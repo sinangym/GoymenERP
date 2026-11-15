@@ -50,11 +50,11 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// Finance record.
 /// </para>
 /// <para>
-/// <b>1.10 (F-018 L1; FNS-D27a / FNS-D45 / FNS-D46):</b> the company accounts' credit limits open at
-/// <c>/finans/kredi-limitleri</c> under <c>finance.credit-limits.read</c>. Proposing (any set, change or removal) and
-/// deciding another person's proposal are two controls of that route under their own narrow names; there is no
-/// one-step change. The approve name is Critical in the manifest (FNS-D46), which changes no route rule; no role or
-/// user receives any of these names here.
+/// <b>1.10 (F-018 L1; FNS-D27 / FNS-D27a / FNS-D46; one step, FNS-D56 / FNS-D57(3)):</b> the company accounts'
+/// credit limits open at <c>/finans/kredi-limitleri</c> under <c>finance.credit-limits.read</c>. Proposing (FNS-D27a)
+/// and approving (a one-step set, change or removal, or the decision of another person's proposal, FNS-D27) are two
+/// controls of that route under their own narrow names. The approve name is Critical in the manifest (FNS-D46), which
+/// changes no route rule; no role or user receives any of these names here.
 /// </para>
 /// <para>
 /// <b>1.11 (FNS-D24, API-32/34):</b> a transfer between two treasury accounts (same currency, or a currency exchange
@@ -331,8 +331,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(PartyLedgerCariCapabilityId, PartyLedgerCariRouteId, PartyLedgerCariRoutePath,
                 PartyLedgerCariScreenId, ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.PartyLedgerRead]),
-            // 1.10 (FNS-D45): every change is a proposal; deciding it is another person's control (the server and the
-            // database refuse a self-decision regardless).
+            // 1.10 (FNS-D27 / FNS-D27a; one step, FNS-D56 / FNS-D57(3)): an approver changes a limit in one step or
+            // decides another person's proposal (the server and the database refuse a self-decision of a proposal).
             creditLimits,
             creditLimits with
             {

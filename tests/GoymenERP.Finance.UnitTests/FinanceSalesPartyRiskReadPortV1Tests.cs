@@ -463,8 +463,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
             IsDirect = false,
             BaseRevision = revision is null ? 0 : revision.Value - 1,
             AccountRevision = revision,
-            // The version the seeding steps reach: one per decision and one for the supersession.
-            Version = 1 + (decided ? 1 : 0) + (status == PartyCreditLimitStatus.Superseded ? 1 : 0),
+            Version = status == PartyCreditLimitStatus.Proposed ? 1 : 2,
             ProposedBy = "SENTETIK-proposer",
             ProposedAtUtc = at,
             DecidedBy = decided ? "SENTETIK-approver" : null,
@@ -502,71 +501,11 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 db.ReversalProposals.AddRange((reversals ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEvents.AddRange((outgoing ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEventReversals.AddRange((paymentReversals ?? []).Where(row => row.CompanyId == company));
+                db.PartyCreditLimits.AddRange((limits ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
-            }
-
-            foreach (var limit in limits ?? [])
-            {
-                await run.SeedLimitAsync(limit);
             }
 
             return run;
-        }
-
-        /// <summary>
-        /// FNS-D45: a credit limit row is born an undecided proposal and reaches its state only through the write
-        /// guard's legal steps (decision, then supersession), one version at a time, as the service writes it.
-        /// </summary>
-        private async Task SeedLimitAsync(PartyCreditLimitRow target)
-        {
-            var seed = new CompanyContext();
-            seed.Set(target.CompanyId);
-            await using (var db = Context(seed))
-            {
-                db.PartyCreditLimits.Add(new PartyCreditLimitRow
-                {
-                    Id = target.Id, CompanyId = target.CompanyId, PartyId = target.PartyId,
-                    CompanyAccountId = target.CompanyAccountId, Kind = target.Kind, CurrencyId = target.CurrencyId,
-                    AmountText = target.AmountText, Status = FinancePartyCreditLimitService.Proposed, IsDirect = false,
-                    BaseRevision = target.BaseRevision, Version = 1, ProposedBy = target.ProposedBy,
-                    ProposedAtUtc = target.ProposedAtUtc, UpdatedAtUtc = target.ProposedAtUtc,
-                });
-                await db.SaveChangesAsync();
-            }
-
-            var steps = new List<Action<PartyCreditLimitRow>>();
-            if (target.DecidedBy is not null)
-            {
-                steps.Add(row =>
-                {
-                    row.Status = target.RejectionReason is null
-                        ? FinancePartyCreditLimitService.Approved
-                        : FinancePartyCreditLimitService.Rejected;
-                    row.DecidedBy = target.DecidedBy;
-                    row.DecidedAtUtc = target.DecidedAtUtc;
-                    row.AccountRevision = target.AccountRevision;
-                    row.RejectionReason = target.RejectionReason;
-                });
-            }
-
-            if (target.SupersededAtUtc is not null)
-            {
-                steps.Add(row =>
-                {
-                    row.Status = FinancePartyCreditLimitService.Superseded;
-                    row.SupersededAtUtc = target.SupersededAtUtc;
-                });
-            }
-
-            foreach (var step in steps)
-            {
-                await using var db = Context(seed);
-                var row = await db.PartyCreditLimits.SingleAsync(candidate => candidate.Id == target.Id);
-                step(row);
-                row.UpdatedAtUtc = target.UpdatedAtUtc;
-                row.Version += 1;
-                await db.SaveChangesAsync();
-            }
         }
 
         public FinanceSalesPartyRiskReadPortV1 Port(Guid company)

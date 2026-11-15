@@ -14,15 +14,17 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>
-/// API-85a (F018 plan §L1; FNS-D27a/D45): the Finance party credit limit master. It moves no money.
+/// API-85a (F018 plan §L1; FNS-D27/D27a, FNS-D56, FNS-D57(3)): the Finance party credit limit master. It moves no
+/// money. FNS-D56 and FNS-D57(3) (the newer user decisions) keep the one-step change and do not apply the
+/// two-person flow of FNS-D45.
 /// <list type="bullet">
-/// <item><b>Two persons for every change (FNS-D45):</b> a set, a change and a removal are all proposals by a holder
-/// of <c>finance.credit-limits.propose</c>; a holder of <c>finance.credit-limits.approve</c> OTHER than the
-/// proposer approves it or rejects it with a reason. There is no one-step direct change and no amount threshold;
-/// holding both authorities does not let anyone decide their own proposal. The database refuses a self-decision
-/// and any direct record too (<c>CK_PartyCreditLimits_Decision</c>, binary collation). An approval supersedes the
-/// account's previous effective record and is audited with the old and the new value.</item>
-/// <item><b>Revision:</b> every proposal names the account's limit revision ("0" before the
+/// <item><b>One step (FNS-D27, FNS-D56):</b> a holder of <c>finance.credit-limits.approve</c> sets, changes or removes an
+/// account's limit directly: the record is inserted approved, supersedes the account's previous effective
+/// record (and any pending proposal) and is audited with the old and the new value.</item>
+/// <item><b>Proposal (FNS-D27a):</b> a holder of only <c>finance.credit-limits.propose</c> proposes; a holder of
+/// the approve authority OTHER than the proposer approves it or rejects it with a reason. The database refuses a
+/// self-decision too (<c>CK_PartyCreditLimits_Decision</c>, binary collation).</item>
+/// <item><b>Revision:</b> every direct change and proposal names the account's limit revision ("0" before the
 /// first approved record). An approved record takes the next revision, unique per account
 /// (<c>UX_PartyCreditLimits_Revision</c>): two changes from the same revision cannot both win. A proposal made
 /// on a revision that has moved since cannot be approved (<c>credit_limit_revision_stale</c>); it can be
@@ -37,8 +39,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// propose or approve; a read-only caller sees approved records (and approved records since superseded).</item>
 /// <item><b>Idempotency (ADR-011) and audit (ADR-009):</b> as the cash account master.</item>
 /// </list>
-/// Not built (open): the real amount/role/currency approval matrix (OPEN-009 stays open; FNS-D45 answers only this
-/// approval step).
+/// Not built: a threshold or a second approval (FNS-D56/FNS-D57(4): a later, separate decision may add them).
 /// </summary>
 public sealed class FinancePartyCreditLimitService(
     FinanceDbContext dbContext,
@@ -51,6 +52,8 @@ public sealed class FinancePartyCreditLimitService(
     FinancePartyCreditLimitEnvelopes envelopes,
     TimeProvider timeProvider) : IFinancePartyCreditLimitMaster
 {
+    public const string SetCommand = "finance.credit-limit.set";
+    public const string RemoveCommand = "finance.credit-limit.remove";
     public const string ProposeCommand = "finance.credit-limit.propose";
     public const string ApproveCommand = "finance.credit-limit.approve";
     public const string RejectCommand = "finance.credit-limit.reject";
@@ -66,6 +69,104 @@ public sealed class FinancePartyCreditLimitService(
     private const int ReasonMaximumLength = 500;
 
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
+
+    public async Task<PartyCreditLimitCommandResult> SetAsync(FinanceContext context, CommandMetadata metadata,
+        PartyCreditLimitSetRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        const FinanceAction action = FinanceAction.ApproveCreditLimit;
+        if (await StartAsync(context, metadata, action, null, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        // A null text cannot be the contract's JSON; refused before it is hashed.
+        if (request.Amount is null)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("amount", "credit_limit_amount_invalid"));
+        }
+
+        if (request.ExpectedRevision is null)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedRevision", "identity_required"));
+        }
+
+        var payloadHash = PayloadHash(SetCommand, request);
+        if (await PriorAsync(context, metadata, action, SetCommand, payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        if (AccountRefusal(context, request.PartyId, request.CompanyAccountId, request.ExpectedRevision) is { } malformed)
+        {
+            return malformed;
+        }
+
+        if (SetPayloadRefusal(context, request.CurrencyId, request.Amount) is { } invalid)
+        {
+            return invalid;
+        }
+
+        if (await CurrencyRefusalAsync(context, action, request.CurrencyId, cancellationToken) is { } currencyRefused)
+        {
+            return currencyRefused;
+        }
+
+        if (await PartyRefusalAsync(context, action, request.PartyId, request.CompanyAccountId, requireActive: true,
+                cancellationToken) is { } partyRefused)
+        {
+            return partyRefused;
+        }
+
+        return await DirectAsync(context, metadata, SetCommand, payloadHash, request.PartyId, request.CompanyAccountId,
+            request.ExpectedRevision, SetKind, request.CurrencyId, request.Amount, "finance.credit-limit.set.v1", "Set",
+            "Finans kredi limiti tanımı (onay yetkilisi tek adımda; para etkisi yok)", cancellationToken);
+    }
+
+    public async Task<PartyCreditLimitCommandResult> RemoveAsync(FinanceContext context, CommandMetadata metadata,
+        PartyCreditLimitRemoveRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        const FinanceAction action = FinanceAction.ApproveCreditLimit;
+        if (await StartAsync(context, metadata, action, null, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.ExpectedRevision is null)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedRevision", "identity_required"));
+        }
+
+        var payloadHash = PayloadHash(RemoveCommand, request);
+        if (await PriorAsync(context, metadata, action, RemoveCommand, payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        if (AccountRefusal(context, request.PartyId, request.CompanyAccountId, request.ExpectedRevision) is { } malformed)
+        {
+            return malformed;
+        }
+
+        // A limit is removed from a passive account too: "no limit" is never more permissive than a stale one.
+        if (await PartyRefusalAsync(context, action, request.PartyId, request.CompanyAccountId, requireActive: false,
+                cancellationToken) is { } partyRefused)
+        {
+            return partyRefused;
+        }
+
+        return await DirectAsync(context, metadata, RemoveCommand, payloadHash, request.PartyId, request.CompanyAccountId,
+            request.ExpectedRevision, RemoveKind, currencyId: null, amount: null, "finance.credit-limit.removed.v1",
+            "Remove", "Finans kredi limiti kaldırma (onay yetkilisi tek adımda; limit yok; para etkisi yok)",
+            cancellationToken);
+    }
 
     public async Task<PartyCreditLimitCommandResult> ProposeAsync(FinanceContext context, CommandMetadata metadata,
         PartyCreditLimitProposeRequest request, CancellationToken cancellationToken)
@@ -251,8 +352,7 @@ public sealed class FinancePartyCreditLimitService(
         }
 
         // The account moved since the proposal was made: approving it would overwrite a change its approver
-        // never saw. It stays pending until it is rejected. (With every change a proposal and one proposal
-        // pending per account, the revision moves only by approving that proposal; the guard stays fail-closed.)
+        // never saw. It stays pending until it is rejected (or superseded by a direct change).
         if (row.BaseRevision != account.Revision)
         {
             return await TerminalAsync(context, metadata, action, ApproveCommand, payloadHash, row.Id,
@@ -281,7 +381,7 @@ public sealed class FinancePartyCreditLimitService(
         row.Version = checked(row.Version + 1);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, ApproveCommand, payloadHash, row.Id, result, now);
-        var approval = JsonSerializer.Serialize(new { rule = "FNS-D45", proposedBy = row.ProposedBy, approvedBy = context.ActorId },
+        var approval = JsonSerializer.Serialize(new { rule = "FNS-D27a", proposedBy = row.ProposedBy, approvedBy = context.ActorId },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Audit(context, metadata, envelopes.Approve, row.Id, "finance.credit-limit.approved.v1", "Approve", versionBefore,
             row.Version, before, RecordAudit(row), approval,
@@ -345,7 +445,7 @@ public sealed class FinancePartyCreditLimitService(
         row.Version = checked(row.Version + 1);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, RejectCommand, payloadHash, row.Id, result, now);
-        var decision = JsonSerializer.Serialize(new { rule = "FNS-D45", proposedBy = row.ProposedBy, rejectedBy = context.ActorId },
+        var decision = JsonSerializer.Serialize(new { rule = "FNS-D27a", proposedBy = row.ProposedBy, rejectedBy = context.ActorId },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Audit(context, metadata, envelopes.Approve, row.Id, "finance.credit-limit.rejected.v1", "Reject", versionBefore,
             row.Version, before, RecordAudit(row), decision,
@@ -502,6 +602,79 @@ public sealed class FinancePartyCreditLimitService(
         && decimal.TryParse(amount, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
         && FinanceExactDecimalText.Equal(amount, value.ToString(CultureInfo.InvariantCulture));
 
+    private async Task<PartyCreditLimitCommandResult> DirectAsync(FinanceContext context, CommandMetadata metadata,
+        string command, string payloadHash, Guid partyId, Guid companyAccountId, string expectedRevision, int kind,
+        Guid? currencyId, string? amount, string eventType, string operation, string auditReason,
+        CancellationToken cancellationToken)
+    {
+        const FinanceAction action = FinanceAction.ApproveCreditLimit;
+        var account = await AccountAsync(companyAccountId, cancellationToken);
+        if (await FenceAsync(context, action, null, cancellationToken) is { } afterRead)
+        {
+            return afterRead;
+        }
+
+        if (!string.Equals(VersionText(account.Revision), expectedRevision, StringComparison.Ordinal))
+        {
+            return await TerminalAsync(context, metadata, action, command, payloadHash, targetId: null,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedRevision", "version_conflict")),
+                cancellationToken);
+        }
+
+        if (account.OtherParty(partyId))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("companyAccountId", "party_account_ineligible"));
+        }
+
+        if (kind == RemoveKind && account.Effective is not { Kind: SetKind })
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("companyAccountId", "credit_limit_not_set"));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var before = AccountAudit(account.Effective, account.Pending);
+        // A direct change by an approver supersedes the pending proposal too: it was made on this revision and
+        // could never be approved after it.
+        if (account.Pending is { } pending)
+        {
+            Supersede(pending, now);
+        }
+
+        if (account.Effective is { } effective)
+        {
+            Supersede(effective, now);
+        }
+
+        var row = new PartyCreditLimitRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = context.CompanyId,
+            PartyId = partyId,
+            CompanyAccountId = companyAccountId,
+            Kind = kind,
+            CurrencyId = currencyId,
+            AmountText = amount,
+            Status = Approved,
+            IsDirect = true,
+            BaseRevision = account.Revision,
+            AccountRevision = checked(account.Revision + 1),
+            Version = 1,
+            ProposedBy = context.ActorId,
+            ProposedAtUtc = now,
+            DecidedBy = context.ActorId,
+            DecidedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        dbContext.PartyCreditLimits.Add(row);
+        var result = Succeeded(context, row);
+        AddCommand(context, metadata, command, payloadHash, row.Id, result, now);
+        var approval = JsonSerializer.Serialize(new { rule = "FNS-D27", approvedBy = context.ActorId, direct = true },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Audit(context, metadata, envelopes.Approve, row.Id, eventType, operation, versionBefore: null, row.Version, before,
+            RecordAudit(row), approval, auditReason);
+        return await SaveAsync(context, metadata, action, command, payloadHash, result, cancellationToken);
+    }
+
     private static void Supersede(PartyCreditLimitRow row, DateTimeOffset now)
     {
         row.Status = Superseded;
@@ -651,7 +824,6 @@ public sealed class FinancePartyCreditLimitService(
                 cancellationToken));
         }
 
-        // A direct record cannot exist since FNS-D45 (the database refuses it); the guard stays fail-closed.
         if (row.Status != Proposed || row.IsDirect)
         {
             return (null, Refused(context, CommandOutcome.ValidationFailed, Issue("proposalId", "credit_limit_not_proposed")));
@@ -930,8 +1102,8 @@ public sealed class FinancePartyCreditLimitService(
             metadata.IdempotencyKey));
     }
 
-    /// <summary>The old value beside the new one — the account's effective record and, if any, the other record the
-    /// command decides.</summary>
+    /// <summary>FNS-D27: the old value beside the new one — the account's effective record and, if any, the other
+    /// record the command decides or supersedes.</summary>
     private static string AccountAudit(PartyCreditLimitRow? effective, PartyCreditLimitRow? other) =>
         effective is null && other is null
             ? "{}"
@@ -977,7 +1149,7 @@ public sealed class FinancePartyCreditLimitService(
 
 /// <summary>
 /// The ADR-009 envelopes of the credit limit master's writes: a proposal with the roles that granted
-/// <c>finance.credit-limits.propose</c>; an approval or a rejection with those of
+/// <c>finance.credit-limits.propose</c>; a direct change, an approval or a rejection with those of
 /// <c>finance.credit-limits.approve</c>.
 /// </summary>
 public sealed record FinancePartyCreditLimitEnvelopes(FinanceAuditEnvelope Propose, FinanceAuditEnvelope Approve);

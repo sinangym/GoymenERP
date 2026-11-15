@@ -98,16 +98,9 @@ describe('credit limit account decoder', () => {
     expect(accountOk(account({ effective: approvedSet({ decidedAtUtc: null }) }))).toBe(false)
     expect(accountOk(account({ effective: approvedSet({ supersededAtUtc: '2026-11-14T11:00:00+00:00' }) }))).toBe(false)
     expect(accountOk(account({ effective: approvedSet({ rejectionReason: 'SENTETIK' }) }))).toBe(false)
+    expect(accountOk(account({ pending: proposedSet({ isDirect: true }) }))).toBe(false)
     expect(accountOk(account({ pending: proposedSet({ revision: '2' }) }))).toBe(false)
     expect(accountOk(account({ pending: proposedSet({ decidedAtUtc: '2026-11-14T11:00:00+00:00' }) }))).toBe(false)
-  })
-
-  it('refuses any record that claims to be a one-step change (FNS-D45), whatever its status', () => {
-    expect(accountOk(account())).toBe(true)
-    expect(accountOk(account({ effective: approvedSet({ isDirect: true }) }))).toBe(false)
-    expect(accountOk(account({ pending: proposedSet({ isDirect: true }) }))).toBe(false)
-    expect(accountOk(account({ effective: approvedSet({ isDirect: 'false' }) }))).toBe(false)
-    expect(accountOk(account({ effective: approvedSet({ isDirect: null }) }))).toBe(false)
   })
 
   it('refuses a non-canonical version and an unknown kind or status', () => {

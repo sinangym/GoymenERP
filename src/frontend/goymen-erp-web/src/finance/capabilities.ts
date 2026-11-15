@@ -72,9 +72,9 @@ export const FINANCE_CAPABILITY = {
   partyLedgerCari: 'finance.party-ledger.cari',
   /** F-018 L1 Kredi Limitleri — the company accounts' credit limits, under `finance.credit-limits.read`. */
   creditLimitsList: 'finance.credit-limits.list',
-  /** FNS-D45: propose a set, change or removal (control of the list; nothing changes until another person approves). */
+  /** FNS-D27a: propose a set, change or removal (control of the list; nothing changes until an approver decides it). */
   creditLimitsPropose: 'finance.credit-limits.propose',
-  /** FNS-D45 / FNS-D46: approve or reject another person's proposal (control of the list; the server refuses a self-decision). */
+  /** FNS-D27 / FNS-D46: set or remove a limit in one step, or decide a proposal (control of the list; FNS-D56 / FNS-D57(3)). */
   creditLimitsApprove: 'finance.credit-limits.approve',
 } as const
 

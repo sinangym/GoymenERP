@@ -1633,8 +1633,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     /// effective record is its one approved row and at most one proposal is pending per account
     /// (<c>UX_PartyCreditLimits_Live</c>); an approved
     /// row's account revision is unique per account, so two concurrent changes from the same revision cannot
-    /// both win. Every record is a proposal decided by another actor (binary collation; FNS-D45 closed the
-    /// one-step direct record of FNS-D27, <c>IsDirect</c> is always 0). No foreign key reaches the party or the company
+    /// both win. A proposal is decided by another actor (binary collation); a direct record is decided by its
+    /// own author, who holds the approve authority (FNS-D27; one step, FNS-D56/FNS-D57(3)). No foreign key reaches the party or the company
     /// account: they are Counterparty's (read through <see cref="Contracts.IFinancePartyAccountPort"/>).
     /// </summary>
     private void ConfigurePartyCreditLimits(ModelBuilder modelBuilder)
@@ -1725,20 +1725,22 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Kind] = 2 AND [CurrencyId] IS NULL AND [AmountText] IS NULL)";
 
     /// <summary>
-    /// FNS-D27a/D45: a proposal carries no decision and no revision. An approved record carries a decider and
-    /// a revision and is always a proposal decided by someone other than its proposer: FNS-D45 closed the
-    /// one-step direct record (decided by its own author) for a set, a change and a removal alike, so
-    /// <c>IsDirect</c> is 0 in every state. A rejection is a proposal's, by someone other than its proposer, with
-    /// a reason. A superseded record is either a proposal never decided or an approved record, with the same
-    /// rules as when it was approved. Actors compare in binary collation.
+    /// FNS-D27/D27a: a proposal carries no decision and no revision. An approved record carries a decider and
+    /// a revision: a direct record is decided by its author (FNS-D27, one step by an approver), a proposal by
+    /// someone other than its proposer (FNS-D27a). A rejection is a proposal's, by someone other than its
+    /// proposer, with a reason. A superseded record is either a proposal never decided or an approved record,
+    /// with the same rules as when it was approved. Actors compare in binary collation. FNS-D56/FNS-D57(3): this
+    /// is again the check <c>AddPartyCreditLimits</c> created; <c>RestorePartyCreditLimitOneStep</c> puts it back
+    /// over the second-person check of <c>RequirePartyCreditLimitSecondPerson</c>, which stays in the chain.
     /// </summary>
     internal const string PartyCreditLimitDecisionCheck =
         "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
         + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR "
-        + "([Status] IN (2, 4) AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
-        + "AND LEN([DecidedBy]) > 0 AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
         + "AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) "
-        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2) OR "
+        + "AND (([IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2) "
+        + "OR ([IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2))) OR "
         + "([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
         + "AND LEN([DecidedBy]) > 0 "
         + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
@@ -1865,14 +1867,6 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             if (!companyContext.IsResolved || entry.Entity.CompanyId != companyContext.CompanyId)
             {
                 throw new InvalidOperationException("Finans kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
-            }
-
-            if (entry.State == EntityState.Added
-                && entry.Entity is PartyCreditLimitRow { } newCreditLimit
-                && !IsAllowedNewPartyCreditLimit(newCreditLimit))
-            {
-                // FNS-D45: every credit limit change is born a proposal; no one-step direct record exists.
-                throw new InvalidOperationException("Kredi limiti kaydı yalnız karar bekleyen bir öneri olarak oluşur.");
             }
 
             if (entry.State == EntityState.Modified
@@ -2353,18 +2347,6 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 && current.RejectionReason is null && current.SupersededAtUtc is not null,
             _ => false,
         };
-    }
-
-    /// <summary>
-    /// FNS-D45: a new credit limit row is a proposal awaiting its decision (status 1, not direct, version 1),
-    /// with no decider, revision, rejection or supersession; only a different approver's decision moves it on.
-    /// </summary>
-    private static bool IsAllowedNewPartyCreditLimit(PartyCreditLimitRow row)
-    {
-        const int proposed = 1;
-        return row.Status == proposed && !row.IsDirect && row.Version == 1
-            && row.DecidedBy is null && row.DecidedAtUtc is null && row.AccountRevision is null
-            && row.RejectionReason is null && row.SupersededAtUtc is null;
     }
 
     private static bool IsAllowedCashAccountDecision(

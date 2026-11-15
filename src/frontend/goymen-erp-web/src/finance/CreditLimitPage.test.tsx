@@ -18,7 +18,6 @@ import {
   proposedSet,
   approvedSet,
   refusal,
-  rejected,
   succeeded,
 } from './creditLimitFixtures'
 
@@ -170,66 +169,68 @@ describe('CreditLimitPage reads', () => {
   })
 })
 
-const proposeForm = (detail: HTMLElement) => detail.querySelector('form[data-form="propose"]') as HTMLFormElement
+describe('CreditLimitPage approver', () => {
+  it('opens the detail with the history table and sets a limit naming the account revision', async () => {
+    const user = userEvent.setup()
+    const calls = serve({}, () => jsonResponse(succeeded(approvedSet({ id: 'aaaaaaaa-0000-4000-8000-000000000007',
+      amount: '175000.25', revision: '2' }))))
+    renderPage({ canApprove: true })
+    const detail = await openAccount(user)
+    expect(await within(detail).findByRole('table', { name: T.historyCaption })).not.toBeNull()
 
-async function chooseRemoval(user: ReturnType<typeof userEvent.setup>, form: HTMLFormElement) {
-  await user.click(within(form).getByLabelText(T.proposeKindRemove))
-}
+    const form = detail.querySelector('form[data-form="set"]') as HTMLFormElement
+    expect(form).not.toBeNull()
+    await user.selectOptions(await within(form).findByLabelText(T.currency), CL_CURRENCY)
+    await user.type(within(form).getByLabelText(T.amount), '175000,25')
+    await user.click(within(form).getByRole('button', { name: T.setSubmit }))
 
-describe('CreditLimitPage second person (FNS-D45)', () => {
-  it('gives an approver alone no set, change or removal path, only a pointer to proposals', async () => {
+    expect(await within(form).findByText(CREDIT_LIMIT_SUCCESS.set)).not.toBeNull()
+    const [post] = posts(calls)
+    expect(post.url).toMatch(/\/finance\/credit-limits$/)
+    expect(post.company).toBe(CL_COMPANY)
+    expect(post.key).toMatch(/^[0-9a-f]{32}$/)
+    expect(post.body).toEqual({ partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, currencyId: CL_CURRENCY, amount: '175000.25',
+      expectedRevision: '1' })
+    // A definite answer releases the stored key.
+    const storeKey = creditLimitAttemptStoreKey({ sessionBinding: SESSION, actorId: ACTOR, companyId: CL_COMPANY }, 'set', CL_ACCOUNT)
+    expect(storeKey).not.toBeNull()
+    expect(sessionStorage.getItem(storeKey ?? '')).toBeNull()
+  })
+
+  it('refuses to send a set without a currency or a valid amount', async () => {
     const user = userEvent.setup()
     const calls = serve({})
     renderPage({ canApprove: true })
     const detail = await openAccount(user)
-    expect(await within(detail).findByRole('table', { name: T.historyCaption })).not.toBeNull()
-    expect(within(detail).getByText(T.approverOnly)).not.toBeNull()
-    expect(detail.querySelector('form[data-form="set"]')).toBeNull()
-    expect(detail.querySelector('[data-form="remove"]')).toBeNull()
-    expect(detail.querySelector('form[data-form="propose"]')).toBeNull()
-    expect(detail.querySelector('[data-form="decision"]')).toBeNull()
-    // No first limit for a new account either: that is a proposal too.
-    expect(screen.queryByRole('button', { name: T.newHeading })).toBeNull()
+    const form = detail.querySelector('form[data-form="set"]') as HTMLFormElement
+    await within(form).findByLabelText(T.currency)
+    await user.type(within(form).getByLabelText(T.amount), '0')
+    await user.click(within(form).getByRole('button', { name: T.setSubmit }))
+    expect(within(form).getByText(T.currencyRequired)).not.toBeNull()
+    expect(within(form).getByText(T.amountError['not-positive'])).not.toBeNull()
     expect(posts(calls)).toHaveLength(0)
   })
 
-  it('gives a holder of both authorities the proposal form, never a one-step change', async () => {
+  it('removes a limit naming the account revision', async () => {
     const user = userEvent.setup()
-    serve({})
-    renderPage({ canApprove: true, canPropose: true })
-    const detail = await openAccount(user)
-    expect(proposeForm(detail)).not.toBeNull()
-    expect(detail.querySelector('form[data-form="set"]')).toBeNull()
-    expect(detail.querySelector('[data-form="remove"]')).toBeNull()
-    expect(within(detail).queryByText(T.approverOnly)).toBeNull()
-  })
-
-  it('draws a history without a "recorded how" column: every record is a proposal and a decision', async () => {
-    const user = userEvent.setup()
-    serve({ history: () => jsonResponse(historyPage([approvedSet(), rejected()])) })
+    const calls = serve({}, () => jsonResponse(succeeded(approvedSet({ id: 'aaaaaaaa-0000-4000-8000-000000000008', kind: 'Remove',
+      currencyId: null, amount: null, revision: '2' }))))
     renderPage({ canApprove: true })
     const detail = await openAccount(user)
-    const table = await within(detail).findByRole('table', { name: T.historyCaption })
-    expect(within(table).getAllByRole('columnheader')).toHaveLength(6)
-    expect(table.querySelectorAll('[data-record]')).toHaveLength(2)
+    const remove = detail.querySelector('[data-form="remove"]') as HTMLElement
+    await user.click(within(remove).getByRole('button', { name: T.removeSubmit }))
+    expect(await within(remove).findByText(CREDIT_LIMIT_SUCCESS.remove)).not.toBeNull()
+    const [post] = posts(calls)
+    expect(post.url).toMatch(/\/finance\/credit-limits\/removals$/)
+    expect(post.body).toEqual({ partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, expectedRevision: '1' })
   })
 
-  it('treats a record that claims a one-step change as malformed, not as history', async () => {
-    const user = userEvent.setup()
-    serve({ history: () => jsonResponse(historyPage([approvedSet({ isDirect: true })])) })
-    renderPage({ canApprove: true })
-    const detail = await openAccount(user)
-    await waitFor(() => expect(detail.querySelector('[data-state="malformed-response"]')).not.toBeNull())
-    expect(within(detail).queryByRole('table', { name: T.historyCaption })).toBeNull()
-  })
-})
-
-describe('CreditLimitPage approver', () => {
   it('approves another person\'s proposal by its version', async () => {
     const user = userEvent.setup()
     const pending = account({ pending: proposedSet() })
     const calls = serve({ list: () => jsonResponse(listPage([pending])), account: () => jsonResponse(pending) },
-      () => jsonResponse(succeeded(approvedSet({ id: proposedSet().id, amount: '200000', revision: '2', version: '2' }))))
+      () => jsonResponse(succeeded(approvedSet({ id: proposedSet().id, isDirect: false, amount: '200000', revision: '2',
+        version: '2' }))))
     renderPage({ canApprove: true })
     const detail = await openAccount(user)
     const decision = await waitFor(() => {
@@ -281,103 +282,38 @@ describe('CreditLimitPage approver', () => {
     // A pending proposal also hides a second proposal form.
     expect(detail.querySelector('form[data-form="propose"]')).toBeNull()
   })
-})
-
-describe('CreditLimitPage proposer', () => {
-  it('opens the detail with the history table and proposes a limit naming the account revision', async () => {
-    const user = userEvent.setup()
-    const calls = serve({}, () => jsonResponse(succeeded(proposedSet({ id: 'aaaaaaaa-0000-4000-8000-000000000007',
-      amount: '175000.25' }))))
-    renderPage({ canPropose: true })
-    const detail = await openAccount(user)
-    expect(await within(detail).findByRole('table', { name: T.historyCaption })).not.toBeNull()
-
-    const form = proposeForm(detail)
-    expect(form).not.toBeNull()
-    expect(detail.querySelector('form[data-form="set"]')).toBeNull()
-    expect(detail.querySelector('[data-form="remove"]')).toBeNull()
-    await user.selectOptions(await within(form).findByLabelText(T.currency), CL_CURRENCY)
-    await user.type(within(form).getByLabelText(T.amount), '175000,25')
-    await user.click(within(form).getByRole('button', { name: T.proposeSubmit }))
-
-    expect(await within(form).findByText(CREDIT_LIMIT_SUCCESS.propose)).not.toBeNull()
-    const [post] = posts(calls)
-    expect(post.url).toMatch(/\/finance\/credit-limits\/proposals$/)
-    expect(post.company).toBe(CL_COMPANY)
-    expect(post.key).toMatch(/^[0-9a-f]{32}$/)
-    expect(post.body).toEqual({ partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, kind: 'Set', currencyId: CL_CURRENCY,
-      amount: '175000.25', expectedRevision: '1' })
-    // A definite answer releases the stored key.
-    const storeKey = creditLimitAttemptStoreKey({ sessionBinding: SESSION, actorId: ACTOR, companyId: CL_COMPANY }, 'propose',
-      CL_ACCOUNT)
-    expect(storeKey).not.toBeNull()
-    expect(sessionStorage.getItem(storeKey ?? '')).toBeNull()
-  })
-
-  it('refuses to send a proposal without a currency or a valid amount', async () => {
-    const user = userEvent.setup()
-    const calls = serve({})
-    renderPage({ canPropose: true })
-    const detail = await openAccount(user)
-    const form = proposeForm(detail)
-    await within(form).findByLabelText(T.currency)
-    await user.type(within(form).getByLabelText(T.amount), '0')
-    await user.click(within(form).getByRole('button', { name: T.proposeSubmit }))
-    expect(within(form).getByText(T.currencyRequired)).not.toBeNull()
-    expect(within(form).getByText(T.amountError['not-positive'])).not.toBeNull()
-    expect(posts(calls)).toHaveLength(0)
-  })
-
-  it('proposes a removal without currency or amount', async () => {
-    const user = userEvent.setup()
-    const calls = serve({}, () => jsonResponse(succeeded(proposedSet({ kind: 'Remove', currencyId: null, amount: null }))))
-    renderPage({ canPropose: true })
-    const detail = await openAccount(user)
-    const form = proposeForm(detail)
-    await chooseRemoval(user, form)
-    expect(within(form).getByText(T.removeHint)).not.toBeNull()
-    await user.click(within(form).getByRole('button', { name: T.proposeSubmit }))
-    expect(await within(form).findByText(CREDIT_LIMIT_SUCCESS.propose)).not.toBeNull()
-    const [post] = posts(calls)
-    expect(post.url).toMatch(/\/finance\/credit-limits\/proposals$/)
-    expect(post.body).toEqual({ partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, kind: 'Remove', currencyId: null, amount: null,
-      expectedRevision: '1' })
-  })
 
   it('shows a version conflict with a reload action, never a success', async () => {
     const user = userEvent.setup()
     serve({}, () => jsonResponse(refusal('VersionConflict', [{ field: 'expectedRevision', code: 'version_conflict' }]), 409))
-    renderPage({ canPropose: true })
+    renderPage({ canApprove: true })
     const detail = await openAccount(user)
-    const form = proposeForm(detail)
-    await chooseRemoval(user, form)
-    await user.click(within(form).getByRole('button', { name: T.proposeSubmit }))
-    expect(await within(form).findByText(T.outcome.VersionConflict)).not.toBeNull()
-    expect(within(form).getByRole('button', { name: T.reload })).not.toBeNull()
-    expect(within(form).queryByText(CREDIT_LIMIT_SUCCESS.propose)).toBeNull()
+    const remove = detail.querySelector('[data-form="remove"]') as HTMLElement
+    await user.click(within(remove).getByRole('button', { name: T.removeSubmit }))
+    expect(await within(remove).findByText(T.outcome.VersionConflict)).not.toBeNull()
+    expect(within(remove).getByRole('button', { name: T.reload })).not.toBeNull()
+    expect(within(remove).queryByText(CREDIT_LIMIT_SUCCESS.remove)).toBeNull()
   })
 
   it('keeps the same key after an unknown outcome and resends the same command', async () => {
     const user = userEvent.setup()
     let answer: () => Response = () => new Response(null, { status: 503 })
     const calls = serve({}, () => answer())
-    renderPage({ canPropose: true })
+    renderPage({ canApprove: true })
     const detail = await openAccount(user)
-    const form = proposeForm(detail)
-    await chooseRemoval(user, form)
-    await user.click(within(form).getByRole('button', { name: T.proposeSubmit }))
-    expect(await within(form).findByText(T.unknownTitle)).not.toBeNull()
+    const remove = detail.querySelector('[data-form="remove"]') as HTMLElement
+    await user.click(within(remove).getByRole('button', { name: T.removeSubmit }))
+    expect(await within(remove).findByText(T.unknownTitle)).not.toBeNull()
 
-    const storeKey = creditLimitAttemptStoreKey({ sessionBinding: SESSION, actorId: ACTOR, companyId: CL_COMPANY }, 'propose',
-      CL_ACCOUNT)
-    expect(storeKey).toBe(`goymen.finance.credit-limit.propose.v1:${SESSION}:${ACTOR}:${CL_COMPANY}:${CL_ACCOUNT}`)
+    const storeKey = creditLimitAttemptStoreKey({ sessionBinding: SESSION, actorId: ACTOR, companyId: CL_COMPANY }, 'remove', CL_ACCOUNT)
+    expect(storeKey).toBe(`goymen.finance.credit-limit.remove.v1:${SESSION}:${ACTOR}:${CL_COMPANY}:${CL_ACCOUNT}`)
     const stored = JSON.parse(sessionStorage.getItem(storeKey ?? '') ?? 'null') as { key: string } | null
     expect(stored?.key).toBe(posts(calls)[0].key)
 
-    answer = () => jsonResponse(succeeded(proposedSet({ id: 'aaaaaaaa-0000-4000-8000-000000000009', kind: 'Remove',
-      currencyId: null, amount: null })))
-    await user.click(within(form).getByRole('button', { name: T.resend }))
-    expect(await within(form).findByText(CREDIT_LIMIT_SUCCESS.propose)).not.toBeNull()
+    answer = () => jsonResponse(succeeded(approvedSet({ id: 'aaaaaaaa-0000-4000-8000-000000000009', kind: 'Remove', currencyId: null,
+      amount: null, revision: '2' })))
+    await user.click(within(remove).getByRole('button', { name: T.resend }))
+    expect(await within(remove).findByText(CREDIT_LIMIT_SUCCESS.remove)).not.toBeNull()
     const [first, second] = posts(calls)
     expect(second.key).toBe(first.key)
     expect(second.body).toEqual(first.body)
@@ -388,13 +324,31 @@ describe('CreditLimitPage proposer', () => {
     signIn(CL_COMPANY, null)
     const user = userEvent.setup()
     serve({}, () => new Response(null, { status: 503 }))
+    renderPage({ canApprove: true })
+    const detail = await openAccount(user)
+    const remove = detail.querySelector('[data-form="remove"]') as HTMLElement
+    await user.click(within(remove).getByRole('button', { name: T.removeSubmit }))
+    expect(await within(remove).findByText(T.unknownTitle)).not.toBeNull()
+    expect(sessionStorage.length).toBe(0)
+  })
+})
+
+describe('CreditLimitPage proposer', () => {
+  it('proposes a removal without currency or amount', async () => {
+    const user = userEvent.setup()
+    const calls = serve({}, () => jsonResponse(succeeded(proposedSet({ kind: 'Remove', currencyId: null, amount: null }))))
     renderPage({ canPropose: true })
     const detail = await openAccount(user)
-    const form = proposeForm(detail)
-    await chooseRemoval(user, form)
+    expect(detail.querySelector('form[data-form="set"]')).toBeNull()
+    expect(detail.querySelector('[data-form="remove"]')).toBeNull()
+    const form = detail.querySelector('form[data-form="propose"]') as HTMLFormElement
+    await user.click(within(form).getByLabelText(T.proposeKindRemove))
     await user.click(within(form).getByRole('button', { name: T.proposeSubmit }))
-    expect(await within(form).findByText(T.unknownTitle)).not.toBeNull()
-    expect(sessionStorage.length).toBe(0)
+    expect(await within(form).findByText(CREDIT_LIMIT_SUCCESS.propose)).not.toBeNull()
+    const [post] = posts(calls)
+    expect(post.url).toMatch(/\/finance\/credit-limits\/proposals$/)
+    expect(post.body).toEqual({ partyId: CL_PARTY, companyAccountId: CL_ACCOUNT, kind: 'Remove', currencyId: null, amount: null,
+      expectedRevision: '1' })
   })
 
   it('proposes a limit for a new account at revision "0" and refuses an invalid identity', async () => {
