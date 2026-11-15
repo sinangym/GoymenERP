@@ -16,7 +16,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // SAT-D119 review B-P3-3: + the write guard refuses a newly written checking company other than the active one
     // (9090f0a5… -> 181bd248…); no filter, set or model change.
     private const string ReviewedCounterpartyDbContextFingerprint =
-        "181bd2486c67c20c14670392988f1d8367836509bb4495ec231ff9129e80ab25";
+        // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
+        "94146948ecf2d9592fe58f32942b72c654860f7578e5c4b19af71929ce5f4e93";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
