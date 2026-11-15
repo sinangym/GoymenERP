@@ -12,7 +12,8 @@ namespace GoymenERP.Finance.UnitTests;
 /// outstanding amounts of the customer account's OPEN items, summed per currency exactly; closed items and other customers,
 /// accounts or companies never enter. A row Finance cannot read makes the figure unavailable (never a partial sum). The credit
 /// limit is the account's one approved API-85a record: an approved Set is available, none or an approved Remove is "NoSource",
-/// never zero; a pending proposal never counts. Collateral has no master on main: "NoSource". The read writes nothing.
+/// never zero; a pending proposal never counts. Collateral is the API-85b master's weighted figure: none held is a recorded
+/// zero (Available, empty). The read writes nothing.
 /// </summary>
 public sealed class FinanceSalesPartyRiskReadPortV1Tests
 {
@@ -25,7 +26,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
     private static readonly Guid Eur = Guid.Parse("aaaaaaaa-9999-4999-8999-999999999999");
 
     [Fact]
-    public async Task Open_receivables_are_the_outstanding_amounts_of_the_accounts_open_items_per_currency_and_limit_and_collateral_have_no_source()
+    public async Task Open_receivables_are_the_outstanding_amounts_of_the_accounts_open_items_per_currency_the_limit_has_no_source_and_no_collateral_is_zero()
     {
         await using var run = await Run.CreateAsync(
             Row("125.50", "75.25"),
@@ -47,9 +48,9 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 FinanceSalesPartyRiskReadPortV1.CreditLimitNotSet),
             (answer.CreditLimit.State, answer.CreditLimit.Source, answer.CreditLimit.IncludesTax, answer.CreditLimit.ReasonCode));
         Assert.Empty(answer.CreditLimit.Amounts);
-        Assert.Equal((SalesPartyRiskFigureStateV1.NoSource, FinanceSalesPartyRiskReadPortV1.CollateralSource,
-                FinanceSalesPartyRiskReadPortV1.CollateralOwnerMissing),
-            (answer.Collateral.State, answer.Collateral.Source, answer.Collateral.ReasonCode));
+        Assert.Equal((SalesPartyRiskFigureStateV1.Available, FinanceSalesPartyRiskReadPortV1.CollateralSource, (bool?)null,
+                (string?)null),
+            (answer.Collateral.State, answer.Collateral.Source, answer.Collateral.IncludesTax, answer.Collateral.ReasonCode));
         Assert.Empty(answer.Collateral.Amounts);
         Assert.False(run.Db.ChangeTracker.HasChanges());
     }
@@ -463,8 +464,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
             IsDirect = false,
             BaseRevision = revision is null ? 0 : revision.Value - 1,
             AccountRevision = revision,
-            // The version the seeding steps reach: one per decision and one for the supersession.
-            Version = 1 + (decided ? 1 : 0) + (status == PartyCreditLimitStatus.Superseded ? 1 : 0),
+            Version = status == PartyCreditLimitStatus.Proposed ? 1 : 2,
             ProposedBy = "SENTETIK-proposer",
             ProposedAtUtc = at,
             DecidedBy = decided ? "SENTETIK-approver" : null,
@@ -473,6 +473,104 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
             SupersededAtUtc = status == PartyCreditLimitStatus.Superseded ? at : null,
             UpdatedAtUtc = at,
         };
+    }
+
+    [Fact]
+    public async Task The_collateral_is_the_held_received_collaterals_in_force_weighted_by_the_Settings_rate_and_fails_closed_without_it()
+    {
+        // API-85b (FNS-D31): 1000 TRY at 80% and 200.10 TRY at 50% in force; 40 USD at 80%. A superseded revision, a
+        // release, a collateral not yet in force, a given one, another account's and another company's never count.
+        var guarantee = Guid.NewGuid();
+        var mortgage = Guid.NewGuid();
+        await using var run = await Run.CreateAsync([], [], limits: null, collaterals:
+        [
+            Collateral(guarantee, Try, "1000"),
+            Collateral(mortgage, Try, "200.10"),
+            Collateral(guarantee, Usd, "40"),
+            Collateral(guarantee, Try, "999", status: FinancePartyCollateralService.Superseded),
+            Collateral(guarantee, Try, "999", kind: FinancePartyCollateralService.ReleaseKind),
+            Collateral(guarantee, Try, "999", from: Today.AddDays(1)),
+            Collateral(guarantee, Try, "999", until: Today.AddDays(-1)),
+            Collateral(guarantee, Try, "999", direction: FinancePartyCollateralService.Given),
+            Collateral(guarantee, Try, "999", account: Guid.NewGuid()),
+            Collateral(guarantee, Try, "999", company: OtherCompany),
+        ]);
+
+        var answer = await run.Port(Company, new RateCatalog(
+            new FinanceCollateralTypeCatalogItem(guarantee, "SENTETIK-K", "SENTETIK kefalet", true, "80", "1", false),
+            new FinanceCollateralTypeCatalogItem(mortgage, "SENTETIK-I", "SENTETIK ipotek", true, "50", "1", false)))
+            .ReadPartyRiskAsync(Party, Account);
+
+        Assert.Equal((SalesPartyRiskFigureStateV1.Available, FinanceSalesPartyRiskReadPortV1.CollateralSource, (bool?)null,
+                (string?)null),
+            (answer.Collateral.State, answer.Collateral.Source, answer.Collateral.IncludesTax, answer.Collateral.ReasonCode));
+        // Exact, per currency, never converted; ordered by currency identity.
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 900.05m), new SalesPartyRiskAmountV1(Usd, 32m)], answer.Collateral.Amounts);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+
+        // Without a Settings catalog (the registered default today): unavailable, never an assumed rate.
+        var closed = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+        Assert.Equal((SalesPartyRiskFigureStateV1.Unavailable, FinancePartyCollateralFigures.TypeRateUnavailable),
+            (closed.Collateral.State, closed.Collateral.ReasonCode));
+        Assert.Empty(closed.Collateral.Amounts);
+    }
+
+    [Fact]
+    public async Task A_held_collateral_naming_another_party_on_the_account_makes_the_collateral_unavailable()
+    {
+        await using var run = await Run.CreateAsync([], [], collaterals:
+            [Collateral(Guid.NewGuid(), Try, "100", party: Guid.NewGuid())]);
+
+        var answer = await run.Port(Company, new RateCatalog()).ReadPartyRiskAsync(Party, Account);
+
+        Assert.Equal((SalesPartyRiskFigureStateV1.Unavailable, FinancePartyCollateralFigures.CollateralUnreadable),
+            (answer.Collateral.State, answer.Collateral.ReasonCode));
+    }
+
+    private static readonly DateOnly Today = new(2026, 11, 15);
+
+    private static PartyCollateralRow Collateral(Guid type, Guid currency, string amount, Guid? company = null,
+        Guid? party = null, Guid? account = null, int status = FinancePartyCollateralService.Effective,
+        int kind = FinancePartyCollateralService.RecordKind, int direction = FinancePartyCollateralService.Received,
+        DateOnly? from = null, DateOnly? until = null)
+    {
+        var at = new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero);
+        return new PartyCollateralRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company ?? Company,
+            CollateralId = Guid.NewGuid(),
+            Revision = 1,
+            Direction = direction,
+            SourceKind = FinancePartyCollateralService.ManualEntry,
+            PartyId = party ?? Party,
+            CompanyAccountId = account ?? Account,
+            Kind = kind,
+            CollateralTypeId = type,
+            CollateralTypeVersion = "1",
+            CurrencyId = currency,
+            AmountText = amount,
+            ValidFrom = from ?? Today.AddDays(-10),
+            ValidUntil = until,
+            Status = status,
+            Version = 1,
+            RecordedBy = "SENTETIK-recorder",
+            RecordedAtUtc = at,
+            SupersededAtUtc = status == FinancePartyCollateralService.Superseded ? at : null,
+            UpdatedAtUtc = at,
+        };
+    }
+
+    private sealed class RateCatalog(params FinanceCollateralTypeCatalogItem[] items) : IFinanceCollateralTypeCatalogReader
+    {
+        public Task<FinanceCollateralTypeCatalogAnswer> ListAsync(Guid companyId, DateOnly asOf,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new FinanceCollateralTypeCatalogAnswer(FinanceCollateralTypeCatalogState.Available, items));
+    }
+
+    private sealed class FixedClock : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(2026, 11, 15, 9, 0, 0, TimeSpan.Zero);
     }
 
     private sealed class Run : IAsyncDisposable
@@ -485,12 +583,12 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         public static async Task<Run> CreateAsync(FinanceOpenItemRow[] rows, MoneyEventRow[] payments,
             FinanceSourceAllocationStateRow[]? states = null, ReversalProposalRow[]? reversals = null,
             OutgoingMoneyEventRow[]? outgoing = null, OutgoingMoneyEventReversalRow[]? paymentReversals = null,
-            PartyCreditLimitRow[]? limits = null)
+            PartyCreditLimitRow[]? limits = null, PartyCollateralRow[]? collaterals = null)
         {
             var run = new Run();
             var companies = rows.Select(row => row.CompanyId).Concat(payments.Select(row => row.CompanyId))
                 .Concat((outgoing ?? []).Select(row => row.CompanyId)).Concat((limits ?? []).Select(row => row.CompanyId))
-                .Append(Company).Distinct();
+                .Concat((collaterals ?? []).Select(row => row.CompanyId)).Append(Company).Distinct();
             foreach (var company in companies)
             {
                 var seed = new CompanyContext();
@@ -502,71 +600,12 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 db.ReversalProposals.AddRange((reversals ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEvents.AddRange((outgoing ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEventReversals.AddRange((paymentReversals ?? []).Where(row => row.CompanyId == company));
+                db.PartyCreditLimits.AddRange((limits ?? []).Where(row => row.CompanyId == company));
+                db.PartyCollaterals.AddRange((collaterals ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
-            }
-
-            foreach (var limit in limits ?? [])
-            {
-                await run.SeedLimitAsync(limit);
             }
 
             return run;
-        }
-
-        /// <summary>
-        /// FNS-D45: a credit limit row is born an undecided proposal and reaches its state only through the write
-        /// guard's legal steps (decision, then supersession), one version at a time, as the service writes it.
-        /// </summary>
-        private async Task SeedLimitAsync(PartyCreditLimitRow target)
-        {
-            var seed = new CompanyContext();
-            seed.Set(target.CompanyId);
-            await using (var db = Context(seed))
-            {
-                db.PartyCreditLimits.Add(new PartyCreditLimitRow
-                {
-                    Id = target.Id, CompanyId = target.CompanyId, PartyId = target.PartyId,
-                    CompanyAccountId = target.CompanyAccountId, Kind = target.Kind, CurrencyId = target.CurrencyId,
-                    AmountText = target.AmountText, Status = FinancePartyCreditLimitService.Proposed, IsDirect = false,
-                    BaseRevision = target.BaseRevision, Version = 1, ProposedBy = target.ProposedBy,
-                    ProposedAtUtc = target.ProposedAtUtc, UpdatedAtUtc = target.ProposedAtUtc,
-                });
-                await db.SaveChangesAsync();
-            }
-
-            var steps = new List<Action<PartyCreditLimitRow>>();
-            if (target.DecidedBy is not null)
-            {
-                steps.Add(row =>
-                {
-                    row.Status = target.RejectionReason is null
-                        ? FinancePartyCreditLimitService.Approved
-                        : FinancePartyCreditLimitService.Rejected;
-                    row.DecidedBy = target.DecidedBy;
-                    row.DecidedAtUtc = target.DecidedAtUtc;
-                    row.AccountRevision = target.AccountRevision;
-                    row.RejectionReason = target.RejectionReason;
-                });
-            }
-
-            if (target.SupersededAtUtc is not null)
-            {
-                steps.Add(row =>
-                {
-                    row.Status = FinancePartyCreditLimitService.Superseded;
-                    row.SupersededAtUtc = target.SupersededAtUtc;
-                });
-            }
-
-            foreach (var step in steps)
-            {
-                await using var db = Context(seed);
-                var row = await db.PartyCreditLimits.SingleAsync(candidate => candidate.Id == target.Id);
-                step(row);
-                row.UpdatedAtUtc = target.UpdatedAtUtc;
-                row.Version += 1;
-                await db.SaveChangesAsync();
-            }
         }
 
         public FinanceSalesPartyRiskReadPortV1 Port(Guid company)
@@ -575,6 +614,14 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
             context.Set(company);
             Db = Context(context);
             return new FinanceSalesPartyRiskReadPortV1(Db, context);
+        }
+
+        public FinanceSalesPartyRiskReadPortV1 Port(Guid company, IFinanceCollateralTypeCatalogReader catalog)
+        {
+            var context = new CompanyContext();
+            context.Set(company);
+            Db = Context(context);
+            return new FinanceSalesPartyRiskReadPortV1(Db, context, catalog, new FixedClock());
         }
 
         public FinanceDbContext Context(ICompanyContext company) => new(

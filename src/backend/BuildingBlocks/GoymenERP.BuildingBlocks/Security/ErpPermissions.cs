@@ -296,17 +296,28 @@ public static class ErpPermissions
     public const string FinanceCashAccountReactivationApprove = "finance.cash-account.reactivation.approve";
 
     /// <summary>
-    /// Finance party credit limit master (API-85a; F018 plan §L1; FNS-D27a/D45): read; propose (every set, change
-    /// or removal is a proposal awaiting another person's decision, FNS-D45); approve (approves or rejects someone
-    /// else's proposal; there is no one-step direct change, FNS-D45). Registering them makes them KNOWN, not
-    /// granted: no role and no user receives them here, and who holds which is a human gate. Company-wide only: a
-    /// limit belongs to a company account of the server-resolved company. Only approve is Critical (FNS-D46, the
-    /// user's classification); read and propose are not. A proposer never decides their own proposal, in the
-    /// service and the database regardless.
+    /// Finance party credit limit master (API-85a; F018 plan §L1; FNS-D27/D27a, FNS-D56/D57(3)): read; propose
+    /// (FNS-D27a, a proposal awaiting another person's decision); approve (FNS-D27/D56, sets, changes or removes a
+    /// limit in one audited step, and approves or rejects a proposal; no threshold and no second approval).
+    /// Registering them makes them KNOWN, not granted: no role and no user receives them here, and who holds which
+    /// is a human gate. Company-wide only: a limit belongs to a company account of the server-resolved company.
+    /// Only approve is Critical (FNS-D46, the user's classification); read and propose are not. A proposer never
+    /// decides their own proposal, in the service and the database regardless.
     /// </summary>
     public const string FinanceCreditLimitsRead = "finance.credit-limits.read";
     public const string FinanceCreditLimitsPropose = "finance.credit-limits.propose";
     public const string FinanceCreditLimitsApprove = "finance.credit-limits.approve";
+
+    /// <summary>
+    /// Finance customer collateral (API-85b; F018 plan §L2; FNS-D57, FNS-D31, FNS-D58): read (a party's collaterals,
+    /// their history and the documented-instrument risk) and record (records, changes or releases a customer
+    /// collateral in one audited step, effective immediately; no proposer/approver and no threshold, FNS-D57).
+    /// Registering them makes them KNOWN, not granted: no role and no user receives them here, and who holds which
+    /// is a human gate (persona list FNS-D68). Company-wide only: a collateral belongs to a company account of the
+    /// server-resolved company. Not Critical.
+    /// </summary>
+    public const string FinanceCollateralsRead = "finance.collaterals.read";
+    public const string FinanceCollateralsRecord = "finance.collaterals.record";
 
     /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
@@ -1515,6 +1526,8 @@ public static class ErpPermissions
             FinanceCreditLimitsRead,
             FinanceCreditLimitsPropose,
             FinanceCreditLimitsApprove,
+            FinanceCollateralsRead,
+            FinanceCollateralsRecord,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
@@ -1749,6 +1762,8 @@ public static class ErpPermissions
             FinanceCreditLimitsRead,
             FinanceCreditLimitsPropose,
             FinanceCreditLimitsApprove,
+            FinanceCollateralsRead,
+            FinanceCollateralsRecord,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,

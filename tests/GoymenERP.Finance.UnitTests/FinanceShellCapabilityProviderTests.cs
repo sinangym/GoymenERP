@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(34, declarations.Count);
+        Assert.Equal(36, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.11", provider.ContractVersion);
+        Assert.Equal("1.12", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -114,7 +114,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
             ("finance.party-ledger.cari", "finance.party-ledger.cari", "/cari/hesap-takibi", "C-04",
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
-            // 1.10 (FNS-D45 / FNS-D46): credit limits; propose and approve are controls of the one route.
+            // 1.10 (FNS-D27 / FNS-D46; one step, FNS-D57(3)): credit limits; propose and approve are controls of the one route.
             ("finance.credit-limits.list", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]),
             ("finance.credit-limits.propose", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
@@ -123,6 +123,12 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.credit-limits.approve", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
                 ShellCapabilityRoutePrecedence.Static,
                 [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove]),
+            // 1.12 (FNS-D57 / FNS-D31 / FNS-D58): customer collaterals; the one-step record is a control of the route.
+            ("finance.collaterals.list", "finance.collaterals.list", "/finans/teminatlar", "F-18-COLLATERALS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCollateralsRead]),
+            ("finance.collaterals.record", "finance.collaterals.list", "/finans/teminatlar", "F-18-COLLATERALS",
+                ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceCollateralsRead, ErpPermissions.FinanceCollateralsRecord]),
             // 1.11 (FNS-D24): one workspace; the commit is its control and also needs the Accounting period read.
             ("finance.cash-transfers.workspace", "finance.cash-transfers.workspace", "/finans/virman",
                 "F-32-CASH-TRANSFERS", ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.CashTransferRead]),
@@ -226,7 +232,7 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal(cashTransfers.CapabilityId, cashTransferCommit.ParentCapabilityId);
         Assert.Superset(cashTransfers.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
             cashTransferCommit.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
-        Assert.Equal(14, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(15, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]

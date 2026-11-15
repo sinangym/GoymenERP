@@ -45,6 +45,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<PartyCreditLimitCommandRow> PartyCreditLimitCommands => Set<PartyCreditLimitCommandRow>();
 
+    internal DbSet<PartyCollateralRow> PartyCollaterals => Set<PartyCollateralRow>();
+
+    internal DbSet<PartyCollateralCommandRow> PartyCollateralCommands => Set<PartyCollateralCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -147,6 +151,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureOutgoingMoneyEventReversals(modelBuilder);
         ConfigureCashAccounts(modelBuilder);
         ConfigurePartyCreditLimits(modelBuilder);
+        ConfigurePartyCollaterals(modelBuilder);
         ConfigureOfficialSalesInvoices(modelBuilder);
         ConfigureExpensePayments(modelBuilder);
         ConfigureCashTransfers(modelBuilder);
@@ -1633,8 +1638,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     /// effective record is its one approved row and at most one proposal is pending per account
     /// (<c>UX_PartyCreditLimits_Live</c>); an approved
     /// row's account revision is unique per account, so two concurrent changes from the same revision cannot
-    /// both win. Every record is a proposal decided by another actor (binary collation; FNS-D45 closed the
-    /// one-step direct record of FNS-D27, <c>IsDirect</c> is always 0). No foreign key reaches the party or the company
+    /// both win. A proposal is decided by another actor (binary collation); a direct record is decided by its
+    /// own author, who holds the approve authority (FNS-D27; one step, FNS-D56/FNS-D57(3)). No foreign key reaches the party or the company
     /// account: they are Counterparty's (read through <see cref="Contracts.IFinancePartyAccountPort"/>).
     /// </summary>
     private void ConfigurePartyCreditLimits(ModelBuilder modelBuilder)
@@ -1725,20 +1730,22 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Kind] = 2 AND [CurrencyId] IS NULL AND [AmountText] IS NULL)";
 
     /// <summary>
-    /// FNS-D27a/D45: a proposal carries no decision and no revision. An approved record carries a decider and
-    /// a revision and is always a proposal decided by someone other than its proposer: FNS-D45 closed the
-    /// one-step direct record (decided by its own author) for a set, a change and a removal alike, so
-    /// <c>IsDirect</c> is 0 in every state. A rejection is a proposal's, by someone other than its proposer, with
-    /// a reason. A superseded record is either a proposal never decided or an approved record, with the same
-    /// rules as when it was approved. Actors compare in binary collation.
+    /// FNS-D27/D27a: a proposal carries no decision and no revision. An approved record carries a decider and
+    /// a revision: a direct record is decided by its author (FNS-D27, one step by an approver), a proposal by
+    /// someone other than its proposer (FNS-D27a). A rejection is a proposal's, by someone other than its
+    /// proposer, with a reason. A superseded record is either a proposal never decided or an approved record,
+    /// with the same rules as when it was approved. Actors compare in binary collation. FNS-D56/FNS-D57(3): this
+    /// is again the check <c>AddPartyCreditLimits</c> created; <c>RestorePartyCreditLimitOneStep</c> puts it back
+    /// over the second-person check of <c>RequirePartyCreditLimitSecondPerson</c>, which stays in the chain.
     /// </summary>
     internal const string PartyCreditLimitDecisionCheck =
         "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
         + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR "
-        + "([Status] IN (2, 4) AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
-        + "AND LEN([DecidedBy]) > 0 AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
         + "AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) "
-        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2) OR "
+        + "AND (([IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2) "
+        + "OR ([IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2))) OR "
         + "([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
         + "AND LEN([DecidedBy]) > 0 "
         + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
@@ -1746,6 +1753,112 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "AND [SupersededAtUtc] IS NULL) OR "
         + "([Status] = 4 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
         + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NOT NULL)";
+
+    /// <summary>
+    /// API-85b (FNS-D57/D31): the collateral revisions (received now, given with API-84) and their own command records.
+    /// A collateral has at most one effective revision (<c>UX_PartyCollaterals_Live</c>) and its revision numbers are
+    /// unique, so two concurrent changes from the same revision cannot both win. No foreign key reaches the party, the
+    /// company account, the currency or the collateral type: they are Counterparty's and Settings' (read through ports).
+    /// </summary>
+    private void ConfigurePartyCollaterals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyCollateralRow>();
+        entity.ToTable("PartyCollaterals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PartyCollaterals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CollateralId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CollateralTypeId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([CollateralTypeVersion]) > 0 AND LEN([RecordedBy]) > 0");
+            table.HasCheckConstraint("CK_PartyCollaterals_Payload", PartyCollateralPayloadCheck);
+            table.HasCheckConstraint("CK_PartyCollaterals_Kind", PartyCollateralKindCheck);
+            table.HasCheckConstraint("CK_PartyCollaterals_Status",
+                "([Status] = 1 AND [SupersededAtUtc] IS NULL) OR ([Status] = 2 AND [SupersededAtUtc] IS NOT NULL)");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.CollateralTypeVersion).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.AmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.ValidFrom).HasColumnType("date");
+        entity.Property(x => x.ValidUntil).HasColumnType("date");
+        entity.Property(x => x.DocumentReference).HasMaxLength(128);
+        entity.Property(x => x.ReleaseReason).HasMaxLength(500);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        // Status is a key column on purpose (as for the credit limit): the revision leaving the live state is written
+        // before the one entering it.
+        entity.HasIndex(x => new { x.CompanyId, x.CollateralId, x.Status }, PartyCollateralLiveIndex)
+            .HasFilter(PartyCollateralLiveFilter).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CollateralId, x.Revision }, "UX_PartyCollaterals_Revision").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.Status }, "IX_PartyCollaterals_Account");
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.RecordedAtUtc }, "IX_PartyCollaterals_History");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<PartyCollateralCommandRow>();
+        command.ToTable("PartyCollateralCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PartyCollateralCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_PartyCollateralCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_PartyCollateralCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_PartyCollateralCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal whose answer names no revision (ADR-011 §7).
+            table.HasCheckConstraint("CK_PartyCollateralCommands_Target",
+                "([PartyCollateralRowId] IS NOT NULL AND [PartyCollateralRowId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([PartyCollateralRowId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') IN ('ValidationFailed', 'VersionConflict'))");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.PartyCollateralRowId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<PartyCollateralRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PartyCollateralRowId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>Per collateral at most one effective revision (status 1).</summary>
+    internal const string PartyCollateralLiveIndex = "UX_PartyCollaterals_Live";
+
+    internal const string PartyCollateralLiveFilter = "[Status] = 1";
+
+    /// <summary>
+    /// API-85b: a known direction (1 received, 2 given) and source (1 Finance manual entry); an unsigned decimal amount
+    /// text with at least one non-zero digit (digits and at most one inner dot; the service holds the exact parse); a
+    /// validity that does not end before it starts; a document reference that is absent or not empty.
+    /// </summary>
+    internal const string PartyCollateralPayloadCheck =
+        "[Direction] IN (1, 2) AND [SourceKind] = 1 AND [Version] >= 1 AND [Revision] >= 1 "
+        + "AND LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' "
+        + "AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' "
+        + "AND [AmountText] LIKE '%[1-9]%' "
+        + "AND ([ValidUntil] IS NULL OR [ValidUntil] >= [ValidFrom]) "
+        + "AND ([DocumentReference] IS NULL OR LEN([DocumentReference]) > 0)";
+
+    /// <summary>
+    /// FNS-D57: the first revision is the record (kind 1); every later one is a change (kind 2) or a release (kind 3,
+    /// the reverse record). Only a release carries a reason.
+    /// </summary>
+    internal const string PartyCollateralKindCheck =
+        "([Kind] = 1 AND [Revision] = 1 AND [ReleaseReason] IS NULL) OR "
+        + "([Kind] = 2 AND [Revision] > 1 AND [ReleaseReason] IS NULL) OR "
+        + "([Kind] = 3 AND [Revision] > 1 AND [ReleaseReason] IS NOT NULL AND LEN([ReleaseReason]) > 0)";
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -1867,14 +1980,6 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 throw new InvalidOperationException("Finans kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
             }
 
-            if (entry.State == EntityState.Added
-                && entry.Entity is PartyCreditLimitRow { } newCreditLimit
-                && !IsAllowedNewPartyCreditLimit(newCreditLimit))
-            {
-                // FNS-D45: every credit limit change is born a proposal; no one-step direct record exists.
-                throw new InvalidOperationException("Kredi limiti kaydı yalnız karar bekleyen bir öneri olarak oluşur.");
-            }
-
             if (entry.State == EntityState.Modified
                 && entry.Entity is ReceiptDraftRow
                 && (int)entry.OriginalValues[nameof(ReceiptDraftRow.Stage)]! != ReceiptStages.Draft)
@@ -1918,6 +2023,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 {
                     throw new InvalidOperationException(
                         "Kredi limiti kaydı yalnız öneri kararıyla veya yerine yenisi geçerek, sürümü bir artarak değişir.");
+                }
+
+                if (entry.Entity is PartyCollateralRow collateral
+                    && !IsAllowedPartyCollateralSupersede(entry, collateral))
+                {
+                    throw new InvalidOperationException(
+                        "Teminat kaydı yalnız yerine yeni sürüm geçerek, sürümü bir artarak değişir.");
                 }
 
                 if (entry.Entity is FinanceAllocationRow allocation
@@ -2006,6 +2118,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(PartyCreditLimitRow.DecidedAtUtc), nameof(PartyCreditLimitRow.RejectionReason),
                         nameof(PartyCreditLimitRow.AccountRevision), nameof(PartyCreditLimitRow.SupersededAtUtc),
                         nameof(PartyCreditLimitRow.UpdatedAtUtc),
+                    ],
+                    // API-85b: only a revision superseded by a newer one; the collateral's values never change.
+                    PartyCollateralRow =>
+                    [
+                        nameof(PartyCollateralRow.Status), nameof(PartyCollateralRow.SupersededAtUtc),
+                        nameof(PartyCollateralRow.UpdatedAtUtc),
                     ],
                     ReversalProposalRow =>
                     [
@@ -2302,6 +2420,21 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && !string.IsNullOrWhiteSpace(current.ReleaseReason);
     }
 
+    /// <summary>API-85b: a collateral revision only leaves the effective state, superseded by the next revision.</summary>
+    private static bool IsAllowedPartyCollateralSupersede(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        PartyCollateralRow current)
+    {
+        const int effective = 1;
+        const int superseded = 2;
+        var originalVersion = (long)entry.OriginalValues[nameof(PartyCollateralRow.Version)]!;
+        var originalStatus = (int)entry.OriginalValues[nameof(PartyCollateralRow.Status)]!;
+        return originalStatus == effective
+            && entry.OriginalValues[nameof(PartyCollateralRow.SupersededAtUtc)] is null
+            && current.Version == checked(originalVersion + 1)
+            && current.Status == superseded && current.SupersededAtUtc is not null;
+    }
+
     /// <summary>
     /// API-85a: one version step and one of four moves — a proposal approved (a decider other than its
     /// proposer and the account's next revision) or rejected (another decider and a reason), a proposal
@@ -2353,18 +2486,6 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 && current.RejectionReason is null && current.SupersededAtUtc is not null,
             _ => false,
         };
-    }
-
-    /// <summary>
-    /// FNS-D45: a new credit limit row is a proposal awaiting its decision (status 1, not direct, version 1),
-    /// with no decider, revision, rejection or supersession; only a different approver's decision moves it on.
-    /// </summary>
-    private static bool IsAllowedNewPartyCreditLimit(PartyCreditLimitRow row)
-    {
-        const int proposed = 1;
-        return row.Status == proposed && !row.IsDirect && row.Version == 1
-            && row.DecidedBy is null && row.DecidedAtUtc is null && row.AccountRevision is null
-            && row.RejectionReason is null && row.SupersededAtUtc is null;
     }
 
     private static bool IsAllowedCashAccountDecision(

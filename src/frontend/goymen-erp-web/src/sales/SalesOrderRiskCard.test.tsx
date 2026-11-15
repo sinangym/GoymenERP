@@ -298,4 +298,10 @@ describe('S-04 customer risk card (API-06 / UI-15)', () => {
       expect(riskReasonText(code)).not.toBe(T.unknownReason(code))
     }
   })
+
+  it('names the FIN-S2 collateral reasons in Turkish instead of as unknown codes', () => {
+    for (const code of ['finance_collateral_type_rate_unavailable', 'finance_collateral_unreadable']) {
+      expect(riskReasonText(code)).not.toBe(T.unknownReason(code))
+    }
+  })
 })

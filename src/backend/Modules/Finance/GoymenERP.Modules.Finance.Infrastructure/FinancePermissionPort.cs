@@ -96,6 +96,9 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadCreditLimits => ErpPermissions.FinanceCreditLimitsRead,
         FinanceAction.ProposeCreditLimit => ErpPermissions.FinanceCreditLimitsPropose,
         FinanceAction.ApproveCreditLimit => ErpPermissions.FinanceCreditLimitsApprove,
+        // API-85b: the customer collateral's own names, registered centrally (company-wide; not Critical; no grant).
+        FinanceAction.ReadCollaterals => ErpPermissions.FinanceCollateralsRead,
+        FinanceAction.RecordCollateral => ErpPermissions.FinanceCollateralsRecord,
         _ => null,
     };
 
