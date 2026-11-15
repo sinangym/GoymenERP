@@ -501,7 +501,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                     token == f'Schema = "{record["schema"]}"'
                     or token == f'ToTable("{record["table"]}", "{record["schema"]}"'
                     or (
-                        record["id"] == "idempotency.command-executions"
+                        # Both contexts split ToTable(name, schema, ...) over several lines.
+                        record["id"] in ("idempotency.command-executions", "identity.outbox")
                         and token == f'"{record["schema"]}",'
                     )
                     for token in tokens
