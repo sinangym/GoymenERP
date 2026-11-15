@@ -181,3 +181,22 @@ internal sealed class VehicleWeighingRow : ILogisticsTenantRow
     public string RecordedBy { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
+
+/// <summary>
+/// LOJ-D17: the unload weighing of a cancelled instruction, one per instruction, append-only. It holds the weighbridge facts, the
+/// kilograms loaded when the instruction was cancelled and the signed difference; it books no stock movement.
+/// </summary>
+internal sealed class UnloadWeighingRow : ILogisticsTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InstructionId { get; set; }
+    public Guid WeighingId { get; set; }
+    public int Direction { get; set; }
+    public decimal FirstWeighingKg { get; set; }
+    public decimal SecondWeighingKg { get; set; }
+    public decimal NetKg { get; set; }
+    public decimal LoadedKgAtCancel { get; set; }
+    public decimal DifferenceKg { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}

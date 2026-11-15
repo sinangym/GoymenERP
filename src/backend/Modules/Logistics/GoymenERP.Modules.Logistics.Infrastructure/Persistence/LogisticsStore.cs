@@ -282,7 +282,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         RequireCommand(commandName);
         if (!LogisticsCommands.IsMutation(commandName))
         {
-            throw new ArgumentException("Yalnız yayımlama, pay, kantar tartımı ve irsaliye komutları bir talimatı değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız yayımlama, pay, kantar tartımı, indirme tartısı ve irsaliye komutları bir talimatı değiştirir.", nameof(commandName));
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -326,12 +326,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var shareRows = await dbContext.Shares.AsNoTracking().Where(share => share.InstructionId == instructionId).OrderBy(share => share.ShareNo)
             .ToListAsync(cancellationToken);
         var weighingRow = await dbContext.Weighings.AsNoTracking().SingleOrDefaultAsync(weighing => weighing.InstructionId == instructionId, cancellationToken);
+        var unloadRow = await dbContext.UnloadWeighings.AsNoTracking().SingleOrDefaultAsync(unload => unload.InstructionId == instructionId, cancellationToken);
         // AT-055: the dispatch notes and their lines are tracked too — a lifecycle step writes its columns and releases lines in place.
         var noteRows = await dbContext.DispatchNotes.Where(note => note.InstructionId == instructionId).OrderBy(note => note.NoteNo)
             .ToListAsync(cancellationToken);
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
-        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows);
+        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows, unloadRow);
         if (aggregateLoadLimit is not null)
         {
             await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
@@ -340,12 +341,14 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var before = MutationSnapshot(instruction, aggregateLoadLimit);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
+        var unloadBefore = instruction.UnloadWeighing;
         var notesBefore = instruction.DispatchNotes.ToArray();
         var stepsBefore = instruction.DispatchSteps;
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
+        var unloadAdded = unloadBefore is null && instruction.UnloadWeighing is not null;
         var noteAdded = instruction.DispatchNotes.Count == notesBefore.Length + 1;
         var notesChanged = Enumerable.Range(0, Math.Min(notesBefore.Length, instruction.DispatchNotes.Count))
             .Where(index => !ReferenceEquals(notesBefore[index], instruction.DispatchNotes[index])).ToArray();
@@ -354,13 +357,15 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
             || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
             || (weighingAdded && instruction.Shares.Count != sharesBefore)
+            || (unloadBefore is not null && !ReferenceEquals(unloadBefore, instruction.UnloadWeighing))
+            || (unloadAdded && (instruction.Shares.Count != sharesBefore || weighingAdded))
             || (instruction.DispatchNotes.Count != notesBefore.Length && !noteAdded)
             || (noteAdded && notesChanged.Length > 0) || notesChanged.Length > 1
             || instruction.DispatchSteps != stepsBefore + (dispatchStep ? 1 : 0)
-            || (dispatchStep && (instruction.Shares.Count != sharesBefore || weighingAdded)))
+            || (dispatchStep && (instruction.Shares.Count != sharesBefore || weighingAdded || unloadAdded)))
         {
             throw new InvalidOperationException(
-                "Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı ya da bir irsaliye adımı (taslak, onay, iptal, e-İrsaliye no) ekler.");
+                "Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı, bir indirme tartısı ya da bir irsaliye adımı (taslak, onay, iptal, e-İrsaliye no) ekler.");
         }
 
         if (noteAdded && await DispatchNoteIdTakenAsync(instruction.DispatchNotes[^1].DispatchNoteId, instruction.Id, cancellationToken))
@@ -444,6 +449,27 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             });
         }
 
+        if (unloadAdded && instruction.UnloadWeighing is { } unload)
+        {
+            // LOJ-D17: appended once; the key (company, instruction) refuses a second unload record in SQL Server too. No stock row.
+            dbContext.UnloadWeighings.Add(new UnloadWeighingRow
+            {
+                CompanyId = companyId,
+                InstructionId = instruction.Id,
+                WeighingId = unload.WeighingId,
+                Direction = (int)unload.Direction,
+                FirstWeighingKg = RequireFits(unload.FirstWeighing.Value),
+                SecondWeighingKg = RequireFits(unload.SecondWeighing.Value),
+                NetKg = RequireFits(unload.Net.Value),
+                LoadedKgAtCancel = RequireFits(unload.LoadedAtCancel.Value),
+                DifferenceKg = unload.DifferenceKg < 0m ? -RequireFits(-unload.DifferenceKg) : RequireFits(unload.DifferenceKg),
+                RecordedBy = string.Equals(unload.RecordedBy, actorId, StringComparison.Ordinal)
+                    ? actorId
+                    : throw new InvalidOperationException("İndirme tartısını kaydeden, bu yazmanın aktörüdür."),
+                RecordedAtUtc = unload.RecordedAtUtc,
+            });
+        }
+
         if (noteAdded)
         {
             AddDispatchNote(companyId, instruction, instruction.DispatchNotes[^1], notesBefore.Length + 1, actorId);
@@ -455,8 +481,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
+        // LOJ-D17 (2): an unload difference is a warning written to the audit record, never a refusal.
+        var reason = unloadAdded && instruction.UnloadWeighing is { DifferenceWarning: true } && !string.IsNullOrWhiteSpace(audit.WarningReason)
+            ? audit.WarningReason
+            : audit.Reason;
         Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
-            MutationSnapshot(instruction, aggregateLoadLimit), audit.Reason);
+            MutationSnapshot(instruction, aggregateLoadLimit), reason);
         await SaveAsync(cancellationToken);
         if (aggregateTransaction is not null)
         {
@@ -821,6 +851,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var lines = await dbContext.Lines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         var shares = await dbContext.Shares.AsNoTracking().Where(share => ids.Contains(share.InstructionId)).ToListAsync(cancellationToken);
         var weighings = await dbContext.Weighings.AsNoTracking().Where(weighing => ids.Contains(weighing.InstructionId)).ToListAsync(cancellationToken);
+        var unloads = await dbContext.UnloadWeighings.AsNoTracking().Where(unload => ids.Contains(unload.InstructionId)).ToListAsync(cancellationToken);
         var notes = await dbContext.DispatchNotes.AsNoTracking().Where(note => ids.Contains(note.InstructionId)).ToListAsync(cancellationToken);
         var noteLines = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row => new StoredLoadingInstruction(
@@ -828,7 +859,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 [.. shares.Where(share => share.InstructionId == row.Id).OrderBy(share => share.ShareNo)],
                 weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id),
                 [.. notes.Where(note => note.InstructionId == row.Id).OrderBy(note => note.NoteNo)],
-                [.. noteLines.Where(line => line.InstructionId == row.Id)]),
+                [.. noteLines.Where(line => line.InstructionId == row.Id)],
+                unloads.SingleOrDefault(unload => unload.InstructionId == row.Id)),
             row.EffectiveOn))];
     }
 
@@ -837,10 +869,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     /// reaches. The weighbridge record (AT-053) is replayed after the shares it was recorded after, so the domain recalculates its
     /// net, loaded snapshot and difference; the stored ones must be the same. The dispatch-note drafts (AT-055) are replayed the
     /// same way, in their order, after the weighing of the same position; the domain rebuilds each line from its shipment, and the
-    /// stored lines must be the ones it reaches.
+    /// stored lines must be the ones it reaches. The unload weighing (LOJ-D17) is replayed last, after the cancel it follows, so the
+    /// domain recalculates its net, loaded-at-cancel and difference; the stored ones must be the same.
     /// </summary>
     private static LoadingInstruction Restore(LoadingInstructionRow row, IReadOnlyList<LoadingInstructionLineRow> lines, IReadOnlyList<LoadingShareRow> shares,
-        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines)
+        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines, UnloadWeighingRow? unload)
     {
         var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc);
         foreach (var line in lines)
@@ -855,7 +888,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         // cancels it last, after every share, weighing and dispatch-note step.
         var blockedCount = lines.Count(line => line.IsBlocked);
         var cancelledFromDraft = row.Status == (int)LoadingInstructionStatus.Cancelled
-            && shares.Count == 0 && weighing is null && notes.Count == 0
+            && shares.Count == 0 && weighing is null && notes.Count == 0 && unload is null
             && row.Version == instruction.Version + blockedCount + 1;
         if (row.Status == (int)LoadingInstructionStatus.Issued
             || (row.Status == (int)LoadingInstructionStatus.Cancelled && !cancelledFromDraft))
@@ -939,6 +972,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             }
 
             instruction.CancelInstruction(instruction.Version, row.CancelledBy, row.CancelReason, row.CancelledAtUtc.Value);
+        }
+
+        if (unload is not null)
+        {
+            // LOJ-D17: only a cancelled instruction takes one; the domain refuses it on any other row.
+            RestoreUnloadWeighing(instruction, unload);
         }
 
         if (instruction.Version != row.Version || instruction.Status != (LoadingInstructionStatus)row.Status
@@ -1080,6 +1119,17 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
     }
 
+    private static void RestoreUnloadWeighing(LoadingInstruction instruction, UnloadWeighingRow row)
+    {
+        var restored = instruction.RecordUnloadWeighing(instruction.Version, row.WeighingId, (WeighingDirection)row.Direction,
+            Quantity.Of(row.FirstWeighingKg, QuantityUnit.Kilogram), Quantity.Of(row.SecondWeighingKg, QuantityUnit.Kilogram), row.RecordedBy,
+            row.RecordedAtUtc);
+        if (restored.Net.Value != row.NetKg || restored.LoadedAtCancel.Value != row.LoadedKgAtCancel || restored.DifferenceKg != row.DifferenceKg)
+        {
+            throw new InvalidOperationException("Kayıtlı indirme tartısı yeniden hesaplanan net, yüklenen ve fark ile uyuşmuyor.");
+        }
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private Task<LoadingAttemptRow?> FindAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
@@ -1147,7 +1197,20 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                     line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value,
                 }),
             }),
+            // LOJ-D17: the "indirme kaydı yok" mark and the unload weighing facts, its difference warning included.
+            unloadRecord = instruction.UnloadRecord.ToString(),
+            unloadWeighing = UnloadSnapshot(instruction),
         }, Json);
+
+    private static object? UnloadSnapshot(LoadingInstruction instruction) =>
+        instruction.UnloadWeighing is { } unload
+            ? new
+            {
+                weighingId = unload.WeighingId, direction = unload.Direction.ToString(), first = unload.FirstWeighing.Value,
+                second = unload.SecondWeighing.Value, net = unload.Net.Value, loadedAtCancel = unload.LoadedAtCancel.Value,
+                difference = unload.DifferenceKg, differenceWarning = unload.DifferenceWarning, recordedBy = unload.RecordedBy,
+            }
+            : null;
 
     private static string Snapshot(LoadingInstruction instruction, IReadOnlyList<LogisticsOrderLineAggregateLimit> aggregateLimits)
     {
@@ -1193,6 +1256,9 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                     line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value,
                 }),
             }),
+            // LOJ-D17: the "indirme kaydı yok" mark and the unload weighing facts, its difference warning included.
+            unloadRecord = instruction.UnloadRecord.ToString(),
+            unloadWeighing = UnloadSnapshot(instruction),
         }, Json);
     }
 

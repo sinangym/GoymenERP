@@ -754,9 +754,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                     b.ToTable("LoadingInstructions", "logistics", t =>
                         {
-                            t.HasCheckConstraint("CK_LoadingInstructions_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000'");
-
                             t.HasCheckConstraint("CK_LoadingInstructions_Cancel", "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL AND [CancelReason] IS NOT NULL AND LEN([CancelReason]) > 0) OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancelReason] IS NULL)");
+
+                            t.HasCheckConstraint("CK_LoadingInstructions_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_LoadingInstructions_Status", "[Status] IN (1, 2, 3)");
 
@@ -992,6 +992,68 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.UnloadWeighingRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("DifferenceKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("FirstWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("LoadedKgAtCancel")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("NetKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("SecondWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("WeighingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "InstructionId");
+
+                    b.HasIndex("CompanyId", "WeighingId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UnloadWeighings_WeighingId");
+
+                    b.ToTable("UnloadWeighings", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_UnloadWeighings_Difference", "[DifferenceKg] = [NetKg] - [LoadedKgAtCancel]");
+
+                            t.HasCheckConstraint("CK_UnloadWeighings_Direction", "[Direction] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_UnloadWeighings_Identity", "[WeighingId] <> '00000000-0000-0000-0000-000000000000' AND LEN([RecordedBy]) > 0");
+
+                            t.HasCheckConstraint("CK_UnloadWeighings_Net", "([Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]) OR ([Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg])");
+
+                            t.HasCheckConstraint("CK_UnloadWeighings_Weights", "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtCancel] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1170,6 +1232,16 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.UnloadWeighingRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InstructionId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

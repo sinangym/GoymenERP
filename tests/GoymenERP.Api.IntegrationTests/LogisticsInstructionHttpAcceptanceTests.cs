@@ -200,6 +200,75 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
     }
 
     [Fact]
+    public async Task The_unload_weighing_route_answers_the_cancelled_instruction_with_its_record_replays_with_headers_and_refuses_a_loose_body_before_the_service()
+    {
+        // LOJ-D17 wire: 200 with the instruction after the record (the "indirme kaydı yok" mark and the unload member always
+        // present), the warning as the backend's boolean, the replay headers on the same key, the recorded terminal 409 with its
+        // code, and a body carrying a calculated member or a threshold refused before the service.
+        var id = Guid.NewGuid();
+        var unload = new LoadingInstructionUnloadWeighingView(Guid.NewGuid(), "GrossFirst", "39050", "15000", "15000", "39050", "24050", "24000", "50", true,
+            "SENTETIK-kantar", DateTimeOffset.UtcNow);
+        LoadingInstructionDetailView Recorded() => Detail(id) with
+        {
+            Instruction = Detail(id).Instruction with { Status = "Cancelled", UnloadRecord = "Recorded" },
+            UnloadWeighing = unload,
+        };
+        var service = new StubService { Unload = () => Task.FromResult(new LoadingInstructionResponse(Recorded(), false, "SENTETIK-corr")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var body = $$"""{"expectedVersion":"5","weighingId":"{{unload.WeighingId:D}}","direction":"GrossFirst","firstWeighingKg":"39050","secondWeighingKg":"15000"}""";
+
+        using (var response = await client.SendAsync(Post($"{id:D}/unload-weighings", "SENTETIK-unload", body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            var answered = detail.GetProperty("unloadWeighing");
+            Assert.Equal(("24050", "24000", "50", true, "GrossFirst"), (answered.GetProperty("netKg").GetString(), answered.GetProperty("loadedKgAtCancel").GetString(),
+                answered.GetProperty("differenceKg").GetString(), answered.GetProperty("differenceWarning").GetBoolean(), answered.GetProperty("direction").GetString()));
+            Assert.Equal("Recorded", detail.GetProperty("instruction").GetProperty("unloadRecord").GetString());
+        }
+
+        var (instructionId, request, key) = Assert.Single(service.UnloadCalls);
+        Assert.Equal((id, "5", unload.WeighingId, "GrossFirst", "39050", "15000", "SENTETIK-unload"),
+            (instructionId, request.ExpectedVersion, request.WeighingId, request.Direction, request.FirstWeighingKg, request.SecondWeighingKg, key));
+
+        service.Unload = () => Task.FromResult(new LoadingInstructionResponse(Recorded(), true, "SENTETIK-first"));
+        using (var response = await client.SendAsync(Post($"{id:D}/unload-weighings", "SENTETIK-unload", body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.Unload = () => throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.UnloadWeighingAlreadyRecorded,
+            [new("weighingId", LogisticsProblemCodesV1.UnloadWeighingAlreadyRecorded)]);
+        using (var response = await client.SendAsync(Post($"{id:D}/unload-weighings", "SENTETIK-unload-2", body)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(LogisticsProblemCodesV1.UnloadWeighingAlreadyRecorded, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        var calls = service.Calls;
+        foreach (var extra in new[] { ",\"differenceKg\":\"50\"", ",\"thresholdKg\":\"10\"" })
+        {
+            using var response = await client.SendAsync(Post($"{id:D}/unload-weighings", "SENTETIK-unload-loose", body.Replace("}", extra + "}", StringComparison.Ordinal)));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        // Without an unload weighing, the detail's member is present and null and the mark is on the summary (the frontend decoder
+        // requires every member).
+        service.Create = () => Task.FromResult(new LoadingInstructionResponse(Detail(id), false, "SENTETIK-corr"));
+        using (var response = await client.SendAsync(Post(string.Empty, "SENTETIK-created-unload", CreateBody())))
+        {
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty("unloadWeighing").ValueKind);
+            Assert.Equal("NotApplicable", detail.GetProperty("instruction").GetProperty("unloadRecord").GetString());
+        }
+    }
+
+    [Fact]
     public async Task The_dispatch_note_route_answers_the_instruction_with_its_draft_replays_with_headers_and_refuses_a_loose_body_before_the_service()
     {
         // AT-055 wire: 200 with the instruction after the draft (the dispatchNotes member always present), the replay headers on the
@@ -486,9 +555,9 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
 
     private static LoadingInstructionDetailView Detail(Guid id) => new(
         new LoadingInstructionSummaryView(id, CompanyA, "Draft", "2", Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 19), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1,
-            null, null, null),
+            null, null, null, "NotApplicable"),
         [new LoadingInstructionLineView(Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), 0, Guid.NewGuid(), Guid.NewGuid(), "6", "0", "0", "0", "6", "0", "0", false)],
-        [], null, []);
+        [], null, [], null);
 
     private WebApplicationFactory<Program> CreateHost(StubService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Scoped<ILogisticsInstructionService>(_ => service))));
@@ -544,6 +613,18 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         {
             Calls++;
             return Weigh();
+        }
+
+        public Func<Task<LoadingInstructionResponse>> Unload { get; set; } = () => throw new InvalidOperationException("not expected");
+
+        public List<(Guid InstructionId, RecordUnloadWeighingRequest Request, string Key)> UnloadCalls { get; } = [];
+
+        public Task<LoadingInstructionResponse> RecordUnloadWeighingAsync(Guid instructionId, RecordUnloadWeighingRequest request, LogisticsCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            UnloadCalls.Add((instructionId, request, metadata.IdempotencyKey));
+            return Unload();
         }
 
         public Func<Task<LoadingInstructionResponse>> Draft { get; set; } = () => throw new InvalidOperationException("not expected");

@@ -36,6 +36,7 @@ import {
   decodeSalesOrderDispatchNotes,
   DISPATCH_NOTE_STATUS,
   INSTRUCTION_STATUS,
+  UNLOAD_RECORD,
   approveDispatchNotePath,
   cancelDispatchNotePath,
   cancelInstructionPath,
@@ -49,6 +50,7 @@ import {
   issuePath,
   loadsPath,
   weighingsPath,
+  unloadWeighingsPath,
   type ApprovedOrderLinePage,
   type ApproveDispatchNoteRequest,
   type CancelDispatchNoteRequest,
@@ -65,6 +67,7 @@ import {
   type IssueRequest,
   type RecordLoadRequest,
   type RecordWeighingRequest,
+  type RecordUnloadWeighingRequest,
 } from './contract'
 import type { CommandOutcome } from './instructionAttempt'
 import type { ViewOutcome } from '../shell/uiState'
@@ -428,6 +431,22 @@ export async function recordWeighing(payload: RecordWeighingRequest, context: Co
   const weighing = outcome.data.detail.weighing
   return weighing === null || weighing.weighingId !== payload.weighingId || weighing.direction !== payload.direction
     || weighing.firstWeighingKg !== payload.firstWeighingKg || weighing.secondWeighingKg !== payload.secondWeighingKg
+    ? { type: 'malformed' } : outcome
+}
+
+/**
+ * LOJ-D17: the manual unload weighing of a cancelled instruction. The answer must be THIS instruction carrying THE weighing sent
+ * (its id, direction and both weighings) and no longer marked "indirme kaydı yok"; the net, difference and warning are the
+ * backend's (the decoder only checks their identities).
+ */
+export async function recordUnloadWeighing(payload: RecordUnloadWeighingRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(unloadWeighingsPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const { instruction, unloadWeighing } = outcome.data.detail
+  return instruction.status !== INSTRUCTION_STATUS.cancelled || instruction.unloadRecord !== UNLOAD_RECORD.recorded
+    || unloadWeighing === null || unloadWeighing.weighingId !== payload.weighingId || unloadWeighing.direction !== payload.direction
+    || unloadWeighing.firstWeighingKg !== payload.firstWeighingKg || unloadWeighing.secondWeighingKg !== payload.secondWeighingKg
     ? { type: 'malformed' } : outcome
 }
 

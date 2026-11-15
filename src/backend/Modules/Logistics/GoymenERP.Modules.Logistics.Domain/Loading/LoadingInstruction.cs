@@ -85,6 +85,20 @@ public sealed class LoadingInstruction
     /// <summary>The instruction's manual weighbridge record (AT-053), or null while none is recorded.</summary>
     public VehicleWeighing? Weighing { get; private set; }
 
+    /// <summary>LOJ-D17: the unload weighing recorded after the cancel, or null while none is recorded.</summary>
+    public UnloadWeighing? UnloadWeighing { get; private set; }
+
+    /// <summary>
+    /// LOJ-D17 (3): <see cref="UnloadRecordState.Missing"/> ("indirme kaydı yok") while a cancelled instruction with loaded goods has
+    /// no unload weighing; <see cref="UnloadRecordState.Recorded"/> once it has one; otherwise nothing is to be unloaded.
+    /// </summary>
+    public UnloadRecordState UnloadRecord =>
+        UnloadWeighing is not null ? UnloadRecordState.Recorded
+        : Status == LoadingInstructionStatus.Cancelled && HasLoadedGoods ? UnloadRecordState.Missing
+        : UnloadRecordState.NotApplicable;
+
+    private bool HasLoadedGoods => lines.Any(line => !line.LoadedQuantity.IsZero);
+
     /// <summary>The dispatch notes prepared from this instruction's shipments (AT-055), in creation order; a read-only view.</summary>
     public IReadOnlyList<DispatchNoteDraft> DispatchNotes => dispatchNotes.AsReadOnly();
 
@@ -320,6 +334,51 @@ public sealed class LoadingInstruction
             WeighbridgeCalculator.Difference(net, loaded), shares.Count, recordedBy.Trim(), now.ToUniversalTime());
         Touch(now);
         return Weighing;
+    }
+
+    /// <summary>
+    /// LOJ-D17: records the unload weighing (indirme tartısı) of a cancelled instruction's vehicle — a manual record, no weighbridge
+    /// hardware. The backend calculates the net with the loading weighing's calculator (WGT-001, refused when the weighings
+    /// contradict the direction) and keeps, as facts, the kilograms loaded on the instruction when it was cancelled and the signed
+    /// difference net − loaded (WGT-002). A difference is a warning (<see cref="UnloadWeighing.DifferenceWarning"/>), never a
+    /// refusal: the cancel stays as it is (LOJ-D17 (2)). Without this record the cancel is still valid and the instruction reads
+    /// "indirme kaydı yok" (LOJ-D17 (3)). Only a cancelled instruction with loaded goods takes it, once — how a wrong entry is
+    /// corrected is not decided, so a second record is refused (fail closed) rather than replacing the first. Nothing physical is
+    /// written: the goods never left the warehouse, so no stock movement exists and Inventory is not touched (LOJ-D17 (4)); the
+    /// order line's physical allocation is not this record's either (LOJ-D16).
+    /// </summary>
+    public UnloadWeighing RecordUnloadWeighing(long expectedVersion, Guid weighingId, WeighingDirection direction, Quantity firstWeighing,
+        Quantity secondWeighing, string recordedBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireStatus(LoadingInstructionStatus.Cancelled, LogisticsRuleCodes.InstructionNotCancelled,
+            "İndirme tartısı yalnız iptal edilmiş talimata kaydedilir.");
+        Identity.Require(weighingId, nameof(weighingId));
+        RequireActor(recordedBy, "İndirme tartısını kaydeden kullanıcı belirtilmelidir.", nameof(recordedBy));
+        if (UnloadWeighing is not null)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.UnloadWeighingAlreadyRecorded,
+                "Bu talimatın indirme tartısı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartı kaydedilmez.");
+        }
+
+        if (!HasLoadedGoods)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.UnloadNothingLoaded, "Talimatta araca yüklenmiş mal yok; indirme tartısı kaydedilmez.");
+        }
+
+        if (lines.Any(line => line.InstructedQuantity.Unit != QuantityUnit.Kilogram))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingUnitUnsupported, "İndirme tartısı farkı yalnız kilogram satırlarıyla karşılaştırılır.");
+        }
+
+        var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
+        // Re-read through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
+        var loaded = Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(line.LoadedQuantity)).Value,
+            QuantityUnit.Kilogram);
+        UnloadWeighing = new UnloadWeighing(weighingId, direction, firstWeighing, secondWeighing, net, loaded,
+            WeighbridgeCalculator.Difference(net, loaded), recordedBy.Trim(), now.ToUniversalTime());
+        Touch(now);
+        return UnloadWeighing;
     }
 
     /// <summary>

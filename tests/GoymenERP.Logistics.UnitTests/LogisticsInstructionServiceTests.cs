@@ -758,6 +758,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public List<LogisticsOrderLineAggregateLoadLimit> LoadLimits { get; } = [];
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
+        public List<(string Command, LogisticsMutationAudit Audit)> Audits { get; } = [];
         public int Replays { get; private set; }
         private long _lastSequenceNo;
         public Exception? CreateFault { get; set; }
@@ -840,6 +841,7 @@ public sealed partial class LogisticsInstructionServiceTests
             }
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Transitions.Add((commandName, instructionId, before, stored.Instruction.Version));
+            Audits.Add((commandName, audit));
             return Task.FromResult<LogisticsStoreResult?>(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
 

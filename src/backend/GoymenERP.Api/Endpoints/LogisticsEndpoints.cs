@@ -289,6 +289,29 @@ public static class LogisticsEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // LOJ-D17: the manual unload weighing (indirme tartısı) of a cancelled instruction with loaded goods — one per instruction; the
+        // backend calculates the net and the signed difference to the kilograms loaded at the cancel. A difference is a warning in the
+        // response and the audit record, never a refusal; no stock movement is booked. No weighbridge hardware is integrated.
+        group.MapPost("/{id:guid}/unload-weighings", (Guid id, HttpContext httpContext, [FromServices] ILogisticsInstructionService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadRecordUnloadWeighing,
+                (body, metadata) => service.RecordUnloadWeighingAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("RecordLoadingInstructionUnloadWeighingV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<RecordUnloadWeighingRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.UnloadWeighingAlreadyRecorded, LogisticsProblemCodesV1.SameKeyPayloadMismatch,
+                LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.WeighingDirectionInconsistent,
+                LogisticsProblemCodesV1.UnsupportedUnit)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/dispatch-notes/{dispatchNoteId:guid}/cancel", (Guid id, Guid dispatchNoteId, HttpContext httpContext,
                 [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
             MutateAsync(httpContext, correlation, LogisticsJson.ReadCancelDispatchNote,

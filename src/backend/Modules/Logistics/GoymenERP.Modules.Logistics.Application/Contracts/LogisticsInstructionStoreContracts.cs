@@ -48,9 +48,12 @@ public static class LogisticsCommands
     /// <summary>F-020: cancel an instruction with no recorded shipment (one version step, no share).</summary>
     public const string CancelInstructionV1 = "logistics.loading-instruction.cancel.v1";
 
+    /// <summary>LOJ-D17: the unload weighing of a cancelled instruction (one version step, no share, no stock movement).</summary>
+    public const string RecordUnloadWeighingV1 = "logistics.loading-instruction.record-unload-weighing.v1";
+
     public static bool IsMutation(string commandName) =>
         commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1
-            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1;
+            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }
@@ -125,8 +128,12 @@ public sealed record LogisticsReplay(StoredLoadingInstruction? Instruction, Logi
 
 public sealed record LogisticsInstructionPage(IReadOnlyList<StoredLoadingInstruction> Items, string? NextCursor);
 
-/// <summary>The audit facts of one mutation (issue / record-load): the versioned event type, the operation and the reason.</summary>
-public sealed record LogisticsMutationAudit(string EventType, string Operation, string Reason);
+/// <summary>
+/// The audit facts of one mutation (issue / record-load): the versioned event type, the operation and the reason.
+/// <paramref name="WarningReason"/> (LOJ-D17) is the reason the store writes instead when the unload weighing this mutation added
+/// carries a difference warning; the warning never refuses the save.
+/// </summary>
+public sealed record LogisticsMutationAudit(string EventType, string Operation, string Reason, string? WarningReason = null);
 
 /// <summary>
 /// The persistent instruction store of the server-resolved company (LOG-4a). One call is one save:
