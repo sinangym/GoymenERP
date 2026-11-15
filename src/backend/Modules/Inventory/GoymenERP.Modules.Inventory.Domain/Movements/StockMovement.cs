@@ -57,6 +57,21 @@ public enum StockMovementKind
     /// with the same owner, product, label, block and kilograms and the new stored location/custodian.
     /// </summary>
     TransferAccept = 9,
+
+    /// <summary>
+    /// F-009 D1 (URT-D28/URT-D31): Manufacturing's output reversal (çıktı ters hareketi). Exactly one Out line from
+    /// the Free bucket of the position the reversed output receipt first stocked, never more than that position's
+    /// free unallocated kg. The original <see cref="Receipt"/> stays as the history; this is the new, linked
+    /// movement that corrects it (T13), with the source kind <c>manufacturing.output-reversal</c>. Blocked kg
+    /// cannot be reversed while blocked: the block is lifted by Inventory's own command first.
+    /// </summary>
+    ManufacturingOutputReversal = 10,
+
+    /// <summary>
+    /// KLN-D20 (B-22b): the reverse of a whole <see cref="TransferDispatch"/> before any acceptance. Every line is an
+    /// In line that restores one dispatched bucket at its exact source position; the dispatch movement stays as history.
+    /// </summary>
+    TransferDispatchCancellation = 11,
 }
 
 public enum StockDirection
@@ -253,6 +268,21 @@ public sealed class StockMovement
                 break;
             case StockMovementKind.TransferAccept:
                 RequireAll(StockDirection.In, "Transfer kabulünün bütün satırları giriş olmalıdır.");
+                break;
+            case StockMovementKind.TransferDispatchCancellation:
+                RequireAll(StockDirection.In, "Transfer çıkış iptalinin bütün satırları giriş olmalıdır.");
+                break;
+            case StockMovementKind.ManufacturingOutputReversal:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Üretim çıktısı ters hareketi tek satırdır: çıktının pozisyonundan çıkış.");
+                }
+
+                if (lines[0].Position.Block == BlockState.Blocked)
+                {
+                    throw Invalid("Bloklu stok üretim çıktısı ters hareketiyle çıkamaz; önce blokaj kaldırılmalıdır.");
+                }
+
                 break;
         }
     }

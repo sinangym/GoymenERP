@@ -205,6 +205,15 @@ public static class ErpPermissions
     public const string InventoryStockTransferWrite = "inventory.stock-transfer.write";
 
     /// <summary>
+    /// B-22b stock transfer dispatch cancellation (KLN-D20: a separate permission from the transfer write). Reverses a
+    /// not-yet-accepted dispatch with a new movement only while the KLN-D25/KLN-D27 window is open and the owner
+    /// confirmations are in hand. Registration grants nothing: no seeded role or real user receives this command.
+    /// Company-wide only because the transfer has no narrower approved scope dimension. Not Critical: no approved
+    /// source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferCancel = "inventory.stock-transfer.cancel";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -1272,6 +1281,7 @@ public static class ErpPermissions
             InventoryStockScrapRecord,
             InventoryStockScrapApprove,
             InventoryStockTransferWrite,
+            InventoryStockTransferCancel,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -1483,6 +1493,7 @@ public static class ErpPermissions
             InventoryStockScrapRecord,
             InventoryStockScrapApprove,
             InventoryStockTransferWrite,
+            InventoryStockTransferCancel,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

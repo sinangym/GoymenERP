@@ -63,6 +63,12 @@ public static class InventoryPermissionManifestV1
     /// transfer aggregate; registration/classification and every grant remain central/user-owned.
     /// </summary>
     public const string StockTransferWrite = "inventory.stock-transfer.write";
+
+    /// <summary>
+    /// KLN-D20 (B-22b): cancel a not-yet-accepted transfer dispatch with a reverse movement. A separate name from
+    /// <see cref="StockTransferWrite"/>; registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferCancel = "inventory.stock-transfer.cancel";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

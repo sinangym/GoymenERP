@@ -179,6 +179,8 @@ export interface HarnessConfig {
   readonly onDispatchNote?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-055: approve / cancel / e-dispatch-number on one note. */
   readonly onDispatchNoteLifecycle?: (kind: string, dispatchNoteId: string, call: RecordedCall) => Response | Promise<Response>
+  /** F-020: cancelling the loading instruction itself. */
+  readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
   readonly onAllocations?: (call: RecordedCall) => Response | Promise<Response>
   /** The price-free approved-order-lines read the picker uses. */
   readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
@@ -245,6 +247,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && lifecycle !== null) {
           if (config.onDispatchNoteLifecycle === undefined) throw new Error('unexpected dispatch-note lifecycle command')
           return config.onDispatchNoteLifecycle(lifecycle[2], decodeURIComponent(lifecycle[1]), call)
+        }
+        if (call.method === 'POST' && /\/logistics\/loading-instructions\/[^/?]+\/cancel$/.test(url)) {
+          if (config.onCancel === undefined) throw new Error('unexpected instruction cancel')
+          return config.onCancel(call)
         }
         if (call.method === 'POST' && /\/dispatch-notes$/.test(url)) {
           if (config.onDispatchNote === undefined) throw new Error('unexpected dispatch note')

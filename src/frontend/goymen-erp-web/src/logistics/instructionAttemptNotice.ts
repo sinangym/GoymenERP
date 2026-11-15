@@ -132,6 +132,7 @@ export function refusalMovesRecord(state: AttemptState<unknown, unknown>): boole
     state.failure === 'conflict' &&
     (code === LOGISTICS_PROBLEM_CODE.versionConflict ||
       code === LOGISTICS_PROBLEM_CODE.instructionState ||
+      code === LOGISTICS_PROBLEM_CODE.instructionShipped ||
       code === LOGISTICS_PROBLEM_CODE.concurrentChange ||
       code === LOGISTICS_PROBLEM_CODE.duplicateShare ||
       code === LOGISTICS_PROBLEM_CODE.loadExceedsInstructed ||

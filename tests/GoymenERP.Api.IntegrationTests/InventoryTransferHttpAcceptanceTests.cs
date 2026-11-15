@@ -279,6 +279,113 @@ public sealed class InventoryTransferHttpAcceptanceTests(GoymenErpApiFactory fac
         Assert.Equal((0, 0, 0), (command.Plans.Count, command.Dispatches.Count, query.Reads.Count));
     }
 
+    [Fact]
+    public async Task Cancel_dispatch_answers_201_and_forwards_the_key_under_the_transfer_cancel_permission()
+    {
+        var command = new StubCommand();
+        using var host = CreateHost(command, granted: CancelGrant);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post(CancelDispatchPath(TransferId), CancelBody(), "cancel-key-1"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        var (transferId, request, transport) = Assert.Single(command.Cancellations);
+        Assert.Equal((TransferId, "2", At.AddHours(2), "SENTETIK yanlış araç"),
+            (transferId, request.ExpectedTransferVersion, request.CancelledAtUtc, request.Reason));
+        Assert.Equal(("cancel-key-1", ErpPermissions.InventoryStockTransferCancel),
+            (transport.IdempotencyKey, transport.PermissionCode));
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("DispatchCancelled", document.RootElement.GetProperty("status").GetString());
+    }
+
+    [Theory]
+    [InlineData(409, InventoryTransferCodesV1.CancelWindowClosed, 409)]
+    [InlineData(409, InventoryTransferCodesV1.CancelWindowUnreadable, 409)]
+    [InlineData(409, InventoryTransferCodesV1.CancelConfirmationMissing, 409)]
+    [InlineData(409, InventoryTransferCodesV1.TransferVersionConflict, 409)]
+    [InlineData(409, InventoryTransferCodesV1.TransferStateConflict, 409)]
+    [InlineData(400, InventoryTransferCodesV1.ValidationFailed, 400)]
+    // Dispatch-only and platform codes are not part of the cancel contract.
+    [InlineData(409, InventoryTransferCodesV1.OutgoingDocumentNotFinal, 503)]
+    [InlineData(422, InventoryTransferCodesV1.OutgoingDocumentNotFound, 503)]
+    [InlineData(503, InventoryTransferCodesV1.Unavailable, 503)]
+    [InlineData(404, InventoryTransferCodesV1.TransferNotFound, 404)]
+    public async Task Cancel_dispatch_refusals_follow_the_cancel_closed_code_set(int status, string code, int expected)
+    {
+        var command = new StubCommand { Failure = new InventoryTransferException(status, code) };
+        using var host = CreateHost(command, granted: CancelGrant);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post(CancelDispatchPath(TransferId), CancelBody(), "cancel-refusal"));
+
+        if (expected == status && status is 400 or 409)
+        {
+            await AssertCodedProblem(response, (HttpStatusCode)status, code);
+        }
+        else
+        {
+            await AssertPlatformProblem(response, (HttpStatusCode)expected);
+        }
+
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+    }
+
+    [Fact]
+    public async Task A_recorded_closed_cancel_window_replays_its_409_with_the_original_correlation()
+    {
+        var command = new StubCommand
+        {
+            Failure = new InventoryTransferException(409, InventoryTransferCodesV1.CancelWindowClosed, true,
+                "closure-correlation"),
+        };
+        using var host = CreateHost(command, granted: CancelGrant);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post(CancelDispatchPath(TransferId), CancelBody(), "closed-key"));
+
+        await AssertCodedProblem(response, HttpStatusCode.Conflict, InventoryTransferCodesV1.CancelWindowClosed);
+        Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+        Assert.Equal("closure-correlation",
+            Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+    }
+
+    [Theory]
+    // An unknown member: the client may not name the window basis or an owner confirmation.
+    [InlineData("{\"expectedTransferVersion\":\"2\",\"cancelledAtUtc\":\"2026-11-11T11:00:00Z\","
+        + "\"reason\":\"SENTETIK\",\"closureBasis\":\"ExitWeighing\"}")]
+    // A missing required member.
+    [InlineData("{\"expectedTransferVersion\":\"2\",\"cancelledAtUtc\":\"2026-11-11T11:00:00Z\"}")]
+    [InlineData("null")]
+    [InlineData("{")]
+    public async Task A_non_strict_cancel_dispatch_body_is_400_before_the_owner(string body)
+    {
+        var command = new StubCommand();
+        using var host = CreateHost(command, granted: CancelGrant);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post(CancelDispatchPath(TransferId), body, "strict-cancel-key"));
+        using var keyless = await client.SendAsync(Post(CancelDispatchPath(TransferId), CancelBody(), null));
+
+        await AssertCodedProblem(response, HttpStatusCode.BadRequest, InventoryTransferCodesV1.ValidationFailed);
+        await AssertCodedProblem(keyless, HttpStatusCode.BadRequest, InventoryTransferCodesV1.ValidationFailed);
+        Assert.Empty(command.Cancellations);
+    }
+
+    [Fact]
+    public async Task The_transfer_write_permission_alone_does_not_reach_the_cancel_owner()
+    {
+        var command = new StubCommand();
+        await using var host = CreateHost(command);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(Post(CancelDispatchPath(TransferId), CancelBody(), "cancel-key"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(command.Cancellations);
+    }
+
     /// <summary>
     /// The edge policy (RequireAuthorization) is answered by a test-only authority: registration grants nothing in the
     /// product, so the host contract is exercised with the two transfer permissions granted here and nowhere else.
@@ -346,6 +453,16 @@ public sealed class InventoryTransferHttpAcceptanceTests(GoymenErpApiFactory fac
 
     private static string DispatchPath(Guid transferId) => $"{InventoryTransferApiV1.Path}/{transferId:D}/dispatch";
 
+    private static string CancelDispatchPath(Guid transferId) =>
+        $"{InventoryTransferApiV1.Path}/{transferId:D}/cancel-dispatch";
+
+    private static readonly string[] CancelGrant =
+        [ErpPermissions.InventoryStockTransferCancel, ErpPermissions.InventoryBalancesRead];
+
+    private static string CancelBody() => JsonSerializer.Serialize(
+        new CancelInventoryTransferDispatchV1("2", At.AddHours(2), "SENTETIK yanlış araç"),
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
     private static string PlanBody() => JsonSerializer.Serialize(new PlanInventoryTransferV1(TransferId, SourceLocation,
         "Company", TestCompanyIds.CompanyA, DestinationLocation, "Company", TestCompanyIds.CompanyA, At,
         [new PlanInventoryTransferLineV1(LineId, LabelId, "1", "5")]), new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -392,6 +509,7 @@ public sealed class InventoryTransferHttpAcceptanceTests(GoymenErpApiFactory fac
         public List<(PlanInventoryTransferV1, InventoryCommandMetadata)> Plans { get; } = [];
         public List<(Guid, DispatchInventoryTransferV1, InventoryCommandMetadata)> Dispatches { get; } = [];
         public int AcceptCalls { get; private set; }
+        public List<(Guid, CancelInventoryTransferDispatchV1, InventoryCommandMetadata)> Cancellations { get; } = [];
 
         public Task<InventoryTransferResultV1> PlanAsync(PlanInventoryTransferV1 request,
             InventoryCommandMetadata transport, CancellationToken cancellationToken = default)
@@ -413,6 +531,14 @@ public sealed class InventoryTransferHttpAcceptanceTests(GoymenErpApiFactory fac
         {
             AcceptCalls++;
             throw new InvalidOperationException("Accept is not published in B-22a.");
+        }
+
+        public Task<InventoryTransferResultV1> CancelDispatchAsync(Guid transferId,
+            CancelInventoryTransferDispatchV1 request, InventoryCommandMetadata transport,
+            CancellationToken cancellationToken = default)
+        {
+            Cancellations.Add((transferId, request, transport));
+            return Answer(View("3", "DispatchCancelled"));
         }
 
         private Task<InventoryTransferResultV1> Answer(InventoryTransferViewV1 view) => Failure is not null

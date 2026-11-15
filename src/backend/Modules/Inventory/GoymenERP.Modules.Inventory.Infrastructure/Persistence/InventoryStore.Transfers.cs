@@ -21,6 +21,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
     internal const string PlanTransferCommand = "inventory.transfer.plan.v1";
     internal const string DispatchTransferCommand = "inventory.transfer.dispatch.v1";
     internal const string AcceptTransferLineCommand = "inventory.transfer.accept-line.v1";
+    internal const string CancelDispatchTransferCommand = "inventory.transfer.cancel-dispatch.v1";
     private const string TransferEntityType = "Inventory.Transfer";
 
     public async Task<InventoryTransferResultV1?> ReplayPlanAsync(
@@ -225,6 +226,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         Guid transferId,
         DispatchInventoryTransferV1 request,
         InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
+        InventoryTransferSourceScaleSetting sourceScaleSettingAtDispatch,
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
@@ -233,6 +235,10 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         ArgumentNullException.ThrowIfNull(effectiveOutgoingDocument);
         ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireTransferCall(metadata);
+        if (!Enum.IsDefined(sourceScaleSettingAtDispatch))
+        {
+            throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+        }
         var (expectedVersion, documentVersion, document, payloadHash) = DispatchPayload(transferId, request);
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
         if (await FindTransferKeyReplayAsync(DispatchTransferCommand, keyHash, payloadHash, metadata.ActorId,
@@ -344,6 +350,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             DocumentLineId = document.LineId,
             DocumentVersion = documentVersion,
             DispatchedAtUtc = request.DispatchedAtUtc,
+            SourceScaleSettingAtDispatch = (int)sourceScaleSettingAtDispatch,
             PayloadHash = payloadHash,
             RecordedAtUtc = now,
             RecordedBy = metadata.ActorId.Trim(),
@@ -465,6 +472,12 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         if (lines.All(line => line.LineId != lineId))
         {
             throw TransferError(404, InventoryTransferCodesV1.TransferNotFound);
+        }
+
+        if (row.Status == (int)InventoryTransferStatus.DispatchCancelled)
+        {
+            // KLN-D20: a cancelled dispatch is terminal; its stock is back at the source and nothing is accepted.
+            throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
 
         var dispatch = await dbContext.TransferDispatches.AsNoTracking()
@@ -595,7 +608,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         IReadOnlyList<InventoryTransferDispatchLineRow> dispatchLines,
         IReadOnlyList<InventoryTransferAcceptanceRow> acceptances,
         IReadOnlyList<InventoryTransferBucketRow>? storedBuckets = null,
-        IReadOnlyDictionary<Guid, LabelRow>? storedLabels = null)
+        IReadOnlyDictionary<Guid, LabelRow>? storedLabels = null,
+        InventoryTransferDispatchCancellationRow? cancellation = null)
     {
         var labelRows = storedLabels ?? new Dictionary<Guid, LabelRow>();
         var buckets = storedBuckets ?? [];
@@ -629,7 +643,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             acceptances.Select(acceptance => new InventoryTransferAcceptedLineState(acceptance.LineId,
                 acceptance.AcceptedAtUtc,
                 new InventoryTransferDocumentReference(acceptance.DocumentKind, acceptance.DocumentId,
-                    acceptance.DocumentLineId))));
+                    acceptance.DocumentLineId))),
+            cancellation?.CancelledAtUtc);
     }
 
     private async Task<InventoryTransferViewV1> TransferViewAsync(Guid transferId, CancellationToken cancellationToken)
@@ -665,7 +680,10 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             {
                 actualByLine.TryGetValue(line.LineId, out var dispatched);
                 var status = acceptedIds.Contains(line.LineId) ? InventoryTransferLineStatus.Accepted
-                    : dispatched is null ? InventoryTransferLineStatus.Planned : InventoryTransferLineStatus.InTransit;
+                    : dispatched is null ? InventoryTransferLineStatus.Planned
+                    : row.Status == (int)InventoryTransferStatus.DispatchCancelled
+                        ? InventoryTransferLineStatus.DispatchCancelled
+                        : InventoryTransferLineStatus.InTransit;
                 return new InventoryTransferLineViewV1(line.LineId, line.LabelId,
                     line.ExpectedLabelVersion.ToString(CultureInfo.InvariantCulture), Kilograms.Positive(line.PlannedKg).ToString(),
                     dispatched is null ? null : Kilograms.Positive(dispatched.ActualKg).ToString(),
@@ -700,8 +718,10 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         }
 
         if (stored.Transfer is null && stored.RefusalStatus == 409 && stored.RefusalCode is { } code
-            && RecordableDispatchRefusals.Contains(code)
-            && string.Equals(command, DispatchTransferCommand, StringComparison.Ordinal))
+            && ((RecordableDispatchRefusals.Contains(code)
+                    && string.Equals(command, DispatchTransferCommand, StringComparison.Ordinal))
+                || (string.Equals(code, InventoryTransferCodesV1.CancelWindowClosed, StringComparison.Ordinal)
+                    && string.Equals(command, CancelDispatchTransferCommand, StringComparison.Ordinal))))
         {
             throw new InventoryTransferException(409, code, isReplay: true, prior.CorrelationId);
         }

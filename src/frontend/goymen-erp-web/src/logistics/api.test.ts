@@ -7,7 +7,7 @@ import issuedResponseRaw from './examples/issued-response.json?raw'
 import loadResponseRaw from './examples/load-response.json?raw'
 import listResponseRaw from './examples/list-response.json?raw'
 import errorCapRaw from './examples/error-cap.json?raw'
-import { createInstruction, fetchApprovedOrderLines, fetchInstructionDetail, fetchInstructionPage, issueInstruction, recordLoad } from './api'
+import { cancelInstruction, createInstruction, fetchApprovedOrderLines, fetchInstructionDetail, fetchInstructionPage, issueInstruction, recordLoad } from './api'
 import type { CreateInstructionRequest } from './contract'
 import { approvedOrderLine, COMPANY_A, INSTRUCTION, LINE } from './testHarness'
 
@@ -109,6 +109,35 @@ describe('issue and record-load — 200 with the instruction after the transitio
     expect((await recordLoad(LINE, { ...payload, quantity: '2.50' }, COMMAND)).type).toBe('malformed')
     respond(200, loadResponseRaw)
     expect((await recordLoad(LINE, { ...payload, loadId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1' }, COMMAND)).type).toBe('malformed')
+  })
+
+  it('F-020 cancel: 200 is success only when the instruction came back Cancelled with the reason sent', async () => {
+    const cancelledWith = (reason: string) => tweak(issuedResponseRaw, (body) => {
+      Object.assign(body.detail.instruction, { status: 'Cancelled', version: '4', cancelledBy: 'SENTETIK-iptal', cancelledAtUtc: '2026-09-19T10:00:00Z', cancelReason: reason })
+    })
+    const payload = { expectedVersion: '3', reason: 'Araç gelmedi' }
+    const calls = respond(200, cancelledWith('Araç gelmedi'))
+    expect((await cancelInstruction(payload, COMMAND)).type).toBe('succeeded')
+    expect(calls[0].url).toBe(`/api/v1/logistics/loading-instructions/${INSTRUCTION}/cancel`)
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(calls[0].init.body as string)).toEqual(payload)
+    // An answer that does not show this cancel is not taken as its success.
+    respond(200, issuedResponseRaw)
+    expect((await cancelInstruction(payload, COMMAND)).type).toBe('malformed')
+    respond(200, cancelledWith('Başka gerekçe'))
+    expect((await cancelInstruction(payload, COMMAND)).type).toBe('malformed')
+    respond(200, cancelledWith('Araç gelmedi'))
+    expect((await cancelInstruction(payload, { ...COMMAND, instructionId: 'cccccccc-cccc-cccc-cccc-ccccccccccc1' })).type).toBe('malformed')
+  })
+
+  it('F-020 cancel: a 409 logistics_instruction_shipped carries its code', async () => {
+    respond(409, JSON.stringify({ status: 409, title: 'Conflict', code: 'logistics_instruction_shipped', correlationId: 'c', errors: [] }))
+    const outcome = await cancelInstruction({ expectedVersion: '3', reason: 'Araç gelmedi' }, COMMAND)
+    expect(outcome.type).toBe('http')
+    if (outcome.type === 'http') {
+      expect(outcome.status).toBe(409)
+      expect(outcome.problem?.code).toBe('logistics_instruction_shipped')
+    }
   })
 
   it('a 409 carries its decoded problem and code', async () => {

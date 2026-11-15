@@ -32,6 +32,8 @@ export const LOGISTICS_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const LOGISTICS_PATH = '/logistics/loading-instructions'
 export const instructionDetailPath = (id: string) => `${LOGISTICS_PATH}/${encodeURIComponent(id)}`
 export const issuePath = (id: string) => `${instructionDetailPath(id)}/issue`
+/** F-020: cancel the instruction itself (LOJ-D6), refused once a shipment is recorded on it (LOJ-D8). */
+export const cancelInstructionPath = (id: string) => `${instructionDetailPath(id)}/cancel`
 export const loadsPath = (id: string, lineId: string) => `${instructionDetailPath(id)}/lines/${encodeURIComponent(lineId)}/loads`
 /** AT-053: the instruction's manual weighbridge record (one per instruction). */
 export const weighingsPath = (id: string) => `${instructionDetailPath(id)}/weighings`
@@ -135,6 +137,16 @@ export interface CreateDispatchNoteRequest {
   readonly expectedVersion: string
   readonly dispatchNoteId: string
   readonly shipmentIds: readonly string[]
+}
+
+/**
+ * `CancelInstructionRequest` (F-020, LOJ-D6/D15): cancel a Draft or Issued instruction with no recorded shipment. Only the
+ * instruction version and the reason travel; what is released is the server's (its unshipped quantity stops counting).
+ */
+export interface CancelInstructionRequest {
+  readonly expectedVersion: string
+  /** Trimmed, 1..500 characters. */
+  readonly reason: string
 }
 
 /** Approve (finalise) a Draft note: the server assigns the company series number. Only the instruction version is sent. */
@@ -307,6 +319,7 @@ export const LOGISTICS_PROBLEM_CODE = {
   orderLineState: 'order_line_state',
   versionConflict: 'version_conflict',
   instructionState: 'logistics_instruction_state',
+  instructionShipped: 'logistics_instruction_shipped',
   loadExceedsInstructed: 'logistics_load_exceeds_instructed',
   lineBlocked: 'logistics_line_blocked',
   duplicateShare: 'logistics_duplicate_share_id',

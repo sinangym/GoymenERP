@@ -21,7 +21,8 @@
  * AT-055 adds the dispatch-note (irsaliye) DRAFT (DispatchNoteCommand.tsx): the drafts and their lines are shown to every
  * reader; the form offers the definite shipments not on a live note (a shipment is linked to at most one non-cancelled note);
  * each note can be approved (the server numbers it), cancelled with a reason (releasing its shipments) and given its e-İrsaliye no.
- * F-020 (LOJ-D6…D8): a cancelled instruction is read only — it shows who cancelled it, when and why, and offers no command.
+ * F-020 (LOJ-D6…D8): a Draft or Issued instruction with no recorded shipment can be cancelled with a reason; a cancelled instruction
+ * is read only — it shows who cancelled it, when and why, its weighing marked cancelled, and offers no command.
  */
 
 import { useRef, useState } from 'react'
@@ -68,6 +69,7 @@ import { RealizationCommands } from './RealizationCommands'
 import { WeighingFacts, WeighingForm } from './WeighingCommand'
 import { DispatchNoteFacts, DispatchNoteForm, DispatchNoteLifecycles } from './DispatchNoteCommand'
 import { CustomerReturnPanel } from './CustomerReturnPanel'
+import { InstructionCancelCommand } from './InstructionCancelCommand'
 import {
   CUSTOMER_RETURN_CAPABILITY,
   abandonCustomerReturnAttempt,
@@ -131,21 +133,29 @@ export function InstructionDetailPage() {
       detail={detail}
       backLink={backLink}
       commands={
-        // F-020: no command applies to a cancelled instruction (the server refuses every one), so none is offered.
-        companyId === null || detail.instruction.status === INSTRUCTION_STATUS.cancelled ? null : (
+        // F-020: no command applies to a cancelled instruction (the server refuses every one), so none is offered. The cancel
+        // section itself stays mounted at the same place (it renders nothing on a cancelled instruction unless it holds the notice
+        // of the command that cancelled it), so that notice survives the re-read that shows the instruction Cancelled.
+        companyId === null ? null : (
           <>
-            {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
-                section, or the notice of the command that caused the version step would vanish with it. */}
-            <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
-              shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <CustomerReturns key={`customer-returns:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
-              shell={shell} detail={detail} companyId={companyId} bindingBase={namespace ?? ''} onRecorded={reread} />
-            <DispatchNoteLifecycles key={`dispatch-note-lifecycle:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
-              companyId={companyId} onRecorded={reread} />
-            <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
+            {detail.instruction.status === INSTRUCTION_STATUS.cancelled ? null : (
+              <>
+                {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
+                    section, or the notice of the command that caused the version step would vanish with it. */}
+                <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+                  shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                <CustomerReturns key={`customer-returns:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+                  shell={shell} detail={detail} companyId={companyId} bindingBase={namespace ?? ''} onRecorded={reread} />
+                <DispatchNoteLifecycles key={`dispatch-note-lifecycle:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
+                  companyId={companyId} onRecorded={reread} />
+                <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
+                  onRecorded={reread} />
+              </>
+            )}
+            <InstructionCancelCommand key={`cancel:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
               onRecorded={reread} />
           </>
         )
@@ -521,7 +531,7 @@ export function InstructionView({
         )}
       </section>
 
-      <WeighingFacts weighing={detail.weighing} />
+      <WeighingFacts weighing={detail.weighing} cancelled={cancelled} />
 
       <DispatchNoteFacts detail={detail} />
 

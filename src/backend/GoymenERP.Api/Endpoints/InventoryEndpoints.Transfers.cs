@@ -11,6 +11,7 @@ public static partial class InventoryEndpoints
 {
     // The owner's templates with the route constraint the host always applies to identities.
     private const string TransferDispatchRoute = InventoryTransferApiV1.Path + "/{transferId:guid}/dispatch";
+    private const string TransferCancelDispatchRoute = InventoryTransferApiV1.Path + "/{transferId:guid}/cancel-dispatch";
     private const string TransferByIdRoute = InventoryTransferApiV1.Path + "/{transferId:guid}";
 
     /// <summary>
@@ -24,7 +25,10 @@ public static partial class InventoryEndpoints
     /// <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c> for the same key and content; a
     /// recorded terminal dispatch refusal (409, outgoing document not final/cancelled/reversed/stale) replays with the
     /// same headers. 401/403/404/503 are code-less platform problems; 400/409/422 carry the owner's closed code and the
-    /// correlation id; any code outside the operation's closed set is a code-less 503.
+    /// correlation id; any code outside the operation's closed set is a code-less 503. B-22b dispatch cancellation
+    /// (KLN-D20/D25/D27) is fenced by the service on <see cref="ErpPermissions.InventoryStockTransferCancel"/>; a closed
+    /// window is a recorded terminal 409 that replays with the same headers, while an unreadable window or a missing
+    /// owner confirmation is a 409 that is not recorded.
     /// </summary>
     private static void MapInventoryTransferEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -111,6 +115,50 @@ public static partial class InventoryEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict([.. InventoryTransferHttpCodes.Dispatch.Status409.Order(StringComparer.Ordinal)])
             .ProducesErpUnprocessableEntity([.. InventoryTransferHttpCodes.Dispatch.Status422.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        endpoints.MapPost(TransferCancelDispatchRoute, async (
+                Guid transferId,
+                HttpContext httpContext,
+                IInventoryTransferCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                var read = await ReadTransferBodyAsync<CancelInventoryTransferDispatchV1>(
+                    httpContext, correlation, cancellationToken);
+                if (read.Problem is not null)
+                {
+                    return read.Problem;
+                }
+
+                try
+                {
+                    var result = await command.CancelDispatchAsync(transferId, read.Request!,
+                        StockCountTransport(currentUser, correlation, read.Key, ErpPermissions.InventoryStockTransferCancel),
+                        cancellationToken);
+                    return TransferResult(httpContext, result);
+                }
+                catch (InventoryTransferException exception)
+                {
+                    return TransferProblem(httpContext, exception, correlation, InventoryTransferHttpCodes.CancelDispatch);
+                }
+            })
+            .RequireAuthorization(ErpPermissions.InventoryStockTransferCancel)
+            .RequireCompanyContext()
+            .WithName("CancelInventoryTransferDispatchV1")
+            .WithTags("Inventory")
+            // The replayable results: the cancelled transfer (200 on a replay) and the recorded closed window (409).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict)
+            .Accepts<CancelInventoryTransferDispatchV1>("application/json")
+            .Produces<InventoryTransferViewV1>(StatusCodes.Status201Created)
+            .Produces<InventoryTransferViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryTransferHttpCodes.CancelDispatch.Status400.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict([.. InventoryTransferHttpCodes.CancelDispatch.Status409.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -268,5 +316,20 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.OutgoingDocumentNotFound,
                 InventoryTransferCodesV1.OutgoingDocumentBindingMismatch,
             });
+
+        internal static readonly Operation CancelDispatch = new(
+            new HashSet<string>(StringComparer.Ordinal) { InventoryTransferCodesV1.ValidationFailed },
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                InventoryTransferCodesV1.IdempotencyConflict,
+                InventoryTransferCodesV1.ConcurrentChange,
+                InventoryTransferCodesV1.TransferVersionConflict,
+                InventoryTransferCodesV1.TransferStateConflict,
+                InventoryTransferCodesV1.LabelVersionConflict,
+                InventoryTransferCodesV1.CancelWindowClosed,
+                InventoryTransferCodesV1.CancelWindowUnreadable,
+                InventoryTransferCodesV1.CancelConfirmationMissing,
+            },
+            new HashSet<string>(StringComparer.Ordinal));
     }
 }

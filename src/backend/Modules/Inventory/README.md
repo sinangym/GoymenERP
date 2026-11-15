@@ -544,12 +544,51 @@ stored company, transfer, requested version and ordered lines and stores `Docume
 
 Migration `AddInventoryTransferDispatchDocumentVersion` adds nullable `TransferDispatches.DocumentVersion` with
 `CK_TransferDispatches_DocumentVersion`; its `Down` refuses (THROW 51272) while a proved dispatch row exists (forward
-fix). Not decided here and left fail-closed: cancelling or reversing a dispatched transfer, planned/actual difference
-or tolerance resolution, and subcontract-order binding.
+fix). Not decided here and left fail-closed: reversing an accepted transfer, planned/actual difference or tolerance
+resolution, and subcontract-order binding. Dispatch cancellation is B-22b below.
+
+### B-22b — dispatch cancellation, "kantardan geçer" setting and departure moment (STK-S5)
+
+Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
+
+- **Command.** `POST /api/v1/inventory/transfers/{transferId}/cancel-dispatch` with `expectedTransferVersion`
+  (canonical positive integer text), `cancelledAtUtc` (UTC, not before the dispatch) and `reason` (trimmed, 1-500,
+  no control characters). Fenced by the service on the new `inventory.stock-transfer.cancel` (registered centrally,
+  company-wide only; no grant, role or Critical is added). Same idempotency/replay/audit boundary as dispatch.
+- **Effect.** Only a fully in-transit transfer (no accepted line) is cancelled. One kind 11
+  `TransferDispatchCancellation` movement brings every dispatched bucket back to its exact source bucket (In), the
+  labels return to the source position with a version bump, the transfer and every line become `DispatchCancelled`,
+  and one `TransferDispatchCancellations` row stores the movement, the reason and the owner confirmation versions.
+  The dispatch row and its kind 8 movement are never changed (append-only, KLN-D20: one reverse record, no copy).
+- **Source warehouse setting (LOJ-D11).** Dispatch reads the Settings-owned value through
+  `IInventoryTransferSourceScaleSettingPortV1` and stores it on `TransferDispatches.SourceScaleSettingAtDispatch`
+  (1 Off, 2 On, 3 Unreadable). An absent port, failing read or undefined answer is stored as Unreadable, never as a
+  chosen value. Dispatches recorded before this migration get Off (the column default; KLN-D27 (7)). Inventory does
+  not own or choose the setting; the port is unregistered until the Settings owner ships it.
+- **Window (pure rule `InventoryTransferCancelWindow`).** Stored and current settings plus a fresh owner reading of
+  the e-İrsaliye link, GİB send, exit weighing and vehicle exit (`IInventoryTransferDispatchCancelGatePortV1.ReadAsync`)
+  give Open, Closed (basis and moment) or Unreadable. Not linked and the more-closed setting Off: closed at dispatch.
+  Not linked and On: open until exit weighing or vehicle exit, needs a Logistics "no exit and none later"
+  confirmation. Linked: open until the GİB send, needs an e-İrsaliye cancel confirmation; if either setting is On or
+  unreadable, the earliest of the three departure facts closes it and both confirmations are needed (KLN-D27).
+- **Answers.** A closed window persists `TransferDispatchCancelClosures` once (first closure is final, never
+  reopened, KLN-D25 (7)(g)/KLN-D27 (5)) and records the terminal 409 `inventory_transfer_cancel_window_closed` under
+  the key. An unreadable reading is 409 `inventory_transfer_cancel_window_unreadable` and a missing required owner
+  confirmation 409 `inventory_transfer_cancel_confirmation_missing`; both are not recorded (the key may retry). An
+  open window asks `ConfirmAsync` only for the parts it needs and re-evaluates the confirmation-time facts before
+  writing. No gate port, a failing read or a malformed answer is a code-less 503.
+- **Migration.** `AddInventoryTransferDispatchCancellation` adds the column (default Off) with
+  `CK_TransferDispatches_SourceScaleSetting`, both tables, widens `CK_Transfers_State` to status 5 and
+  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51471) while a kind 11 movement, a cancellation or closure row,
+  a non-Off stored setting or a cancelled transfer exists (forward fix).
+- **Not decided here (NEEDS-SINAN, fail-closed):** the cost golden of the reverse movement (transfers post no cost
+  today), whether an unreadable reading should ever be persisted, whether dispatch should refuse an unreadable
+  setting, and the disposition snapshot bucket of a cancellation (counted as other inbound kg today). The real
+  Settings and Logistics/e-İrsaliye producers are those owners' integration work.
 
 ## Movement kinds and rollback signal (reference)
 
-`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 9`):
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 11`):
 
 | Kind | Value | Written by | Lines |
 |---|---|---|---|
@@ -562,6 +601,8 @@ or tolerance resolution, and subcontract-order binding.
 | `Scrap` | 7 | an approved scrap write-off (ST-02, `AddInventoryStockScraps`); free or blocked | one Out |
 | `TransferDispatch` | 8 | one INV-R20 transfer dispatch; every source bucket leaves stock atomically | Out |
 | `TransferAccept` | 9 | one accepted INV-R20 line; the captured buckets enter the validated target | In |
+| `ManufacturingOutputReversal` | 10 | the reversal of a manufacturing output receipt (F-009 D1, `AddInventoryManufacturingOutputReversal`); free unallocated kg at the output position only, no cost | one Out |
+| `TransferDispatchCancellation` | 11 | the cancellation of one in-transit INV-R20 dispatch (B-22b, `AddInventoryTransferDispatchCancellation`); every dispatched bucket back to its exact source bucket | In |
 
 A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
 exists. An allocation change, a split/merge and a label version bump write NO movement.
@@ -604,6 +645,47 @@ Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
   `AddInventoryLabelProductionStatus` adds nullable `Labels.ProductionStatus` with `CK_Labels_ProductionStatus`
   (`IS NULL OR IN (1)`); its `Down` refuses (THROW 51291) while any label carries a production status (forward fix).
 
+## Manufacturing output reversal, label disposition and Free kg ports (F-009 D1/D5, STK-S20)
+
+Refs: `docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md` §5 D1 and §6; URT-D28, URT-D31 (correction is a new linked
+movement, never an edit of the old one), URT-D34 (Free kg read before allocation).
+
+- **Reversal participant:** `InventoryManufacturingRealizationParticipant` also implements
+  `IInventoryManufacturingOutputReversalParticipantV1.StageOutputReversalAsync`, enlisted in Manufacturing's open
+  transaction like the issue/output/return stages. It writes exactly one `ManufacturingOutputReversal` (10) movement:
+  one Out line at the output receipt's original position, Free block, source kind `manufacturing.output-reversal`,
+  source id = order, source line = Manufacturing's reversal fact id. The old `Receipt` stays unchanged; net output =
+  receipt − reversals. Command name `inventory.manufacturing-output-reversal.stage.v1`; idempotency replay, payload
+  conflict, label expected version (bumped by the movement) and the single audit/command save follow the participant's
+  existing skeleton.
+- **Decision source inside the transaction:** the reversal re-reads the label's disposition with the same pure
+  computation the read port shows (`InventoryLabelDispositionReader`), under the label version fence. Stored figures
+  that do not reconcile are refused 503 `Unavailable` (fail-closed). A request for another order/output than the
+  label's output origin is 404 `InvalidReference`.
+- **Refusals (all 409, `InventoryManufacturingOutputReversalCodesV1`):** `exceeds_produced` (earlier reversals +
+  this one > received kg) first; then, when the kg are not free and unallocated at the output position, the first
+  reason in this fixed order: `shipped` (net of customer return), `issued_to_manufacturing` (net of manufacturing
+  return), `transferred`, `allocated`, `blocked`, otherwise `not_free` (scrap, count, …). Every reason blocks alike; the
+  order is a reversible presentation choice. Releasing the hold is the owning module's own command. The V1 realization
+  code set is unchanged; the reversal-only codes live only in the reversal contract.
+- **No average-cost impact:** a manufacturing receipt is recorded without cost (`CostResult.NotCalculated`) and never
+  enters the average while its order is open (§4.8), so the reversal is also `NotCalculated` and touches no
+  `AverageCostLedger` row.
+- **`IInventoryLabelDispositionReadPortV1`:** `Get(CompanyId, LabelId)` → Value / NotFound / Unreadable. Value carries
+  the label version, `InStock`/`OutOfStock`, the output origin (order, output, receipt movement, produced, reversed,
+  free-unallocated and blocked kg at the output position; null for a non-output label) and gross kg per business reason
+  (shipped, customer-returned, manufacturing issued/returned, transfer dispatched/accepted, scrapped, count in/out,
+  other in/out), physical, blocked and allocated kg. A company other than the resolved one reads as NotFound. It is
+  never the decision source (TOCTOU) and carries no authority.
+- **`IInventoryFreeQuantityReadPortV1`:** `Get(CompanyId, LabelId)` → `FreeKg` (Free balance minus active allocations,
+  summed over Free positions), `FreePositionCount` and the label version. Same status, company and side-effect rules.
+- **`OrderCancelled = 3`:** `InventoryManufacturingPlanReleaseReasonV1` gains `OrderCancelled` (wire code
+  `manufacturing.order-cancelled`) for Manufacturing's cancel path (URT-S4).
+- **Migration:** `AddInventoryManufacturingOutputReversal` widens `CK_Movements_Kind` to `BETWEEN 1 AND 10`. Its `Down`
+  refuses (THROW 51420) while any kind 10 movement exists, then narrows the check back (forward fix).
+- **Not here:** no permission, grant or role (the participant and the ports carry no authority; Manufacturing fences its
+  own command), no HTTP endpoint and no OpenAPI change. The frontend movement-kind decoders do not know kind 10 yet.
+
 ## Average purchase cost ledger and read port V1 (SAT-D262..D267, slice 1)
 
 Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory owns the moving-average purchase cost
@@ -638,6 +720,28 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 - **No price input source is connected yet** (Purchasing price input is NEEDS-SINAN, Issue #66 comment 6760990097), so
   nothing writes the ledger in this slice and the port answers NoSource. No permission or grant is added; the port carries
   no authority (the Sales caller fences around it).
+
+## Future supply allocation (F-017 F017-b, STOK_F017 §3.2/§4, KLN-D26)
+
+- **Tables:** `inventory.FutureSupplyAllocations` (one allocation of a Sales order line's demand onto an approved purchase
+  order line; Active 1 / Consumed 2 / Released 3; quantities `decimal(18,3)`, refused never rounded beyond three decimals)
+  and `inventory.FutureSupplyLines` (the per purchase line ledger: `ActiveAllocated <= AllocatableSnapshot`, the snapshot
+  being the allocatable amount read under the lock). Checks: `CK_FutureSupplyAllocations_Identity/_Kinds/_Quantity/_Release`
+  and `CK_FutureSupplyLines_Ledger`; the allocation's FK to its ledger row is `Restrict`. Both tables carry `CompanyId` and
+  the company query filter.
+- **Writer (no route yet; endpoint, OpenAPI and permission are F017-b2):** replay → transaction → Sales line lock, then
+  purchase line lock → fence → demand and supply reads → product match → ledger reserve (insufficient 409, other rule
+  422) → demand cap → allocation + command attempt + audit + outbox in one save. The Sales line lock
+  (`goymen:sales-order-line:{company:N}:{line:N}`, `sp_getapplock` Exclusive/Transaction) is a host adapter until Sales
+  owns it.
+- **Ports:** `IInventoryFutureAllocationReadPortV1` (active allocated sum in the purchase unit; Unreadable when the ledger
+  disagrees with Σ active remaining, never the ledger's figure) and `IInventoryFutureAllocationReleasePortV1` (a session
+  on the caller's open connection and transaction; the caller commits; no Inventory idempotency row). Defaults are
+  fail-closed until the host replaces them (identity-only unit conversion, purchase source unavailable).
+- **Migration:** `AddInventoryFutureSupplyAllocations` creates both tables. Its `Down` refuses (THROW 51460) while any
+  allocation or ledger row exists, then drops (forward fix).
+- **Open (NEEDS-SINAN):** the demand open quantity definition (ordered − shipped, cancelled → 0), unit conversion beyond
+  the identity, and the release reason code list are the author's reading or format-only; no grant is added.
 
 ## dependency_wait
 

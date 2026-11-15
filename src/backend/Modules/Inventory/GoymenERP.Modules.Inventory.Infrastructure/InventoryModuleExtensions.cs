@@ -59,7 +59,13 @@ public static class InventoryModuleExtensions
         services.AddScoped<ISalesOrderAllocationReadPortV1, InventorySalesOrderAllocationReadPort>();
         // SAT-D262: Inventory owns the moving-average purchase cost and answers Sales only through this versioned read port.
         services.AddScoped<IInventoryAverageCostReadPortV1, InventoryAverageCostReadPort>();
+        // SAT-D272 / SAT-D347 / SAT-D350 (STK-S35): the company-wide (all locations) average; the aggregation is Inventory's.
+        services.AddScoped<IInventoryCompanyWideAverageCostReadPortV1, InventoryCompanyWideAverageCostReadPort>();
+        // STK-S35: the ledger's only writer. No movement path calls it until the purchase price input has a port (SAT-D295).
+        services.AddScoped<InventoryAverageCostLedgerWriter>();
         services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();
+        services.AddScoped<IInventoryLabelDispositionReadPortV1, InventoryLabelDispositionReadPort>();
+        services.AddScoped<IInventoryFreeQuantityReadPortV1, InventoryFreeQuantityReadPort>();
         services.TryAddScoped<IInventoryLabelGenealogyReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.
@@ -67,6 +73,15 @@ public static class InventoryModuleExtensions
         services.AddInventoryStockPositions();
         services.AddInventoryLabelDetails();
         services.AddInventoryMovementTimeline();
+        // F-017 STOK F017-b: the future supply allocation writer (no route yet, F017-b2) and the ports Purchasing and Sales use.
+        // The purchase and sales line lock binders and the purchase line source are the host's; the defaults below are
+        // fail-closed (identity-only conversion, purchase source unavailable) until the host replaces them.
+        services.AddScoped<IInventoryFutureAllocationWriterV1, InventoryFutureAllocationWriter>();
+        services.AddScoped<IInventoryFutureAllocationReadPortV1, InventoryFutureAllocationReadPort>();
+        services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
+        services.AddScoped<IInventoryFutureDemandSourceV1, InventoryFutureDemandSource>();
+        services.TryAddScoped<IInventoryFutureUnitConverterV1, InventoryIdentityFutureUnitConverterV1>();
+        services.TryAddScoped<IInventoryFutureSupplySourceV1, InventoryUnavailableFutureSupplySourceV1>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }
