@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using Microsoft.Data.SqlClient;
