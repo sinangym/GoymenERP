@@ -81,6 +81,17 @@ public static class ErpPermissions
     public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
 
     /// <summary>
+    /// ALS-D100 (Sinan, 2026-11-15): deactivate one Cari card's account in every Göymen company in a single group-wide
+    /// command — the Counterparty owner's name (CounterpartyGroupDeactivationPermissionsV1). Separate from
+    /// counterparty.accounts.status.update, which keeps the per-company deactivation; the decision limits the group
+    /// command to the Genel Müdür and Admin personas and keeps it from the Muhasebe Müdürü, so the existing per-company
+    /// grants are not widened. Registered, not granted: no role, seed or user receives it here (human gate). Company-wide
+    /// only, as every Counterparty name; it is checked in the origin company and again in every target company. Not
+    /// Critical: no source makes it a grant-time dual-control duty.
+    /// </summary>
+    public const string CounterpartyPartiesGroupDeactivate = "counterparty.parties.group-deactivate";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -1202,6 +1213,7 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1412,6 +1424,7 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

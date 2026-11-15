@@ -241,6 +241,32 @@ export interface HarnessConfig {
   contact?: Responder
   /** The selected account's reasoned active-state `PUT` the C-03 status action uses. */
   activeState?: Responder
+  /**
+   * ALS-D99: the deactivation warning `GET` a deactivate window reads on open. Default: every line `clear`, bound to
+   * the requested party and company, so a deactivation needs no acknowledgement unless a test says otherwise.
+   */
+  deactivationWarning?: Responder
+}
+
+/** `CounterpartyDeactivationExposureView` shape; every line `clear` unless overridden. */
+export function deactivationWarningView(
+  partyId: string,
+  companyId: string,
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    companyId,
+    partyId,
+    accountVersion: '1',
+    isActive: true,
+    items: [
+      { kind: 'finance-open-balance', outcome: 'clear', openItemCount: null },
+      { kind: 'sales-open-documents', outcome: 'clear', openItemCount: null },
+      { kind: 'purchasing-open-documents', outcome: 'clear', openItemCount: null },
+    ],
+    acknowledgementRequired: false,
+    ...over,
+  }
 }
 
 export const ALL_CARI_CAPABILITIES: readonly string[] = [
@@ -269,6 +295,7 @@ export const CANDIDATES_RE = /\/counterparties\/company-account-link-candidates(
 export const DETAIL_RE = /\/counterparties\/(?!company-account-link-candidates)[^/?]+$/
 export const CONTACT_RE = /\/counterparties\/[^/?]+\/contact-information$/
 export const ACTIVE_STATE_RE = /\/counterparties\/[^/?]+\/company-account\/active-state$/
+export const DEACTIVATION_WARNING_RE = /\/counterparties\/([^/?]+)\/company-account\/deactivation-warning$/
 
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
@@ -326,6 +353,14 @@ export function installFetch(config: HarnessConfig = {}) {
       if (method === 'PUT' && ACTIVE_STATE_RE.test(url)) {
         return (config.activeState ?? (() => noContent()))(call)
       }
+      // A deeper segment again: matched before the list fallback, which would answer it with a list body.
+      const warningMatch = method === 'GET' ? DEACTIVATION_WARNING_RE.exec(url) : null
+      if (warningMatch !== null) {
+        return (
+          config.deactivationWarning ??
+          (() => json(deactivationWarningView(decodeURIComponent(warningMatch[1]), call.companyId ?? '')))
+        )(call)
+      }
       // Before the detail pattern for the same reason the candidates path is: a deeper
       // segment must not be read as a party id.
       if (CONTACT_RE.test(url)) {
@@ -353,6 +388,8 @@ export function installFetch(config: HarnessConfig = {}) {
     contactReads: () => calls.filter((c) => c.method === 'GET' && CONTACT_RE.test(c.url)),
     contactUpdates: () => calls.filter((c) => c.method === 'PUT' && CONTACT_RE.test(c.url)),
     activeStateUpdates: () => calls.filter((c) => c.method === 'PUT' && ACTIVE_STATE_RE.test(c.url)),
+    deactivationWarningReads: () =>
+      calls.filter((c) => c.method === 'GET' && DEACTIVATION_WARNING_RE.test(c.url)),
     capabilityReads: () => calls.filter((c) => c.url.includes('/shell/capabilities')),
   }
 }

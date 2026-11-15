@@ -124,7 +124,8 @@ public sealed class CounterpartyWriteSafetySqlServerRelationalAcceptanceTests
                 var statusCommand = new SetCompanyPartyAccountActiveState(
                     false,
                     currentVersion,
-                    "Farklı anahtar optimistic concurrency testi");
+                    "Farklı anahtar optimistic concurrency testi",
+                    ExposureWarningAcknowledged: true);
                 var statusResponses = await Task.WhenAll(
                     statusClientA.PutAsJsonAsync(
                         $"/api/v1/counterparties/{partyId}/company-account/active-state",

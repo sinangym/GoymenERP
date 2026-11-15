@@ -110,6 +110,12 @@ public static class CounterpartyModuleExtensions
         services.AddScoped<ICounterpartyEDocumentProfileService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
+        // ALS-D99/D100: owner modules register ICounterpartyDeactivationExposureSourceV1 adapters in the API host; with none
+        // registered every warning line reads as unavailable (fail-closed), never as "nothing open".
+        services.AddScoped<ICounterpartyDeactivationExposureReader, CounterpartyDeactivationExposureReader>();
+        services.AddScoped<CounterpartyGroupDeactivationService>();
+        services.AddScoped<ICounterpartyGroupDeactivationService>(provider =>
+            provider.GetRequiredService<CounterpartyGroupDeactivationService>());
         services.AddScoped<
             ICounterpartyMutationRelationshipVerifier,
             CounterpartyMutationRelationshipVerifier>();

@@ -24,6 +24,7 @@ internal sealed partial class CounterpartyCommandService(
     IErpAuthorityRevalidationService authorityRevalidationService,
     IAuditEventCollector auditEventCollector,
     ICounterpartyActiveStateCommandProbe activeStateCommandProbe,
+    ICounterpartyDeactivationExposureReader deactivationExposureReader,
     ILogger<CounterpartyCommandService> logger,
     TimeProvider timeProvider,
     ISettingsEInvoiceScenarioPolicyProviderV1? eInvoiceScenarioPolicy = null,
@@ -34,6 +35,9 @@ internal sealed partial class CounterpartyCommandService(
     private const string CreateCommandName = "counterparty.party.create.v1";
     private const string SetAccountActiveStateCommandName =
         "counterparty.company-account.set-active-state.v1";
+    private const string GroupDeactivateCommandName = "counterparty.party.group-deactivate.v1";
+    private const string DeactivationWarningScopeCompany = "company";
+    private const string DeactivationWarningScopeGroup = "group";
 
     public async Task<CounterpartyCommandExecution> CreateAsync(
         CreateCounterparty command,
@@ -134,6 +138,55 @@ internal sealed partial class CounterpartyCommandService(
         CounterpartyCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
+        var outcome = await ChangeAccountActiveStateAsync(
+            partyId,
+            command,
+            metadata,
+            ErpPermissions.CounterpartyAccountsStatusUpdate,
+            SetAccountActiveStateCommandName,
+            DeactivationWarningScopeCompany,
+            cancellationToken);
+        return outcome.Execution;
+    }
+
+    /// <summary>
+    /// ALS-D100: one company's step of the group deactivation. It runs in a scope whose company context is the target
+    /// company, under its own command name (so its idempotency keys never collide with the per-company PUT), and checks
+    /// <see cref="ErpPermissions.CounterpartyPartiesGroupDeactivate"/> in that company. The ALS-D99 warning, the reason,
+    /// the expected version, the audit and the <c>counterparty.party.deactivated.v1</c> event are the per-company ones.
+    /// <c>StateChanged</c> is null on a replay or a refusal.
+    /// </summary>
+    internal Task<CounterpartyAccountActiveStateOutcome> DeactivateForGroupAsync(
+        Guid partyId,
+        long expectedVersion,
+        string reason,
+        bool exposureWarningAcknowledged,
+        CounterpartyCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        return ChangeAccountActiveStateAsync(
+            partyId,
+            new SetCompanyPartyAccountActiveState(
+                IsActive: false,
+                expectedVersion,
+                reason,
+                exposureWarningAcknowledged),
+            metadata,
+            ErpPermissions.CounterpartyPartiesGroupDeactivate,
+            GroupDeactivateCommandName,
+            DeactivationWarningScopeGroup,
+            cancellationToken);
+    }
+
+    private async Task<CounterpartyAccountActiveStateOutcome> ChangeAccountActiveStateAsync(
+        Guid partyId,
+        SetCompanyPartyAccountActiveState command,
+        CounterpartyCommandMetadata metadata,
+        string permission,
+        string commandName,
+        string deactivationWarningScope,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(command);
         ValidateCommandMetadata(metadata);
         ValidateReason(command.Reason);
@@ -150,21 +203,31 @@ internal sealed partial class CounterpartyCommandService(
         }
 
         var scope = await RequireCompanyWidePermissionAsync(
-            ErpPermissions.CounterpartyAccountsStatusUpdate,
+            permission,
             cancellationToken);
         var idempotencyKeyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new SetAccountActiveStateFingerprint(
-            partyId,
-            command.IsActive,
-            command.ExpectedVersion,
-            command.Reason.Trim()));
+        // An unacknowledged request keeps the pre-ALS-D99 fingerprint, so answers stored before this change replay unchanged.
+        var requestHash = command.ExposureWarningAcknowledged
+            ? IdempotencyHash.ComputePayload(new SetAccountActiveStateAcknowledgedFingerprint(
+                partyId,
+                command.IsActive,
+                command.ExpectedVersion,
+                command.Reason.Trim(),
+                ExposureWarningAcknowledged: true))
+            : IdempotencyHash.ComputePayload(new SetAccountActiveStateFingerprint(
+                partyId,
+                command.IsActive,
+                command.ExpectedVersion,
+                command.Reason.Trim()));
         var existingExecution = await FindCommandExecutionAsync(
-            SetAccountActiveStateCommandName,
+            commandName,
             idempotencyKeyHash,
             cancellationToken);
         if (existingExecution is not null)
         {
-            return ResolveExistingExecution(existingExecution, requestHash, metadata);
+            return new CounterpartyAccountActiveStateOutcome(
+                ResolveExistingExecution(existingExecution, requestHash, metadata),
+                StateChanged: null);
         }
 
         var account = await dbContext.CompanyPartyAccounts
@@ -173,26 +236,30 @@ internal sealed partial class CounterpartyCommandService(
                 cancellationToken);
         if (account is null)
         {
-            return await CompleteCommandAsync(
-                SetAccountActiveStateCommandName,
-                Responses.NotFound(),
-                idempotencyKeyHash,
-                requestHash,
-                metadata,
-                concurrencyContext: null,
-                cancellationToken);
+            return new CounterpartyAccountActiveStateOutcome(
+                await CompleteCommandAsync(
+                    commandName,
+                    Responses.NotFound(),
+                    idempotencyKeyHash,
+                    requestHash,
+                    metadata,
+                    concurrencyContext: null,
+                    cancellationToken),
+                StateChanged: null);
         }
 
         if (account.Version != command.ExpectedVersion)
         {
-            return await CompleteCommandAsync(
-                SetAccountActiveStateCommandName,
-                Responses.VersionConflict(command.ExpectedVersion, account.Version),
-                idempotencyKeyHash,
-                requestHash,
-                metadata,
-                concurrencyContext: null,
-                cancellationToken);
+            return new CounterpartyAccountActiveStateOutcome(
+                await CompleteCommandAsync(
+                    commandName,
+                    Responses.VersionConflict(command.ExpectedVersion, account.Version),
+                    idempotencyKeyHash,
+                    requestHash,
+                    metadata,
+                    concurrencyContext: null,
+                    cancellationToken),
+                StateChanged: null);
         }
 
         await activeStateCommandProbe.AfterExpectedVersionValidatedAsync(
@@ -204,6 +271,49 @@ internal sealed partial class CounterpartyCommandService(
                 metadata.CorrelationId,
                 idempotencyKeyHash),
             cancellationToken);
+
+        // ALS-D99: the warning is re-read here, server-side, for the account that is about to become passive; the client's
+        // earlier preview is never trusted. Open, unavailable or denied lines need the acknowledgement; they never block.
+        CounterpartyDeactivationExposureView? deactivationWarning = null;
+        if (!command.IsActive && account.IsActive)
+        {
+            deactivationWarning = await deactivationExposureReader.ReadAsync(
+                metadata.CompanyId,
+                metadata.ActorId,
+                partyId,
+                cancellationToken);
+            if (deactivationWarning is null)
+            {
+                return new CounterpartyAccountActiveStateOutcome(
+                    await CompleteCommandAsync(
+                        commandName,
+                        Responses.NotFound(),
+                        idempotencyKeyHash,
+                        requestHash,
+                        metadata,
+                        concurrencyContext: null,
+                        cancellationToken),
+                    StateChanged: null);
+            }
+
+            if (deactivationWarning.AcknowledgementRequired && !command.ExposureWarningAcknowledged)
+            {
+                // Not stored and not audited: nothing was decided, and the next attempt re-reads the live warning.
+                logger.LogInformation(
+                    "Counterparty deactivation refused until the warning is acknowledged. CompanyId={CompanyId} PartyId={PartyId} ActorId={ActorId} CorrelationId={CorrelationId} Command={Command}",
+                    metadata.CompanyId,
+                    partyId,
+                    metadata.ActorId,
+                    metadata.CorrelationId,
+                    commandName);
+                return new CounterpartyAccountActiveStateOutcome(
+                    new CounterpartyCommandExecution(
+                        Responses.DeactivationWarningAcknowledgementRequired(),
+                        false,
+                        metadata.CorrelationId),
+                    StateChanged: null);
+            }
+        }
 
         var versionBefore = account.Version;
         var isActiveBefore = account.IsActive;
@@ -220,6 +330,13 @@ internal sealed partial class CounterpartyCommandService(
         var operation = stateChanged
             ? account.IsActive ? "Activate" : "Deactivate"
             : "NoChange";
+        var afterJson = stateChanged && !account.IsActive && deactivationWarning is not null
+            ? SerializeDeactivationAuditSnapshot(
+                account,
+                deactivationWarning,
+                command.ExposureWarningAcknowledged,
+                deactivationWarningScope)
+            : SerializeAccountAuditSnapshot(account, account.IsActive, account.Version);
         auditEventCollector.Enqueue(new AuditEventDraft(
             metadata.CompanyId,
             "counterparty.company-account.active-state.changed.v1",
@@ -230,10 +347,10 @@ internal sealed partial class CounterpartyCommandService(
             account.Version,
             AuditActorTypes.User,
             metadata.ActorId,
-            ErpPermissions.CounterpartyAccountsStatusUpdate,
+            permission,
             scope.RoleCodes,
             SerializeAccountAuditSnapshot(account, isActiveBefore, versionBefore),
-            SerializeAccountAuditSnapshot(account, account.IsActive, account.Version),
+            afterJson,
             command.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -251,7 +368,7 @@ internal sealed partial class CounterpartyCommandService(
         }
 
         var result = await CompleteCommandAsync(
-            SetAccountActiveStateCommandName,
+            commandName,
             Responses.Succeeded(),
             idempotencyKeyHash,
             requestHash,
@@ -261,14 +378,17 @@ internal sealed partial class CounterpartyCommandService(
                 command.ExpectedVersion),
             cancellationToken);
         logger.LogInformation(
-            "Counterparty company-account active-state command completed. CompanyId={CompanyId} PartyId={PartyId} ActorId={ActorId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
+            "Counterparty company-account active-state command completed. CompanyId={CompanyId} PartyId={PartyId} ActorId={ActorId} CorrelationId={CorrelationId} Command={Command} Result={Result} IsReplay={IsReplay}",
             metadata.CompanyId,
             partyId,
             metadata.ActorId,
             metadata.CorrelationId,
+            commandName,
             result.Response.Result,
             result.IsReplay);
-        return result;
+        return new CounterpartyAccountActiveStateOutcome(
+            result,
+            result.IsReplay || result.Response.Result != CounterpartyCommandResult.Succeeded ? null : stateChanged);
     }
 
     private async Task<CounterpartyCommandExecution> CompleteCommandAsync(
@@ -634,6 +754,38 @@ internal sealed partial class CounterpartyCommandService(
         });
     }
 
+    /// <summary>
+    /// ALS-D99: the deactivation audit's after-image also records the warning the server read (counts and outcomes only,
+    /// never amounts), whether it needed acknowledgement, whether it was acknowledged and the command scope.
+    /// </summary>
+    private static string SerializeDeactivationAuditSnapshot(
+        CompanyPartyAccount account,
+        CounterpartyDeactivationExposureView warning,
+        bool acknowledged,
+        string scope)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            account.Id,
+            account.CompanyId,
+            account.PartyId,
+            account.Roles,
+            account.ExternalIntegrationCode,
+            account.IsActive,
+            account.Version,
+            DeactivationWarning = new
+            {
+                Scope = scope,
+                Shown = true,
+                warning.AcknowledgementRequired,
+                Acknowledged = acknowledged,
+                Items = warning.Items
+                    .Select(item => new { item.Kind, item.Outcome, item.OpenItemCount })
+                    .ToArray(),
+            },
+        });
+    }
+
     private sealed record CreateFingerprint(
         PartyKind Kind,
         string LegalName,
@@ -645,6 +797,14 @@ internal sealed partial class CounterpartyCommandService(
         bool IsActive,
         long ExpectedVersion,
         string Reason);
+
+    /// <summary>ALS-D99: the acknowledged request hashes differently from the unacknowledged one.</summary>
+    private sealed record SetAccountActiveStateAcknowledgedFingerprint(
+        Guid PartyId,
+        bool IsActive,
+        long ExpectedVersion,
+        string Reason,
+        bool ExposureWarningAcknowledged);
 
     private abstract record ConcurrencyContext(
         Guid PartyId,
@@ -705,6 +865,14 @@ internal sealed partial class CounterpartyCommandService(
                 "Cari kayıt başka bir işlem tarafından değiştirilmiş. Güncel veriyi yenileyip tekrar deneyin.",
                 Resource: null,
                 new CounterpartyVersionConflict(expectedVersion, currentVersion));
+
+        public static CounterpartyCommandResponse DeactivationWarningAcknowledgementRequired() => new(
+            CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired,
+            422,
+            "Pasife alma uyarısı onaylanmalı.",
+            "Carinin açık bakiye veya açık belge uyarısı var ya da kontrol edilemedi. Uyarıyı inceleyip onaylayarak tekrar deneyin.",
+            Resource: null,
+            Conflict: null);
 
         public static CounterpartyCommandResponse IdempotencyConflict() => new(
             CounterpartyCommandResult.IdempotencyConflict,

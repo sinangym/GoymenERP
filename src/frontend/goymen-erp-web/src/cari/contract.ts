@@ -316,6 +316,12 @@ export const PROBLEM_CODE = {
    * is fixed by reading again, and neither is fixed by resending.
    */
   versionConflict: 'version_conflict',
+  /**
+   * ALS-D99: the account's deactivation warning (open balance / open documents, or a line the owner could not
+   * answer) needs acknowledgement and the deactivation did not carry it. 422, never stored: the same attempt
+   * resent WITH the acknowledgement is a new request the server evaluates afresh.
+   */
+  deactivationWarningAcknowledgementRequired: 'deactivation_warning_acknowledgement_required',
 } as const
 
 export type ProblemCode = (typeof PROBLEM_CODE)[keyof typeof PROBLEM_CODE]

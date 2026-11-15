@@ -294,7 +294,12 @@ public sealed class CounterpartyDeactivationOutboxSqlServerRelationalAcceptanceT
                 correlationId ?? $"cari-pasif-correlation-{Guid.NewGuid():N}");
             return client.PutAsJsonAsync(
                 $"/api/v1/counterparties/{partyId}/company-account/active-state",
-                new SetCompanyPartyAccountActiveState(isActive, expectedVersion, reason));
+                new SetCompanyPartyAccountActiveState(
+                    isActive,
+                    expectedVersion,
+                    reason,
+                    // ALS-D99: no owner warning source in the test host, so every line is unavailable and needs it.
+                    ExposureWarningAcknowledged: !isActive));
         }
 
         public Task<int> OutboxCountAsync(Guid companyId) =>
