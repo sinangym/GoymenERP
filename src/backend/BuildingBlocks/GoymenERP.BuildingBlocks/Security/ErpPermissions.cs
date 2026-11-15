@@ -356,6 +356,15 @@ public static class ErpPermissions
     public const string ManufacturingScrapPricesWrite = "manufacturing.scrap-prices.write";
 
     /// <summary>
+    /// URT-S19 (B-27, DEC-PRDCT-009, API-42): reading an order's cost trace — its lots, line, fire, subcontract owner,
+    /// sales-order link and fact moments, and the production cost port's answer. Its own name because the trace carries
+    /// cost data the order read does not (URETIM_HAZIRLIK_PLANI API-42 names it). Registered, not granted: no role and no
+    /// user receives it here; who reads production cost data is a human gate. Company-wide only (the route filters by no
+    /// work center or site, so a narrow grant would fail open). Not Critical.
+    /// </summary>
+    public const string ManufacturingReportsRead = "manufacturing.reports.read";
+
+    /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
     /// reading one, and because until now a plan could be created and approved but **never read
     /// again** — there was no plan read at any layer above the store. Registered, not granted.
@@ -1262,6 +1271,7 @@ public static class ErpPermissions
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
             ManufacturingScrapPricesWrite,
+            ManufacturingReportsRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -1473,6 +1483,7 @@ public static class ErpPermissions
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
             ManufacturingScrapPricesWrite,
+            ManufacturingReportsRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,

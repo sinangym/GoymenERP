@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY FIFTEEN IDS. They map onto the permissions the server enforces separately
+ * WHY SIXTEEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -18,6 +18,7 @@
  *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
  *   manufacturing.orders.close-exception-approve <- manufacturing.orders.close-exception.approve
  *   manufacturing.orders.due-date <- manufacturing.orders.read + manufacturing.orders.write (URT-D66: the order termin)
+ *   manufacturing.orders.cost-trace <- manufacturing.orders.read + manufacturing.reports.read (URT-S19: the cost trace)
  *   manufacturing.plans.create  <- manufacturing.plans.write
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
@@ -57,6 +58,12 @@ export const MANUFACTURING_CAPABILITY = {
    * registry publishes it to nobody and no termin form is drawn.
    */
   orderDueDate: 'manufacturing.orders.due-date',
+  /**
+   * URT-S19 (B-27, DEC-PRDCT-009, API-42): the order's cost trace INSIDE the order screen — lots, outputs, fact moments
+   * and the production cost port's answer. Not a route — a control. Its permission (`manufacturing.reports.read`) is
+   * registered and granted to no role, so until a grant exists the registry publishes it to nobody and no trace is read.
+   */
+  orderCostTrace: 'manufacturing.orders.cost-trace',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */

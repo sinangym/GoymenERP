@@ -74,6 +74,7 @@ import {
   type FactAttempt,
 } from './factAttempt'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
+import { OrderCostTracePanel } from './OrderCostTracePanel'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -168,6 +169,8 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   )
   // URT-D66 (5): the order's termin is changed under the order edit grant, a control of its own.
   const canChangeDueDate = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDueDate)
+  // URT-S19 (API-42): the cost trace is read under the reports grant, a control of its own; no write follows from it.
+  const canReadCostTrace = hasCapability(shell, MANUFACTURING_CAPABILITY.orderCostTrace)
   const storeKey = pendingFactKey(
     shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
@@ -231,6 +234,15 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         orderId={order.orderId}
         orderVersion={order.version}
       />
+      {canReadCostTrace ? (
+        <OrderCostTracePanel
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
+          companyId={activeCompanyId ?? ''}
+          orderId={order.orderId}
+          orderVersion={order.version}
+        />
+      ) : null}
       {canRecord ? (
         <FactSection
           order={order}

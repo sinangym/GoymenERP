@@ -60,11 +60,12 @@ public sealed class ManufacturingShellRegistrationTests
         // TAKIP-URT-02 (1.6) adds the plan-detail cancel control (plans.read + plans.cancel).
         // URT-S13 (1.7) adds the scrap price route (scrap-prices.read) and its record control (+ scrap-prices.write).
         // URT-S23 (1.8) adds the order-detail termin control (orders.read + orders.write).
-        Assert.Equal(15, manufacturing.Length);
+        // URT-S19 (1.9) adds the order-detail cost trace control (orders.read + reports.read).
+        Assert.Equal(16, manufacturing.Length);
         string[] expected =
         [
             "manufacturing.orders.close", "manufacturing.orders.close-exception-approve",
-            "manufacturing.orders.detail", "manufacturing.orders.due-date", "manufacturing.orders.facts",
+            "manufacturing.orders.cost-trace", "manufacturing.orders.detail", "manufacturing.orders.due-date", "manufacturing.orders.facts",
             "manufacturing.orders.list",
             "manufacturing.plans.approve", "manufacturing.plans.cancel", "manufacturing.plans.create", "manufacturing.plans.detail",
             "manufacturing.plans.edit", "manufacturing.plans.list", "manufacturing.plans.order-create",

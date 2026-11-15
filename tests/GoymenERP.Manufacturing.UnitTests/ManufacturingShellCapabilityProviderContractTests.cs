@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.8"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(15, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.9"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(16, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -108,6 +108,9 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         // fact confers it.
         AssertControl(declarations, detail, "manufacturing.orders.due-date",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersWrite]);
+        // URT-S19 (B-27, API-42): the cost trace on its own report grant — the order read alone does not confer it.
+        AssertControl(declarations, detail, "manufacturing.orders.cost-trace",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingReportsRead]);
         AssertControl(declarations, planDetail, "manufacturing.plans.approve",
             [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansApprove]);
         AssertControl(declarations, planDetail, "manufacturing.plans.order-create",
