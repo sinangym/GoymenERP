@@ -80,7 +80,11 @@ public sealed record SalesOrderLineLoadingV1(Guid OrderLineId, Guid UnitId, int 
 /// <summary>The six DEC-SAL-005 impact categories, one stable name each (the wire's <c>source</c>).</summary>
 public static class SalesCancellationImpactSourcesV1
 {
-    /// <summary>"aktif tahsis" — Inventory's active physical allocations (owner port <see cref="ISalesOrderAllocationReadPortV1"/>).</summary>
+    /// <summary>
+    /// "aktif tahsis" — Inventory's active physical allocations (owner port <see cref="ISalesOrderAllocationReadPortV1"/>) and,
+    /// since F-017 STOK §5.1 (STK-S16), its active future supply allocations (<see cref="ISalesOrderAllocationReadPortV2"/>): either
+    /// kind present is Present, either read failing is Unreadable. The line members stay the physical kilograms only.
+    /// </summary>
     public const string ActiveAllocations = "inventory.active-allocations";
 
     /// <summary>

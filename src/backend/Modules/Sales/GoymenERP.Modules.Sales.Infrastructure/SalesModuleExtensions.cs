@@ -261,7 +261,12 @@ public static class SalesModuleExtensions
         // API-06 / plan S0 (DEC-FIN-007 second stage): Sales' own invoice records (which shares a FINALIZED invoice took) and the
         // Logistics owner's posted shipment shares; without the latter "shipped, not invoiced" is "Unavailable", never zero.
         serviceProvider.GetService<ISalesInvoiceStore>(),
-        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>());
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
+        // F-017 STOK §5.1 (STK-S16): the allocation owner's read WITH its kind (Inventory: physical kg and future supply in the
+        // purchase unit). Only the cancellation impact read asks it (the preview, the cancel, and the header revision's customer or
+        // currency check); until it is registered that category is unreadable and the command is refused, never decided on an
+        // assumed "no future allocation". Every other caller keeps V1 (physical).
+        serviceProvider.GetService<ISalesOrderAllocationReadPortV2>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

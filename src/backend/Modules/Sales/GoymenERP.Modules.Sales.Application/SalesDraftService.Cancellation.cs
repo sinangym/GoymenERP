@@ -246,13 +246,22 @@ public sealed partial class SalesDraftService
     /// </summary>
     private async Task<Impact> ReadImpactAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
     {
-        var allocationsByLine = await ReadAllocationsAsync(scope, permission, draft, cancellationToken);
+        var physicalByLine = await ReadAllocationsAsync(scope, permission, draft, cancellationToken);
+        // F-017 STOK §5.1 b (STK-S16): the preview also shows the line's ACTIVE FUTURE SUPPLY allocations, read through the
+        // kind-aware V2 port; an owner that cannot answer them makes the whole "aktif tahsis" category unreadable (fail-closed).
+        var futureCount = await ReadFutureAllocationCountAsync(scope, permission, draft, cancellationToken);
+        var allocationsByLine = futureCount is null ? null : physicalByLine;
         var loadingImpact = await ReadLoadingImpactAsync(scope, permission, draft, cancellationToken);
         var loadingByLine = loadingImpact?.Lines;
 
+        // A physical allocation blocks as before. A future one blocks too, until SAT-S8 releases it in the approved
+        // cancellation's own transaction (KLN-D28(9)); never a cancelled line holding an active future allocation (KLN-D28(7)).
+        // The line members below stay PHYSICAL kilograms only: a future quantity is in a purchase unit and is never added to them.
         var allocationStatus = allocationsByLine is null
             ? SalesCancellationImpactStatusesV1.Unreadable
-            : allocationsByLine.Values.Any(line => line.Count > 0) ? SalesCancellationImpactStatusesV1.Present : SalesCancellationImpactStatusesV1.None;
+            : allocationsByLine.Values.Any(line => line.Count > 0) || futureCount > 0
+                ? SalesCancellationImpactStatusesV1.Present
+                : SalesCancellationImpactStatusesV1.None;
         var loadingStatus = loadingByLine is null
             ? SalesCancellationImpactStatusesV1.Unreadable
             : loadingByLine.Values.Any(line => line.Count > 0 || line.Instructed > 0m) ? SalesCancellationImpactStatusesV1.Present : SalesCancellationImpactStatusesV1.None;
@@ -347,6 +356,76 @@ public sealed partial class SalesDraftService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// F-017 STOK §5.1 (STK-S16): the number of ACTIVE future supply allocations the allocation owner holds against the order's
+    /// lines, read through <see cref="ISalesOrderAllocationReadPortV2"/> under the operation's name (fenced before and after), or
+    /// null when the port is not composed, fails or answers a malformed value: another company or order, an entry or a line
+    /// unknown to the order, an unknown kind, a count below zero, a negative quantity, a zero count with a non-zero quantity, a
+    /// physical entry naming a unit or with an over-scale kilogram, a future entry without its purchase unit or with more
+    /// decimals than its owner keeps, or the same (line, kind, unit) twice. The physical figure of the preview stays the V1
+    /// read (<see cref="ReadAllocationsAsync"/>, unchanged for every caller); the V2 physical entries are checked for shape only.
+    /// A future quantity is never converted to kilograms nor added to the physical figure (§5.1 a).
+    /// </summary>
+    private async Task<long?> ReadFutureAllocationCountAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken)
+    {
+        if (allocationsV2 is null)
+        {
+            return null;
+        }
+
+        SalesOrderAllocationReadAnswerV2? answer;
+        try
+        {
+            answer = await GuardedAsync(scope, permission, () => allocationsV2.ReadOrderAllocationsAsync(draft.Id, cancellationToken),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return null;
+        }
+
+        if (answer is null || answer.Lines is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id)
+        {
+            return null;
+        }
+
+        // SAT-D167: an allocation may name a passive line of the order; it is still the order's line (fail-closed).
+        var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
+        var seen = new HashSet<(Guid Line, string Kind, Guid? Unit)>();
+        var futureCount = 0L;
+        foreach (var entry in answer.Lines)
+        {
+            if (entry is null || !lineIds.Contains(entry.OrderLineId) || !SalesOrderAllocationKindsV2.IsKnown(entry.Kind)
+                || entry.ActiveCount < 0 || entry.ActiveQuantity < 0m || (entry.ActiveCount == 0 && entry.ActiveQuantity != 0m)
+                || !seen.Add((entry.OrderLineId, entry.Kind, entry.UnitId)))
+            {
+                return null;
+            }
+
+            if (entry.Kind == SalesOrderAllocationKindsV2.Physical)
+            {
+                if (entry.UnitId is not null || !FitsScale(entry.ActiveQuantity, QuantityUnit.Kilogram))
+                {
+                    return null;
+                }
+
+                continue;
+            }
+
+            if (entry.UnitId is not { } unitId || unitId == Guid.Empty
+                || decimal.Round(entry.ActiveQuantity, SalesOrderAllocationKindsV2.FutureSupplyQuantityMaximumDecimals,
+                    MidpointRounding.ToZero) != entry.ActiveQuantity)
+            {
+                return null;
+            }
+
+            futureCount += entry.ActiveCount;
+        }
+
+        return futureCount;
     }
 
     /// <summary>
