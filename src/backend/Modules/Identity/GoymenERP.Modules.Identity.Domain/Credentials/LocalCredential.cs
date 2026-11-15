@@ -98,6 +98,63 @@ public sealed class LocalCredential
     }
 
     /// <summary>
+    /// Replaces the security stamp (KIM-D30 logout) and raises <see cref="Version"/> by one, because a stamp change
+    /// is a command, not a login write. Used by non-relational stores; the SQL store writes the same values in one
+    /// conditional UPDATE.
+    /// </summary>
+    public void RenewSecurityStamp(Guid newSecurityStamp)
+    {
+        if (newSecurityStamp == Guid.Empty)
+        {
+            throw new ArgumentException("Güvenlik damgası boş olamaz.", nameof(newSecurityStamp));
+        }
+
+        if (newSecurityStamp == SecurityStamp)
+        {
+            throw new ArgumentException("Yeni güvenlik damgası eskisinden farklı olmalıdır.", nameof(newSecurityStamp));
+        }
+
+        SecurityStamp = newSecurityStamp;
+        Version++;
+    }
+
+    /// <summary>
+    /// ID-2 password change (also the forced first change): the new hash replaces the old one, the forced-change
+    /// flag and any temporary password are cleared, the lockout resets, the stamp is renewed (other sessions end,
+    /// KS-21) and <see cref="Version"/> rises by one. Used by non-relational stores; the SQL store writes the same
+    /// values in one conditional UPDATE.
+    /// </summary>
+    public void ChangePassword(string newPasswordHash, int hashFormatVersion, DateTimeOffset changedAtUtc, Guid newSecurityStamp)
+    {
+        if (string.IsNullOrWhiteSpace(newPasswordHash))
+        {
+            throw new ArgumentException("Parola özeti boş olamaz.", nameof(newPasswordHash));
+        }
+
+        if (hashFormatVersion < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(hashFormatVersion));
+        }
+
+        if (newSecurityStamp == Guid.Empty || newSecurityStamp == SecurityStamp)
+        {
+            throw new ArgumentException("Yeni güvenlik damgası boş olamaz ve eskisinden farklı olmalıdır.", nameof(newSecurityStamp));
+        }
+
+        PasswordHash = newPasswordHash;
+        HashFormatVersion = hashFormatVersion;
+        MustChangePassword = false;
+        PasswordChangedAtUtc = changedAtUtc;
+        TemporaryPasswordIssuedAtUtc = null;
+        TemporaryPasswordExpiresAtUtc = null;
+        TemporaryPasswordConsumedAtUtc = null;
+        FailedAccessCount = 0;
+        LockoutEndUtc = null;
+        SecurityStamp = newSecurityStamp;
+        Version++;
+    }
+
+    /// <summary>
     /// Applies a successful login: the counter and the lockout reset, an optional rehash replaces the hash. Used
     /// by non-relational stores; the SQL store writes the same values in one conditional UPDATE.
     /// </summary>

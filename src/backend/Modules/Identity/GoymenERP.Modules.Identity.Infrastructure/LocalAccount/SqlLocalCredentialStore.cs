@@ -8,7 +8,8 @@ namespace GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 /// <summary>
 /// The relational login store. Each login write is one conditional <c>UPDATE</c> whose <c>WHERE</c> repeats the
 /// values read at the start of the attempt, so a concurrent password change, stamp renewal, temporary password or
-/// lock makes the write affect no row. Neither write touches <c>Version</c>.
+/// lock makes the write affect no row. Neither login write touches <c>Version</c>; the KIM-D30 logout stamp renewal
+/// is a command and raises it by one.
 /// </summary>
 internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILocalCredentialStore
 {
@@ -105,6 +106,28 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
                     credential.MustChangePassword,
                     credential.TemporaryPasswordIssuedAtUtc))
             .SingleOrDefaultAsync(cancellationToken);
+
+    public async Task<bool> TryRenewSecurityStampAsync(
+        Guid userId,
+        Guid readSecurityStamp,
+        Guid newSecurityStamp,
+        CancellationToken cancellationToken)
+    {
+        if (newSecurityStamp == Guid.Empty || newSecurityStamp == readSecurityStamp)
+        {
+            throw new ArgumentException("Yeni güvenlik damgası boş olamaz ve eskisinden farklı olmalıdır.", nameof(newSecurityStamp));
+        }
+
+        // One UPDATE: a second logout, a password change or a reset that renewed the stamp first makes it affect no row.
+        var affected = await dbContext.LocalCredentials
+            .Where(credential => credential.UserId == userId && credential.SecurityStamp == readSecurityStamp)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(credential => credential.SecurityStamp, newSecurityStamp)
+                    .SetProperty(credential => credential.Version, credential => credential.Version + 1),
+                cancellationToken);
+        return affected == 1;
+    }
 
     private IQueryable<LocalCredential> Unchanged(LocalCredentialLoginState read)
     {

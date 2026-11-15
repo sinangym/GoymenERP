@@ -28,6 +28,19 @@ public static class ErpPermissions
     /// </summary>
     public const string OrganizationWorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
 
+    /// <summary>
+    /// KIM-D28 / DEC-ORG-005 company tax number (VKN): propose the resolved company's VKN or a change of it (the
+    /// maker), and approve or reject someone else's proposal (the checker) — the owner's
+    /// OrganizationCompanyTaxIdPermissionsV1 names. Registered, not granted: no role, seed or user receives them here (who
+    /// holds them is a human gate). Company-wide only: the company record has no narrower scope dimension. Not
+    /// Critical: whether the approve grant itself needs grant-time dual control is not decided (human gate). Holding
+    /// approve never lets the proposer decide their own request: that is the module's maker-checker rule, not a grant.
+    /// </summary>
+    public const string OrganizationCompanyTaxIdRequest = "organization.company.tax-id.request";
+
+    /// <inheritdoc cref="OrganizationCompanyTaxIdRequest"/>
+    public const string OrganizationCompanyTaxIdApprove = "organization.company.tax-id.approve";
+
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
     public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
@@ -1140,6 +1153,37 @@ public static class ErpPermissions
     public const string SettingsSalesApprovalThresholdsManage = "settings.sales-approval-thresholds.manage";
 
     /// <summary>
+    /// F-029 S5 (URUN_F029 spec §5.4(2); URN-D2…D5): read the Sales quote policies — the closed loss reason list (SAT-D25)
+    /// and the default quote validity (SAT-D39) — transfer their reviewed compiled baseline once and record new versions
+    /// (<c>SettingsSalesQuoteAndEInvoicePolicyPermissionManifestV1.SalesQuotePolicyManage</c>). Registered, not granted: no
+    /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
+
+    /// <summary>
+    /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
+    /// and the default scenario (SAT-D102) — transfer its reviewed compiled baseline once and record new versions
+    /// (<c>SettingsSalesQuoteAndEInvoicePolicyPermissionManifestV1.EInvoiceScenarioManage</c>). Registered, not granted: no
+    /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsEInvoiceScenariosManage = "settings.einvoice-scenarios.manage";
+
+    /// <summary>
+    /// F-004 (BS-9/BS-13/BS-16/BS-17; URN-D7…D9): read the company's unit conversion policy timeline — the steel density, the
+    /// coefficient and document total decimals and rounding, the whole-unit rounding and the weighbridge tolerance with its
+    /// boundary and base — and record new versions (<c>SettingsUnitConversionPolicyPermissionManifestV1.Manage</c>).
+    /// Registered, not granted: no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
+
+    /// <summary>
+    /// FNS-D52: read the company's per-bank CSV column mappings of the bank statement import (XLSX and MT940 need none) and
+    /// record new versions (<c>SettingsBankCsvMappingPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed
+    /// or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsBankCsvMappingsManage = "settings.bank-csv-mappings.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1225,6 +1269,13 @@ public static class ErpPermissions
     /// </summary>
     public const string IdentityAssignmentsRead = "identity.assignments.read";
     /// <summary>
+    /// KIM-D9 (user decision 2026-11-12): manage local user accounts (create, deactivate, reset a password) in the
+    /// company. Registered, not granted: no role, seed or user receives it here (a grant is a human gate). Company-wide
+    /// only. Not Critical: the account itself carries no permission; what it may do is decided by role assignment,
+    /// which stays under identity.roles.manage and identity.access.approve.
+    /// </summary>
+    public const string IdentityUsersManage = "identity.users.manage";
+    /// <summary>
     /// ADR-SEC-001 section 5 read of the company's security event channel (security.SecurityEvents). Company-wide
     /// only; platform rows need a separate platform permission. Critical (user decision 2026-11-11, Issue #66
     /// comment 6810051185 item 19: held only by Sinan and the admin; any other holder needs Sinan's approval). No
@@ -1250,6 +1301,8 @@ public static class ErpPermissions
             OrganizationLocationsWrite,
             OrganizationWorkCentersWrite,
             OrganizationWorkCenterCalendarsWrite,
+            OrganizationCompanyTaxIdRequest,
+            OrganizationCompanyTaxIdApprove,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -1423,6 +1476,10 @@ public static class ErpPermissions
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
+            SettingsSalesQuotePoliciesManage,
+            SettingsEInvoiceScenariosManage,
+            SettingsUnitConversionPoliciesManage,
+            SettingsBankCsvMappingsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1442,6 +1499,7 @@ public static class ErpPermissions
             IdentityAuditRead,
             IdentityAssignmentsRead,
             AiPanelUse,
+            IdentityUsersManage,
             PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
@@ -1469,6 +1527,8 @@ public static class ErpPermissions
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
             OrganizationSitesWrite,
+            OrganizationCompanyTaxIdRequest,
+            OrganizationCompanyTaxIdApprove,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -1642,6 +1702,10 @@ public static class ErpPermissions
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
+            SettingsSalesQuotePoliciesManage,
+            SettingsEInvoiceScenariosManage,
+            SettingsUnitConversionPoliciesManage,
+            SettingsBankCsvMappingsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1657,6 +1721,7 @@ public static class ErpPermissions
             IdentityAuditRead,
             IdentityAssignmentsRead,
             AiPanelUse,
+            IdentityUsersManage,
             PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);

@@ -43,6 +43,14 @@ public static class SettingsModuleExtensions
         // F-029 S4b (SAT-D5/SAT-D6): the persistent delivery tolerance and approval amount threshold administration; the
         // policy port above reads the table once a family's compiled baseline is transferred (the catalog until then).
         services.AddScoped<ISettingsSalesPolicyAdministrationV1, SettingsSalesPolicyAdministration>();
+        // F-029 S5/S6 (SAT-D25/D39, SAT-D102/D120): the persistent quote policy and e-Fatura scenario administration on the
+        // same administration class, and the two read ports over the table; each port keeps answering from the reviewed
+        // catalog until its family's compiled baseline is transferred (byte-identical answers, spec §4).
+        services.AddScoped<ISettingsSalesQuotePolicyAdministrationV1, SettingsSalesPolicyAdministration>();
+        services.AddScoped<ISettingsEInvoiceScenarioPolicyAdministrationV1, SettingsSalesPolicyAdministration>();
+        services.Replace(ServiceDescriptor.Scoped<ISettingsSalesQuotePolicyProviderV1, SettingsSalesQuotePolicyProviderV1>());
+        services.Replace(ServiceDescriptor.Scoped<ISettingsEInvoiceScenarioPolicyProviderV1,
+            SettingsEInvoiceScenarioPolicyProviderV1>());
         // MOD-03 tax master (SAT-D83/D133/D135/D139/D140): the administration and the line tax port Sales consumes. The product's
         // item type comes from the host's Product adapter (ISettingsProductItemTypeSourceV1); until it is composed the
         // product-based read answers 503.
@@ -51,6 +59,12 @@ public static class SettingsModuleExtensions
         // SAT-D181 (EK26): the VAT rate / withholding ratio lists a Sales line's reasoned tax change picks from (read-only; empty
         // until entered, SAT-D148; maintenance is the SAT-D146 slice).
         services.AddScoped<ISettingsTaxRateListReaderV1, SettingsTaxRateListReader>();
+        // F-004 (BS-9/BS-13/BS-16/BS-17, URN-D7…D9): the unit conversion policy record, its administration and the read port
+        // Product / stock-logistics consume. No compiled value: the port refuses until a person records the first version.
+        services.AddScoped<ISettingsUnitConversionPolicyAdministrationV1, SettingsUnitConversionPolicyAdministration>();
+        services.AddScoped<ISettingsUnitConversionPolicyProviderV1, SettingsUnitConversionPolicyProviderV1>();
+        services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
+        services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both
         // official sources stay disabled unless configuration enables them explicitly (an https base address is required);
         // enabling the outbound connection in an environment is a human gate.

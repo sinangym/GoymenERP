@@ -59,6 +59,30 @@ public static class OrganizationProblemCodesV1
     public const string LocationOperatorIneligible = "organization_location_operator_ineligible";
 
     public const string LocationOperatorDependencyUnavailable = "organization_location_operator_dependency_unavailable";
+
+    /// <summary>422 — KIM-S23 (KIM-D28, DEC-ORG-005): the VKN already belongs to another company of the group.</summary>
+    public const string CompanyTaxIdInUse = "organization_company_tax_id_in_use";
+
+    /// <summary>409 — KIM-S23: the company already has a pending VKN change request.</summary>
+    public const string CompanyTaxIdChangePending = "organization_company_tax_id_change_pending";
+
+    /// <summary>409 — KIM-S23: the change request under decision is no longer pending.</summary>
+    public const string CompanyTaxIdChangeNotPending = "organization_company_tax_id_change_not_pending";
+
+    /// <summary>409 — KIM-S23: the company moved after the request was prepared; the request cannot be applied.</summary>
+    public const string CompanyTaxIdChangeStale = "organization_company_tax_id_change_stale";
+
+    /// <summary>409 — KIM-S23: the preparer may not decide their own request (maker-checker).</summary>
+    public const string CompanyTaxIdSelfDecision = "organization_company_tax_id_self_decision";
+
+    /// <summary>409 — KIM-S23: the proposed VKN equals the current one.</summary>
+    public const string CompanyTaxIdUnchanged = "organization_company_tax_id_unchanged";
+
+    /// <summary>409 — KIM-S23: the company's version differs from <c>expectedVersion</c>; reload the tax-id view.</summary>
+    public const string CompanyTaxIdVersionConflict = "organization_company_tax_id_version_conflict";
+
+    /// <summary>409 — KIM-S23: the Idempotency-Key was reused with another body or actor.</summary>
+    public const string CompanyTaxIdIdempotencyConflict = "organization_company_tax_id_idempotency_conflict";
 }
 
 /// <summary>

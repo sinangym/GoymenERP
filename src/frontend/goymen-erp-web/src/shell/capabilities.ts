@@ -144,6 +144,13 @@ export const CAPABILITY = {
    * list row, never from the sidebar.
    */
   organizationWorkCentersDetail: 'organization.work-centers.detail',
+  /**
+   * ORG-05 (KIM-S23, KIM-D28) the active company's VKN and its maker-checker change flow. Route
+   * `/ayarlar/organizasyon/sirket-vergi-no`, owner the Organization lane. The route stands on
+   * `organization.context.read`; the VKN itself is returned only to a holder of one of the two tax-id names, and
+   * the request/decide buttons follow the server's own viewer flags.
+   */
+  organizationCompanyTaxId: 'organization.company.tax-id',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
@@ -287,6 +294,17 @@ export const CAPABILITY = {
    * (`settings/capabilities.ts` `SETTINGS_EXCHANGE_RATE_CONTROL`). Non-Critical, granted to no role here.
    */
   settingsExchangeRates: 'settings.exchange-rates.read',
+  /**
+   * F-029 S4b, SAT-D5 Ayarlar > Teslim toleransı: the delivery tolerance timeline (warn / approval / block percents),
+   * baseline transfer and new versions. Route `/ayarlar/teslim-toleransi`, owner Settings 1.3; one non-Critical name,
+   * granted to no role here.
+   */
+  settingsSalesDeliveryTolerance: 'settings.sales-delivery-tolerances.manage',
+  /**
+   * F-029 S4b, SAT-D6 Ayarlar > Onay tutar eşikleri: the approval amount thresholds per currency, baseline transfer and
+   * new versions. Route `/ayarlar/onay-esikleri`, owner Settings 1.3; one non-Critical name, granted to no role here.
+   */
+  settingsSalesApprovalThresholds: 'settings.sales-approval-thresholds.manage',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -346,6 +364,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // ORG-04: a parameter BELOW the static list. The list never matches the card and the card never matches
   // `lokasyon/:locationId`, whose static segment differs (#172 P1-2).
   [CAPABILITY.organizationWorkCentersDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
+  // ORG-05: a static sibling of the work-centre list; no url matches it and any other Organization route.
+  [CAPABILITY.organizationCompanyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
@@ -412,6 +432,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
   [CAPABILITY.settingsExchangeRates]: '/ayarlar/kurlar',
+  [CAPABILITY.settingsSalesDeliveryTolerance]: '/ayarlar/teslim-toleransi',
+  [CAPABILITY.settingsSalesApprovalThresholds]: '/ayarlar/onay-esikleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',

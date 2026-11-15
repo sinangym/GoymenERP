@@ -31,6 +31,7 @@ import {
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 import { decodeWorkCenterCalendar, type WorkCenterCalendar } from './workCenterCalendarContract'
+import { decodeCompanyTaxId, type CompanyTaxId } from './companyTaxIdContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -225,4 +226,21 @@ export async function fetchLocation(
   const location = decodeLocation(result.body)
   if (location === null) return { type: 'malformed' }
   return { type: 'ok-single', data: location }
+}
+
+/**
+ * `GET /api/v1/organization/company/tax-id` — ORG-05 (KIM-S23). The ACTIVE company's VKN, its version, the pending
+ * change and the last decided one. The server answers 403 unless the caller holds one of the two tax-id names; that
+ * status is passed through, never turned into an empty card. An answer about another company is malformed.
+ */
+export async function fetchCompanyTaxId(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CompanyTaxId>> {
+  const result = await read('/organization/company/tax-id', companyId, signal)
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const view = decodeCompanyTaxId(result.body, companyId)
+  if (view === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: view }
 }

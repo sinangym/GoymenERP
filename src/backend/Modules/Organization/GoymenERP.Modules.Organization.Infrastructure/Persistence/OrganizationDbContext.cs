@@ -33,13 +33,36 @@ public sealed class OrganizationDbContext(
     public DbSet<WorkCenterCalendarClosedDateRecord> WorkCenterCalendarClosedDates =>
         Set<WorkCenterCalendarClosedDateRecord>();
 
+    public DbSet<CompanyTaxIdChangeRequest> CompanyTaxIdChangeRequests => Set<CompanyTaxIdChangeRequest>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     internal const string WorkCenterCalendarVersionCheck = "[Version] >= 1";
     internal const string WorkCenterCalendarShiftRevisionCheck = "[Revision] >= 1";
     internal const string WorkCenterCalendarShiftDayCheck = "[Day] BETWEEN 0 AND 6";
-    internal const string WorkCenterCalendarShiftWindowCheck = "[StartTime] < [EndTime]";
+    /// <summary>KIM-D33: an earlier end spills into the next day, so only an empty window (start = end) is refused.</summary>
+    internal const string WorkCenterCalendarShiftWindowCheck = "[StartTime] <> [EndTime]";
     internal const string WorkCenterCalendarClosedDateRevisionCheck = "[Revision] >= 1";
+
+    // KIM-S23 (KIM-D28, DEC-ORG-005): a non-placeholder company always carries a VKN and no two companies share one.
+    internal const string CompanyVknRequiredCheck = "[IsPlaceholder] = 1 OR [Vkn] IS NOT NULL";
+    internal const string CompanyVknUniqueFilter = "[Vkn] IS NOT NULL";
+
+    // KIM-S23: the VKN change request table (maker-checker, at most one pending request per company).
+    internal const string CompanyTaxIdChangePendingFilter = "[Status] = N'Pending'";
+    internal const string CompanyTaxIdChangeStatusCheck = "[Status] IN (N'Pending', N'Approved', N'Rejected')";
+    internal const string CompanyTaxIdChangeProposedVknCheck =
+        "LEN([ProposedVkn]) = 10 AND [ProposedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%'";
+    internal const string CompanyTaxIdChangeCurrentVknCheck =
+        "[CurrentVkn] IS NULL OR (LEN([CurrentVkn]) = 10 AND [CurrentVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')";
+    internal const string CompanyTaxIdChangeDistinctVknCheck =
+        "[CurrentVkn] IS NULL OR [CurrentVkn] <> [ProposedVkn]";
+    internal const string CompanyTaxIdChangeDecisionCheck =
+        "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL) "
+        + "OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)";
+    internal const string CompanyTaxIdChangeMakerCheckerCheck =
+        "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2";
+    internal const string CompanyTaxIdChangeVersionCheck = "[Version] >= 1 AND [CompanyVersionAtRequest] >= 1";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +73,7 @@ public sealed class OrganizationDbContext(
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
         ConfigureWorkCenterCalendar(modelBuilder);
+        ConfigureCompanyTaxIdChangeRequest(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -93,6 +117,7 @@ public sealed class OrganizationDbContext(
             table.HasCheckConstraint(
                 "CK_Companies_Placeholder_InvoiceDisabled",
                 "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
+            table.HasCheckConstraint("CK_Companies_Vkn_RequiredUnlessPlaceholder", CompanyVknRequiredCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code).HasMaxLength(64).IsRequired();
@@ -102,6 +127,55 @@ public sealed class OrganizationDbContext(
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => x.Code).IsUnique();
+        entity.HasIndex(x => x.Vkn)
+            .IsUnique()
+            .HasFilter(CompanyVknUniqueFilter)
+            .HasDatabaseName(CompanyVknUniqueIndexName);
+    }
+
+    internal const string CompanyVknUniqueIndexName = "IX_Companies_Vkn";
+    internal const string CompanyTaxIdChangePendingIndexName = "IX_CompanyTaxIdChangeRequests_CompanyId_Pending";
+
+    /// <summary>
+    /// KIM-S23: the company VKN change requests. The company owns its rows (query filter + write guard), at most one
+    /// request per company is pending (filtered unique index), the decider is never the preparer (check constraint
+    /// next to the service and domain rules) and a request is never deleted.
+    /// </summary>
+    private void ConfigureCompanyTaxIdChangeRequest(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CompanyTaxIdChangeRequest>();
+        entity.ToTable("CompanyTaxIdChangeRequests", "organization", table =>
+        {
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Status", CompanyTaxIdChangeStatusCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_ProposedVkn", CompanyTaxIdChangeProposedVknCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_CurrentVkn", CompanyTaxIdChangeCurrentVknCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_DistinctVkn", CompanyTaxIdChangeDistinctVknCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Decision", CompanyTaxIdChangeDecisionCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_MakerChecker", CompanyTaxIdChangeMakerCheckerCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Version", CompanyTaxIdChangeVersionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.CurrentVkn).HasMaxLength(Company.VknLength);
+        entity.Property(x => x.ProposedVkn).HasMaxLength(Company.VknLength).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(CompanyTaxIdChangeRequest.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+        entity.Property(x => x.RequestedBy).HasMaxLength(CompanyTaxIdChangeRequest.ActorMaximumLength).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(CompanyTaxIdChangeRequest.ActorMaximumLength);
+        entity.Property(x => x.DecisionNote).HasMaxLength(CompanyTaxIdChangeRequest.NoteMaximumLength);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Ignore(x => x.IsPending);
+        entity.HasIndex(x => x.CompanyId)
+            .IsUnique()
+            .HasFilter(CompanyTaxIdChangePendingFilter)
+            .HasDatabaseName(CompanyTaxIdChangePendingIndexName);
+        entity.HasIndex(x => new { x.CompanyId, x.RequestedAtUtc });
+        entity.HasOne<Company>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureSite(ModelBuilder modelBuilder)
@@ -277,11 +351,13 @@ public sealed class OrganizationDbContext(
             }
 
             if (entry.State == EntityState.Deleted
-                || (entry.State == EntityState.Modified && entry.Entity is not WorkCenterCalendar))
+                || (entry.State == EntityState.Modified
+                    && entry.Entity is not (WorkCenterCalendar or CompanyTaxIdChangeRequest)))
             {
                 // A calendar head is never deleted and a revision row is append-only: a change is a new revision.
+                // A VKN change request is never deleted either; only its decision closes it (KIM-S23).
                 throw new InvalidOperationException(
-                    "İş merkezi takvimi kayıtları silinemez; takvim satırları değiştirilemez.");
+                    "İş merkezi takvimi kayıtları ve VKN değişiklik talepleri silinemez; takvim satırları değiştirilemez.");
             }
 
             if (entry.Entity.CompanyId == Guid.Empty)
@@ -311,6 +387,7 @@ public sealed class OrganizationDbContext(
             }
         }
 
+        ApplyCompanyWriteGuard();
 
         foreach (var entry in ChangeTracker.Entries<CommandExecution>())
         {
@@ -329,6 +406,35 @@ public sealed class OrganizationDbContext(
             {
                 throw new InvalidOperationException(
                     "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// KIM-S23: outside the bootstrap seed a company row is never created or deleted through this context, and the only
+    /// company a request may change is the resolved active company (the approved VKN change). Companies carry no query
+    /// filter (the context directory reads them), so this guard is what fences a write to another company.
+    /// </summary>
+    private void ApplyCompanyWriteGuard()
+    {
+        if (bootstrapWriteScope.IsActive)
+        {
+            return;
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Company>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Şirket kaydı yalnız kurulum tohumlamasında oluşturulabilir ve silinemez.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && (!companyContext.IsResolved || entry.Entity.Id != companyContext.CompanyId))
+            {
+                throw new InvalidOperationException(
+                    "Yalnız aktif şirket bağlamındaki şirket kaydı değiştirilebilir.");
             }
         }
     }

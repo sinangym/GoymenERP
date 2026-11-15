@@ -29,7 +29,7 @@ public static class SettingsSalesPolicyEndpoints
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
 
-    private static readonly string[] CommandBadRequestCodes =
+    internal static readonly string[] CommandBadRequestCodes =
     [
         SalesPolicyProblemCodesV1.RequestInvalid,
         SalesPolicyProblemCodesV1.CommandMetadataInvalid,
@@ -185,7 +185,7 @@ public static class SettingsSalesPolicyEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> ReadAsync<T>(HttpContext httpContext, Func<Task<T>> read)
+    internal static async Task<IResult> ReadAsync<T>(HttpContext httpContext, Func<Task<T>> read)
     {
         httpContext.Response.Headers.CacheControl = "private, no-store";
         if (httpContext.Request.Query.Count != 0)
@@ -208,7 +208,7 @@ public static class SettingsSalesPolicyEndpoints
         }
     }
 
-    private static async Task<IResult> CommandAsync(
+    internal static async Task<IResult> CommandAsync(
         HttpContext httpContext,
         ICurrentUser currentUser,
         ICompanyContext companyContext,

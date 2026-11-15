@@ -2,6 +2,9 @@ namespace GoymenERP.Modules.Organization.Domain.Companies;
 
 public sealed class Company
 {
+    /// <summary>A Turkish tax identity number (VKN) is exactly this many ASCII digits.</summary>
+    public const int VknLength = 10;
+
     public Company(
         Guid id,
         string code,
@@ -19,6 +22,14 @@ public sealed class Company
         Code = RequireText(code, nameof(code), 64);
         LegalName = RequireText(legalName, nameof(legalName), 250);
         Vkn = RequireVkn(vkn);
+        if (!isPlaceholder && Vkn is null)
+        {
+            // KIM-D28: a real (non-placeholder) company always carries its VKN.
+            throw new ArgumentException(
+                "Placeholder olmayan şirket geçerli VKN taşımalıdır.",
+                nameof(vkn));
+        }
+
         if (invoiceCapable && (isPlaceholder || Vkn is null))
         {
             throw new ArgumentException(
@@ -56,6 +67,28 @@ public sealed class Company
 
     public DateTimeOffset UpdatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>True when <paramref name="value"/> is already in the stored canonical VKN shape (no trimming).</summary>
+    public static bool IsCanonicalVkn(string? value) =>
+        value is { Length: VknLength } && value.All(character => character is >= '0' and <= '9');
+
+    /// <summary>
+    /// Applies a VKN that passed the maker-checker change flow (KIM-D28). Only the approval of a
+    /// <see cref="CompanyTaxIdChangeRequest"/> calls this; the proposed value is never written directly.
+    /// </summary>
+    public void ApplyApprovedVkn(string vkn, DateTimeOffset utcNow)
+    {
+        var normalized = RequireVkn(vkn)
+            ?? throw new ArgumentException("Onaylanan VKN boş olamaz.", nameof(vkn));
+        if (string.Equals(normalized, Vkn, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Onaylanan VKN şirketin mevcut VKN'si ile aynı olamaz.");
+        }
+
+        Vkn = normalized;
+        Version++;
+        UpdatedAtUtc = utcNow;
+    }
+
     private static string RequireText(string value, string parameterName, int maximumLength)
     {
         var normalized = value?.Trim();
@@ -77,8 +110,7 @@ public sealed class Company
             return null;
         }
 
-        if (normalized.Length != 10
-            || normalized.Any(character => character is < '0' or > '9'))
+        if (!IsCanonicalVkn(normalized))
         {
             throw new ArgumentException(
                 "VKN tam olarak 10 ASCII rakamdan oluşmalıdır.",

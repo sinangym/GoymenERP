@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Identity.Domain.Credentials;
 using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -19,7 +20,7 @@ internal static class LocalAccountSession
     public const string SchemeName = "LocalAccount";
 
     /// <summary>The issuer of the local claim pair; the external identity link of a local user uses it.</summary>
-    public const string Issuer = "urn:goymen:local-account";
+    public const string Issuer = LocalAccountIdentity.Issuer;
 
     public const string IssuerClaimType = "iss";
 
@@ -32,6 +33,12 @@ internal static class LocalAccountSession
 
     /// <summary>The <c>__Host-</c> prefix pins the cookie to this host, path <c>/</c> and HTTPS.</summary>
     public const string CookieName = "__Host-goymen-session";
+
+    /// <summary>
+    /// <c>HttpContext.Items</c> flag set by the per-request check when the session is current but the credential
+    /// still has <c>MustChangePassword=true</c> (ID-2); <see cref="LocalAccountPasswordChangeFence"/> reads it.
+    /// </summary>
+    public const string PasswordChangeRequiredItem = "goymen.local_password_change_required";
 
     public static void Configure(CookieAuthenticationOptions options, LocalAccountSessionSettings settings)
     {
@@ -77,10 +84,23 @@ internal static class LocalAccountSession
         new(new ClaimsIdentity(
             [
                 new Claim(IssuerClaimType, Issuer),
-                new Claim(SubjectClaimType, userId.ToString("D")),
+                new Claim(SubjectClaimType, LocalAccountIdentity.SubjectOf(userId)),
                 new Claim(SecurityStampClaimType, securityStamp.ToString("D")),
             ],
             SchemeName));
+
+    /// <summary>Reads the local claim pair and stamp of a principal the cookie scheme authenticated.</summary>
+    public static bool TryReadSession(ClaimsPrincipal? principal, out Guid userId, out Guid securityStamp)
+    {
+        userId = Guid.Empty;
+        securityStamp = Guid.Empty;
+        return principal is not null
+            && string.Equals(principal.FindFirstValue(IssuerClaimType), Issuer, StringComparison.Ordinal)
+            && Guid.TryParseExact(principal.FindFirstValue(SubjectClaimType), "D", out userId)
+            && Guid.TryParseExact(principal.FindFirstValue(SecurityStampClaimType), "D", out securityStamp)
+            && userId != Guid.Empty
+            && securityStamp != Guid.Empty;
+    }
 
     public static AuthenticationProperties CreateProperties(DateTimeOffset startedAtUtc)
     {
@@ -114,14 +134,48 @@ internal static class LocalAccountSession
                 DateTimeStyles.RoundtripKind,
                 out var startedAtUtc)
             || settings.AbsoluteLifetime is not { } absoluteLifetime
-            || nowUtc >= startedAtUtc + absoluteLifetime
-            || !await services.GetRequiredService<ILocalAccountSessionValidator>().IsCurrentAsync(
-                userId,
-                securityStamp,
-                context.HttpContext.RequestAborted))
+            || nowUtc >= startedAtUtc + absoluteLifetime)
         {
-            context.RejectPrincipal();
-            await context.HttpContext.SignOutAsync(SchemeName);
+            await RejectAsync(context);
+            return;
         }
+
+        var state = await services.GetRequiredService<ILocalAccountSessionValidator>().GetSessionStateAsync(
+            userId,
+            securityStamp,
+            context.HttpContext.RequestAborted);
+        switch (state)
+        {
+            case LocalAccountSessionState.Current:
+                return;
+            case LocalAccountSessionState.PasswordChangeRequired:
+                // ID-2: the session stays, but the fence allows only the password change, logout and the reads
+                // the client needs to show the change form.
+                context.HttpContext.Items[PasswordChangeRequiredItem] = true;
+                return;
+            default:
+                await RejectAsync(context);
+                return;
+        }
+    }
+
+    /// <summary>Reads the login instant kept in the ticket; a re-issued session keeps it (absolute lifetime).</summary>
+    public static bool TryReadStartedAtUtc(AuthenticationProperties? properties, out DateTimeOffset startedAtUtc)
+    {
+        startedAtUtc = default;
+        return properties is not null
+            && properties.Items.TryGetValue(StartedAtUtcItem, out var startedText)
+            && DateTimeOffset.TryParseExact(
+                startedText,
+                "O",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out startedAtUtc);
+    }
+
+    private static async Task RejectAsync(CookieValidatePrincipalContext context)
+    {
+        context.RejectPrincipal();
+        await context.HttpContext.SignOutAsync(SchemeName);
     }
 }

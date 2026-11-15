@@ -660,6 +660,27 @@ public static partial class ErpOpenApiContract
             maximumLength: 128,
             pattern: "^[A-Za-z0-9._:-]+$");
 
+        // KIM-D31: in the LocalAccount mode the login and every write the session cookie authenticates must carry
+        // the antiforgery header; a missing or invalid one is a 400 before the handler. Bearer requests are exempt.
+        if (GoymenERP.Api.Security.LocalAccountAntiforgery.IsWrite(context.Description.HttpMethod ?? string.Empty))
+        {
+            problemCodesByStatus[StatusCodes.Status400BadRequest] =
+                problemCodesByStatus
+                    .GetValueOrDefault(StatusCodes.Status400BadRequest, [])
+                    .Append(GoymenERP.Modules.Identity.Application.Contracts.IdentitySessionProblemCodesV1.AntiforgeryTokenInvalid)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+            AddHeaderParameter(
+                operation,
+                GoymenERP.Api.Security.LocalAccountAntiforgery.HeaderName,
+                required: false,
+                "Antiforgery request token from GetLocalAccountAntiforgeryTokenV1. Required in the LocalAccount "
+                    + "mode on the login and on every write the session cookie authenticates; bearer requests "
+                    + "omit it. Ask for a new token after login and logout.",
+                minimumLength: 1);
+        }
+
         if (endpointMetadata.OfType<RequiresCompanyContextAttribute>().Any())
         {
             problemCodesByStatus[StatusCodes.Status400BadRequest] =

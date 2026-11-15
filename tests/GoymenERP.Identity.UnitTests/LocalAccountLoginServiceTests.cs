@@ -191,15 +191,23 @@ public sealed class LocalAccountLoginServiceTests
     }
 
     [Fact]
-    public async Task A_forced_password_change_keeps_the_account_out_until_id2_and_id3_exist()
+    public async Task A_forced_password_change_account_opens_a_session_that_the_validator_fences()
     {
         var harness = Harness.WithUser(mustChangePassword: true);
 
         var result = await harness.LoginAsync(UserName, Password);
 
-        Assert.False(result.Succeeded);
-        Assert.Equal(0, harness.Store.Writes);
-        AssertSingleFailure(harness, SecurityEventReasonCodesV1.PolicyRefused);
+        // ID-2: the session opens; the per-request validator reports PasswordChangeRequired and the API fence allows
+        // only the password change and logout.
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            LocalAccountSessionState.PasswordChangeRequired,
+            await new LocalAccountSessionValidator(harness.Store).GetSessionStateAsync(
+                harness.Credential.UserId,
+                result.SecurityStamp!.Value,
+                CancellationToken.None));
+        var written = Assert.Single(harness.Events.Written);
+        Assert.Equal(SecurityEventTypesV1.LoginSucceeded, written.EventType);
     }
 
     [Fact]
@@ -456,6 +464,13 @@ public sealed class LocalAccountLoginServiceTests
                 PartitionBy = LocalAccountLoginRateLimitPartition.IpAddressAndUserName,
             },
         },
+        PasswordPolicy = new LocalAccountPasswordPolicySettings
+        {
+            MinimumLength = 8,
+            MaximumLength = 128,
+            RequireCharacterClasses = false,
+            BlocklistEnabled = true,
+        },
     };
 }
 
@@ -533,6 +548,23 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
                 credential.MustChangePassword,
                 credential.TemporaryPasswordIssuedAtUtc)
             : null);
+
+    public Task<bool> TryRenewSecurityStampAsync(
+        Guid userId,
+        Guid readSecurityStamp,
+        Guid newSecurityStamp,
+        CancellationToken cancellationToken)
+    {
+        RunBeforeWrite();
+        if (credential.UserId != userId || credential.SecurityStamp != readSecurityStamp)
+        {
+            return Task.FromResult(false);
+        }
+
+        Writes++;
+        credential.RenewSecurityStamp(newSecurityStamp);
+        return Task.FromResult(true);
+    }
 
     public void ReplaceStamp(Guid stamp) =>
         typeof(LocalCredential).GetProperty(nameof(LocalCredential.SecurityStamp))!.SetValue(credential, stamp);

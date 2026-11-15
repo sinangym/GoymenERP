@@ -6,8 +6,9 @@ namespace GoymenERP.Modules.Organization.Application.Contracts;
 
 /// <summary>
 /// One weekly working window on the wire. <paramref name="Day"/> is the English weekday token (<c>Monday</c> …
-/// <c>Sunday</c>); <paramref name="Start"/> and <paramref name="End"/> are <c>HH:mm</c> in the business time zone, on the
-/// same day (no overnight window in v1).
+/// <c>Sunday</c>), the day the window starts on; <paramref name="Start"/> and <paramref name="End"/> are <c>HH:mm</c> in the
+/// business time zone. KIM-D33: an <paramref name="End"/> earlier than <paramref name="Start"/> ends on the next day
+/// (<c>22:00</c>–<c>06:00</c>); an equal pair is refused.
 /// </summary>
 public sealed record WorkCenterCalendarShiftV1(
     string Day,

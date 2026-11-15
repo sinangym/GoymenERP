@@ -119,7 +119,7 @@ export interface ShellState {
    */
   readonly sessionBinding: string | null
   /**
-   * The server rejected this session (401). TERMINAL until a real re-login.
+   * The server rejected this session (401). TERMINAL until a real re-login (SESSION_REESTABLISHED, ID-1F).
    *
    * This lives in the reducer, not in a component, because a SESSION_RESET alone
    * is not enough: it advances the epoch, which makes `needsBootstrap` true, and
@@ -244,6 +244,12 @@ export type ShellEvent =
   | { type: 'SESSION_RESET' }
   /** A 401: drop everything AND refuse to bootstrap again until re-login. */
   | { type: 'SESSION_INVALIDATED' }
+  /**
+   * ID-1F: the server answered 204 to a local sign-in. The ONE event that lifts `sessionInvalid` — "the real re-login"
+   * the terminal state waits for. It commits nothing: the new session is trusted only once `/identity/me` answers for
+   * it and the ordinary bootstrap commits a context under the new epoch.
+   */
+  | { type: 'SESSION_REESTABLISHED' }
   /**
    * An authenticated business read came back 401/403 (Issue #165).
    *
@@ -546,6 +552,22 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         lastSecurityEffect: state.lastSecurityEffect,
         // NOT carried. A session reset ends the situation the held failure belonged
         // to; carrying it let a departed actor's 401 terminate a later session.
+        pendingFormerSessionFailure: null,
+      }
+    }
+
+    case 'SESSION_REESTABLISHED': {
+      // Everything SESSION_RESET drops, the epoch advanced so every in-flight answer of the old session is fenced off,
+      // and the terminal flag cleared so the orchestrator may read identity and bootstrap again. The security-effect
+      // ledger is kept (an old outcome must not apply twice); a held former-session failure is not.
+      return {
+        ...initialShellState,
+        requestFenceGeneration: state.requestFenceGeneration + 1,
+        committedContextRevision: state.committedContextRevision,
+        sessionEpoch: state.sessionEpoch + 1,
+        bootstrappedSessionEpoch: null,
+        sessionInvalid: false,
+        lastSecurityEffect: state.lastSecurityEffect,
         pendingFormerSessionFailure: null,
       }
     }

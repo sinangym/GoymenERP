@@ -372,6 +372,17 @@ public interface ISettingsTaxMasterAdministrationV1
     /// <summary>SAT-D158: withdraw a buyer situation list version before it takes effect.</summary>
     Task<TaxMasterCommandResultV1> WithdrawBuyerSituationListAsync(long listVersion, WithdrawTaxCodeListRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D181: the VAT rate and withholding ratio lists (the same authority as <see cref="GetAsync"/>).</summary>
+    Task<TaxRateListsViewV1> GetRateListsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D181: publish a whole rate list version of <paramref name="listKind"/> (<see cref="TaxRateListKindsV1"/>).</summary>
+    Task<TaxMasterCommandResultV1> PublishRateListAsync(string listKind, PublishTaxRateListRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D181: withdraw a rate list version before it takes effect.</summary>
+    Task<TaxMasterCommandResultV1> WithdrawRateListAsync(string listKind, long listVersion, WithdrawTaxCodeListRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Whether a tax value was found. <c>Unresolved</c> is "kaynak yok": never 0, never a guessed default.</summary>

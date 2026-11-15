@@ -134,11 +134,37 @@ describe('B-15 calendar view', () => {
     expect(within(section).getByText('2026-12-31')).toBeTruthy()
   })
 
+  it('shows an overnight shift (KIM-D33) on the day it starts, marked as ending on the next day', async () => {
+    const overnight = workCenterCalendar(WC_PAINT, {
+      source: 'WorkCenter',
+      version: 2,
+      shifts: [
+        { day: 'Monday', start: '06:00', end: '14:00' },
+        { day: 'Monday', start: '22:00', end: '06:00' },
+        { day: 'Sunday', start: '16:00', end: '00:00' },
+      ],
+      closedDates: [],
+    })
+    stub({ capabilities: WORK_CENTER_CARD_CAPABILITIES, reads: [overnight] })
+    renderAt(workCenterDetailPath(WC_PAINT))
+    const section = await calendarSection()
+    await within(section).findByText(WORK_CENTER_CALENDAR_TEXT.sourceWorkCenter)
+    const monday = section.querySelector('[data-day="Monday"]') as HTMLElement
+    expect(monday.textContent).toContain(
+      `06:00–14:00, ${WORK_CENTER_CALENDAR_TEXT.shiftWindow('22:00', '06:00', true)}`,
+    )
+    expect(monday.textContent).toContain('22:00–06:00 (ertesi gün)')
+    const tuesday = section.querySelector('[data-day="Tuesday"]') as HTMLElement
+    expect(within(tuesday).getByText(WORK_CENTER_CALENDAR_TEXT.closed)).toBeTruthy()
+    const sunday = section.querySelector('[data-day="Sunday"]') as HTMLElement
+    expect(sunday.textContent).toContain('16:00–00:00 (ertesi gün)')
+  })
+
   it.each([
     ['another work centre', () => workCenterCalendar('cccccccc-3333-4333-8333-333333333333')],
     ['a default that claims a revision', () => workCenterCalendar(WC_PAINT, { version: 2 })],
     ['a saved calendar at version 0', () => workCenterCalendar(WC_PAINT, { source: 'WorkCenter', version: 0 })],
-    ['an overnight window', () => workCenterCalendar(WC_PAINT, { shifts: [{ day: 'Monday', start: '22:00', end: '06:00' }] })],
+    ['an empty window', () => workCenterCalendar(WC_PAINT, { shifts: [{ day: 'Monday', start: '08:00', end: '08:00' }] })],
     ['an impossible date', () => workCenterCalendar(WC_PAINT, { closedDates: ['2026-02-30'] })],
     ['an extra field', () => ({ ...workCenterCalendar(WC_PAINT), capacity: 8 })],
   ])('shows no calendar for %s, while the card stays', async (_case, body) => {
@@ -223,6 +249,43 @@ describe('B-15 calendar edit', () => {
 
     expect(await screen.findByText(WORK_CENTER_CALENDAR_TEXT.shiftsOverlap)).toBeTruthy()
     expect(screen.getByLabelText('Gerekçe').getAttribute('aria-invalid')).toBe('true')
+    expect(calendarWrites(recorded)).toHaveLength(0)
+  })
+
+  it('saves an overnight shift (KIM-D33) as typed and marks it as ending on the next day', async () => {
+    const recorded = stub()
+    renderAt(workCenterDetailPath(WC_PAINT))
+    await openForm()
+    await userEvent.click(screen.getByRole('button', { name: WORK_CENTER_CALENDAR_TEXT.addShift }))
+    const row = screen.getByRole('group', { name: WORK_CENTER_CALENDAR_TEXT.shiftRow(6) })
+    await userEvent.selectOptions(within(row).getByLabelText(WORK_CENTER_CALENDAR_TEXT.day), 'Friday')
+    await userEvent.type(within(row).getByLabelText(WORK_CENTER_CALENDAR_TEXT.start), '22:00')
+    expect(row.querySelector('[data-next-day]')).toBeNull()
+    await userEvent.type(within(row).getByLabelText(WORK_CENTER_CALENDAR_TEXT.end), '06:00')
+    expect(within(row).getByText(WORK_CENTER_CALENDAR_TEXT.nextDay)).toBeTruthy()
+    await typeReason()
+    await userEvent.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText(WORK_CENTER_CALENDAR_TEXT.savedTitle)).toBeTruthy()
+    const writes = calendarWrites(recorded)
+    expect(writes).toHaveLength(1)
+    const body = writes[0].body as { shifts: unknown[] }
+    expect(body.shifts).toContainEqual({ day: 'Friday', start: '22:00', end: '06:00' })
+  })
+
+  it('refuses an overnight shift whose next-day part overlaps the next day before minting a key', async () => {
+    const recorded = stub()
+    renderAt(workCenterDetailPath(WC_PAINT))
+    await openForm()
+    // The default has Tuesday 08:00-16:00; Monday 22:00-09:00 runs into it.
+    await userEvent.click(screen.getByRole('button', { name: WORK_CENTER_CALENDAR_TEXT.addShift }))
+    const row = screen.getByRole('group', { name: WORK_CENTER_CALENDAR_TEXT.shiftRow(6) })
+    await userEvent.type(within(row).getByLabelText(WORK_CENTER_CALENDAR_TEXT.start), '22:00')
+    await userEvent.type(within(row).getByLabelText(WORK_CENTER_CALENDAR_TEXT.end), '09:00')
+    await typeReason()
+    await userEvent.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText(WORK_CENTER_CALENDAR_TEXT.shiftsOverlap)).toBeTruthy()
     expect(calendarWrites(recorded)).toHaveLength(0)
   })
 
@@ -360,7 +423,28 @@ describe('B-15 calendar contract', () => {
     const shift = (day: string, start: string, end: string) => ({ day, start, end })
     expect(validateCalendar([shift('Monday', '08:00', '16:00')], [])).toEqual({})
     expect(validateCalendar([], []).shifts).toBe(WORK_CENTER_CALENDAR_TEXT.noShift)
-    expect(validateCalendar([shift('Monday', '16:00', '08:00')], []).shifts).toBe(WORK_CENTER_CALENDAR_TEXT.shiftInvalid)
+    expect(validateCalendar([shift('Monday', '08:00', '08:00')], []).shifts).toBe(WORK_CENTER_CALENDAR_TEXT.shiftInvalid)
+    expect(validateCalendar([shift('Monday', '00:00', '00:00')], []).shifts).toBe(WORK_CENTER_CALENDAR_TEXT.shiftInvalid)
+    // KIM-D33: an end before the start spills into the next day; one that ends at midnight is overnight too.
+    expect(validateCalendar([shift('Monday', '16:00', '08:00')], [])).toEqual({})
+    expect(validateCalendar([shift('Monday', '16:00', '00:00'), shift('Tuesday', '00:00', '08:00')], [])).toEqual({})
+    expect(
+      validateCalendar([shift('Monday', '22:00', '06:00'), shift('Tuesday', '05:59', '14:00')], []).shifts,
+    ).toBe(WORK_CENTER_CALENDAR_TEXT.shiftsOverlap)
+    expect(
+      validateCalendar([shift('Monday', '22:00', '06:00'), shift('Monday', '23:00', '23:30')], []).shifts,
+    ).toBe(WORK_CENTER_CALENDAR_TEXT.shiftsOverlap)
+    // A Sunday overnight shift wraps into Monday of the next week.
+    expect(
+      validateCalendar([shift('Sunday', '22:00', '06:00'), shift('Monday', '05:00', '13:00')], []).shifts,
+    ).toBe(WORK_CENTER_CALENDAR_TEXT.shiftsOverlap)
+    expect(validateCalendar([shift('Sunday', '22:00', '06:00'), shift('Monday', '06:00', '14:00')], [])).toEqual({})
+    expect(
+      validateCalendar(
+        [shift('Monday', '06:00', '14:00'), shift('Monday', '14:00', '22:00'), shift('Monday', '22:00', '06:00'), shift('Tuesday', '06:00', '14:00')],
+        [],
+      ),
+    ).toEqual({})
     expect(
       validateCalendar([shift('Monday', '08:00', '16:00'), shift('Monday', '12:00', '18:00')], []).shifts,
     ).toBe(WORK_CENTER_CALENDAR_TEXT.shiftsOverlap)

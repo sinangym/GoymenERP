@@ -13,6 +13,7 @@
  */
 
 import type { ViewOutcome } from './uiState'
+import { developmentIdentityHeaderEnabled } from './authMode'
 
 export interface IdentitySummary {
   readonly userId: string
@@ -54,11 +55,10 @@ export const SHELL_CAPABILITY_CONTRACT_VERSION = 'SHELL-CAPABILITY-V1'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
-const DEV_IDENTITY_ENABLED =
-  import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
+/** ID-1F: never sent in local-account mode (see the shell authMode module). */
 function devHeaders(): Record<string, string> {
-  return DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}
+  return developmentIdentityHeaderEnabled() ? { 'X-Development-User': DEV_USER } : {}
 }
 
 interface RawResult {

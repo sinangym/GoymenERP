@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// </summary>
 public sealed partial class SettingsDbContext
 {
-    internal const string SalesPolicyFamilyCheck = "[PolicyFamily] IN ('DeliveryTolerance','ApprovalAmountThreshold')";
+    internal const string SalesPolicyFamilyCheck =
+        "[PolicyFamily] IN ('DeliveryTolerance','ApprovalAmountThreshold','SalesQuotePolicy','EInvoiceScenario')";
 
     internal const string SalesPolicySourceKindCheck = "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')";
 

@@ -74,6 +74,11 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * Nothing else renders only where the server granted it, as ever.
    */
   'organization.work-centers.list',
+  /**
+   * ORG-05 (KIM-S23). A sidebar entry because nothing else links to it: the screen stands on the plain context read,
+   * not on ORG-01's locations read, so it cannot hang off that list.
+   */
+  'organization.company.tax-id',
   /** S-02 is the single Sales work-list entry. Create lives inside that list; detail opens from a row. */
   'sales.drafts.list',
   /** UI-60 / UI-61: the two read-only Sales lists of the dispatch/invoice flow (S-07, S-08), each on its own grant. */
@@ -152,6 +157,10 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.tax-master.manage',
   /** F-025 / B-11: the Settings exchange rate screen, drawn only where the server granted its read name. */
   'settings.exchange-rates.read',
+  /** F-029 S4b (SAT-D5): the Settings delivery tolerance screen, drawn only where the server granted its one name. */
+  'settings.sales-delivery-tolerances.manage',
+  /** F-029 S4b (SAT-D6): the Settings approval amount threshold screen, drawn only where the server granted its one name. */
+  'settings.sales-approval-thresholds.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -186,6 +195,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'organization.work-centers.list': 'İş Merkezleri',
   // ORG-04: reached from a work-centre row, never from the sidebar; Organization keeps two entries.
   'organization.work-centers.detail': '',
+  // ORG-05: its only entry point is the sidebar.
+  'organization.company.tax-id': 'Şirket Vergi Numarası',
   'sales.drafts.list': 'Satış Siparişleri',
   // K5: creation is reached through the list's authorised action, never a parallel sidebar entry.
   'sales.drafts.create': '',
@@ -250,6 +261,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   'settings.exchange-rates.read': 'Kurlar',
+  'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
+  'settings.sales-approval-thresholds.manage': 'Onay tutar eşikleri',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -387,10 +400,14 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'organization.sites.list',
       'organization.work-centers.list',
+      'organization.company.tax-id',
       // F-025 / B-11: rates follow the organization entries inside Ana Veriler (KLN-D2 order: organization, units, rates).
       'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
+      // F-029 S4b: the sales policy screens follow the other Sales-facing Settings entries (discount limits, tax).
+      'settings.sales-delivery-tolerances.manage',
+      'settings.sales-approval-thresholds.manage',
       'identity.assignments.list',
       // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
       'identity.audit.list',

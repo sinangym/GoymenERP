@@ -115,14 +115,96 @@ public sealed class WorkCenterCalendarDomainTests
     }
 
     [Fact]
-    public void An_empty_or_reversed_window_is_refused()
+    public void An_empty_window_is_refused()
     {
         Assert.Equal(
             WorkCenterCalendarDefinitionError.ShiftNotPositive,
             TryCreate([Shift(DayOfWeek.Monday, 8, 0, 8, 0)], []));
         Assert.Equal(
             WorkCenterCalendarDefinitionError.ShiftNotPositive,
-            TryCreate([Shift(DayOfWeek.Monday, 22, 0, 6, 0)], []));
+            TryCreate([Shift(DayOfWeek.Monday, 0, 0, 0, 0)], []));
+    }
+
+    [Fact]
+    public void An_end_before_the_start_is_an_overnight_shift_that_ends_on_the_next_day()
+    {
+        var error = WorkCenterCalendarDefinition.TryCreate(
+            [Shift(DayOfWeek.Monday, 22, 0, 6, 0), Shift(DayOfWeek.Monday, 8, 0, 16, 0)],
+            [],
+            out var definition);
+
+        Assert.Equal(WorkCenterCalendarDefinitionError.None, error);
+        Assert.NotNull(definition);
+        Assert.Equal(
+            [Shift(DayOfWeek.Monday, 8, 0, 16, 0), Shift(DayOfWeek.Monday, 22, 0, 6, 0)],
+            definition.Shifts);
+        var overnight = definition.Shifts[1];
+        Assert.True(overnight.EndsNextDay);
+        Assert.Equal(8 * 60, overnight.LengthMinutes);
+        Assert.False(definition.Shifts[0].EndsNextDay);
+        Assert.Equal(8 * 60, definition.Shifts[0].LengthMinutes);
+    }
+
+    [Fact]
+    public void A_shift_that_ends_at_midnight_ends_on_the_next_day_without_spilling_into_it()
+    {
+        var untilMidnight = Shift(DayOfWeek.Monday, 16, 0, 0, 0);
+
+        Assert.True(untilMidnight.EndsNextDay);
+        Assert.Equal(8 * 60, untilMidnight.LengthMinutes);
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.None,
+            TryCreate([untilMidnight, Shift(DayOfWeek.Tuesday, 0, 0, 8, 0)], []));
+    }
+
+    [Fact]
+    public void The_week_clock_places_a_shift_by_its_iso_weekday_and_start()
+    {
+        Assert.Equal(7 * 24 * 60, WorkCenterShift.MinutesPerWeek);
+        Assert.Equal(24 * 60, WorkCenterShift.MinutesPerDay);
+        Assert.Equal(8 * 60, Shift(DayOfWeek.Monday, 8, 0, 16, 0).WeekStartMinute);
+        Assert.Equal((6 * 24 * 60) + (22 * 60) + 30, Shift(DayOfWeek.Sunday, 22, 30, 6, 0).WeekStartMinute);
+        Assert.Equal((7 * 60) + 30, Shift(DayOfWeek.Sunday, 22, 30, 6, 0).LengthMinutes);
+    }
+
+    [Fact]
+    public void The_next_day_part_of_an_overnight_shift_may_not_overlap_the_next_days_shift()
+    {
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.ShiftsOverlap,
+            TryCreate([Shift(DayOfWeek.Monday, 22, 0, 6, 0), Shift(DayOfWeek.Tuesday, 5, 59, 14, 0)], []));
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.ShiftsOverlap,
+            TryCreate([Shift(DayOfWeek.Monday, 22, 0, 6, 0), Shift(DayOfWeek.Monday, 23, 0, 23, 30)], []));
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.ShiftsOverlap,
+            TryCreate([Shift(DayOfWeek.Monday, 20, 0, 4, 0), Shift(DayOfWeek.Monday, 22, 0, 6, 0)], []));
+    }
+
+    [Fact]
+    public void A_sunday_overnight_shift_wraps_into_monday_of_the_next_week()
+    {
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.ShiftsOverlap,
+            TryCreate([Shift(DayOfWeek.Sunday, 22, 0, 6, 0), Shift(DayOfWeek.Monday, 5, 0, 13, 0)], []));
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.None,
+            TryCreate([Shift(DayOfWeek.Sunday, 22, 0, 6, 0), Shift(DayOfWeek.Monday, 6, 0, 14, 0)], []));
+    }
+
+    [Fact]
+    public void An_overnight_shift_may_touch_the_next_days_shift()
+    {
+        Assert.Equal(
+            WorkCenterCalendarDefinitionError.None,
+            TryCreate(
+                [
+                    Shift(DayOfWeek.Monday, 6, 0, 14, 0),
+                    Shift(DayOfWeek.Monday, 14, 0, 22, 0),
+                    Shift(DayOfWeek.Monday, 22, 0, 6, 0),
+                    Shift(DayOfWeek.Tuesday, 6, 0, 14, 0),
+                ],
+                []));
     }
 
     [Fact]

@@ -5,6 +5,8 @@
  *  - The default KDV and tevkifat per item type (demir / hurda / hizmet): the reviewed SAT-D139 catalog as the base, a
  *    Settings record over it from its date; the UBL-TR exemption and withholding code lists; the VUK 232 threshold; the
  *    buyer situation list (SAT-D158) with each situation's tax effect as data over the reviewed catalog.
+ *  - The company's VAT rate and withholding ratio lists (F-029 S9, SAT-D181; empty until entered, SAT-D148) in their own
+ *    section with their own read (./TaxRateListSection.tsx).
  *  - The screen never computes a tax: a value the server does not answer (a code, the threshold) is shown as "Kaynak yok".
  *  - Every change: one person, a mandatory reason, the expected version, one Idempotency-Key (kept for a retry after an
  *    unknown outcome). A version conflict closes the form and re-reads. A not-yet-effective record can be withdrawn.
@@ -56,6 +58,7 @@ import {
   type TaxThresholdRecord,
 } from './taxMasterContract'
 import { CODE_LIST_LABEL, ITEM_TYPE_LABEL, TAX_TEXT, formatDate, taxRefusalText } from './taxMasterText'
+import { TaxRateListSection } from './TaxRateListSection'
 import { useCommandAttempt, type AttemptStatus } from './useCommandAttempt'
 import styles from './settings.module.css'
 
@@ -318,6 +321,8 @@ function MasterView({
           setEditor({ kind: 'withdraw-situations', list: master.buyerSituations, listVersion: version.listVersion })
         }
       />
+
+      <TaxRateListSection companyId={companyId} />
 
       {editor.kind === 'default' ? <DefaultForm key={editor.series.itemType} {...formProps} series={editor.series} /> : null}
       {editor.kind === 'withdraw-default' ? (
