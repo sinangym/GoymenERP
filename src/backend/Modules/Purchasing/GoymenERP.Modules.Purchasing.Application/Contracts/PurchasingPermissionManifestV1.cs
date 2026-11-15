@@ -84,7 +84,14 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string OrdersClose = "purchasing.orders.close";
 
+    /// <summary>
+    /// ALC-S16 (F-027, KLN-D45): approve or reject a bulk goods receipt whose total kg differs from the order line outside the Ayarlar
+    /// tolerance, or with no tolerance set. Apart from recording a receipt; neither confers the other, and the batch's preparer never
+    /// decides it (hazırlayan ≠ onaylayan). Company-wide, not critical. Registered only: the grant is a human gate.
+    /// </summary>
+    public const string GoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
+
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
-            OrdersRevise, OrdersClose];
+            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance];
 }

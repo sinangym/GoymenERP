@@ -12,6 +12,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, reservePendingApproval, type ApprovalSnapshot } from './pendingApprovalStore'
 import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
+import { GoodsReceiptBatchPanel } from './GoodsReceiptBatchPanel'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
@@ -266,6 +267,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       editor={canEditSchedule && actorId !== null
         ? { sessionEpoch: shell.sessionEpoch, actorId, onSettled: () => query.refetch() }
         : null} /></div> : null}
+    {/* F-027 (ALC-S16; KLN-D43): the order's bulk goods receipts, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
+      orderVersion={order.version} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>

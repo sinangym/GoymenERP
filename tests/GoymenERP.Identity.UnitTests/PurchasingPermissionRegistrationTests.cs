@@ -33,6 +33,7 @@ public sealed class PurchasingPermissionRegistrationTests
         ErpPermissions.PurchasingOrdersPriceRead,
         ErpPermissions.PurchasingOrdersRevise,
         ErpPermissions.PurchasingOrdersClose,
+        ErpPermissions.PurchasingGoodsReceiptsApproveVariance,
     };
 
     [Fact]
@@ -47,6 +48,7 @@ public sealed class PurchasingPermissionRegistrationTests
         Assert.Equal("purchasing.orders.price.read", ErpPermissions.PurchasingOrdersPriceRead);
         Assert.Equal("purchasing.orders.revise", ErpPermissions.PurchasingOrdersRevise);
         Assert.Equal("purchasing.orders.close", ErpPermissions.PurchasingOrdersClose);
+        Assert.Equal("purchasing.goods-receipts.approve-variance", ErpPermissions.PurchasingGoodsReceiptsApproveVariance);
     }
 
     [Theory]
