@@ -26,7 +26,10 @@ public static class DocumentCommands
     /// <summary>B-26: link an existing document to one more owner record (DEC-DOC-002).</summary>
     public const string LinkV1 = "documents.link.v1";
 
-    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1 or LinkV1;
+    /// <summary>F-026 (PLT-S9): store a PDF a producing module generated, as a new document with its template snapshot.</summary>
+    public const string StoreGeneratedV1 = "documents.store-generated.v1";
+
+    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1 or LinkV1 or StoreGeneratedV1;
 }
 
 /// <summary>The problem codes of the vault's routes. Platform 401/403/404 and every 503 stay code-less.</summary>

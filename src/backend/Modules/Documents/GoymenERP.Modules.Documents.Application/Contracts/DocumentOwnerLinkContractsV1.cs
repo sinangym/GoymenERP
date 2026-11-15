@@ -59,6 +59,13 @@ public interface IDocumentOwnerLinkPortV1
     /// </summary>
     bool AcceptsExistingDocumentLinks => false;
 
+    /// <summary>
+    /// F-026 (PLT-S9): whether a PDF the owner's module GENERATED may be stored into the vault on a record of this kind
+    /// through <see cref="IGeneratedDocumentStorePortV1"/>. Fail-closed by default: an owner opts in explicitly. The
+    /// Finance official sales invoice stays out (its PDF is the official one uploaded to the reserved id).
+    /// </summary>
+    bool AcceptsGeneratedDocuments => false;
+
     Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }
 

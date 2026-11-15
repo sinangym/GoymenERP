@@ -16,6 +16,9 @@ public sealed class SalesDocumentOwnerLinkPort(
 {
     public string Kind => DocumentOwnerLinkKindsV1.SalesOrder;
 
+    /// <summary>F-026 (PLT-S9): the order PDF Sales renders may be kept in the vault on this record.</summary>
+    public bool AcceptsGeneratedDocuments => true;
+
     public async Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

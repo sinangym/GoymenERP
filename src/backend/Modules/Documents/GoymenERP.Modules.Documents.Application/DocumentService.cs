@@ -32,7 +32,7 @@ namespace GoymenERP.Modules.Documents.Application;
 /// file on every linked record, so appending requires EVERY link to be readable.</item>
 /// </list>
 /// </summary>
-public sealed class DocumentService(
+public sealed partial class DocumentService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,

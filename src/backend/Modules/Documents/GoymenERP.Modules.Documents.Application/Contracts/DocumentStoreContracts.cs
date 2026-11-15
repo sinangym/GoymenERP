@@ -19,6 +19,9 @@ public interface IDocumentStore
     /// Stores a new logical document (version 1, the owner link and — when the company does not hold this content yet —
     /// the blob row), the recorded attempt and the audit event in one save. <paramref name="beforeWrite"/> runs after
     /// every store read and immediately before the sole save; a lost same-key race runs it before returning the winner.
+    /// F-026 (PLT-S9): an upload carrying <see cref="NewDocumentUpload.Template"/> is a GENERATED PDF — the same single
+    /// save, its attempt recorded under <see cref="DocumentCommands.StoreGeneratedV1"/> and its audit event carrying the
+    /// template snapshot (DEC-DOC-010); a replay answers version 1 of the first attempt either way.
     /// </summary>
     Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
@@ -68,7 +71,10 @@ public sealed record DocumentWriteEnvelope(
     string? ClientIpAddress,
     string? UserAgent);
 
-/// <summary>A new upload, already classified, hashed, scanned and written to the object store.</summary>
+/// <summary>
+/// A new upload, already classified, hashed, scanned and written to the object store. F-026 (PLT-S9):
+/// <see cref="Template"/> is set only for a PDF a producing module generated (DEC-DOC-010 snapshot); null is a user upload.
+/// </summary>
 public sealed record NewDocumentUpload(
     Guid DocumentId,
     DocumentOwnerLink Owner,
@@ -79,7 +85,8 @@ public sealed record NewDocumentUpload(
     string ObjectKey,
     DocumentScanState ScanState,
     string? ScannerId,
-    DateTimeOffset UploadedAtUtc);
+    DateTimeOffset UploadedAtUtc,
+    GeneratedDocumentTemplate? Template = null);
 
 /// <summary>A classified, scanned immutable version to append to one existing logical document.</summary>
 public sealed record NewDocumentVersion(

@@ -17,6 +17,7 @@ public sealed class SalesDocumentOwnerLinkPortTests
         var (port, _, _) = Port((id, _) => Task.FromResult(Detail(id, Company)));
 
         Assert.Equal(DocumentOwnerLinkKindsV1.SalesOrder, port.Kind);
+        Assert.True(port.AcceptsGeneratedDocuments);
         Assert.Equal(DocumentOwnerAccessV1.Readable, await port.CheckReadableAsync(Order));
     }
 
