@@ -1,7 +1,7 @@
 /**
  * SAT-D61…D70 — the Ayarlar screen of the Sales discount limit groups, their limits and the person → group bindings.
  *
- * Mirrors `SettingsShellCapabilityProvider` exactly (provider 1.2: three route capabilities, each on its own server permission,
+ * Mirrors `SettingsShellCapabilityProvider` exactly (provider 1.3: five route capabilities, each on its own server permission,
  * and the exchange rate screen's three command controls). The first,
  * `settings.sales-discount-limits.manage`, company-wide, in one company (not Critical; granted to no role — SAT-D65/D69,
  * a human gate). Listing the id here grants nothing: an ungranted capability closes the route onto the neutral
@@ -21,6 +21,16 @@ export const SETTINGS_CAPABILITY = {
    * `settings.exchange-rates.read` (company-wide, not Critical, granted to no role here).
    */
   exchangeRates: 'settings.exchange-rates.read',
+  /**
+   * F-029 S4b, SAT-D5 (provider 1.3): route `/ayarlar/teslim-toleransi`, the delivery tolerance timeline on its own name
+   * `settings.sales-delivery-tolerances.manage` (company-wide, not Critical, granted to no role here).
+   */
+  salesDeliveryTolerance: 'settings.sales-delivery-tolerances.manage',
+  /**
+   * F-029 S4b, SAT-D6 (provider 1.3): route `/ayarlar/onay-esikleri`, the approval amount thresholds per currency on its
+   * own name `settings.sales-approval-thresholds.manage` (company-wide, not Critical, granted to no role here).
+   */
+  salesApprovalThresholds: 'settings.sales-approval-thresholds.manage',
 } as const
 
 /**
@@ -40,10 +50,14 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.salesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [SETTINGS_CAPABILITY.taxMaster]: '/ayarlar/vergi',
   [SETTINGS_CAPABILITY.exchangeRates]: '/ayarlar/kurlar',
+  [SETTINGS_CAPABILITY.salesDeliveryTolerance]: '/ayarlar/teslim-toleransi',
+  [SETTINGS_CAPABILITY.salesApprovalThresholds]: '/ayarlar/onay-esikleri',
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.salesDiscountLimits]: 'İskonto limitleri',
   [SETTINGS_CAPABILITY.taxMaster]: 'Vergi (KDV / tevkifat)',
   [SETTINGS_CAPABILITY.exchangeRates]: 'Kurlar',
+  [SETTINGS_CAPABILITY.salesDeliveryTolerance]: 'Teslim toleransı',
+  [SETTINGS_CAPABILITY.salesApprovalThresholds]: 'Onay tutar eşikleri',
 }

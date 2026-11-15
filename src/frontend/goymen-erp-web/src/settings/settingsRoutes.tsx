@@ -9,6 +9,8 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { SETTINGS_CAPABILITY, SETTINGS_ROUTE } from './capabilities'
 import { ExchangeRatesPage } from './ExchangeRatesPage'
 import { SalesDiscountLimitsPage } from './SalesDiscountLimitsPage'
+import { SalesPolicyApprovalThresholdsPage } from './SalesPolicyApprovalThresholdsPage'
+import { SalesPolicyDeliveryTolerancePage } from './SalesPolicyDeliveryTolerancePage'
 import { TaxMasterPage } from './TaxMasterPage'
 
 export const settingsRoutes: RouteObject[] = [
@@ -33,6 +35,22 @@ export const settingsRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={SETTINGS_CAPABILITY.exchangeRates}>
         <ExchangeRatesPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesDeliveryTolerance].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.salesDeliveryTolerance}>
+        <SalesPolicyDeliveryTolerancePage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesApprovalThresholds].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.salesApprovalThresholds}>
+        <SalesPolicyApprovalThresholdsPage />
       </CapabilityRoute>
     ),
   },
