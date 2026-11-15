@@ -214,7 +214,8 @@ public sealed partial class SalesStore(
     }
 
     public async Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default,
+        SalesOrderRiskAssessment? riskWarning = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -224,6 +225,11 @@ public sealed partial class SalesStore(
         if (!SalesDraftCommands.IsStateCommand(commandName))
         {
             throw new ArgumentException("Yalnız onay ekseni komutları bir taslağın durumunu değiştirir.", nameof(commandName));
+        }
+
+        if (riskWarning is not null)
+        {
+            RequireRiskWarning(commandName, riskWarning);
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -372,6 +378,12 @@ public sealed partial class SalesStore(
             envelope.CorrelationId,
             envelope.CausationId,
             envelope.IdempotencyKey));
+        if (riskWarning is not null)
+        {
+            // F-018 / plan S1 (FNS-D27(3)): the order's limit warning, appended in the same save as the transition it warned.
+            AppendRiskWarning(envelope, companyId, commandName, draft, riskWarning, now);
+        }
+
         await SaveAsync(cancellationToken);
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }

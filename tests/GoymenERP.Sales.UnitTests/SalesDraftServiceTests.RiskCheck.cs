@@ -48,7 +48,7 @@ public sealed partial class SalesDraftServiceTests
             [
                 new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable),
                 new SalesDraftRiskReasonV1("ApprovedUnshippedRemainder", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
-                new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_owner_missing"),
+                new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_not_set"),
             ],
             check.Reasons);
         Assert.Equal(
@@ -65,7 +65,7 @@ public sealed partial class SalesDraftServiceTests
             check.Components.Select(Flat));
         // SAT-D48: this order's current revision is approved — already in the remainder, it adds nothing.
         Assert.Equal(("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Available", "IncludingTax", "", null), Flat(check.ThisOrder));
-        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"), Flat(check.CreditLimit));
+        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"), Flat(check.CreditLimit));
         Assert.Equal(("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"), Flat(check.Collateral));
 
         // The owners were asked for this customer and its one open approved order only.
@@ -95,7 +95,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(noLocal.InLocalCurrency);
         Assert.Equal(SalesDraftRiskResultsV1.Unavailable, noLocal.Result);
         Assert.DoesNotContain(noLocal.Reasons, reason => reason.Code == "local_currency_unavailable");
-        Assert.Contains(new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_owner_missing"), noLocal.Reasons);
+        Assert.Contains(new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_not_set"), noLocal.Reasons);
     }
 
     [Fact]
@@ -323,9 +323,9 @@ public sealed partial class SalesDraftServiceTests
     public async Task The_risk_check_refuses_before_anything_is_read_and_another_companys_or_an_unknown_draft_is_404()
     {
         var world = new World();
+        var approved = await PricedApprovedAsync(world, "a");
         var partyRisk = new FakePartyRisk(FinanceLike([]));
         world.PartyRisk = partyRisk;
-        var approved = await PricedApprovedAsync(world, "a");
 
         world.Authority.Denied.Add(ReadPermission);
         var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftRiskCheckAsync(approved.Draft.Id));
@@ -377,7 +377,11 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Priced(discount: null), Metadata($"{key}-create"))).Detail;
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata($"{key}-submit"));
-        return (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
+        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
+        // F-018 / plan S1: the submission and the approval evaluated the risk for their warning record; the read-only check's own
+        // order list reads start from here.
+        world.Store.OpenApprovedOrderReads.Clear();
+        return approved;
     }
 
     /// <summary>The answer shape of the Finance owner on main: receivables as given (taxes included), limit and collateral without a master.</summary>
@@ -448,7 +452,7 @@ public sealed partial class SalesDraftServiceTests
     private static Func<Guid, Guid, SalesPartyRiskReadAnswerV1> FinanceLike(IReadOnlyList<SalesPartyRiskAmountV1> receivables) =>
         (party, account) => new SalesPartyRiskReadAnswerV1(Company, party, account,
             new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, "finance.open-items", receivables, true, null),
-            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-credit-limit", [], null, "finance_credit_limit_owner_missing"),
+            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-credit-limit", [], null, "finance_credit_limit_not_set"),
             new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-collateral", [], null, "finance_collateral_owner_missing"));
 
     /// <summary>A SYNTHETIC customer-finance owner: answers what the case gives it and records the customers asked.</summary>

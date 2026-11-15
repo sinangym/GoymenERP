@@ -214,6 +214,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal DbSet<DraftCancellationRow> DraftCancellations => Set<DraftCancellationRow>();
 
     internal DbSet<DraftCustomerRejectionRow> DraftCustomerRejections => Set<DraftCustomerRejectionRow>();
+    internal DbSet<DraftRiskWarningRow> DraftRiskWarnings => Set<DraftRiskWarningRow>();
 
     /// <summary>No 30 / SAT-D12: the recorded force-closures (append-only, at most one per draft).</summary>
     internal DbSet<DraftForceClosureRow> DraftForceClosures => Set<DraftForceClosureRow>();
@@ -290,6 +291,18 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>API-40 (ADR-011 §2): the customer return commands' own attempt records (append-only).</summary>
     internal DbSet<CustomerReturnAttemptRow> CustomerReturnAttempts => Set<CustomerReturnAttemptRow>();
+
+    /// <summary>
+    /// CK_DraftRiskWarnings_Facts (F-018 / plan S1, ASSUMPTION-SAT-RISK-1/-4): a warning is recorded by a submit or an approve
+    /// only; its outcome is Over (1) with the category OverLimit (1), or Unavailable (2) with CreditLimitNotSet (2) or
+    /// SourceUnavailable (3); the smallest version a submit can produce is 2 (a draft created with its lines, then submitted).
+    /// </summary>
+    internal const string DraftRiskWarningFactsConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [DraftVersion] >= 2 AND [Revision] >= 0 "
+        + "AND [Command] IN (N'" + SalesDraftCommands.SubmitV1 + "', N'" + SalesDraftCommands.ApproveV1 + "') "
+        + "AND (([Outcome] = 1 AND [Category] = 1) OR ([Outcome] = 2 AND [Category] IN (2, 3))) "
+        + "AND LEN([RecordedBy]) > 0 AND LEN([RiskSourceContract]) > 0 AND LEN([CorrelationId]) > 0";
 
     /// <summary>
     /// CK_ShipmentRiskExceptions_Decision (SAT-D153/D160): Requested (1) carries no decision and no validity date; Approved (2) a
@@ -625,6 +638,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftDeliverySchedules(modelBuilder);
         ConfigureDraftCancellations(modelBuilder);
         ConfigureDraftCustomerRejections(modelBuilder);
+        ConfigureDraftRiskWarnings(modelBuilder);
         ConfigureDraftForceClosures(modelBuilder);
         ConfigureDraftUserClosures(modelBuilder);
         ConfigureDraftOverDeliveryApprovals(modelBuilder);
@@ -1439,6 +1453,25 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         rejection.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // F-018 / plan S1 (FNS-D27(3)): the recorded credit limit warnings — append-only history beside the draft, at most one per
+    // draft version (one submit or approve produces exactly one version). No amount.
+    private void ConfigureDraftRiskWarnings(ModelBuilder modelBuilder)
+    {
+        var warning = modelBuilder.Entity<DraftRiskWarningRow>();
+        warning.ToTable("DraftRiskWarnings", Schema, table =>
+            table.HasCheckConstraint("CK_DraftRiskWarnings_Facts", DraftRiskWarningFactsConstraint));
+        warning.HasKey(x => new { x.CompanyId, x.DraftId, x.DraftVersion });
+        warning.Property(x => x.Command).HasMaxLength(160).IsRequired();
+        warning.Property(x => x.RecordedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        warning.Property(x => x.RiskSourceContract).HasMaxLength(128).IsRequired();
+        warning.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        warning.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        warning.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // DEC-SAL-005 / AT-007: the recorded cancellation — append-only history beside the draft, at most one per draft.
     private void ConfigureDraftCancellations(ModelBuilder modelBuilder)
     {
@@ -1999,6 +2032,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftCancellationRow => [],
                     // SAT-D115: a recorded customer rejection is APPEND-ONLY — no column of it may change afterwards.
                     DraftCustomerRejectionRow => [],
+                    // F-018 / plan S1: a recorded credit limit warning is APPEND-ONLY — no column of it may change afterwards.
+                    DraftRiskWarningRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
                     // SAT-D32: a recorded user closure is APPEND-ONLY — no column of it may change afterwards.

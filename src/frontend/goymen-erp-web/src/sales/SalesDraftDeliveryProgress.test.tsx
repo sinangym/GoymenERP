@@ -3,6 +3,8 @@
  * shipped / delivered / remaining / excess quantity exactly as the server answers it (read from Logistics' recorded
  * deliveries), reads it afresh on every open, never invents a number for a failed or foreign answer and derives no
  * tolerance or completion state. Component evidence, NOT_ENV: the API answers here are the harness's.
+ * SAT-S11 (B-33): "Sevk eden" shows the shippers Logistics names as received, "Bilinmiyor" when a shipment names nobody
+ * and "—" when nothing is shipped; a shipper list that does not fit the shipped quantity is refused.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -37,10 +39,17 @@ function detail(state = 'Approved', revision = 'Rev.0', version = '4'): Body {
   return body
 }
 
-function progress(values: { shipped: string; delivered: string; remaining: string; excess?: string }, version = '4'): Body {
+const SHIPPER = 'SENTETIK-sevk-1'
+
+function progress(
+  values: { shipped: string; delivered: string; remaining: string; excess?: string; shippedBy?: readonly string[] | null },
+  version = '4',
+): Body {
+  // A shipped quantity names its shipper unless the case says otherwise; nothing shipped names nobody.
+  const shippedBy = /^0+(\.0+)?$/.test(values.shipped) ? [] : [SHIPPER]
   return {
     draftVersion: version,
-    lines: [{ lineId: LINE, lineNo: 1, orderUnitId: KG, ordered: '1000', excess: '0', ...values }],
+    lines: [{ lineId: LINE, lineNo: 1, orderUnitId: KG, ordered: '1000', excess: '0', shippedBy, ...values }],
   }
 }
 
@@ -72,9 +81,26 @@ describe('S-04 delivery progress (AT-024)', () => {
     expect(screen.getByTestId('sales-delivery-progress-line-1-delivered').textContent).toBe('400')
     expect(screen.getByTestId('sales-delivery-progress-line-1-remaining').textContent).toBe('600')
     expect(screen.getByTestId('sales-delivery-progress-line-1-excess').textContent).toBe('0')
+    expect(screen.getByTestId('sales-delivery-progress-line-1-shipped-by').textContent).toBe(SHIPPER)
+    expect(within(section).getByRole('columnheader', { name: T.shippedBy })).toBeTruthy()
     const [read] = progressCalls(harness.calls)
     expect(read).toMatchObject({ method: 'GET', companyId: COMPANY_A, idempotencyKey: null, body: null })
     expect(read.url).toContain(`/sales/drafts/${DRAFT}/delivery-progress`)
+  })
+
+  it.each([
+    ['every shipper the owner names, in its order', { shipped: '600', shippedBy: ['SENTETIK-sevk-A', 'SENTETIK-sevk-b'] }, 'SENTETIK-sevk-A, SENTETIK-sevk-b'],
+    ['unknown when a shipment names nobody — never a partial list', { shipped: '600', shippedBy: null }, T.shippedByUnknown],
+    ['a dash when nothing is shipped yet', { shipped: '0', shippedBy: [] }, T.shippedByNone],
+  ] as const)('shows the shippers (SAT-S11): %s', async (_, values, expected) => {
+    installFetch({
+      onDetail: () => json(detail()),
+      onDeliveryProgress: () => json(progress({ ...values, delivered: '0', remaining: '1000' })),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
+
+    await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-shipped-by').textContent).toBe(expected))
+    expect(screen.getByTestId('sales-delivery-progress-line-1-shipped').textContent).toBe(values.shipped)
   })
 
   it('reads afresh when the order is opened again, so a delivery recorded meanwhile shows', async () => {
@@ -174,9 +200,16 @@ describe('decodeDeliveryProgress', () => {
       draftVersion: '4',
       lines: [{
         lineId: LINE, lineNo: 1, orderUnitId: KG, ordered: '1000',
-        shipped: '600.125', delivered: '0', remaining: '1000', excess: '0',
+        shipped: '600.125', delivered: '0', remaining: '1000', excess: '0', shippedBy: [SHIPPER],
       }],
     })
+  })
+
+  it('keeps an unnamed shipment as null and nothing shipped as an empty list (SAT-S11)', () => {
+    expect(decodeDeliveryProgress(progress({ shipped: '600', delivered: '0', remaining: '1000', shippedBy: null }), draftDetail)
+      ?.lines[0].shippedBy).toBeNull()
+    expect(decodeDeliveryProgress(progress({ shipped: '0.000', delivered: '0', remaining: '1000' }), draftDetail)
+      ?.lines[0].shippedBy).toEqual([])
   })
 
   it.each([
@@ -189,6 +222,19 @@ describe('decodeDeliveryProgress', () => {
     ['another ordered quantity', (body: Body) => { body.lines[0].ordered = '999' }],
     ['a missing line', (body: Body) => { body.lines = [] }],
     ['another version', (body: Body) => { body.draftVersion = '5' }],
+    ['a missing shipper list', (body: Body) => { delete body.lines[0].shippedBy }],
+    ['a shipper list that is not a list', (body: Body) => { body.lines[0].shippedBy = SHIPPER }],
+    ['a shipper that is not text', (body: Body) => { body.lines[0].shippedBy = [7] }],
+    ['a blank shipper', (body: Body) => { body.lines[0].shippedBy = ['  '] }],
+    ['an untrimmed shipper', (body: Body) => { body.lines[0].shippedBy = [` ${SHIPPER}`] }],
+    ['a shipper above the actor length', (body: Body) => { body.lines[0].shippedBy = ['x'.repeat(129)] }],
+    ['a repeated shipper', (body: Body) => { body.lines[0].shippedBy = [SHIPPER, SHIPPER] }],
+    ['shippers out of ordinal order', (body: Body) => { body.lines[0].shippedBy = ['SENTETIK-sevk-b', 'SENTETIK-sevk-A'] }],
+    ['no shipper for a shipped quantity', (body: Body) => { body.lines[0].shippedBy = [] }],
+    ['a shipper for nothing shipped', (body: Body) => { body.lines[0].shipped = '0'; body.lines[0].delivered = '0' }],
+    ['an unknown shipper for nothing shipped', (body: Body) => {
+      body.lines[0].shipped = '0'; body.lines[0].delivered = '0'; body.lines[0].shippedBy = null
+    }],
   ])('refuses %s', (_, mutate) => {
     const body = progress({ shipped: '600', delivered: '400', remaining: '600' })
     mutate(body)

@@ -1013,6 +1013,13 @@ public sealed partial class SalesDraftService(
             await RequireHeaderReapprovalClearAsync(scope, permission, current, expectedVersion, cancellationToken);
         }
 
+        // F-018 / plan S1 (FNS-D27(3)): a limit overrun (or an undecidable risk) is a warning only — it is recorded in the same
+        // save as the transition and never refuses the command. A replay was answered above, so a retry records nothing twice; a
+        // transition the domain will refuse (stale version, wrong state) asks no owner.
+        var riskWarning = RiskWarningDue(commandName, current, expectedVersion)
+            ? await OrderRiskWarningAsync(scope, permission, current, cancellationToken)
+            : null;
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
@@ -1020,7 +1027,7 @@ public sealed partial class SalesDraftService(
         try
         {
             result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
-                (draft, now) => transition(draft, scope.ActorId, expectedVersion, now), audit, cancellationToken);
+                (draft, now) => transition(draft, scope.ActorId, expectedVersion, now), audit, cancellationToken, riskWarning);
         }
         catch (SalesVersionConflictException exception)
         {

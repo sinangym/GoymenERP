@@ -440,6 +440,7 @@ public static partial class SalesEndpoints
         // API-07 (SAT-D153…D162): the single-shipment risk exception — request, approval, rejection and the order's list.
         MapRiskExceptions(drafts);
         MapRiskCheck(drafts);
+        MapRiskWarnings(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -1121,6 +1122,36 @@ public static partial class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftRiskCheckV1")
             .Produces<SalesOrderDraftRiskCheckResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// F-018 / plan S1 (FNS-D27(3)): the limit warnings recorded on the order at submit / approve, under <c>sales.drafts.read</c>
+    /// (ASSUMPTION-SAT-RISK-3) — outcome and category only, never an amount. Another company's draft is 404; the read writes nothing.
+    /// </summary>
+    private static void MapRiskWarnings(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/risk-warnings", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftRiskWarningsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftRiskWarningsV1")
+            .Produces<SalesOrderDraftRiskWarningsResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

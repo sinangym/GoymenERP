@@ -29,10 +29,13 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(created.Draft.Version, progress.DraftVersion);
         Assert.Equal(
             [
-                new SalesDraftLineDeliveryProgressV1(first.LineId, 1, KgUnit, "1.25", "1", "0.75", "0.5", "0"),
-                new SalesDraftLineDeliveryProgressV1(second.LineId, 2, KgUnit, "2.25", "0", "0", "2.25", "0"),
+                (first.LineId, 1, KgUnit, "1.25", "1", "0.75", "0.5", "0"),
+                (second.LineId, 2, KgUnit, "2.25", "0", "0", "2.25", "0"),
             ],
-            progress.Lines);
+            progress.Lines.Select(Facts));
+        // SAT-S11: the first line shipped but the synthetic owner names nobody (null: unknown); the second shipped nothing ([]).
+        Assert.Null(progress.Lines[0].ShippedBy);
+        Assert.Empty(progress.Lines[1].ShippedBy!);
         // The owner is asked once, for this draft; the draft read is measured before, after the draft and after the owner.
         Assert.Equal([created.Draft.Id], owner.Asked);
         Assert.Equal([ReadPermission, ReadPermission, ReadPermission], world.Authority.Measured);
@@ -60,7 +63,7 @@ public sealed partial class SalesDraftServiceTests
         // OPEN-004 (tolerance) is open: the facts only — no completion, warning or approval member exists on the wire.
         Assert.Equal(("1.25", "1.5", "0", "0.25"), (line.Ordered, line.Delivered, line.Remaining, line.Excess));
         Assert.Equal(
-            ["Delivered", "Excess", "LineId", "LineNo", "OrderUnitId", "Ordered", "Remaining", "Shipped"],
+            ["Delivered", "Excess", "LineId", "LineNo", "OrderUnitId", "Ordered", "Remaining", "Shipped", "ShippedBy"],
             typeof(SalesDraftLineDeliveryProgressV1).GetProperties().Select(property => property.Name).Order(StringComparer.Ordinal));
     }
 
@@ -160,6 +163,46 @@ public sealed partial class SalesDraftServiceTests
 
         Assert.Equal(("0", "0", "1.25", "0"), (line.Shipped, line.Delivered, line.Remaining, line.Excess));
     }
+
+    [Fact]
+    public async Task The_shippers_the_owner_names_are_shown_once_trimmed_and_ordinal_across_units_and_never_as_a_partial_list()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        var (first, second) = (created.Lines[0], created.Lines[1]);
+        // SAT-S11 (F-006, B-33): the first line shipped twice in its unit (one shipper repeated, one padded) plus an instructed-only
+        // entry in another unit that names nobody (it counts nothing, so it does not make the line unknown); the second line
+        // shipped by a named actor and by an unnamed one (a share recorded before the owner kept its actor).
+        var owner = new FakeDeliveries(order => new(Company, order,
+        [
+            new(first.LineId, KgUnit, 0.5m, 0m, ["SENTETIK-shipper-b", "SENTETIK-shipper-B"]),
+            new(first.LineId, KgUnit, 0.25m, 0m, [" SENTETIK-shipper-b "]),
+            new(first.LineId, Guid.NewGuid(), 0m, 0m),
+            new(second.LineId, KgUnit, 1m, 0m, ["SENTETIK-shipper-c"]),
+            new(second.LineId, KgUnit, 0.5m, 0m),
+        ]));
+        world.Deliveries = owner;
+        var attempts = world.Store.Attempts;
+
+        var progress = await world.Service().GetDraftDeliveryProgressAsync(created.Draft.Id);
+
+        // A literal ordinal oracle ('B' < 'b'), not recomputed; the quantities are unchanged by the names.
+        Assert.Equal(["SENTETIK-shipper-B", "SENTETIK-shipper-b"], progress.Lines[0].ShippedBy);
+        Assert.Equal(("0.75", "1.5"), (progress.Lines[0].Shipped, progress.Lines[1].Shipped));
+        // One unnamed counted shipment makes the whole line unknown — never only the known shipper.
+        Assert.Null(progress.Lines[1].ShippedBy);
+        Assert.Equal(attempts, world.Store.Attempts);
+
+        // A blank name is not a shipper: unknown (the approval's own unverified reading), never a malformed answer (503).
+        owner.Answer = order => new(Company, order, [new(first.LineId, KgUnit, 1m, 0m, ["  "])]);
+        var blank = await world.Service().GetDraftDeliveryProgressAsync(created.Draft.Id);
+        Assert.Null(blank.Lines[0].ShippedBy);
+        Assert.Empty(blank.Lines[1].ShippedBy!);
+    }
+
+    private static (Guid LineId, int LineNo, Guid OrderUnitId, string Ordered, string Shipped, string Delivered, string Remaining, string Excess)
+        Facts(SalesDraftLineDeliveryProgressV1 line) =>
+        (line.LineId, line.LineNo, line.OrderUnitId, line.Ordered, line.Shipped, line.Delivered, line.Remaining, line.Excess);
 
     private static (int Status, string Code) Status(SalesDraftServiceException exception) => (exception.Status, exception.Code);
 

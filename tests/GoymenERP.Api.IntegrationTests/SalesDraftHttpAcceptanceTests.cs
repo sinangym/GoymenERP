@@ -588,6 +588,18 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return RiskCheck(draftId);
         }
 
+        /// <summary>F-018 / plan S1: what the stub answers the recorded limit warnings read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftRiskWarningsResponse>> RiskWarnings { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> RiskWarningReads { get; } = [];
+
+        public Task<SalesOrderDraftRiskWarningsResponse> GetDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            RiskWarningReads.Add(draftId);
+            return RiskWarnings(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -1249,7 +1261,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var service = new StubDraftService
         {
             Progress = id => Task.FromResult(new SalesOrderDraftDeliveryProgressResponse("5",
-                [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "2.5", "3.5", "0")])),
+                [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "2.5", "3.5", "0", ["SENTETIK-shipper-A", "SENTETIK-shipper-a"])])),
         };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
@@ -1264,15 +1276,28 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(["draftVersion", "lines"], body.EnumerateObject().Select(member => member.Name));
             Assert.Equal("5", body.GetProperty("draftVersion").GetString());
             var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
-            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "remaining", "excess"],
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "remaining", "excess", "shippedBy"],
                 line.EnumerateObject().Select(member => member.Name));
             Assert.Equal((lineId.ToString("D"), 1, "6", "4", "2.5", "3.5", "0"),
                 (line.GetProperty("lineId").GetString(), line.GetProperty("lineNo").GetInt32(), line.GetProperty("ordered").GetString(),
                     line.GetProperty("shipped").GetString(), line.GetProperty("delivered").GetString(), line.GetProperty("remaining").GetString(),
                     line.GetProperty("excess").GetString()));
+            // SAT-S11: the named shippers pass through as the service ordered them (a string array, never re-sorted by the host).
+            Assert.Equal(["SENTETIK-shipper-A", "SENTETIK-shipper-a"],
+                line.GetProperty("shippedBy").EnumerateArray().Select(actor => actor.GetString()));
         }
 
-        Assert.Equal([draftId], service.ProgressReads);
+        // A shipped line whose shippers the owner does not name: shippedBy is written as an explicit null (the key is never dropped).
+        service.Progress = _ => Task.FromResult(new SalesOrderDraftDeliveryProgressResponse("5",
+            [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "0", "6", "0", null)]));
+        using (var unnamed = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, unnamed.StatusCode);
+            var line = Assert.Single((await unnamed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("lines").EnumerateArray());
+            Assert.Equal(JsonValueKind.Null, line.GetProperty("shippedBy").ValueKind);
+        }
+
+        Assert.Equal([draftId, draftId], service.ProgressReads);
 
         service.Progress = _ => throw new SalesDraftServiceException(404, "not_found");
         using (var missing = await client.GetAsync(path))
@@ -1509,7 +1534,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 ],
                 new SalesDraftRiskFigureV1("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Unavailable", null, null,
                     SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
-                new SalesDraftRiskFigureV1("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"),
+                new SalesDraftRiskFigureV1("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"),
                 new SalesDraftRiskFigureV1("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"))),
         };
         using var host = CreateHost(service);
@@ -1554,7 +1579,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 (components[3].GetProperty("amounts").ValueKind, components[3].GetProperty("source").GetString(),
                     components[3].GetProperty("reasonCode").GetString()));
             Assert.Equal((JsonValueKind.Array, 0), (components[2].GetProperty("amounts").ValueKind, components[2].GetProperty("amounts").GetArrayLength()));
-            Assert.Equal(("NoSource", "finance_credit_limit_owner_missing"), (body.GetProperty("creditLimit").GetProperty("state").GetString(),
+            Assert.Equal(("NoSource", "finance_credit_limit_not_set"), (body.GetProperty("creditLimit").GetProperty("state").GetString(),
                 body.GetProperty("creditLimit").GetProperty("reasonCode").GetString()));
         }
 
@@ -1582,6 +1607,74 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
             Assert.True(forbidden.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+    }
+
+    [Fact]
+    public async Task Risk_warnings_are_a_private_read_of_the_recorded_warnings_with_every_member_and_no_amount()
+    {
+        var draftId = Guid.NewGuid();
+        var recordedAt = new DateTimeOffset(2026, 11, 14, 9, 30, 0, TimeSpan.Zero);
+        var service = new StubDraftService
+        {
+            RiskWarnings = _ => Task.FromResult(new SalesOrderDraftRiskWarningsResponse(
+                [
+                    new SalesOrderDraftRiskWarningV1(0, "6", SalesDraftCommands.ApproveV1, SalesDraftRiskWarningOutcomesV1.Unavailable,
+                        SalesDraftRiskWarningCategoriesV1.CreditLimitNotSet, "approver-actor", recordedAt, new DateOnly(2026, 11, 14),
+                        "sales.party-risk-read.v1"),
+                    new SalesOrderDraftRiskWarningV1(0, "5", SalesDraftCommands.SubmitV1, SalesDraftRiskWarningOutcomesV1.Over,
+                        SalesDraftRiskWarningCategoriesV1.OverLimit, "preparer-actor", recordedAt.AddMinutes(-5), new DateOnly(2026, 11, 14),
+                        "sales.party-risk-read.v1"),
+                ],
+                false)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/risk-warnings";
+        Assert.Equal(SalesDraftApiV1.RiskWarningsPath.Replace("{id}", draftId.ToString("D"), StringComparison.Ordinal), path);
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["warnings", "truncated"], body.EnumerateObject().Select(member => member.Name));
+            Assert.False(body.GetProperty("truncated").GetBoolean());
+            var warnings = body.GetProperty("warnings").EnumerateArray().ToArray();
+            Assert.Equal(2, warnings.Length);
+            Assert.All(warnings, warning => Assert.Equal(
+                ["revision", "draftVersion", "command", "outcome", "category", "recordedBy", "recordedAtUtc", "checkBusinessDay", "riskSourceContract"],
+                warning.EnumerateObject().Select(member => member.Name)));
+            Assert.Equal((0, "6", SalesDraftCommands.ApproveV1, "Unavailable", "CreditLimitNotSet", "approver-actor", "2026-11-14", "sales.party-risk-read.v1"),
+                (warnings[0].GetProperty("revision").GetInt32(), warnings[0].GetProperty("draftVersion").GetString(),
+                    warnings[0].GetProperty("command").GetString(), warnings[0].GetProperty("outcome").GetString(),
+                    warnings[0].GetProperty("category").GetString(), warnings[0].GetProperty("recordedBy").GetString(),
+                    warnings[0].GetProperty("checkBusinessDay").GetString(), warnings[0].GetProperty("riskSourceContract").GetString()));
+            Assert.Equal(recordedAt, warnings[0].GetProperty("recordedAtUtc").GetDateTimeOffset());
+            Assert.Equal(("Over", "OverLimit"), (warnings[1].GetProperty("outcome").GetString(), warnings[1].GetProperty("category").GetString()));
+        }
+
+        Assert.Equal([draftId], service.RiskWarningReads);
+
+        service.RiskWarnings = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        service.RiskWarnings = _ => throw new SalesDraftServiceException(503, "service_unavailable");
+        using (var unavailable = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        }
+
+        service.RiskWarnings = _ => throw new SalesDraftServiceException(403, "forbidden");
+        using (var forbidden = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         }
     }
 

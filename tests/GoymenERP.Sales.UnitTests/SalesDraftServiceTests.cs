@@ -2066,9 +2066,32 @@ public sealed partial class SalesDraftServiceTests
         public string? Race { get; set; }
         public SalesOrderDraft? Winner { get; private set; }
 
-        public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default) =>
-            UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken);
+        /// <summary>F-018: every limit warning the store appended, with the transition that carried it.</summary>
+        public List<(string Command, Guid DraftId, long DraftVersion, int Revision, SalesOrderRiskAssessment Warning, SalesDraftWriteEnvelope Envelope)> RiskWarnings { get; } = [];
+
+        public async Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default,
+            SalesOrderRiskAssessment? riskWarning = null)
+        {
+            if (riskWarning is not null && commandName is not (SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1))
+                throw new ArgumentException("a limit warning rides only on submit / approve", nameof(riskWarning));
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken);
+            if (riskWarning is not null && result is { Outcome: SalesDraftWriteOutcome.Recorded } recorded)
+                RiskWarnings.Add((commandName, draftId, recorded.Draft.Version, recorded.Draft.Revision, riskWarning, envelope));
+            return result;
+        }
+
+        public Task<IReadOnlyList<SalesOrderRiskWarningRecord>?> ListDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            if (_drafts.All(candidate => candidate.Id != draftId)) return Task.FromResult<IReadOnlyList<SalesOrderRiskWarningRecord>?>(null);
+            IReadOnlyList<SalesOrderRiskWarningRecord> records = [.. StoredRiskWarnings.Where(record => record.DraftId == draftId)
+                .Select(record => record.Record).OrderByDescending(record => record.DraftVersion).Take(SalesDraftRiskWarningsApiV1.MaximumListed + 1)];
+            return Task.FromResult<IReadOnlyList<SalesOrderRiskWarningRecord>?>(records);
+        }
+
+        /// <summary>F-018: the rows the read answers (seeded by a test; the write recorder above stays separate).</summary>
+        public List<(Guid DraftId, SalesOrderRiskWarningRecord Record)> StoredRiskWarnings { get; } = [];
 
         private async Task<SalesDraftStateResult?> UpdateDraftStateAsyncCore(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,

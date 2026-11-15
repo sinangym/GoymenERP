@@ -522,7 +522,7 @@ function nothingDelivered(detail: unknown): Response {
     draftVersion: body.draft.version,
     lines: body.lines.map((line) => ({
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
-      shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
+      shipped: '0', delivered: '0', remaining: line.quantity, excess: '0', shippedBy: [],
     })),
   })
 }
@@ -780,7 +780,7 @@ export function riskCheckOf(detail: unknown): Response {
     result: 'Unavailable',
     reasons: [
       { component: 'ShippedNotInvoiced', code: 'shipment_provider_unavailable' },
-      { component: 'CreditLimit', code: 'finance_credit_limit_owner_missing' },
+      { component: 'CreditLimit', code: 'finance_credit_limit_not_set' },
     ],
     amountDisclosure: visible ? 'Visible' : 'Withheld',
     inLocalCurrency: null,
@@ -792,7 +792,7 @@ export function riskCheckOf(detail: unknown): Response {
       figure('InvoicedAwaitingFinance', 'sales.finalized-invoices', 'Unavailable', 'shipment_provider_unavailable'),
     ],
     thisOrder: figure('ThisOrder', 'sales.this-order', 'Available', null),
-    creditLimit: figure('CreditLimit', 'finance.party-credit-limit', 'NoSource', 'finance_credit_limit_owner_missing'),
+    creditLimit: figure('CreditLimit', 'finance.party-credit-limit', 'NoSource', 'finance_credit_limit_not_set'),
     collateral: figure('Collateral', 'finance.party-collateral', 'NoSource', 'finance_collateral_owner_missing'),
   })
 }
