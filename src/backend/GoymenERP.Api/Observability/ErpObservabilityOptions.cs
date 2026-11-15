@@ -11,9 +11,9 @@ namespace GoymenERP.Api.Observability;
 /// <item>the OTLP exporter (Sinan 2026-10-21 No.134 / EK-44: OpenTelemetry to a local OTLP collector) needs
 /// <see cref="ErpOtlpOptions.Enabled"/>, an endpoint and, for traces, an explicit sampling ratio.</item>
 /// </list>
-/// Capacities and sampling ratios are not chosen in code: they depend on OPEN-014 (inventory) and OPEN-015
-/// (volume), so the operator must state them when a sink is turned on, and an incomplete configuration fails
-/// startup instead of silently picking a value.
+/// Capacities and sampling ratios are not chosen in code: KLN-D51 (Sinan 2026-11-15) sets the starting queue
+/// capacity and trace sampling ratio as configuration values, so the operator must state them when a sink is
+/// turned on, and an incomplete configuration fails startup instead of silently picking a value.
 /// </summary>
 public sealed class ErpObservabilityOptions
 {
@@ -113,7 +113,7 @@ public sealed class ErpOtlpOptions
 
     public bool ExportTraces { get; set; } = true;
 
-    /// <summary>Head-sampling ratio (0..1) for root traces. Required when traces are exported (OPEN-015).</summary>
+    /// <summary>Head-sampling ratio (0..1) for root traces. Required when traces are exported (KLN-D51).</summary>
     public double? TraceSamplingRatio { get; set; }
 
     internal ErpOtlpSettings? Resolve()
