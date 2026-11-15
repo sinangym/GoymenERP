@@ -83,7 +83,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         var shippedOnly = await run.ProgressAsync(client, progressPath);
         Assert.Equal(("4", "0", "6", "0"), Line(shippedOnly, orderLine.Id));
         // SAT-S11 (F-006, B-33): the real Logistics owner names who recorded the shipment, and the order shows it on the wire.
-        Assert.Equal([run.Actor], ShippedBy(shippedOnly));
+        Assert.Equal(new[] { run.Actor }, ShippedBy(shippedOnly));
         // The same real Logistics instruction is readable as loading facts: no Sales copy and no dispatch-note fiction.
         Assert.Equal((1, "6", "6", "4", "0"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
 
