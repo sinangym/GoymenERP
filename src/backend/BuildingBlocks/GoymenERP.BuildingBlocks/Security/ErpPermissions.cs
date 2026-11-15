@@ -468,8 +468,10 @@ public static class ErpPermissions
     /// URT-S19 (B-27, DEC-PRDCT-009, API-42): reading an order's cost trace — its lots, line, fire, subcontract owner,
     /// sales-order link and fact moments, and the production cost port's answer. Its own name because the trace carries
     /// cost data the order read does not (URETIM_HAZIRLIK_PLANI API-42 names it). Registered, not granted: no role and no
-    /// user receives it here; who reads production cost data is a human gate. Company-wide only (the route filters by no
-    /// work center or site, so a narrow grant would fail open). Not Critical.
+    /// user receives it here. Company-wide only (the route filters by no work center or site, so a narrow grant would fail
+    /// open). Not Critical. URT-D90 (SINAN-CEVAP 34.16) declares its holders: the Üretim Müdürü, Üretim Planlama and
+    /// Genel Müdür personas, company-wide. That is a declaration for the grant-time human gate, not a grant: this file
+    /// still gives the name to no role and no user, and no seed carries it.
     /// </summary>
     public const string ManufacturingReportsRead = "manufacturing.reports.read";
 
