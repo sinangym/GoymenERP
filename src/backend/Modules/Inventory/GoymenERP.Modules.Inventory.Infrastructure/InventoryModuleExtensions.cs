@@ -59,6 +59,10 @@ public static class InventoryModuleExtensions
         services.AddScoped<ISalesOrderAllocationReadPortV1, InventorySalesOrderAllocationReadPort>();
         // SAT-D262: Inventory owns the moving-average purchase cost and answers Sales only through this versioned read port.
         services.AddScoped<IInventoryAverageCostReadPortV1, InventoryAverageCostReadPort>();
+        // SAT-D272 / SAT-D347 / SAT-D350 (STK-S35): the company-wide (all locations) average; the aggregation is Inventory's.
+        services.AddScoped<IInventoryCompanyWideAverageCostReadPortV1, InventoryCompanyWideAverageCostReadPort>();
+        // STK-S35: the ledger's only writer. No movement path calls it until the purchase price input has a port (SAT-D295).
+        services.AddScoped<InventoryAverageCostLedgerWriter>();
         services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();
         services.AddScoped<IInventoryLabelDispositionReadPortV1, InventoryLabelDispositionReadPort>();
         services.AddScoped<IInventoryFreeQuantityReadPortV1, InventoryFreeQuantityReadPort>();
