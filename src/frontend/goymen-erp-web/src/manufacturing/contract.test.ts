@@ -5,6 +5,9 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_OUTPUT_CLASS,
+  DEFAULT_REMNANT_CLASSIFICATION,
+  REMNANT_CLASSIFICATIONS,
   closeBody,
   decodeCutToLengthSpec,
   decodeMassBalance,
@@ -215,6 +218,7 @@ describe('factBody', () => {
       kind: 'outputs',
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      remnantClassification: null,
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
       lotId: 'a0000000-0000-4000-8000-000000000002',
@@ -253,6 +257,41 @@ describe('factBody', () => {
       kg: '10.5',
       occurredAtUtc: '2026-09-18T09:00:00.000Z',
     })
+  })
+
+  it('sends the remnant label classification only with a usable remnant (URT-S16, BS-14)', () => {
+    const output: FactSnapshot = {
+      ...base,
+      kind: 'outputs',
+      expectedParentLabelVersion: '8',
+      outputClass: 'UsableRemnant',
+      remnantClassification: 'Standard',
+      productId: 'a0000000-0000-4000-8000-000000000001',
+      expectedProductVersion: '12',
+      lotId: 'a0000000-0000-4000-8000-000000000002',
+      labelId: 'a0000000-0000-4000-8000-000000000003',
+      labelCode: 'REM-1',
+      heatNumber: null,
+      coilNumber: null,
+      requiredDocuments: [],
+      ownerKind: 'Company',
+      ownerId: 'a0000000-0000-4000-8000-000000000004',
+      custodianKind: 'Company',
+      custodianId: 'a0000000-0000-4000-8000-000000000004',
+      locationId: 'a0000000-0000-4000-8000-000000000005',
+      initialBlock: 'Free',
+    }
+    expect(factBody(output)).toMatchObject({ outputClass: 'UsableRemnant', remnantClassification: 'Standard' })
+    expect(factBody({ ...output, remnantClassification: 'SecondQuality' }))
+      .toMatchObject({ remnantClassification: 'SecondQuality' })
+    // A missing choice or any other class sends no member: the server applies its own fixed mapping.
+    expect(factBody({ ...output, remnantClassification: null })).not.toHaveProperty('remnantClassification')
+    for (const outputClass of ['GoodProduct', 'SecondQuality', 'Scrap'] as const) {
+      expect(factBody({ ...output, outputClass }), outputClass).not.toHaveProperty('remnantClassification')
+    }
+    expect(DEFAULT_REMNANT_CLASSIFICATION).toBe('SecondQuality')
+    expect(DEFAULT_OUTPUT_CLASS).toBe('GoodProduct')
+    expect([...REMNANT_CLASSIFICATIONS]).toEqual(['Standard', 'SecondQuality'])
   })
 })
 

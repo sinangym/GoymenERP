@@ -39,9 +39,12 @@ import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
 import type { InventoryLabelDetailWithMovementTimeline } from '../inventory/labelDetailContract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
+  DEFAULT_OUTPUT_CLASS,
+  DEFAULT_REMNANT_CLASSIFICATION,
   FACT_KINDS,
   INVENTORY_OUTPUT_CLASSES,
   OUTPUT_CLASSES,
+  REMNANT_CLASSIFICATIONS,
   isKilogramText,
   type CloseSnapshot,
   type EngineAnswer,
@@ -51,6 +54,7 @@ import {
   type ManufacturingOutputLocationCandidate,
   type ManufacturingOutputProductCandidate,
   type ProductionOrderView,
+  type RemnantClassification,
   type RollBalance,
 } from './contract'
 import {
@@ -90,6 +94,7 @@ import {
   OUTPUT_INVENTORY_TEXT,
   OUTPUT_CLASS_LABEL,
   REMAINING_UNAVAILABLE,
+  REMNANT_CLASSIFICATION_LABEL,
   REPLAYED_DETAIL,
   REPLAYED_TITLE,
   ROLL_REQUIRED,
@@ -646,6 +651,8 @@ interface FormValues {
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
   readonly outputClass: '' | (typeof INVENTORY_OUTPUT_CLASSES)[number]
+  /** URT-S16 (BS-14): sent only when the output class is UsableRemnant. */
+  readonly remnantClassification: RemnantClassification
   readonly productId: string
   readonly locationId: string
   readonly labelCode: string
@@ -662,7 +669,9 @@ const EMPTY_FORM: FormValues = {
   parentRollId: '',
   kg: '',
   occurredAt: '',
-  outputClass: '',
+  // URT-D43 (2): a new output starts as a good product; BS-14: a usable remnant starts as second quality.
+  outputClass: DEFAULT_OUTPUT_CLASS,
+  remnantClassification: DEFAULT_REMNANT_CLASSIFICATION,
   productId: '',
   locationId: '',
   labelCode: '',
@@ -682,7 +691,10 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
     parentRollId: snapshot.parentRollId,
     kg: snapshot.kg,
     occurredAt: local,
-    outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : '',
+    outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : DEFAULT_OUTPUT_CLASS,
+    remnantClassification: snapshot.kind === 'outputs'
+      ? (snapshot.remnantClassification ?? DEFAULT_REMNANT_CLASSIFICATION)
+      : DEFAULT_REMNANT_CLASSIFICATION,
     productId: snapshot.kind === 'outputs' ? snapshot.productId : '',
     locationId: snapshot.kind === 'outputs' ? snapshot.locationId : '',
     labelCode: snapshot.kind === 'outputs' ? snapshot.labelCode : '',
@@ -1008,6 +1020,7 @@ function FactSection({
               movementId: newId(),
               expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
               outputClass: form.outputClass as (typeof INVENTORY_OUTPUT_CLASSES)[number],
+              remnantClassification: form.outputClass === 'UsableRemnant' ? form.remnantClassification : null,
               productId: selectedProduct?.productId ?? '',
               expectedProductVersion: selectedProduct?.productVersion ?? '',
               lotId: newId(),
@@ -1142,6 +1155,31 @@ function FactSection({
                   ))}
                 </select>
               </div>
+              {form.outputClass === 'UsableRemnant' ? (
+                <div className={styles.control}>
+                  <label htmlFor="mfg-output-remnant-classification">
+                    {OUTPUT_INVENTORY_TEXT.remnantClassification}
+                  </label>
+                  <select
+                    id="mfg-output-remnant-classification"
+                    aria-describedby="mfg-output-remnant-classification-help"
+                    value={form.remnantClassification}
+                    disabled={frozen}
+                    onChange={(event) => update({
+                      remnantClassification: event.target.value as RemnantClassification,
+                    })}
+                  >
+                    {REMNANT_CLASSIFICATIONS.map((classification) => (
+                      <option key={classification} value={classification}>
+                        {REMNANT_CLASSIFICATION_LABEL[classification]}
+                      </option>
+                    ))}
+                  </select>
+                  <p id="mfg-output-remnant-classification-help" className={styles.help}>
+                    {OUTPUT_INVENTORY_TEXT.remnantClassificationHelp}
+                  </p>
+                </div>
+              ) : null}
               <div className={styles.control}>
                 <label htmlFor="mfg-output-product-search">{OUTPUT_INVENTORY_TEXT.productSearch}</label>
                 <input

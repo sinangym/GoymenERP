@@ -55,6 +55,11 @@ public sealed record ManufacturingInventoryInputReturnPortCommandV1(
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc);
 
+/// <summary>
+/// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the label classification the operator chose for a
+/// <c>UsableRemnant</c> output (Standard or SecondQuality); null means the default of
+/// <see cref="ManufacturingOutputClassMappingV1"/>. Every other output class leaves it null.
+/// </summary>
 public sealed record ManufacturingInventoryOutputPortCommandV1(
     Guid OrderId,
     long ExpectedOrderVersion,
@@ -78,7 +83,8 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     string InitialBlock,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    InventoryLabelClassificationV1? RemnantClassification = null);
 
 public sealed record ManufacturingInventoryInputIssuePortResultV1(
     long OrderVersion,

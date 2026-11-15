@@ -34,6 +34,21 @@ export const INVENTORY_OUTPUT_CLASSES = [
 
 export type InventoryOutputClass = (typeof INVENTORY_OUTPUT_CLASSES)[number]
 
+/**
+ * URT-S16 (URT-D43, BS-5, BS-14): the label classifications the operator may choose for a usable remnant. The label
+ * keeps this classification and carries the separate UsableRemnant production status; the server holds the fixed
+ * output class mapping and refuses anything else. Every other output class sends no choice.
+ */
+export const REMNANT_CLASSIFICATIONS = ['Standard', 'SecondQuality'] as const
+
+export type RemnantClassification = (typeof REMNANT_CLASSIFICATIONS)[number]
+
+/** BS-14: the screen preselects SecondQuality, the same default the server applies when no choice is sent. */
+export const DEFAULT_REMNANT_CLASSIFICATION: RemnantClassification = 'SecondQuality'
+
+/** URT-D43 (2): a new production output starts as a good product. */
+export const DEFAULT_OUTPUT_CLASS: InventoryOutputClass = 'GoodProduct'
+
 export interface ManufacturingOutputProductCandidate {
   readonly productId: string
   readonly productVersion: string
@@ -1122,6 +1137,8 @@ export type FactSnapshot =
       readonly movementId: string
       readonly expectedParentLabelVersion: string
       readonly outputClass: InventoryOutputClass
+      /** Only for UsableRemnant (null otherwise); sent only with that class. */
+      readonly remnantClassification: RemnantClassification | null
       readonly productId: string
       readonly expectedProductVersion: string
       readonly lotId: string
@@ -1163,6 +1180,9 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       outputClass: snapshot.outputClass,
+      ...(snapshot.outputClass === 'UsableRemnant' && snapshot.remnantClassification !== null
+        ? { remnantClassification: snapshot.remnantClassification }
+        : {}),
       productId: snapshot.productId,
       expectedProductVersion: snapshot.expectedProductVersion,
       lotId: snapshot.lotId,

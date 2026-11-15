@@ -614,6 +614,9 @@ describe('fact forms', () => {
     await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
     await waitFor(() => expect(locationReads(recorded)).toHaveLength(1))
 
+    // URT-D43 (2): a new output starts as a good product; only a usable remnant asks for a label classification.
+    expect((screen.getByLabelText('Çıktı sınıfı') as HTMLSelectElement).value).toBe('GoodProduct')
+    expect(screen.queryByLabelText('Artık etiket sınıfı')).toBeNull()
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
     await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
@@ -657,11 +660,55 @@ describe('fact forms', () => {
     expect(new Set(ids).size).toBe(4)
     expect(ids.every((id) => /^[0-9a-f-]{36}$/.test(id))).toBe(true)
     expect(output.body).not.toHaveProperty('companyId')
+    expect(output.body).not.toHaveProperty('remnantClassification')
     const selectedEffectiveOn = new URL(productReads(recorded)[0].url, 'http://local.test')
       .searchParams.get('effectiveOn')
     expect(selectedEffectiveOn).toBe((output.body as { occurredAtUtc: string }).occurredAtUtc.slice(0, 10))
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+  })
+
+  it.each([
+    { chosen: null, sent: 'SecondQuality' },
+    { chosen: 'Standard', sent: 'Standard' },
+  ] as const)('sends a usable remnant with its label classification ($sent; chosen: $chosen)', async ({ chosen, sent }) => {
+    // URT-S16 (BS-5, BS-14): the remnant keeps the chosen classification, second quality preselected; the server
+    // adds the separate UsableRemnant production status.
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await screen.findByRole('option', { name: /PRD-12/ })
+    await screen.findByRole('option', { name: /HOL-1/ })
+
+    expect(screen.queryByLabelText('Artık etiket sınıfı')).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'UsableRemnant')
+    const remnant = screen.getByLabelText('Artık etiket sınıfı') as HTMLSelectElement
+    expect(remnant.value).toBe('SecondQuality')
+    expect([...remnant.options].map((option) => [option.value, option.textContent]))
+      .toEqual([['Standard', 'Standart'], ['SecondQuality', 'İkinci kalite']])
+    if (chosen !== null) await user.selectOptions(remnant, chosen)
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'REM-40')
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).toMatchObject({
+      outputClass: 'UsableRemnant',
+      remnantClassification: sent,
+      labelCode: 'REM-40',
+    })
   })
 
   it('freezes customer/fason owner and custodian from this order input issue into the output command', async () => {

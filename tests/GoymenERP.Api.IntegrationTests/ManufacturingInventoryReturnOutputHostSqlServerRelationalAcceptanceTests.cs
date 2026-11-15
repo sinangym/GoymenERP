@@ -444,17 +444,21 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
         new Kilograms(quantity),
         seed.OccurredAtUtc.AddMinutes(2));
 
-    private static async Task<InventoryManufacturingOutputResultV1> CommitOutputOrphanAsync(
+    private static async Task<InventoryManufacturingOutputResultV2> CommitOutputOrphanAsync(
         Run run, ManufacturingInventoryOutputCommand command, ManufacturingCommandMetadata metadata)
     {
-        var request = new InventoryManufacturingOutputRequestV1(
+        // The orphan is staged exactly as the host stages it (URT-S16: the V2 request with the remnant
+        // classification resolved by the fixed mapping), so only the missing Manufacturing fact differs.
+        Assert.True(ManufacturingOutputClassMappingV1.TryMap(command.OutputClass, command.RemnantClassification,
+            out var label));
+        var request = new InventoryManufacturingOutputRequestV2(
             CompanyA,
             command.OrderId,
             command.OutputId,
             checked(command.ExpectedOrderVersion + 1).ToString(CultureInfo.InvariantCulture),
             command.ParentLabelId,
             command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
-            command.OutputClass.ToString(),
+            label.InventoryOutputClass,
             command.ProductId,
             command.ExpectedProductVersion,
             command.LotId,
@@ -471,7 +475,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             command.InitialBlock,
             command.MovementId,
             command.Quantity.Value.ToString("0.###", CultureInfo.InvariantCulture),
-            command.OccurredAtUtc);
+            command.OccurredAtUtc,
+            label.ProductionStatus is null ? null : (InventoryLabelClassificationV1?)label.Classification);
         var inventoryMetadata = new InventoryCommandMetadata(
             metadata.ActorId,
             metadata.PermissionCode,
