@@ -35,6 +35,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.OrdersCancel, ErpPermissions.PurchasingOrdersCancel)]
     [InlineData(PurchasingPermissionManifestV1.OrdersPriceRead, ErpPermissions.PurchasingOrdersPriceRead)]
     [InlineData(PurchasingPermissionManifestV1.OrdersRevise, ErpPermissions.PurchasingOrdersRevise)]
+    [InlineData(PurchasingPermissionManifestV1.OrdersClose, ErpPermissions.PurchasingOrdersClose)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -84,7 +85,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(12, purchasing.Length);
+        Assert.Equal(13, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
@@ -92,6 +93,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.CancelCapabilityId,
             PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
+            PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
             PurchasingShellCapabilityProvider.RequestApproveCapabilityId,
             PurchasingShellCapabilityProvider.RequestCreateCapabilityId,
@@ -163,6 +165,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(detail.ContextRequirement, cancel.ContextRequirement);
         Assert.Equal(detail.ScopeRequirement, cancel.ScopeRequirement);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCancel], cancel.RequiredPermissions);
+
+        // F-027 (UI-07, EK16 §2a; ALS-D94): the line delivery schedule control is a child of the order detail measured with the revise name.
+        var lineSchedule = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.LineScheduleCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, lineSchedule.ParentCapabilityId);
+        Assert.Equal(detail.RoutePath, lineSchedule.RoutePath);
+        Assert.Equal(detail.ContextRequirement, lineSchedule.ContextRequirement);
+        Assert.Equal(detail.ScopeRequirement, lineSchedule.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise], lineSchedule.RequiredPermissions);
     }
 
     [Fact]

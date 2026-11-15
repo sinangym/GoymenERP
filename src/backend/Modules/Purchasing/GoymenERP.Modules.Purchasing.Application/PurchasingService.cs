@@ -1044,6 +1044,10 @@ public sealed partial class PurchasingService(
                 Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity))
             {
                 Cancelled = Text(line.CancelledQuantity),
+                Closed = Text(line.ClosedQuantity),
+                Closure = line.Closure is { } closure
+                    ? new PurchaseOrderLineClosureView(closure.ClosedBy, closure.ClosedAtUtc, closure.Reason)
+                    : null,
                 Price = visible ? PriceView(line, stored.Order.Money) : null,
                 DeliverySchedule = [.. line.DeliverySchedule.Select(slice =>
                     new PurchaseOrderDeliverySliceView(slice.SliceId, slice.SliceNo, Text(slice.Quantity), slice.DeliveryDate))],

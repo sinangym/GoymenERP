@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { PurchaseOrderDeliverySlice, PurchaseOrderLine, PurchaseOrderSummary } from './contract'
 import { fetchPurchaseOrderLineScheduleHistory } from './lineScheduleApi'
+import { LineScheduleEditor } from './LineScheduleEditor'
 import type { PurchaseOrderLineScheduleHistory } from './lineScheduleContract'
 import { LINE_SCHEDULE_TEXT as T } from './lineScheduleText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -16,6 +17,18 @@ export interface LineSchedulePanelProps {
   readonly companyId: string
   readonly order: PurchaseOrderSummary
   readonly lines: readonly PurchaseOrderLine[]
+  /**
+   * F-027 (UI-07): present only when the caller measured the `purchasing.orders.line-schedule.write` child capability and knows the
+   * actor; absent, the section stays read-only.
+   */
+  readonly editor?: LineScheduleEditorAccess | null
+}
+
+export interface LineScheduleEditorAccess {
+  readonly sessionEpoch: number
+  readonly actorId: string
+  /** Re-reads the order after a definite answer of the termin change. */
+  readonly onSettled: () => Promise<unknown>
 }
 
 /** Presentation only: the wire's `yyyy-MM-dd` in Turkish order; anything else is shown as received. */
@@ -44,22 +57,24 @@ function SliceTable({ caption, slices }: { readonly caption: string; readonly sl
  * F-027 (ALS-D94, ALS-D81): the read-only delivery schedule of each order line — the current slices from the order detail and, on
  * request, the line's recorded revisions oldest first with recorder and time, so a termin change on an approved order (no
  * re-approval) stays visible. Reading the history uses the order's read name, re-measured by the backend; 401/403 go to the auth
- * boundary. No edit control: the schedule command's screen control is a separate slice.
+ * boundary. With `editor` (UI-07, EK16 §2a) each general line also gets the termin change control; without it nothing is editable.
  */
-export function LineSchedulePanel({ fenceKey, companyId, order, lines }: LineSchedulePanelProps) {
+export function LineSchedulePanel({ fenceKey, companyId, order, lines, editor = null }: LineSchedulePanelProps) {
   const headingId = useId()
   return <section aria-labelledby={headingId} data-testid="purchase-order-line-schedules">
     <h2 id={headingId}>{T.heading}</h2>
     <p>{T.note}</p>
-    {lines.map((line) => <LineSchedule key={line.lineId} fenceKey={fenceKey} companyId={companyId} order={order} line={line} />)}
+    {lines.map((line) => <LineSchedule key={line.lineId} fenceKey={fenceKey} companyId={companyId} order={order} line={line}
+      editor={editor} />)}
   </section>
 }
 
-function LineSchedule({ fenceKey, companyId, order, line }: {
+function LineSchedule({ fenceKey, companyId, order, line, editor }: {
   readonly fenceKey: string
   readonly companyId: string
   readonly order: PurchaseOrderSummary
   readonly line: PurchaseOrderLine
+  readonly editor: LineScheduleEditorAccess | null
 }) {
   const [open, setOpen] = useState(false)
   const historyId = useId()
@@ -69,6 +84,10 @@ function LineSchedule({ fenceKey, companyId, order, line }: {
     {current === undefined
       ? <p>{T.currentUnavailable}</p>
       : current.length === 0 ? <p>{T.currentEmpty}</p> : <SliceTable caption={T.currentCaption(line.lineNo)} slices={current} />}
+    {editor !== null
+      ? <LineScheduleEditor sessionEpoch={editor.sessionEpoch} fenceKey={fenceKey} actorId={editor.actorId} companyId={companyId}
+        order={order} line={line} onSettled={editor.onSettled} />
+      : null}
     <Button type="button" variant="secondary" aria-expanded={open} aria-controls={historyId} onClick={() => setOpen((value) => !value)}>
       {open ? T.hideHistory(line.lineNo) : T.showHistory(line.lineNo)}
     </Button>

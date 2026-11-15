@@ -62,6 +62,8 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
         // F-017 F17-1 (ALS-D82): the allocatable amount of an approved general line, read by Inventory's future allocation only.
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
+        // BS-1 (F-011): the invoiced exchange rate of one goods receipt line, read by Inventory's average cost (Unavailable until invoiced).
+        services.AddScoped<IPurchaseInvoiceCostRateReadPortV1, PurchaseInvoiceCostRateReadPort>();
         return services;
     }
 

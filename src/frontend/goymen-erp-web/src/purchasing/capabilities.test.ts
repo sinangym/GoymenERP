@@ -15,6 +15,7 @@ describe('purchasing capability contract', () => {
       orderDetail: 'purchasing.orders.detail',
       orderApprove: 'purchasing.orders.approve',
       orderCancel: 'purchasing.orders.cancel',
+      orderLineScheduleWrite: 'purchasing.orders.line-schedule.write',
     })
     expect(PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestList]).toBe('/satinalma/talepler')
     expect(PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestCreate]).toBe('/satinalma/talepler/yeni')

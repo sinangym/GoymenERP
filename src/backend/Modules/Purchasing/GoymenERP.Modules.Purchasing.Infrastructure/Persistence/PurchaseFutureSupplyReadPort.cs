@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// accepted or cancelled on a slice lowers the general line's allocatable and nothing is counted twice (§3.3: "teknik dilimler
 /// genel satırın içindedir; iki kez sayılmaz"; the same open rule as <c>PurchaseSalesLinkedSupplyComposer</c>):
 /// committed = (ordered − technical) + Σ slice ordered, accepted = own + Σ slice accepted, cancelled = own + Σ slice cancelled,
-/// allocatable = committed − accepted − cancelled. A negative allocatable is a record that cannot be answered and fails closed.
+/// closed = own + Σ slice closed (API-11), allocatable = committed − accepted − cancelled − closed. A negative allocatable is a record that cannot be answered and fails closed.
 /// Untracked; creates nothing (no attempt, audit or version effect). The list's keyset cursor (business date, order id, line
 /// number) is bound to the company and the product that read it.
 /// </summary>
@@ -41,7 +41,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
             .Where(row => row.OrderId == orderId && row.LineId == lineId)
             .Select(row => new LineFacts(row.CompanyId, row.OrderId, row.LineId, row.LineNo, row.Kind, row.ParentLineId,
                 row.SourceRequestLineId, row.ProductId, row.ProductVersion, row.UnitId, row.UnitIsKilogram, row.Ordered, row.Technical,
-                row.Accepted, row.Cancelled))
+                row.Accepted, row.Cancelled, row.Closed))
             .SingleOrDefaultAsync(cancellationToken);
         if (line is null)
         {
@@ -85,7 +85,8 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
         var slices = await dbContext.OrderLines.AsNoTracking()
             .Where(row => row.OrderId == orderId && row.ParentLineId == lineId && row.Kind == TechnicalKind)
             .GroupBy(row => row.OrderId)
-            .Select(group => new SliceTotals(group.Sum(row => row.Ordered), group.Sum(row => row.Accepted), group.Sum(row => row.Cancelled)))
+            .Select(group => new SliceTotals(group.Sum(row => row.Ordered), group.Sum(row => row.Accepted), group.Sum(row => row.Cancelled),
+                group.Sum(row => row.Closed)))
             .SingleOrDefaultAsync(cancellationToken) ?? SliceTotals.None;
 
         var salesIntent = await SalesIntentAsync(order.SourceRequestId, line.SourceRequestLineId is { } requestLineId ? [requestLineId] : [],
@@ -123,7 +124,11 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
             let sliceCancelled = technical
                 .Where(slice => slice.CompanyId == line.CompanyId && slice.OrderId == line.OrderId && slice.ParentLineId == line.LineId)
                 .Sum(slice => (decimal?)slice.Cancelled) ?? 0m
-            where line.Ordered - line.Technical + sliceOrdered - line.Accepted - sliceAccepted - line.Cancelled - sliceCancelled > 0m
+            let sliceClosed = technical
+                .Where(slice => slice.CompanyId == line.CompanyId && slice.OrderId == line.OrderId && slice.ParentLineId == line.LineId)
+                .Sum(slice => (decimal?)slice.Closed) ?? 0m
+            where line.Ordered - line.Technical + sliceOrdered - line.Accepted - sliceAccepted - line.Cancelled - sliceCancelled
+                - line.Closed - sliceClosed > 0m
             select new
             {
                 order.CompanyId,
@@ -148,9 +153,11 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
                 line.Technical,
                 line.Accepted,
                 line.Cancelled,
+                line.Closed,
                 SliceOrdered = sliceOrdered,
                 SliceAccepted = sliceAccepted,
                 SliceCancelled = sliceCancelled,
+                SliceClosed = sliceClosed,
             };
 
         if (cursor is not null)
@@ -185,8 +192,9 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
                     row.Status, row.Version, row.EffectiveOn);
                 var line = new LineFacts(row.LineCompanyId, row.OrderId, row.LineId, row.LineNo, row.Kind, row.ParentLineId,
                     row.SourceRequestLineId, row.ProductId, row.ProductVersion, row.UnitId, row.UnitIsKilogram, row.Ordered, row.Technical,
-                    row.Accepted, row.Cancelled);
-                items.Add(Compose(companyId, order, line, new SliceTotals(row.SliceOrdered, row.SliceAccepted, row.SliceCancelled), salesIntent));
+                    row.Accepted, row.Cancelled, row.Closed);
+                items.Add(Compose(companyId, order, line, new SliceTotals(row.SliceOrdered, row.SliceAccepted, row.SliceCancelled, row.SliceClosed),
+                    salesIntent));
             }
         }
 
@@ -229,8 +237,9 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
         var committed = line.Ordered - line.Technical + slices.Ordered;
         var accepted = line.Accepted + slices.Accepted;
         var cancelled = line.Cancelled + slices.Cancelled;
-        var allocatable = committed - accepted - cancelled;
-        if (committed < 0m || accepted < 0m || cancelled < 0m || allocatable < 0m)
+        var closed = line.Closed + slices.Closed;
+        var allocatable = committed - accepted - cancelled - closed;
+        if (committed < 0m || accepted < 0m || cancelled < 0m || closed < 0m || allocatable < 0m)
         {
             // Fail closed: an over-accepted or over-cancelled record is never answered as a guessed (clamped) amount.
             throw Unreadable();
@@ -239,7 +248,7 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
         var intent = line.SourceRequestLineId is { } requestLineId && salesIntent.TryGetValue(requestLineId, out var found) ? found : null;
         return new PurchaseFutureSupplyLineV1(companyId, order.OrderId, line.LineId, line.LineNo, order.SupplierPartyId, order.CompanyAccountId,
             line.ProductId, line.ProductVersion, line.UnitId, PurchaseOrderLineKind.General.ToString(), Text(committed, unit), Text(accepted, unit),
-            Text(cancelled, unit), Text(allocatable, unit), intent?.SalesOrderId, intent?.SalesOrderLineId, order.Version);
+            Text(cancelled, unit), Text(closed, unit), Text(allocatable, unit), intent?.SalesOrderId, intent?.SalesOrderLineId, order.Version);
     }
 
     private static string Text(decimal value, QuantityUnit unit) => Quantity.Of(value, unit).Value.ToString(CultureInfo.InvariantCulture);
@@ -250,11 +259,12 @@ internal sealed class PurchaseFutureSupplyReadPort(PurchasingDbContext dbContext
         long Version, DateOnly EffectiveOn);
 
     private sealed record LineFacts(Guid CompanyId, Guid OrderId, Guid LineId, int LineNo, int Kind, Guid? ParentLineId, Guid? SourceRequestLineId,
-        Guid ProductId, string ProductVersion, Guid UnitId, bool UnitIsKilogram, decimal Ordered, decimal Technical, decimal Accepted, decimal Cancelled);
+        Guid ProductId, string ProductVersion, Guid UnitId, bool UnitIsKilogram, decimal Ordered, decimal Technical, decimal Accepted, decimal Cancelled,
+        decimal Closed);
 
-    private sealed record SliceTotals(decimal Ordered, decimal Accepted, decimal Cancelled)
+    private sealed record SliceTotals(decimal Ordered, decimal Accepted, decimal Cancelled, decimal Closed)
     {
-        public static readonly SliceTotals None = new(0m, 0m, 0m);
+        public static readonly SliceTotals None = new(0m, 0m, 0m, 0m);
     }
 
     private sealed record SalesIntent(Guid? SalesOrderId, Guid? SalesOrderLineId);

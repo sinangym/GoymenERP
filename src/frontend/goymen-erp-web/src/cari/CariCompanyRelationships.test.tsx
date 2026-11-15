@@ -109,14 +109,15 @@ function installFetch(config: Config = {}) {
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
-  // The card's AT-009 VKN/TCKN block, SAT-D57 customer group panel, SAT-D102 e-belge panel and F-027 trade name
-  // panel read their own sub-resources; they are not the card read these cases count.
+  // The card's AT-009 VKN/TCKN block, SAT-D57 customer group panel, SAT-D102 e-belge panel and F-027 trade name and
+  // legal name panels read their own sub-resources; they are not the card read these cases count.
   const partyCalls = () =>
     calls.filter(
       (c) =>
         c.url.includes(`/counterparties/${PARTY}`) &&
         !c.url.includes('/tax-identity') &&
         !c.url.includes('/trade-name') &&
+        !c.url.includes('/legal-name') &&
         !c.url.includes('/company-account/customer-group') &&
         !c.url.includes('/company-account/e-document'),
     )

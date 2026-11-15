@@ -29,6 +29,9 @@ public sealed class CounterpartyDbContext(
 
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
+    /// <summary>F-027: Counterparty-owned events stored in the producer transaction (append-only, unpublished).</summary>
+    internal DbSet<CounterpartyOutboxRow> OutboxMessages => Set<CounterpartyOutboxRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -41,6 +44,7 @@ public sealed class CounterpartyDbContext(
         ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
         ConfigureCustomerGroup(modelBuilder);
         ConfigureCustomerEDocumentProfile(modelBuilder);
+        ConfigureOutboxMessages(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -312,6 +316,43 @@ public sealed class CounterpartyDbContext(
             .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
     }
 
+    internal const string OutboxIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'";
+
+    internal const string OutboxEnvelopeCheck =
+        "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 "
+        + "AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 "
+        + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1";
+
+    /// <summary>
+    /// F-027: the module's transactional outbox. One row per event, in the company that wrote it, never updated or
+    /// deleted here; (company, event, aggregate, sequence) is unique so one account version yields one event.
+    /// </summary>
+    private void ConfigureOutboxMessages(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CounterpartyOutboxRow>();
+        entity.ToTable("OutboxMessages", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Identity", OutboxIdentityCheck);
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope", OutboxEnvelopeCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2").IsRequired();
+        entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
+        entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
+            .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private static void ConfigureOrganizationCompanyReference(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<OrganizationCompanyReference>();
@@ -338,7 +379,8 @@ public sealed class CounterpartyDbContext(
 
             if (entry.State == EntityState.Modified
                 && !IsTaxIdentityOnlyPartyChange(entry)
-                && !IsTradeNameOnlyPartyChange(entry))
+                && !IsTradeNameOnlyPartyChange(entry)
+                && !IsLegalNameOnlyPartyChange(entry))
             {
                 throw new InvalidOperationException(
                     "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
@@ -497,6 +539,27 @@ public sealed class CounterpartyDbContext(
                     "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
+
+        foreach (var entry in ChangeTracker.Entries<CounterpartyOutboxRow>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari olay kutusu kayıtları değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Cari olay kutusu kaydı aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
     }
 
     private static readonly string[] MutableTaxIdentityPartyProperties =
@@ -508,12 +571,24 @@ public sealed class CounterpartyDbContext(
     ];
 
     /// <summary>
-    /// F-027 / C-02: the trade name edit touches only these. The official legal name stays outside every direct edit
-    /// (CARI-DEC-004: its change is approval-bound), and a tax identity change never rides along.
+    /// F-027 / C-02: the trade name edit touches only these. The official legal name never rides along: it has its own
+    /// command and permission (ALS-D95), and a tax identity change never rides along either.
     /// </summary>
     private static readonly string[] MutableTradeNamePartyProperties =
     [
         nameof(Party.TradeName),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    /// <summary>
+    /// ALS-D95 (19.22): the legal name change touches only these. The trade name and the tax identity never ride along,
+    /// so each name change is fenced and audited under its own permission.
+    /// </summary>
+    private static readonly string[] MutableLegalNamePartyProperties =
+    [
+        nameof(Party.LegalName),
         nameof(Party.Version),
         nameof(Party.UpdatedAtUtc),
         nameof(Party.RowVersion),
@@ -554,6 +629,16 @@ public sealed class CounterpartyDbContext(
             .ToArray();
         return modified.Contains(nameof(Party.TradeName), StringComparer.Ordinal)
             && modified.All(name => MutableTradeNamePartyProperties.Contains(name, StringComparer.Ordinal));
+    }
+
+    private static bool IsLegalNameOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.LegalName), StringComparer.Ordinal)
+            && modified.All(name => MutableLegalNamePartyProperties.Contains(name, StringComparer.Ordinal));
     }
 
     private sealed class OrganizationCompanyReference

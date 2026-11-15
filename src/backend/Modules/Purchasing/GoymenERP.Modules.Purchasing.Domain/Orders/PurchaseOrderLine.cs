@@ -38,6 +38,7 @@ public sealed class PurchaseOrderLine
         TechnicalQuantity = Quantity.Zero(quantity.Unit);
         AcceptedQuantity = Quantity.Zero(quantity.Unit);
         CancelledQuantity = Quantity.Zero(quantity.Unit);
+        ClosedQuantity = Quantity.Zero(quantity.Unit);
     }
 
     public Guid Id { get; }
@@ -66,14 +67,34 @@ public sealed class PurchaseOrderLine
     /// <summary>A1-3 (No.161 §2): the not-yet-accepted remainder cancelled with the order (zero until then).</summary>
     public Quantity CancelledQuantity { get; private set; }
 
+    /// <summary>
+    /// API-11 (ALIS_F017 v1 §2/§3.6, ALS-D10/D12/D87): the not-yet-accepted remainder closed with the line's short-delivery closure
+    /// (eksik teslim kapanışı) — a separate axis from <see cref="CancelledQuantity"/>; zero while the line is open and again after a
+    /// reopening. On a technical slice it is the slice's part of its general line's closure.
+    /// </summary>
+    public Quantity ClosedQuantity { get; private set; }
+
+    /// <summary>API-11: the general line's current closure (who, when, why), or null while the line is open.</summary>
+    public PurchaseOrderLineClosure? Closure { get; private set; }
+
+    /// <summary>
+    /// API-11: the general line's latest closure or reopening (who, when, why, which direction), or null when it has none; a technical
+    /// slice has none. The store records each new one as the line's closure history and its outbox message.
+    /// </summary>
+    public PurchaseOrderLineClosureChange? LastClosureChange { get; private set; }
+
+    /// <summary>API-11: true while the line (or, for a technical slice, its general line) is closed.</summary>
+    public bool IsClosed => Closure is not null || !ClosedQuantity.IsZero;
+
     /// <summary>What this line itself still commits to: ordered minus technical slices.</summary>
     public Quantity CommittedQuantity => Quantity.Subtract(TechnicalQuantity);
 
     /// <summary>
-    /// Committed minus accepted minus cancelled: the future supply still expected on this line (master INV-006:
-    /// Onaylı − İptal − KabulNet; the return effect arrives with A5).
+    /// Committed minus accepted minus cancelled minus closed: the future supply still expected on this line (master INV-006:
+    /// Onaylı − İptal − KabulNet, extended with the API-11 <c>closed</c> axis, ALIS_F017 v1 §2; the return effect arrives with
+    /// API-44/API-60).
     /// </summary>
-    public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity).Subtract(CancelledQuantity);
+    public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity).Subtract(CancelledQuantity).Subtract(ClosedQuantity);
 
     /// <summary>
     /// A3 API-30 (ALS-D33): the line's current delivery schedule (termin dilimleri), empty until one is recorded; its slices sum to
@@ -96,7 +117,7 @@ public sealed class PurchaseOrderLine
     internal void AddTechnicalSlice(Quantity slice)
     {
         var next = TechnicalQuantity.Add(slice);
-        if (next.Add(AcceptedQuantity).Add(CancelledQuantity).IsGreaterThan(Quantity))
+        if (next.Add(AcceptedQuantity).Add(CancelledQuantity).Add(ClosedQuantity).IsGreaterThan(Quantity))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: teknik kırılımlar ve kabul edilen pay ilk taahhüdü aşıyor.");
@@ -108,7 +129,7 @@ public sealed class PurchaseOrderLine
     internal void AddAcceptedShare(Quantity accepted)
     {
         var next = AcceptedQuantity.Add(accepted);
-        if (next.Add(CancelledQuantity).IsGreaterThan(CommittedQuantity))
+        if (next.Add(CancelledQuantity).Add(ClosedQuantity).IsGreaterThan(CommittedQuantity))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: kabul edilen pay taahhüdü aşıyor.");
@@ -127,5 +148,47 @@ public sealed class PurchaseOrderLine
         }
 
         CancelledQuantity = RemainingQuantity;
+    }
+
+    /// <summary>
+    /// API-11: the line's whole remainder becomes its closed share (zero allowed on a technical slice whose remainder is already
+    /// gone); a general line also records <paramref name="closure"/>, a technical slice passes null. Only the aggregate calls it.
+    /// </summary>
+    internal void CloseRemainder(PurchaseOrderLineClosure? closure)
+    {
+        if (IsClosed || (closure is null) != (Kind == PurchaseOrderLineKind.Technical))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: satır zaten kapalı veya kapanış kaydı satır türüyle uyuşmuyor.");
+        }
+
+        ClosedQuantity = RemainingQuantity;
+        Closure = closure;
+        if (closure is not null)
+        {
+            LastClosureChange = new PurchaseOrderLineClosureChange(true, closure.ClosedBy, closure.ClosedAtUtc, closure.Reason);
+        }
+    }
+
+    /// <summary>
+    /// API-11 reopening (ALS-D10): the closed share returns to the remainder and the closure record is cleared; a general line records
+    /// <paramref name="reopening"/>, a technical slice passes null. Released future allocations do not come back (ALIS_F017 v1 §3.6,
+    /// author reading, closed direction). Only the aggregate calls it.
+    /// </summary>
+    internal void Reopen(PurchaseOrderLineClosureChange? reopening)
+    {
+        var general = Kind == PurchaseOrderLineKind.General;
+        if ((general && (!IsClosed || reopening is null || reopening.Closed)) || (!general && reopening is not null))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: kapalı olmayan satır yeniden açılamaz veya yeniden açma kaydı satır türüyle uyuşmuyor.");
+        }
+
+        ClosedQuantity = Quantity.Zero(Quantity.Unit);
+        Closure = null;
+        if (reopening is not null)
+        {
+            LastClosureChange = reopening;
+        }
     }
 }

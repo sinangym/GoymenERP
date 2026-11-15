@@ -418,6 +418,48 @@ public static class PurchasingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // API-11 (ALS-D10/ALS-D12): the short-delivery closure of an Approved order's general line under purchasing.orders.close —
+        // the line's and its technical slices' unaccepted remainder becomes closed, with a reason; the reopening reverses it.
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/closure", (Guid id, Guid lineId, HttpContext httpContext,
+                [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadCloseOrderLine,
+                (body, metadata) => service.CloseOrderLineAsync(id, lineId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("ClosePurchaseOrderLineV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ClosePurchaseOrderLineRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
+                PurchasingProblemCodesV1.LineClosureState, PurchasingProblemCodesV1.LineNothingToClose,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.LineClosureOnTechnicalLine,
+                PurchasingProblemCodesV1.LineClosureReasonRequired, PurchasingProblemCodesV1.LineClosureReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/reopening", (Guid id, Guid lineId, HttpContext httpContext,
+                [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadReopenOrderLine,
+                (body, metadata) => service.ReopenOrderLineAsync(id, lineId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("ReopenPurchaseOrderLineV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ReopenPurchaseOrderLineRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
+                PurchasingProblemCodesV1.LineClosureState, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
+                PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.LineClosureOnTechnicalLine,
+                PurchasingProblemCodesV1.LineReopenReasonRequired, PurchasingProblemCodesV1.LineReopenReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // ALS-D94 / ALS-D81 (F-027): the line's delivery schedule history — every recorded revision, oldest first, with who recorded
         // it and when; read only under purchasing.orders.read. The last revision is the detail's current schedule.
         group.MapGet("/{id:guid}/lines/{lineId:guid}/schedule-history", async (Guid id, Guid lineId, HttpContext httpContext,

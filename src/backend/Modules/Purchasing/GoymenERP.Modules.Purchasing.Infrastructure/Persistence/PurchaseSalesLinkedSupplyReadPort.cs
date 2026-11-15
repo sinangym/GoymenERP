@@ -55,7 +55,7 @@ internal sealed class PurchaseSalesLinkedSupplyReadPort(PurchasingDbContext dbCo
             select new PurchaseSalesLinkedSupplyRow(
                 orderLine.CompanyId, orderLine.OrderId, orderLine.LineId, orderLine.LineNo, orderLine.Kind, orderLine.ParentLineId,
                 requestLine.SourceDocumentLineId, orderLine.UnitId, orderLine.UnitIsKilogram,
-                orderLine.Ordered, orderLine.Technical, orderLine.Accepted, orderLine.Cancelled))
+                orderLine.Ordered, orderLine.Technical, orderLine.Accepted, orderLine.Cancelled, orderLine.Closed))
             .ToListAsync(cancellationToken);
 
         return PurchaseSalesLinkedSupplyComposer.Compose(rows, companyId);
@@ -65,11 +65,11 @@ internal sealed class PurchaseSalesLinkedSupplyReadPort(PurchasingDbContext dbCo
 /// <summary>One stored order line reached from a Sales-sourced request line (general or technical), before the commitment is composed.</summary>
 internal sealed record PurchaseSalesLinkedSupplyRow(
     Guid CompanyId, Guid OrderId, Guid LineId, int LineNo, int Kind, Guid? ParentLineId, Guid? SalesOrderLineId, Guid UnitId,
-    bool UnitIsKilogram, decimal Ordered, decimal Technical, decimal Accepted, decimal Cancelled);
+    bool UnitIsKilogram, decimal Ordered, decimal Technical, decimal Accepted, decimal Cancelled, decimal Closed = 0m);
 
 /// <summary>
-/// The one rule of "open": per GENERAL line, committed (ordered − technical) − accepted − cancelled, plus every technical slice of
-/// it (slice − accepted − cancelled). A technical line carries its general line's request source, so it is reached by the same
+/// The one rule of "open": per GENERAL line, committed (ordered − technical) − accepted − cancelled − closed, plus every technical
+/// slice of it (slice − accepted − cancelled − closed; API-11, ALS-D87: a short-delivery closed remainder is not open). A technical line carries its general line's request source, so it is reached by the same
 /// index; it is folded into its general line and never listed or counted a second time. A commitment with nothing left is closed
 /// and not listed. A row that cannot be answered (other company, no Sales line, a technical slice without its general line, a
 /// negative remainder, a value above the unit's scale) throws: the answer is Unreadable, never a guess.
@@ -114,10 +114,10 @@ internal static class PurchaseSalesLinkedSupplyComposer
         var lines = new List<PurchaseSalesLinkedSupplyLineV1>();
         foreach (var line in general.OrderBy(line => line.OrderId).ThenBy(line => line.LineNo))
         {
-            var open = line.Ordered - line.Technical - line.Accepted - line.Cancelled;
+            var open = line.Ordered - line.Technical - line.Accepted - line.Cancelled - line.Closed;
             if (slices.TryGetValue(line.LineId, out var own))
             {
-                open += own.Sum(slice => slice.Ordered - slice.Accepted - slice.Cancelled);
+                open += own.Sum(slice => slice.Ordered - slice.Accepted - slice.Cancelled - slice.Closed);
             }
 
             if (open < 0m)

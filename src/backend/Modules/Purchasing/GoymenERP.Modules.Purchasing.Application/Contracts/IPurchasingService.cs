@@ -54,6 +54,17 @@ public interface IPurchasingService
     Task<PurchaseOrderResponse> SetOrderLineScheduleAsync(Guid orderId, Guid lineId, SetPurchaseOrderLineScheduleRequest request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// API-11 (ALS-D10/ALS-D12): closes an Approved order's general line under <c>purchasing.orders.close</c> — its (and its technical
+    /// slices') whole not-yet-accepted remainder becomes <c>closed</c>, with a reason; the accepted shares and the ordered quantity stay.
+    /// </summary>
+    Task<PurchaseOrderResponse> CloseOrderLineAsync(Guid orderId, Guid lineId, ClosePurchaseOrderLineRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>API-11 (ALS-D12): reopens a closed general line of an Approved order under <c>purchasing.orders.close</c>, with a reason.</summary>
+    Task<PurchaseOrderResponse> ReopenOrderLineAsync(Guid orderId, Guid lineId, ReopenPurchaseOrderLineRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     /// <summary>A1-3 (plan API-10): the cancellation's impact preview under <c>purchasing.orders.cancel</c>; reads only.</summary>
     Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default);
 

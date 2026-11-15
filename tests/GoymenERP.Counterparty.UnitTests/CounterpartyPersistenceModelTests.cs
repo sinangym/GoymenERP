@@ -6,6 +6,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using System.Linq.Expressions;
 
 namespace GoymenERP.Counterparty.UnitTests;
@@ -200,7 +201,8 @@ public sealed class CounterpartyPersistenceModelTests
         dbContext.ChangeTracker.Clear();
         var other = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000002"), PartyKind.LegalEntity, "Başka Cari");
         dbContext.Parties.Attach(other);
-        dbContext.Entry(other).Property(value => value.LegalName).CurrentValue = "Yeni Unvan";
+        // A legal-name-only change has its own command now (ALS-D95); any other Party column is still refused.
+        dbContext.Entry(other).Property(value => value.IsActive).CurrentValue = false;
         var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
         Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
 
@@ -226,7 +228,7 @@ public sealed class CounterpartyPersistenceModelTests
         var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
         Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
 
-        // CARI-DEC-004: the legal name is approval-bound, so it may not ride along with a trade name change.
+        // The legal name has its own command and permission (ALS-D95), so it may not ride along with a trade name change.
         dbContext.ChangeTracker.Clear();
         var mixed = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000012"), PartyKind.LegalEntity, "Karışık Cari");
         dbContext.Parties.Attach(mixed);
@@ -241,6 +243,47 @@ public sealed class CounterpartyPersistenceModelTests
         dbContext.Parties.Attach(both);
         both.ChangeTradeName("İkili", DateTimeOffset.UtcNow);
         both.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("1234567890"), DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void SaveChanges_AllowsALegalNameOnlyPartyChangeAndRejectsAnythingRiddenAlong()
+    {
+        // ALS-D95 / 19.22: the legal name change is its own fenced, audited command; nothing else shares the save.
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000021"), PartyKind.LegalEntity, "Eski Unvan A.Ş.");
+        dbContext.Parties.Attach(party);
+        Assert.True(party.ChangeLegalName("Yeni Unvan A.Ş.", DateTimeOffset.UtcNow));
+        dbContext.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, dbContext.Entry(party).State);
+        // The guard lets this through; the (absent) database is what fails next, not the guard.
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
+
+        // A trade name change may not ride along: each name is changed under its own permission.
+        dbContext.ChangeTracker.Clear();
+        var mixed = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000022"), PartyKind.LegalEntity, "Karışık Unvan");
+        dbContext.Parties.Attach(mixed);
+        mixed.ChangeLegalName("Karışık Yeni Unvan", DateTimeOffset.UtcNow);
+        dbContext.Entry(mixed).Property(value => value.TradeName).CurrentValue = "Gizli Ticari Ad";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
+
+        // Nor may a tax identity change (maker-checker) share the save.
+        dbContext.ChangeTracker.Clear();
+        var both = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000023"), PartyKind.LegalEntity, "İkili Unvan");
+        dbContext.Parties.Attach(both);
+        both.ChangeLegalName("İkili Yeni Unvan", DateTimeOffset.UtcNow);
+        both.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("1234567890"), DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        // Nor any other Party column.
+        dbContext.ChangeTracker.Clear();
+        var other = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000024"), PartyKind.LegalEntity, "Pasif Unvan");
+        dbContext.Parties.Attach(other);
+        other.ChangeLegalName("Pasif Yeni Unvan", DateTimeOffset.UtcNow);
+        dbContext.Entry(other).Property(value => value.IsActive).CurrentValue = false;
         Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
     }
 
@@ -295,9 +338,13 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261027202534_AddCounterpartyCustomerGroups",
             dbContext.Database.GetMigrations());
-        Assert.Equal(
+        Assert.Contains(
             "20261031143822_AddCustomerEDocumentProfiles",
-            dbContext.Database.GetMigrations().Last());
+            dbContext.Database.GetMigrations());
+        Assert.EndsWith(
+            "_AddCounterpartyOutbox",
+            dbContext.Database.GetMigrations().Last(),
+            StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }
 
@@ -368,6 +415,104 @@ public sealed class CounterpartyPersistenceModelTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
         Assert.Contains("fiziksel", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Outbox_is_company_scoped_append_only_and_keyed_by_aggregate_sequence()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var outbox = dbContext.Model.FindEntityType(typeof(CounterpartyOutboxRow))!;
+        Assert.Equal("counterparty", outbox.GetSchema());
+        Assert.Equal("OutboxMessages", outbox.GetTableName());
+        Assert.NotNull(outbox.GetDeclaredQueryFilters().SingleOrDefault());
+        Assert.Equal(
+            ["CK_OutboxMessages_Envelope", "CK_OutboxMessages_Identity"],
+            outbox.GetCheckConstraints().Select(check => check.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            CounterpartyDbContext.OutboxIdentityCheck,
+            outbox.GetCheckConstraints().Single(check => check.Name == "CK_OutboxMessages_Identity").Sql);
+        Assert.Equal(
+            CounterpartyDbContext.OutboxEnvelopeCheck,
+            outbox.GetCheckConstraints().Single(check => check.Name == "CK_OutboxMessages_Envelope").Sql);
+
+        var unique = Assert.Single(outbox.GetIndexes(), index => index.IsUnique);
+        Assert.Equal("UX_OutboxMessages_AggregateSequence", unique.GetDatabaseName());
+        Assert.Equal(
+            ["CompanyId", "EventType", "AggregateId", "Sequence"],
+            unique.Properties.Select(property => property.Name));
+        Assert.Equal(ValueGenerated.Never, outbox.FindPrimaryKey()!.Properties.Single().ValueGenerated);
+        Assert.False(outbox.FindProperty(nameof(CounterpartyOutboxRow.CorrelationId))!.IsNullable);
+        Assert.True(outbox.FindProperty(nameof(CounterpartyOutboxRow.CausationId))!.IsNullable);
+
+        var company = Assert.Single(outbox.GetForeignKeys());
+        Assert.Equal(["CompanyId"], company.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, company.DeleteBehavior);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_outbox_update_delete_and_another_company_row_before_the_database_call()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var own = OutboxRow(companyId);
+        dbContext.OutboxMessages.Attach(own);
+        own.PayloadJson = "{}";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("olay kutusu", refused.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        var deleted = OutboxRow(companyId);
+        dbContext.OutboxMessages.Attach(deleted);
+        dbContext.OutboxMessages.Remove(deleted);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.OutboxMessages.Add(OutboxRow(Guid.NewGuid()));
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("şirket", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_outbox_row_without_a_resolved_company_before_the_database_call()
+    {
+        using var dbContext = CreateContext();
+        dbContext.OutboxMessages.Add(OutboxRow(Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void Outbox_migration_Up_is_pure_DDL_and_its_Down_first_refuses_while_events_exist()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddCounterpartyOutbox();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51441", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[OutboxMessages]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains(
+            migration.DownOperations,
+            operation => operation is DropTableOperation { Name: "OutboxMessages", Schema: "counterparty" });
+    }
+
+    private static CounterpartyOutboxRow OutboxRow(Guid companyId)
+    {
+        var occurredAt = new DateTimeOffset(2026, 11, 15, 9, 0, 0, TimeSpan.Zero);
+        return new CounterpartyOutboxRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = companyId,
+            EventType = "counterparty.party.deactivated.v1",
+            SchemaVersion = 1,
+            SourceOperation = "counterparty.company-account.set-active-state.v1",
+            AggregateType = "Counterparty.CompanyPartyAccount",
+            AggregateId = Guid.NewGuid(),
+            AggregateVersion = 2,
+            Sequence = 2,
+            PayloadJson = "{\"reason\":\"Çalışma sona erdi\"}",
+            OccurredAtUtc = occurredAt,
+            CorrelationId = "unit-correlation",
+            RecordedAtUtc = occurredAt,
+        };
     }
 
     private static CounterpartyDbContext CreateContext(ICompanyContext? companyContext = null)

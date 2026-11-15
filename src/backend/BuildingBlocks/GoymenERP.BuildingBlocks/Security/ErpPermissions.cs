@@ -71,6 +71,16 @@ public static class ErpPermissions
     public const string CounterpartyAccountsEDocumentUpdate = "counterparty.accounts.e-document.update";
 
     /// <summary>
+    /// ALS-D95 (confirmed by SINAN-CEVAP 19.22): change a Cari card's official legal name (resmi/hukuki unvan) in one
+    /// step, with no approval step — the Counterparty owner's name (CounterpartyLegalNamePermissionsV1). Registered, not
+    /// granted: no role, seed or user receives it here; the decision flags it for the accounting persona and the grant is
+    /// a human gate (19.31). Company-wide only, as every Counterparty name. Not Critical: the decision makes it a
+    /// single-person change. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants are not
+    /// widened (19.22 chose a separate permission over the basic edit).
+    /// </summary>
+    public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -962,6 +972,16 @@ public static class ErpPermissions
     public const string PurchasingOrdersRevise = "purchasing.orders.revise";
 
     /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87; plan API-11 name): close the unaccepted remainder of an APPROVED purchase order's
+    /// general line (eksik teslim kapanışı) and reopen it. The Purchasing owner's name (PurchasingPermissionManifestV1.OrdersClose),
+    /// apart from entering, approving, receiving, cancelling and revising; none confers another. When future allocations exist on
+    /// the line, the release name is measured beside it (§3.5/§3.6, F17-4). Registered, not granted: no role, seed or user receives
+    /// it here (only SENTETIK browser-suite personas in disposable stacks); the persona card and any real grant stay a human gate.
+    /// Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingOrdersClose = "purchasing.orders.close";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1188,6 +1208,7 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
+            CounterpartyPartiesLegalNameUpdate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1275,6 +1296,7 @@ public static class ErpPermissions
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
+            PurchasingOrdersClose,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1397,6 +1419,7 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
+            CounterpartyPartiesLegalNameUpdate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1484,6 +1507,7 @@ public static class ErpPermissions
             PurchasingOrdersCancel,
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
+            PurchasingOrdersClose,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

@@ -209,6 +209,19 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   line carries `deliverySchedule` (the latest revision). Migration `20261112014446_AddPurchaseOrderLineDeliverySchedule` adds
   `purchasing.PurchaseOrderLineDeliverySlices` (bound to the line; checks on identity, quantity, slice number, version, text); its
   Down refuses (`THROW 51173`) while any slice exists. Delay flagging (API-31/32) and the schedule screen are not part of it.
+- **Order line closure (API-11, ALS-D10/ALS-D12, F-017 §2/§3.6, ALS-D87):** `POST /api/v1/purchasing/orders/{id}/lines/{lineId}/closure`
+  and `.../reopening` (`purchasing.orders.close`, registered only; body `{ expectedVersion, reason }`, reason required; ADR-011 replay;
+  the line id is in the replay identity). Closing an APPROVED order's GENERAL line records its (and its technical slices')
+  not-yet-accepted remainder as `closed`, a separate share from `cancelled`: remaining = committed − accepted − cancelled − closed.
+  A cancelled or Draft order (409 `purchasing_order_state`), a line already closed / not closed (409 `purchasing_line_closure_state`),
+  a line with nothing left (409 `purchasing_line_nothing_to_close`) and a stale version (409 `version_conflict`) are terminal and
+  replayed; a technical slice id or a bad reason is a 422, an unknown line a 404. Each closure and reopening appends one
+  `purchasing.PurchaseOrderLineClosureEvents` row at the order version it produced and one `purchasing.OutboxMessages` row
+  (`purchasing.order-line.closed.v1`, payload `{ companyId, purchaseOrderId, purchaseOrderLineId, closed, version }`) in the same
+  save; no dispatcher yet. The future-supply port carries `ClosedText` and subtracts it; the open-line port leaves a fully closed
+  line out. Migration `AddPurchaseOrderLineClosure` adds the `Closed` column (default 0), the shares and closed-or-cancelled checks
+  and both tables; its Down refuses (`THROW 51174`) while a closure, a message or a closed share exists. Releasing Inventory future
+  allocations at closure (F17-4) and the ALS-D10 in-tolerance suggestion (OPEN-004 / API-95) are not part of it.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay
@@ -231,19 +244,21 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 - **Receipt reads:** options (locations), list, detail and the read-only accepted-vs-measured kg comparison
   (`PurchaseGoodsReceiptComparisonContractsV1.cs`: `SameKilogramUnit` / `Unavailable` are emitted; `ApprovedConversion`
   is declared but intentionally not emitted; no tolerance, approval or stock effect).
-- **HTTP (20 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`,
-  `cancel-impact`, `cancellation` (A1-3); `references/currencies` (A2a-1);
+- **HTTP (22 routes):** requests — create, list, detail, `submission`, `approval`, `rejection`, `withdrawal`; orders — create, list, detail, `approval`,
+  `cancel-impact`, `cancellation` (A1-3), line `closure` and `reopening` (API-11); `references/currencies` (A2a-1);
   goods receipts — record (`POST orders/{id}/lines/{lineId}/goods-receipts`), options, list, detail,
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
-- **Permissions (9):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
+- **Permissions (10):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
   `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b), `purchasing.orders.cancel` (A1-3),
-  `purchasing.orders.price.read` (A2a-1, disclosure only), `purchasing.orders.revise` (A3 API-30 termin change, ALS-D94; no shell
+  `purchasing.orders.price.read` (A2a-1, disclosure only), `purchasing.orders.revise` (A3 API-30 termin change, ALS-D94; since
+  F-027 UI-07 the `purchasing.orders.line-schedule.write` detail child), `purchasing.orders.close` (API-11 line closure; no shell
   control yet) (`PurchasingPermissionManifestV1`,
   `ErpPermissions`; company-wide, not critical, registered only).
-- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.7`) declares P-01 request
+- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.8`) declares P-01 request
   list/new/detail (+ submit, since A1-1 the `purchasing.requests.approve` decision child and since A1-1b the
   `purchasing.requests.withdraw` withdrawal child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve, goods-receipt
-  and, since A1-3, the `purchasing.orders.cancel` remainder cancellation children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
+  and, since A1-3, the `purchasing.orders.cancel` remainder cancellation children; since F-027 the `purchasing.orders.line-schedule.write`
+  line termin child, measured with read + `purchasing.orders.revise`), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
   `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage` (+ `PurchaseRequestDecisionPanel`:
   approve / reject with reason, unknown-result resend of the same key; `PurchaseRequestWithdrawalPanel`: "Geri çek"
   with reason, shown only to the recorded preparer or submitter), `PurchaseOrderListPage`,

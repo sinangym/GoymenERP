@@ -60,6 +60,15 @@ public sealed class CounterpartyMigrationScriptTests
         // The e-belge profile table has no CompanyId column (group-wide, SAT-D119).
         Assert.DoesNotContain("[CustomerEDocumentProfiles] ([CompanyId]", script, StringComparison.Ordinal);
         Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerEDocumentProfiles]", script, StringComparison.OrdinalIgnoreCase);
+        // F-027: the module's own append-only outbox (company-scoped, unique per aggregate sequence); nothing seeded.
+        Assert.Contains("_AddCounterpartyOutbox", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[OutboxMessages]", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "CREATE UNIQUE INDEX [UX_OutboxMessages_AggregateSequence] ON [counterparty].[OutboxMessages] ([CompanyId], [EventType], [AggregateId], [Sequence])",
+            script, StringComparison.Ordinal);
+        Assert.Contains("CK_OutboxMessages_Envelope", script, StringComparison.Ordinal);
+        Assert.Contains("CK_OutboxMessages_Identity", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[OutboxMessages]", script, StringComparison.OrdinalIgnoreCase);
 
         Assert.DoesNotContain("CREATE TABLE [audit].[AuditEvents]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(

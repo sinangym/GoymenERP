@@ -98,9 +98,9 @@ public sealed class Party
 
     /// <summary>
     /// F-027 / C-02 trade name edit: the optional trade name (ticari ad) is a basic card field, changed directly with the
-    /// basic-update permission and audited (CARI-DEC-004 lists only the official legal name, VKN/TCKN, MERSİS and IBAN as
-    /// approval-bound). Blank clears it. Returns false and leaves the version untouched when the normalized value is the
-    /// one already stored, so a repeated save is not a business change. The legal name is never changed here.
+    /// basic-update permission and audited (ALS-D97). Blank clears it. Returns false and leaves the version untouched when
+    /// the normalized value is the one already stored, so a repeated save is not a business change. The legal name is
+    /// never changed here (ALS-D95 gives it its own command).
     /// </summary>
     internal bool ChangeTradeName(string? tradeName, DateTimeOffset utcNow)
     {
@@ -118,6 +118,33 @@ public sealed class Party
     /// <summary>The trade name as <see cref="ChangeTradeName"/> would store it (trimmed, blank as null, bounded).</summary>
     public static string? NormalizeTradeName(string? tradeName) =>
         NormalizeOptionalText(tradeName, nameof(tradeName), TradeNameMaximumLength);
+
+    /// <summary>
+    /// ALS-D95 (confirmed by SINAN-CEVAP 19.22): the official legal name (resmi/hukuki unvan) is changed in one step,
+    /// without an approval step, by the holder of its own separate permission. It stays required (trimmed, at most
+    /// <see cref="LegalNameMaximumLength"/>); blank is refused, never stored. Returns false and leaves the version untouched
+    /// when the normalized value is the one already stored, so a repeated save is not a business change. VKN/TCKN, MERSİS
+    /// and IBAN stay in the CARI-DEC-004 maker-checker flow; nothing else is changed here.
+    /// </summary>
+    internal bool ChangeLegalName(string legalName, DateTimeOffset utcNow)
+    {
+        var normalized = NormalizeLegalName(legalName);
+        if (string.Equals(LegalName, normalized, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        LegalName = normalized;
+        Touch(utcNow);
+        return true;
+    }
+
+    /// <summary>
+    /// The legal name as <see cref="ChangeLegalName"/> would store it (trimmed, bounded). Blank throws
+    /// <see cref="ArgumentException"/>; too long throws <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    public static string NormalizeLegalName(string? legalName) =>
+        RequireText(legalName!, nameof(legalName), LegalNameMaximumLength);
 
     internal void Touch(DateTimeOffset utcNow)
     {

@@ -131,6 +131,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove)
   const canCancel = hasCapability(shell, PURCHASING_CAPABILITY.orderCancel)
+  // F-027 (UI-07, EK16 §2a): the line termin change control; the backend re-measures purchasing.orders.revise on every call.
+  const canEditSchedule = hasCapability(shell, PURCHASING_CAPABILITY.orderLineScheduleWrite)
   const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
@@ -257,9 +259,13 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         </tr>)}
       </RecordTable>
     </section>
-    {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions, read only. */}
+    {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions; the termin change control (UI-07) only
+        behind its child capability. */}
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><LineSchedulePanel
-      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} /></div> : null}
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines}
+      editor={canEditSchedule && actorId !== null
+        ? { sessionEpoch: shell.sessionEpoch, actorId, onSettled: () => query.refetch() }
+        : null} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>

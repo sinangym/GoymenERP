@@ -182,7 +182,10 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         // A3 API-30: the delivery-schedule revisions are part of the order's version history; the rebuild replays them too.
         var sliceRows = await _dbContext.DeliverySlices.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
             .ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows);
+        // API-11: line closures and reopenings are part of the version history too; a closed remainder takes no acceptance share.
+        var closureRows = await _dbContext.LineClosureEvents.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
+            .OrderBy(row => row.OrderVersionAfter).ToListAsync(cancellationToken);
+        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows);
         if (order.Version != validated.ExpectedPurchaseOrderVersion)
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.OrderVersionConflict, 409, "Sipariş sürümü değişti.");
