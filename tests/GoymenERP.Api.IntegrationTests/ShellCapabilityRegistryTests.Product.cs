@@ -138,11 +138,12 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13,
             ShellCapabilityRegistry.ComputeCandidateRevision(normal));
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
-        // Counterparty's four + Organization's eleven (ORG-03 and ORG-04 joined; the master edit adds five child
-        // controls) + Product's seven (four screens, the approve / deactivate / reactivate controls).
-        Assert.Equal(22, combined.Registrations.Count);
+        // Counterparty's four + Organization's twelve (ORG-03 and ORG-04 joined; the master edit adds five child
+        // controls; B-15 adds the work-centre calendar edit control) + Product's seven (four screens, the approve /
+        // deactivate / reactivate controls).
+        Assert.Equal(23, combined.Registrations.Count);
         Assert.Equal(7, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
-        Assert.Equal(10, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
+        Assert.Equal(11, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         var activation = Assert.Single(combined.Registrations,
             item => item.Declaration.CapabilityId == "product.items.activate");
         Assert.Equal("product.items.detail", activation.Declaration.ParentCapabilityId);
