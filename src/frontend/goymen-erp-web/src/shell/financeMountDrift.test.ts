@@ -55,6 +55,8 @@ const ROUTED = [
     FINANCE_ROUTE.manualBankPaymentsCreate],
   [CAPABILITY.financeManualBankPaymentsDetail, FINANCE_CAPABILITY.manualBankPaymentsDetail,
     FINANCE_ROUTE.manualBankPaymentsDetail],
+  [CAPABILITY.financeExpensePaymentsWorkspace, FINANCE_CAPABILITY.expensePaymentsWorkspace,
+    FINANCE_ROUTE.expensePayments],
 ] as const
 
 /**
@@ -76,6 +78,9 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.manualBankPaymentsRecord,
   FINANCE_CAPABILITY.manualBankPaymentsReversePropose,
   FINANCE_CAPABILITY.manualBankPaymentsReverseApprove,
+  FINANCE_CAPABILITY.expensePaymentsDraft,
+  FINANCE_CAPABILITY.expensePaymentsApprove,
+  FINANCE_CAPABILITY.expensePaymentsRecord,
   FINANCE_CAPABILITY.allocationsWrite,
 ]
 
@@ -174,6 +179,7 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.manual-bank-payments.list': 'Giden Ödemeler',
       'finance.manual-bank-payments.create': '',
       'finance.manual-bank-payments.detail': '',
+      'finance.expense-payments.workspace': 'Masraf Ödemeleri',
     })
   })
 })

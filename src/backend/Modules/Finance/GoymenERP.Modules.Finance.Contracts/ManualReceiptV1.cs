@@ -111,6 +111,9 @@ public enum FinanceAction
     ProposeCashAccountReactivation, ApproveCashAccountReactivation,
     // API-85a: the party credit limit master (F018 §L1).
     ReadCreditLimits, ProposeCreditLimit, ApproveCreditLimit,
+    // FNS-D25 (API-25): the payment not tied to a party (single expense item, mandatory description); its own
+    // names, so preparing, approving and recording an expense payment stay separate grants from R47's.
+    SaveExpensePaymentDraft, ReadExpensePayments, ApproveExpensePayment, RecordExpensePayment,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

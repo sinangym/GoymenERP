@@ -64,6 +64,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadManualBankPayments => FinancePermissionNames.ManualBankPaymentDraftRead,
         FinanceAction.ApproveManualBankPayment => FinancePermissionNames.ManualBankPaymentApprove,
         FinanceAction.RecordManualBankPayment => FinancePermissionNames.ManualBankPaymentRecord,
+        FinanceAction.SaveExpensePaymentDraft => FinancePermissionNames.ExpensePaymentDraftSave,
+        FinanceAction.ReadExpensePayments => FinancePermissionNames.ExpensePaymentDraftRead,
+        FinanceAction.ApproveExpensePayment => FinancePermissionNames.ExpensePaymentApprove,
+        FinanceAction.RecordExpensePayment => FinancePermissionNames.ExpensePaymentRecord,
         // API-23: the payment reversal's own names; Unavailable (503) until the central registry knows them.
         FinanceAction.ProposePaymentReversal => FinancePermissionNames.PaymentReversePropose,
         FinanceAction.ApprovePaymentReversal => FinancePermissionNames.PaymentReverseApprove,

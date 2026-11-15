@@ -538,6 +538,28 @@ Not decided, so not built (NEEDS-SINAN): whether movements are held while a pass
 reactivation re-checks the account's currency against today's Settings candidates. Not in this slice: cash movements
 (API-31), transfers (API-32), the screen (UI-05).
 
+## FIN-S15 / API-25: payment not tied to a party (masraf ödemesi) — FNS-D25
+
+A bank or cash payment that is not tied to a party: one expense item kept **by identity** (never a free-text label)
+and a mandatory description. It follows the manual bank payment flow: draft → approval by a different actor →
+record. The recorded row itself is the money fact; no second movement row (no `OutgoingMoneyEvent`, no open item) is
+written.
+
+| Part | What |
+|---|---|
+| HTTP | `/api/v1/finance/expense-payments`: `POST` save draft (`SaveFinanceExpensePaymentDraftV1`), `POST …/{paymentId}/approval` (`ApproveFinanceExpensePaymentV1`), `POST …/{paymentId}/record` (`RecordFinanceExpensePaymentV1`), `GET` list (`GetFinanceExpensePaymentsV1`) and detail (`GetFinanceExpensePaymentV1`), `GET …/expense-items` (`GetFinanceExpenseItemsV1`), `GET …/draft-context` (`GetFinanceExpensePaymentDraftContextV1`). Commands take the `Idempotency-Key` header (surrounding whitespace refused) and a strict JSON body; 401/403/404/503 code-less; replay headers on a replay |
+| Authority | `finance.expense-payment.draft.save`, `.draft.read`, `.approve`, `.record`: registered and company-wide, granted to no role or seed (a human gate). Fenced before the first read, on replay and right before the save |
+| Rules | Source `Bank` (an approved, money-movement-eligible bank account) or `Cash` (an approved cash account; a passive one is refused); the amount is checked against Settings' approved money profile. Description required (trimmed, ≤ 1000): `expense_payment_description_required`, `expense_payment_description_too_long`. Expense item required and known: `expense_item_required`, `expense_item_unknown`. Approval by the preparer is refused (`payment_approval_invalid`, also `CK_ExpensePayments_Status`). Record needs `paymentConfirmed` (`expense_payment_not_confirmed`) and an approved payment (`expense_payment_not_approved`) |
+| Expense item | One item, `general-expense`, with a fixed identity (`SingleExpenseItemCatalog`); the screen sends the id, the label comes from the frontend text file. Whether it moves to a Settings-managed catalog is NEEDS-SINAN |
+| Balance (FNS-D11/D22) | `IFinanceTreasuryBalanceGuard` answers sufficient / insufficient / unavailable; insufficient is a 422 (`finance_treasury_balance_insufficient`), never clipped. No treasury balance source exists yet, so the only registration (`UnavailableTreasuryBalanceGuard`) answers unavailable and a record returns 503 (fail-closed) |
+| Cash passivation | Once a cash account has a recorded expense payment, `ExpensePaymentAwareCashAccountBalanceReader` stops answering `Zero` for it, so its passivation is refused until a real balance reading exists |
+| Money operation | Temporarily the manual bank payment profile (`finance.manual-bank-payment.v1`) through `ExpensePaymentBinding`; a dedicated key is asked of the Settings owner (NEEDS-SINAN). Stored rows carry the profile id and version |
+| Persistence | `finance.ExpensePayments` (company query filter; status 0 draft, 1 approved, 2 recorded; `CK_ExpensePayments_Status` keeps approver ≠ preparer in binary collation) and `finance.ExpensePaymentCommands` keyed by (company, command, key hash). Terminal refusals (not found, stale version) are recorded and replay. Audit `finance.expense-payment.created.v1` / `.updated.v1` / `.approved.v1` / `.recorded.v1` |
+| Migration `20261115000505_AddExpensePayments` | Pure DDL up (two tables). `Down` refuses with `THROW 51296` while any expense payment or command is stored (forward fix) |
+
+Not decided, so not built (NEEDS-SINAN): the treasury balance source and opening balances for the record-time check;
+whether a cash account with a pending passivation may pay; a dedicated money operation key.
+
 ## F-005 D1: official sales invoice record — FNS-D17…FNS-D21, FNS-D26
 
 Finance owns the official sales invoice (e-Fatura / e-Arşiv) that was issued outside the ERP. One person records it

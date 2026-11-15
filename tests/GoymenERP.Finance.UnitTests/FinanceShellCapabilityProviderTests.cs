@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(25, declarations.Count);
+        Assert.Equal(29, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -85,6 +85,20 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.manual-bank-payments.reverse.approve", "finance.manual-bank-payments.detail",
                 "/finans/odemeler/:paymentId", "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.PaymentReverseApprove,
+                    ErpPermissions.AccountingPeriodsRead]),
+            // 1.9 (FNS-D25): the payment not tied to a party; each command is a control of its workspace.
+            ("finance.expense-payments.workspace", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead]),
+            ("finance.expense-payments.draft", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentDraftSave]),
+            ("finance.expense-payments.approve", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentApprove]),
+            ("finance.expense-payments.record", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentRecord,
                     ErpPermissions.AccountingPeriodsRead]),
             ("finance.allocations.list", "finance.allocations.list", "/finans/dagitimlar", "F-03",
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.AllocationRead]),
@@ -162,7 +176,21 @@ public sealed class FinanceShellCapabilityProviderTests
             Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
                 control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         }
-        Assert.Equal(8, declarations.Count(item => item.ParentCapabilityId is not null));
+        var expenseWorkspace = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.ExpensePaymentWorkspaceCapabilityId);
+        foreach (var id in new[]
+                 {
+                     FinanceShellCapabilityProvider.ExpensePaymentDraftCapabilityId,
+                     FinanceShellCapabilityProvider.ExpensePaymentApproveCapabilityId,
+                     FinanceShellCapabilityProvider.ExpensePaymentRecordCapabilityId,
+                 })
+        {
+            var control = Assert.Single(declarations, item => item.CapabilityId == id);
+            Assert.Equal(expenseWorkspace.CapabilityId, control.ParentCapabilityId);
+            Assert.Superset(expenseWorkspace.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+                control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        }
+        Assert.Equal(11, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -201,7 +229,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
-                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "M-03"],
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-25-EXPENSE-PAYMENTS", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }
