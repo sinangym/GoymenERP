@@ -483,6 +483,7 @@ if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
     app.UseMiddleware<DatabaseReadinessGateMiddleware>();
 }
 app.UseAuthentication();
+app.UseLocalAccountAntiforgery();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
 

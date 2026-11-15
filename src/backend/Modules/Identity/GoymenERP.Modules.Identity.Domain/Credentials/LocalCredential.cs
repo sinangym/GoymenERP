@@ -98,6 +98,27 @@ public sealed class LocalCredential
     }
 
     /// <summary>
+    /// Replaces the security stamp (KIM-D30 logout) and raises <see cref="Version"/> by one, because a stamp change
+    /// is a command, not a login write. Used by non-relational stores; the SQL store writes the same values in one
+    /// conditional UPDATE.
+    /// </summary>
+    public void RenewSecurityStamp(Guid newSecurityStamp)
+    {
+        if (newSecurityStamp == Guid.Empty)
+        {
+            throw new ArgumentException("Güvenlik damgası boş olamaz.", nameof(newSecurityStamp));
+        }
+
+        if (newSecurityStamp == SecurityStamp)
+        {
+            throw new ArgumentException("Yeni güvenlik damgası eskisinden farklı olmalıdır.", nameof(newSecurityStamp));
+        }
+
+        SecurityStamp = newSecurityStamp;
+        Version++;
+    }
+
+    /// <summary>
     /// Applies a successful login: the counter and the lockout reset, an optional rehash replaces the hash. Used
     /// by non-relational stores; the SQL store writes the same values in one conditional UPDATE.
     /// </summary>

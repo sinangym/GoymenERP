@@ -4,6 +4,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 
 namespace GoymenERP.Api.Endpoints;
@@ -52,10 +53,37 @@ public static class IdentityEndpoints
     /// ID-1 local account session. Both routes are always in the document (the login screen is built from it) and
     /// answer a code-less 404 unless the host runs in the <c>LocalAccount</c> mode. Every login refusal is the same
     /// platform 401, whatever the reason (unknown user, wrong password, lock, inactive account); only the security
-    /// event carries the reason. The rate limit is checked before any credential is read.
+    /// event carries the reason. The rate limit is checked before any credential is read (KIM-D29). The login and
+    /// every cookie-authenticated write carry the antiforgery header from the token route (KIM-D31,
+    /// <see cref="LocalAccountAntiforgery"/>); logout renews the security stamp, so every cookie session of the user
+    /// ends on its next request (KIM-D30).
     /// </summary>
     private static void MapLocalAccountSession(RouteGroupBuilder group)
     {
+        group.MapGet("/session/antiforgery", async (
+                HttpContext httpContext,
+                IAuthenticationSchemeProvider schemeProvider) =>
+            {
+                NoStore(httpContext);
+                if (await schemeProvider.GetSchemeAsync(LocalAccountSession.SchemeName) is null
+                    || httpContext.RequestServices.GetService<IAntiforgery>() is not { } antiforgery)
+                {
+                    return NotFound();
+                }
+
+                // The request token is bound to the current user; a client asks again after login and logout.
+                var tokens = antiforgery.GetAndStoreTokens(httpContext);
+                return tokens.RequestToken is { Length: > 0 } requestToken
+                    ? Results.Ok(new LocalAccountAntiforgeryTokenV1(requestToken))
+                    : Results.Problem(statusCode: StatusCodes.Status500InternalServerError);
+            })
+            .AllowAnonymous()
+            .WithName("GetLocalAccountAntiforgeryTokenV1")
+            .Produces<LocalAccountAntiforgeryTokenV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpInternalError();
+
         group.MapPost("/session/login", async (
                 LocalAccountLoginRequestV1 request,
                 HttpContext httpContext,
@@ -90,6 +118,7 @@ public static class IdentityEndpoints
                 return Results.NoContent();
             })
             .AllowAnonymous()
+            .WithMetadata(LocalAccountAntiforgery.Required)
             .WithName("LoginLocalAccountV1")
             .Accepts<LocalAccountLoginRequestV1>("application/json")
             .Produces(StatusCodes.Status204NoContent)
@@ -103,12 +132,21 @@ public static class IdentityEndpoints
 
         group.MapPost("/session/logout", async (
                 HttpContext httpContext,
-                IAuthenticationSchemeProvider schemeProvider) =>
+                IAuthenticationSchemeProvider schemeProvider,
+                CancellationToken cancellationToken) =>
             {
                 NoStore(httpContext);
                 if (await schemeProvider.GetSchemeAsync(LocalAccountSession.SchemeName) is null)
                 {
                     return NotFound();
+                }
+
+                // KIM-D30: a new stamp ends this and every other cookie session of the user; there is no session table.
+                // A stamp that already moved means the session had ended anyway, and the cookie is cleared either way.
+                if (LocalAccountSession.TryReadSession(httpContext.User, out var userId, out var securityStamp))
+                {
+                    await httpContext.RequestServices.GetRequiredService<ILocalAccountLogoutService>()
+                        .LogoutAsync(userId, securityStamp, cancellationToken);
                 }
 
                 await httpContext.SignOutAsync(LocalAccountSession.SchemeName);

@@ -119,6 +119,8 @@ public static class ErpAuthenticationExtensions
                 .AddCookie(
                     LocalAccountSession.SchemeName,
                     options => LocalAccountSession.Configure(options, localAccountOptions.Session));
+            // KIM-D31: the antiforgery header on the login and on every cookie-authenticated write.
+            services.AddLocalAccountAntiforgery();
         }
         else
         {

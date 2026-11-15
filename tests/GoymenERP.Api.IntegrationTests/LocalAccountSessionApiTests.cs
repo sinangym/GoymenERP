@@ -17,12 +17,14 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// ID-1 local account login over HTTP: the session cookie, the uniform 401 refusal, logout, the per-request stamp
-/// check, the idle and absolute session limits, the login rate limit and the closed mode. SENTETIK users only.
+/// check, the idle and absolute session limits, the login rate limit and the closed mode, plus KIM-S24: the shipped
+/// KIM-D29 rate limit, the KIM-D30 logout that renews the stamp and the KIM-D31 antiforgery header. SENTETIK users only.
 /// </summary>
 public sealed class LocalAccountSessionApiTests
 {
     private const string LoginPath = "/api/v1/identity/session/login";
     private const string LogoutPath = "/api/v1/identity/session/logout";
+    private const string AntiforgeryPath = "/api/v1/identity/session/antiforgery";
     private const string MePath = "/api/v1/identity/me";
     private const string UserName = "sentetik.yerel";
     // Generated per run (spec "Varsayılan kimlik bilgisi yasağı" item 1).
@@ -97,12 +99,13 @@ public sealed class LocalAccountSessionApiTests
             Assert.Equal(HttpStatusCode.NoContent, login.StatusCode);
         }
 
-        using var logout = await client.PostAsync(LogoutPath, content: null);
+        using var logout = await LogoutAsync(client);
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
         Assert.Contains(SetCookies(logout), cookie => cookie.StartsWith(LocalAccountSession.CookieName + "=;", StringComparison.Ordinal));
 
         using var me = await client.GetAsync(MePath);
         Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
+        // Without a session the write is not cookie-authenticated: authorization answers 401, not the antiforgery 400.
         using var logoutAgain = await client.PostAsync(LogoutPath, content: null);
         Assert.Equal(HttpStatusCode.Unauthorized, logoutAgain.StatusCode);
     }
@@ -273,34 +276,220 @@ public sealed class LocalAccountSessionApiTests
     }
 
     [Fact]
-    public async Task Without_the_local_account_mode_login_and_logout_answer_404()
+    public async Task Without_the_local_account_mode_login_logout_and_the_antiforgery_token_answer_404()
     {
         await using var factory = new GoymenErpApiFactory();
         using var anonymous = factory.CreateClient();
         using var authenticated = factory.CreateClientFor(TestUsers.CompanyA);
 
-        using var login = await LoginAsync(anonymous, UserName, Password);
+        // No antiforgery header: the bearer modes never run the KIM-D31 check, so the route itself answers.
+        using var login = await anonymous.PostAsJsonAsync(LoginPath, new { userName = UserName, password = Password });
         using var logout = await authenticated.PostAsync(LogoutPath, content: null);
+        using var token = await anonymous.GetAsync(AntiforgeryPath);
 
         Assert.Equal(HttpStatusCode.NotFound, login.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, logout.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, token.StatusCode);
+        Assert.False(token.Headers.Contains("Set-Cookie"));
     }
 
     [Fact]
-    public async Task The_local_account_mode_does_not_start_without_rate_limit_settings()
+    public async Task The_local_account_mode_does_not_start_with_an_invalid_rate_limit_setting()
     {
-        await using var factory = new LocalAccountApiFactory(includeRateLimit: false);
+        await using var factory = new LocalAccountApiFactory(permitLimit: 0);
 
         var failure = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
 
         Assert.Contains("RateLimit:Login:PermitLimit", Flatten(failure), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_shipped_settings_carry_the_kim_d29_login_rate_limit()
+    {
+        // No test override: the values come from the shipped appsettings.json.
+        await using var factory = new LocalAccountApiFactory(permitLimit: null);
+        using var client = factory.CreateClient();
+
+        var login = factory.Services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAccountOptions>>()
+            .Value.RateLimit.Login;
+
+        Assert.Equal("SINAN-2026-11-15-KIM-D29", login.PolicyRef);
+        Assert.Equal(10, login.PermitLimit);
+        Assert.Equal(TimeSpan.FromMinutes(1), login.Window);
+        Assert.Equal(LocalAccountLoginRateLimitPartition.IpAddressAndUserName, login.PartitionBy);
+    }
+
+    [Fact]
+    public async Task A_login_without_or_with_a_forged_antiforgery_header_answers_400_and_reads_no_credential()
+    {
+        await using var factory = new LocalAccountApiFactory();
+        var userId = await factory.SeedLocalUserAsync(UserName, Password);
+        using var client = factory.CreateClient();
+
+        using var missing = await client.PostAsJsonAsync(LoginPath, new { userName = UserName, password = WrongPassword });
+        await AssertAntiforgeryRefusalAsync(missing);
+
+        using var forged = await PostWithTokenAsync(
+            client,
+            LoginPath,
+            "SENTETIK-forged-token",
+            JsonContent.Create(new { userName = UserName, password = Password }));
+        await AssertAntiforgeryRefusalAsync(forged);
+        Assert.DoesNotContain(SetCookies(forged), cookie => cookie.StartsWith(LocalAccountSession.CookieName + "=", StringComparison.Ordinal));
+
+        // Neither refusal reached the credential: no failed access was counted.
+        var credential = await factory.FindCredentialAsync(userId);
+        Assert.Equal(0, credential.FailedAccessCount);
+        Assert.Equal(1, credential.Version);
+
+        using var accepted = await LoginAsync(client, UserName, Password);
+        Assert.Equal(HttpStatusCode.NoContent, accepted.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_antiforgery_token_route_sets_a_host_only_strict_cookie_and_is_never_cached()
+    {
+        await using var factory = new LocalAccountApiFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(AntiforgeryPath);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(["requestToken"], body.RootElement.EnumerateObject().Select(property => property.Name));
+        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("requestToken").GetString()));
+        var cookie = Assert.Single(SetCookies(response));
+        Assert.StartsWith(LocalAccountAntiforgery.CookieName + "=", cookie, StringComparison.Ordinal);
+        var attributes = cookie.ToLowerInvariant();
+        Assert.Contains("; secure", attributes, StringComparison.Ordinal);
+        Assert.Contains("; httponly", attributes, StringComparison.Ordinal);
+        Assert.Contains("; samesite=strict", attributes, StringComparison.Ordinal);
+        Assert.Contains("; path=/", attributes, StringComparison.Ordinal);
+        Assert.DoesNotContain("domain=", attributes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_cookie_authenticated_write_needs_a_token_issued_to_the_current_session()
+    {
+        await using var factory = new LocalAccountApiFactory();
+        await factory.SeedLocalUserAsync(UserName, Password);
+        using var client = factory.CreateClient();
+        var anonymousToken = await TokenAsync(client);
+        using (var login = await PostWithTokenAsync(
+                   client,
+                   LoginPath,
+                   anonymousToken,
+                   JsonContent.Create(new { userName = UserName, password = Password })))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, login.StatusCode);
+        }
+
+        using (var missing = await client.PostAsync(LogoutPath, content: null))
+        {
+            await AssertAntiforgeryRefusalAsync(missing);
+        }
+
+        // The token from before the login is bound to the anonymous user, not to this session.
+        using (var stale = await PostWithTokenAsync(client, LogoutPath, anonymousToken, content: null))
+        {
+            await AssertAntiforgeryRefusalAsync(stale);
+        }
+
+        // The refused writes changed nothing: the session is still open.
+        using (var me = await client.GetAsync(MePath))
+        {
+            Assert.Equal(HttpStatusCode.OK, me.StatusCode);
+        }
+
+        using var logout = await LogoutAsync(client);
+        Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
+    }
+
+    [Fact]
+    public async Task Logout_renews_the_security_stamp_and_ends_every_other_session_of_the_user()
+    {
+        await using var factory = new LocalAccountApiFactory();
+        var userId = await factory.SeedLocalUserAsync(UserName, Password);
+        await factory.SeedLocalUserAsync("sentetik.diger", Password);
+        using var first = factory.CreateClient();
+        using var second = factory.CreateClient();
+        using var otherUser = factory.CreateClient();
+        foreach (var (client, name) in new[] { (first, UserName), (second, UserName), (otherUser, "sentetik.diger") })
+        {
+            using var login = await LoginAsync(client, name, Password);
+            Assert.Equal(HttpStatusCode.NoContent, login.StatusCode);
+        }
+
+        var before = await factory.FindCredentialAsync(userId);
+
+        using (var logout = await LogoutAsync(first))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
+        }
+
+        var after = await factory.FindCredentialAsync(userId);
+        Assert.NotEqual(before.SecurityStamp, after.SecurityStamp);
+        Assert.NotEqual(Guid.Empty, after.SecurityStamp);
+        Assert.Equal(before.Version + 1, after.Version);
+
+        // The second browser of the same user loses its session on the next request with the generic 401.
+        using (var secondMe = await second.GetAsync(MePath))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, secondMe.StatusCode);
+            using var body = JsonDocument.Parse(await secondMe.Content.ReadAsStringAsync());
+            Assert.Equal("authentication_required", body.RootElement.GetProperty("code").GetString());
+        }
+
+        // Another user's session is untouched, and the user can sign in again.
+        using (var otherMe = await otherUser.GetAsync(MePath))
+        {
+            Assert.Equal(HttpStatusCode.OK, otherMe.StatusCode);
+        }
+
+        using var again = await LoginAsync(second, UserName, Password);
+        Assert.Equal(HttpStatusCode.NoContent, again.StatusCode);
+        using var reopened = await second.GetAsync(MePath);
+        Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+    }
+
     private static string NewPassword() =>
         "S-" + Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
 
-    private static Task<HttpResponseMessage> LoginAsync(HttpClient client, string userName, string password) =>
-        client.PostAsJsonAsync(LoginPath, new { userName, password });
+    /// <summary>The shared client's flow: a fresh token for the current user, then the write with the header.</summary>
+    private static async Task<HttpResponseMessage> LoginAsync(HttpClient client, string userName, string password) =>
+        await PostWithTokenAsync(client, LoginPath, await TokenAsync(client), JsonContent.Create(new { userName, password }));
+
+    private static async Task<HttpResponseMessage> LogoutAsync(HttpClient client) =>
+        await PostWithTokenAsync(client, LogoutPath, await TokenAsync(client), content: null);
+
+    private static async Task<string> TokenAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync(AntiforgeryPath);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return body.RootElement.GetProperty("requestToken").GetString()!;
+    }
+
+    private static async Task<HttpResponseMessage> PostWithTokenAsync(
+        HttpClient client,
+        string path,
+        string token,
+        HttpContent? content)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
+        request.Headers.Add(LocalAccountAntiforgery.HeaderName, token);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task AssertAntiforgeryRefusalAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(IdentitySessionProblemCodesV1.AntiforgeryTokenInvalid, body.RootElement.GetProperty("code").GetString());
+    }
 
     private static IReadOnlyList<string> SetCookies(HttpResponseMessage response) =>
         response.Headers.TryGetValues("Set-Cookie", out var values) ? values.ToArray() : [];
@@ -336,13 +525,12 @@ internal sealed class LocalAccountApiFactory : WebApplicationFactory<Program>
     public static readonly TimeSpan AbsoluteLifetime = TimeSpan.FromHours(2);
 
     private readonly string databaseName = $"goymen-erp-local-account-{Guid.NewGuid():N}";
-    private readonly int permitLimit;
-    private readonly bool includeRateLimit;
+    private readonly int? permitLimit;
 
-    public LocalAccountApiFactory(int permitLimit = 100, bool includeRateLimit = true)
+    /// <param name="permitLimit">The test login rate limit; <see langword="null"/> keeps the shipped settings.</param>
+    public LocalAccountApiFactory(int? permitLimit = 100)
     {
         this.permitLimit = permitLimit;
-        this.includeRateLimit = includeRateLimit;
         // The cookie is Secure and __Host- prefixed; the client must talk HTTPS to send it back.
         ClientOptions.BaseAddress = new Uri("https://localhost");
     }
@@ -423,10 +611,10 @@ internal sealed class LocalAccountApiFactory : WebApplicationFactory<Program>
             ["Identity:LocalAccount:PasswordHashing:Pbkdf2Iterations"] =
                 LocalAccountOptions.MinimumPbkdf2Iterations.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
-        if (includeRateLimit)
+        if (permitLimit is { } limit)
         {
             settings["Identity:LocalAccount:RateLimit:Login:PermitLimit"] =
-                permitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
             settings["Identity:LocalAccount:RateLimit:Login:Window"] = "00:01:00";
             settings["Identity:LocalAccount:RateLimit:Login:PartitionBy"] =
                 nameof(LocalAccountLoginRateLimitPartition.IpAddressAndUserName);
@@ -506,6 +694,23 @@ internal sealed class TrackingLocalCredentialStore(IdentityDbContext dbContext) 
         }
 
         credential.ApplySuccessfulAccess(rehashedPasswordHash, rehashedFormatVersion);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> TryRenewSecurityStampAsync(
+        Guid userId,
+        Guid readSecurityStamp,
+        Guid newSecurityStamp,
+        CancellationToken cancellationToken)
+    {
+        var credential = await dbContext.LocalCredentials.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (credential is null || credential.SecurityStamp != readSecurityStamp)
+        {
+            return false;
+        }
+
+        credential.RenewSecurityStamp(newSecurityStamp);
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }

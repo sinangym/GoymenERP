@@ -82,6 +82,19 @@ internal static class LocalAccountSession
             ],
             SchemeName));
 
+    /// <summary>Reads the local claim pair and stamp of a principal the cookie scheme authenticated.</summary>
+    public static bool TryReadSession(ClaimsPrincipal? principal, out Guid userId, out Guid securityStamp)
+    {
+        userId = Guid.Empty;
+        securityStamp = Guid.Empty;
+        return principal is not null
+            && string.Equals(principal.FindFirstValue(IssuerClaimType), Issuer, StringComparison.Ordinal)
+            && Guid.TryParseExact(principal.FindFirstValue(SubjectClaimType), "D", out userId)
+            && Guid.TryParseExact(principal.FindFirstValue(SecurityStampClaimType), "D", out securityStamp)
+            && userId != Guid.Empty
+            && securityStamp != Guid.Empty;
+    }
+
     public static AuthenticationProperties CreateProperties(DateTimeOffset startedAtUtc)
     {
         var properties = new AuthenticationProperties
