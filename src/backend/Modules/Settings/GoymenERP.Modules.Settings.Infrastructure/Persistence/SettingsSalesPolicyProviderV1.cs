@@ -6,9 +6,13 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// The host's <see cref="ISettingsSalesPolicyProviderV1"/>: the delivery tolerance and the amount threshold stay exactly the
-/// approved catalog's (<see cref="ApprovedSalesPolicyCatalog"/>); the discount limit (SAT-D2, SAT-D36, SAT-D61…D64) has two
-/// sources.
+/// The host's <see cref="ISettingsSalesPolicyProviderV1"/>. The delivery tolerance (SAT-D5) and the amount threshold (SAT-D6)
+/// have two sources per company and family (F-029 S4b, URUN_F029 spec §5.4(1)): until the family's one-time baseline transfer
+/// the approved catalog (<see cref="ApprovedSalesPolicyCatalog"/>) answers exactly as before; once the transfer marker exists
+/// the Settings version table is the only source and answers with the same shape and the same window rule
+/// (<see cref="SalesPolicyTimelineV1"/>): the version for the date with its real window, or
+/// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/> when the key has no version. The interface is unchanged.
+/// The discount limit (SAT-D2, SAT-D36, SAT-D61…D64) has two sources as well.
 /// <list type="number">
 /// <item>cancelled → <see cref="OperationCanceledException"/>; no access → <c>settings_access_denied</c>; an empty group id →
 /// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid"/> (the catalog's order).</item>
@@ -49,25 +53,86 @@ public sealed class SettingsSalesPolicyProviderV1 : ISettingsSalesPolicyProvider
         _catalog = catalog;
     }
 
-    public Task<SalesDeliveryTolerancePolicyV1> GetSalesDeliveryToleranceAsync(
-        DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
-        _catalog.GetSalesDeliveryToleranceAsync(effectiveOn, cancellationToken);
+    public async Task<SalesDeliveryTolerancePolicyV1> GetSalesDeliveryToleranceAsync(
+        DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        RequireAccess(cancellationToken);
+        var companyId = _companyContext.CompanyId;
+        SalesDeliveryToleranceVersionRow[]? rows;
+        try
+        {
+            rows = await SalesPolicyReads.IsTransferredAsync(_database, SalesPolicyFamiliesV1.DeliveryTolerance, cancellationToken)
+                ? await SalesPolicyReads.LoadTolerancesAsync(_database, cancellationToken)
+                : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not SettingsPrerequisiteException)
+        {
+            throw new SettingsPrerequisiteException("settings_provider_unavailable");
+        }
 
-    public Task<SalesApprovalAmountThresholdPolicyV1> GetSalesApprovalAmountThresholdAsync(
-        Guid currencyId, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
-        _catalog.GetSalesApprovalAmountThresholdAsync(currencyId, effectiveOn, cancellationToken);
+        if (rows is null)
+        {
+            return await _catalog.GetSalesDeliveryToleranceAsync(effectiveOn, cancellationToken);
+        }
+
+        var entry = SalesPolicyTimelineV1.For(SalesPolicyReads.ToleranceTimeline(rows), effectiveOn)
+                    ?? throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyNotFound);
+        return new SalesDeliveryTolerancePolicyV1(
+            companyId,
+            new ProfileVersionV1(entry.Value.ProfileId, entry.Version),
+            SalesPolicyTimelineV1.Canonical(entry.Value.WarnPercent),
+            SalesPolicyTimelineV1.Canonical(entry.Value.ApprovalPercent),
+            SalesPolicyTimelineV1.Canonical(entry.Value.BlockPercent),
+            entry.Value.IsActive,
+            entry.EffectiveFrom,
+            entry.EffectiveThrough);
+    }
+
+    public async Task<SalesApprovalAmountThresholdPolicyV1> GetSalesApprovalAmountThresholdAsync(
+        Guid currencyId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        RequireAccess(cancellationToken);
+        if (currencyId == Guid.Empty)
+        {
+            throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid);
+        }
+
+        var companyId = _companyContext.CompanyId;
+        SalesApprovalAmountThresholdVersionRow[]? rows;
+        try
+        {
+            rows = await SalesPolicyReads.IsTransferredAsync(_database, SalesPolicyFamiliesV1.ApprovalAmountThreshold,
+                    cancellationToken)
+                ? await SalesPolicyReads.LoadThresholdsAsync(_database, currencyId, cancellationToken)
+                : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not SettingsPrerequisiteException)
+        {
+            throw new SettingsPrerequisiteException("settings_provider_unavailable");
+        }
+
+        if (rows is null)
+        {
+            return await _catalog.GetSalesApprovalAmountThresholdAsync(currencyId, effectiveOn, cancellationToken);
+        }
+
+        var entry = SalesPolicyTimelineV1.For(SalesPolicyReads.ThresholdTimeline(rows), effectiveOn)
+                    ?? throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyNotFound);
+        return new SalesApprovalAmountThresholdPolicyV1(
+            companyId,
+            currencyId,
+            new ProfileVersionV1(entry.Value.ProfileId, entry.Version),
+            entry.Value.IsEnabled,
+            SalesPolicyReads.AmountText(entry.Value),
+            entry.Value.IsActive,
+            entry.EffectiveFrom,
+            entry.EffectiveThrough);
+    }
 
     public async Task<SalesDiscountLimitPolicyV1> GetSalesDiscountLimitAsync(
         Guid limitGroupId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!_currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(_currentUser.UserId)
-            || !_companyContext.IsResolved || _companyContext.CompanyId == Guid.Empty
-            || !_currentUser.CanAccessCompany(_companyContext.CompanyId))
-        {
-            throw new SettingsPrerequisiteException("settings_access_denied");
-        }
-
+        RequireAccess(cancellationToken);
         if (limitGroupId == Guid.Empty)
         {
             throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid);
@@ -115,5 +180,17 @@ public sealed class SettingsSalesPolicyProviderV1 : ISettingsSalesPolicyProvider
                 throw new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyNotFound),
             _ => throw new SettingsPrerequisiteException("settings_profile_invalid"),
         };
+    }
+
+    /// <summary>Cancelled → <see cref="OperationCanceledException"/>; no access → <c>settings_access_denied</c> (the catalog's order).</summary>
+    private void RequireAccess(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(_currentUser.UserId)
+            || !_companyContext.IsResolved || _companyContext.CompanyId == Guid.Empty
+            || !_currentUser.CanAccessCompany(_companyContext.CompanyId))
+        {
+            throw new SettingsPrerequisiteException("settings_access_denied");
+        }
     }
 }

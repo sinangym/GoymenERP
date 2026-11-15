@@ -49,6 +49,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { MasterFormLauncher, MasterRecordForm } from './MasterRecordForm'
 import { MASTER_TEXT, savedNotice } from './organizationText'
 import { refreshOrganizationReads } from './refreshOrganizationReads'
+import { WorkCenterCalendarSection } from './WorkCenterCalendarSection'
 import styles from './WorkCenterDetailPage.module.css'
 
 /** Only an id the Organization routes could have emitted is ever sent; anything else is not a record here. */
@@ -101,6 +102,7 @@ function WorkCenterCardScreen({ namespace }: { readonly namespace: string | null
     await refreshOrganizationReads(queryClient, namespace)
   }, [namespace, queryClient, refetch])
   const canEdit = hasCapability(shell, ORGANIZATION_CAPABILITY.workCenterEdit)
+  const canEditCalendar = hasCapability(shell, ORGANIZATION_CAPABILITY.workCenterCalendarEdit)
 
   if (!singleCompanyContext) {
     return (
@@ -137,6 +139,14 @@ function WorkCenterCardScreen({ namespace }: { readonly namespace: string | null
       {canEdit ? (
         <WorkCenterEditSection workCenter={state.data} companyId={activeCompanyId ?? ''} onRefresh={refreshAll} />
       ) : null}
+      {/* B-15: the calendar is read on the card's own grant; its edit is its own server-derived control. */}
+      <WorkCenterCalendarSection
+        workCenterId={state.data.id}
+        companyId={activeCompanyId ?? ''}
+        namespace={namespace}
+        entryGeneration={entryGeneration}
+        canEdit={canEditCalendar}
+      />
     </Frame>
   )
 }

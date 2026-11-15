@@ -35,8 +35,15 @@ public static class OrganizationPermissionManifestV1
     /// </summary>
     public const string WorkCentersWrite = "organization.work-centers.write";
 
+    /// <summary>
+    /// PUT /api/v1/organization/work-centers/{id}/calendar (B-15): the work centre's shifts and closed dates, on the
+    /// work-centre read predicate of this grant. Site / location / work-centre scoped. Kept apart from
+    /// <see cref="WorkCentersWrite"/> so editing a calendar is not silently granted to whoever may rename a work centre.
+    /// </summary>
+    public const string WorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
+
     public static IReadOnlySet<string> Names { get; } = new HashSet<string>(
-        [SitesWrite, LocationsWrite, WorkCentersWrite],
+        [SitesWrite, LocationsWrite, WorkCentersWrite, WorkCenterCalendarsWrite],
         StringComparer.Ordinal);
 }
 

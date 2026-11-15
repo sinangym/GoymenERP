@@ -34,11 +34,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        // Counterparty's four plus Organization's ELEVEN (ORG-03 joined the four ORG-01/02 declarations,
-        // ORG-04's work-centre card the fifth, the master edit's five controls the rest). Measured, not
-        // incremented: the count is asserted here so that a declaration appearing or vanishing has to be
-        // stated rather than absorbed.
-        Assert.Equal(15, registry.Registrations.Count);
+        // Counterparty's four plus Organization's TWELVE (ORG-03 joined the four ORG-01/02 declarations,
+        // ORG-04's work-centre card the fifth, the master edit's five controls, then B-15's calendar edit
+        // control). Measured, not incremented: the count is asserted here so that a declaration appearing
+        // or vanishing has to be stated rather than absorbed.
+        Assert.Equal(16, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail])));
@@ -79,6 +79,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         OrganizationPermissionManifestV1.SitesWrite,
         OrganizationPermissionManifestV1.LocationsWrite,
         OrganizationPermissionManifestV1.WorkCentersWrite,
+        OrganizationPermissionManifestV1.WorkCenterCalendarsWrite,
     ];
 
     /// <summary>
@@ -239,6 +240,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
                 if ((permissions & Bit(ErpPermissions.OrganizationLocationsRead)) != 0)
                     expected.Add(OrganizationShellCapabilityProvider.WorkCenterCreateCapabilityId);
             }
+
+            // B-15: the calendar edit stands on the card's read plus the calendar's OWN write, never on the
+            // work-centre master write, so either write can be granted without the other.
+            if ((permissions & Bit(OrganizationPermissionManifestV1.WorkCenterCalendarsWrite)) != 0)
+                expected.Add(OrganizationShellCapabilityProvider.WorkCenterCalendarEditCapabilityId);
         }
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);

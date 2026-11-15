@@ -20,6 +20,14 @@ public static class ErpPermissions
     public const string OrganizationLocationsWrite = "organization.locations.write";
     public const string OrganizationWorkCentersWrite = "organization.work-centers.write";
 
+    /// <summary>
+    /// B-15 work-centre calendar master (URT-D11 "hat bazında değiştirilebilir"): PUT
+    /// /api/v1/organization/work-centers/{id}/calendar, the owner's OrganizationPermissionManifestV1 name. Scoped like
+    /// <see cref="OrganizationWorkCentersWrite"/> (site / location / work-centre). Not Critical. Registered, not granted:
+    /// which persona holds it is a human gate.
+    /// </summary>
+    public const string OrganizationWorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
+
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
     public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
@@ -1024,6 +1032,21 @@ public static class ErpPermissions
     public const string SettingsTaxMasterManage = "settings.tax-master.manage";
 
     /// <summary>
+    /// F-029 S4b (URUN_F029 spec §5.4(1); URN-D2…D5): read the Sales delivery tolerance (SAT-D5) timeline, transfer its reviewed
+    /// compiled baseline once and record new versions (<c>SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage</c>).
+    /// Registered, not granted: no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesDeliveryTolerancesManage = "settings.sales-delivery-tolerances.manage";
+
+    /// <summary>
+    /// F-029 S4b (URUN_F029 spec §5.4(1); URN-D2…D5): read the Sales order-approval amount thresholds (SAT-D6), transfer their
+    /// reviewed compiled baseline once and record new versions per currency
+    /// (<c>SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage</c>). Registered, not granted: no role, seed or user
+    /// receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesApprovalThresholdsManage = "settings.sales-approval-thresholds.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1126,6 +1149,7 @@ public static class ErpPermissions
             OrganizationSitesWrite,
             OrganizationLocationsWrite,
             OrganizationWorkCentersWrite,
+            OrganizationWorkCenterCalendarsWrite,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -1281,6 +1305,8 @@ public static class ErpPermissions
             DocumentsFilesLink,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsSalesDeliveryTolerancesManage,
+            SettingsSalesApprovalThresholdsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1480,6 +1506,8 @@ public static class ErpPermissions
             DocumentsFilesLink,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsSalesDeliveryTolerancesManage,
+            SettingsSalesApprovalThresholdsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,

@@ -16,6 +16,11 @@ public sealed class OrganizationMasterDataPermissionRegistrationTests
     // Site / location / work-centre scoped, like organization.locations.status.update.
     [InlineData(OrganizationPermissionManifestV1.LocationsWrite, ErpPermissions.OrganizationLocationsWrite, false)]
     [InlineData(OrganizationPermissionManifestV1.WorkCentersWrite, ErpPermissions.OrganizationWorkCentersWrite, false)]
+    // B-15: the work-centre calendar's own write, scoped like the work-centre write and granted to no one here.
+    [InlineData(
+        OrganizationPermissionManifestV1.WorkCenterCalendarsWrite,
+        ErpPermissions.OrganizationWorkCenterCalendarsWrite,
+        false)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName, bool companyWideOnly)
     {
         Assert.Equal(ownerName, centralName);

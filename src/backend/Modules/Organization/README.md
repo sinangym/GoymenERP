@@ -44,3 +44,14 @@
 - A stored successful replay does not re-evaluate a party that became inactive later: the historical `OperatorPartyId`, audit and old response remain immutable. A new command must pass the current company-scoped Supplier eligibility check.
 - `IOrganizationTransferDestinationSourceV1` is the bounded company-scoped read for an Inventory transfer command: location id, active/external flags, nullable operator party and exact location version. It applies no user permission or row-by-row lookup and makes no transfer decision itself.
 - This integration deliberately adds no permission/grant, seed PartyId, Counterparty write or Inventory write. A real external-depot PartyId remains data-owner work.
+
+## B-15 — work-centre shift calendar and planning reference V2 (URT-D11 / URT-D29)
+
+- `GET /api/v1/organization/work-centers/{id}/calendar` → `WorkCenterCalendarDetail` `{workCenterId, source, version, timeZoneId, shifts[{day, start, end}], closedDates[]}` under the work-centre read's own grant and scope predicate. A work centre with no saved calendar answers the URT-D11 default (Monday–Friday 08:00–16:00, one shift, weekend closed, no holidays) with `version` 0 and `source` `Default`; nothing is stored for it.
+- `PUT …/work-centers/{id}/calendar` `{shifts, closedDates, expectedVersion, reason}` → 204 under the new permission `organization.work-centers.calendar.write` (registered only; no grant, role or Critical). `expectedVersion` 0 saves the first calendar; equal content is an audited `NoChange` that writes no revision. The active-state command protocol applies (idempotency key, replay, stale-version 409, audit, row scope).
+- Storage: `organization.WorkCenterCalendars` (one head row per work centre, `Version` ≥ 1, row version), `WorkCenterCalendarShifts` and `WorkCenterCalendarClosedDates` (append-only, tagged with the head revision; the current calendar is the rows whose `Revision` equals the head's `Version`). Rows are tenant-filtered and the DbContext write guard refuses deleting any calendar row or modifying a shift/closed-date row.
+- Rules: shifts are whole-minute windows with `Start < End` (no overnight shift), may touch but not overlap on one day, at most 8 per day and 56 per calendar; closed dates are distinct, at most 1000. Times are wall-clock in `Europe/Istanbul`.
+- Migration `AddWorkCenterCalendar`: Down guard **51361** refuses while any calendar exists (forward fix); an empty store rolls back freely.
+- `IOrganizationWorkCenterPlanningReferenceV2` (consumer Manufacturing) = V1's identity and kind plus the calendar's `Version`, `Source`, `TimeZoneId`, `Shifts` and `Holidays`, with V1's fences. `IOrganizationWorkCenterPlanningReferenceV1` is unchanged.
+- Shell (provider 1.3 → 1.4): control `organization.work-centers.calendar.edit` on ORG-04.
+- Not here (URT-D29): no capacity, load or termin computation; holiday source beyond per-work-centre manual dates, overnight shifts and the calendar write grant stay open.

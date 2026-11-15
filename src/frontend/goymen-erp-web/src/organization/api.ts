@@ -30,6 +30,7 @@ import {
   type WorkCenterSummary,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
+import { decodeWorkCenterCalendar, type WorkCenterCalendar } from './workCenterCalendarContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -148,6 +149,28 @@ export async function fetchWorkCenter(
   const workCenter = decodeWorkCenterDetail(result.body, workCenterId)
   if (workCenter === null) return { type: 'malformed' }
   return { type: 'ok-single', data: workCenter }
+}
+
+/**
+ * `GET /api/v1/organization/work-centers/{id}/calendar` — B-15. The work centre's current calendar, or the URT-D11
+ * default (`source: Default`, `version: 0`) while none is saved. Read on the card's own grant; a 404 is the same
+ * non-disclosing answer as the card's. An answer that is not the requested work centre's is malformed.
+ */
+export async function fetchWorkCenterCalendar(
+  companyId: string,
+  workCenterId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<WorkCenterCalendar>> {
+  const result = await read(
+    `/organization/work-centers/${encodeURIComponent(workCenterId)}/calendar`,
+    companyId,
+    signal,
+  )
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const calendar = decodeWorkCenterCalendar(result.body, workCenterId)
+  if (calendar === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: calendar }
 }
 
 export interface LocationPageQuery {
