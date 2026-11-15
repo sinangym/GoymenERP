@@ -934,6 +934,21 @@ nothing, opens no document and writes no other module's record.
   retried with the same key. The shipment is typed as its loading instruction id (SAT-D283) until a Logistics screen offers the entry
   (NEEDS-SINAN; SAT-D159/SAT-D162, EK56 "Sınırlar").
 
+## Shipment risk gate read port (F-018; plan S2, FNS-D30, SAT-D310)
+
+The Logistics shipment gate (consumer STK-S27) reads the order's risk result at the moment of shipment through
+`ISalesShipmentRiskGateReadPortV1.GetAsync(orderId, loadingInstructionId)` (contract `sales.shipment-risk-gate.v1`). Sales owns
+the answer; the gate rule (plan L-1..L-8) is the consumer's. No amount, limit or balance is answered (SAT-D162).
+
+| Concern | Rule |
+|---|---|
+| Shape | `SalesShipmentRiskGateReadV1(OrderId, LoadingInstructionId, Result, HoldReason, Exception, ContractVersion)`; `Result` is `Within` / `Over` / `Unavailable` (the default value is `Unavailable`: never read as "within"); `HoldReason` is null only on `Within`, otherwise `OverLimit` / `CreditLimitNotSet` / `SourceUnavailable`. |
+| Evaluation | The same deterministic path as the S-04 risk check and the S1 limit warning (`EvaluateRiskAsync` → `SalesCustomerRiskCalculator`), classified by the S1 mapping (`SalesOrderRiskWarnings.Classify`): `Over` → `OverLimit`; `Unavailable` with the Finance limit `NoSource` (`finance_credit_limit_not_set`) or no single limit amount → `CreditLimitNotSet`; every other `Unavailable` → `SourceUnavailable`. |
+| Authority | A company-scoped system read: the consumer measures its own permission; no Sales permission, actor or role is used. Every owner read is still fenced on the server-resolved company staying the same. |
+| Exception | The shipment's single-shipment risk exception (`ISalesShipmentRiskExceptionReadPortV1`) is read once and embedded, so the gate decides on one answer. The gate passes `Within`; anything else passes only with `Exception.Status = Valid` (SAT-D310: `CreditLimitNotSet` included), consumed by that one shipment (SAT-D285). |
+| Fail-closed | No resolved company throws; a lost authority propagates. Another company's or an unknown order and any other failure of the evaluation answer `Unavailable` / `SourceUnavailable`, never a 403 (another company's order also reads its exception as `None` under the tenant filter). A self-contradicting decision is answered as `SourceUnavailable`. |
+| Writes | None: no attempt, audit, warning or version effect (the S1 warning is the order command's). |
+
 ## Customer return rejection and cancellation (API-40; SAT-D290 (2, 3), EK57)
 
 SAT-D290: the return is recorded by Muhasebe and moves submit → approve → finalize; the preparer never approves. This

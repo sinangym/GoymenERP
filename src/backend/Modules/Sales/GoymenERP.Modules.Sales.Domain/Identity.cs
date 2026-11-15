@@ -497,6 +497,33 @@ public static class SalesRuleCodes
     /// <summary>API-40: a return carries no lines, too many lines or a line twice.</summary>
     public const string CustomerReturnLinesInvalid = "sales_customer_return_lines_invalid";
 
+    /// <summary>S-11 (SAT-D28): the contract's validity window is not ordered (the last day precedes the first).</summary>
+    public const string ContractValidityInvalid = "sales_contract_validity_invalid";
+
+    /// <summary>
+    /// S-11 (NS-13): the payment plan has no installment or too many, an amount is not positive or does not fit the money
+    /// profile's scale, or the due dates are not in order.
+    /// </summary>
+    public const string ContractInstallmentsInvalid = "sales_contract_installments_invalid";
+
+    /// <summary>
+    /// S-11 (NS-13): a discount rule has no label, a duplicate label of its kind, a rate outside (0, 100] or too many decimals,
+    /// or the contract carries more than one total discount or too many rules.
+    /// </summary>
+    public const string ContractDiscountInvalid = "sales_contract_discount_invalid";
+
+    /// <summary>S-11 (SAT-D28): the clauses exceed their bound (never cut).</summary>
+    public const string ContractClausesTooLong = "sales_contract_clauses_too_long";
+
+    /// <summary>S-11 (NS-13): the contract's creator tried to approve or reject its own discount (maker≠checker).</summary>
+    public const string ContractSelfDecision = "sales_contract_self_decision";
+
+    /// <summary>S-11 (NS-13): a discount rejection carries no reason.</summary>
+    public const string ContractReasonRequired = "sales_contract_reason_required";
+
+    /// <summary>S-11 (NS-13): a discount rejection reason exceeds its bound (never cut).</summary>
+    public const string ContractReasonTooLong = "sales_contract_reason_too_long";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

@@ -1118,11 +1118,18 @@ public sealed partial class SalesDraftService(
 
     // ---- authority ------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The released authority of one call. <paramref name="IsSystemRead"/> marks the plan S2 shipment gate's company-scoped system
+    /// read (<see cref="ISalesShipmentRiskGateSource"/>): no actor, role or Sales permission is part of it, and every later fence
+    /// re-checks only that the server-resolved company is still the same. Only the gate's read creates such a scope; it never
+    /// reaches a write.
+    /// </summary>
     private sealed record Scope(
         Guid CompanyId,
         string ActorId,
         IReadOnlyCollection<string> RoleCodes,
-        bool IsSalesSupport);
+        bool IsSalesSupport,
+        bool IsSystemRead = false);
 
     /// <summary>
     /// The fence: capture server identity/company, read the active persona, then make the permission
@@ -1165,6 +1172,17 @@ public sealed partial class SalesDraftService(
 
     private async Task<Scope> RequireStillAsync(Scope scope, string? permission, CancellationToken cancellationToken)
     {
+        if (scope.IsSystemRead)
+        {
+            // Plan S2 system read: the consumer measured its own authority; here only the company must still be the same.
+            if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty || companyContext.CompanyId != scope.CompanyId)
+            {
+                throw new SalesDraftServiceException(403, "forbidden");
+            }
+
+            return scope;
+        }
+
         var current = await RequireAsync(permission, cancellationToken);
         if (current.CompanyId != scope.CompanyId || !string.Equals(current.ActorId, scope.ActorId, StringComparison.Ordinal))
         {
