@@ -294,6 +294,9 @@ public sealed partial class InventoryStore
 
         var movement = effect.Movement(Guid.NewGuid(), row.CompanyId);
         await StageTransferMovementAsync(movement, metadata, freshAuthorityFence, cancellationToken);
+        // KLN-D64 (2): the dispatch posted nothing to the average-cost ledger, so the cancellation posts nothing either.
+        // Once transfer cost posting starts, this save stages AverageCostCalculator.ApplyTransferDispatchCancel at the
+        // dispatch unit cost (KLN-D64 (1)) through the ledger writer.
         var now = timeProvider.GetUtcNow();
         var cancellation = new InventoryTransferDispatchCancellationRow
         {

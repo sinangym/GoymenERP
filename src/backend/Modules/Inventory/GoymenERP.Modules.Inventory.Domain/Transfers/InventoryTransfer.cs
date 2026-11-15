@@ -111,7 +111,9 @@ public sealed record InventoryTransferAcceptanceEffect(
 /// <summary>
 /// KLN-D20: the reverse of a whole dispatch. The dispatch row and its movement stay; this separate inbound movement
 /// puts every dispatched bucket back at its exact source position (same block, owner, custodian and location). Cost is
-/// not touched here: transfers do not post to the cost ledger yet (KLN-D25 (2) golden is an open follow-up).
+/// not touched here: KLN-D64 (2), while transfers do not post to the cost ledger the cancellation does not either. When
+/// transfer cost posting starts, the reverse re-enters the source at the unit cost used at dispatch, never at the source's
+/// average at cancel time (KLN-D64 (1), <see cref="Costing.AverageCostCalculator.ApplyTransferDispatchCancel"/>).
 /// </summary>
 public sealed record InventoryTransferDispatchCancellationEffect(
     Guid TransferId,
