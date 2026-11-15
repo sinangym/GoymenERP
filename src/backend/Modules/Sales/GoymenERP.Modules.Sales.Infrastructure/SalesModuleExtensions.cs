@@ -109,8 +109,25 @@ public static class SalesModuleExtensions
         // port is the Finance owner's and is NOT composed here: without it the finalisation is 503 before any read (SAT-D294).
         services.AddScoped<ISalesCustomerReturnStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesCustomerReturnService>(CreateCustomerReturnService);
+        // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract over the Sales store. The discount limit source is the Settings
+        // owner's and is NOT composed here: without it no limit is defined and every discount goes to approval (SAT-D346).
+        services.AddScoped<ISalesContractStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesContractService>(CreateContractService);
         return services;
     }
+
+    // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
+    // A missing discount limit source stays null: "sınır tanımlı değil", every discount goes to approval (SAT-D346).
+    private static SalesContractService CreateContractService(IServiceProvider serviceProvider) => new SalesContractService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ICorrelationContext>(),
+        serviceProvider.GetRequiredService<ISalesContractStore>(),
+        serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
+        serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ISalesContractDiscountLimitSourceV1>());
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing Finance port stays null: the finalisation fails closed, never a silent admission.

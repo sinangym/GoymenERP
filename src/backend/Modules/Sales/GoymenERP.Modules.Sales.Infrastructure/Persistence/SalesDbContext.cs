@@ -8,6 +8,7 @@ using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using GoymenERP.Modules.Sales.Domain.RiskExceptions;
+using GoymenERP.Modules.Sales.Domain.SalesContracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -292,6 +293,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-40 (ADR-011 §2): the customer return commands' own attempt records (append-only).</summary>
     internal DbSet<CustomerReturnAttemptRow> CustomerReturnAttempts => Set<CustomerReturnAttemptRow>();
 
+    /// <summary>S-11 (SAT-D28, NS-13): the sales contracts (the discount decision is the only change).</summary>
+    internal DbSet<ContractRow> Contracts => Set<ContractRow>();
+
+    /// <summary>S-11 (ADR-011 §2): the contract commands' own attempt records (append-only).</summary>
+    internal DbSet<ContractAttemptRow> ContractAttempts => Set<ContractAttemptRow>();
+
     /// <summary>
     /// CK_DraftRiskWarnings_Facts (F-018 / plan S1, ASSUMPTION-SAT-RISK-1/-4): a warning is recorded by a submit or an approve
     /// only; its outcome is Over (1) with the category OverLimit (1), or Unavailable (2) with CreditLimitNotSet (2) or
@@ -422,6 +429,54 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string CustomerReturnAttemptOutcomeConstraint =
         "([Outcome] = 1 AND [CustomerReturnId] IS NOT NULL AND [RefusalJson] IS NULL) "
         + "OR ([Outcome] = 2 AND [CustomerReturnId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    /// <summary>
+    /// CK_Contracts_State (S-11, NS-13, SAT-D346): a contract whose discount needed no approval is Active (1 → no decision); one
+    /// that needed approval is PendingDiscountApproval (1) with no decision, Active (2) with a decision without a reason, or
+    /// DiscountRejected (3) with a decision and a non-blank reason. A decided contract is at least version 2.
+    /// </summary>
+    internal const string ContractStateConstraint =
+        "([DiscountApprovalRequired] = 0 AND [State] = 2 AND " + ContractNoDecision + " AND [Version] >= 1) "
+        + "OR ([DiscountApprovalRequired] = 1 AND [State] = 1 AND " + ContractNoDecision + " AND [Version] >= 1) "
+        + "OR ([DiscountApprovalRequired] = 1 AND [State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL AND [Version] >= 2) "
+        + "OR ([DiscountApprovalRequired] = 1 AND [State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [Version] >= 2)";
+
+    private const string ContractNoDecision = "[DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL";
+
+    /// <summary>CK_Contracts_MakerChecker (NS-13): the discount approver or rejecter is never the creator, compared ordinally.</summary>
+    internal const string ContractMakerCheckerConstraint =
+        "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2";
+
+    /// <summary>
+    /// CK_Contracts_DiscountLimit (SAT-D346): the limit snapshot is null (not configured) or a percent between 0 and 100.
+    /// </summary>
+    internal const string ContractDiscountLimitConstraint =
+        "[DiscountLimitPercent] IS NULL OR ([DiscountLimitPercent] >= 0 AND [DiscountLimitPercent] <= 100)";
+
+    /// <summary>
+    /// TR_Contracts_Guard (S-11): the contract facts are immutable, the state takes the one discount decision (1 → 2 | 3), the
+    /// version moves by exactly one and no row is deleted (THROW 51471). Declared so EF Core does not use OUTPUT without INTO.
+    /// </summary>
+    internal const string ContractGuardTrigger = "TR_Contracts_Guard";
+
+    /// <summary>TR_ContractAttempts_Guard (S-11): an attempt row is append-only (THROW 51472).</summary>
+    internal const string ContractAttemptGuardTrigger = "TR_ContractAttempts_Guard";
+
+    /// <summary>CK_ContractAttempts_Command: only the contract's own versioned commands record here.</summary>
+    internal const string ContractAttemptCommandConstraint =
+        "[CommandName] IN (N'" + SalesContractCommands.CreateV1 + "', N'" + SalesContractCommands.ApproveDiscountV1 + "', N'"
+        + SalesContractCommands.RejectDiscountV1 + "')";
+
+    /// <summary>
+    /// CK_ContractAttempts_Outcome: a recorded attempt names its contract; a refusal carries its JSON and names the contract whose
+    /// discount decision it refused (only a decision records a terminal refusal; a refused create records nothing).
+    /// </summary>
+    internal const string ContractAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [ContractId] IS NOT NULL AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND [ContractId] IS NOT NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1 "
+        + "AND [CommandName] <> N'" + SalesContractCommands.CreateV1 + "')";
 
     /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
     internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
@@ -651,6 +706,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureInvoiceFinalizations(modelBuilder);
         ConfigureShipmentRiskExceptions(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
+        ConfigureContracts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1947,6 +2003,78 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // S-11 (SAT-D28, NS-13, SAT-D346): the sales contracts and their attempts.
+    private void ConfigureContracts(ModelBuilder modelBuilder)
+    {
+        var contract = modelBuilder.Entity<ContractRow>();
+        contract.ToTable("Contracts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Contracts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ContractNo] >= 1");
+            table.HasCheckConstraint("CK_Contracts_StateAxis", "[State] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_Contracts_State", ContractStateConstraint);
+            table.HasCheckConstraint("CK_Contracts_MakerChecker", ContractMakerCheckerConstraint);
+            table.HasCheckConstraint("CK_Contracts_Validity", "[ValidThrough] >= [ValidFrom]");
+            table.HasCheckConstraint("CK_Contracts_Money", "[MoneyScale] >= 0 AND [MoneyScale] <= 8 AND LEN([MoneyProfileVersion]) > 0");
+            table.HasCheckConstraint("CK_Contracts_DiscountLimit", ContractDiscountLimitConstraint);
+            table.HasCheckConstraint("CK_Contracts_Json", "ISJSON([InstallmentsJson]) = 1 AND ISJSON([DiscountRulesJson]) = 1");
+            table.HasCheckConstraint("CK_Contracts_Text",
+                "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND ([Clauses] IS NULL OR LEN([Clauses]) > 0)");
+            table.HasTrigger(ContractGuardTrigger);
+        });
+        contract.HasKey(x => x.Id);
+        contract.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        contract.Property(x => x.Id).ValueGeneratedNever();
+        contract.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        contract.Property(x => x.ValidFrom).HasColumnType("date");
+        contract.Property(x => x.ValidThrough).HasColumnType("date");
+        contract.Property(x => x.InstallmentsJson).HasColumnType("nvarchar(max)").IsRequired();
+        contract.Property(x => x.DiscountRulesJson).HasColumnType("nvarchar(max)").IsRequired();
+        contract.Property(x => x.Clauses).HasMaxLength(SalesContract.MaximumClausesLength);
+        contract.Property(x => x.DiscountLimitPercent).HasPrecision(7, SalesContract.RateScale);
+        contract.Property(x => x.CreatedBy).HasMaxLength(SalesContract.MaximumActorLength).IsRequired();
+        contract.Property(x => x.DecidedBy).HasMaxLength(SalesContract.MaximumActorLength);
+        contract.Property(x => x.RejectionReason).HasMaxLength(SalesContract.MaximumReasonLength);
+        contract.Property(x => x.Version).IsConcurrencyToken();
+        contract.Property(x => x.RowVersion).IsRowVersion();
+        contract.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        contract.HasIndex(x => new { x.CompanyId, x.ContractNo }).IsUnique().HasDatabaseName("UX_Contracts_No");
+        contract.HasIndex(x => new { x.CompanyId, x.PartyId, x.ValidFrom }).HasDatabaseName("IX_Contracts_Party");
+        contract.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        contract.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<ContractAttemptRow>();
+        attempt.ToTable("ContractAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ContractAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 "
+                + "AND LEN([ActorId]) > 0 AND ([ContractId] IS NULL OR [ContractId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_ContractAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_ContractAttempts_Command", ContractAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_ContractAttempts_Outcome", ContractAttemptOutcomeConstraint);
+            table.HasTrigger(ContractAttemptGuardTrigger);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<ContractRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ContractId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         SalesAuditEventTenantGuard.Validate(this, companyContext);
@@ -2119,6 +2247,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(CustomerReturnRow.UpdatedAtUtc),
                     ],
                     CustomerReturnAttemptRow => [],
+                    // S-11 (NS-13): a contract moves only along its one discount decision (checked below); the contract facts, the
+                    // payment plan, the discount rules and the limit snapshot never change; its attempts are APPEND-ONLY.
+                    ContractRow =>
+                    [
+                        nameof(ContractRow.State), nameof(ContractRow.DecidedBy), nameof(ContractRow.DecidedAtUtc),
+                        nameof(ContractRow.RejectionReason), nameof(ContractRow.UpdatedAtUtc),
+                    ],
+                    ContractAttemptRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftLineRow)
@@ -2167,6 +2303,18 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                                 or (int)SalesShipmentRiskExceptionState.Rejected or (int)SalesShipmentRiskExceptionState.Withdrawn))
                     {
                         throw new InvalidOperationException("Risk istisnasının durumu yalnız bir kez, Onay bekliyor → Onaylı/Reddedildi/Geri çekildi yönünde değişir.");
+                    }
+                }
+
+                if (entry.Entity is ContractRow)
+                {
+                    // S-11 (NS-13): the discount decision is taken once — PendingDiscountApproval → Active | DiscountRejected.
+                    var contractState = entry.Property(nameof(ContractRow.State));
+                    if (!(contractState.IsModified
+                            && (int)contractState.OriginalValue! == (int)SalesContractState.PendingDiscountApproval
+                            && (int)contractState.CurrentValue! is (int)SalesContractState.Active or (int)SalesContractState.DiscountRejected))
+                    {
+                        throw new InvalidOperationException("Sözleşmenin durumu yalnız bir kez, İskonto onayı bekliyor → Etkin/İskonto reddedildi yönünde değişir.");
                     }
                 }
 

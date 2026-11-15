@@ -138,7 +138,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddOrderRiskLimitWarnings", StringComparison.Ordinal));
-        Assert.Equal("20261115123637_AddOrderRiskLimitWarnings", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
+        Assert.Equal("20261115160935_AddSalesContracts", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -359,6 +360,53 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains("[sales].[DraftRiskWarnings]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[^1]);
+    }
+
+    /// <summary>S-11 (SAT-D28, NS-13, SAT-D346): the sales contract and its attempts — company-filtered, the contract number unique per
+    /// company, the version a concurrency token, the maker-checker and limit checks declared, both guard triggers declared; Up adds
+    /// the one-decision guard (51471) and the append-only attempts guard (51472); Down is a forward fix (51473) first.</summary>
+    [Fact]
+    public void The_sales_contract_migration_adds_two_triggers_and_its_down_refuses_with_51473_first()
+    {
+        using var context = Context();
+        var contract = context.Model.FindEntityType(typeof(ContractRow))!;
+        Assert.Equal(("sales", "Contracts"), (contract.GetSchema(), contract.GetTableName()));
+        Assert.Single(contract.GetDeclaredQueryFilters());
+        Assert.Equal(["Id"], contract.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(contract, "UX_Contracts_No"));
+        Assert.True(contract.FindProperty(nameof(ContractRow.Version))!.IsConcurrencyToken);
+        Assert.Contains(contract.GetForeignKeys(), key => key.Properties.Any(property => property.Name == "CompanyId"));
+        var attempt = context.Model.FindEntityType(typeof(ContractAttemptRow))!;
+        Assert.Equal(("sales", "ContractAttempts"), (attempt.GetSchema(), attempt.GetTableName()));
+        Assert.Single(attempt.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempt.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Null(attempt.FindProperty("IdempotencyKey"));
+
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var checks = design.FindEntityType(typeof(ContractRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(checks, check => check.Name == "CK_Contracts_State" && check.Sql == SalesDbContext.ContractStateConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_Contracts_MakerChecker" && check.Sql == SalesDbContext.ContractMakerCheckerConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_Contracts_DiscountLimit" && check.Sql == SalesDbContext.ContractDiscountLimitConstraint);
+        var attemptChecks = design.FindEntityType(typeof(ContractAttemptRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(attemptChecks, check => check.Name == "CK_ContractAttempts_Command" && check.Sql == SalesDbContext.ContractAttemptCommandConstraint);
+        Assert.Contains(attemptChecks, check => check.Name == "CK_ContractAttempts_Outcome" && check.Sql == SalesDbContext.ContractAttemptOutcomeConstraint);
+        Assert.Equal([SalesDbContext.ContractGuardTrigger],
+            design.FindEntityType(typeof(ContractRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+        Assert.Equal([SalesDbContext.ContractAttemptGuardTrigger],
+            design.FindEntityType(typeof(ContractAttemptRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesContracts();
+        var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
+        Assert.Equal(2, up.Length);
+        Assert.Contains(up, op => op.Sql.Contains("TR_Contracts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51471,", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_ContractAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51472,", StringComparison.Ordinal));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51473,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[sales].[Contracts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[sales].[ContractAttempts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(2, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
     }
 
     [Fact]
