@@ -84,6 +84,7 @@ public static partial class InventoryEndpoints
         MapParentRollCandidateEndpoint(endpoints);
         MapStockPositionEndpoint(endpoints);
         MapMovementTimelineEndpoint(endpoints);
+        MapShortageWarningEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);

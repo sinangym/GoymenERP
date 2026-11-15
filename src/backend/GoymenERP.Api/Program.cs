@@ -398,6 +398,8 @@ builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineS
 // future supply source; both replace Inventory's fail-closed defaults. No route or permission (F017-b2).
 builder.Services.AddScoped<ISalesOrderLineSerializationLockBinderV1, SalesOrderLineSerializationLockHostBinder>();
 builder.Services.AddScoped<IInventoryFutureSupplySourceV1, InventoryFutureSupplyHostSource>();
+// KLN-D42 (STK-S31): the Purchasing adapter of Inventory's shortage warning supply source (replaces the fail-closed default).
+builder.Services.AddScoped<IInventoryShortageSupplySourceV1, InventoryShortageSupplyHostSource>();
 builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

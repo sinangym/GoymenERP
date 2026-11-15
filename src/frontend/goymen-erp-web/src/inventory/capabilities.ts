@@ -30,6 +30,13 @@ export const INVENTORY_STOCK_POSITIONS_ROUTE = '/stok/pozisyonlar' as const
  */
 export const INVENTORY_MOVEMENT_TIMELINE_ROUTE = '/stok/hareketler' as const
 
+/**
+ * KLN-D42 dated shortage warning (it replaces minimum stock). Reached from the stock positions page; it rides the
+ * existing `inventory.stock-positions.list` capability (labels + balances read, company-wide) and adds no name of its
+ * own. The API re-measures both reads on every request.
+ */
+export const INVENTORY_SHORTAGE_WARNINGS_ROUTE = '/stok/eksik-uyarilari' as const
+
 /** Router state a label detail hands the timeline so its return link reopens the same label (and its ST-01 filter). */
 export interface MovementTimelineEntryState {
   readonly movementTimelineFromLabelId: string

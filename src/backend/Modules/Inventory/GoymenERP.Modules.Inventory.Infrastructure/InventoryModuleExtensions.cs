@@ -73,6 +73,8 @@ public static class InventoryModuleExtensions
         services.AddInventoryStockPositions();
         services.AddInventoryLabelDetails();
         services.AddInventoryMovementTimeline();
+        // KLN-D42 (STK-S31): the dated shortage warning read; the purchase source is the host's adapter.
+        services.AddInventoryShortageWarnings();
         // F-017 STOK F017-b: the future supply allocation writer (no route yet, F017-b2) and the ports Purchasing and Sales use.
         // The purchase and sales line lock binders and the purchase line source are the host's; the defaults below are
         // fail-closed (identity-only conversion, purchase source unavailable) until the host replaces them.
