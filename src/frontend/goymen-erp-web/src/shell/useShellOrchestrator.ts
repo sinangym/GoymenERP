@@ -14,6 +14,12 @@
  *    restoring the former context). A failed switch always leaves 'switching'.
  *  - P1-3: capability envelope is validated for exact version + non-empty generation
  *    in api.ts; anything else is 'malformed'.
+ *
+ * ID-1F (local-account mode): `completeLogin` is the only way out of the terminal
+ * session-invalid state — called after the server answered 204 to a sign-in — and
+ * `completeLogout` enters it after a sign-out. Neither trusts the client: the new
+ * session counts only once `/identity/me` answers for it and the ordinary bootstrap
+ * commits a context.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -29,6 +35,7 @@ import {
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from './uiState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { contextActorMismatch, needsBootstrap, type CompanyContext, type ShellState } from './shellState'
+import type { LoginNotice } from '../identity/LoginPage'
 
 const COMPANY_PREFERENCE_KEY = 'goymen-company-id'
 
@@ -106,8 +113,17 @@ export interface ShellOrchestration {
   readonly bootstrapFailure: boolean
   /** The most recent company switch failed and the former context was restored. */
   readonly switchFailure: boolean
-  /** A 401 was seen — the session is dead. Terminal until re-login (no login flow yet). */
+  /** A 401 was seen — the session is dead. Terminal until a real re-login (`completeLogin`, ID-1F). */
   readonly sessionInvalid: boolean
+  /**
+   * Why the sign-in screen is shown (ID-1F): `signed-out` after this tab signed out, `expired` when a session this
+   * tab already held was rejected (expired, or ended in another tab — KIM-D30), null on a first visit.
+   */
+  readonly loginNotice: LoginNotice
+  /** The server answered 204 to a sign-in: lift the terminal state and read identity afresh under a new epoch. */
+  readonly completeLogin: () => void
+  /** The server ended the session (204) or it had already ended (401): drop everything and show sign-in. */
+  readonly completeLogout: (outcome: 'signed-out' | 'already-ended') => void
   /**
    * The bound context does not belong to the session the server currently authenticates:
    * another actor (Codex #139 P1-1), or the same actor in another server session — a
@@ -147,6 +163,10 @@ export function useShellOrchestrator(): ShellOrchestration {
   const seenSession = useRef<{ readonly actorId: string; readonly binding: string | null } | null>(null)
   const [bootstrapFailure, setBootstrapFailure] = useState(false)
   const [switchFailure, setSwitchFailure] = useState(false)
+  // ID-1F notice inputs. `hadSession` latches once this tab saw a ready identity, so a later 401 reads as "expired"
+  // rather than a first visit; it is set during render (the documented derived-state pattern), never in an effect.
+  const [signedOut, setSignedOut] = useState(false)
+  const [hadSession, setHadSession] = useState(false)
   // Terminal session-invalid now lives in the reducer so a business-read 401 and a
   // capability 401 reach the SAME terminal state (Issue #165 SAB-006).
   const sessionInvalid = state.sessionInvalid
@@ -188,6 +208,7 @@ export function useShellOrchestrator(): ShellOrchestration {
   const identityId = identity?.userId ?? null
   // From the SAME decoded response as `identityId`: the pair is the server's answer about one authenticated session.
   const identityBinding = identity === null ? null : identity.authenticationSessionBinding
+  if (identityId !== null && !hadSession) setHadSession(true)
 
   // --- P1-1: actor change -> full reset --------------------------------------
   // M01.3 r5 (#66/6187473245): a change of the server's session binding for the SAME actor is a session boundary too
@@ -364,6 +385,32 @@ export function useShellOrchestrator(): ShellOrchestration {
     void queryClient.invalidateQueries({ queryKey: ['shell'] })
   }, [queryClient])
 
+  const completeLogin = useCallback(() => {
+    setSignedOut(false)
+    setBootstrapFailure(false)
+    setSwitchFailure(false)
+    // The new server session is a boundary of its own: the first identity it answers becomes the baseline pair,
+    // instead of being compared with the pair of the session that ended (which would reset a second time).
+    seenSession.current = null
+    dispatch({ type: 'SESSION_REESTABLISHED' })
+    // Nothing read before the sign-in may survive it; the shell reads (identity, directory) start over from empty.
+    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'shell' })
+    void queryClient.resetQueries({ queryKey: ['shell'] })
+  }, [dispatch, queryClient])
+
+  const completeLogout = useCallback(
+    (outcome: 'signed-out' | 'already-ended') => {
+      setSignedOut(outcome === 'signed-out')
+      setBootstrapFailure(false)
+      setSwitchFailure(false)
+      setSessionInvalid(true)
+      queryClient.clear()
+    },
+    [queryClient, setSessionInvalid],
+  )
+
+  const loginNotice: LoginNotice = signedOut ? 'signed-out' : hadSession ? 'expired' : null
+
   return {
     identityState,
     directoryState,
@@ -374,6 +421,9 @@ export function useShellOrchestrator(): ShellOrchestration {
     bootstrapFailure: bootstrapFailure && state.phase === 'no-active-company',
     switchFailure: switchFailure && state.phase === 'idle',
     sessionInvalid,
+    loginNotice,
+    completeLogin,
+    completeLogout,
     sessionMismatch: contextSessionMismatch(state, identityId, identityBinding),
     retry,
   }
