@@ -92,6 +92,12 @@ public enum StockMovementKind
     /// position: the loss is recorded as a movement fact without changing any balance.
     /// </summary>
     TransferTransitLoss = 14,
+
+    /// <summary>
+    /// B-19 / SAT-D306: the exit of a supplier return. Exactly one Out line, free or blocked alike, on the position the
+    /// original goods receipt stocked; it is traced to that receipt line and never exceeds its received kilograms.
+    /// </summary>
+    SupplierReturnExit = 15,
 }
 
 public enum StockDirection
@@ -308,6 +314,13 @@ public sealed class StockMovement
                 break;
             case StockMovementKind.TransferTransitLoss:
                 RequireNetZeroPairs();
+                break;
+            case StockMovementKind.SupplierReturnExit:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Tedarikçi iadesi çıkışı tek satırdır: iade edilen pozisyondan çıkış.");
+                }
+
                 break;
             case StockMovementKind.ManufacturingOutputReversal:
                 if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)

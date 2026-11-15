@@ -333,6 +333,8 @@ internal sealed class InventoryLabelDetailService(
                     || kind == StockMovementKind.Scrap && (direction != StockDirection.Out || movement.Lines.Count != 1)
                     || kind == StockMovementKind.TransferReceiptShortage
                         && (direction != StockDirection.Out || movement.Lines.Count != 1)
+                    || kind == StockMovementKind.SupplierReturnExit
+                        && (direction != StockDirection.Out || movement.Lines.Count != 1)
                     || kind == StockMovementKind.TransferReceiptOverage && movement.Lines.Count != 1
                     || kind == StockMovementKind.TransferTransitLoss && movement.Lines.Count % 2 != 0
                     || kind == StockMovementKind.ManufacturingOutputReversal

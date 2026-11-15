@@ -226,10 +226,112 @@ public sealed class InventoryAverageCostCalculatorTests
     }
 
     [Fact]
-    public void A_return_is_unreadable_until_its_effect_is_decided()
+    public void An_unclassified_return_stays_unreadable()
     {
         var result = AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(AverageCostMovementKind.Return, 1m, 5m));
         Assert.Equal(AverageCostUnreadableReason.Return, result.UnreadableReason);
+    }
+
+    [Fact]
+    public void A_customer_return_enters_at_the_original_issue_cost_and_blends_like_a_receipt()
+    {
+        // SAT-D303 / KLN-D64: 10 kg held at 12, 2 kg return at the original issue's 9: (10 * 12 + 2 * 9) / 12 = 11.5.
+        var result = AverageCostCalculator.Apply(AverageCostPosition.Known(10m, 12m), new(CustomerReturn, 2m, 10m, 9m));
+        AssertKnown(result, 12m, 11.5000m);
+
+        // (3 * 10 + 1 * 11) / 4 = 10.25; a return into a position at zero blends from nothing.
+        AssertKnown(AverageCostCalculator.Apply(AverageCostPosition.Known(3m, 10m), new(CustomerReturn, 1m, 3m, 11m)), 4m, 10.2500m);
+        AssertKnown(AverageCostCalculator.Apply(null, new(CustomerReturn, 2m, 0m, 7m)), 2m, 7m);
+    }
+
+    [Fact]
+    public void A_customer_return_without_its_original_cost_is_unreadable_and_a_zero_cost_is_unknown()
+    {
+        var held = AverageCostPosition.Known(10m, 12m);
+        Assert.Equal(AverageCostUnreadableReason.Return, AverageCostCalculator.Apply(held, new(CustomerReturn, 2m, 10m)).UnreadableReason);
+        Assert.Equal(ZeroCostReceipt, AverageCostCalculator.Apply(held, new(CustomerReturn, 2m, 10m, 0m)).UnreadableReason);
+        Assert.Equal(
+            ForeignCurrency,
+            AverageCostCalculator.Apply(held, new(CustomerReturn, 2m, 10m, 9m, IsBaseCurrency: false)).UnreadableReason);
+        Assert.Equal(LedgerStockMismatch, AverageCostCalculator.Apply(held, new(CustomerReturn, 2m, 11m, 9m)).UnreadableReason);
+    }
+
+    [Fact]
+    public void A_purchase_return_leaves_at_the_original_purchase_cost_and_recalculates_the_average()
+    {
+        // SAT-D306: 150 kg at 11 (100 at 10 + 50 at 13); returning 50 kg of the 13 lot leaves (1650 - 650) / 100 = 10.
+        var result = AverageCostCalculator.Apply(AverageCostPosition.Known(150m, 11m), new(PurchaseReturn, 50m, 150m, 13m));
+        AssertKnown(result, 100m, 10.0000m);
+
+        // (3 * 10 - 1 * 11) / 2 = 9.5; (7 * 10.3333 - 2 * 9) / 5 = 10.86662 -> 10.8666.
+        AssertKnown(AverageCostCalculator.Apply(AverageCostPosition.Known(3m, 10m), new(PurchaseReturn, 1m, 3m, 11m)), 2m, 9.5000m);
+        AssertKnown(
+            AverageCostCalculator.Apply(AverageCostPosition.Known(7m, 10.3333m), new(PurchaseReturn, 2m, 7m, 9m)), 5m, 10.8666m);
+    }
+
+    [Fact]
+    public void A_purchase_return_that_empties_the_position_keeps_the_last_average_only_without_a_left_over_value()
+    {
+        AssertKnown(AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(PurchaseReturn, 5m, 5m, 8m)), 0m, 8m);
+
+        // SAT-D306 (c): a residual value would need a cost-difference record whose posting is not specified: fail-closed.
+        Assert.Equal(
+            AverageCostUnreadableReason.Return,
+            AverageCostCalculator.Apply(AverageCostPosition.Known(5m, 8m), new(PurchaseReturn, 5m, 5m, 9m)).UnreadableReason);
+    }
+
+    [Fact]
+    public void A_purchase_return_never_produces_a_negative_or_zero_average()
+    {
+        // 10 kg at 2 hold 20; returning 5 kg at 5 takes 25 out: the remaining value is negative -> unreadable, no guess.
+        Assert.Equal(
+            AverageCostUnreadableReason.Return,
+            AverageCostCalculator.Apply(AverageCostPosition.Known(10m, 2m), new(PurchaseReturn, 5m, 10m, 5m)).UnreadableReason);
+
+        // Exactly zero remaining value with stock left is not a readable average either.
+        Assert.Equal(
+            AverageCostUnreadableReason.Return,
+            AverageCostCalculator.Apply(AverageCostPosition.Known(10m, 2m), new(PurchaseReturn, 5m, 10m, 4m)).UnreadableReason);
+    }
+
+    [Fact]
+    public void A_purchase_return_beyond_the_held_stock_or_without_its_original_cost_is_unreadable()
+    {
+        var held = AverageCostPosition.Known(5m, 8m);
+        Assert.Equal(NegativeStock, AverageCostCalculator.Apply(null, new(PurchaseReturn, 1m, 0m, 8m)).UnreadableReason);
+        Assert.Equal(NegativeStock, AverageCostCalculator.Apply(held, new(PurchaseReturn, 6m, 5m, 8m)).UnreadableReason);
+        Assert.Equal(AverageCostUnreadableReason.Return, AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m)).UnreadableReason);
+        Assert.Equal(ZeroCostReceipt, AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m, 0m)).UnreadableReason);
+        Assert.Equal(
+            UnitConversion,
+            AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m, 8m, UnitCostIsPerStockKg: false)).UnreadableReason);
+        Assert.Equal(
+            ForeignCurrency,
+            AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m, 8m, IsBaseCurrency: false)).UnreadableReason);
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m, -1m)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(held, new(CustomerReturn, 1m, 5m, -1m)));
+    }
+
+    [Fact]
+    public void An_approved_opening_cost_seeds_only_an_untracked_position_with_a_positive_cost()
+    {
+        // SAT-D304: the entered cost costs the whole stock on hand; afterwards receipts blend normally.
+        var opening = AverageCostCalculator.ApplyOpeningCost(null, 10m, 12.5m);
+        AssertKnown(opening, 10m, 12.5m);
+        AssertKnown(AverageCostCalculator.Apply(opening, Purchase(10m, 10m, 14.5m)), 20m, 13.5000m);
+
+        Assert.Throws<InvalidOperationException>(() => AverageCostCalculator.ApplyOpeningCost(opening, 10m, 12.5m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ApplyOpeningCost(null, 0m, 12.5m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ApplyOpeningCost(null, 10m, 0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ApplyOpeningCost(null, 10m, 1.00001m));
+    }
+
+    [Fact]
+    public void The_movement_kind_numbers_are_pinned()
+    {
+        Assert.Equal(
+            [(1, "PurchaseReceipt"), (2, "Issue"), (3, "ProductionReceipt"), (4, "Return"), (5, "CustomerReturn"), (6, "PurchaseReturn")],
+            Enum.GetValues<AverageCostMovementKind>().Select(kind => ((int)kind, kind.ToString())).Order());
     }
 
     [Theory]

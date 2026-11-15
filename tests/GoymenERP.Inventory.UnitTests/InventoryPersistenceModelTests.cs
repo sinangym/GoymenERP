@@ -199,7 +199,7 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryFutureSupplyAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryTransferReceipts", context.Database.GetMigrations().Last()[15..]);
+        Assert.Equal("AddInventorySupplierReturnExit", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -571,7 +571,7 @@ public sealed class InventoryPersistenceModelTests
         var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementRow))!;
 
         Assert.Equal(10, (int)StockMovementKind.ManufacturingOutputReversal);
-        Assert.Equal("[Kind] BETWEEN 1 AND 14",
+        Assert.Equal("[Kind] BETWEEN 1 AND 15",
             Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51420", guard.Sql, StringComparison.Ordinal);
@@ -597,7 +597,7 @@ public sealed class InventoryPersistenceModelTests
         var cancellations = model.FindEntityType(typeof(InventoryTransferDispatchCancellationRow))!;
 
         Assert.Equal(11, (int)StockMovementKind.TransferDispatchCancellation);
-        Assert.Equal("[Kind] BETWEEN 1 AND 14",
+        Assert.Equal("[Kind] BETWEEN 1 AND 15",
             Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
         Assert.Contains("[Status] BETWEEN 1 AND 6",
             Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
@@ -649,7 +649,7 @@ public sealed class InventoryPersistenceModelTests
 
         Assert.Equal((12, 13, 14), ((int)StockMovementKind.TransferReceiptShortage,
             (int)StockMovementKind.TransferReceiptOverage, (int)StockMovementKind.TransferTransitLoss));
-        Assert.Equal("[Kind] BETWEEN 1 AND 14",
+        Assert.Equal("[Kind] BETWEEN 1 AND 15",
             Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
         Assert.Contains("[Status] BETWEEN 1 AND 6",
             Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
@@ -700,6 +700,30 @@ public sealed class InventoryPersistenceModelTests
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);
         Assert.Equal("[Kind] BETWEEN 1 AND 11", narrowed.Sql);
+    }
+
+    [Fact]
+    public void The_supplier_return_exit_migration_widens_the_movement_kind_check_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventorySupplierReturnExit();
+        using var context = Context();
+        var movements = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementRow))!;
+
+        Assert.Equal(15, (int)StockMovementKind.SupplierReturnExit);
+        Assert.Equal("[Kind] BETWEEN 1 AND 15",
+            Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51654", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[Movements]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] = 15", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var widened = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.UpOperations[^1]);
+        Assert.Equal("[Kind] BETWEEN 1 AND 15", widened.Sql);
+        var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.DownOperations[^1]);
+        Assert.Equal("[Kind] BETWEEN 1 AND 14", narrowed.Sql);
     }
 
     [Fact]

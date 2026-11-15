@@ -22,9 +22,15 @@ public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition
 /// reading of that decision (reversible).</item>
 /// <item>Stock never goes below zero (SAT-D318 (1)) and no recovery-from-negative formula is written (SAT-D323 (2)): an
 /// issue that would breach this answers <see cref="AverageCostUnreadableReason.NegativeStock"/>, fail-closed (the decision
-/// file's author reading; see that reason). Unit conversion, foreign currency and returns are decided (SAT-D298, BS-1,
-/// SAT-D303, SAT-D306) but not implemented in this core yet: they answer <see cref="AverageCostStatus.Unreadable"/> with
-/// their <see cref="AverageCostUnreadableReason"/>; nothing is guessed.</item>
+/// file's author reading; see that reason). Unit conversion and foreign currency are decided (SAT-D298, BS-1) but not
+/// implemented in this core yet: they answer <see cref="AverageCostStatus.Unreadable"/> with their
+/// <see cref="AverageCostUnreadableReason"/>; nothing is guessed.</item>
+/// <item>SAT-D303: a customer return enters at the original issue's unit cost and blends like a receipt.</item>
+/// <item>SAT-D306: a purchase return leaves at the original purchase line's unit cost:
+/// <c>round4((q·a − Δ·c) / (q − Δ))</c>. A residual value at zero stock, or a non-positive remaining value, would need a
+/// cost-difference record whose posting is not specified: the position is unreadable
+/// (<see cref="AverageCostUnreadableReason.Return"/>), fail-closed, never a negative or invented average.</item>
+/// <item>SAT-D304: an approved opening cost seeds a position the ledger never tracked (<see cref="ApplyOpeningCost"/>).</item>
 /// </list>
 /// A position never seen by the ledger is <c>null</c> (it reads as NoSource). A position that falls to exactly zero keeps
 /// its last average as a readable value (Sinan 2026-11-11). A zero unit cost is "cost unknown": the receipt makes the
@@ -56,6 +62,12 @@ public static class AverageCostCalculator
             throw new ArgumentOutOfRangeException(nameof(movement), "A purchase receipt carries a non-negative unit cost.");
         }
 
+        if (movement.Kind is AverageCostMovementKind.CustomerReturn or AverageCostMovementKind.PurchaseReturn
+            && movement.UnitCostPerStockKg is < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(movement), "A return's original unit cost is not negative.");
+        }
+
         if (movement.AdditionalCostPerStockKg is { } additional
             && (movement.Kind != AverageCostMovementKind.PurchaseReceipt || additional < 0m))
         {
@@ -80,8 +92,38 @@ public static class AverageCostCalculator
             AverageCostMovementKind.Issue => ApplyIssue(current, movement),
             AverageCostMovementKind.ProductionReceipt =>
                 AverageCostPosition.Unreadable(AverageCostUnreadableReason.ProductionSource),
+            AverageCostMovementKind.CustomerReturn => ApplyCustomerReturn(current, movement),
+            AverageCostMovementKind.PurchaseReturn => ApplyPurchaseReturn(current, movement),
             _ => AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return),
         };
+    }
+
+    /// <summary>
+    /// SAT-D304: the approved opening cost of a position the ledger never tracked (<paramref name="current"/> is null).
+    /// It costs the position's whole physical stock on hand at the entered base-currency unit cost per stock kilogram.
+    /// A position that already has a ledger state is never overwritten (the command refuses before calling); a missing
+    /// cost is simply not entered ("yok", never zero), so a zero cost is refused here.
+    /// </summary>
+    public static AverageCostPosition ApplyOpeningCost(
+        AverageCostPosition? current, decimal stockOnHandKg, decimal unitCostPerStockKg)
+    {
+        if (current is not null)
+        {
+            throw new InvalidOperationException("An opening cost seeds only a position the ledger never tracked.");
+        }
+
+        if (stockOnHandKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(stockOnHandKg), "An opening cost costs positive stock on hand.");
+        }
+
+        if (unitCostPerStockKg <= 0m || !AverageCostPrecision.IsAtInternalScale(unitCostPerStockKg))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(unitCostPerStockKg), "An opening cost is positive with at most the internal scale of decimals.");
+        }
+
+        return AverageCostPosition.Known(stockOnHandKg, unitCostPerStockKg);
     }
 
     /// <summary>
@@ -185,6 +227,74 @@ public static class AverageCostCalculator
         var heldCost = current!.AverageCostPerKg!.Value;
         var blended = ((heldKg * heldCost) + (movement.QuantityKg * receiptCost)) / newKg;
         return AverageCostPosition.Known(newKg, AverageCostPrecision.Round(blended));
+    }
+
+    /// <summary>
+    /// SAT-D303 / KLN-D64: the reversal of the original issue enters at that issue's unit cost and blends like a
+    /// receipt. Without the original cost the position is unreadable; nothing is guessed from the current average.
+    /// </summary>
+    private static AverageCostPosition ApplyCustomerReturn(AverageCostPosition? current, AverageCostMovement movement)
+    {
+        if (movement.UnitCostPerStockKg is null)
+        {
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
+        }
+
+        return ApplyReceipt(current, movement);
+    }
+
+    /// <summary>
+    /// SAT-D306: the return leaves at the original purchase line's unit cost <c>c</c>; the remaining average is
+    /// <c>round4((q·a − Δ·c) / (q − Δ))</c>. Returning more than is held is negative stock (SAT-D301/D318). A return that
+    /// empties the position keeps its last average only when no value is left over; a left-over value, or a remaining
+    /// value that is not positive, needs a cost-difference record whose posting is not specified (SAT-D306 (c)): the
+    /// position is unreadable instead, fail-closed.
+    /// </summary>
+    private static AverageCostPosition ApplyPurchaseReturn(AverageCostPosition? current, AverageCostMovement movement)
+    {
+        var heldKg = current?.QuantityKg ?? 0m;
+        if (current is null || movement.QuantityKg > heldKg)
+        {
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.NegativeStock);
+        }
+
+        if (movement.UnitCostPerStockKg is not { } returnCost)
+        {
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
+        }
+
+        if (!movement.UnitCostIsPerStockKg)
+        {
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.UnitConversion);
+        }
+
+        if (!movement.IsBaseCurrency)
+        {
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ForeignCurrency);
+        }
+
+        if (returnCost == 0m)
+        {
+            // A zero cost is "cost unknown" (Sinan 2026-11-11), on the way out as on the way in.
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.ZeroCostReceipt);
+        }
+
+        var heldCost = current.AverageCostPerKg!.Value;
+        var remainingKg = heldKg - movement.QuantityKg;
+        var remainingValue = (heldKg * heldCost) - (movement.QuantityKg * returnCost);
+        if (remainingKg == 0m)
+        {
+            return remainingValue == 0m
+                ? AverageCostPosition.Known(0m, heldCost)
+                : AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
+        }
+
+        if (remainingValue <= 0m)
+        {
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
+        }
+
+        return AverageCostPosition.Known(remainingKg, AverageCostPrecision.Round(remainingValue / remainingKg));
     }
 
     private static AverageCostPosition ApplyIssue(AverageCostPosition? current, AverageCostMovement movement)

@@ -58,7 +58,11 @@ public enum AverageCostUnreadableReason
     /// </summary>
     LandedOrAdditionalCost = 4,
 
-    /// <summary>OPEN-INV-AVGCOST-RETURN (NEEDS-SINAN): effect of sales and purchase returns.</summary>
+    /// <summary>
+    /// A return whose cost effect cannot be read: an unclassified return, a customer or purchase return without its
+    /// original unit cost (SAT-D303, SAT-D306 (b)), or a purchase return that would leave a cost difference whose posting
+    /// is not specified (SAT-D306 (c), fail-closed). The persisted number stays 5.
+    /// </summary>
     Return = 5,
 
     /// <summary>OPEN-INV-AVGCOST-MIXED-SOURCE (NEEDS-SINAN, SAT-D258): produced stock is not part of the purchase average.</summary>
