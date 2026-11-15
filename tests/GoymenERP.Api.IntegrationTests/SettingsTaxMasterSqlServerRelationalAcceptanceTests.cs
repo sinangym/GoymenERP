@@ -39,7 +39,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// owner's SHARED item type (SAT-D149) feeding the Settings line tax port end to end, with the forward-fix move (51151/51152).
 /// Every grant is a fresh synthetic role; codes and amounts are SENTETIK.
 /// </summary>
-public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsTaxMasterSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

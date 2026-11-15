@@ -14,7 +14,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <summary>
 /// MOD-03 tax master (SAT-D83, EK12; SAT-D93, EK13; SAT-D133…D139, EK19; SAT-D158, EK21): the company's per-item-type default
 /// tax (the reviewed SAT-D139 catalog as the base, Settings records over it), the UBL-TR exemption / withholding code lists, the
-/// VUK 232 withholding amount threshold and the buyer situation list (the reviewed SAT-D158 catalog as the base).
+/// VUK 232 withholding amount threshold, the buyer situation list (the reviewed SAT-D158 catalog as the base) and the VAT rate /
+/// withholding ratio lists (SAT-D181, EK26; empty until entered).
 /// <list type="bullet">
 /// <item><b>Nothing is seeded</b>: the only shipped values are Sinan's SAT-D139 defaults and the SAT-D158 buyer situations, as
 /// reviewed source catalogs; every
@@ -324,6 +325,11 @@ internal sealed partial class SettingsTaxMasterAdministration(
             "Yürürlüğe girmemiş alıcı vergi durumu listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
         "settings.tax-buyer-situation-list.withdrawn.v1" =>
             "Yürürlüğe girmemiş alıcı vergi durumu listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-rate-list.published.v1" => "Vergi oranı listesi sürümü yayımlandı; gerekçe kayıt içeriğindedir",
+        "settings.tax-rate-list.corrected.v1" =>
+            "Yürürlüğe girmemiş vergi oranı listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-rate-list.withdrawn.v1" =>
+            "Yürürlüğe girmemiş vergi oranı listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
         _ => throw new InvalidOperationException("Tanımsız Ayarlar audit olayı."),
     };
 

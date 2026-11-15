@@ -3,7 +3,8 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// <summary>
 /// SAT-D181 (EK26): the two Settings lists a Sales order line's reasoned tax change may pick from — the legal VAT rates and the
 /// legal withholding ratios. Company-scoped (SAT-D133) and effective-dated like the code lists. Their values are entered by Sinan
-/// or the müşavir (SAT-D148), maintained under the SAT-D146 proposal / approval flow (a later slice); none is hard-coded.
+/// or the müşavir (SAT-D148) and maintained in Settings under <see cref="SettingsTaxMasterPermissionManifestV1.TaxMasterManage"/>
+/// (SAT-D145 direct maintenance; the SAT-D146 proposal / approval flow is a later slice); none is hard-coded or seeded.
 /// </summary>
 public static class TaxRateListKindsV1
 {
