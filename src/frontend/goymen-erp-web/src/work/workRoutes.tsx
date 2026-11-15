@@ -9,9 +9,15 @@
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ApprovalInboxDetailPage, ApprovalInboxPage } from './ApprovalInboxPages'
+import { WorkQueuePage } from './WorkQueuePage'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 
 export const workRoutes: RouteObject[] = [
+  // B-25: the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
+  {
+    path: WORK_ROUTE.queue.slice(1),
+    element: <CapabilityRoute capability={WORK_APPROVALS_CAPABILITIES}><WorkQueuePage /></CapabilityRoute>,
+  },
   {
     path: WORK_ROUTE.approvals.slice(1),
     element: <CapabilityRoute capability={WORK_APPROVALS_CAPABILITIES}><ApprovalInboxPage /></CapabilityRoute>,

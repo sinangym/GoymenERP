@@ -22,6 +22,8 @@ import {
 export const WORK_ROUTE = {
   approvals: '/onaylarim',
   approvalDetail: '/onaylarim/:kind/:approvalId',
+  /** B-25: every connected source's pending approvals in one list, oldest first. */
+  queue: '/onaylarim/kuyruk',
 } as const
 
 /** The inbox's `?kaynak=` member: which connected source the list shows (kept in the address for Back/Forward). */
@@ -213,6 +215,44 @@ export const APPROVALS_TEXT = {
   homeText: (labels: readonly string[]) => `Onayınızı bekleyen kayıtlar: ${joinLabels(labels)}.`,
   homeLink: 'Bekleyen onaylarımı aç',
 } as const
+
+/** B-25 Work queue — the words of the one-list view (`WORK_ROUTE.queue`). */
+export const WORK_QUEUE_TEXT = {
+  heading: 'Onay kuyruğu',
+  /** The queue's honest scope: it lists, the owner decides. */
+  scope:
+    'Onayınızı bekleyen kayıtlar, bağlı bütün kaynaklardan tek listede, en eskisi önce gösterilir. Her kaynak yalnız kendi yetkinizle okunur.',
+  nativeOnly: APPROVALS_TEXT.nativeOnly,
+  caption: 'Onayınızı bekleyen kayıtlar (en eskisi önce)',
+  subject: 'bekleyen onaylar',
+  kind: 'Onay türü',
+  module: 'Modül',
+  createdAt: 'Gönderim',
+  open: 'Aç',
+  openLabel: (kindText: string) => `${kindText} kaydını aç`,
+  /** A source that answered nothing usable: its records are not shown, the others are. */
+  unavailable: (labels: readonly string[]) =>
+    `Şu kaynaklar şu anda okunamadı, kayıtları listede yok: ${joinLabels(labels)}.`,
+  /** A source holds more than the queue shows; its own list has them all. */
+  hasMore: (labels: readonly string[]) =>
+    `Şu kaynaklarda listede gösterilenden fazla bekleyen kayıt var; tamamı kaynağın kendi listesinde: ${joinLabels(labels)}.`,
+  /** No item, but a source could not be read: not "nothing is pending". */
+  emptyReadable: 'Okunabilen kaynaklarda bekleyen kayıt yok.',
+  backToInbox: 'Onaylarım',
+  /** The inbox's and the home entry's link to the queue. */
+  openQueue: 'Tüm bekleyenleri tek listede gör',
+} as const
+
+/** The module names the queue shows; any other module is shown by its own technical name. */
+export const WORK_QUEUE_MODULE_TEXT: Readonly<Record<string, string>> = {
+  finance: 'Finans',
+  sales: 'Satış',
+  inventory: 'Stok',
+  purchasing: 'Satın alma',
+  manufacturing: 'Üretim',
+  logistics: 'Lojistik',
+  accounting: 'Muhasebe',
+}
 
 export const APPROVAL_KIND_TEXT: Readonly<Record<string, string>> = Object.fromEntries(
   APPROVAL_SOURCES.map((source) => [source.kind, source.kindText]),

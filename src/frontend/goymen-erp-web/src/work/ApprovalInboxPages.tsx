@@ -32,6 +32,7 @@ import {
   APPROVAL_SOURCES,
   APPROVALS_TEXT as T,
   SOURCE_PARAM,
+  WORK_QUEUE_TEXT,
   WORK_ROUTE,
   approvalDetailRoute,
   formatInstant,
@@ -116,6 +117,8 @@ export function ApprovalInboxPage() {
     <header className={styles.header}>
       <h1 id="work-approvals-heading">{T.heading}</h1>
       <PilotScope />
+      {/* B-25: the same pending approvals of every connected source in one list. */}
+      <p><Link to={WORK_ROUTE.queue}>{WORK_QUEUE_TEXT.openQueue}</Link></p>
     </header>
     {granted.length > 1
       ? <nav aria-label={T.sources} className={styles.sources}>
