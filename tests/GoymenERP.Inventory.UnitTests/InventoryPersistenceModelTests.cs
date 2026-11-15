@@ -33,6 +33,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(InventoryTransferDispatchCancelClosureRow), typeof(InventoryTransferDispatchCancellationRow),
             typeof(InventoryTransferReceiptRow), typeof(InventoryTransferOverageDecisionRow),
             typeof(InventoryTransferLossRequestRow), typeof(InventoryTransferLossDecisionRow),
+            typeof(FutureSupplyConversionRow),
         ];
 
     [Fact]
@@ -724,6 +725,63 @@ public sealed class InventoryPersistenceModelTests
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);
         Assert.Equal("[Kind] BETWEEN 1 AND 14", narrowed.Sql);
+    }
+
+    [Fact]
+    public void The_future_supply_conversion_link_carries_the_reviewed_checks_keys_and_indexes_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryFutureSupplyConversions();
+        using var context = Context();
+        var conversions = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(FutureSupplyConversionRow))!;
+
+        Assert.Equal("FutureSupplyConversions", conversions.GetTableName());
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["CK_FutureSupplyConversions_Identity"] = InventoryDbContext.FutureSupplyConversionIdentityCheck,
+                ["CK_FutureSupplyConversions_Outcome"] = InventoryDbContext.FutureSupplyConversionOutcomeCheck,
+            },
+            conversions.GetCheckConstraints().ToDictionary(check => check.Name!, check => (string?)check.Sql));
+        Assert.Contains(conversions.GetIndexes(), index => index.IsUnique && index.GetFilter() is null
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "AcceptanceId", "FutureAllocationId"]));
+        Assert.Contains(conversions.GetIndexes(), index => index.IsUnique
+            && index.GetFilter() == "[PhysicalAllocationId] IS NOT NULL"
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PhysicalAllocationId"]));
+        Assert.Contains(conversions.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FutureSupplyAllocationRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "FutureAllocationId"]));
+        Assert.Contains(conversions.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(AllocationRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PhysicalAllocationId"]));
+        Assert.Contains(conversions.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(LabelRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LabelId"]));
+        Assert.All(conversions.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Equal((false, true, true, true),
+            (conversions.FindProperty("Quantity")!.IsNullable, conversions.FindProperty("PhysicalAllocationId")!.IsNullable,
+                conversions.FindProperty("PhysicalQuantityKg")!.IsNullable, conversions.FindProperty("FailureReason")!.IsNullable));
+        Assert.Equal((3, 3, 64), (conversions.FindProperty("Quantity")!.GetScale(),
+            conversions.FindProperty("PhysicalQuantityKg")!.GetScale(), conversions.FindProperty("FailureReason")!.GetMaxLength()));
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51711", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[FutureSupplyConversions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void A_stored_conversion_link_is_never_modified()
+    {
+        using var context = Context();
+        var row = new FutureSupplyConversionRow
+        {
+            Id = Guid.Parse("8a17c000-0000-4000-8000-0000000000c1"), CompanyId = CompanyA,
+            AcceptanceId = Guid.Parse("8a17c000-0000-4000-8000-0000000000c2"),
+            FutureAllocationId = Guid.Parse("8a17c000-0000-4000-8000-0000000000c3"),
+            LabelId = Guid.Parse("8a17c000-0000-4000-8000-0000000000c4"), Outcome = 2, Quantity = 5m,
+            FailureReason = "label-blocked", CreatedAtUtc = new DateTimeOffset(2026, 11, 15, 0, 0, 0, TimeSpan.Zero),
+        };
+        context.Attach(row);
+        row.Quantity = 6m;
+
+        Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
     }
 
     [Fact]

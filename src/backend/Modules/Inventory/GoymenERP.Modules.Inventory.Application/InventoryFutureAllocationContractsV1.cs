@@ -361,14 +361,18 @@ public enum InventoryFutureDemandSourceOutcomeV1
     Unavailable = 4,
 }
 
-/// <summary>The approved Sales line and its open quantity, in <see cref="UnitId"/> (the order unit).</summary>
+/// <summary>
+/// The approved Sales line and its open quantity, in <see cref="UnitId"/> (the order unit). <see cref="DueDate"/> is the line's
+/// requested delivery date when the Sales port answers it (F017-c tie rule); null sorts after every dated line.
+/// </summary>
 public sealed record InventoryFutureDemandLineV1(
     Guid OrderId,
     Guid LineId,
     Guid ProductId,
     string ProductVersion,
     Guid UnitId,
-    string OpenQuantityText);
+    string OpenQuantityText,
+    DateOnly? DueDate = null);
 
 public sealed record InventoryFutureDemandSourceAnswerV1(
     InventoryFutureDemandSourceOutcomeV1 Outcome,

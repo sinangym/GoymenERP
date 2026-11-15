@@ -94,6 +94,8 @@ public static class InventoryModuleExtensions
             serviceProvider.GetService<ISettingsUnitIdentityCatalogV1>() is { } units
                 ? (IInventoryFutureUnitConverterV1)new InventorySettingsFutureUnitConverterV1(units)
                 : new InventoryIdentityFutureUnitConverterV1());
+        // F-017 STOK F017-c: the goods receipt host enlists this port in its own transaction (ALS-D84 order).
+        services.AddScoped<IInventoryGoodsReceiptFutureSupplyPortV1, InventoryGoodsReceiptFutureSupplyPort>();
         services.TryAddScoped<IInventoryFutureSupplySourceV1, InventoryUnavailableFutureSupplySourceV1>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
