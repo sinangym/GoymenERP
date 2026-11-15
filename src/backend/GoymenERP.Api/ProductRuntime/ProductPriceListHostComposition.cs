@@ -43,6 +43,10 @@ public static class ProductPriceListHostComposition
         services.TryAddScoped<IProductDimensionReaderV1, UnavailableProductDimensionService>();
         // URN-D16: the kg/m table lives in the same context: its routes answer 503.
         services.TryAddScoped<IProductProfileWeightTableServiceV1, UnavailableProductProfileWeightTableService>();
+        // B-08 / BS-10: the package standard table lives in the same context: its routes answer 503 and the read port
+        // "unavailable" (never NoSource, which would claim there is no table).
+        services.TryAddScoped<IProductPackageStandardServiceV2, UnavailableProductPackageStandardService>();
+        services.TryAddScoped<IProductPackageStandardReaderV2, UnavailableProductPackageStandardService>();
         return services;
     }
 }
@@ -106,6 +110,34 @@ internal sealed class UnavailableProductProfileWeightTableService : IProductProf
         cancellationToken.ThrowIfCancellationRequested();
         return new ProductProfileWeightException(StatusCodes.Status503ServiceUnavailable,
             ProductProfileWeightProblemCodesV1.ProviderUnavailable);
+    }
+}
+
+internal sealed class UnavailableProductPackageStandardService : IProductPackageStandardServiceV2, IProductPackageStandardReaderV2
+{
+    public Task<ProductPackageStandardTableViewV2> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardTableViewV2>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardResultV2> ImportAsync(ImportProductPackageStandardsRequestV2 request,
+        ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardResultV2>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardResultV2> SetAsync(Guid productId, SetProductPackageStandardRequestV2 request,
+        ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardResultV2>(Unavailable(cancellationToken));
+
+    Task<ProductPackageStandardReadV2> IProductPackageStandardReaderV2.GetAsync(Guid productId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ProductPackageStandardReadV2.Without(ProductPackageStandardReadOutcomeV2.Unavailable));
+    }
+
+    private static ProductPackageStandardException Unavailable(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return new ProductPackageStandardException(StatusCodes.Status503ServiceUnavailable,
+            ProductPackageStandardProblemCodesV2.ProviderUnavailable);
     }
 }
 

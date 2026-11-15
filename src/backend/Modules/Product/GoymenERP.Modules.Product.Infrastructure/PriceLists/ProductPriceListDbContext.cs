@@ -18,7 +18,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// company scope (SAT-D149, EK20): the item type of the SHARED product card (<c>ProductCardItemTypes</c>) is keyed by the product
 /// alone, written only from a resolved company (recorded as the acting company) under its own write guard. The "Ebat/kalınlık"
 /// row of the shared card (BS-9, <c>ProductCardDimensions</c>) follows the same rule. The company's kg/m table (URN-D13…D16,
-/// <c>ProductProfileWeightImports</c> / <c>ProductProfileWeightLines</c>) is ordinary company-scoped and insert-only.
+/// <c>ProductProfileWeightImports</c> / <c>ProductProfileWeightLines</c>) is ordinary company-scoped and insert-only, and so is
+/// the company's package standard table (B-08 / BS-10, <c>ProductPackageStandardVersions</c> / <c>ProductPackageStandardLines</c>).
 /// Migrations have their own history table so that this context never shares one with <c>ProductDbContext</c>.
 /// </summary>
 public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListDbContext> options, ICompanyContext companyContext)
@@ -85,6 +86,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
 
     internal DbSet<ProductProfileWeightAttemptRow> ProfileWeightAttempts => Set<ProductProfileWeightAttemptRow>();
 
+    internal DbSet<ProductPackageStandardVersionRow> PackageStandardVersions => Set<ProductPackageStandardVersionRow>();
+
+    internal DbSet<ProductPackageStandardLineRow> PackageStandardLines => Set<ProductPackageStandardLineRow>();
+
+    internal DbSet<ProductPackageStandardAttemptRow> PackageStandardAttempts => Set<ProductPackageStandardAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -107,6 +114,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureItemTypes(modelBuilder);
         ConfigureDimensions(modelBuilder);
         ConfigureProfileWeights(modelBuilder);
+        ConfigurePackageStandards(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -443,6 +451,75 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// B-08 / BS-10: the company's package standard table — one insert-only header per version (an Excel import with its source
+    /// label and file facts, or an ERP edit naming the product), the whole table's entries of that version and the command answers.
+    /// All company-scoped; an entry and an edited product reference the shared card.
+    /// </summary>
+    private void ConfigurePackageStandards(ModelBuilder modelBuilder)
+    {
+        var header = modelBuilder.Entity<ProductPackageStandardVersionRow>();
+        header.ToTable("ProductPackageStandardVersions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductPackageStandardVersions_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [VersionId] <> {EmptyGuid} AND [Version] >= 1 AND [EntryCount] >= 0 "
+                + "AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+            table.HasCheckConstraint("CK_ProductPackageStandardVersions_Source",
+                "([SourceKind] = 'Import' AND [SourceLabel] IS NOT NULL AND LEN(LTRIM(RTRIM([SourceLabel]))) > 0 "
+                + "AND [FileName] IS NOT NULL AND LEN([FileName]) > 0 AND [FileSha256] IS NOT NULL AND LEN([FileSha256]) = 64 "
+                + "AND [FileSizeBytes] IS NOT NULL AND [FileSizeBytes] > 0 AND [EditedProductId] IS NULL AND [EntryCount] > 0) "
+                + "OR ([SourceKind] = 'Edit' AND [SourceLabel] IS NULL AND [FileName] IS NULL AND [FileSha256] IS NULL "
+                + $"AND [FileSizeBytes] IS NULL AND [EditedProductId] IS NOT NULL AND [EditedProductId] <> {EmptyGuid})");
+        });
+        header.HasKey(x => new { x.CompanyId, x.Version });
+        header.HasIndex(x => new { x.CompanyId, x.VersionId }).IsUnique();
+        header.Property(x => x.Version).ValueGeneratedNever();
+        header.Property(x => x.SourceKind).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.SourceLabel).HasMaxLength(ProductPackageStandardInputLimitsV2.SourceLabelMaximumLength);
+        header.Property(x => x.Reason).HasMaxLength(ProductPackageStandardInputLimitsV2.ReasonMaximumLength).IsRequired();
+        header.Property(x => x.FileName).HasMaxLength(ProductPackageStandardInputLimitsV2.FileNameMaximumLength);
+        header.Property(x => x.FileSha256).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation);
+        header.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        header.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        header.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        header.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.EditedProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+        header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<ProductPackageStandardLineRow>();
+        line.ToTable("ProductPackageStandardLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductPackageStandardLines_Values",
+                $"[ProductId] <> {EmptyGuid} AND [PiecesPerPackage] > 0");
+        });
+        line.HasKey(x => new { x.CompanyId, x.Version, x.ProductId });
+        line.HasOne<ProductPackageStandardVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Version })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<ProductPackageStandardAttemptRow>();
+        attempt.ToTable("ProductPackageStandardAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductPackageStandardAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_ProductPackageStandardAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_ProductPackageStandardAttempts_Answer",
+                "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         foreach (var entry in ChangeTracker.Entries<AuditEvent>())
@@ -539,6 +616,14 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 && entry.Entity is ProductProfileWeightImportRow or ProductProfileWeightLineRow or ProductProfileWeightAttemptRow)
             {
                 throw new InvalidOperationException("Metre ağırlığı tablosunun içe aktarımı ve satırları değiştirilmez veya silinmez.");
+            }
+
+            // B-08 / BS-10: a package standard version, its entries and its answers are insert-only (a change is a new version).
+            if (entry.State != EntityState.Added
+                && entry.Entity is ProductPackageStandardVersionRow or ProductPackageStandardLineRow
+                    or ProductPackageStandardAttemptRow)
+            {
+                throw new InvalidOperationException("Paket standardı tablosunun sürümü ve satırları değiştirilmez veya silinmez.");
             }
 
             if (entry.Entity.CompanyId == Guid.Empty || !companyContext.IsResolved || entry.Entity.CompanyId != companyContext.CompanyId)

@@ -524,6 +524,7 @@ app.MapProductPriceListEndpoints();
 app.MapProductItemTypeEndpoints();
 app.MapProductDimensionEndpoints();
 app.MapProductProfileWeightTableEndpoints();
+app.MapProductPackageStandardEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();

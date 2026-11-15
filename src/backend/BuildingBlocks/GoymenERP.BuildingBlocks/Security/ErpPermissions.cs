@@ -167,6 +167,14 @@ public static class ErpPermissions
     public const string ProductProfileWeightsImport = "product.profile-weights.import";
 
     /// <summary>
+    /// B-08 / BS-10 (STK-S12): the Product owner's ONE name for reading the company's package standard table, importing it from
+    /// an Excel file and editing one product's entry (every version source-recorded and audited;
+    /// <c>ProductPackageStandardPermissionsV2.Manage</c>). The consumers' read port measures no permission. Registered, not
+    /// granted: no role, seed or user receives it here; who receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductPackageStandardsManage = "product.package-standards.manage";
+
+    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -1456,6 +1464,7 @@ public static class ErpPermissions
             ProductItemTypeManage,
             ProductDimensionManage,
             ProductProfileWeightsImport,
+            ProductPackageStandardsManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1698,6 +1707,7 @@ public static class ErpPermissions
             ProductItemTypeManage,
             ProductDimensionManage,
             ProductProfileWeightsImport,
+            ProductPackageStandardsManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,

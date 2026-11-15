@@ -78,6 +78,7 @@ import { DuplicateCandidatesPanel } from './DuplicateCandidates'
 import { ProductItemTypePanel } from './ProductItemTypePanel'
 import { ProductDimensionPanel } from './ProductDimensionPanel'
 import { ProfileWeightTablePanel } from './ProfileWeightTablePanel'
+import { PackageImportPanel } from './PackageImportPanel'
 import {
   duplicateIds,
   duplicateQueryKey,
@@ -955,6 +956,11 @@ function ProductCardView({
       {/* URN-D13…D16: the selected company's kg/m table, the only source of a profile's or round tube's kg/m. */}
       {itemTypeCompany !== null && itemTypeNamespace !== null ? (
         <ProfileWeightTablePanel companyId={itemTypeCompany} queryNamespace={itemTypeNamespace} />
+      ) : null}
+
+      {/* B-08 / BS-10: the selected company's package standard (pieces per package) and this product's entry. */}
+      {itemTypeCompany !== null && itemTypeNamespace !== null ? (
+        <PackageImportPanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
       ) : null}
 
       <section className={styles.section} aria-labelledby="product-roles-heading">

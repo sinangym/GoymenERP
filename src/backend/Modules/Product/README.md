@@ -682,3 +682,22 @@ the request; the view answers the table's `kgPerMetre`, `kgPerMetreSourceLabel` 
 | Authority | ONE name, `product.profile-weights.import` (`ErpPermissions.ProductProfileWeightsImport`): company-wide, not Critical, granted to NO role here (URN-D15; the grant is a human gate). |
 | Command | `GET /api/v1/product-profile-weight-tables/current` and `POST /api/v1/product-profile-weight-tables` `{expectedVersion, sourceLabel (mandatory, URN-D14), reason, fileName, contentBase64}`: Idempotency-Key, stale version 409, invalid file 400 with the row number; ONE audit event `product.profile-weights.imported.v1`. |
 | Rollback | Migration `AddProductProfileWeightImports` (`dotnet ef`): `Down` refuses with `THROW 51483` while any import or import answer exists, or while a profile card has no stored kg/m (the old shape check would not hold) — forward fix; an empty store rolls back freely. |
+
+## Package standard (STK-S12, B-08 / BS-10)
+
+Source: `docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md` B-08, `SINAN_KARARLARI_2026-11-11` BS-10, DEC-PRD-008 /
+D-PACKAGE=A, URT-D27 and AT-017. The pieces per package of a product is **not** a card attribute. It is the company's
+package standard table, versioned and read by the consumers as a suggestion that they snapshot. The table is first imported
+from an Excel file and then edited in the ERP. While no table or no entry exists, the read port answers `NoSource`. No value is
+guessed or seeded, and OPEN-007 stays open.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, company-scoped, in `ProductPriceListDbContext`. `product.ProductPackageStandardVersions` holds one insert-only version per import or edit: `Import` (source label, file name, SHA-256, size) or `Edit` (the edited product), plus reason, actor, time and a deterministic `VersionId`. `product.ProductPackageStandardLines` holds the whole table of a version, one row per product, with pieces > 0. `product.ProductPackageStandardAttempts` holds the command answers. All three are insert-only (DbContext write guard). The newest version is current, and a past version never changes (AT-017). |
+| File | `.xlsx`, first worksheet, header row `Ürün kodu` / `Paket içi adet` (other columns are ignored). Each row has the product card code as text and the pieces as a positive whole number. A code appears once per file. Empty rows are ignored; formula cells refuse the file. Limits: at most 2 MiB and 5000 rows. The whole file is refused with the row numbers (at most 20 listed, the total always named), and nothing is stored. The file replaces the whole table. |
+| Authority | ONE name, `product.package-standards.manage` (`ErpPermissions.ProductPackageStandardsManage`), covers the screen, the import and the edit. It is company-wide, not Critical, and granted to NO role here; the grant is a human gate. |
+| Commands | `GET /api/v1/product-package-standards/current`; `POST /api/v1/product-package-standards/imports` `{expectedVersion, sourceLabel (mandatory), reason, fileName, contentBase64}`; `PUT /api/v1/product-package-standards/products/{productId}` `{expectedVersion, piecesPerPackage (null removes the entry), reason}`. Each takes an Idempotency-Key. A stale version is refused with 409. Setting the same value creates no version. Each new version writes ONE audit event (`product.package-standards.imported.v2` / `product.package-standards.entry-set.v2`, entity `Product.PackageStandardTable`). |
+| Read port | `IProductPackageStandardReaderV2.GetAsync(productId)` (consumed by Sales and Production) answers one of `Found` (pieces, `StandardVersion`, `StandardVersionId`, source kind and label), `NoSource`, `NotFound`, `Denied` (not a member of the company) or `Unavailable`. It checks access only; no permission is measured. The old `ProductPackageStandardStatusV2` placeholder of the price resolution is unchanged. |
+| Not implemented (NEEDS-SINAN) | The plant override and the customer exception of DEC-PRD-008. A validity date or approval step for a version. Keeping the import file in the document vault (retention). Whether inactive cards may hold an entry. |
+| Rollback | Migration `AddProductPackageStandards` (`dotnet ef`). `Down` refuses with `THROW 51492` while any version or command answer exists, so the fix is forward; an empty store rolls back freely. |
+| Screen | The product detail page has a `PackageImportPanel`. It shows the current table with its source, imports a file and edits the product's own entry. |
