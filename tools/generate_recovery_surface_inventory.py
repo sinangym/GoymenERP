@@ -1291,6 +1291,9 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs": "7043f54a2a8f6a9cebde62285dd2890cb5a4081397b4766fc623b216da0421b7",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCreditLimitService.cs": "e31360adde051e12f46f433cb831f044338a085dbd64368f18098ddcc3f4cb04",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs": "1a96c566b9eb8dff8446ecf675ab98d07346911ed12496a4b1f715603cd78119",
+    # tren-1 wave 3 (stok_lojistik): new live writers; K3 review pending (stok).
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs": "5c46bcc865767391a2581dd6c09ed0b430c095713aa400069fad8b409f938f2a",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": "36116eed61c020bcb11b7ed0cdfc7c64105267ada848518de7d108883b638385",
 }
 
 

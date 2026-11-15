@@ -245,9 +245,11 @@
           "module": {
             "enum": [
               "Accounting",
+              "Counterparty",
               "Documents",
               "Finance",
               "Idempotency",
+              "Identity",
               "Inventory",
               "Logistics",
               "Manufacturing",
@@ -283,7 +285,7 @@
           },
           "contracts": {
             "type": "array",
-            "maxItems": 2,
+            "maxItems": 3,
             "uniqueItems": true,
             "items": {
               "type": "string",
@@ -293,7 +295,7 @@
           "sourceFiles": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 7,
+            "maxItems": 8,
             "uniqueItems": true,
             "items": {
               "type": "object",
