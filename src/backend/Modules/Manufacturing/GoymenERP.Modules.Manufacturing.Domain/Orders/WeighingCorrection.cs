@@ -35,8 +35,10 @@ public sealed record WeighingCorrectionApplication(OutputReversal Reversal, Outp
 /// decision is about an output weighed too heavy, and a correction upwards is not decided, so it is refused rather than
 /// applied. A declared process loss has no weighing (<see cref="ManufacturingRuleCodes.WeighingCorrectionNotWeighed"/>).
 /// A closed order is refused with <see cref="ManufacturingRuleCodes.OrderClosed"/> as <see cref="ProductionOrder.ReverseOutput"/>
-/// refuses it: whether correcting an order closed with output above input before URT-D41 (URT-D52 (2)) needs the order
-/// to be reopened was not asked (NEEDS-SINAN, URT-D52 (3)), so nothing here reopens or changes a closed order. The stock
+/// refuses it, at the proposal and again at the approval (URT-D81, SINAN_KARARLARI_2026-11-15_DALGA2_EK10: a weighing on
+/// a closed order is corrected only after the order is reopened by the reopen flow, URT-D32 with its URT-D77
+/// permission; a direct correction on a closed order is refused). Nothing here reopens or changes a closed order; the
+/// reopen is its own command. The stock
 /// side of an approval (the wrong label's reversal movement and the correct label's receipt) is Inventory's and is not
 /// performed here; the command that persists a correction stages both with the order's facts in one transaction. The
 /// permission names of the proposal and the approval are that command's, registered without any grant (URT-D53 (3)).

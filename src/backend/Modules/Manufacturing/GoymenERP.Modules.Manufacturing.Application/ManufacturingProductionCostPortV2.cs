@@ -5,22 +5,25 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 
 /// <summary>
 /// The production cost of one order with its recorded figures, version 2 of the production cost port (SAT-D305 (4),
-/// SAT-D307 "Uretim maliyet portu"; URT-D54, URT-D55, URT-D58, SINAN_KARARLARI_2026-11-14_URETIM_EK4). Version 1
+/// SAT-D307 "Uretim maliyet portu"; URT-D54, URT-D55, URT-D58, SINAN_KARARLARI_2026-11-14_URETIM_EK4; URT-D78…URT-D80,
+/// SINAN_KARARLARI_2026-11-15_DALGA2_EK10). Version 1
 /// (<see cref="IManufacturingScrapCostDistributionPortV1"/>) stays as it is and answers the unrounded figures. Version 2
 /// adds:
 /// <list type="bullet">
 /// <item>the recorded figures of <see cref="ProductionCostRoundingCalculatorV1"/>: a kg cost at 4 decimals and a TL
-/// amount at 2 decimals, each rounded once from the full-precision calculation, with the remainder on the good product
-/// line so the TL that went in equals the TL distributed (URT-D54 (1)-(2));</item>
+/// amount at 2 decimals, each rounded once from the full-precision calculation (a label's amount is its unrounded kg
+/// cost x kg, URT-D79), with the remainder on the good product line with the most kg so the TL that went in equals the
+/// TL distributed (URT-D54 (1)-(2), URT-D80);</item>
 /// <item>the currency lines of the issues that entered stock in a foreign currency, with the rate recorded then
 /// (URT-D55 (2), display only);</item>
 /// <item>the issues that keep the cost from being computed, with their reason: a stamped cost of zero
 /// (<c>input_cost_zero</c>, URT-D58 (1)) or no rate recorded (<c>input_exchange_rate_missing</c>, URT-D55 (2)).</item>
 /// </list>
-/// The rounding direction is read per company from <see cref="IManufacturingCostRoundingPolicySourceV1"/>; it is not
-/// decided (URT-D54 (3), NEEDS-SINAN), so a source that answers "not decided" leaves every cost pending
-/// (<c>cost_rounding_policy_not_decided</c>) and no figure is answered. The port carries no authority: the caller resolves
-/// and fences the company; the port reads that company's order only, writes nothing and never answers a silent zero.
+/// A half is rounded away from zero, the one rounding rule of the system (URT-D78, SAT-D11): there is no company
+/// setting and no rounding source, so the cost never waits for one. An order whose remainder has no good product line to
+/// carry it is pending (<c>rounding_remainder_line_missing</c>, URT-D80). The port carries no authority: the caller
+/// resolves and fences the company; the port reads that company's order only, writes nothing and never answers a
+/// silent zero.
 /// </summary>
 public interface IManufacturingProductionCostPortV2
 {
@@ -28,34 +31,6 @@ public interface IManufacturingProductionCostPortV2
         Guid companyId,
         Guid orderId,
         CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// Reads the company's rounding direction of the recorded production cost figures (URT-D54 (3)). It reads the given
-/// company only, writes nothing, answers <see cref="ProductionCostRoundingPolicyStatusV1.NotDecided"/> while no direction
-/// is decided and never picks one; a direction that cannot be read is
-/// <see cref="ManufacturingCostRoundingPolicySourceStatusV1.Unavailable"/>.
-/// </summary>
-public interface IManufacturingCostRoundingPolicySourceV1
-{
-    Task<ManufacturingCostRoundingPolicyReadV1> ReadAsync(Guid companyId, CancellationToken cancellationToken);
-}
-
-public enum ManufacturingCostRoundingPolicySourceStatusV1
-{
-    Found = 1,
-    Unavailable = 2,
-}
-
-public sealed record ManufacturingCostRoundingPolicyReadV1(
-    ManufacturingCostRoundingPolicySourceStatusV1 Status,
-    Guid CompanyId,
-    ProductionCostRoundingPolicyInputV1? Policy);
-
-public static class ManufacturingProductionCostCodesV2
-{
-    public const string RoundingPolicyUnavailable = "cost_rounding_policy_unavailable";
-    public const string RoundingPolicyScopeMismatch = "cost_rounding_policy_scope_mismatch";
 }
 
 /// <summary>
@@ -100,7 +75,6 @@ public sealed record ManufacturingProductionCostResultV2(
     Guid OrderId,
     ManufacturingScrapCostDistributionStatusV1 Status,
     string? CostBasis,
-    ProductionCostRoundingDirectionV1? RoundingDirection,
     decimal? RecordedCostPerKgTl,
     decimal? RecordedRawMaterialCostPerKgTl,
     decimal? InputTotalTl,
@@ -118,21 +92,18 @@ public sealed record ManufacturingProductionCostResultV2(
 
     public static ManufacturingProductionCostResultV2 Empty(
         Guid companyId, Guid orderId, ManufacturingScrapCostDistributionStatusV1 status, string reasonCode) =>
-        new(CurrentContractVersion, companyId, orderId, status, null, null, null, null, null, null, null, null, null,
+        new(CurrentContractVersion, companyId, orderId, status, null, null, null, null, null, null, null, null,
             [], [], [], [], reasonCode);
 }
 
 /// <summary>
 /// <see cref="IManufacturingProductionCostPortV2"/> over the order's cost source
-/// (<see cref="IManufacturingScrapCostDistributionSourceV1"/>, the same as version 1) and the rounding direction source:
-/// it checks the scope, reads each source once and calls the single rounding calculator; it computes nothing itself. An
-/// empty company or order, a source that throws or answers for another company or order, or an unknown source status
-/// is <see cref="ManufacturingScrapCostDistributionStatusV1.Unavailable"/> (fail closed). The order is read first, so an
-/// order that does not exist is not found whatever the direction source answers. Cancellation is not swallowed.
+/// (<see cref="IManufacturingScrapCostDistributionSourceV1"/>, the same as version 1): it checks the scope, reads the
+/// source once and calls the single rounding calculator; it computes nothing itself. An empty company or order, a source
+/// that throws or answers for another company or order, or an unknown source status is
+/// <see cref="ManufacturingScrapCostDistributionStatusV1.Unavailable"/> (fail closed). Cancellation is not swallowed.
 /// </summary>
-public sealed class ManufacturingProductionCostPort(
-    IManufacturingScrapCostDistributionSourceV1 source,
-    IManufacturingCostRoundingPolicySourceV1 policySource)
+public sealed class ManufacturingProductionCostPort(IManufacturingScrapCostDistributionSourceV1 source)
     : IManufacturingProductionCostPortV2
 {
     public async Task<ManufacturingProductionCostResultV2> ReadAsync(
@@ -187,37 +158,7 @@ public sealed class ManufacturingProductionCostPort(
             return Unavailable(companyId, orderId, ManufacturingScrapCostDistributionCodesV1.SourceUnavailable);
         }
 
-        ManufacturingCostRoundingPolicyReadV1? policy;
-        try
-        {
-            policy = await policySource.ReadAsync(companyId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return Unavailable(companyId, orderId, ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable);
-        }
-
-        if (policy is null)
-        {
-            return Unavailable(companyId, orderId, ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable);
-        }
-
-        if (policy.CompanyId != companyId)
-        {
-            return Unavailable(companyId, orderId, ManufacturingProductionCostCodesV2.RoundingPolicyScopeMismatch);
-        }
-
-        if (policy is not { Status: ManufacturingCostRoundingPolicySourceStatusV1.Found, Policy: { } roundingPolicy })
-        {
-            return Unavailable(companyId, orderId, ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable);
-        }
-
-        return Map(companyId, orderId,
-            ProductionCostRoundingCalculatorV1.Round(new ProductionCostRoundingInputV1(input, roundingPolicy)));
+        return Map(companyId, orderId, ProductionCostRoundingCalculatorV1.Round(input));
     }
 
     private static ManufacturingProductionCostResultV2 Unavailable(Guid companyId, Guid orderId, string code) =>
@@ -254,7 +195,7 @@ public sealed class ManufacturingProductionCostPort(
                     .ToArray();
                 return new ManufacturingProductionCostResultV2(
                     ManufacturingProductionCostResultV2.CurrentContractVersion, companyId, orderId,
-                    ManufacturingScrapCostDistributionStatusV1.Available, cost.CostBasis, result.Direction,
+                    ManufacturingScrapCostDistributionStatusV1.Available, cost.CostBasis,
                     result.RecordedCostPerKg, result.RecordedRawMaterialCostPerKg, result.InputTotalTl,
                     result.RecordedWeighedScrapExpenseTl, result.DistributedTotalTl, result.RemainderTl,
                     result.RemainderLabelId, lines, currencyLines, [], notes, null);

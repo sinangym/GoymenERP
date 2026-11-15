@@ -34,8 +34,8 @@ public sealed class ManufacturingScrapCostDistributionPortTests
                 Kilograms.Zero,
                 ScrapCostSettingStatus.Off,
                 nonKg),
-            [new ProductionScrapCostLabelInput(GoodA, OutputClass.GoodProduct, new Kilograms(900m)),
-                new ProductionScrapCostLabelInput(SecondA, OutputClass.SecondQuality, new Kilograms(50m))]);
+            [new ProductionScrapCostLabelInput(GoodA, "ETK-1", OutputClass.GoodProduct, new Kilograms(900m)),
+                new ProductionScrapCostLabelInput(SecondA, "ETK-2", OutputClass.SecondQuality, new Kilograms(50m))]);
 
     private static ManufacturingScrapCostDistributionSourceReadV1 Found(ProductionScrapCostDistributionInput? input) =>
         new(ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyA, OrderA, input);
