@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.DocumentsRuntime;
 using GoymenERP.Api.Endpoints;
@@ -232,6 +233,8 @@ builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySale
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddSecurityEventsModule(builder.Configuration);
+// AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
+builder.Services.AddAiRuntime(builder.Configuration);
 builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -491,6 +494,7 @@ app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapSecurityEventsEndpoints();
+app.MapAiEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();

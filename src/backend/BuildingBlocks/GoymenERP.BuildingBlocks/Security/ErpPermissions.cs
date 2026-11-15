@@ -1159,6 +1159,13 @@ public static class ErpPermissions
     /// seeded role holds it: applying the grant is a human gate.
     /// </summary>
     public const string PlatformSecurityEventsRead = "platform.security-events.read";
+    /// <summary>
+    /// AI-3 right-panel capability: may ask the READ-only AI runtime in the company context. The name is a reviewed
+    /// assumption (AI_KARAR_PAKETI_2026-11, plan AI-3/AI-5; NEEDS-SINAN for the final name and holders). Registered
+    /// company-wide only and not critical; no seeded role holds it, and granting it is a human gate. Each owner READ
+    /// tool still requires its own permissions in addition to this capability.
+    /// </summary>
+    public const string AiPanelUse = "ai.panel.use";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1353,6 +1360,7 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            AiPanelUse,
             PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
@@ -1557,6 +1565,7 @@ public static class ErpPermissions
             SettingsManufacturingToleranceProfilesPublish,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            AiPanelUse,
             PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
