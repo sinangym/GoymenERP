@@ -63,11 +63,17 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// <c>finance.cash-transfers.commit</c> and, like every Finance record, the Accounting period read. No role or user
 /// receives either name here.
 /// </para>
+/// <para>
+/// <b>1.12 (F-018 L2; FNS-D57 / FNS-D31 / FNS-D58, API-85b):</b> the company accounts' customer collaterals open at
+/// <c>/finans/teminatlar</c> under <c>finance.collaterals.read</c>; recording, changing and releasing (one step, no
+/// approval, FNS-D57) is one control of that route under <c>finance.collaterals.record</c>. Neither name is Critical and no
+/// role or user receives either name here (the persona distribution is open).
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.11";
+    public const string OwnerContractVersion = "1.12";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -162,6 +168,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string CreditLimitListRoutePath = "/finans/kredi-limitleri";
     public const string CreditLimitProposeCapabilityId = "finance.credit-limits.propose";
     public const string CreditLimitApproveCapabilityId = "finance.credit-limits.approve";
+    public const string CollateralListScreenId = "F-18-COLLATERALS";
+    public const string CollateralListCapabilityId = "finance.collaterals.list";
+    public const string CollateralListRouteId = "finance.collaterals.list";
+    public const string CollateralListRoutePath = "/finans/teminatlar";
+    public const string CollateralRecordCapabilityId = "finance.collaterals.record";
     public const string CashTransferWorkspaceScreenId = "F-32-CASH-TRANSFERS";
     public const string CashTransferWorkspaceCapabilityId = "finance.cash-transfers.workspace";
     public const string CashTransferWorkspaceRouteId = "finance.cash-transfers.workspace";
@@ -190,6 +201,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             [FinancePermissionNames.CashTransferRead]);
         var creditLimits = Declaration(CreditLimitListCapabilityId, CreditLimitListRouteId, CreditLimitListRoutePath,
             CreditLimitListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]);
+        var collaterals = Declaration(CollateralListCapabilityId, CollateralListRouteId, CollateralListRoutePath,
+            CollateralListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCollateralsRead]);
         return
         [
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
@@ -345,6 +358,14 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = CreditLimitApproveCapabilityId,
                 ParentCapabilityId = CreditLimitListCapabilityId,
                 RequiredPermissions = [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove],
+            },
+            // 1.12 (FNS-D57): one step; recording, changing and releasing are one control under the record name.
+            collaterals,
+            collaterals with
+            {
+                CapabilityId = CollateralRecordCapabilityId,
+                ParentCapabilityId = CollateralListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCollateralsRead, ErpPermissions.FinanceCollateralsRecord],
             },
             // 1.11 (FNS-D24): one transaction per transfer; the commit also needs the Accounting period read.
             cashTransfers,

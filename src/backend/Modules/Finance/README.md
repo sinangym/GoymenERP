@@ -642,6 +642,25 @@ Not in this slice: an amount threshold or a second approval (FNS-D56/FNS-D57(4):
 of OPEN-009 stays open), the Cari-side ownership check of party/account (F018 N-2), and the processed-invoice set on the Sales risk port
 (SAT-D311 / FNS-D53, opened by Sales and filled later by Finance).
 
+## API-85b L2: customer collateral master (müşteri teminatı) — FNS-D57, FNS-D31, FNS-D58, F018 §L2
+
+| Part | What |
+|---|---|
+| HTTP | `POST /api/v1/finance/collaterals` (record), `POST …/collaterals/{collateralId}/changes` (change, `expectedRevision`), `POST …/collaterals/{collateralId}/release` (release, written reason, `expectedRevision`), `GET …/collaterals/accounts/{companyAccountId}` (held collaterals + weighted collateral + documentary risk), `GET …/collaterals/accounts/{companyAccountId}/history`, `GET …/collaterals/type-candidates`, `GET …/collaterals/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
+| Permissions | `finance.collaterals.read`, `finance.collaterals.record`: registered, company-wide, **not Critical, not granted** (FNS-D57). Granting them to a role or persona stays a human step (FNS-D68 persona distribution) |
+| One step (FNS-D57) | Recording, changing and releasing each take effect in one save, with no proposer/approver and no amount threshold. Every change writes the old and the new values to the audit (`finance.collateral.recorded.v1` / `changed.v1` / `released.v1`, approval context `FNS-D57`, direct). A release is a reverse record carrying its reason; nothing is deleted |
+| Record | `finance.PartyCollaterals`: per collateral a revision chain (record = 1, each change or release the next); status Effective / Superseded; kind Record / Change / Release. Direction is `Received` (customer collateral); exact decimal text amount (`CK_PartyCollaterals_Payload`: positive), currency, Settings type id, validity dates. At most one effective revision per collateral (`UX_PartyCollaterals_Live`, filtered) and one row per revision (`UX_PartyCollaterals_Revision`) |
+| Types and rates (FNS-D31) | Settings owns the collateral types and their rates (0–100, exact decimal). Finance reads them through `IFinanceCollateralTypeCatalogReader`; the default `UnavailableFinanceCollateralTypeCatalogReader` answers Unavailable, so until Settings registers its adapter recording refuses (`collateral_type_catalog_unavailable`) and a held collateral's weighted figure is Unavailable. A cheque or promissory-note class is never a collateral type: the server refuses it (`collateral_type_is_instrument`). The rate is read at READ time, never copied into the record |
+| Weighted collateral | `FinancePartyCollateralFigures` (one calculator for the account view and the Sales port): amount x rate / 100, exact, per currency, never converted; anything Finance cannot read exactly makes the whole figure Unavailable (never a partial sum, never an assumed rate). The collateral haircut is OPEN-010 (open): none is applied. The read date is the server's UTC calendar date |
+| Documentary risk (FNS-D58) | Customer instruments of the account whose status is neither Collected nor ReturnedToCustomer, per currency; an unknown status is Unavailable; shown separately, **never added to gross risk**. Withheld without `finance.customer-instrument.read` and `finance.customer-instrument.amount.read` |
+| Idempotency / audit | `finance.PartyCollateralCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; another payload under the same key is an `IdempotencyConflict`; a stale revision is a recorded `VersionConflict` |
+| Sales port | `FinanceSalesPartyRiskReadPortV1` now answers the collateral figure from this master (weighted, per currency) instead of `NoSource`; a catalog that cannot answer is `Unavailable`. The port shape is unchanged; the documentary risk is not part of it (an L3 field is a Sales contract decision) |
+| Migration `20261115184536_AddPartyCollaterals` | Pure DDL up (records and commands). `Down` refuses with `THROW 51585` while any collateral record or recorded attempt exists (forward fix); an empty store rolls back |
+| Shell (provider 1.12) | Route `finance.collaterals.list` at `/finans/teminatlar` (screen `F-18-COLLATERALS`) under `finance.collaterals.read`; control `finance.collaterals.record` (read + record) of that route draws the record/change/release forms. The server checks every command on its own |
+
+Not in this slice: the Settings collateral type catalog adapter (so FIN-S2 is partial until it exists), persona grants, a haircut
+(OPEN-010 stays open), the Cari-side ownership check of party/account (F018 N-2), and a documentary-risk field on the Sales port.
+
 ## F-019 / API-11 v2: customer return acceptance (müşteri iadesi kabulü)
 
 | Part | What |

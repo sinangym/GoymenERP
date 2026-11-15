@@ -119,7 +119,9 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         Assert.Equal(("ThisOrder", "sales.this-order", "Available", "IncludingTax", "", null), Figure(check.GetProperty("thisOrder")));
         Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"),
             Figure(check.GetProperty("creditLimit")));
-        Assert.Equal(("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"),
+        // API-85b: the Finance collateral master answers; no collateral is held, so the weighted collateral is a recorded zero
+        // (an empty list, no tax basis), and it is still no input of the gross risk.
+        Assert.Equal(("Collateral", "finance.party-collateral", "Available", null, "", null),
             Figure(check.GetProperty("collateral")));
 
         // The read writes nothing in any module (no attempt, audit, command, share or version effect).

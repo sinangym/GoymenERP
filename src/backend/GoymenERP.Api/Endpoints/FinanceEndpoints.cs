@@ -23,6 +23,7 @@ public static class FinanceEndpoints
     public const string CashAccountsPath = "/api/v1/finance/cash-accounts";
     public const string CashAccountCurrencyCandidatesPath = "/api/v1/finance/cash-accounts/currency-candidates";
     public const string CreditLimitsPath = "/api/v1/finance/credit-limits";
+    public const string CollateralsPath = "/api/v1/finance/collaterals";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string PaymentReversalProposalsPath = "/api/v1/finance/manual-bank-payments/reversal-proposals";
     public const string ExpensePaymentsPath = "/api/v1/finance/expense-payments";
@@ -105,6 +106,7 @@ public static class FinanceEndpoints
         MapBankAccountEndpoints(endpoints);
         MapCashAccountEndpoints(endpoints);
         MapCreditLimitEndpoints(endpoints);
+        MapCollateralEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
         return endpoints;
@@ -2824,6 +2826,245 @@ public static class FinanceEndpoints
             .RequireAuthorization()
             .RequireCompanyContext()
             .Produces<PartyCreditLimitCurrencyCandidates>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// API-85b (F018 §L2; FNS-D57/D31/D58): the customer collateral master. A record, a change or a release is one step
+    /// (no proposal, no approval), effective at once; a change or a release names the collateral's current revision. A
+    /// stale revision is 409 <c>version_conflict</c>; a type that is not a Settings candidate is 422
+    /// <c>collateral_type_not_a_candidate</c>, a cheque/note class 422 <c>collateral_type_is_instrument</c>; a Settings
+    /// type catalog that cannot answer is 503. The account read shows the weighted collateral and the documentary risk
+    /// separately.
+    /// </summary>
+    private static void MapCollateralEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(CollateralsPath, async (
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<PartyCollateralRecordRequest>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.RecordAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), body, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RecordFinancePartyCollateralV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<PartyCollateralRecordRequest>("application/json")
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status200OK)
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CollateralsPath + "/{collateralId:guid}/changes", async (
+                Guid collateralId,
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<PartyCollateralChangeBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ChangeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new PartyCollateralChangeRequest(collateralId, body.ExpectedRevision,
+                        body.CollateralTypeId, body.CurrencyId, body.Amount, body.ValidFrom, body.ValidUntil,
+                        body.DocumentReference), cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ChangeFinancePartyCollateralV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<PartyCollateralChangeBody>("application/json")
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status200OK)
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CollateralsPath + "/{collateralId:guid}/release", async (
+                Guid collateralId,
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<PartyCollateralReleaseBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ReleaseAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new PartyCollateralReleaseRequest(collateralId, body.ExpectedRevision,
+                        body.Reason), cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ReleaseFinancePartyCollateralV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<PartyCollateralReleaseBody>("application/json")
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status200OK)
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<PartyCollateralCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CollateralsPath + "/accounts/{companyAccountId:guid}", async (
+                Guid companyAccountId,
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.GetAccountAsync(Context(companyContext, currentUser, correlation), companyAccountId,
+                    cancellationToken));
+            })
+            .WithName("GetFinancePartyCollateralAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyCollateralAccountView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CollateralsPath + "/accounts/{companyAccountId:guid}/history", async (
+                Guid companyAccountId,
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.HistoryAsync(Context(companyContext, currentUser, correlation), companyAccountId,
+                    cancellationToken));
+            })
+            .WithName("GetFinancePartyCollateralHistoryV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyCollateralHistoryPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CollateralsPath + "/type-candidates", async (
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.TypeCandidatesAsync(Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinancePartyCollateralTypeCandidatesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyCollateralTypeCandidates>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CollateralsPath + "/currency-candidates", async (
+                HttpContext httpContext,
+                IFinancePartyCollateralMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.CurrencyCandidatesAsync(Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinancePartyCollateralCurrencyCandidatesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyCollateralCurrencyCandidates>()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()

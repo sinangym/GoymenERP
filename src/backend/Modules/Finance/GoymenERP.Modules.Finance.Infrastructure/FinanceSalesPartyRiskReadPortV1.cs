@@ -27,13 +27,26 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// is <see cref="SalesPartyRiskFigureStateV1.NoSource"/> (<see cref="CreditLimitNotSet"/>) — never zero, never unlimited. A
 /// stored record Finance cannot read exactly (or one naming another party) is <see cref="SalesPartyRiskFigureStateV1.Unavailable"/>.
 /// A pending proposal never counts.</item>
-/// <item><b>Collateral</b>: no master exists on main yet (W4-RISK; the collateral haircut is OPEN-010, still open):
-/// <see cref="SalesPartyRiskFigureStateV1.NoSource"/> — never zero.</item>
+/// <item><b>Collateral</b> (API-85b, F018 §L2; FNS-D31, FNS-D57): the account's held received collaterals of the collateral
+/// master (<see cref="FinancePartyCollateralService"/>) in force on the read date (the UTC calendar date of the server clock),
+/// each weighted by the Settings rate of its type at READ time (amount x rate / 100, exact), summed per currency
+/// (<see cref="FinancePartyCollateralFigures"/>; <c>IncludesTax</c> null). No collateral in force is a recorded zero (an
+/// empty list). A Settings catalog that cannot answer (the default until Settings registers one), an unknown type, a rate
+/// outside 0–100, a stored row Finance cannot read, or a sum System.Decimal cannot hold exactly is
+/// <see cref="SalesPartyRiskFigureStateV1.Unavailable"/> — never a partial sum and never an assumed rate. The collateral
+/// haircut is OPEN-010 (still open): none is applied. The documentary risk (FNS-D58) is not part of this contract.</item>
 /// </list>
 /// </summary>
-internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext)
+internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext,
+    IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider)
     : ISalesPartyRiskReadPortV1
 {
+    /// <summary>Without a Settings collateral type catalog: the collateral figure fails closed when any collateral is held.</summary>
+    public FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext)
+        : this(dbContext, companyContext, new UnavailableFinanceCollateralTypeCatalogReader(), TimeProvider.System)
+    {
+    }
+
     /// <summary>The stable source names this owner answers under.</summary>
     public const string OpenItemsSource = "finance.open-items";
     public const string CreditLimitSource = "finance.party-credit-limit";
@@ -42,7 +55,6 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
     /// <summary>The stable reason codes of this owner's figures.</summary>
     public const string CreditLimitNotSet = "finance_credit_limit_not_set";
     public const string CreditLimitUnreadable = "finance_credit_limit_unreadable";
-    public const string CollateralOwnerMissing = "finance_collateral_owner_missing";
     public const string OpenItemUnreadable = "finance_open_item_unreadable";
     public const string CustomerUnidentified = "finance_customer_unidentified";
 
@@ -64,8 +76,55 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         var creditLimit = partyId == Guid.Empty || companyAccountId == Guid.Empty
             ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CreditLimitSource, [], null, CustomerUnidentified)
             : await CreditLimitAsync(companyId, partyId, companyAccountId, cancellationToken);
-        return new SalesPartyRiskReadAnswerV1(companyId, partyId, companyAccountId, receivables, creditLimit,
-            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, CollateralSource, [], null, CollateralOwnerMissing));
+        var collateral = partyId == Guid.Empty || companyAccountId == Guid.Empty
+            ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null, CustomerUnidentified)
+            : await CollateralAsync(companyId, partyId, companyAccountId, cancellationToken);
+        return new SalesPartyRiskReadAnswerV1(companyId, partyId, companyAccountId, receivables, creditLimit, collateral);
+    }
+
+    /// <summary>
+    /// API-85b: the weighted collateral of the account — its held received collaterals (effective, not released) in force on
+    /// the read date, at the Settings rate of their type read now.
+    /// </summary>
+    private async Task<SalesPartyRiskFigureV1> CollateralAsync(Guid companyId, Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken)
+    {
+        var held = await FinancePartyCollateralService.HeldReceivedAsync(dbContext, companyId, companyAccountId,
+            cancellationToken);
+        if (held.Any(row => row.PartyId != partyId))
+        {
+            // A collateral of another party on this account: never a guess.
+            return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                FinancePartyCollateralFigures.CollateralUnreadable);
+        }
+
+        var asOf = FinancePartyCollateralService.ReadDate(timeProvider);
+        var inputs = held.Select(FinancePartyCollateralService.HeldInput).ToList();
+        var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil, asOf))
+            ? await collateralTypes.ListAsync(companyId, asOf, cancellationToken)
+            : null;
+        var figure = FinancePartyCollateralFigures.Weigh(inputs, catalog, asOf);
+        if (!figure.IsAvailable)
+        {
+            return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                figure.ReasonCode);
+        }
+
+        var amounts = new List<SalesPartyRiskAmountV1>(figure.Amounts.Count);
+        foreach (var amount in figure.Amounts)
+        {
+            if (!FinancePartyCollateralFigures.TryExactDecimal(amount.Amount, out var value))
+            {
+                // A weighted sum System.Decimal cannot hold exactly is never rounded to fit.
+                return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                    FinancePartyCollateralFigures.CollateralUnreadable);
+            }
+
+            amounts.Add(new SalesPartyRiskAmountV1(amount.CurrencyId, value));
+        }
+
+        return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, CollateralSource, amounts,
+            IncludesTax: null, null);
     }
 
     /// <summary>

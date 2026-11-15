@@ -32,6 +32,9 @@ public sealed class FinanceShellCapabilityRegistryTests
                 // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
                 ("finance.cash-transfers.commit", "F-32-CASH-TRANSFERS", "finance.cash-transfers.workspace"),
                 ("finance.cash-transfers.workspace", "F-32-CASH-TRANSFERS", null),
+                // F-018 L2 (Finance 1.12, FNS-D57): the one-step collateral record is a control of the list.
+                ("finance.collaterals.list", "F-18-COLLATERALS", null),
+                ("finance.collaterals.record", "F-18-COLLATERALS", "finance.collaterals.list"),
                 // F-018 L1 (Finance 1.10, FNS-D27 / FNS-D27a; one step, FNS-D57(3)): propose and approve are controls.
                 ("finance.credit-limits.approve", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
                 ("finance.credit-limits.list", "F-18-CREDIT-LIMITS", null),
