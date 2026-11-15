@@ -20,7 +20,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// SAT-D61…D70: the Settings provider (the discount limit screen) joins the full normal host as its last module, with
 /// one capability on the one non-Critical, company-wide limit name; MOD-03 (Settings 1.1) adds the tax master screen on its
-/// own non-Critical, company-wide name.
+/// own non-Critical, company-wide name; F-025 (Settings 1.2, B-11) adds the exchange rate screen on the read name with three
+/// command controls (correction, half-day mark, import — the import name also carries the re-verification).
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
@@ -70,8 +71,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(2, declarations.Count);
-        Assert.Equal("1.1", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(6, declarations.Count);
+        Assert.Equal("1.2", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -81,5 +82,41 @@ public sealed class SettingsShellAuthorityTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
         Assert.False(ErpPermissions.IsCritical(SettingsTaxMasterPermissionManifestV1.TaxMasterManage));
+    }
+
+    [Fact]
+    public void The_exchange_rate_screen_stands_on_the_read_name_with_three_command_controls()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        var screen = Assert.Single(declarations,
+            candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.ExchangeRatesCapabilityId);
+
+        Assert.Equal(("settings.exchange-rates.read", "/ayarlar/kurlar", "AY-KUR-01"),
+            (screen.CapabilityId, screen.RoutePath, screen.ScreenId));
+        Assert.Equal([SettingsExchangeRatePermissionManifestV1.Read], screen.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, screen.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, screen.ScopeRequirement);
+        Assert.Null(screen.ParentCapabilityId);
+
+        string[] commands =
+        [
+            SettingsExchangeRatePermissionManifestV1.Correct,
+            SettingsExchangeRatePermissionManifestV1.MarkHalfDay,
+            SettingsExchangeRatePermissionManifestV1.Import,
+        ];
+        foreach (var command in commands)
+        {
+            var control = Assert.Single(declarations, candidate => candidate.CapabilityId == command);
+            Assert.Equal(SettingsShellCapabilityProvider.ExchangeRatesCapabilityId, control.ParentCapabilityId);
+            Assert.Equal([SettingsExchangeRatePermissionManifestV1.Read, command], control.RequiredPermissions);
+            Assert.Equal((screen.RoutePath, screen.ScreenId), (control.RoutePath, control.ScreenId));
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, control.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, control.ScopeRequirement);
+        }
+
+        foreach (var name in commands.Prepend(SettingsExchangeRatePermissionManifestV1.Read))
+        {
+            Assert.False(ErpPermissions.IsCritical(name));
+        }
     }
 }

@@ -147,6 +147,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.sales-discount-limits.manage',
   /** MOD-03: the Settings tax master screen, drawn only where the server granted its one name. */
   'settings.tax-master.manage',
+  /** F-025 / B-11: the Settings exchange rate screen, drawn only where the server granted its read name. */
+  'settings.exchange-rates.read',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -239,6 +241,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
+  'settings.exchange-rates.read': 'Kurlar',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -373,6 +376,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'organization.sites.list',
       'organization.work-centers.list',
+      // F-025 / B-11: rates follow the organization entries inside Ana Veriler (KLN-D2 order: organization, units, rates).
+      'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
       'identity.assignments.list',

@@ -9,11 +9,17 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 /// (the read, the commands and the binding editor are all that one name; the API re-authorizes every request, and the
 /// binding write in every company it writes). A declaration grants nothing: the name is given to no role here (SAT-D65,
 /// SAT-D69 — a human gate). The id and the route are the frontend lane's (<c>src/settings/capabilities.ts</c>).
+/// <para>
+/// 1.1 (MOD-03): the tax master screen. 1.2 (F-025, B-11): the exchange rate screen (<c>/ayarlar/kurlar</c>) on
+/// <see cref="SettingsExchangeRatePermissionManifestV1.Read"/>, with three controls that each also need their own
+/// write name — the reasoned correction, the half-day mark and the import (which also carries the re-verification).
+/// None of the four names is granted to a role here; the API re-authorizes every request on its own name.
+/// </para>
 /// </summary>
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -28,31 +34,79 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string TaxMasterRoutePath = "/ayarlar/vergi";
     public const string TaxMasterScreenId = "AY-VRG-01";
 
+    // F-025 (B-11, provider 1.2): the exchange rate screen (day list, correction, half-day mark, re-verification, import)
+    // on settings.exchange-rates.read, company-wide, in one company; each command control also needs its own name.
+    public const string ExchangeRatesCapabilityId = SettingsExchangeRatePermissionManifestV1.Read;
+    public const string ExchangeRatesRouteId = SettingsExchangeRatePermissionManifestV1.Read;
+    public const string ExchangeRatesRoutePath = "/ayarlar/kurlar";
+    public const string ExchangeRatesScreenId = "AY-KUR-01";
+    public const string ExchangeRatesCorrectCapabilityId = SettingsExchangeRatePermissionManifestV1.Correct;
+    public const string ExchangeRatesMarkHalfDayCapabilityId = SettingsExchangeRatePermissionManifestV1.MarkHalfDay;
+    public const string ExchangeRatesImportCapabilityId = SettingsExchangeRatePermissionManifestV1.Import;
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
 
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-    [
-        new ShellCapabilityDeclaration(
-            SalesDiscountLimitsCapabilityId,
-            SalesDiscountLimitsRouteId,
-            SalesDiscountLimitsRoutePath,
-            SalesDiscountLimitsScreenId,
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
+    {
+        var exchangeRates = new ShellCapabilityDeclaration(
+            ExchangeRatesCapabilityId,
+            ExchangeRatesRouteId,
+            ExchangeRatesRoutePath,
+            ExchangeRatesScreenId,
             ShellCapabilityRoutePrecedence.Static,
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
-            [SettingsPermissionManifestV1.SalesDiscountLimitsManage],
-            ImplementationAvailable: true),
-        new ShellCapabilityDeclaration(
-            TaxMasterCapabilityId,
-            TaxMasterRouteId,
-            TaxMasterRoutePath,
-            TaxMasterScreenId,
-            ShellCapabilityRoutePrecedence.Static,
-            ShellCapabilityContextRequirement.SingleCompany,
-            ShellCapabilityScopeRequirement.CompanyWide,
-            [SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
-            ImplementationAvailable: true),
-    ];
+            [SettingsExchangeRatePermissionManifestV1.Read],
+            ImplementationAvailable: true);
+
+        return
+        [
+            new ShellCapabilityDeclaration(
+                SalesDiscountLimitsCapabilityId,
+                SalesDiscountLimitsRouteId,
+                SalesDiscountLimitsRoutePath,
+                SalesDiscountLimitsScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsPermissionManifestV1.SalesDiscountLimitsManage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                TaxMasterCapabilityId,
+                TaxMasterRouteId,
+                TaxMasterRoutePath,
+                TaxMasterScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
+                ImplementationAvailable: true),
+            exchangeRates,
+            // Controls of the exchange rate screen: the screen's read plus the command's own name (the re-verification
+            // runs on the import name, as the API authorizes it).
+            exchangeRates with
+            {
+                CapabilityId = ExchangeRatesCorrectCapabilityId,
+                ParentCapabilityId = ExchangeRatesCapabilityId,
+                RequiredPermissions =
+                    [SettingsExchangeRatePermissionManifestV1.Read, SettingsExchangeRatePermissionManifestV1.Correct],
+            },
+            exchangeRates with
+            {
+                CapabilityId = ExchangeRatesMarkHalfDayCapabilityId,
+                ParentCapabilityId = ExchangeRatesCapabilityId,
+                RequiredPermissions =
+                    [SettingsExchangeRatePermissionManifestV1.Read, SettingsExchangeRatePermissionManifestV1.MarkHalfDay],
+            },
+            exchangeRates with
+            {
+                CapabilityId = ExchangeRatesImportCapabilityId,
+                ParentCapabilityId = ExchangeRatesCapabilityId,
+                RequiredPermissions =
+                    [SettingsExchangeRatePermissionManifestV1.Read, SettingsExchangeRatePermissionManifestV1.Import],
+            },
+        ];
+    }
 }
