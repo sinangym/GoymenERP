@@ -7,7 +7,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PartyLedgerWorkspacePage } from './PartyLedgerWorkspacePage'
-import { LEDGER_ACCOUNT, LEDGER_PARTY, ledgerBody } from './partyLedgerFixtures'
+import { ITEMS_EMPTY } from './partyAccountsText'
+import { LEDGER_ACCOUNT, LEDGER_PARTY, LEDGER_TRY, ledgerBody } from './partyLedgerFixtures'
 import {
   WORKSPACE_ACCOUNTS_PARTIAL,
   WORKSPACE_NO_ACCOUNTS,
@@ -221,5 +222,48 @@ describe('party ledger workspace (B-05)', () => {
     await screen.findByRole('option', { name: 'C-100 - SENTETIK Alici' })
     const init = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect((init[1].headers as Record<string, string>)['X-Company-Id']).toBe(COMPANY_A)
+  })
+
+  it('shows Muhasebe\'s open accounts with the picker\'s names and, once chosen, the account\'s open items', async () => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const path = String(url)
+      if (path.endsWith(`/finance/party-accounts/${LEDGER_PARTY}/${LEDGER_ACCOUNT}`)) {
+        return json({ ...balance, openItemsDisclosure: 'Visible', openItems: [] })
+      }
+      if (path.endsWith('/finance/party-accounts')) {
+        return json({
+          companyId: COMPANY_A,
+          accounts: [{
+            partyId: LEDGER_PARTY, companyAccountId: LEDGER_ACCOUNT, currencies: [{
+              currencyId: LEDGER_TRY, receivableCount: 1, openReceivable: { amount: '12.50', currencyId: LEDGER_TRY },
+              payableCount: 0, openPayable: { amount: '0', currencyId: LEDGER_TRY },
+            }],
+          }],
+        })
+      }
+      return json({ items: [PARTY_ROW], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { port } = recordingPort((method) => method === 'partyBalance' ? found(balance) : found(ledgerBody()))
+    renderFinance(<PartyLedgerWorkspacePage companyId={COMPANY_A} base="/muhasebe/cari-hesaplar" title="Cari Hesaplar"
+      openAccounts />, { port, router: true })
+
+    const row = await screen.findByRole('row', { name: /C-100 - SENTETIK Alici/ })
+    expect(row.textContent).toContain('12,50')
+    fireEvent.change(screen.getByLabelText('Cari hesabı'), { target: { value: `${LEDGER_PARTY}:${LEDGER_ACCOUNT}` } })
+    expect(await screen.findByText(ITEMS_EMPTY)).toBeTruthy()
+  })
+
+  it('shows no open-account panel on the Cari route', async () => {
+    const fetchMock = counterpartiesSpy([PARTY_ROW])
+    const { port } = recordingPort(() => found(ledgerBody()))
+    renderFinance(<PartyLedgerWorkspacePage companyId={COMPANY_A} base="/cari/hesap-takibi" title={WORKSPACE_TITLE_CARI} />,
+      { port, router: true })
+
+    await screen.findByRole('option', { name: 'C-100 - SENTETIK Alici' })
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/finance/party-accounts'))).toBe(false)
   })
 })

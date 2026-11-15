@@ -71,12 +71,19 @@ function usePaymentContext() {
   return { ...context, companyId: context.companyId }
 }
 
-/** B-05: the party-ledger workspace on one of its two routes; it needs a single active company. */
-function PartyLedgerWorkspaceRoute({ base, title }: { readonly base: string; readonly title: string }) {
+/**
+ * B-05: the party-ledger workspace on one of its two routes; it needs a single active company. M-03's open-account
+ * panels (`openAccounts`) are Muhasebe > Cari Hesaplar's.
+ */
+function PartyLedgerWorkspaceRoute({ base, title, openAccounts = false }: {
+  readonly base: string
+  readonly title: string
+  readonly openAccounts?: boolean
+}) {
   const context = usePaymentContext()
   return context === null
     ? <StateBlock state={{ kind: 'not-found' }} subject={WORKSPACE_NEEDS_COMPANY} />
-    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} />
+    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} openAccounts={openAccounts} />
 }
 
 /** F-25 (FNS-D25): the expense-payment workspace; it needs a single active company. Each control has its own gate. */
@@ -234,7 +241,8 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.partyLedgerAccounting.slice(1),
     element: gate(FINANCE_CAPABILITY.partyLedgerAccounting,
-      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING} />),
+      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING}
+        openAccounts />),
   },
   {
     path: FINANCE_ROUTE.partyLedgerCari.slice(1),

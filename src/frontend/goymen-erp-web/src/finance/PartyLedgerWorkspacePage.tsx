@@ -7,6 +7,7 @@ import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shel
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { LEDGER_QUERY, partyLedgerPath } from './capabilities'
 import { isBoundUuid } from './contract'
+import { OpenPartyAccounts, PartyAccountOpenItems } from './PartyAccounts'
 import { PartyLedger, type PartyLedgerRange } from './PartyLedger'
 import {
   WORKSPACE_ACCOUNTS_LOADING,
@@ -40,15 +41,20 @@ interface PickerList {
  * Hesaplar and from Cari > Cari Hesap Takibi. Both are Finance's read of the one open-item sub-ledger; neither is a new
  * master. The chosen party account and the date range live in the address (`LEDGER_QUERY`), so reopening the address
  * shows the same ledger and a row's source can be opened and come back.
+ *
+ * M-03 (`openAccounts`, Muhasebe > Cari Hesaplar only): above the picker, the company's party accounts with open
+ * items and their open receivable / open payable per currency; under the chosen ledger, that account's open items.
  */
 export function PartyLedgerWorkspacePage({
   companyId,
   base,
   title,
+  openAccounts = false,
 }: {
   readonly companyId: string
   readonly base: string
   readonly title: string
+  readonly openAccounts?: boolean
 }) {
   const navigate = useNavigate()
   const [search] = useSearchParams()
@@ -82,11 +88,13 @@ export function PartyLedgerWorkspacePage({
     if (account !== undefined) navigate(partyLedgerPath(account.partyId, account.companyAccountId, undefined, base))
   }
   const chosenKey = chosen ? accountKey(partyId, companyAccountId) : ''
+  const labels = new Map(accounts.map((account) => [account.key, account.label]))
 
   return (
     <section aria-labelledby="finance-party-ledger-workspace-title">
       <h1 id="finance-party-ledger-workspace-title">{title}</h1>
       <p className={styles.notice}>{WORKSPACE_PICK_HINT}</p>
+      {openAccounts ? <OpenPartyAccounts companyId={companyId} base={base} labels={labels} /> : null}
       {state.kind === 'initial-loading' ? <p role="status">{WORKSPACE_ACCOUNTS_LOADING}</p> : null}
       {state.kind !== 'ready' && state.kind !== 'initial-loading' ? (
         <StateBlock state={state} subject={WORKSPACE_ACCOUNTS_SUBJECT} onRetry={() => { void counterparties.refetch() }} />
@@ -106,6 +114,9 @@ export function PartyLedgerWorkspacePage({
       {chosen ? (
         <PartyLedger partyId={partyId} companyAccountId={companyAccountId} range={range}
           onRange={(next) => navigate(partyLedgerPath(partyId, companyAccountId, next, base))} />
+      ) : null}
+      {chosen && openAccounts ? (
+        <PartyAccountOpenItems companyId={companyId} partyId={partyId} companyAccountId={companyAccountId} />
       ) : null}
     </section>
   )
