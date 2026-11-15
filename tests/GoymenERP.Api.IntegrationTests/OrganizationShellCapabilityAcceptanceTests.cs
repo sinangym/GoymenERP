@@ -34,11 +34,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        // Counterparty's four plus Organization's TWELVE (ORG-03 joined the four ORG-01/02 declarations,
-        // ORG-04's work-centre card the fifth, the master edit's five controls, then B-15's calendar edit
-        // control). Measured, not incremented: the count is asserted here so that a declaration appearing
-        // or vanishing has to be stated rather than absorbed.
-        Assert.Equal(16, registry.Registrations.Count);
+        // Counterparty's four plus Organization's THIRTEEN (ORG-03 joined the four ORG-01/02 declarations,
+        // ORG-04's work-centre card the fifth, the master edit's five controls, B-15's calendar edit
+        // control, then KIM-S23's company tax-id route). Measured, not incremented: the count is asserted
+        // here so that a declaration appearing or vanishing has to be stated rather than absorbed.
+        Assert.Equal(17, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail])));
@@ -80,6 +80,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         OrganizationPermissionManifestV1.LocationsWrite,
         OrganizationPermissionManifestV1.WorkCentersWrite,
         OrganizationPermissionManifestV1.WorkCenterCalendarsWrite,
+        ErpPermissions.OrganizationContextRead,
     ];
 
     /// <summary>
@@ -246,6 +247,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
             if ((permissions & Bit(OrganizationPermissionManifestV1.WorkCenterCalendarsWrite)) != 0)
                 expected.Add(OrganizationShellCapabilityProvider.WorkCenterCalendarEditCapabilityId);
         }
+
+        // KIM-S23: the company tax-id route stands on the context read alone and only on a company-wide grant
+        // (scope kind 0); a site / location / work-centre scoped grant never publishes it.
+        if ((permissions & Bit(ErpPermissions.OrganizationContextRead)) != 0 && scope == 0)
+            expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId);
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }

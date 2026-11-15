@@ -101,6 +101,24 @@ public enum CommandResult
     CodeInUse = 6,
     OperatorIneligible = 7,
     DependencyUnavailable = 8,
+
+    /// <summary>KIM-S23 (KIM-D28): the proposed VKN already belongs to another company of the group.</summary>
+    TaxIdInUse = 9,
+
+    /// <summary>KIM-S23: the company already has a pending VKN change request.</summary>
+    TaxIdChangePending = 10,
+
+    /// <summary>KIM-S23: the change request is not pending (already decided) or is not the one under decision.</summary>
+    TaxIdChangeNotPending = 11,
+
+    /// <summary>KIM-S23: the company's VKN or version moved after the request was prepared; it cannot be applied.</summary>
+    TaxIdChangeStale = 12,
+
+    /// <summary>KIM-S23: the preparer may not decide their own request (hazırlayan ≠ onaylayan).</summary>
+    TaxIdSelfDecision = 13,
+
+    /// <summary>KIM-S23: the proposed VKN equals the company's current VKN.</summary>
+    TaxIdUnchanged = 14,
 }
 
 public sealed record CommandExecutionResult(
@@ -162,6 +180,36 @@ public static class CommandResponses
                 503,
                 "Lokasyon operatörü doğrulanamadı.",
                 "Cari uygunluğu şu anda doğrulanamıyor; daha sonra yeniden deneyin."),
+            CommandResult.TaxIdInUse => new CommandResponseSnapshot(
+                result,
+                422,
+                "VKN kullanımda.",
+                "Bu VKN gruptaki başka bir şirkette kayıtlı; aynı VKN iki şirkette olamaz."),
+            CommandResult.TaxIdChangePending => new CommandResponseSnapshot(
+                result,
+                409,
+                "Bekleyen VKN değişikliği var.",
+                "Şirketin onay bekleyen bir VKN değişiklik talebi var; önce o talep onaylanmalı veya reddedilmelidir."),
+            CommandResult.TaxIdChangeNotPending => new CommandResponseSnapshot(
+                result,
+                409,
+                "VKN değişikliği beklemede değil.",
+                "Bu VKN değişiklik talebi artık onay beklemiyor; ekranı yenileyin."),
+            CommandResult.TaxIdChangeStale => new CommandResponseSnapshot(
+                result,
+                409,
+                "VKN değişikliği güncelliğini yitirdi.",
+                "Talep hazırlandıktan sonra şirket kaydı değişti; talebi reddedip yeniden hazırlayın."),
+            CommandResult.TaxIdSelfDecision => new CommandResponseSnapshot(
+                result,
+                409,
+                "Kendi talebinizi karara bağlayamazsınız.",
+                "VKN değişikliğini hazırlayan kişi onaylayamaz veya reddedemez; başka bir yetkili karar vermelidir."),
+            CommandResult.TaxIdUnchanged => new CommandResponseSnapshot(
+                result,
+                409,
+                "VKN değişmiyor.",
+                "Önerilen VKN şirketin mevcut VKN'si ile aynı."),
             CommandResult.Created => throw new ArgumentException(
                 "Created cevabı oluşturulan kaydın kimliğini ve sürümünü içermelidir.",
                 nameof(result)),
