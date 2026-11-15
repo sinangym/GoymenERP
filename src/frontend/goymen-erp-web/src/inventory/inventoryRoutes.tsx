@@ -6,6 +6,7 @@ import {
   INVENTORY_OPENING_CAPABILITY,
   INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_ROUTE,
+  INVENTORY_SHORTAGE_WARNINGS_ROUTE,
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
 } from './capabilities'
@@ -13,6 +14,7 @@ import { InventoryMovementTimelinePage } from './InventoryMovementTimelinePage'
 import { InventoryOpeningCreatePage } from './InventoryOpeningCreatePage'
 import { InventoryOpeningDetailPage } from './InventoryOpeningDetailPage'
 import { InventoryOpeningHomePage } from './InventoryOpeningHomePage'
+import { InventoryShortageWarningPage } from './InventoryShortageWarningPage'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import { InventoryStockPositionPage } from './InventoryStockPositionPage'
 import { INVENTORY_LABEL_DETAIL_ROUTE } from './labelDetailRoute'
@@ -43,6 +45,14 @@ export const inventoryRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
         <InventoryMovementTimelinePage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: INVENTORY_SHORTAGE_WARNINGS_ROUTE.slice(1),
+    element: (
+      <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+        <InventoryShortageWarningPage />
       </CapabilityRoute>
     ),
   },

@@ -35,7 +35,9 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
+import { INVENTORY_SHORTAGE_WARNINGS_ROUTE } from './capabilities'
 import { PurchaseSupplySection } from './PurchaseSupplySection'
+import { SHORTAGE_WARNING_TEXT } from './shortageWarningText'
 import { StockRowActionMenu } from './StockRowActionMenu'
 import {
   normalizeStockSearch,
@@ -787,7 +789,10 @@ function InventoryStockPositionView({
   const restart = () => { setState({ type: 'loading' }); void load(filters) }
 
   return <main className={styles.page}>
-    <header className={styles.header}><h1>{STOCK_TEXT.heading}</h1></header>
+    <header className={styles.header}>
+      <h1>{STOCK_TEXT.heading}</h1>
+      <Link to={INVENTORY_SHORTAGE_WARNINGS_ROUTE}>{SHORTAGE_WARNING_TEXT.entryLink}</Link>
+    </header>
 
     <div className={styles.toolbar}>
       <form className={styles.search} onSubmit={submit} role="search">
