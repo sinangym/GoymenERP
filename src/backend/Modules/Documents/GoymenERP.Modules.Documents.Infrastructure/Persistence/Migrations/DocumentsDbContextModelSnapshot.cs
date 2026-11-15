@@ -220,7 +220,7 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
                     {
                         t.HasCheckConstraint("CK_ContentBlobs_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Sha256]) = 64 AND LEN([ObjectKey]) > 0 AND LEN([FirstStoredBy]) > 0");
 
-                        t.HasCheckConstraint("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)");
+                        t.HasCheckConstraint("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3, 4, 5, 6)");
 
                         t.HasCheckConstraint("CK_ContentBlobs_Size", "[SizeBytes] > 0");
                     });
@@ -296,6 +296,9 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid>("OwnerId")
                     .HasColumnType("uniqueidentifier");
 
+                b.Property<bool>("IsPrimary")
+                    .HasColumnType("bit");
+
                 b.Property<DateTimeOffset>("LinkedAtUtc")
                     .HasColumnType("datetimeoffset");
 
@@ -305,6 +308,11 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("nvarchar(128)");
 
                 b.HasKey("CompanyId", "DocumentId", "OwnerKind", "OwnerId");
+
+                b.HasIndex("CompanyId", "DocumentId")
+                    .IsUnique()
+                    .HasDatabaseName("UX_DocumentLinks_Primary")
+                    .HasFilter("[IsPrimary] = 1");
 
                 b.HasIndex("CompanyId", "OwnerKind", "OwnerId", "LinkedAtUtc")
                     .HasDatabaseName("IX_DocumentLinks_CompanyId_OwnerKind_OwnerId_LinkedAtUtc");

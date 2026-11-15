@@ -69,4 +69,10 @@ public sealed class PurchasingDocumentOwnerLinkPort(
     private bool IsCurrent() =>
         currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(currentUser.UserId) && companyContext.IsResolved
         && companyContext.CompanyId != Guid.Empty && currentUser.CanAccessCompany(companyContext.CompanyId);
+
+    /// <summary>
+    /// KLN-D50: a purchase order takes an earlier document of the same company by a link (KLN-D49: one readable source record and
+    /// this record readable), so the same file is never uploaded twice.
+    /// </summary>
+    public bool AcceptsExistingDocumentLinks => true;
 }

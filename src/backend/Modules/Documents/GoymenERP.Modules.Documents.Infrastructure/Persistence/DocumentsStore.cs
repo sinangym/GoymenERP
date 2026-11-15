@@ -25,6 +25,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
 {
     private const string EntityType = "Documents.Document";
     private const string UploadedEventType = "documents.document.uploaded.v1";
+    private const string GeneratedEventType = "documents.document.generated.v1";
     private const string VersionAppendedEventType = "documents.document.version-appended.v1";
     private const string LinkedEventType = "documents.document.linked.v1";
     private const int ActorMaximumLength = 128;
@@ -82,13 +83,15 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         RequireHash(requestHash);
         var companyId = RequireResolvedCompany();
         RequireUpload(upload, companyId);
+        // F-026 (PLT-S9): a generated PDF (a template snapshot is present) is the same single save under its own command.
+        var commandName = upload.Template is null ? DocumentCommands.UploadV1 : DocumentCommands.StoreGeneratedV1;
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
         var correlationId = envelope.CorrelationId.Trim();
 
         for (var round = 1; ; round++)
         {
-            var attempt = await FindAttemptAsync(DocumentCommands.UploadV1, keyHash, cancellationToken);
+            var attempt = await FindAttemptAsync(commandName, keyHash, cancellationToken);
             if (attempt is not null)
             {
                 var replay = await ReplayAsync(attempt, envelope, requestHash, cancellationToken);
@@ -155,11 +158,12 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 OwnerId = upload.Owner.OwnerId,
                 LinkedBy = actorId,
                 LinkedAtUtc = upload.UploadedAtUtc,
+                IsPrimary = true,
             });
             dbContext.Attempts.Add(new DocumentAttemptRow
             {
                 CompanyId = companyId,
-                CommandName = DocumentCommands.UploadV1,
+                CommandName = commandName,
                 IdempotencyKeyHash = keyHash,
                 RequestHash = requestHash,
                 ActorId = actorId,
@@ -342,8 +346,9 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 throw Refused(DocumentStoreCodes.AlreadyLinked, "Belge bu kayda zaten bağlıdır.");
             }
 
-            // The upload's link stays the earliest (the primary one): a later link is stamped strictly after every link the
-            // document already carries, even when the clock reads the same instant.
+            // The upload's link is the primary one (KLN-D49 (4), marked by IsPrimary) and stays the earliest: a later link is
+            // never primary and is stamped strictly after every link the document already carries, even when the clock reads
+            // the same instant.
             var latestLinkedAt = await dbContext.Links.AsNoTracking()
                 .Where(row => row.DocumentId == link.DocumentId)
                 .MaxAsync(row => (DateTimeOffset?)row.LinkedAtUtc, cancellationToken);
@@ -360,6 +365,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 OwnerId = link.Owner.OwnerId,
                 LinkedBy = actorId,
                 LinkedAtUtc = linkedAtUtc,
+                IsPrimary = false,
             });
             dbContext.Attempts.Add(new DocumentAttemptRow
             {
@@ -529,8 +535,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         };
 
     /// <summary>
-    /// Attaches every owner link of the read documents, earliest first (the upload's link is the primary one), keeping the
-    /// rows' order. A row whose document lost every link meanwhile is not answered.
+    /// Attaches every owner link of the read documents, the primary link first (KLN-D49 (4); the upload's link), then the
+    /// rest earliest first, keeping the rows' order. A row whose document lost every link meanwhile is not answered.
     /// </summary>
     private async Task<IReadOnlyList<StoredDocument>> AttachAsync(List<LatestDocumentRow> rows, CancellationToken cancellationToken)
     {
@@ -542,13 +548,14 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         var documentIds = rows.Select(row => row.Id).Distinct().ToList();
         var links = await dbContext.Links.AsNoTracking()
             .Where(link => documentIds.Contains(link.DocumentId))
-            .Select(link => new { link.CompanyId, link.DocumentId, link.OwnerKind, link.OwnerId, link.LinkedAtUtc })
+            .Select(link => new { link.CompanyId, link.DocumentId, link.OwnerKind, link.OwnerId, link.LinkedAtUtc, link.IsPrimary })
             .ToListAsync(cancellationToken);
         var byDocument = links
             .GroupBy(link => (link.CompanyId, link.DocumentId))
             .ToDictionary(group => group.Key, group => (IReadOnlyList<StoredDocumentLink>)
             [
-                .. group.OrderBy(link => link.LinkedAtUtc)
+                .. group.OrderByDescending(link => link.IsPrimary)
+                    .ThenBy(link => link.LinkedAtUtc)
                     .ThenBy(link => link.OwnerKind, StringComparer.Ordinal)
                     .ThenBy(link => link.OwnerId)
                     .Select(link => new StoredDocumentLink(link.OwnerKind, link.OwnerId)),
@@ -630,7 +637,14 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
 
     // ---- audit ----------------------------------------------------------------------------------
 
-    private void Audit(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions) =>
+    private void Audit(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions)
+    {
+        if (upload.Template is { } template)
+        {
+            AuditGenerated(envelope, companyId, upload, earlierVersions, template);
+            return;
+        }
+
         auditEvents.Enqueue(new AuditEventDraft(companyId, UploadedEventType, EntityType, upload.DocumentId.ToString("D"), "Upload", null, 1,
             AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", JsonSerializer.Serialize(new
             {
@@ -647,6 +661,29 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 sameContentEarlierVersions = earlierVersions,
             }, Json), "Belge yüklendi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel,
             envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
+    }
+
+    /// <summary>F-026 (PLT-S9): the generated PDF's audit event carries the template snapshot (DEC-DOC-010).</summary>
+    private void AuditGenerated(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions,
+        GeneratedDocumentTemplate template) =>
+        auditEvents.Enqueue(new AuditEventDraft(companyId, GeneratedEventType, EntityType, upload.DocumentId.ToString("D"), "StoreGenerated",
+            null, 1, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", JsonSerializer.Serialize(new
+            {
+                ownerKind = upload.Owner.Kind,
+                ownerId = upload.Owner.OwnerId,
+                versionNo = 1,
+                fileName = upload.FileName.Value,
+                contentType = upload.Kind.ContentType,
+                sizeBytes = upload.SizeBytes,
+                sha256 = upload.Sha256,
+                scanState = upload.ScanState.ToString(),
+                scannerId = upload.ScannerId,
+                sameContentEarlierVersions = earlierVersions,
+                templateCode = template.Code,
+                templateVersion = template.Version,
+            }, Json), "Üretilen belge kasaya kaydedildi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
+            envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
+            envelope.IdempotencyKey));
 
     private void AuditVersion(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentVersion version, int expectedVersion, int resultVersion) =>
         auditEvents.Enqueue(new AuditEventDraft(companyId, VersionAppendedEventType, EntityType, version.DocumentId.ToString("D"), "AppendVersion",
@@ -689,7 +726,8 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     {
         if (upload.DocumentId == Guid.Empty || upload.SizeBytes < 1 || !DocumentContentHash.IsWellFormed(upload.Sha256)
             || upload.Owner is null || upload.FileName is null || upload.Kind is null
-            || !Enum.IsDefined(upload.ScanState) || (upload.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(upload.ScannerId))
+            || !Enum.IsDefined(upload.ScanState) || (upload.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(upload.ScannerId)
+            || (upload.Template is not null && upload.Kind.Kind != DocumentFileKind.Pdf))
         {
             throw new ArgumentException("Belge yüklemesi eksik veya tutarsız.", nameof(upload));
         }

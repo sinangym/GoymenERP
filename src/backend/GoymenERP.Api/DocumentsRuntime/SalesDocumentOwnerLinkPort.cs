@@ -16,6 +16,9 @@ public sealed class SalesDocumentOwnerLinkPort(
 {
     public string Kind => DocumentOwnerLinkKindsV1.SalesOrder;
 
+    /// <summary>F-026 (PLT-S9): the order PDF Sales renders may be kept in the vault on this record.</summary>
+    public bool AcceptsGeneratedDocuments => true;
+
     public async Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -68,4 +71,10 @@ public sealed class SalesDocumentOwnerLinkPort(
     private bool IsCurrent() =>
         currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(currentUser.UserId) && companyContext.IsResolved
         && companyContext.CompanyId != Guid.Empty && currentUser.CanAccessCompany(companyContext.CompanyId);
+
+    /// <summary>
+    /// KLN-D50: a sales order takes an earlier document of the same company by a link (KLN-D49: one readable source record and
+    /// this record readable), so the same file is never uploaded twice.
+    /// </summary>
+    public bool AcceptsExistingDocumentLinks => true;
 }

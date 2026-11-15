@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.DocumentsRuntime;
 using GoymenERP.Api.Endpoints;
@@ -194,6 +195,7 @@ builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockCountPend
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockScrapPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, SalesOrderDraftPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
+builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
@@ -232,6 +234,8 @@ builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySale
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddSecurityEventsModule(builder.Configuration);
+// AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
+builder.Services.AddAiRuntime(builder.Configuration);
 builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -485,12 +489,15 @@ if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
 app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
+// F023-2 / KIM-D10: an endpoint's own 401/403 (service fence) is recorded once as authz.denied.
+app.UseMiddleware<AuthorizationDenialResponseMiddleware>();
 
 app.MapErpHealthEndpoints();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapSecurityEventsEndpoints();
+app.MapAiEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
@@ -499,6 +506,7 @@ app.MapProductDimensionEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
+app.MapWorkQueueEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();

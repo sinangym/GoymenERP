@@ -38,6 +38,7 @@ public sealed class ErpActivityRedactionProcessor : BaseProcessor<Activity>
         CorrelationIdTag,
         CausationIdTag,
         SourceChannelTag,
+        ErpFailedTraceProcessor.SamplingTag,
     };
 
     /// <summary>

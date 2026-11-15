@@ -23,6 +23,8 @@ public sealed class FinanceDocumentOwnerLinkPortTests
 
         Assert.Equal(DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice, port.Kind);
         Assert.Equal("finance.official-sales-invoice", port.Kind);
+        // F-026: the official invoice keeps its own legal document; it does not take generated PDFs (FNS-D36/D38).
+        Assert.False(((IDocumentOwnerLinkPortV1)port).AcceptsGeneratedDocuments);
         Assert.Equal(DocumentOwnerAccessV1.Readable, await port.CheckReadableAsync(Invoice));
         var (context, invoiceId) = Assert.Single(read.Requests);
         Assert.Equal(Invoice, invoiceId);

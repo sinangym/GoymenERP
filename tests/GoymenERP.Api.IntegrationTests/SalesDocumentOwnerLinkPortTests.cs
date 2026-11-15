@@ -17,6 +17,7 @@ public sealed class SalesDocumentOwnerLinkPortTests
         var (port, _, _) = Port((id, _) => Task.FromResult(Detail(id, Company)));
 
         Assert.Equal(DocumentOwnerLinkKindsV1.SalesOrder, port.Kind);
+        Assert.True(port.AcceptsGeneratedDocuments);
         Assert.Equal(DocumentOwnerAccessV1.Readable, await port.CheckReadableAsync(Order));
     }
 
@@ -87,6 +88,14 @@ public sealed class SalesDocumentOwnerLinkPortTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => port.CheckReadableAsync(Order, cancellation.Token));
+    }
+
+    [Fact]
+    public void The_record_takes_an_existing_document_by_link_KLN_D50()
+    {
+        var (port, _, _) = Port((_, token) => Task.FromCanceled<SalesOrderDraftDetailView>(token));
+
+        Assert.True(port.AcceptsExistingDocumentLinks);
     }
 
     private static (SalesDocumentOwnerLinkPort Port, MutableUser User, MutableCompany Company) Port(

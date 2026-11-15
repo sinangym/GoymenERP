@@ -43,7 +43,7 @@ public sealed class ErpFileLoggerProvider : ILoggerProvider, ISupportExternalSco
         this.settings = settings;
         this.environmentName = environmentName;
         this.timeProvider = timeProvider;
-        writer = new ErpFileLogWriter(settings, timeProvider);
+        writer = new ErpFileLogWriter(settings, timeProvider, FormatDropReport);
     }
 
     public ILogger CreateLogger(string categoryName)
@@ -71,7 +71,23 @@ public sealed class ErpFileLoggerProvider : ILoggerProvider, ISupportExternalSco
         TState state,
         Exception? exception)
     {
-        writer.Enqueue(FormatRecord(categoryName, logLevel, eventId, state, exception));
+        writer.Enqueue(logLevel, FormatRecord(categoryName, logLevel, eventId, state, exception));
+    }
+
+    /// <summary>
+    /// KLN-D51: the record that reports dropped records, in the same redacted shape as every other record.
+    /// It is written by the writer's own loop, so it carries no request correlation or trace.
+    /// </summary>
+    public string FormatDropReport(ErpFileLogDropCounts counts)
+    {
+        ArgumentNullException.ThrowIfNull(counts);
+
+        return FormatRecord(
+            ErpFileLogWriter.DropReportCategory,
+            LogLevel.Warning,
+            new EventId(0, ErpFileLogWriter.DropReportEventName),
+            ErpFileLogWriter.DropReportState(counts),
+            exception: null);
     }
 
     /// <summary>Builds the redacted JSON line for one record; public for tests and for the format contract.</summary>

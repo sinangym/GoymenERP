@@ -78,3 +78,107 @@
     border-top: 1px solid var(--shell-border, #d5dbe6);
   }
 }
+
+/* Plan AI-3 — salt-okuma soru formu ve cevap. */
+
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form p {
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.field textarea,
+.field select {
+  font: inherit;
+  font-weight: 400;
+  padding: 6px 8px;
+  border: 1px solid var(--shell-border, #d5dbe6);
+  border-radius: 6px;
+  color: #1a2233;
+  background: #fff;
+}
+
+.field textarea:focus-visible,
+.field select:focus-visible,
+.submitButton:focus-visible {
+  outline: 2px solid var(--shell-action, #1f5fd0);
+  outline-offset: 2px;
+}
+
+.fieldError {
+  color: #a1251b;
+}
+
+.submitButton {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--shell-action, #1f5fd0);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submitButton:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.answerHeading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.result {
+  padding: 8px;
+  border: 1px solid var(--shell-border, #d5dbe6);
+  border-radius: 6px;
+}
+
+.content {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+
+.source {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  color: #55607a;
+}
+
+.source dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

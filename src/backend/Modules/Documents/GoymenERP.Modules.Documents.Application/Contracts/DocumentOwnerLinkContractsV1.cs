@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Documents.Domain;
+
 namespace GoymenERP.Modules.Documents.Application.Contracts;
 
 /// <summary>
@@ -58,6 +60,22 @@ public interface IDocumentOwnerLinkPortV1
     /// belongs to one invoice record).
     /// </summary>
     bool AcceptsExistingDocumentLinks => false;
+
+    /// <summary>
+    /// F-026 (PLT-S9): whether a PDF the owner's module GENERATED may be stored into the vault on a record of this kind
+    /// through <see cref="IGeneratedDocumentStorePortV1"/>. Fail-closed by default: an owner opts in explicitly. The
+    /// Finance official sales invoice stays out (its PDF is the official one uploaded to the reserved id).
+    /// </summary>
+    bool AcceptsGeneratedDocuments => false;
+
+    /// <summary>
+    /// B-26 / FNS-D52: the content kinds a record of this kind may hold. Every existing owner keeps
+    /// <see cref="DocumentContentPolicy.StandardKinds"/>; the owner of a bank-statement import (FIN-S21) opts in to
+    /// <see cref="DocumentContentPolicy.BankStatementImportKinds"/> by overriding this. An upload, a new version and a
+    /// link of an existing document are each refused when a record they touch does not accept the document's kind, so a
+    /// statement file never appears on a record whose type list did not grow (DEC-DOC-009's open list stays as it is).
+    /// </summary>
+    IReadOnlyCollection<DocumentFileKind> AcceptedFileKinds => DocumentContentPolicy.StandardKinds;
 
     Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }

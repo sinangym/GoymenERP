@@ -10,10 +10,14 @@ import {
   DOCUMENTS_PATH,
   REPLAY_HEADER,
   contentPath,
+  decodeDocumentLinkCandidates,
+  decodeDocumentLinkWrite,
   decodeDocumentList,
   decodeDocumentUpload,
   decodeDocumentVersionPage,
   decodeDocumentVersionWrite,
+  linkCandidatesPath,
+  linkPath,
   listPath,
   problemCode,
   versionContentPath,
@@ -21,6 +25,8 @@ import {
   versionsPath,
   VERSION_PAGE_SIZE,
   type DocumentBinding,
+  type DocumentLinkCandidates,
+  type DocumentLinkWrite,
   type DocumentList,
   type DocumentUpload,
   type DocumentVersionPage,
@@ -267,4 +273,82 @@ export async function downloadDocumentVersion(
   } catch {
     return { type: 'failed' }
   }
+}
+
+/* ── Existing documents linked to another record (KLN-D49/D50) ────────────── */
+
+/** The chosen file's SHA-256 as the server writes it; null when the browser cannot compute it (no probe then). */
+export async function sha256Hex(file: Blob): Promise<string | null> {
+  try {
+    if (typeof crypto === 'undefined' || crypto.subtle === undefined) return null
+    const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(await file.arrayBuffer()))
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  } catch {
+    return null
+  }
+}
+
+export type LinkCandidatesOutcome =
+  | { readonly type: 'ok'; readonly candidates: DocumentLinkCandidates }
+  /** A definite answer that there is nothing to offer (403/404/422): the upload stays the only way. */
+  | { readonly type: 'refused'; readonly status: number; readonly code: string | null }
+  /** No answer, a server failure, or an answer that is not this probe's. */
+  | { readonly type: 'failed' }
+  | { readonly type: 'aborted' }
+
+/** The target record's earlier documents with the chosen file's content (reads only; the server re-checks on link). */
+export async function fetchLinkCandidates(
+  asked: { readonly companyId: string; readonly ownerKind: OwnerKind; readonly ownerId: string; readonly sha256: string; readonly sizeBytes: number },
+  signal?: AbortSignal,
+): Promise<LinkCandidatesOutcome> {
+  const response = await send(linkCandidatesPath(asked.ownerKind, asked.ownerId, asked.sha256), { headers: headers(asked.companyId) }, signal)
+  if (response === 'aborted') return { type: 'aborted' }
+  if (typeof response === 'string') return { type: 'failed' }
+  const body = await jsonBody(response)
+  if (signal?.aborted) return { type: 'aborted' }
+  if (response.status === 200) {
+    const candidates = decodeDocumentLinkCandidates(body, asked)
+    return candidates === null ? { type: 'failed' } : { type: 'ok', candidates }
+  }
+  if (response.status >= 500) return { type: 'failed' }
+  return { type: 'refused', status: response.status, code: problemCode(body) }
+}
+
+/** One link attempt, frozen when the user chose the candidate: a retry sends exactly this. */
+export interface LinkAttempt extends DocumentBinding {
+  readonly idempotencyKey: string
+  readonly expectedCurrentVersion: number
+}
+
+export type LinkOutcome =
+  | { readonly type: 'linked'; readonly write: DocumentLinkWrite; readonly replayed: boolean }
+  /** A definite refusal: no link was created under this key. */
+  | { readonly type: 'refused'; readonly status: number; readonly code: string | null }
+  /** No answer, a 5xx, or a 201 that is not this attempt's: the link may exist; the same attempt is kept for a retry. */
+  | { readonly type: 'unknown' }
+
+export async function linkDocument(attempt: LinkAttempt): Promise<LinkOutcome> {
+  const response = await send(
+    linkPath(attempt.documentId),
+    {
+      method: 'POST',
+      headers: { ...headers(attempt.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': attempt.idempotencyKey },
+      body: JSON.stringify({
+        ownerKind: attempt.ownerKind,
+        ownerId: attempt.ownerId,
+        expectedCurrentVersion: attempt.expectedCurrentVersion,
+      }),
+    },
+    undefined,
+  )
+  if (typeof response === 'string') return { type: 'unknown' }
+  const body = await jsonBody(response)
+  if (response.status === CREATED_STATUS) {
+    const write = decodeDocumentLinkWrite(body, attempt)
+    const replayed = response.headers.get(REPLAY_HEADER) === 'true'
+    if (write === null || write.isReplay !== replayed) return { type: 'unknown' }
+    return { type: 'linked', write, replayed }
+  }
+  if (response.status >= 500) return { type: 'unknown' }
+  return { type: 'refused', status: response.status, code: problemCode(body) }
 }

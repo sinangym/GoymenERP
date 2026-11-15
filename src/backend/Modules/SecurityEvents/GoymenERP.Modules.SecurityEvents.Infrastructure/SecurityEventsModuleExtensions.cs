@@ -44,6 +44,8 @@ public static class SecurityEventsModuleExtensions
         services.AddSingleton(aggregation);
         services.AddSingleton<ISecurityEventStore, StandaloneSecurityEventStore>();
         services.AddSingleton<ISecurityEventWriterV1, SecurityEventWriter>();
+        // F023-2 / KIM-D10: one authz.denied per refused request, built from the request context (scoped).
+        services.AddScoped<IAuthorizationDenialRecorderV1, AuthorizationDenialRecorder>();
         // ADR-SEC-001 section 5 company read; it records security.events.read before reading (fail-closed).
         services.AddScoped<ISecurityEventQueryServiceV1, SecurityEventQueryService>();
 
