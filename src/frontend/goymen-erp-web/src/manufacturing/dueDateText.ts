@@ -1,6 +1,8 @@
 /**
  * F-010a (URT-D29) plan termin text, in Turkish and in its own file. The termin is entered by hand: the system never
- * computes it from line speed, a calendar or capacity, and these words never suggest it does.
+ * computes it from line speed, a calendar or capacity, and these words never suggest it does. URT-D66: a plan is approved
+ * only with a termin, and no termin is earlier than the server's Europe/Istanbul business day (the screen never compares
+ * days itself; the server refuses).
  */
 
 export const DUE_DATE_TEXT = {
@@ -9,7 +11,8 @@ export const DUE_DATE_TEXT = {
   revision: 'termin revizyonu',
   manualNote: 'Termin elle girilir; hat hızından veya takvimden hesaplanmaz.',
   inputLabel: 'Termin tarihi',
-  inputHint: 'Gün olarak girin (saat yok). Boş bırakıp kaydederseniz termin kaldırılır.',
+  inputHint: 'Gün olarak girin (saat yok). Boş bırakıp kaydederseniz termin kaldırılır. Bugünkü iş gününden (İstanbul) önceki bir gün sunucu tarafından reddedilir.',
+  inputHintApproved: 'Gün olarak girin (saat yok). Bugünkü iş gününden (İstanbul) önceki bir gün sunucu tarafından reddedilir.',
   invalid: 'Geçerli bir takvim günü girin.',
   unchanged: 'Girilen termin plandaki terminle aynı.',
   edit: 'Termini değiştir',
@@ -18,6 +21,8 @@ export const DUE_DATE_TEXT = {
   remove: 'Termini kaldır',
   dismiss: 'Vazgeç',
   cancelledReadOnly: 'İptal edilmiş planın termini değiştirilemez.',
+  approvedKeepsTermin: 'Onaylı planın termini değiştirilebilir ama kaldırılamaz.',
+  approvalNeedsTermin: 'Termini girilmemiş plan onaylanmaz; önce planın terminini girin.',
   setRefreshed: 'Termin kaydedildi ve güncel plan yeniden okundu.',
   clearedRefreshed: 'Termin kaldırıldı ve güncel plan yeniden okundu.',
   refreshPending: 'Termin değişikliği uygulandı; güncel plan henüz yeniden okunamadı.',
@@ -43,6 +48,14 @@ export function dueDateFailureText(status: number, code: string | null): string 
   }
   if (status === 422 && code === 'manufacturing_plan_due_date_no_change') {
     return 'İstek plandaki termini değiştirmiyor; kayıt yapılmadı.'
+  }
+  // URT-D66 (1): no termin before today's business day (Europe/Istanbul, the server's clock).
+  if (status === 422 && code === 'manufacturing_due_date_in_past') {
+    return 'Termin bugünkü iş gününden (İstanbul) önce olamaz; termin kaydedilmedi.'
+  }
+  // URT-D66 (2): an approved plan keeps a termin.
+  if (status === 422 && code === 'manufacturing_plan_due_date_required') {
+    return 'Onaylı planın termini kaldırılamaz; termin kaydedilmedi.'
   }
   if (status === 400) return 'Termin veya sürüm sunucu tarafından kabul edilmedi.'
   if (status === 422) return `Termin iş kuralı tarafından reddedildi (${code ?? 'rule_refusal'}).`

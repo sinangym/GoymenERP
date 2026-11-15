@@ -339,6 +339,13 @@ internal sealed class OrderRow : IManufacturingTenantRow
     public Guid? ClosedByUserId { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
     public long Version { get; set; }
+
+    /// <summary>URT-D66 (3): the order's termin — the plan's, copied when the order opens; null on an older order.</summary>
+    public DateOnly? DueDate { get; set; }
+
+    /// <summary>URT-D66 (3): how many times the order's termin was changed on the order (0 = as copied).</summary>
+    public long DueDateRevision { get; set; }
+
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
@@ -462,6 +469,22 @@ internal sealed class OutputReversalRow : IManufacturingTenantRow
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// URT-S13 (URT-D47, URT-D65): the company's scrap price of one calendar month, in TL per kg. One row per (company,
+/// year, month); append-only: a recorded month is never changed or deleted (correcting it is not decided).
+/// </summary>
+internal sealed class MonthlyScrapPriceRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public decimal TlPerKg { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }
 

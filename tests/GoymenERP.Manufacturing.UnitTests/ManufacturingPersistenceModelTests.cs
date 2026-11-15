@@ -26,7 +26,7 @@ public sealed class ManufacturingPersistenceModelTests
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
             typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
-            typeof(CommandRow)];
+            typeof(MonthlyScrapPriceRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -133,6 +133,10 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanDueDate", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOutputReversals", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingMonthlyScrapPrices", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOrderDueDate", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -183,6 +187,45 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation { Name: "OutputReversals" });
         Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
             { Table: "Facts", Name: "OutputLineKind" });
+    }
+
+    [Fact]
+    public void A_monthly_scrap_price_is_one_per_company_and_month_and_its_rollback_refuses_while_one_exists()
+    {
+        // URT-S13 (URT-D47, URT-D65): one append-only row per (company, year, month), keyed by (company, id); the price is
+        // decimal(18,4) as the stamped average cost per kg. Up is pure DDL; Down refuses (THROW 51387) while any price is
+        // stored (forward fix).
+        using var context = Context();
+        var prices = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MonthlyScrapPriceRow))!;
+        Assert.Equal(("manufacturing", "MonthlyScrapPrices"), (prices.GetSchema(), prices.GetTableName()));
+        Assert.Equal(["CompanyId", "Id"], prices.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var month = Assert.Single(prices.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(["CompanyId", "Year", "Month"], month.Properties.Select(property => property.Name));
+        Assert.Equal(ManufacturingDbContext.MonthlyScrapPriceMonthIndex, month.GetDatabaseName());
+        var price = prices.FindProperty(nameof(MonthlyScrapPriceRow.TlPerKg))!;
+        Assert.Equal(((int?)18, (int?)GoymenERP.Modules.Manufacturing.Domain.Costing.ScrapPriceTlPerKg.Scale),
+            (price.GetPrecision(), price.GetScale()));
+        Assert.Equal(GoymenERP.Modules.Manufacturing.Domain.Costing.MonthlyScrapPrice.RecordedByMaximumLength,
+            prices.FindProperty(nameof(MonthlyScrapPriceRow.RecordedBy))!.GetMaxLength());
+        Assert.Equal(ManufacturingDbContext.IdentityCollation,
+            prices.FindProperty(nameof(MonthlyScrapPriceRow.RecordedBy))!.GetCollation());
+        var checks = prices.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(ManufacturingDbContext.MonthlyScrapPriceIdentityCheck, checks["CK_MonthlyScrapPrices_Identity"]);
+        Assert.Equal(ManufacturingDbContext.MonthlyScrapPricePeriodCheck, checks["CK_MonthlyScrapPrices_Period"]);
+        Assert.Equal(ManufacturingDbContext.MonthlyScrapPriceTextCheck, checks["CK_MonthlyScrapPrices_Text"]);
+        Assert.Contains(prices.GetForeignKeys(), key => key.PrincipalEntityType.GetTableName() == "Companies"
+            && key.PrincipalEntityType.GetSchema() == "organization" && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var migration = new AddManufacturingMonthlyScrapPrices();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.UpOperations, operation => operation is CreateIndexOperation
+            { Name: ManufacturingDbContext.MonthlyScrapPriceMonthIndex, IsUnique: true });
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51387", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[MonthlyScrapPrices]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
+            { Name: "MonthlyScrapPrices" });
     }
 
     [Fact]
@@ -275,6 +318,37 @@ public sealed class ManufacturingPersistenceModelTests
             { Table: "Plans", Name: "RequestedDueDate" });
         Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
             { Table: "Plans", Name: "DueDateRevision" });
+    }
+
+    [Fact]
+    public void The_order_termin_is_a_nullable_day_counted_by_its_revision_and_its_rollback_refuses_while_one_is_held()
+    {
+        // URT-D66 (3): the order's termin is a nullable `date` (no time) copied from the plan; its revision starts at 0 and
+        // needs a termin once it moved. Up is pure DDL; Down refuses (THROW 51466) while any order holds or ever changed a
+        // termin (forward fix).
+        using var context = Context();
+        var order = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(OrderRow))!;
+        var dueDate = order.FindProperty(nameof(OrderRow.DueDate))!;
+        Assert.True(dueDate.IsNullable);
+        Assert.Equal("date", dueDate.GetColumnType());
+        var revision = order.FindProperty(nameof(OrderRow.DueDateRevision))!;
+        Assert.False(revision.IsNullable);
+        Assert.Equal(0L, revision.GetDefaultValue());
+        Assert.Equal(ManufacturingDbContext.OrderDueDateRevisionCheck,
+            order.GetCheckConstraints().Single(check => check.Name == "CK_Orders_DueDateRevision").Sql);
+
+        var migration = new AddManufacturingOrderDueDate();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51466", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[Orders]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DueDateRevision] > 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[DueDate] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Orders", Name: "DueDate" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Orders", Name: "DueDateRevision" });
     }
 
     [Fact]
@@ -532,6 +606,8 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("edit-output-reversal-mass")]
     [InlineData("delete-output-reversal")]
     [InlineData("edit-fact-output-line")]
+    [InlineData("edit-scrap-price")]
+    [InlineData("delete-scrap-price")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
         using var context = Context();
@@ -617,6 +693,13 @@ public sealed class ManufacturingPersistenceModelTests
                 break;
             case "edit-fact-output-line":
                 Attach(context, Fact()).OutputLineKind = 3;
+                break;
+            // URT-S13: a recorded month's scrap price is never changed or deleted (correcting it is not decided).
+            case "edit-scrap-price":
+                Attach(context, ScrapPrice()).TlPerKg = 9.5m;
+                break;
+            case "delete-scrap-price":
+                context.MonthlyScrapPrices.Remove(Attach(context, ScrapPrice()));
                 break;
             default:
                 Attach(context, Order()).CompanyId = CompanyB;
@@ -811,6 +894,12 @@ public sealed class ManufacturingPersistenceModelTests
         OutputId = Guid.NewGuid(), ParentRollId = Guid.NewGuid(), MassKg = 1m, Reason = "sentetik gerekçe",
         OccurredAtUtc = At, PayloadHash = new string('0', 64), RecordedAtUtc = At, RecordedBy = "synthetic-actor",
         CorrelationId = "synthetic-correlation",
+    };
+
+    private static MonthlyScrapPriceRow ScrapPrice() => new()
+    {
+        CompanyId = CompanyA, Id = Guid.NewGuid(), Year = 2026, Month = 11, TlPerKg = 7.25m,
+        RecordedBy = "synthetic-actor", RecordedAtUtc = At, CorrelationId = "synthetic-correlation",
     };
 
     private static OrderClosureDecisionRow ClosureDecision() => new()

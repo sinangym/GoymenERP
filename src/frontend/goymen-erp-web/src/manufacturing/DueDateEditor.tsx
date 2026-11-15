@@ -52,7 +52,8 @@ export function DueDateEditor({
 
   const trimmed = value.trim()
   const requested = trimmed === '' ? null : trimmed
-  const valid = requested === null || calendarDate(requested)
+  const keepsTermin = plan.status === 'Approved'
+  const valid = requested === null ? !keepsTermin : calendarDate(requested)
   const unchanged = valid && requested === plan.requestedDueDate
   const hintId = 'manufacturing-plan-due-date-hint'
 
@@ -77,6 +78,7 @@ export function DueDateEditor({
   return (
     <div>
       <p className={styles.note}>{DUE_DATE_TEXT.manualNote}</p>
+      {keepsTermin ? <p className={styles.note}>{DUE_DATE_TEXT.approvedKeepsTermin}</p> : null}
       <label htmlFor="manufacturing-plan-due-date">{DUE_DATE_TEXT.inputLabel}</label>
       <input
         id="manufacturing-plan-due-date"
@@ -88,7 +90,8 @@ export function DueDateEditor({
         onChange={(event) => setValue(event.target.value)}
       />
       <p id={hintId} className={valid ? styles.note : styles.error}>
-        {!valid ? DUE_DATE_TEXT.invalid : unchanged ? DUE_DATE_TEXT.unchanged : DUE_DATE_TEXT.inputHint}
+        {!valid ? DUE_DATE_TEXT.invalid : unchanged ? DUE_DATE_TEXT.unchanged
+          : keepsTermin ? DUE_DATE_TEXT.inputHintApproved : DUE_DATE_TEXT.inputHint}
       </p>
       <div className={styles.actions}>
         <Button
@@ -103,7 +106,8 @@ export function DueDateEditor({
         >
           {sending ? DUE_DATE_TEXT.saving : DUE_DATE_TEXT.save}
         </Button>
-        {plan.requestedDueDate === null ? null : (
+        {/* URT-D66 (2): an approved plan keeps a termin; the server refuses its removal either way. */}
+        {plan.requestedDueDate === null || keepsTermin ? null : (
           <Button
             type="button"
             disabled={busy}

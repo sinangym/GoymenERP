@@ -6,6 +6,8 @@ namespace GoymenERP.Api.OpenApi;
 
 public static partial class ErpOpenApiContract
 {
+    private const string RemnantClassificationProperty = "remnantClassification";
+
     /// <summary>
     /// SAT-D318 (owner decision of 2026-11-13): the input issue's 409 is the shared coded problem plus an optional
     /// <c>stockShortfall</c> member. Same status, same stable codes as <see cref="ProducesErpConflict"/>; only the
@@ -52,6 +54,22 @@ public static partial class ErpOpenApiContract
                 + "form, the usable kilograms the issue could have taken there: the free physical kilograms less "
                 + "other demands' active reservations, never negative and always less than requestedKg. Reserved "
                 + "kilograms are not part of this view. It records nothing: the refusal is not stored.";
+        }
+        else if (type == typeof(DeclareInventoryOutputRequestV1))
+        {
+            // URT-S16 (URT-D43, BS-14): the usable remnant's label classification is an additive optional member;
+            // a client that never sends it is answered as before.
+            schema.Required?.Remove(RemnantClassificationProperty);
+            if (schema.Properties?.TryGetValue(RemnantClassificationProperty, out var remnant) != true
+                || remnant is not OpenApiSchema concreteRemnant)
+            {
+                throw new InvalidOperationException(
+                    "Manufacturing output remnantClassification is not a concrete OpenAPI schema.");
+            }
+
+            concreteRemnant.Description = "Optional. Only with outputClass UsableRemnant: the label classification "
+                + "the operator chose, exactly Standard or SecondQuality. Absent or null opens a SecondQuality label. "
+                + "The label always carries the separate UsableRemnant production status.";
         }
 
         return Task.CompletedTask;

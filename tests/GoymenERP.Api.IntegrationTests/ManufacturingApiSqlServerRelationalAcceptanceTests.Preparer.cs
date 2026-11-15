@@ -33,6 +33,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         var toApprove = await DraftAsync("APPROVE");
+        await run.EnterTerminAsync(toApprove);
         var toReject = await DraftAsync("REJECT");
         var commands = await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands WHERE CompanyId = @c",
             ("@c", CompanyA));

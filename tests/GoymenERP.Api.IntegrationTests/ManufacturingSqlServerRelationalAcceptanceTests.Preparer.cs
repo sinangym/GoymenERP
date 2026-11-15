@@ -73,6 +73,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var store = run.Store(CompanyA))
         {
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 2, 0, TerminDay, TerminToday, Metadata(run));
             var approved = await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Actor, At, Metadata(run));
             Assert.Equal((PlanStatus.Approved, 3L, run.Actor), (approved.Status, approved.Version, approved.ApprovedByUserId));
         }
@@ -97,6 +98,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         // its creator can never decide it after a later Up.
         await using (var context = run.Context(CompanyA))
         {
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(BeforePlanPreparer));
             Assert.Equal(51190, error.Number);
@@ -114,6 +116,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         // preparer is on the revision row), Down drops the column and Up adds it back empty.
         await using (var store = run.Store(CompanyA))
         {
+            await store.DueDates.ChangeDueDateAsync(draft.Id, 1, 0, TerminDay, TerminToday, Metadata(run));
             await store.Plans.ApprovePlanAsync(draft.Id, 1, run.Approver, At, Metadata(run));
         }
 
@@ -133,13 +136,14 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(BeforePlanPreparer);
             Assert.Equal(BeforePlanPreparer, (await context.Database.GetAppliedMigrationsAsync()).Last());
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'CreatedBy' "
                 + "AND [object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingOutputReversals", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+            Assert.EndsWith("_AddManufacturingOrderDueDate", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
         }
 
@@ -160,6 +164,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var store = run.Store(CompanyA))
         {
+            await store.DueDates.ChangeDueDateAsync(revisedDraft.Id, 2, 0, TerminDay, TerminToday, Metadata(run));
             var approved = await store.Plans.ApprovePlanAsync(revisedDraft.Id, 2, run.Actor, At, Metadata(run));
             Assert.Equal(PlanStatus.Approved, approved.Status);
         }
@@ -178,6 +183,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         {
             var stored = (await store.Plans.FindPlanAsync(legacy.Id))!;
             Assert.Null(stored.PreparedBy);
+            await store.DueDates.ChangeDueDateAsync(legacy.Id, 1, 0, TerminDay, TerminToday, Metadata(run));
             var approved = await store.Plans.ApprovePlanAsync(legacy.Id, 1, run.Actor, At, Metadata(run));
             Assert.Equal(PlanStatus.Approved, approved.Status);
         }

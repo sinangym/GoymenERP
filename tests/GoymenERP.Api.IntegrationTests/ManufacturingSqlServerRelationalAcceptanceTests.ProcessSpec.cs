@@ -23,11 +23,12 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await run.ForgetPlanPreparersBeforeRollbackAsync();
             await migrator.MigrateAsync(BeforePlanProcessSpecs);
             Assert.Equal(BeforePlanProcessSpecs, (await context.Database.GetAppliedMigrationsAsync()).Last());
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingOutputReversals", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+            Assert.EndsWith("_AddManufacturingOrderDueDate", (await context.Database.GetAppliedMigrationsAsync()).Last(),
                 StringComparison.Ordinal);
         }
 
@@ -49,6 +50,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             await run.ForgetPlanPreparersBeforeRollbackAsync();
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(BeforePlanProcessSpecs));
             Assert.Equal(51189, error.Number);

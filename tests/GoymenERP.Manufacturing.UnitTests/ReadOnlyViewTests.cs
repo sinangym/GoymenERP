@@ -22,7 +22,7 @@ public sealed class ReadOnlyViewTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(MasterRoll, Kg(10_000m))]);
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return plan;
     }
 
@@ -103,10 +103,10 @@ public sealed class ReadOnlyViewTests
             "account:v02/α");
         var commercialPlan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(MasterRoll, Kg(9_000m), commercialContext: commercial)]);
-        commercialPlan.Approve(commercialPlan.Version, Planner, DateTimeOffset.UnixEpoch);
+        commercialPlan.WithDueDate().Approve(commercialPlan.Version, Planner, DateTimeOffset.UnixEpoch);
         var legacyPlan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Guid.NewGuid(), Kg(1_000m))]);
-        legacyPlan.Approve(legacyPlan.Version, Planner, DateTimeOffset.UnixEpoch);
+        legacyPlan.WithDueDate().Approve(legacyPlan.Version, Planner, DateTimeOffset.UnixEpoch);
 
         var commercialOrder = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), commercialPlan);
         var legacyOrder = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), legacyPlan);

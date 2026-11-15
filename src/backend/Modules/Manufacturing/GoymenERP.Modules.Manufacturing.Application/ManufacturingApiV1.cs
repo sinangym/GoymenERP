@@ -111,12 +111,18 @@ public sealed record ReturnInventoryInputRequestV1(
     Guid ReturnId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
     Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
 
+/// <summary>
+/// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the stock label classification the operator chose
+/// for a <c>UsableRemnant</c> output, <c>Standard</c> or <c>SecondQuality</c>; omitted or null means SecondQuality. It
+/// is refused with any other output class, whose label classification follows the fixed mapping.
+/// </summary>
 public sealed record DeclareInventoryOutputRequestV1(
     Guid OutputId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
     string? OutputClass, Guid ProductId, string? ExpectedProductVersion, Guid LotId, Guid LabelId,
     string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
     string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
-    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
+    string? RemnantClassification = null);
 
 /// <summary><see cref="OutputClass"/> is one of the five <c>OutputClass</c> names.</summary>
 public sealed record DeclareOutputRequestV1(
@@ -266,7 +272,8 @@ public sealed record RemainingTargetViewV1(string? Basis, string? TargetKg, stri
 public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
-    string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+    string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
+    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -413,6 +420,7 @@ public static class ManufacturingCommandNames
     public const string CancelPlan = "manufacturing.plan.cancel.v1";
     public const string ChangePlanSalesOrderLink = "manufacturing.plan.sales-order-link.v1";
     public const string ChangePlanDueDate = "manufacturing.plan.due-date.v1";
+    public const string ChangeOrderDueDate = "manufacturing.order.due-date.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
@@ -420,6 +428,7 @@ public static class ManufacturingCommandNames
     public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
+    public const string RecordScrapPrice = "manufacturing.scrap-price.record.v1";
 }
 
 /// <summary>
@@ -477,7 +486,9 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null,
     IManufacturingSubcontractServiceOrderPortV1? subcontractServiceOrders = null,
     IManufacturingClosedOrderListStore? closedOrders = null,
-    IManufacturingPlanDueDateStore? planDueDates = null)
+    IManufacturingPlanDueDateStore? planDueDates = null,
+    IManufacturingMonthlyScrapPriceStore? scrapPrices = null,
+    IManufacturingOrderDueDateStore? orderDueDates = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1543,6 +1554,15 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
         }
 
+        // URT-S16 (BS-14, URT-D43): only a usable remnant takes an operator-chosen label classification, and only
+        // Standard or SecondQuality. Refused before any read or write; the fixed mapping covers every other class.
+        if (!ManufacturingOutputClassMappingV1.TryParseRemnantClassification(request.RemnantClassification,
+                out var remnantClassification)
+            || !ManufacturingOutputClassMappingV1.TryMap(outputClass, remnantClassification, out _))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("remnantClassification"));
+        }
+
         if (string.IsNullOrWhiteSpace(request.LabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
@@ -1607,9 +1627,14 @@ public sealed partial class ManufacturingCommandService(
             kg = Text(kg),
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+        // URT-S16: the remnant classification joins the request hash only when it was sent, so an output declared
+        // without it keeps the request hash it had before the field existed.
+        object canonicalRequest = remnantClassification is { } chosenRemnantClassification
+            ? new { declaration = canonical, remnantClassification = chosenRemnantClassification.ToString() }
+            : canonical;
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
+            canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -1635,7 +1660,7 @@ public sealed partial class ManufacturingCommandService(
                         request.LotId, request.LabelId, request.LabelCode.Trim(), request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
-                        request.MovementId, mass.Value, occurredAt),
+                        request.MovementId, mass.Value, occurredAt, remnantClassification),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -1679,7 +1704,8 @@ public sealed partial class ManufacturingCommandService(
     /// Closes the order at the version the caller read. Settings supplies the exact company/line/process/date tolerance
     /// (URT-D6: the order's work center version, else the process version, else the version-0 catalog, URT-D23);
     /// Manufacturing persists it with its source and version and derives fire (Scrap + ProcessLoss) and net issued mass
-    /// from its own facts. Output above input on any planned parent roll is refused
+    /// from its own facts. Output above input on any planned parent roll — on the order total for a process without a
+    /// main roll input (URT-D49) — is refused
     /// (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>, URT-D41 (1)-(2), URT-D42 (1)-(2)): the tolerance does
     /// not apply in that direction and the refusal is answered before any approval step, with or without a reason.
     /// A roll's unexplained shortfall within the mass-balance tolerance is accepted as it is (URT-D5; never
@@ -2272,10 +2298,13 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingRuleException exception)
         {
             // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request; F-010a
-            // (URT-D29): a moved termin likewise.
+            // (URT-D29): a moved termin likewise (URT-D66: the order's termin as well); URT-S13: a month whose scrap price is
+            // already recorded likewise.
             result = new ManufacturingApiResult<T>(
                 exception.Code is ManufacturingRuleCodes.PlanSalesOrderLinkChanged
                     or ManufacturingRuleCodes.PlanDueDateChanged
+                    or ManufacturingRuleCodes.OrderDueDateChanged
+                    or ManufacturingRuleCodes.ScrapPriceAlreadyRecorded
                     ? ManufacturingApiStatus.Conflict
                     : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
@@ -3037,7 +3066,8 @@ public sealed partial class ManufacturingCommandService(
                     Text(balance.WorkInProgress.Value), Text(balance.Unexplained), balance.IsFullyAccounted,
                     CommercialContextView(input.CommercialContext));
             })],
-            nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc);
+            nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc,
+            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan);
     }
 
     /// <summary>

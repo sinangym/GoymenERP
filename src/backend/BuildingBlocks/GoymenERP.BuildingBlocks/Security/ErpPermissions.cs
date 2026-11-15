@@ -341,12 +341,38 @@ public static class ErpPermissions
         "manufacturing.orders.close-exception.approve";
 
     /// <summary>
+    /// URT-D66 (5): editing an open production order — first the order's own termin (URT-D66 (3)), which the decision puts
+    /// under "the order edit permission" rather than a termin permission of its own. No order edit name existed before, so
+    /// this registers it. Its own name because editing an order is neither creating one, recording a fact nor closing it.
+    /// Registered, not granted: no role and no user receives it here; who edits an order is a human gate. Company-wide
+    /// only (K-1: the route filters by no work center). Not Critical.
+    /// </summary>
+    public const string ManufacturingOrdersWrite = "manufacturing.orders.write";
+
+    /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
     /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
     /// nor approving one. Registered, not granted: no role and no user receives it here; the grant is a human gate.
     /// Company-wide only for the reason above (K-1: the route filters by no work center). Not Critical.
     /// </summary>
     public const string ManufacturingPlansCancel = "manufacturing.plans.cancel";
+
+    /// <summary>
+    /// URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): reading the company's monthly scrap prices (TL per kg). Its own name
+    /// because a price list is neither a plan nor an order. Registered, not granted: no role and no user receives it here;
+    /// who sees the price (URT-D57 (1) "like Sales") is a human gate. Company-wide only for the reason above (the route
+    /// filters by no work center or site, so a narrow grant would fail open). Not Critical.
+    /// </summary>
+    public const string ManufacturingScrapPricesRead = "manufacturing.scrap-prices.read";
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): recording the company's scrap price of one month by hand. Its own name because entering
+    /// a price is not recording a production fact. Registered, not granted: who enters the price and under which approval
+    /// is not decided (URT-D57 (3) is an author reading), so no role and no user receives it here; the grant is a human
+    /// gate. Company-wide only (one price per company and month). Not Critical: whether it joins the grant-time
+    /// dual-control set is the same human gate.
+    /// </summary>
+    public const string ManufacturingScrapPricesWrite = "manufacturing.scrap-prices.write";
 
     /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
@@ -1268,8 +1294,11 @@ public static class ErpPermissions
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
+            ManufacturingOrdersWrite,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingScrapPricesRead,
+            ManufacturingScrapPricesWrite,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -1480,8 +1509,11 @@ public static class ErpPermissions
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
+            ManufacturingOrdersWrite,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingScrapPricesRead,
+            ManufacturingScrapPricesWrite,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,

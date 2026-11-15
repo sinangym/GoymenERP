@@ -210,6 +210,10 @@ export function lifecycleFailureText(kind: LifecycleKind, status: number, code: 
   if (status === 422 && code === 'manufacturing_plan_self_approval') {
     return 'Planın bu sürümünü siz hazırladınız; onayı başka bir kullanıcı vermelidir.'
   }
+  // URT-D66 (2): a plan without a termin is not approved.
+  if (status === 422 && code === 'manufacturing_plan_due_date_required') {
+    return 'Termini girilmemiş plan onaylanmaz; önce planın terminini girin.'
+  }
   if (status === 422 && code === 'manufacturing_plan_has_order') {
     return 'Bu plandan üretim emri açıldığı için plan iptal edilemez.'
   }

@@ -4,9 +4,11 @@ using GoymenERP.Modules.Manufacturing.Domain.Plans;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// Üretim F-010a (URT-D29): the termin is entered by hand on the plan. Entering, changing and removing it move the termin
-/// revision and never the plan version; a cancelled plan, a closed order, a stale termin revision and no change are refused
-/// with nothing changed; no date rule is applied (a past day is the user's entry). The stored termin is restored and checked.
+/// Üretim F-010a (URT-D29) with URT-D66: the termin is entered by hand on the plan. Entering, changing and removing it move
+/// the termin revision and never the plan version; a cancelled plan, a closed order, a stale termin revision and no change
+/// are refused with nothing changed. URT-D66: a day earlier than the company's Europe/Istanbul business day is refused, a
+/// plan without a termin is not approved (the last approval refusal) and an approved plan's termin is changed, never
+/// removed. The stored termin is restored and checked.
 /// </summary>
 public sealed class PlanDueDateTests
 {
@@ -14,6 +16,7 @@ public sealed class PlanDueDateTests
     private static readonly Guid WorkCenter = Guid.Parse("20000000-0000-0000-0000-00000000f001");
     private static readonly Guid Roll = Guid.Parse("30000000-0000-0000-0000-00000000f001");
     private static readonly DateTimeOffset At = new(2026, 11, 12, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateOnly Today = new(2026, 11, 12);
     private static readonly DateOnly DayA = new(2026, 12, 31);
     private static readonly DateOnly DayB = new(2027, 1, 15);
 
@@ -27,37 +30,70 @@ public sealed class PlanDueDateTests
     {
         var plan = Draft();
 
-        plan.ChangeDueDate(1, 0, DayA, orderClosed: false);
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
         Assert.Equal((DayA, 1L, 1L), (plan.RequestedDueDate, plan.DueDateRevision, plan.Version));
 
-        plan.ChangeDueDate(1, 1, DayB, orderClosed: false);
+        plan.ChangeDueDate(1, 1, DayB, orderClosed: false, Today);
         Assert.Equal((DayB, 2L), (plan.RequestedDueDate, plan.DueDateRevision));
 
-        plan.ChangeDueDate(1, 2, null, orderClosed: false);
+        plan.ChangeDueDate(1, 2, null, orderClosed: false, Today);
         Assert.Null(plan.RequestedDueDate);
         Assert.Equal((3L, 1L), (plan.DueDateRevision, plan.Version));
     }
 
     [Fact]
-    public void An_approved_plan_takes_a_termin_while_its_order_is_open()
+    public void An_approved_plan_changes_its_termin_while_its_order_is_open()
     {
         var plan = Draft();
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
         plan.Approve(1, Guid.NewGuid(), At);
 
-        plan.ChangeDueDate(2, 0, DayA, orderClosed: false);
+        plan.ChangeDueDate(2, 1, DayB, orderClosed: false, Today);
 
-        Assert.Equal((PlanStatus.Approved, DayA, 2L), (plan.Status, plan.RequestedDueDate, plan.Version));
+        Assert.Equal((PlanStatus.Approved, DayB, 2L, 2L),
+            (plan.Status, plan.RequestedDueDate, plan.DueDateRevision, plan.Version));
     }
 
     [Fact]
-    public void A_past_day_is_the_users_entry_and_is_kept()
+    public void A_plan_without_a_termin_is_not_approved_and_nothing_changes()
     {
         var plan = Draft();
-        var past = new DateOnly(2020, 1, 1);
 
-        plan.ChangeDueDate(1, 0, past, orderClosed: false);
+        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(1, Guid.NewGuid(), At));
 
-        Assert.Equal(past, plan.RequestedDueDate);
+        Assert.Equal(ManufacturingRuleCodes.PlanDueDateRequired, refusal.Code);
+        Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
+    }
+
+    [Fact]
+    public void Approval_without_a_termin_keeps_the_version_conflict_of_a_stale_plan()
+    {
+        // The termin rule is the last refusal: an earlier rule keeps its own answer.
+        var plan = Draft();
+
+        Assert.Throws<ManufacturingVersionConflictException>(() => plan.Approve(2, Guid.NewGuid(), At));
+        Assert.Equal(PlanStatus.Draft, plan.Status);
+    }
+
+    [Fact]
+    public void An_approved_plans_termin_is_not_removed_and_nothing_changes()
+    {
+        var plan = Draft();
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
+        plan.Approve(1, Guid.NewGuid(), At);
+
+        AssertRefused(plan, 2, 1, null, false, ManufacturingRuleCodes.PlanDueDateRequired);
+        Assert.Equal(DayA, plan.RequestedDueDate);
+    }
+
+    [Fact]
+    public void A_day_before_the_business_day_is_refused_and_the_business_day_itself_is_taken()
+    {
+        AssertRefused(Draft(), 1, 0, Today.AddDays(-1), false, ManufacturingRuleCodes.DueDateInPast);
+
+        var plan = Draft();
+        plan.ChangeDueDate(1, 0, Today, orderClosed: false, Today);
+        Assert.Equal(Today, plan.RequestedDueDate);
     }
 
     [Fact]
@@ -73,7 +109,7 @@ public sealed class PlanDueDateTests
     public void A_stale_termin_revision_is_refused_and_nothing_changes()
     {
         var plan = Draft();
-        plan.ChangeDueDate(1, 0, DayA, orderClosed: false);
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
 
         AssertRefused(plan, 1, 0, DayB, false, ManufacturingRuleCodes.PlanDueDateChanged);
         Assert.Equal(DayA, plan.RequestedDueDate);
@@ -89,7 +125,7 @@ public sealed class PlanDueDateTests
         AssertRefused(Draft(), 1, 0, null, false, ManufacturingRuleCodes.PlanDueDateNoChange);
 
         var plan = Draft();
-        plan.ChangeDueDate(1, 0, DayA, orderClosed: false);
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
         AssertRefused(plan, 1, 1, DayA, false, ManufacturingRuleCodes.PlanDueDateNoChange);
     }
 
@@ -98,7 +134,8 @@ public sealed class PlanDueDateTests
     {
         var plan = Draft();
 
-        Assert.Throws<ManufacturingVersionConflictException>(() => plan.ChangeDueDate(2, 0, DayA, orderClosed: false));
+        Assert.Throws<ManufacturingVersionConflictException>(
+            () => plan.ChangeDueDate(2, 0, DayA, orderClosed: false, Today));
 
         Assert.Equal((null as DateOnly?, 0L), (plan.RequestedDueDate, plan.DueDateRevision));
     }
@@ -107,7 +144,7 @@ public sealed class PlanDueDateTests
     public void A_revision_of_the_plan_keeps_the_termin_and_its_revision()
     {
         var plan = Draft();
-        plan.ChangeDueDate(1, 0, DayA, orderClosed: false);
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
 
         // A real revision (the planned quantity changes); an unchanged one is refused as no change.
         plan.Revise(1, WorkCenter, ManufacturingProcess.ColdRolling,
@@ -132,6 +169,16 @@ public sealed class PlanDueDateTests
         }
     }
 
+    [Fact]
+    public void The_business_day_is_the_Istanbul_calendar_day_of_the_instant()
+    {
+        // 21:30 UTC is already the next day in Istanbul (UTC+3); 20:59 UTC is still the same day.
+        Assert.Equal(new DateOnly(2026, 11, 13),
+            ManufacturingBusinessDay.DateOf(new DateTimeOffset(2026, 11, 12, 21, 30, 0, TimeSpan.Zero)));
+        Assert.Equal(new DateOnly(2026, 11, 12),
+            ManufacturingBusinessDay.DateOf(new DateTimeOffset(2026, 11, 12, 20, 59, 0, TimeSpan.Zero)));
+    }
+
     private static ProductionPlan Restore(Guid id, DateOnly? day, long revision) =>
         ProductionPlan.Restore(id, Company, WorkCenter, ManufacturingProcess.ColdRolling, [Input()], null, null, null, 1,
             requestedDueDate: day, dueDateRevision: revision);
@@ -139,12 +186,12 @@ public sealed class PlanDueDateTests
     private static void AssertRefused(ProductionPlan plan, long version, long dueDateRevision, DateOnly? day,
         bool orderClosed, string code)
     {
-        var before = (plan.RequestedDueDate, plan.DueDateRevision, plan.Version);
+        var before = (plan.RequestedDueDate, plan.DueDateRevision, plan.Version, plan.Status);
 
         var refusal = Assert.Throws<ManufacturingRuleException>(
-            () => plan.ChangeDueDate(version, dueDateRevision, day, orderClosed));
+            () => plan.ChangeDueDate(version, dueDateRevision, day, orderClosed, Today));
 
         Assert.Equal(code, refusal.Code);
-        Assert.Equal(before, (plan.RequestedDueDate, plan.DueDateRevision, plan.Version));
+        Assert.Equal(before, (plan.RequestedDueDate, plan.DueDateRevision, plan.Version, plan.Status));
     }
 }

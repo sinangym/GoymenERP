@@ -58,14 +58,17 @@ public sealed class ManufacturingShellRegistrationTests
         // route's service measures its own Manufacturing permission afresh, and the close measures its own name on
         // top of the read. MFG-PLAN-EDIT (1.4) adds the plan-detail edit control (plans.read + plans.write).
         // TAKIP-URT-02 (1.6) adds the plan-detail cancel control (plans.read + plans.cancel).
-        Assert.Equal(12, manufacturing.Length);
+        // URT-S13 (1.7) adds the scrap price route (scrap-prices.read) and its record control (+ scrap-prices.write).
+        // URT-S23 (1.8) adds the order-detail termin control (orders.read + orders.write).
+        Assert.Equal(15, manufacturing.Length);
         string[] expected =
         [
             "manufacturing.orders.close", "manufacturing.orders.close-exception-approve",
-            "manufacturing.orders.detail", "manufacturing.orders.facts",
+            "manufacturing.orders.detail", "manufacturing.orders.due-date", "manufacturing.orders.facts",
             "manufacturing.orders.list",
             "manufacturing.plans.approve", "manufacturing.plans.cancel", "manufacturing.plans.create", "manufacturing.plans.detail",
             "manufacturing.plans.edit", "manufacturing.plans.list", "manufacturing.plans.order-create",
+            "manufacturing.scrap-prices.list", "manufacturing.scrap-prices.record",
         ];
         Assert.Equal(expected,
             manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());

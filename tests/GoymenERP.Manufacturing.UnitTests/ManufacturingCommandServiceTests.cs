@@ -2522,7 +2522,7 @@ public sealed partial class ManufacturingCommandServiceTests
         var approved = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, new Kilograms(1000m))]);
         approved.RecordPreparer(OtherActor.ToString("D"));
-        approved.Approve(approved.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
+        approved.WithDueDate().Approve(approved.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
         fixture.Store.Plans[approved.Id] = approved;
         foreach (var expectedVersion in new[] { approved.Version - 1, approved.Version })
         {
@@ -2541,7 +2541,7 @@ public sealed partial class ManufacturingCommandServiceTests
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, new Kilograms(1000m))]);
         plan.RecordPreparer(OtherActor.ToString("D"));
-        plan.Approve(plan.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
+        plan.WithDueDate().Approve(plan.Version, Guid.NewGuid(), new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero));
         fixture.Store.Plans[plan.Id] = plan;
         var version = plan.Version;
         var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
@@ -2860,6 +2860,138 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Equal(0L, plan.DueDateRevision);
     }
 
+    [Fact]
+    public async Task A_plan_termin_before_the_Istanbul_business_day_is_422_and_nothing_changes()
+    {
+        // URT-D66 (1): the server's clock gives today's Istanbul business day (2026-09-18); the client sends no "today".
+        var (fixture, plan, service) = DueDateCase();
+
+        var past = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, new DateOnly(2026, 9, 17)), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+        var today = await service.ChangePlanDueDateAsync(plan.Id, new(1, 0, new DateOnly(2026, 9, 18)), "key-2",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.DueDateInPast), (past.Status, past.Code));
+        Assert.Equal(ManufacturingApiStatus.Ok, today.Status);
+        Assert.Equal([new DateOnly(2026, 9, 18), new DateOnly(2026, 9, 18)], fixture.Store.BusinessDays);
+        Assert.Single(fixture.Store.Writes);
+    }
+
+    private static (Fixture Fixture, ManufacturingCommandService Service) OrderDueDateCase(bool withOrderDueDateStore = true)
+    {
+        var fixture = new Fixture();
+        var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
+            new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
+            fixture.Correlation, new FixedTime(), manufacturingTolerances: fixture.Settings,
+            orderDueDates: withOrderDueDateStore ? fixture.Store : null);
+        return (fixture, service);
+    }
+
+    [Fact]
+    public async Task An_order_termin_change_is_stored_once_and_the_key_replays_the_answer()
+    {
+        // URT-D66 (3)/(4): the order opens with the plan's termin; the change moves the order's termin revision only.
+        var (fixture, service) = OrderDueDateCase();
+        var order = await fixture.ApprovedOrderAsync();
+        var version = order.Version;
+        var request = new ChangeOrderDueDateRequestV1(0, DueDay.AddDays(10));
+
+        var first = await service.ChangeOrderDueDateAsync(order.Id, request, "key-1", "manufacturing.orders.write",
+            CancellationToken.None);
+        var replay = await service.ChangeOrderDueDateAsync(order.Id, request, "key-1", "manufacturing.orders.write",
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (first.Status, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Ok, true), (replay.Status, replay.IsReplay));
+        var view = Assert.IsType<OrderViewV1>(first.Resource);
+        Assert.Equal((DueDay.AddDays(10) as DateOnly?, 1L, DueDay as DateOnly?, true, version),
+            (view.DueDate, view.DueDateRevision, view.PlanDueDate, view.DueDateDiffersFromPlan, view.Version));
+        Assert.Equal(view.DueDate, replay.Resource!.DueDate);
+        Assert.Single(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+        Assert.Equal((1L, version), (order.DueDateRevision, order.Version));
+    }
+
+    [Fact]
+    public async Task A_stale_order_termin_revision_is_409_and_a_closed_order_no_change_or_past_day_is_422()
+    {
+        var (fixture, service) = OrderDueDateCase();
+        var order = await fixture.ApprovedOrderAsync();
+
+        var stale = await service.ChangeOrderDueDateAsync(order.Id, new(1, DueDay.AddDays(1)), "key-1",
+            "manufacturing.orders.write", CancellationToken.None);
+        var noChange = await service.ChangeOrderDueDateAsync(order.Id, new(0, DueDay), "key-2",
+            "manufacturing.orders.write", CancellationToken.None);
+        var past = await service.ChangeOrderDueDateAsync(order.Id, new(0, new DateOnly(2026, 9, 17)), "key-3",
+            "manufacturing.orders.write", CancellationToken.None);
+        var balanced = await fixture.BalancedOrderAsync();
+        balanced.Close(balanced.Version, Actor, At);
+        var closed = await service.ChangeOrderDueDateAsync(balanced.Id, new(0, DueDay.AddDays(1)), "key-4",
+            "manufacturing.orders.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.OrderDueDateChanged),
+            (stale.Status, stale.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.OrderDueDateNoChange),
+            (noChange.Status, noChange.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.DueDateInPast),
+            (past.Status, past.Code));
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.OrderDueDateOrderClosed),
+            (closed.Status, closed.Code));
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Equal((DueDay as DateOnly?, 0L), (order.DueDate, order.DueDateRevision));
+    }
+
+    [Fact]
+    public async Task An_unknown_order_is_404_for_the_order_termin()
+    {
+        var (fixture, service) = OrderDueDateCase();
+
+        var result = await service.ChangeOrderDueDateAsync(Guid.NewGuid(), new(0, DueDay), "key-1",
+            "manufacturing.orders.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.NotFound, result.Status);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task Without_the_order_termin_store_the_order_termin_is_503_and_nothing_changes()
+    {
+        var (fixture, service) = OrderDueDateCase(withOrderDueDateStore: false);
+        var order = await fixture.ApprovedOrderAsync();
+
+        var result = await service.ChangeOrderDueDateAsync(order.Id, new(0, DueDay.AddDays(1)), "key-1",
+            "manufacturing.orders.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.Equal((DueDay as DateOnly?, 0L), (order.DueDate, order.DueDateRevision));
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_malformed_order_termin_request_is_400_before_any_read()
+    {
+        var (fixture, service) = OrderDueDateCase();
+        var order = await fixture.ApprovedOrderAsync();
+        var cases = new (Guid OrderId, ChangeOrderDueDateRequestV1? Request, string Field)[]
+        {
+            (order.Id, null, "expectedDueDateRevision"),
+            (Guid.Empty, new(0, DueDay.AddDays(1)), "expectedDueDateRevision"),
+            (order.Id, new(-1, DueDay.AddDays(1)), "expectedDueDateRevision"),
+            (order.Id, new(0, DateOnly.MinValue), "dueDate"),
+        };
+
+        foreach (var (orderId, request, field) in cases)
+        {
+            var result = await service.ChangeOrderDueDateAsync(orderId, request, "key-1", "manufacturing.orders.write",
+                CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (result.Status, result.Field));
+        }
+
+        Assert.Empty(fixture.Calls);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Equal(0L, order.DueDateRevision);
+    }
+
     private static (Fixture Fixture, ProductionPlan Plan, SubcontractOrderPort Orders, ManufacturingCommandService Service)
         CustomerGoodsLinkCase(bool withOrderPort = true)
     {
@@ -3134,7 +3266,7 @@ public sealed partial class ManufacturingCommandServiceTests
         {
             var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(Roll, new Kilograms(1000m))]);
-            plan.Approve(plan.Version, Actor, At);
+            plan.WithDueDate().Approve(plan.Version, Actor, At);
             var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
             Store.Orders[order.Id] = order;
             await Task.CompletedTask;
@@ -3545,7 +3677,7 @@ public sealed partial class ManufacturingCommandServiceTests
     /// <summary>An in-memory store with the store's contract: the company's records, the domain's rules.</summary>
     private sealed class FakeStore : IManufacturingPlanStore, IManufacturingPlanRevisionStore,
         IManufacturingOrderStore, IManufacturingCommandLog, IManufacturingPlanSalesOrderLinkStore,
-        IManufacturingPlanDueDateStore
+        IManufacturingPlanDueDateStore, IManufacturingOrderDueDateStore
     {
         /// <summary>Whether the plan's order is closed when the sales order link changes (U2-b).</summary>
         public bool OrderClosed { get; set; }
@@ -3565,16 +3697,35 @@ public sealed partial class ManufacturingCommandServiceTests
         }
 
         public Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
-            DateOnly? dueDate, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+            DateOnly? dueDate, DateOnly businessToday, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
         {
             Guard();
             OnWrite?.Invoke(metadata);
             var plan = Plans.GetValueOrDefault(planId)
                 ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
-            plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, OrderClosed);
+            BusinessDays.Add(businessToday);
+            plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, OrderClosed, businessToday);
             Complete(metadata, plan);
             Writes.Add(metadata);
             return Task.FromResult(plan);
+        }
+
+        /// <summary>The business days the service handed to the termin writes (URT-D66 (1)).</summary>
+        public List<DateOnly> BusinessDays { get; } = [];
+
+        public Task<ProductionOrder> ChangeOrderDueDateAsync(Guid orderId, long expectedDueDateRevision, DateOnly dueDate,
+            DateOnly businessToday, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var order = Orders.GetValueOrDefault(orderId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            BusinessDays.Add(businessToday);
+            order.ChangeDueDate(expectedDueDateRevision, dueDate, businessToday);
+            Complete(metadata, order);
+            Writes.Add(metadata);
+            return Task.FromResult(order);
         }
 
         public Dictionary<(string Command, string KeyHash), ManufacturingCommandRecord> Commands { get; } = [];

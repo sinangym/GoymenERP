@@ -121,6 +121,29 @@ public static class ManufacturingRuleCodes
     public const string PlanDueDateNoChange = "manufacturing_plan_due_date_no_change";
 
     /// <summary>
+    /// URT-D66 (1): the termin is earlier than the company's business day (the Europe/Istanbul date of the server's clock).
+    /// Held on the plan and on the production order alike.
+    /// </summary>
+    public const string DueDateInPast = "manufacturing_due_date_in_past";
+
+    /// <summary>
+    /// URT-D66 (2): a plan without a termin is not approved; an approved plan's termin is changed but not removed.
+    /// </summary>
+    public const string PlanDueDateRequired = "manufacturing_plan_due_date_required";
+
+    /// <summary>
+    /// URT-D66 (3): the order's termin moved since the caller read it (its termin revision differs); the caller reads the
+    /// order again. Answered as a conflict.
+    /// </summary>
+    public const string OrderDueDateChanged = "manufacturing_order_due_date_changed";
+
+    /// <summary>URT-D66 (3): the order is closed; its termin no longer changes.</summary>
+    public const string OrderDueDateOrderClosed = "manufacturing_order_due_date_order_closed";
+
+    /// <summary>URT-D66 (3): the request sets the termin the order already has.</summary>
+    public const string OrderDueDateNoChange = "manufacturing_order_due_date_no_change";
+
+    /// <summary>
     /// Üretim U2-b / API-16: the plan's customer-owned inputs belong to a different party than the sales order line's
     /// customer; the link (or a revision under a link) is refused.
     /// </summary>
@@ -179,6 +202,15 @@ public static class ManufacturingRuleCodes
     /// its net output never goes below zero.
     /// </summary>
     public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): the company already has a scrap price for this month. A recorded month is never changed
+    /// or replaced here (correcting it is not decided); the answer is a conflict.
+    /// </summary>
+    public const string ScrapPriceAlreadyRecorded = "manufacturing_scrap_price_already_recorded";
+
+    /// <summary>URT-S13: a scrap price carries at most four decimals (its decimal(18,4) column); a fifth is refused, not rounded.</summary>
+    public const string ScrapPricePrecisionExceeded = "manufacturing_scrap_price_precision_exceeded";
 
     /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace

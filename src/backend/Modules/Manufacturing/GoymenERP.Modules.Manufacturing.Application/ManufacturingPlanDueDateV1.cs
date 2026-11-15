@@ -15,9 +15,13 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 /// </summary>
 public interface IManufacturingPlanDueDateStore
 {
-    /// <summary>Enters, changes or (with a null <paramref name="dueDate"/>) removes the plan's termin.</summary>
+    /// <summary>
+    /// Enters, changes or (with a null <paramref name="dueDate"/>) removes the plan's termin; <paramref name="businessToday"/>
+    /// is the server's Istanbul business day (URT-D66 (1)).
+    /// </summary>
     Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
-        DateOnly? dueDate, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
+        DateOnly? dueDate, DateOnly businessToday, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -34,8 +38,10 @@ public sealed partial class ManufacturingCommandService
     /// <summary>
     /// <c>POST /plans/{planId}/due-date</c> (F-010a, URT-D29) under <c>manufacturing.plans.write</c>: enters, changes or
     /// removes the plan's hand-entered termin. The plan's version does not move; its termin revision does. A cancelled plan,
-    /// a closed order and no change are 422; a moved termin revision is 409. No date rule is applied (whether a past day is
-    /// refused is not decided). ADR-011 as the other plan commands: the same key replays the first answer.
+    /// a closed order and no change are 422; a moved termin revision is 409. URT-D66: a day before the Istanbul business day
+    /// of the server's clock is 422 (<c>manufacturing_due_date_in_past</c>), and an approved plan's termin cannot be removed
+    /// (<c>manufacturing_plan_due_date_required</c>, since a plan without a termin is never approved); a host that cannot
+    /// resolve the business day's zone is 503. ADR-011 as the other plan commands: the same key replays the first answer.
     /// </summary>
     public Task<ManufacturingApiResult<PlanViewV1>> ChangePlanDueDateAsync(Guid planId,
         ChangePlanDueDateRequestV1? request, string idempotencyKey, string permission,
@@ -69,7 +75,7 @@ public sealed partial class ManufacturingCommandService
             }, ManufacturingApiStatus.Ok,
             async (metadata, actor, companyId) =>
             {
-                if (planDueDates is null)
+                if (planDueDates is null || BusinessToday() is not { } businessToday)
                 {
                     return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
                 }
@@ -85,7 +91,7 @@ public sealed partial class ManufacturingCommandService
                 }
 
                 var changed = await planDueDates.ChangeDueDateAsync(planId, request.ExpectedVersion,
-                    request.ExpectedDueDateRevision, request.RequestedDueDate, metadata, cancellationToken);
+                    request.ExpectedDueDateRevision, request.RequestedDueDate, businessToday, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(changed, live), false,
                     null);
             }, stored => PlanView((ProductionPlan)stored, live), cancellationToken);

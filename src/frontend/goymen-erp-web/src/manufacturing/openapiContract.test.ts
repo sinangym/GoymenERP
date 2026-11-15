@@ -302,16 +302,21 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           'productId',
           'requiredDocuments',
         ],
+        // URT-S16 (BS-14): the usable remnant's label classification is an additive optional member.
+        optional: ['remnantClassification'],
       },
     ] as const
 
     for (const request of requests) {
+      const optional: readonly string[] = 'optional' in request ? request.optional : []
       expect(requestSchemaName(`${base}/${request.kind}`), request.kind).toBe(request.schemaName)
-      expect(names(request.schemaName), request.schemaName).toEqual([...request.properties].sort())
+      expect(names(request.schemaName), request.schemaName).toEqual([...request.properties, ...optional].sort())
       expect([...(schema(request.schemaName).required ?? [])].sort(), request.schemaName).toEqual(
         [...request.properties].sort(),
       )
     }
+    expect(schema('DeclareInventoryOutputRequestV1').properties?.remnantClassification)
+      .toMatchObject({ type: ['null', 'string'] })
   })
 
   it('reads the SAT-D318 stock shortfall exactly as declared: an optional member of the input issue 409 only', () => {
