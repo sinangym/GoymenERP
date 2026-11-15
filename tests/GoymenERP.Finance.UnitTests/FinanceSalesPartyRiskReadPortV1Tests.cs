@@ -11,7 +11,8 @@ namespace GoymenERP.Finance.UnitTests;
 /// MOD-01: Finance's answer to the Sales-declared risk-input port over SYNTHETIC open-item rows. Open receivables are the
 /// outstanding amounts of the customer account's OPEN items, summed per currency exactly; closed items and other customers,
 /// accounts or companies never enter. A row Finance cannot read makes the figure unavailable (never a partial sum). The credit
-/// limit and collateral have no master on main: "NoSource", never zero. The read writes nothing.
+/// limit is the account's one approved API-85a record: an approved Set is available, none or an approved Remove is "NoSource",
+/// never zero; a pending proposal never counts. Collateral has no master on main: "NoSource". The read writes nothing.
 /// </summary>
 public sealed class FinanceSalesPartyRiskReadPortV1Tests
 {
@@ -43,7 +44,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         // 75.25 + 10.00 in TRY (exact, never rounded); USD apart, never converted; ordered by currency identity.
         Assert.Equal([new SalesPartyRiskAmountV1(Try, 85.25m), new SalesPartyRiskAmountV1(Usd, 40m)], answer.OpenReceivables.Amounts);
         Assert.Equal((SalesPartyRiskFigureStateV1.NoSource, FinanceSalesPartyRiskReadPortV1.CreditLimitSource, (bool?)null,
-                FinanceSalesPartyRiskReadPortV1.CreditLimitOwnerMissing),
+                FinanceSalesPartyRiskReadPortV1.CreditLimitNotSet),
             (answer.CreditLimit.State, answer.CreditLimit.Source, answer.CreditLimit.IncludesTax, answer.CreditLimit.ReasonCode));
         Assert.Empty(answer.CreditLimit.Amounts);
         Assert.Equal((SalesPartyRiskFigureStateV1.NoSource, FinanceSalesPartyRiskReadPortV1.CollateralSource,
@@ -247,6 +248,81 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
     }
 
     [Fact]
+    public async Task The_credit_limit_is_the_accounts_one_approved_set_record_and_a_pending_proposal_never_counts()
+    {
+        await using var run = await Run.CreateAsync([Row("1", "1")], [], limits:
+        [
+            Limit(PartyCreditLimitStatus.Superseded, "100.00", revision: 1),
+            Limit(PartyCreditLimitStatus.Approved, "250000.50", revision: 2),
+            Limit(PartyCreditLimitStatus.Proposed, "999999.00"),
+            Limit(PartyCreditLimitStatus.Approved, "5.00", revision: 1, account: Guid.NewGuid()),
+            Limit(PartyCreditLimitStatus.Approved, "7.00", revision: 1, company: OtherCompany),
+        ]);
+
+        var answer = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+
+        Assert.Equal((SalesPartyRiskFigureStateV1.Available, FinanceSalesPartyRiskReadPortV1.CreditLimitSource, (bool?)null,
+                (string?)null),
+            (answer.CreditLimit.State, answer.CreditLimit.Source, answer.CreditLimit.IncludesTax, answer.CreditLimit.ReasonCode));
+        // The exact amount in its own currency: never rounded, never converted.
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 250000.50m)], answer.CreditLimit.Amounts);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task An_approved_remove_or_only_a_pending_or_rejected_proposal_is_no_source_never_zero()
+    {
+        await using (var removed = await Run.CreateAsync([Row("1", "1")], [], limits:
+            [
+                Limit(PartyCreditLimitStatus.Superseded, "100.00", revision: 1),
+                Limit(PartyCreditLimitStatus.Approved, null, revision: 2),
+            ]))
+        {
+            var answer = await removed.Port(Company).ReadPartyRiskAsync(Party, Account);
+            Assert.Equal((SalesPartyRiskFigureStateV1.NoSource, FinanceSalesPartyRiskReadPortV1.CreditLimitNotSet),
+                (answer.CreditLimit.State, answer.CreditLimit.ReasonCode));
+            Assert.Empty(answer.CreditLimit.Amounts);
+        }
+
+        await using var pending = await Run.CreateAsync([Row("1", "1")], [], limits:
+            [Limit(PartyCreditLimitStatus.Proposed, "100.00"), Limit(PartyCreditLimitStatus.Rejected, "50.00")]);
+        var none = await pending.Port(Company).ReadPartyRiskAsync(Party, Account);
+        Assert.Equal((SalesPartyRiskFigureStateV1.NoSource, FinanceSalesPartyRiskReadPortV1.CreditLimitNotSet),
+            (none.CreditLimit.State, none.CreditLimit.ReasonCode));
+        Assert.Empty(none.CreditLimit.Amounts);
+    }
+
+    [Theory]
+    [InlineData("-1.00", false)]
+    [InlineData("1,00", false)]
+    [InlineData("0", false)]
+    [InlineData("79228162514264337593543950336", false)]
+    [InlineData("100.00", true)]
+    public async Task A_limit_finance_cannot_read_or_one_of_another_party_is_unavailable_never_zero(string amount, bool otherParty)
+    {
+        await using var run = await Run.CreateAsync([Row("1", "1")], [], limits:
+            [Limit(PartyCreditLimitStatus.Approved, amount, revision: 1, party: otherParty ? Guid.NewGuid() : null)]);
+
+        var answer = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+
+        Assert.Equal((SalesPartyRiskFigureStateV1.Unavailable, FinanceSalesPartyRiskReadPortV1.CreditLimitUnreadable),
+            (answer.CreditLimit.State, answer.CreditLimit.ReasonCode));
+        Assert.Empty(answer.CreditLimit.Amounts);
+    }
+
+    [Fact]
+    public async Task Without_a_named_customer_the_credit_limit_is_unavailable()
+    {
+        await using var run = await Run.CreateAsync([Row("1", "1")], [], limits:
+            [Limit(PartyCreditLimitStatus.Approved, "100.00", revision: 1)]);
+
+        var answer = await run.Port(Company).ReadPartyRiskAsync(Party, Guid.Empty);
+
+        Assert.Equal((SalesPartyRiskFigureStateV1.Unavailable, FinanceSalesPartyRiskReadPortV1.CustomerUnidentified),
+            (answer.CreditLimit.State, answer.CreditLimit.ReasonCode));
+    }
+
+    [Fact]
     public async Task Without_a_resolved_company_nothing_is_read()
     {
         await using var run = await Run.CreateAsync(Row("1", "1"));
@@ -368,6 +444,36 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         Version = approved ? 2 : 1,
     };
 
+    private static PartyCreditLimitRow Limit(PartyCreditLimitStatus status, string? amount, long? revision = null,
+        Guid? party = null, Guid? account = null, Guid? company = null)
+    {
+        var at = new DateTimeOffset(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
+        var decided = status is PartyCreditLimitStatus.Approved or PartyCreditLimitStatus.Rejected
+            || (status == PartyCreditLimitStatus.Superseded && revision is not null);
+        return new PartyCreditLimitRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company ?? Company,
+            PartyId = party ?? Party,
+            CompanyAccountId = account ?? Account,
+            Kind = amount is null ? FinancePartyCreditLimitService.RemoveKind : FinancePartyCreditLimitService.SetKind,
+            CurrencyId = amount is null ? null : Try,
+            AmountText = amount,
+            Status = (int)status + 1,
+            IsDirect = false,
+            BaseRevision = revision is null ? 0 : revision.Value - 1,
+            AccountRevision = revision,
+            Version = status == PartyCreditLimitStatus.Proposed ? 1 : 2,
+            ProposedBy = "SENTETIK-proposer",
+            ProposedAtUtc = at,
+            DecidedBy = decided ? "SENTETIK-approver" : null,
+            DecidedAtUtc = decided ? at : null,
+            RejectionReason = status == PartyCreditLimitStatus.Rejected ? "SENTETIK neden" : null,
+            SupersededAtUtc = status == PartyCreditLimitStatus.Superseded ? at : null,
+            UpdatedAtUtc = at,
+        };
+    }
+
     private sealed class Run : IAsyncDisposable
     {
         private readonly string _database = $"party-risk-{Guid.NewGuid():N}";
@@ -377,11 +483,13 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
 
         public static async Task<Run> CreateAsync(FinanceOpenItemRow[] rows, MoneyEventRow[] payments,
             FinanceSourceAllocationStateRow[]? states = null, ReversalProposalRow[]? reversals = null,
-            OutgoingMoneyEventRow[]? outgoing = null, OutgoingMoneyEventReversalRow[]? paymentReversals = null)
+            OutgoingMoneyEventRow[]? outgoing = null, OutgoingMoneyEventReversalRow[]? paymentReversals = null,
+            PartyCreditLimitRow[]? limits = null)
         {
             var run = new Run();
             var companies = rows.Select(row => row.CompanyId).Concat(payments.Select(row => row.CompanyId))
-                .Concat((outgoing ?? []).Select(row => row.CompanyId)).Append(Company).Distinct();
+                .Concat((outgoing ?? []).Select(row => row.CompanyId)).Concat((limits ?? []).Select(row => row.CompanyId))
+                .Append(Company).Distinct();
             foreach (var company in companies)
             {
                 var seed = new CompanyContext();
@@ -393,6 +501,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 db.ReversalProposals.AddRange((reversals ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEvents.AddRange((outgoing ?? []).Where(row => row.CompanyId == company));
                 db.OutgoingMoneyEventReversals.AddRange((paymentReversals ?? []).Where(row => row.CompanyId == company));
+                db.PartyCreditLimits.AddRange((limits ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
             }
 

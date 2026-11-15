@@ -223,6 +223,11 @@ export const CAPABILITY = {
   financeManualBankPaymentsCreate: 'finance.manual-bank-payments.create',
   /** R47 one manual outgoing bank payment. */
   financeManualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
+  /**
+   * FNS-D25 (API-25) the payment not tied to a party (Masraf Ödemeleri). Its draft, approve and record are
+   * CONTROLS of this workspace, never routes.
+   */
+  financeExpensePaymentsWorkspace: 'finance.expense-payments.workspace',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
   accountingPeriodsList: 'accounting.periods.list',
   /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
@@ -265,6 +270,12 @@ export const CAPABILITY = {
   settingsSalesDiscountLimits: 'settings.sales-discount-limits.manage',
   /** MOD-03 Ayarlar > Vergi: the tax master. Route `/ayarlar/vergi`, owner Settings; one non-Critical name, granted to no role. */
   settingsTaxMaster: 'settings.tax-master.manage',
+  /**
+   * F-025 / B-11 Ayarlar > Ana Veriler > Kurlar: the exchange rate days, correction, half-day mark, reverification and
+   * import. Route `/ayarlar/kurlar`, owner Settings 1.2, on the read name; the three command controls are separate names
+   * (`settings/capabilities.ts` `SETTINGS_EXCHANGE_RATE_CONTROL`). Non-Critical, granted to no role here.
+   */
+  settingsExchangeRates: 'settings.exchange-rates.read',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -368,6 +379,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeManualBankPaymentsList]: '/finans/odemeler',
   [CAPABILITY.financeManualBankPaymentsCreate]: '/finans/odemeler/yeni',
   [CAPABILITY.financeManualBankPaymentsDetail]: '/finans/odemeler/:paymentId',
+  [CAPABILITY.financeExpensePaymentsWorkspace]: '/finans/masraf-odemeleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
@@ -385,6 +397,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.identityAuditList]: '/ayarlar/denetim-kaydi',
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
+  [CAPABILITY.settingsExchangeRates]: '/ayarlar/kurlar',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',

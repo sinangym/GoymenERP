@@ -51,6 +51,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   'product.items.list',
   'finance.manual-bank-payments.list',
+  'finance.expense-payments.workspace',
   'finance.allocations.list',
   'finance.open-items.list',
   // B-05 (KLN-D3): the party ledger opens from Muhasebe and from Cari; both are Finance's read of one sub-ledger.
@@ -147,6 +148,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.sales-discount-limits.manage',
   /** MOD-03: the Settings tax master screen, drawn only where the server granted its one name. */
   'settings.tax-master.manage',
+  /** F-025 / B-11: the Settings exchange rate screen, drawn only where the server granted its read name. */
+  'settings.exchange-rates.read',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -224,6 +227,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.manual-bank-payments.list': 'Giden Ödemeler',
   'finance.manual-bank-payments.create': '',
   'finance.manual-bank-payments.detail': '',
+  'finance.expense-payments.workspace': 'Masraf Ödemeleri',
   'accounting.periods.list': 'Muhasebe Dönemleri',
   'accounting.journals.list': 'Muhasebe Fişleri',
   'accounting.posting-queues': 'Muhasebe Kontrol',
@@ -239,6 +243,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'identity.audit.list': 'Denetim kaydı',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
+  'settings.exchange-rates.read': 'Kurlar',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -344,6 +349,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'finance.receipts.list',
       'finance.manual-bank-payments.list',
+      'finance.expense-payments.workspace',
       'finance.bank-accounts.list',
       'finance.customer-instruments.list',
       'finance.open-items.list',
@@ -373,6 +379,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'organization.sites.list',
       'organization.work-centers.list',
+      // F-025 / B-11: rates follow the organization entries inside Ana Veriler (KLN-D2 order: organization, units, rates).
+      'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
       'identity.assignments.list',

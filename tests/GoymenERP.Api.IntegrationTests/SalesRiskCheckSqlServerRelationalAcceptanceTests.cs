@@ -105,7 +105,7 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         Assert.Equal(JsonValueKind.Null, check.GetProperty("inLimitCurrency").ValueKind);
         Assert.Equal(
             [("ShippedNotInvoiced", "vat_inclusive_amount_unavailable"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
-                ("CreditLimit", "finance_credit_limit_owner_missing")],
+                ("CreditLimit", "finance_credit_limit_not_set")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
         Assert.Equal(
             [
@@ -117,7 +117,7 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
             check.GetProperty("components").EnumerateArray().Select(Figure));
         // SAT-D48: the checked order is approved — already in the remainder, it adds nothing.
         Assert.Equal(("ThisOrder", "sales.this-order", "Available", "IncludingTax", "", null), Figure(check.GetProperty("thisOrder")));
-        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"),
+        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"),
             Figure(check.GetProperty("creditLimit")));
         Assert.Equal(("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"),
             Figure(check.GetProperty("collateral")));

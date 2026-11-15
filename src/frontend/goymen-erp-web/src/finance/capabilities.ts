@@ -46,6 +46,14 @@ export const FINANCE_CAPABILITY = {
   manualBankPaymentsReversePropose: 'finance.manual-bank-payments.reverse.propose',
   /** API-23: approve or reject a pending payment reversal (another user than the proposer). */
   manualBankPaymentsReverseApprove: 'finance.manual-bank-payments.reverse.approve',
+  /** FNS-D25 (API-25): the payment not tied to a party — list, preparation, approval and record on one workspace. */
+  expensePaymentsWorkspace: 'finance.expense-payments.workspace',
+  /** FNS-D25: prepare or replace a draft (control of the workspace). */
+  expensePaymentsDraft: 'finance.expense-payments.draft',
+  /** FNS-D25: approve another user's draft (control of the workspace; the server refuses a self-approval). */
+  expensePaymentsApprove: 'finance.expense-payments.approve',
+  /** FNS-D25: the final, explicitly confirmed record — the money fact (control of the workspace). */
+  expensePaymentsRecord: 'finance.expense-payments.record',
   officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',
@@ -74,6 +82,7 @@ export const FINANCE_ROUTE = {
   manualBankPaymentsList: '/finans/odemeler',
   manualBankPaymentsCreate: '/finans/odemeler/yeni',
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
+  expensePayments: '/finans/masraf-odemeleri',
   officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
   allocationsList: '/finans/dagitimlar',

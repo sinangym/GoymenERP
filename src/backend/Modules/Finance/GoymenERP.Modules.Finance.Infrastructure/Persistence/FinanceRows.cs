@@ -287,6 +287,60 @@ internal sealed class CashAccountCommandRow : IFinanceTenantRow
 }
 
 /// <summary>
+/// API-85a (FNS-D27/D27a): one record of a company account's credit limit history. Kind: 1 Set (a currency
+/// and an exact decimal amount text &gt; 0), 2 Remove ("no limit"; neither). Status: 1 proposed, 2 approved (the
+/// account's effective record; at most one, <c>UX_PartyCreditLimits_Live</c>), 3 rejected, 4 superseded.
+/// <para>
+/// A direct record (<see cref="IsDirect"/>) is inserted approved by a holder of the approve authority in one
+/// step: its decider IS its proposer. A proposal is approved or rejected by a DIFFERENT actor (binary
+/// collation, <c>CK_PartyCreditLimits_Decision</c>). An approved record takes the account's next revision
+/// (<see cref="AccountRevision"/>, unique per account); <see cref="BaseRevision"/> is the account revision
+/// the request named. Rows are never deleted; a newer approved record supersedes the previous one, and a
+/// direct change supersedes a pending proposal.
+/// </para>
+/// </summary>
+internal sealed class PartyCreditLimitRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public int Kind { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public string? AmountText { get; set; }
+    public int Status { get; set; }
+    public bool IsDirect { get; set; }
+    public long BaseRevision { get; set; }
+    public long? AccountRevision { get; set; }
+    public long Version { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTimeOffset? SupersededAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-85a: one accepted credit-limit command attempt (ADR-011), kept beside the limit records like
+/// <see cref="CashAccountCommandRow"/>. (company, command, key hash) is its key; only the key's SHA-256 is
+/// kept. Append-only.
+/// </summary>
+internal sealed class PartyCreditLimitCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? PartyCreditLimitId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// One accepted command attempt (ADR-011): (company, command, key hash) is its key. The raw
 /// Idempotency-Key is never stored, only its upper-case SHA-256 (§2). The actor, the canonical
 /// payload hash, the answered result and the first correlation are kept, so the same key with the

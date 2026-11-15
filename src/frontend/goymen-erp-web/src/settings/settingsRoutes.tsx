@@ -7,6 +7,7 @@
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { SETTINGS_CAPABILITY, SETTINGS_ROUTE } from './capabilities'
+import { ExchangeRatesPage } from './ExchangeRatesPage'
 import { SalesDiscountLimitsPage } from './SalesDiscountLimitsPage'
 import { TaxMasterPage } from './TaxMasterPage'
 
@@ -24,6 +25,14 @@ export const settingsRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={SETTINGS_CAPABILITY.taxMaster}>
         <TaxMasterPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.exchangeRates].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.exchangeRates}>
+        <ExchangeRatesPage />
       </CapabilityRoute>
     ),
   },

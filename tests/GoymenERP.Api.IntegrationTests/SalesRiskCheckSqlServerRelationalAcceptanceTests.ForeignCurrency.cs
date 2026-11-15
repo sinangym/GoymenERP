@@ -41,7 +41,7 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         // The decision's reasons are the missing owners only: the local (TL) total is information only (SAT-D80), so the missing
         // rate never becomes a decision reason. Nothing is shipped, so "shipped but not invoiced" (plan S0) is an available zero.
         Assert.Equal(
-            [("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"), ("CreditLimit", "finance_credit_limit_owner_missing")],
+            [("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"), ("CreditLimit", "finance_credit_limit_not_set")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
 
         // The open receivables: one amount per currency, each in its own currency — the USD amount is not converted to TL.

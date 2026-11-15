@@ -86,12 +86,19 @@ public sealed class FinanceBankAccountTests
         const string officialSalesInvoiceDecisions = "20261114073527_AddOfficialSalesInvoiceRejectionAndWithdrawal";
         Assert.True(Array.IndexOf(migrations, cashAccountStateChanges)
             < Array.IndexOf(migrations, officialSalesInvoiceDecisions));
-        // The NEWEST migration is pinned by name on purpose: the rejection and withdrawal of a pending official sales
-        // invoice record (FNS-D39) is the reviewed append, never an unreviewed migration that silently becomes
-        // authoritative. By migration id the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits
-        // between the payment reversals (API-23) and the cash accounts (API-30), whose passivation and reactivation
-        // precede the newest one.
-        Assert.Equal(officialSalesInvoiceDecisions, migrations.Last());
+        const string partyCreditLimits = "20261114200445_AddPartyCreditLimits";
+        Assert.True(Array.IndexOf(migrations, officialSalesInvoiceDecisions) < Array.IndexOf(migrations, partyCreditLimits));
+        const string customerReturnCredits = "20261114231451_AddCustomerReturnCredits";
+        Assert.True(Array.IndexOf(migrations, partyCreditLimits) < Array.IndexOf(migrations, customerReturnCredits));
+        const string expensePayments = "20261115000505_AddExpensePayments";
+        Assert.True(Array.IndexOf(migrations, customerReturnCredits) < Array.IndexOf(migrations, expensePayments));
+        // The NEWEST migration is pinned by name on purpose: the payment not tied to a party (FNS-D25) is the
+        // reviewed append, never an unreviewed migration that silently becomes authoritative. By migration id
+        // the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits between the payment reversals
+        // (API-23) and the cash accounts (API-30), whose passivation and reactivation precede the rejection and
+        // withdrawal of a pending official sales invoice record (FNS-D39), which the credit limit master
+        // (API-85a L1, FNS-D27/D27a) follows; the customer return credits (F-019) and the expense payments follow it.
+        Assert.Equal(expensePayments, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

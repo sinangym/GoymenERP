@@ -77,13 +77,22 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         // API-30: the cash account (kasa) master; a definition only, audited with the roles of its own permission.
         services.AddScoped<IFinanceCashAccountMaster>(CreateCashAccountService);
-        // The balance seam of passivation: no cash movement exists yet, so every balance reads zero. The
-        // slice that adds cash movements registers the real reader before this one.
+        // The balance seam of passivation. FNS-D25 lets cash leave a cash account (a recorded cash expense
+        // payment), so the reader that sees those records is registered before the no-movement default.
+        services.TryAddScoped<IFinanceCashAccountBalanceReader, ExpensePaymentAwareCashAccountBalanceReader>();
         services.TryAddScoped<IFinanceCashAccountBalanceReader, NoCashMovementBalanceReader>();
+        // API-85a (F018 §L1; FNS-D27/D27a): the party credit limit master. The Sales risk port below reads its
+        // effective record; it moves no money.
+        services.AddScoped<IFinancePartyCreditLimitMaster>(CreatePartyCreditLimitService);
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
         services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
+        // FNS-D25 (API-25): the payment not tied to a party. One expense item; the record is fail-closed until a
+        // treasury balance source registers its guard (FNS-D11).
+        services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
+        services.TryAddScoped<IFinanceTreasuryBalanceGuard, UnavailableTreasuryBalanceGuard>();
+        services.AddScoped<IExpensePaymentService>(CreateExpensePaymentService);
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
@@ -96,8 +105,9 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinancePaymentAllocationService>(CreatePaymentAllocationService);
         services.AddScoped<IFinancePaymentAllocationReadService, FinancePaymentAllocationReadService>();
         services.AddScoped<IFinanceOpenItemReadServiceV1, FinanceOpenItemReadService>();
-        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items (credit limit and
-        // collateral have no master yet: NoSource). It carries no authority; the Sales risk read measures its own.
+        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items and (API-85a)
+        // the effective credit limit record; collateral has no master yet (NoSource). It carries no authority; the
+        // Sales risk read measures its own.
         services.AddScoped<ISalesPartyRiskReadPortV1, FinanceSalesPartyRiskReadPortV1>();
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
@@ -158,6 +168,26 @@ public static class FinanceModuleExtensions
                 Envelope(provider, ErpPermissions.FinanceCashAccountReactivationApprove, permissions,
                     FinanceAction.ApproveCashAccountReactivation)),
             provider.GetRequiredService<IFinanceCashAccountBalanceReader>(),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinancePartyCreditLimitService CreatePartyCreditLimitService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinancePartyCreditLimitService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinancePartyCreditLimitEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCreditLimitsPropose, permissions, FinanceAction.ProposeCreditLimit),
+                Envelope(provider, ErpPermissions.FinanceCreditLimitsApprove, permissions, FinanceAction.ApproveCreditLimit)),
             provider.GetRequiredService<TimeProvider>());
     }
 
@@ -238,6 +268,32 @@ public static class FinanceModuleExtensions
                     FinanceAction.ApproveManualBankPayment),
                 Envelope(provider, FinancePermissionNames.ManualBankPaymentRecord, permissions,
                     FinanceAction.RecordManualBankPayment)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static ExpensePaymentService CreateExpensePaymentService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ExpensePaymentService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceExpenseItemCatalog>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            // No dedicated Settings money operation exists for expense payments yet; the outgoing bank payment
+            // operation's approved profile governs the amount until one is catalogued (NEEDS-SINAN).
+            new ExpensePaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+            new ExpensePaymentAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.ExpensePaymentDraftSave, permissions,
+                    FinanceAction.SaveExpensePaymentDraft),
+                Envelope(provider, FinancePermissionNames.ExpensePaymentApprove, permissions,
+                    FinanceAction.ApproveExpensePayment),
+                Envelope(provider, FinancePermissionNames.ExpensePaymentRecord, permissions,
+                    FinanceAction.RecordExpensePayment)),
             provider.GetRequiredService<TimeProvider>());
     }
 

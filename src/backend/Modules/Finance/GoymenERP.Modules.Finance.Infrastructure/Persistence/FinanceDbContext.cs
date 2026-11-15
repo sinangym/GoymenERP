@@ -41,6 +41,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<CashAccountCommandRow> CashAccountCommands => Set<CashAccountCommandRow>();
 
+    internal DbSet<PartyCreditLimitRow> PartyCreditLimits => Set<PartyCreditLimitRow>();
+
+    internal DbSet<PartyCreditLimitCommandRow> PartyCreditLimitCommands => Set<PartyCreditLimitCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -49,6 +53,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     internal DbSet<FinanceInvoiceCancellationRow> InvoiceCancellations => Set<FinanceInvoiceCancellationRow>();
 
     internal DbSet<FinanceInvoiceCancellationItemRow> InvoiceCancellationItems => Set<FinanceInvoiceCancellationItemRow>();
+
+    internal DbSet<FinanceCustomerReturnCreditRow> CustomerReturnCredits => Set<FinanceCustomerReturnCreditRow>();
+
+    internal DbSet<FinanceCustomerReturnCreditItemRow> CustomerReturnCreditItems => Set<FinanceCustomerReturnCreditItemRow>();
+
+    internal DbSet<FinanceCustomerReturnInvoiceStateRow> CustomerReturnInvoiceStates => Set<FinanceCustomerReturnInvoiceStateRow>();
 
     internal DbSet<FinanceOfficialInvoiceImportBatchRow> OfficialInvoiceImportBatches => Set<FinanceOfficialInvoiceImportBatchRow>();
 
@@ -90,6 +100,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     internal DbSet<FinanceOfficialSalesInvoiceReservationRow> OfficialSalesInvoiceReservations =>
         Set<FinanceOfficialSalesInvoiceReservationRow>();
 
+    /// <summary>FNS-D25 (API-25): the payment not tied to a party and its command receipts.</summary>
+    internal DbSet<ExpensePaymentRow> ExpensePayments => Set<ExpensePaymentRow>();
+
+    internal DbSet<ExpensePaymentCommandRow> ExpensePaymentCommands => Set<ExpensePaymentCommandRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -106,6 +121,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureOfficialInvoiceImports(modelBuilder);
         ConfigureOpenItems(modelBuilder);
         ConfigureInvoiceCancellations(modelBuilder);
+        ConfigureCustomerReturnCredits(modelBuilder);
         ConfigureSourceAllocationStates(modelBuilder);
         ConfigureAllocations(modelBuilder);
         ConfigureReversalProposals(modelBuilder);
@@ -118,7 +134,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigurePaymentReversalProposals(modelBuilder);
         ConfigureOutgoingMoneyEventReversals(modelBuilder);
         ConfigureCashAccounts(modelBuilder);
+        ConfigurePartyCreditLimits(modelBuilder);
         ConfigureOfficialSalesInvoices(modelBuilder);
+        ConfigureExpensePayments(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -591,6 +609,91 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         item.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// F-019 / API-11 v2 (SAT-D291, SAT-D294): the reversing credit of an accepted customer return invoice and the original
+    /// open items it reduced. Append-only; one credit per return document; the advance is the credit's unapplied part.
+    /// </summary>
+    private void ConfigureCustomerReturnCredits(ModelBuilder modelBuilder)
+    {
+        var header = modelBuilder.Entity<FinanceCustomerReturnCreditRow>();
+        header.ToTable("CustomerReturnCredits", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturnCredits_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[DocumentId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[PartyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CustomerReturnCredits_Text",
+                "LEN([SourceKind]) > 0 AND LEN([DocumentVersion]) > 0 AND LEN([OriginalInvoiceVersion]) > 0 AND "
+                + "LEN([AmountText]) > 0 AND LEN([AppliedAmountText]) > 0 AND LEN([AdvanceAmountText]) > 0 AND "
+                + "LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND "
+                + "LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+            // IS NOT NULL is explicit: a CHECK passes on UNKNOWN (the F2a exchange rule).
+            table.HasCheckConstraint("CK_CustomerReturnCredits_Functional",
+                "[FunctionalAmountText] IS NULL OR LEN([FunctionalAmountText]) > 0");
+        });
+        header.HasKey(x => x.Id);
+        header.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        header.Property(x => x.Id).ValueGeneratedNever();
+        header.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.DocumentVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.OriginalInvoiceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        header.Property(x => x.AppliedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        header.Property(x => x.AdvanceAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        header.Property(x => x.FunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false);
+        header.Property(x => x.BusinessDate).HasColumnType("date");
+        header.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        header.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        header.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.ResultJson).IsRequired();
+        header.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        header.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).IsUnique();
+        header.HasIndex(x => new { x.CompanyId, x.SourceKind, x.DocumentId }).IsUnique();
+        header.HasIndex(x => new { x.CompanyId, x.OriginalInvoiceId });
+        header.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var item = modelBuilder.Entity<FinanceCustomerReturnCreditItemRow>();
+        item.ToTable("CustomerReturnCreditItems", Schema, table =>
+            table.HasCheckConstraint("CK_CustomerReturnCreditItems_Amount", "LEN([ReducedAmountText]) > 0"));
+        item.HasKey(x => new { x.CompanyId, x.CreditId, x.OpenItemId });
+        item.Property(x => x.ReducedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        item.HasIndex(x => new { x.CompanyId, x.OpenItemId });
+        item.HasOne<FinanceCustomerReturnCreditRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CreditId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        item.HasOne<FinanceOpenItemRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpenItemId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        item.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var state = modelBuilder.Entity<FinanceCustomerReturnInvoiceStateRow>();
+        state.ToTable("CustomerReturnInvoiceStates", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturnInvoiceStates_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CustomerReturnInvoiceStates_Text",
+                "LEN([ReturnedAmountText]) > 0 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_CustomerReturnInvoiceStates_Version", "[Version] >= 1");
+        });
+        state.HasKey(x => new { x.CompanyId, x.OriginalInvoiceId });
+        state.Property(x => x.ReturnedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        state.Property(x => x.Version).IsConcurrencyToken();
+        state.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        state.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        state.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureAllocations(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceAllocationRow>();
@@ -915,6 +1018,85 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL "
         + "AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0 "
         + "AND [RecordedAtUtc] IS NOT NULL AND [BankResultConfirmed] = 1)";
+
+    internal const string ExpensePaymentStatusCheck =
+        "([Status] = 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RecordedBy] IS NULL "
+        + "AND [RecordedAtUtc] IS NULL AND [PaymentConfirmed] = 0) OR "
+        + "([Status] = 1 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NULL AND [RecordedAtUtc] IS NULL "
+        + "AND [PaymentConfirmed] = 0) OR "
+        + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0 "
+        + "AND [RecordedAtUtc] IS NOT NULL AND [PaymentConfirmed] = 1)";
+
+    private void ConfigureExpensePayments(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ExpensePaymentRow>();
+        entity.ToTable("ExpensePayments", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ExpensePayments_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ExpenseItemId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_ExpensePayments_Text",
+                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0 "
+                + "AND LEN(LTRIM(RTRIM([Description]))) > 0 "
+                + "AND ([Reference] IS NULL OR LEN(LTRIM(RTRIM([Reference]))) > 0)");
+            table.HasCheckConstraint("CK_ExpensePayments_SourceKind", "[SourceKind] IN (0, 1)");
+            table.HasCheckConstraint("CK_ExpensePayments_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
+            table.HasCheckConstraint("CK_ExpensePayments_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_ExpensePayments_Status", ExpensePaymentStatusCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.ValueOn).HasColumnType("date");
+        entity.Property(x => x.Reference).HasMaxLength(128);
+        entity.Property(x => x.Description).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.PreparedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.HasIndex(x => new { x.CompanyId, x.PreparedAtUtc, x.Id });
+        // The cash passivation reading asks whether a recorded cash payment names the account.
+        entity.HasIndex(x => new { x.CompanyId, x.SourceKind, x.TreasuryAccountId, x.Status });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<ExpensePaymentCommandRow>();
+        command.ToTable("ExpensePaymentCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ExpensePaymentCommands_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "([PaymentId] IS NULL OR [PaymentId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_ExpensePaymentCommands_Content",
+                "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 "
+                + "AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+        });
+        command.HasKey(x => x.Id);
+        command.Property(x => x.Id).ValueGeneratedNever();
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ResultJson).IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
+        command.HasOne<ExpensePaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
 
     private void ConfigureManualBankPayments(ModelBuilder modelBuilder)
     {
@@ -1301,6 +1483,125 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "AND [ChangeRejectionReason] IS NOT NULL AND LEN([ChangeRejectionReason]) > 0 "
         + "AND (([ChangeKind] = 1 AND [Status] = 2) OR ([ChangeKind] = 2 AND [Status] = 4)))))";
 
+    /// <summary>
+    /// API-85a (FNS-D27/D27a): the party credit limit history and its own command records. The account's
+    /// effective record is its one approved row and at most one proposal is pending per account
+    /// (<c>UX_PartyCreditLimits_Live</c>); an approved
+    /// row's account revision is unique per account, so two concurrent changes from the same revision cannot
+    /// both win. A proposal is decided by another actor (binary collation); a direct record is decided by its
+    /// own author, who holds the approve authority (FNS-D27). No foreign key reaches the party or the company
+    /// account: they are Counterparty's (read through <see cref="Contracts.IFinancePartyAccountPort"/>).
+    /// </summary>
+    private void ConfigurePartyCreditLimits(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyCreditLimitRow>();
+        entity.ToTable("PartyCreditLimits", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PartyCreditLimits_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_PartyCreditLimits_Payload", PartyCreditLimitPayloadCheck);
+            table.HasCheckConstraint("CK_PartyCreditLimits_Revision",
+                "[Version] >= 1 AND [BaseRevision] >= 0 AND ([AccountRevision] IS NULL OR [AccountRevision] > [BaseRevision])");
+            table.HasCheckConstraint("CK_PartyCreditLimits_Decision", PartyCreditLimitDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.AmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation);
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        // Status is a key column on purpose: a save that moves one row out of a live state and another into it
+        // (an approval superseding the effective record) is ordered by EF Core on this index's values only
+        // when a key column changes, so the row leaving the state is written first.
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.Status }, PartyCreditLimitLiveIndex)
+            .HasFilter(PartyCreditLimitLiveFilter).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.AccountRevision }, "UX_PartyCreditLimits_Revision")
+            .HasFilter("[AccountRevision] IS NOT NULL").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.ProposedAtUtc }, "IX_PartyCreditLimits_History");
+        entity.HasIndex(x => new { x.CompanyId, x.Status });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<PartyCreditLimitCommandRow>();
+        command.ToTable("PartyCreditLimitCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal (not found, stale revision or version, a
+            // rule refusal) whose answer names no record (ADR-011 §7).
+            table.HasCheckConstraint("CK_PartyCreditLimitCommands_Target",
+                "([PartyCreditLimitId] IS NOT NULL AND [PartyCreditLimitId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([PartyCreditLimitId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') IN ('ValidationFailed', 'VersionConflict'))");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.PartyCreditLimitId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<PartyCreditLimitRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PartyCreditLimitId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// Per account at most one row per live state: one proposal awaiting its decision (status 1) and one
+    /// effective record, its approved row (status 2, a Set or a Remove).
+    /// </summary>
+    internal const string PartyCreditLimitLiveIndex = "UX_PartyCreditLimits_Live";
+
+    internal const string PartyCreditLimitLiveFilter = "[Status] IN (1, 2)";
+
+    /// <summary>
+    /// API-85a: a Set (kind 1) names a currency and an unsigned decimal text with at least one non-zero digit
+    /// (digits and at most one inner dot); a Remove (kind 2) names neither. The service holds the exact parse;
+    /// the database refuses what cannot be an amount at all. Kind is tested for NULL first by NOT NULL columns.
+    /// </summary>
+    internal const string PartyCreditLimitPayloadCheck =
+        "([Kind] = 1 AND [CurrencyId] IS NOT NULL AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [AmountText] IS NOT NULL AND LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' "
+        + "AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' "
+        + "AND [AmountText] LIKE '%[1-9]%') OR "
+        + "([Kind] = 2 AND [CurrencyId] IS NULL AND [AmountText] IS NULL)";
+
+    /// <summary>
+    /// FNS-D27/D27a: a proposal carries no decision and no revision. An approved record carries a decider and
+    /// a revision: a direct record is decided by its author (FNS-D27, one step by an approver), a proposal by
+    /// someone other than its proposer (FNS-D27a). A rejection is a proposal's, by someone other than its
+    /// proposer, with a reason. A superseded record is either a proposal never decided or an approved record,
+    /// with the same rules as when it was approved. Actors compare in binary collation.
+    /// </summary>
+    internal const string PartyCreditLimitDecisionCheck =
+        "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
+        + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
+        + "AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) "
+        + "AND (([IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2) "
+        + "OR ([IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2))) OR "
+        + "([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+        + "AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [AccountRevision] IS NULL "
+        + "AND [SupersededAtUtc] IS NULL) OR "
+        + "([Status] = 4 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
+        + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NOT NULL)";
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
@@ -1382,6 +1683,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             throw new InvalidOperationException("Resmî satış faturası komut ve kimlik ayırma kayıtları append-only'dir.");
         }
 
+        if (ChangeTracker.Entries<ExpensePaymentCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Masraf ödemesi komut kayıtları append-only'dir.");
+        }
+
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -1421,6 +1728,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Manuel banka ödemesi yalnız taslak, onay ve kesin kayıt geçişleriyle değişir.");
                 }
 
+                if (entry.Entity is ExpensePaymentRow expensePayment
+                    && !IsAllowedExpensePaymentTransition(entry, expensePayment))
+                {
+                    throw new InvalidOperationException(
+                        "Masraf ödemesi yalnız taslak, onay ve kesin kayıt geçişleriyle değişir.");
+                }
+
                 if (entry.Entity is BankAccountRow bankAccount
                     && !IsAllowedBankAccountTransition(entry, bankAccount))
                 {
@@ -1433,6 +1747,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 {
                     throw new InvalidOperationException(
                         "Kasa hesabı yalnız açılış kararıyla veya pasife alma/yeniden etkinleştirme öneri ve kararıyla değişir.");
+                }
+
+                if (entry.Entity is PartyCreditLimitRow creditLimit
+                    && !IsAllowedPartyCreditLimitTransition(entry, creditLimit))
+                {
+                    throw new InvalidOperationException(
+                        "Kredi limiti kaydı yalnız öneri kararıyla veya yerine yenisi geçerek, sürümü bir artarak değişir.");
                 }
 
                 if (entry.Entity is FinanceAllocationRow allocation
@@ -1513,6 +1834,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(CashAccountRow.ChangeRejectionReason),
                         nameof(CashAccountRow.UpdatedAtUtc),
                     ],
+                    // API-85a: a proposal's decision, or a record superseded by a newer one; the state-aware guard
+                    // above admits only those steps. The limit itself (kind, currency, amount) never changes.
+                    PartyCreditLimitRow =>
+                    [
+                        nameof(PartyCreditLimitRow.Status), nameof(PartyCreditLimitRow.DecidedBy),
+                        nameof(PartyCreditLimitRow.DecidedAtUtc), nameof(PartyCreditLimitRow.RejectionReason),
+                        nameof(PartyCreditLimitRow.AccountRevision), nameof(PartyCreditLimitRow.SupersededAtUtc),
+                        nameof(PartyCreditLimitRow.UpdatedAtUtc),
+                    ],
                     ReversalProposalRow =>
                     [
                         nameof(ReversalProposalRow.Status), nameof(ReversalProposalRow.DecidedBy),
@@ -1526,6 +1856,19 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(PaymentReversalProposalRow.DecidedAtUtc),
                         nameof(PaymentReversalProposalRow.DecisionReason),
                         nameof(PaymentReversalProposalRow.ReversalEventId),
+                    ],
+                    ExpensePaymentRow =>
+                    [
+                        nameof(ExpensePaymentRow.SourceKind), nameof(ExpensePaymentRow.TreasuryAccountId),
+                        nameof(ExpensePaymentRow.ExpenseItemId), nameof(ExpensePaymentRow.CurrencyId),
+                        nameof(ExpensePaymentRow.AmountText), nameof(ExpensePaymentRow.ProfileId),
+                        nameof(ExpensePaymentRow.ProfileVersion), nameof(ExpensePaymentRow.OccurredOn),
+                        nameof(ExpensePaymentRow.ValueOn), nameof(ExpensePaymentRow.Reference),
+                        nameof(ExpensePaymentRow.Description), nameof(ExpensePaymentRow.Status),
+                        nameof(ExpensePaymentRow.PreparedBy), nameof(ExpensePaymentRow.PreparedAtUtc),
+                        nameof(ExpensePaymentRow.ApprovedBy), nameof(ExpensePaymentRow.ApprovedAtUtc),
+                        nameof(ExpensePaymentRow.RecordedBy), nameof(ExpensePaymentRow.RecordedAtUtc),
+                        nameof(ExpensePaymentRow.PaymentConfirmed),
                     ],
                     ManualBankPaymentRow =>
                     [
@@ -1568,6 +1911,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(FinanceSourceAllocationStateRow.UnallocatedAmountText),
                         nameof(FinanceSourceAllocationStateRow.UpdatedBy),
                         nameof(FinanceSourceAllocationStateRow.UpdatedAtUtc),
+                    ],
+                    // F-019: only the running total of an invoice's accepted returns and its update stamp; the credit
+                    // and its reductions are append-only (no entry here).
+                    FinanceCustomerReturnInvoiceStateRow =>
+                    [
+                        nameof(FinanceCustomerReturnInvoiceStateRow.ReturnedAmountText),
+                        nameof(FinanceCustomerReturnInvoiceStateRow.UpdatedBy),
+                        nameof(FinanceCustomerReturnInvoiceStateRow.UpdatedAtUtc),
                     ],
                     // DEC-FIN-016: the facts never change; only the status step and its bank / collection trace. The
                     // state-aware guard above admits only an allowed step. A movement is append-only (no entry here).
@@ -1635,6 +1986,61 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 && current.WithdrawnAtUtc is not null,
             _ => false,
         };
+    }
+
+    private static readonly string[] ExpensePaymentPreparationColumns =
+    [
+        nameof(ExpensePaymentRow.SourceKind), nameof(ExpensePaymentRow.TreasuryAccountId),
+        nameof(ExpensePaymentRow.ExpenseItemId), nameof(ExpensePaymentRow.CurrencyId),
+        nameof(ExpensePaymentRow.AmountText), nameof(ExpensePaymentRow.ProfileId),
+        nameof(ExpensePaymentRow.ProfileVersion), nameof(ExpensePaymentRow.OccurredOn),
+        nameof(ExpensePaymentRow.ValueOn), nameof(ExpensePaymentRow.Reference),
+        nameof(ExpensePaymentRow.Description), nameof(ExpensePaymentRow.PreparedBy),
+        nameof(ExpensePaymentRow.PreparedAtUtc),
+    ];
+
+    /// <summary>
+    /// FNS-D25: a draft is replaced only while a draft; approval (approver ≠ preparer) and the confirmed record are
+    /// each one step, the version moving by exactly one. A recorded payment never changes again.
+    /// </summary>
+    private static bool IsAllowedExpensePaymentTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        ExpensePaymentRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(ExpensePaymentRow.Status)]!;
+        var originalVersion = (long)entry.OriginalValues[nameof(ExpensePaymentRow.Version)]!;
+        if (current.Version != originalVersion + 1)
+        {
+            return false;
+        }
+
+        var modified = entry.Properties
+            .Where(property => property.IsModified && !property.Metadata.IsConcurrencyToken)
+            .Select(property => property.Metadata.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        bool Only(params string[] names) => modified.All(names.Contains);
+
+        if (originalStatus == ExpensePaymentStatuses.Draft && current.Status == ExpensePaymentStatuses.Draft)
+        {
+            return Only(ExpensePaymentPreparationColumns);
+        }
+
+        if (originalStatus == ExpensePaymentStatuses.Draft && current.Status == ExpensePaymentStatuses.Approved)
+        {
+            return Only(nameof(ExpensePaymentRow.Status), nameof(ExpensePaymentRow.ApprovedBy),
+                       nameof(ExpensePaymentRow.ApprovedAtUtc))
+                   && !string.IsNullOrWhiteSpace(current.ApprovedBy)
+                   && !string.Equals(current.PreparedBy, current.ApprovedBy, StringComparison.Ordinal)
+                   && current.ApprovedAtUtc is not null;
+        }
+
+        return originalStatus == ExpensePaymentStatuses.Approved
+               && current.Status == ExpensePaymentStatuses.Recorded
+               && Only(nameof(ExpensePaymentRow.Status), nameof(ExpensePaymentRow.RecordedBy),
+                   nameof(ExpensePaymentRow.RecordedAtUtc), nameof(ExpensePaymentRow.PaymentConfirmed))
+               && !string.IsNullOrWhiteSpace(current.RecordedBy)
+               && current.RecordedAtUtc is not null
+               && current.PaymentConfirmed;
     }
 
     private static bool IsAllowedManualBankPaymentTransition(
@@ -1730,6 +2136,59 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && !string.IsNullOrWhiteSpace(current.ReleasedBy)
             && current.ReleasedAtUtc is not null
             && !string.IsNullOrWhiteSpace(current.ReleaseReason);
+    }
+
+    /// <summary>
+    /// API-85a: one version step and one of four moves — a proposal approved (a decider other than its
+    /// proposer and the account's next revision) or rejected (another decider and a reason), a proposal
+    /// superseded undecided, or an approved record superseded with its decision kept.
+    /// </summary>
+    private static bool IsAllowedPartyCreditLimitTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        PartyCreditLimitRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        const int superseded = 4;
+        var originalVersion = (long)entry.OriginalValues[nameof(PartyCreditLimitRow.Version)]!;
+        var originalStatus = (int)entry.OriginalValues[nameof(PartyCreditLimitRow.Status)]!;
+        var originalDecidedBy = (string?)entry.OriginalValues[nameof(PartyCreditLimitRow.DecidedBy)];
+        var originalDecidedAt = (DateTimeOffset?)entry.OriginalValues[nameof(PartyCreditLimitRow.DecidedAtUtc)];
+        var originalRevision = (long?)entry.OriginalValues[nameof(PartyCreditLimitRow.AccountRevision)];
+        if (current.Version != checked(originalVersion + 1)
+            || entry.OriginalValues[nameof(PartyCreditLimitRow.RejectionReason)] is not null
+            || entry.OriginalValues[nameof(PartyCreditLimitRow.SupersededAtUtc)] is not null)
+        {
+            return false;
+        }
+
+        if (originalStatus == approved)
+        {
+            return current.Status == superseded && current.SupersededAtUtc is not null
+                && string.Equals(current.DecidedBy, originalDecidedBy, StringComparison.Ordinal)
+                && current.DecidedAtUtc == originalDecidedAt && current.AccountRevision == originalRevision
+                && current.RejectionReason is null;
+        }
+
+        if (originalStatus != proposed || originalDecidedBy is not null || originalDecidedAt is not null
+            || originalRevision is not null || current.IsDirect)
+        {
+            return false;
+        }
+
+        var otherDecider = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+        return current.Status switch
+        {
+            approved => otherDecider && current.AccountRevision is not null && current.RejectionReason is null
+                && current.SupersededAtUtc is null,
+            rejected => otherDecider && current.AccountRevision is null
+                && !string.IsNullOrWhiteSpace(current.RejectionReason) && current.SupersededAtUtc is null,
+            superseded => current.DecidedBy is null && current.DecidedAtUtc is null && current.AccountRevision is null
+                && current.RejectionReason is null && current.SupersededAtUtc is not null,
+            _ => false,
+        };
     }
 
     private static bool IsAllowedCashAccountDecision(

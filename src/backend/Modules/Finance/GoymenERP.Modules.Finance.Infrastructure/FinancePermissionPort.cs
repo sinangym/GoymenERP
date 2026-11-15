@@ -64,6 +64,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadManualBankPayments => FinancePermissionNames.ManualBankPaymentDraftRead,
         FinanceAction.ApproveManualBankPayment => FinancePermissionNames.ManualBankPaymentApprove,
         FinanceAction.RecordManualBankPayment => FinancePermissionNames.ManualBankPaymentRecord,
+        FinanceAction.SaveExpensePaymentDraft => FinancePermissionNames.ExpensePaymentDraftSave,
+        FinanceAction.ReadExpensePayments => FinancePermissionNames.ExpensePaymentDraftRead,
+        FinanceAction.ApproveExpensePayment => FinancePermissionNames.ExpensePaymentApprove,
+        FinanceAction.RecordExpensePayment => FinancePermissionNames.ExpensePaymentRecord,
         // API-23: the payment reversal's own names; Unavailable (503) until the central registry knows them.
         FinanceAction.ProposePaymentReversal => FinancePermissionNames.PaymentReversePropose,
         FinanceAction.ApprovePaymentReversal => FinancePermissionNames.PaymentReverseApprove,
@@ -85,6 +89,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ApproveCashAccountPassivation => ErpPermissions.FinanceCashAccountPassivationApprove,
         FinanceAction.ProposeCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationPropose,
         FinanceAction.ApproveCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationApprove,
+        // API-85a: the credit limit master's own names, registered centrally (company-wide; not Critical; no grant).
+        FinanceAction.ReadCreditLimits => ErpPermissions.FinanceCreditLimitsRead,
+        FinanceAction.ProposeCreditLimit => ErpPermissions.FinanceCreditLimitsPropose,
+        FinanceAction.ApproveCreditLimit => ErpPermissions.FinanceCreditLimitsApprove,
         _ => null,
     };
 

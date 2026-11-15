@@ -236,6 +236,18 @@ public static class ErpPermissions
     public const string FinanceCashAccountReactivationApprove = "finance.cash-account.reactivation.approve";
 
     /// <summary>
+    /// Finance party credit limit master (API-85a; F018 plan §L1; FNS-D27/D27a): read; propose (FNS-D27a, a
+    /// proposal awaiting another person's decision); approve (FNS-D27, sets, changes or removes a limit in one
+    /// step, and approves or rejects a proposal). Registering them makes them KNOWN, not granted: no role and no
+    /// user receives them here, and who holds which is a human gate. Company-wide only: a limit belongs to a
+    /// company account of the server-resolved company. Not Critical: whether they are is not decided (human
+    /// gate). A proposer never decides their own proposal, in the service and the database regardless.
+    /// </summary>
+    public const string FinanceCreditLimitsRead = "finance.credit-limits.read";
+    public const string FinanceCreditLimitsPropose = "finance.credit-limits.propose";
+    public const string FinanceCreditLimitsApprove = "finance.credit-limits.approve";
+
+    /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
     /// measurable and grants nothing. Both are company-wide because the batch belongs to the
     /// server-resolved company and has no narrower scope dimension. They are not Critical; the
@@ -406,6 +418,15 @@ public static class ErpPermissions
     /// </summary>
     public const string FinanceManualBankPaymentReversePropose = "finance.manual-bank-payment.reverse.propose";
     public const string FinanceManualBankPaymentReverseApprove = "finance.manual-bank-payment.reverse.approve";
+
+    /// <summary>
+    /// FNS-D25 (API-25): the payment not tied to a party — one expense item kept by identity and a mandatory
+    /// description. Company-wide, not Critical; registration grants nothing (grants are a human gate).
+    /// </summary>
+    public const string FinanceExpensePaymentDraftSave = "finance.expense-payment.draft.save";
+    public const string FinanceExpensePaymentDraftRead = "finance.expense-payment.draft.read";
+    public const string FinanceExpensePaymentApprove = "finance.expense-payment.approve";
+    public const string FinanceExpensePaymentRecord = "finance.expense-payment.record";
 
     /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
@@ -1272,6 +1293,9 @@ public static class ErpPermissions
             FinanceCashAccountPassivationApprove,
             FinanceCashAccountReactivationPropose,
             FinanceCashAccountReactivationApprove,
+            FinanceCreditLimitsRead,
+            FinanceCreditLimitsPropose,
+            FinanceCreditLimitsApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
@@ -1289,6 +1313,10 @@ public static class ErpPermissions
         FinanceManualBankPaymentRecord,
         FinanceManualBankPaymentReversePropose,
         FinanceManualBankPaymentReverseApprove,
+        FinanceExpensePaymentDraftSave,
+        FinanceExpensePaymentDraftRead,
+        FinanceExpensePaymentApprove,
+        FinanceExpensePaymentRecord,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1473,6 +1501,9 @@ public static class ErpPermissions
             FinanceCashAccountPassivationApprove,
             FinanceCashAccountReactivationPropose,
             FinanceCashAccountReactivationApprove,
+            FinanceCreditLimitsRead,
+            FinanceCreditLimitsPropose,
+            FinanceCreditLimitsApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
@@ -1490,6 +1521,10 @@ public static class ErpPermissions
         FinanceManualBankPaymentRecord,
         FinanceManualBankPaymentReversePropose,
         FinanceManualBankPaymentReverseApprove,
+        FinanceExpensePaymentDraftSave,
+        FinanceExpensePaymentDraftRead,
+        FinanceExpensePaymentApprove,
+        FinanceExpensePaymentRecord,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,

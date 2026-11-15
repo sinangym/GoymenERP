@@ -401,8 +401,13 @@ read measures `sales.drafts.read` and discloses amounts only with `sales.orders.
   to a party that is both can only make the deduction smaller). Any payment, state or outgoing row Finance cannot read → the
   receivables are `Unavailable` (no partial deduction). No customer named (empty party or account) → `Unavailable`
   (`finance_customer_unidentified`), never a recorded zero. Allocation (matching) continues separately; this read touches nothing.
-- **Credit limit / collateral:** Finance owns them (SAT-D51; the Cari card only shows them), but no master exists on main
-  (W4-RISK); both are `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
+- **Credit limit:** read from Finance's own master (API-85a L1 below). The one APPROVED record of the account gives
+  `Available` with its single amount and currency (`taxBasis` null); no record, or an approved removal, is `NoSource`
+  (`finance_credit_limit_not_set`: "limit yok", never zero or unlimited); two approved records, a record of another party or
+  an unreadable amount/currency is `Unavailable` (`finance_credit_limit_unreadable`); an empty party or account is
+  `Unavailable` (`finance_customer_unidentified`).
+- **Collateral:** Finance owns it (SAT-D51; the Cari card only shows it), but no master exists on main (W4-RISK); it is
+  `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
   input and never enters the gross risk.
 
 ## MOD-15: open-item direction (borç / alacak) — FNS-D2, FNS-D7
@@ -533,6 +538,28 @@ Not decided, so not built (NEEDS-SINAN): whether movements are held while a pass
 reactivation re-checks the account's currency against today's Settings candidates. Not in this slice: cash movements
 (API-31), transfers (API-32), the screen (UI-05).
 
+## FIN-S15 / API-25: payment not tied to a party (masraf ödemesi) — FNS-D25
+
+A bank or cash payment that is not tied to a party: one expense item kept **by identity** (never a free-text label)
+and a mandatory description. It follows the manual bank payment flow: draft → approval by a different actor →
+record. The recorded row itself is the money fact; no second movement row (no `OutgoingMoneyEvent`, no open item) is
+written.
+
+| Part | What |
+|---|---|
+| HTTP | `/api/v1/finance/expense-payments`: `POST` save draft (`SaveFinanceExpensePaymentDraftV1`), `POST …/{paymentId}/approval` (`ApproveFinanceExpensePaymentV1`), `POST …/{paymentId}/record` (`RecordFinanceExpensePaymentV1`), `GET` list (`GetFinanceExpensePaymentsV1`) and detail (`GetFinanceExpensePaymentV1`), `GET …/expense-items` (`GetFinanceExpenseItemsV1`), `GET …/draft-context` (`GetFinanceExpensePaymentDraftContextV1`). Commands take the `Idempotency-Key` header (surrounding whitespace refused) and a strict JSON body; 401/403/404/503 code-less; replay headers on a replay |
+| Authority | `finance.expense-payment.draft.save`, `.draft.read`, `.approve`, `.record`: registered and company-wide, granted to no role or seed (a human gate). Fenced before the first read, on replay and right before the save |
+| Rules | Source `Bank` (an approved, money-movement-eligible bank account) or `Cash` (an approved cash account; a passive one is refused); the amount is checked against Settings' approved money profile. Description required (trimmed, ≤ 1000): `expense_payment_description_required`, `expense_payment_description_too_long`. Expense item required and known: `expense_item_required`, `expense_item_unknown`. Approval by the preparer is refused (`payment_approval_invalid`, also `CK_ExpensePayments_Status`). Record needs `paymentConfirmed` (`expense_payment_not_confirmed`) and an approved payment (`expense_payment_not_approved`) |
+| Expense item | One item, `general-expense`, with a fixed identity (`SingleExpenseItemCatalog`); the screen sends the id, the label comes from the frontend text file. Whether it moves to a Settings-managed catalog is NEEDS-SINAN |
+| Balance (FNS-D11/D22) | `IFinanceTreasuryBalanceGuard` answers sufficient / insufficient / unavailable; insufficient is a 422 (`finance_treasury_balance_insufficient`), never clipped. No treasury balance source exists yet, so the only registration (`UnavailableTreasuryBalanceGuard`) answers unavailable and a record returns 503 (fail-closed) |
+| Cash passivation | Once a cash account has a recorded expense payment, `ExpensePaymentAwareCashAccountBalanceReader` stops answering `Zero` for it, so its passivation is refused until a real balance reading exists |
+| Money operation | Temporarily the manual bank payment profile (`finance.manual-bank-payment.v1`) through `ExpensePaymentBinding`; a dedicated key is asked of the Settings owner (NEEDS-SINAN). Stored rows carry the profile id and version |
+| Persistence | `finance.ExpensePayments` (company query filter; status 0 draft, 1 approved, 2 recorded; `CK_ExpensePayments_Status` keeps approver ≠ preparer in binary collation) and `finance.ExpensePaymentCommands` keyed by (company, command, key hash). Terminal refusals (not found, stale version) are recorded and replay. Audit `finance.expense-payment.created.v1` / `.updated.v1` / `.approved.v1` / `.recorded.v1` |
+| Migration `20261115000505_AddExpensePayments` | Pure DDL up (two tables). `Down` refuses with `THROW 51296` while any expense payment or command is stored (forward fix) |
+
+Not decided, so not built (NEEDS-SINAN): the treasury balance source and opening balances for the record-time check;
+whether a cash account with a pending passivation may pay; a dedicated money operation key.
+
 ## F-005 D1: official sales invoice record — FNS-D17…FNS-D21, FNS-D26
 
 Finance owns the official sales invoice (e-Fatura / e-Arşiv) that was issued outside the ERP. One person records it
@@ -574,3 +601,31 @@ actor to be the recorder.
 
 Not in this slice: the single "Kaydet" screen (reserve → upload → record, resumable with the same keys), the Sales
 read port (D3), correcting or cancelling an approved record (FNS-D20), reservation expiry and PDF retention.
+
+## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a, F018 §L1
+
+| Part | What |
+|---|---|
+| HTTP | `POST /api/v1/finance/credit-limits` (set, one step), `POST …/credit-limits/removals` (remove, one step), `POST …/credit-limits/proposals` (propose a set or a removal), `POST …/credit-limits/proposals/{proposalId}/approval`, `POST …/credit-limits/proposals/{proposalId}/rejection` (written reason), `GET …/credit-limits`, `GET …/credit-limits/accounts/{companyAccountId}`, `GET …/credit-limits/accounts/{companyAccountId}/history`, `GET …/credit-limits/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
+| Permissions | `finance.credit-limits.read`, `finance.credit-limits.propose`, `finance.credit-limits.approve`: registered, company-wide, **not granted and not Critical** (grant/rol/Critical is a human gate). The approver sets or removes a limit in one save (FNS-D27a); the proposer only proposes, and another approver decides (`finance_approver_is_proposer`, checked by the service and by `CK_PartyCreditLimits_Decision`) |
+| Record | Per company account: kind `Set` (positive exact decimal text amount + currency) or `Remove`; status Proposed / Approved / Rejected / Superseded. At most one live (Proposed or Approved) record per account and status (`UX_PartyCreditLimits_Live`); every approval moves the account revision by one (`UX_PartyCreditLimits_Revision`), the previous approved record becomes Superseded. Commands carry `expectedRevision` (account) or `expectedVersion` (proposal) |
+| Idempotency / audit | `finance.PartyCreditLimitCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; a stale revision is a recorded `VersionConflict` |
+| Sales port | `FinanceSalesPartyRiskReadPortV1` reads the approved record (MOD-01 above); the port name and shape are unchanged |
+| Migration `20261114200445_AddPartyCreditLimits` | Pure DDL up (records and commands). `Down` refuses with `THROW 51322` while any credit limit record or recorded attempt exists (forward fix): it is the history of who set which limit; an empty store rolls back |
+
+Not in this slice: the threshold-based second approval (OPEN-009 / F018 N-3), the shell route and capability wiring of the
+screen (`src/frontend/goymen-erp-web/src/finance/CreditLimitPage.tsx` is built, not mounted), and the Cari-side ownership check
+of party/account (F018 N-2).
+
+## F-019 / API-11 v2: customer return acceptance (müşteri iadesi kabulü)
+
+| Part | What |
+|---|---|
+| Port | `IFinanceInvoiceAcceptancePortV2` (`FinanceInvoiceAcceptanceV2`), kind `CustomerReturn`, Sales producer only; the v1 admission and cancellation ports are unchanged. In-process, no HTTP endpoint |
+| Host | `FinanceInvoiceAcceptanceHost` re-measures `sales.returns.finalize` company-wide before the reads and before the save; no grant, role or Critical is added |
+| Rows | `CustomerReturnCredits`, `CustomerReturnCreditItems` (append-only) and `CustomerReturnInvoiceStates` (one concurrency row per original invoice) |
+| Behaviour | Original invoice link mandatory and admitted (SAT-D288); a separate reversing credit, open items keep their identity (SAT-D291); open items reduced first, the excess stays on the credit as an advance (SAT-D294). A partial return over several open installments is refused (`finance_customer_return_installment_order_not_decided`) until the order is decided |
+| Migration `20261114231451_AddCustomerReturnCredits` | Pure DDL up. `Down` refuses with `THROW 51320` while any credit or return state is stored (forward fix) |
+
+Not in this slice: the Sales-side adapter (SAT-S2), the party ledger / risk read of the credit and advance, and consuming
+the advance in allocation.
