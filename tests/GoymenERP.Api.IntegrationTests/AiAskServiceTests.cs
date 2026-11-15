@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GoymenERP.Api.Ai;
+using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -308,6 +309,39 @@ public sealed class AiAskServiceTests
     }
 
     [Fact]
+    public async Task An_external_egress_refusal_is_refused_with_policy_refused_and_no_tool_runs()
+    {
+        var harness = new Harness();
+        harness.Provider.Failure = () => new AiExternalEgressRefusedException();
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Refused, result.Status);
+        Assert.Null(result.Response);
+        Assert.Equal(1, harness.Provider.Calls);
+        Assert.Empty(harness.Tool.Contexts);
+        var refusal = Assert.Single(harness.Writer.Events);
+        Assert.Equal(SecurityEventTypesV1.AiRequestRefused, refusal.EventType);
+        Assert.Equal(SecurityEventReasonCodesV1.PolicyRefused, refusal.ReasonCode);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task An_external_provider_failure_is_unavailable_with_provider_failed_and_no_tool_runs()
+    {
+        var harness = new Harness();
+        harness.Provider.Failure = () => new AiExternalProviderException(AiExternalProviderFailuresV1.Timeout);
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Unavailable, result.Status);
+        Assert.Empty(harness.Tool.Contexts);
+        var refusal = Assert.Single(harness.Writer.Events);
+        Assert.Equal(SecurityEventReasonCodesV1.AiProviderFailed, refusal.ReasonCode);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
     public void The_runtime_is_disabled_when_no_configuration_enables_it()
     {
         var state = AiRuntimeStateEvaluator.Evaluate(new AiRuntimeOptions(), new TestHostEnvironment("Development"), new FakeAiModelProvider());
@@ -457,9 +491,16 @@ public sealed class AiAskServiceTests
 
         public string ProviderKind => inner.ProviderKind;
 
+        public Func<Exception>? Failure { get; set; }
+
         public Task<AiModelPlanV1> PlanAsync(AiModelRequestV1 request, CancellationToken cancellationToken = default)
         {
             Calls++;
+            if (Failure is { } failure)
+            {
+                throw failure();
+            }
+
             return inner.PlanAsync(request, cancellationToken);
         }
     }

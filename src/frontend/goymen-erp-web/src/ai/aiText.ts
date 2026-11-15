@@ -22,6 +22,7 @@ export const AI_TEXT = {
   readOnlyNotice: 'AI yalnız okur: kayıt oluşturmaz, değiştirmez. Cevaplar kaynak kayıtla birlikte gösterilir.',
   questionLabel: 'Sorunuz',
   questionHint: 'Kısa ve açık bir soru yazın.',
+  questionSensitiveReminder: 'Soruya fiyat, bakiye, tutar, IBAN, telefon veya e-posta gibi hassas değer yazmayın; böyle bir soru gönderilmez.',
   questionInvalid: 'Soru boş olamaz veya izin verilen uzunluğu aşamaz.',
   toolLabel: 'Okunacak kaynak',
   toolNone: 'Kaynak seçin',

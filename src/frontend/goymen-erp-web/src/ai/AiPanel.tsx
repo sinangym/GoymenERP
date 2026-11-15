@@ -234,12 +234,15 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
             value={question}
             rows={3}
             aria-invalid={isInvalid('question') || undefined}
-            aria-describedby="ai-question-hint"
+            aria-describedby="ai-question-hint ai-question-sensitive"
             onChange={(event) => setQuestion(event.target.value)}
           />
         </label>
         <p id="ai-question-hint" className={isInvalid('question') ? styles.fieldError : styles.hint}>
           {isInvalid('question') ? AI_TEXT.questionInvalid : AI_TEXT.questionHint}
+        </p>
+        <p id="ai-question-sensitive" className={styles.hint}>
+          {AI_TEXT.questionSensitiveReminder}
         </p>
         <label className={styles.field}>
           {AI_TEXT.toolLabel}
