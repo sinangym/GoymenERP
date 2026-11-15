@@ -205,3 +205,56 @@ table yet (consumers satis, alis_cari, finans are a follow-up).
 Migration `20261115132003_AddCounterpartyOutbox` (generated with `dotnet ef`): rollback is refused with `51441` while any outbox
 row exists; with an empty table it drops the table. Forward-fix plan otherwise: keep the additive table and correct with
 a new migration.
+
+## F-027 / EK-18 #76-#77 — duplicate party merge (ALC-S12, `SINAN_KARARLARI_2026-10-21.md`)
+
+A duplicate Cari party is merged into a surviving party at group level. Party is global, so the approval reaches every
+company that holds a card of either party.
+
+- `GET /api/v1/counterparties/{partyId}/merge` — the card's code, name and PARTY version (decimal text), the same-VKN/TCKN
+  candidates the active company holds (unmerged, each with its version), `mergedInto` when the card was merged away
+  (`code` only when the active company also holds the survivor) and `viewer.canApproveMerge`.
+- `PUT /api/v1/counterparties/{partyId}/merge` — body `{mergedPartyId, expectedVersion, mergedPartyExpectedVersion, reason}`;
+  204 on success. Needs `counterparty.parties.merge.approve` and `counterparty.parties.read`, company-wide, in EVERY
+  company that holds a card of either party (measured first, re-measured before the single save). A duplicate in a
+  company the actor cannot reach is the same 404 as an unknown one.
+
+`counterparty.parties.merge.approve` is a catalogue registration only (#76): not Critical, no shipped role or seed
+carries it; the group-manager grant is a human gate. One `Idempotency-Key` (204/404/409 replay); both PARTY versions are
+fenced (the survivor through a no-change predicate on its row). Refusals: `version_conflict`, `party_already_merged`,
+`party_merge_target_merged`, `party_merge_tax_identity_mismatch` (two different VKN/TCKN values; open policy, see below).
+
+In one transaction: the duplicate becomes passive and points at the survivor for good (`[Parties].[MergedIntoPartyId]`,
+check `CK_Parties_MergedInto`), one append-only `[counterparty].[PartyMerges]` record (unique per merged party, no update
+or delete), one audit event `counterparty.party.merged.v1` in the approving company and one outbox row per holding company:
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `counterparty.party.merged.v1` (schema 1, `CounterpartyPartyMergedOutboxV1`, aggregate `Counterparty.PartyMerge` = merge id, sequence 1) | `{companyId, mergeId, survivorPartyId, mergedPartyId, mergedPartyVersion, approvalCompanyId}`; the reason stays in the approving company's record and audit | One row for each company holding a card of either party. A refusal or a replay writes nothing. |
+
+Consumers move their own references to the survivor in their own tables. Company accounts, balances and documents are not
+moved by this command. There is no unmerge (#77): a wrong merge is corrected forward with a new card and reversed links,
+keeping the source ids and the audit trail.
+
+Migration `20261115165158_AddCounterpartyPartyMerge`: Up is pure DDL (nullable column, self foreign key,
+filtered index, new table). Rollback is refused with `51453` while any merge record or merged party exists; with no merge
+it drops the table and the column. Forward-fix plan otherwise: keep the additive schema and correct with a new migration.
+
+Open (NEEDS-SINAN): a separate request/maker step before the approval; one group-level authority instead of the grant in
+every holding company; moving the duplicate's accounts/balances; merging two different VKN/TCKN values; notifying all
+group companies instead of the holding ones.
+
+## ALS-D99 / ALS-D100 / ALS-D101 — deactivation warning, group-wide deactivation (ALC-F1, F-SC23; Sinan, 2026-11-15)
+
+| Rule | Behaviour |
+| --- | --- |
+| Warning (ALS-D99) | `GET /api/v1/counterparties/{partyId}/company-account/deactivation-warning` (permission `counterparty.accounts.status.update`, company-wide) → `companyId`, `partyId`, `accountVersion` (decimal text), `isActive`, one line per owner kind in fixed order (`finance-open-balance`, `sales-open-documents`, `purchasing-open-documents`) with `outcome` `clear` / `open` (with `openItemCount`, counts only, never amounts) / `denied` / `unavailable`, and `acknowledgementRequired` (any line not `clear`). |
+| Owner ports | Each line comes from exactly one `ICounterpartyDeactivationExposureSourceV1` the API host registers over the owner's own read contract (Finance party balance, Sales open documents, Purchasing open orders). Counterparty never reads those tables. **No source is registered yet (NEEDS-PORT)**: a missing, duplicated, failing or malformed source reads `unavailable`, which is a warning to acknowledge, never a silent "nothing open". |
+| Command | The existing `PUT …/company-account/active-state` takes `exposureWarningAcknowledged`. On an active → passive change the server re-reads the warning (the client's preview is never trusted); when it is not clear and the flag is missing the answer is 422 `deactivation_warning_acknowledgement_required`, **not stored** (the same key can be retried with the flag) and not audited. The warning never blocks; the 1-1000 character reason stays mandatory. |
+| Audit | The deactivation audit's `AfterJson` adds `DeactivationWarning {Scope, Shown, AcknowledgementRequired, Acknowledged, Items[{Kind, Outcome, OpenItemCount}]}`. |
+| Group (ALS-D100) | `GET …/{partyId}/group-deactivation-preview` and `POST …/{partyId}/group-deactivation` `{targets[{companyId, expectedVersion}], reason, exposureWarningAcknowledged}` → 200 with one outcome per named company (`deactivated`, `already-passive`, `version-conflict` + `currentVersion`, `not-found`, `forbidden`, `warning-acknowledgement-required`, `idempotency-conflict`, `failed`) plus `not-requested` for every reachable company whose account is still active. Each company runs as its own command in its own scope (own expected version, own key derived from the request key and the company, own audit, own `counterparty.party.deactivated.v1` event, own transaction); one company's failure never rolls back another. Companies the actor cannot reach are never disclosed. |
+| Group permission | `counterparty.parties.group-deactivate`: separate from the per-company name, company-wide only, not Critical, checked in the origin company and again in every target company. **Registered, not granted**: giving it to the personas the decision names is a human gate. Until then every group call is 403. |
+| Tolerance close (ALS-D101) | Not implemented here: the tolerance belongs to Purchasing (API-95 provider) and its value is an OPEN-004 policy; the line close keeps its mandatory reason until that provider exists. |
+
+No migration: the command reuses the existing account, command-execution, audit and outbox tables. The group screen is
+a follow-up (it needs a new shell capability); the frontend carries its decoders and transport (`src/cari/deactivationWarning*.ts`).

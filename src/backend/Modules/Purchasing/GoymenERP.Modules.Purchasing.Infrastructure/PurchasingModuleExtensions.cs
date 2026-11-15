@@ -54,6 +54,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchasingOrderReadServiceV1, PurchasingOrderReadServiceV1>();
         services.AddScoped<IPurchaseGoodsReceiptServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseGoodsReceiptQuantityComparisonServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        // ALC-S16 (F-027): the bulk goods receipt (KLN-D41/D43/D45).
+        services.AddScoped<IPurchaseGoodsReceiptBatchStore, PurchaseGoodsReceiptBatchStore>();
+        services.AddScoped<IPurchaseGoodsReceiptBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseAcceptanceSourceV1, PurchaseAcceptanceSource>();
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
@@ -64,6 +67,8 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // BS-1 (F-011): the invoiced exchange rate of one goods receipt line, read by Inventory's average cost (Unavailable until invoiced).
         services.AddScoped<IPurchaseInvoiceCostRateReadPortV1, PurchaseInvoiceCostRateReadPort>();
+        // SAT-D295 (BS-1): the recorded price of one purchase order line, read by Inventory's average cost (the rate is the invoice's).
+        services.AddScoped<IPurchaseOrderLineCostReadPortV1, PurchaseOrderLineCostReadPort>();
         return services;
     }
 
@@ -87,7 +92,13 @@ public static class PurchasingModuleExtensions
         // A2a-2 (API-20, ALS-D74): the existing Settings line tax port for the item type's default VAT (no new Settings port).
         serviceProvider.GetService<ISettingsLineTaxResolverV1>(),
         // A4b (SAT-D220): Sales's approved line read, adapted by the host (not registered: Sales-sourced new lines stay closed).
-        serviceProvider.GetService<IPurchaseRequestSalesSourcePortV1>());
+        serviceProvider.GetService<IPurchaseRequestSalesSourcePortV1>(),
+        // ALC-S16 (F-027): the bulk receipt's store and host transaction; the Ayarlar policy and Inventory's label register are optional
+        // (unwired: no tolerance = every kg difference waits for approval, no generated code and no suffix suggestion — KLN-D41/D45).
+        serviceProvider.GetRequiredService<IPurchaseGoodsReceiptBatchStore>(),
+        serviceProvider.GetService<IPurchaseGoodsReceiptBatchTransactionV1>(),
+        serviceProvider.GetService<IPurchaseGoodsReceiptPolicyReadPortV1>(),
+        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

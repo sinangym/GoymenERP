@@ -202,7 +202,11 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(10, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(11, PurchasingPermissionManifestV1.Names.Count);
+        // ALC-S16 (KLN-D45): the variance approval name measures the bulk receipt approval and rejection only; no shell control yet.
+        Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration =>
+            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance));
         // API-11 (ALS-D10/D12): the close name measures the line closure and reopening commands only; no shell control yet (frontend lane).
         Assert.Contains("purchasing.orders.close", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersClose));
@@ -250,14 +254,15 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_A3_API_30_and_API_11_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_A3_API_30_API_11_and_ALC_S16_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
-        Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
+        Assert.Equal(["20261102161658_AddPurchaseRequestWithdrawal",
                 "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
                 "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale",
                 "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
-                "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure"],
+                "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure",
+                "20261115184944_AddPurchaseGoodsReceiptBatches"],
             context.Database.GetMigrations().TakeLast(10));
         Assert.False(context.Database.HasPendingModelChanges());
 
@@ -510,6 +515,53 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(),
             check => check.Name == "CK_PurchaseOrderLines_Shares"
                 && check.Sql == "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]");
+    }
+
+    [Fact]
+    public void The_ALC_S16_batches_their_labels_and_attempts_are_tenant_tables_with_their_checks_and_a_Down_that_refuses_while_one_is_used()
+    {
+        using PurchasingDbContext context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        // ALC-S16 (KLN-D41/KLN-D43/KLN-D45): one unreleased label code per company, the supplier number in its own searchable
+        // column, a pending batch carries no decision and an outside-tolerance or tolerance-not-set batch posts only with a decider
+        // other than the preparer (binary).
+        var batches = model.FindEntityType(typeof(PurchaseGoodsReceiptBatchRow))!;
+        var batchChecks = batches.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal("[Status] IN (1, 2, 3)", batchChecks["CK_PurchaseGoodsReceiptBatches_Status"]);
+        Assert.Contains("[DecidedBy] COLLATE Latin1_General_100_BIN2 <> [PreparedBy] COLLATE Latin1_General_100_BIN2",
+            batchChecks["CK_PurchaseGoodsReceiptBatches_Decision"], StringComparison.Ordinal);
+        Assert.Contains("[Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL",
+            batchChecks["CK_PurchaseGoodsReceiptBatches_Decision"], StringComparison.Ordinal);
+        Assert.Contains("[Status] <> 2 OR [VarianceOutcome] IN (1, 2) OR [DecidedBy] IS NOT NULL",
+            batchChecks["CK_PurchaseGoodsReceiptBatches_Variance"], StringComparison.Ordinal);
+        Assert.Contains("[VarianceOutcome] = 4 AND [TolerancePercent] IS NULL", batchChecks["CK_PurchaseGoodsReceiptBatches_Variance"],
+            StringComparison.Ordinal);
+        Assert.Contains("[VarianceOutcome] <> 2 OR [VarianceAcknowledged] = 1", batchChecks["CK_PurchaseGoodsReceiptBatches_Variance"],
+            StringComparison.Ordinal);
+        Assert.All(batches.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        var labels = model.FindEntityType(typeof(PurchaseGoodsReceiptBatchLabelRow))!;
+        var held = Assert.Single(labels.GetIndexes(), index => index.GetDatabaseName() == "UX_PurchaseGoodsReceiptBatchLabels_LabelCode");
+        Assert.True(held.IsUnique);
+        Assert.Equal("[Released] = 0", held.GetFilter());
+        Assert.Equal([nameof(PurchaseGoodsReceiptBatchLabelRow.CompanyId), nameof(PurchaseGoodsReceiptBatchLabelRow.LabelCode)],
+            held.Properties.Select(property => property.Name));
+        var supplier = Assert.Single(labels.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseGoodsReceiptBatchLabels_SupplierLabelNumber");
+        Assert.Equal([nameof(PurchaseGoodsReceiptBatchLabelRow.CompanyId), nameof(PurchaseGoodsReceiptBatchLabelRow.SupplierLabelNumber)],
+            supplier.Properties.Select(property => property.Name));
+        Assert.Contains(labels.GetCheckConstraints(), check => check.Name == "CK_PurchaseGoodsReceiptBatchLabels_Code"
+            && check.Sql.Contains("[SupplierLabelNumber] COLLATE Latin1_General_100_BIN2 = [LabelCode] COLLATE Latin1_General_100_BIN2",
+                StringComparison.Ordinal));
+        Assert.All(labels.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+
+        // Up creates the three tables and runs no SQL; Down refuses (51616) before any drop while a batch or an attempt exists.
+        var batchMigration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseGoodsReceiptBatches();
+        Assert.Empty(batchMigration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(3, batchMigration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>().Count());
+        var batchGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(batchMigration.DownOperations[0]);
+        Assert.Contains("THROW 51616", batchGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseGoodsReceiptBatches]", batchGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseGoodsReceiptBatchAttempts]", batchGuard.Sql, StringComparison.Ordinal);
+        Assert.Single(batchMigration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]

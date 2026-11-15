@@ -135,6 +135,13 @@ export function AccountStatusControl({
           onConfirmClose={flow.confirmClose}
           notice={<AccountStatusRecoveryNotice flow={flow} unresolvedRef={unresolvedRef} />}
           summaryRef={summaryRef}
+          warning={flow.warning}
+          acknowledged={flow.acknowledged}
+          onAcknowledgedChange={flow.setAcknowledged}
+          acknowledgementMissing={flow.acknowledgementMissing}
+          warningChanged={flow.warningChanged}
+          warningSatisfied={flow.warningSatisfied}
+          onRetryWarning={flow.retryWarning}
         />
       ) : null}
     </div>

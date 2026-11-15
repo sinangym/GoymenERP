@@ -40,11 +40,15 @@ export const CARI_CONTROL_CAPABILITY = {
   accountStatusUpdate: 'cari.accounts.status.update',
 } as const
 
-/** The three DTO properties, spelled once. */
+/**
+ * The DTO properties, spelled once. `exposureWarningAcknowledged` (ALS-D99) is optional on the wire and is sent ONLY
+ * when the deactivation warning required it and the actor ticked it; otherwise the body keeps its three properties.
+ */
 export const ACCOUNT_STATUS_FIELD = {
   isActive: 'isActive',
   expectedVersion: 'expectedVersion',
   reason: 'reason',
+  exposureWarningAcknowledged: 'exposureWarningAcknowledged',
 } as const
 
 /**
@@ -102,10 +106,12 @@ export function reasonProblem(raw: string): ReasonProblem | null {
   return null
 }
 
-/** The two business fields of the body. The fence is added by the transport. */
+/** The business fields of the body. The fence is added by the transport. */
 export interface AccountStatusPayload {
   readonly isActive: boolean
   readonly reason: string
+  /** ALS-D99: present (and true) only on a deactivation whose warning required acknowledgement. */
+  readonly exposureWarningAcknowledged?: true
 }
 
 /**
@@ -117,7 +123,15 @@ export interface AccountStatusPayload {
 export function buildAccountStatusPayload(
   intent: AccountStatusIntent,
   rawReason: string,
+  /**
+   * ALS-D99: the actor acknowledged a warning that REQUIRED it. Ignored for an activation (the warning belongs to
+   * deactivation only), and never sent as `false`: an absent key is the server's default.
+   */
+  exposureWarningAcknowledged = false,
 ): AccountStatusPayload | null {
   if (reasonProblem(rawReason) !== null) return null
-  return { isActive: targetIsActive(intent), reason: canonicalReason(rawReason) }
+  const base = { isActive: targetIsActive(intent), reason: canonicalReason(rawReason) }
+  return intent === 'deactivate' && exposureWarningAcknowledged
+    ? { ...base, exposureWarningAcknowledged: true }
+    : base
 }

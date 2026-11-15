@@ -316,6 +316,56 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerEDocumentStatusRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("RecordedInCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordedInCompanyId");
+
+                    b.HasIndex("ProfileId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomerEDocumentStatusRevisions_ProfileSequence");
+
+                    b.ToTable("CustomerEDocumentStatusRevisions", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Kind", "[Kind] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Recorded", "[Kind] = 1 OR ([RecordedByUserId] IS NOT NULL AND LEN([RecordedByUserId]) > 0 AND [RecordedInCompanyId] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Sequence", "[Sequence] >= 1");
+
+                            t.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Status", "[Status] IN (0, 1, 2)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerGroup", b =>
                 {
                     b.Property<Guid>("Id")
@@ -363,6 +413,61 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.PartySuccession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("EffectiveOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LegalBasis")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("PredecessorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("SuccessorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PredecessorPartyId");
+
+                    b.HasIndex("SuccessorPartyId");
+
+                    b.HasIndex("CompanyId", "PredecessorPartyId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PartySuccessions_Predecessor");
+
+                    b.HasIndex("CompanyId", "SuccessorPartyId");
+
+                    b.ToTable("PartySuccessions", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartySuccessions_Kind", "[Kind] IN (1, 2, 3)");
+
+                            t.HasCheckConstraint("CK_PartySuccessions_Parties", "[PredecessorPartyId] <> [SuccessorPartyId]");
+
+                            t.HasCheckConstraint("CK_PartySuccessions_Text", "LEN([LegalBasis]) > 0 AND LEN([RecordedByUserId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.Party", b =>
                 {
                     b.Property<Guid>("Id")
@@ -389,6 +494,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
+
+                    b.Property<Guid?>("MergedIntoPartyId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -419,6 +527,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("IsActive");
 
+                    b.HasIndex("MergedIntoPartyId")
+                        .HasFilter("[MergedIntoPartyId] IS NOT NULL");
+
                     b.HasIndex("TaxIdentityNumber")
                         .HasFilter("[TaxIdentityNumber] IS NOT NULL");
 
@@ -428,9 +539,140 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Parties_Kind", "[Kind] IN (N'LegalEntity', N'NaturalPerson')");
 
+                            t.HasCheckConstraint("CK_Parties_MergedInto", "[MergedIntoPartyId] IS NULL OR ([MergedIntoPartyId] <> [Id] AND [IsActive] = 0)");
+
                             t.HasCheckConstraint("CK_Parties_TaxIdentityNumber", "[TaxIdentityNumber] IS NULL OR (LEN([TaxIdentityNumber]) IN (10, 11) AND DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber]) AND [TaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%')");
 
                             t.HasCheckConstraint("CK_Parties_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyIdentityRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attribute")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("RecordedInCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("SourceChangeRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordedInCompanyId");
+
+                    b.HasIndex("SourceChangeRequestId");
+
+                    b.HasIndex("PartyId", "Attribute", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PartyIdentityRevisions_PartySequence");
+
+                    b.ToTable("PartyIdentityRevisions", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Attribute", "[Attribute] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Correction", "([Kind] = 3 AND [Attribute] = 1 AND [SourceChangeRequestId] IS NOT NULL AND [Reason] IS NOT NULL AND LEN([Reason]) > 0) OR ([Kind] <> 3 AND [SourceChangeRequestId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_EffectiveFrom", "([Kind] IN (1, 2) AND [EffectiveFrom] IS NULL) OR ([Kind] IN (3, 4) AND [EffectiveFrom] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Kind", "[Kind] IN (1, 2, 3, 4)");
+
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Recorded", "[Kind] = 1 OR ([RecordedByUserId] IS NOT NULL AND LEN([RecordedByUserId]) > 0 AND [RecordedInCompanyId] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Sequence", "[Sequence] >= 1");
+
+                            t.HasCheckConstraint("CK_PartyIdentityRevisions_Value", "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11) AND DATALENGTH([Value]) = LEN([Value]) AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyMerge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApprovalCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("MergedPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MergedPartyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("SurvivorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("SurvivorPartyVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalCompanyId");
+
+                    b.HasIndex("MergedPartyId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PartyMerges_MergedParty");
+
+                    b.HasIndex("SurvivorPartyId");
+
+                    b.ToTable("PartyMerges", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyMerges_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ApprovalCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SurvivorPartyId] <> [MergedPartyId]");
+
+                            t.HasCheckConstraint("CK_PartyMerges_Text", "LEN([Reason]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PartyMerges_Version", "[SurvivorPartyVersion] >= 1 AND [MergedPartyVersion] >= 1");
                         });
                 });
 
@@ -720,11 +962,98 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerEDocumentStatusRevision", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerEDocumentProfile", null)
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedInCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_CustomerEDocumentStatusRevisions_Companies_RecordedInCompanyId");
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerGroup", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.PartySuccession", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("PredecessorPartyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_PartySuccessions_Parties_PredecessorPartyId");
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("SuccessorPartyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_PartySuccessions_Parties_SuccessorPartyId");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyIdentityRevision", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("PartyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedInCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_PartyIdentityRevisions_Companies_RecordedInCompanyId");
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.PartyTaxIdentityChangeRequest", null)
+                        .WithMany()
+                        .HasForeignKey("SourceChangeRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.Party", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("MergedIntoPartyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.PartyMerge", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovalCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("MergedPartyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
+                        .WithMany()
+                        .HasForeignKey("SurvivorPartyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

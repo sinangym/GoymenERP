@@ -684,7 +684,8 @@ public sealed record PurchasingServiceBindings(
     string? OrderCancelPermission = PurchasingPermissionManifestV1.OrdersCancel,
     string? PriceReadPermission = PurchasingPermissionManifestV1.OrdersPriceRead,
     string? RevisePermission = PurchasingPermissionManifestV1.OrdersRevise,
-    string? OrderClosePermission = PurchasingPermissionManifestV1.OrdersClose);
+    string? OrderClosePermission = PurchasingPermissionManifestV1.OrdersClose,
+    string? GoodsReceiptVarianceApprovePermission = PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);

@@ -95,7 +95,8 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
                 new SetCompanyPartyAccountActiveState(
                     false,
                     baseline.AccountVersion,
-                    "Geçersiz idempotency header sınır doğrulaması"),
+                    "Geçersiz idempotency header sınır doğrulaması",
+                    ExposureWarningAcknowledged: true),
                 $"cari-header-status-{caseName}-{Guid.NewGuid():N}",
                 idempotencyHeaderValues);
             await AssertProblemCodeAsync(

@@ -47,6 +47,13 @@ public sealed class Party
 
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// F-027 / EK-18 #76: the surviving party this duplicate was merged into, or null while it was never merged. Set once
+    /// and never cleared: there is no unmerge (#77); a wrong merge is corrected by opening a new card and reversing the
+    /// moved links with a reason chain, never by editing or deleting this value.
+    /// </summary>
+    public Guid? MergedIntoPartyId { get; private set; }
+
     public long Version { get; private set; } = 1;
 
     public byte[] RowVersion { get; private set; } = [];
@@ -145,6 +152,35 @@ public sealed class Party
     /// </summary>
     public static string NormalizeLegalName(string? legalName) =>
         RequireText(legalName!, nameof(legalName), LegalNameMaximumLength);
+
+    /// <summary>
+    /// F-027 / EK-18 #76: this duplicate is merged into <paramref name="survivor"/>. The duplicate becomes passive at
+    /// group level and points at the survivor for good (no unmerge, #77). A party is never merged into itself, a party
+    /// already merged is never merged again, and a party already merged away is never a survivor. Nothing else changes
+    /// here: the duplicate keeps its code, names and tax identity as history.
+    /// </summary>
+    internal void MergeInto(Party survivor, DateTimeOffset utcNow)
+    {
+        ArgumentNullException.ThrowIfNull(survivor);
+        if (survivor.Id == Id)
+        {
+            throw new InvalidOperationException("Cari kendisiyle birleştirilemez.");
+        }
+
+        if (MergedIntoPartyId is not null)
+        {
+            throw new InvalidOperationException("Bu cari daha önce başka bir cariyle birleştirilmiş.");
+        }
+
+        if (survivor.MergedIntoPartyId is not null)
+        {
+            throw new InvalidOperationException("Başka bir cariyle birleştirilmiş cari birleştirme hedefi olamaz.");
+        }
+
+        MergedIntoPartyId = survivor.Id;
+        IsActive = false;
+        Touch(utcNow);
+    }
 
     internal void Touch(DateTimeOffset utcNow)
     {

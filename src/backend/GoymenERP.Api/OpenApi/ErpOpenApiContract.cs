@@ -167,6 +167,30 @@ public static partial class ErpOpenApiContract
                         "reason",
                         minimumLength: 1,
                         maximumLength: 1000);
+                    // ALS-D99: optional, false when omitted (older clients keep their body shape).
+                    schema.Required?.Remove("exposureWarningAcknowledged");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(GroupDeactivateCounterparty))
+                {
+                    // ALS-D100: the group command carries the same reason contract; the acknowledgement is optional.
+                    AddCanonicalLengthContract(
+                        schema,
+                        "reason",
+                        minimumLength: 1,
+                        maximumLength: 1000);
+                    schema.Required?.Remove("exposureWarningAcknowledged");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CounterpartyGroupDeactivationTarget))
+                {
+                    SetPositiveInteger(schema, "expectedVersion");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CounterpartyDeactivationExposureView))
+                {
+                    // ALS-D99: the account version is a lossless decimal string like every Cari view version.
+                    SetPositiveIntegerStringProperty(schema, "accountVersion");
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(SetLocationActiveState)

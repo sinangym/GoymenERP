@@ -206,7 +206,7 @@ function readOriginalCorrelationId(headers: Headers): string | null {
   return value !== null && value.trim().length > 0 ? value.trim() : null
 }
 
-async function postCommand<T>(
+export async function postCommand<T>(
   path: string,
   context: CommandContext,
   body: unknown,
@@ -214,6 +214,11 @@ async function postCommand<T>(
   /** The endpoint's own stored-failure table; see `ReplayableFailures`. */
   replayable: ReplayableFailures,
   signal?: AbortSignal,
+  /**
+   * The ONE success status the endpoint declares. Creates answer 201 (the default); a command that reports a
+   * per-target outcome list (ALS-D100 group deactivation) answers 200. Any other 2xx stays a definite `http`.
+   */
+  successStatus: 200 | 201 = 201,
 ): Promise<CommandOutcome<T>> {
   /**
    * THE WRITE GATE. Nothing leaves the client until compatibility has been proven in
@@ -258,9 +263,9 @@ async function postCommand<T>(
     parsed = null
   }
 
-  // Exact 201 only. Everything else is reported with its stable code (or null when
-  // the body carried none — `x-erp-empty-body-possible` on 400).
-  if (response.status !== 201) {
+  // Exact success status only (201 unless the endpoint declares 200). Everything else is reported with its stable
+  // code (or null when the body carried none — `x-erp-empty-body-possible` on 400).
+  if (response.status !== successStatus) {
     return {
       type: 'http',
       status: response.status,
@@ -434,7 +439,11 @@ export function setCompanyAccountActiveState(
     accountStatusPath(partyId),
     context,
     expectedVersion,
-    { isActive: payload.isActive, reason: payload.reason },
+    // ALS-D99: the acknowledgement travels only when the warning required it and the actor ticked it, so every
+    // body that needed no acknowledgement is byte-for-byte the body it was before.
+    payload.exposureWarningAcknowledged === true
+      ? { isActive: payload.isActive, reason: payload.reason, exposureWarningAcknowledged: true }
+      : { isActive: payload.isActive, reason: payload.reason },
     signal,
     // `SetCounterpartyCompanyAccountActiveStateV1` stores 204 / 404 / 409 (version_conflict).
     VERSIONED_UPDATE_REPLAYABLE_FAILURES,

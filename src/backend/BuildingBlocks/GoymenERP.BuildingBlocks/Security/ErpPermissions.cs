@@ -94,6 +94,34 @@ public static class ErpPermissions
     public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
 
     /// <summary>
+    /// F-027 / EK-18 #76 (SINAN_KARARLARI_2026-10-21): approve the merge of a duplicate Cari party into a surviving party
+    /// at group level — the Counterparty owner's name (CounterpartyPartyMergePermissionsV1). Catalogue registration only:
+    /// no role, seed or user receives it here (the group-manager persona grant is a human gate). Company-wide only, and
+    /// the merge command measures it in every company that holds an account for either party. Not Critical (#76).
+    /// </summary>
+    public const string CounterpartyPartiesMergeApprove = "counterparty.parties.merge.approve";
+
+    /// <summary>
+    /// KLN-D38 (Sinan, 2026-11-14) rule 2: record that a new legal person succeeds a cari in the active company (the old
+    /// company account becomes passive and is linked predecessor → successor). The Counterparty owner's name
+    /// (CounterpartyPartySuccessionPermissionsV1). Registered, not granted: no role, seed or user receives it here; who
+    /// holds it is a human gate. Company-wide only, as every Counterparty name. Not Critical (no decision makes it so).
+    /// It moves no balance: the devir fişi is a separate approved Finance voucher.
+    /// </summary>
+    public const string CounterpartyPartiesSuccessionRecord = "counterparty.parties.succession.record";
+
+    /// <summary>
+    /// ALS-D100 (Sinan, 2026-11-15): deactivate one Cari card's account in every Göymen company in a single group-wide
+    /// command — the Counterparty owner's name (CounterpartyGroupDeactivationPermissionsV1). Separate from
+    /// counterparty.accounts.status.update, which keeps the per-company deactivation; the decision limits the group
+    /// command to the Genel Müdür and Admin personas and keeps it from the Muhasebe Müdürü, so the existing per-company
+    /// grants are not widened. Registered, not granted: no role, seed or user receives it here (human gate). Company-wide
+    /// only, as every Counterparty name; it is checked in the origin company and again in every target company. Not
+    /// Critical: no source makes it a grant-time dual-control duty.
+    /// </summary>
+    public const string CounterpartyPartiesGroupDeactivate = "counterparty.parties.group-deactivate";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -1063,6 +1091,14 @@ public static class ErpPermissions
     public const string PurchasingOrdersClose = "purchasing.orders.close";
 
     /// <summary>
+    /// ALC-S16 (F-027, KLN-D45): approve or reject a bulk goods receipt whose total kg differs from the order line outside the Ayarlar
+    /// tolerance (or with no tolerance set). The Purchasing owner's name (PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance),
+    /// apart from recording a receipt; neither confers the other, and the batch's preparer never decides it (hazırlayan ≠ onaylayan).
+    /// Registered, not granted: no role, seed or user receives it here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1338,6 +1374,9 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesMergeApprove,
+            CounterpartyPartiesSuccessionRecord,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1433,6 +1472,7 @@ public static class ErpPermissions
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
+            PurchasingGoodsReceiptsApproveVariance,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1567,6 +1607,9 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesMergeApprove,
+            CounterpartyPartiesSuccessionRecord,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1662,6 +1705,7 @@ public static class ErpPermissions
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
+            PurchasingGoodsReceiptsApproveVariance,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

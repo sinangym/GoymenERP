@@ -47,6 +47,11 @@ export type AttemptFailure =
   | 'already-linked'
   | 'idempotency-conflict'
   /**
+   * ALS-D99 (422): the deactivation warning needed acknowledgement and the request lacked it. Nothing changed; the
+   * screen re-reads the warning and asks for the acknowledgement.
+   */
+  | 'warning-acknowledgement-required'
+  /**
    * The record moved between the read the editor was opened on and the update, so
    * the server applied nothing. Definite — and NOT retryable under the same key
    * either: the kept snapshot carries the `expectedVersion` that is now stale, so a
@@ -225,6 +230,11 @@ function classifyHttp<R>(status: number, code: string | null): CommandResolution
        * telling them someone else changed the record while they were editing it.
        */
       if (code === PROBLEM_CODE.versionConflict) return { kind: 'failed', failure: 'version-conflict' }
+      return { kind: 'failed', failure: 'unexpected' }
+    case 422:
+      if (code === PROBLEM_CODE.deactivationWarningAcknowledgementRequired) {
+        return { kind: 'failed', failure: 'warning-acknowledgement-required' }
+      }
       return { kind: 'failed', failure: 'unexpected' }
     default:
       // 415 and any other definite rejection: safe technical error, no business effect.
