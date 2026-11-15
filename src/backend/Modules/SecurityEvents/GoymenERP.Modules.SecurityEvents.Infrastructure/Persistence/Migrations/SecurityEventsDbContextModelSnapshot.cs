@@ -128,6 +128,12 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
                     b.Property<int?>("PolicyVersion")
                         .HasColumnType("int");
 
+                    b.Property<int?>("RateLimitPermitLimit")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RateLimitWindowSeconds")
+                        .HasColumnType("int");
+
                     b.Property<string>("ReasonCode")
                         .HasMaxLength(64)
                         .IsUnicode(false)
@@ -187,7 +193,7 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SecurityEvents_AiRiskClass", "[AiRiskClass] IS NULL OR [AiRiskClass] IN ('Read', 'Draft', 'Simulate', 'Write')");
 
-                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read')");
+                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read', 'auth.login.rate_limited')");
 
                             t.HasCheckConstraint("CK_SecurityEvents_LegalHold", "[LegalHold] = 0");
 
@@ -198,6 +204,8 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SecurityEvents_Phase", "[Phase] IN ('Single', 'Started', 'Completed')");
 
                             t.HasCheckConstraint("CK_SecurityEvents_PhaseEventType", "([EventType] = 'ai.tool.called' AND [Phase] IN ('Started', 'Completed')) OR ([EventType] <> 'ai.tool.called' AND [Phase] = 'Single')");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_RateLimitSummary", "([EventType] = 'auth.login.rate_limited' AND [ScopeKind] = 'Platform' AND [ActorType] = 'Anonymous' AND [RateLimitPermitLimit] IS NOT NULL AND [RateLimitPermitLimit] > 0 AND [RateLimitWindowSeconds] IS NOT NULL AND [RateLimitWindowSeconds] > 0 AND [AggregationWindowStartUtc] IS NOT NULL AND [AggregationWindowEndUtc] IS NOT NULL AND [AggregationWindowStartUtc] < [AggregationWindowEndUtc]) OR ([EventType] <> 'auth.login.rate_limited' AND [RateLimitPermitLimit] IS NULL AND [RateLimitWindowSeconds] IS NULL)");
 
                             t.HasCheckConstraint("CK_SecurityEvents_ReasonCode", "[ReasonCode] IS NULL OR [ReasonCode] IN ('permission_missing', 'company_context_mismatch', 'credentials_invalid', 'account_inactive', 'session_invalid', 'policy_refused', 'ai_tool_not_allowed', 'ai_data_class_not_allowed', 'ai_approval_missing', 'ai_provider_failed', 'operation_failed')");
 

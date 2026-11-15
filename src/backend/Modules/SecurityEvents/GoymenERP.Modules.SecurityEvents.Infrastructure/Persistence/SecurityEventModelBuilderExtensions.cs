@@ -16,6 +16,14 @@ public static class SecurityEventModelBuilderExtensions
     public const string TableName = "SecurityEvents";
     public const string AppendOnlyTriggerName = "TR_SecurityEvents_RejectUpdateDelete";
 
+    /// <summary>
+    /// <c>auth.login.rate_limited</c> rows carry the limiter settings, a summary window and a refused count; every other
+    /// row carries no limiter column (KIM-D29). Together with CK_SecurityEvents_ScopeCompany and CK_SecurityEvents_ActorId
+    /// the database also keeps the summary platform-wide and anonymous.
+    /// </summary>
+    public const string RateLimitSummaryCheck =
+        $"([EventType] = '{SecurityEventTypesV1.LoginRateLimited}' AND [ScopeKind] = '{SecurityEventScopeKindsV1.Platform}' AND [ActorType] = '{SecurityEventActorTypesV1.Anonymous}' AND [RateLimitPermitLimit] IS NOT NULL AND [RateLimitPermitLimit] > 0 AND [RateLimitWindowSeconds] IS NOT NULL AND [RateLimitWindowSeconds] > 0 AND [AggregationWindowStartUtc] IS NOT NULL AND [AggregationWindowEndUtc] IS NOT NULL AND [AggregationWindowStartUtc] < [AggregationWindowEndUtc]) OR ([EventType] <> '{SecurityEventTypesV1.LoginRateLimited}' AND [RateLimitPermitLimit] IS NULL AND [RateLimitWindowSeconds] IS NULL)";
+
     public static ModelBuilder ConfigureSecurityEvent(this ModelBuilder modelBuilder, bool excludeFromMigrations)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -59,6 +67,7 @@ public static class SecurityEventModelBuilderExtensions
                     "CK_SecurityEvents_AiRiskClass", NullOrInList("AiRiskClass", Enum.GetNames<AiToolRiskClassV1>()));
                 table.HasCheckConstraint(
                     "CK_SecurityEvents_AiDataClass", NullOrInList("AiDataClass", Enum.GetNames<AiDataClassV1>()));
+                table.HasCheckConstraint("CK_SecurityEvents_RateLimitSummary", RateLimitSummaryCheck);
             });
 
             entity.HasKey(x => x.Id);
@@ -90,6 +99,8 @@ public static class SecurityEventModelBuilderExtensions
             entity.Property(x => x.OccurrenceCount).IsRequired().HasDefaultValue(1);
             entity.Property(x => x.AggregationWindowStartUtc);
             entity.Property(x => x.AggregationWindowEndUtc);
+            entity.Property(x => x.RateLimitPermitLimit);
+            entity.Property(x => x.RateLimitWindowSeconds);
             entity.Property(x => x.IntegrityHash)
                 .HasMaxLength(SecurityEventRecord.IntegrityHashLength)
                 .IsFixedLength()

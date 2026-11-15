@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.SecurityEvents.Domain.Events;
 
@@ -32,9 +33,15 @@ public sealed record SecurityEventIntegrityEnvelope(
     bool LegalHold,
     int OccurrenceCount,
     DateTimeOffset? AggregationWindowStartUtc,
-    DateTimeOffset? AggregationWindowEndUtc);
+    DateTimeOffset? AggregationWindowEndUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RateLimitPermitLimit = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RateLimitWindowSeconds = null);
 
 /// <summary>Row integrity hash, the same construction as <c>AuditEventIntegrity</c>.</summary>
+/// <remarks>
+/// The rate-limit columns (added with <c>auth.login.rate_limited</c>) are left out of the canonical JSON while null,
+/// so every row written before them keeps the hash it was stored with.
+/// </remarks>
 public static class SecurityEventIntegrity
 {
     public static string Compute(SecurityEventIntegrityEnvelope envelope)

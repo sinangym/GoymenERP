@@ -19,7 +19,8 @@ namespace GoymenERP.Api.Ai;
 /// AI capability, tool allowlist, risk/permission, fresh authority, input schema/size/canonicalization, data class,
 /// owner READ through the owner port, security events. Tool arguments never set the company: the owner tool receives
 /// the server-built <see cref="AiServerContextV1"/>. Every call and every refusal is a security event (Group E):
-/// <c>ai.tool.called</c> Started is fail-closed, Completed and the refusals are fail-open with alarm.
+/// <c>ai.tool.called</c> Started is fail-closed, Completed and the refusals are fail-open with alarm. Every event carries
+/// the published AI policy reference, or <c>default-deny</c> when none is published (ASSUMPTION-AI-POLICYREF-1).
 /// </summary>
 public sealed class AiAskService(
     IOptions<AiRuntimeOptions> options,
@@ -45,7 +46,7 @@ public sealed class AiAskService(
         }
 
         var actorId = ResolveActorId();
-        var state = AiRuntimeStateEvaluator.Evaluate(options.Value, environment, provider);
+        var state = AiRuntimeStateEvaluator.Evaluate(options, environment, provider);
         if (!state.IsReady)
         {
             await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
@@ -416,8 +417,10 @@ public sealed class AiAskService(
         Guid? companyId,
         string? actorId,
         string? permissionCode,
-        AiToolDescriptorV1? tool) =>
-        new()
+        AiToolDescriptorV1? tool)
+    {
+        var policy = AiPolicyReferenceV1.Resolve(AiRuntimeOptionsReader.TryRead(options, out var value) ? value : null);
+        return new SecurityEventV1
         {
             EventId = Guid.NewGuid(),
             OccurredAtUtc = timeProvider.GetUtcNow().ToUniversalTime(),
@@ -431,6 +434,8 @@ public sealed class AiAskService(
             ReasonCode = reasonCode,
             Severity = severity,
             PermissionCode = permissionCode,
+            PolicyId = policy.PolicyId,
+            PolicyVersion = policy.PolicyVersion,
             CorrelationId = correlationContext.CorrelationId,
             CausationId = correlationContext.CausationId,
             SourceChannel = SourceChannels.AiAssisted,
@@ -439,6 +444,7 @@ public sealed class AiAskService(
             AiRiskClass = tool?.Risk,
             AiDataClass = tool?.DataClass,
         };
+    }
 
     private sealed record ToolRun(AiToolResultV1? Result, AiToolDescriptorV1? Tool, AiAskResultV1? Failure)
     {

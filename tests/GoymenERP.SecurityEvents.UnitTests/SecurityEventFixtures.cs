@@ -65,6 +65,25 @@ internal static class SecurityEventFixtures
         AiDataClass = AiDataClassV1.Internal,
     };
 
+    /// <summary>A pre-counted login rate-limit summary: platform scope, anonymous actor, policy reference, no PII.</summary>
+    public static SecurityEventV1 RateLimited() => new()
+    {
+        EventId = Guid.NewGuid(),
+        OccurredAtUtc = OccurredAt,
+        ScopeKind = SecurityEventScopeKindsV1.Platform,
+        ActorType = SecurityEventActorTypesV1.Anonymous,
+        EventType = SecurityEventTypesV1.LoginRateLimited,
+        Outcome = SecurityEventOutcomesV1.Denied,
+        ReasonCode = SecurityEventReasonCodesV1.PolicyRefused,
+        Severity = SecurityEventSeveritiesV1.Warning,
+        PolicyId = "auth.login.rate-limit",
+        PolicyVersion = "1",
+        CorrelationId = "corr-4",
+        SourceChannel = SourceChannels.Web,
+        RateLimitSummary = new SecurityEventRateLimitSummaryV1(
+            OccurredAt.AddMinutes(-1), OccurredAt, RejectedAttemptCount: 7, PermitLimit: 10, Window: TimeSpan.FromMinutes(1)),
+    };
+
     public static Dictionary<string, SecurityEventRetentionClassOptions> RetentionClasses() => new(StringComparer.Ordinal)
     {
         [SecurityEventRetentionClassesV1.No134] = new() { Years = 2, PolicyRef = "TEST-No134" },

@@ -687,7 +687,8 @@ public sealed partial class DocumentService(
     private async Task<DocumentContentV1> ReadContentAsync(StoredDocument document, DocumentOwnerLink readableOwner, Scope scope,
         string permission, CancellationToken cancellationToken)
     {
-        if (document.ScanState != DocumentScanState.Clean)
+        // KLN-D60: a system-generated PDF is served like a clean one; NotScanned stays refused (DEC-DOC-009).
+        if (!DocumentScanStates.IsServable(document.ScanState))
         {
             throw new DocumentServiceException(409, DocumentProblemCodesV1.NotScanned, [new("document", DocumentProblemCodesV1.NotScanned)]);
         }
@@ -797,7 +798,7 @@ public sealed partial class DocumentService(
         var ownerId = shownOwner?.OwnerId ?? document.OwnerId;
         return new DocumentView(document.Id, document.CompanyId, ownerKind, ownerId, document.VersionNo, document.FileName,
             DocumentContentPolicy.Info(document.Kind).ContentType, document.SizeBytes, document.Sha256, document.ScanState.ToString(),
-            document.ScanState == DocumentScanState.Clean, document.UploadedBy, document.UploadedAtUtc);
+            DocumentScanStates.IsServable(document.ScanState), document.UploadedBy, document.UploadedAtUtc);
     }
 
     /// <summary>The bounds of an upload to a record of <paramref name="ownerKind"/>: only the kinds that record accepts.</summary>

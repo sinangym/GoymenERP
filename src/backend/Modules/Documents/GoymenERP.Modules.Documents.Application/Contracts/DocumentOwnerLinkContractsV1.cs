@@ -69,6 +69,15 @@ public interface IDocumentOwnerLinkPortV1
     bool AcceptsGeneratedDocuments => false;
 
     /// <summary>
+    /// KLN-D59: the permissions of the owner module's producing commands that may store a generated PDF on a record of
+    /// this kind. The generated-document port checks the producing command's own permission (fresh, for the context
+    /// actor) instead of <c>documents.files.upload</c>, and only a permission declared here: a caller that names any
+    /// other permission is refused before anything is read. Empty by default (fail-closed); the owner module declares
+    /// its own commands' permissions, the vault never chooses them and no new permission is opened.
+    /// </summary>
+    IReadOnlyCollection<string> GeneratedDocumentProducerPermissions => [];
+
+    /// <summary>
     /// B-26 / FNS-D52: the content kinds a record of this kind may hold. Every existing owner keeps
     /// <see cref="DocumentContentPolicy.StandardKinds"/>; the owner of a bank-statement import (FIN-S21) opts in to
     /// <see cref="DocumentContentPolicy.BankStatementImportKinds"/> by overriding this. An upload, a new version and a

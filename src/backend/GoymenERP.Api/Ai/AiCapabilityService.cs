@@ -21,7 +21,7 @@ public sealed class AiCapabilityService(
 {
     public async Task<AiCapabilitiesV1> GetAsync(CancellationToken cancellationToken = default)
     {
-        var state = AiRuntimeStateEvaluator.Evaluate(options.Value, environment, provider);
+        var state = AiRuntimeStateEvaluator.Evaluate(options, environment, provider);
         if (!state.IsReady)
         {
             return new AiCapabilitiesV1(

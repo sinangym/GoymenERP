@@ -58,7 +58,8 @@ export const DOCUMENT_PROBLEM = {
   linkNotAccepted: 'document_link_not_accepted',
 } as const
 
-export type ScanState = 'Clean' | 'NotScanned'
+// KLN-D60: a server-produced PDF skips the malware scan and is served under the "sistem üretimi" marker.
+export type ScanState = 'Clean' | 'NotScanned' | 'SystemGenerated'
 
 export interface DocumentRow {
   readonly id: string
@@ -189,10 +190,10 @@ export function decodeDocumentRow(value: unknown): DocumentRow | null {
     !isCount(value.sizeBytes, 1) ||
     typeof value.sha256 !== 'string' ||
     !SHA256.test(value.sha256) ||
-    (scanState !== 'Clean' && scanState !== 'NotScanned') ||
+    (scanState !== 'Clean' && scanState !== 'NotScanned' && scanState !== 'SystemGenerated') ||
     typeof value.downloadable !== 'boolean' ||
-    // Only a clean version is ever served; an answer claiming otherwise is not this contract.
-    (value.downloadable && scanState !== 'Clean') ||
+    // Only a clean or system-generated version is ever served; an answer claiming otherwise is not this contract.
+    (value.downloadable && scanState === 'NotScanned') ||
     !isText(value.uploadedBy) ||
     !isInstant(value.uploadedAtUtc)
   ) {

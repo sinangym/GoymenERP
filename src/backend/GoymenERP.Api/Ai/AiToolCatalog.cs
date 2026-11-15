@@ -17,7 +17,9 @@ public sealed class AiToolCatalog
     {
         ArgumentNullException.ThrowIfNull(ownerTools);
         ArgumentNullException.ThrowIfNull(options);
-        var allowlist = (options.Value.AllowedTools ?? [])
+        // An unreadable section admits no tool (default-deny); the runtime state reports it as misconfigured.
+        var configured = AiRuntimeOptionsReader.TryRead(options, out var value) ? value!.AllowedTools : null;
+        var allowlist = (configured ?? [])
             .Where(entry => !string.IsNullOrWhiteSpace(entry?.ToolId) && !string.IsNullOrWhiteSpace(entry?.Version))
             .Select(entry => (entry.ToolId!, entry.Version!))
             .ToHashSet();

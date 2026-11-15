@@ -7,6 +7,8 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -16,7 +18,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// AI-3 READ runtime over synthetic owners (no database, no network). Pins the ERP-000J §8 order and the Group E
 /// security events: disabled leaves the ERP alone, no company context never reaches the provider, an undefined tool
-/// is refused, tool arguments never carry the company, Started is fail-closed and every refusal is an event.
+/// is refused, tool arguments never carry the company, Started is fail-closed and every refusal is an event. AI-D9
+/// pins the shipped starting limits and their fail-closed reading; ASSUMPTION-AI-POLICYREF-1 pins the policy reference
+/// every Group E event carries.
 /// </summary>
 public sealed class AiAskServiceTests
 {
@@ -406,6 +410,260 @@ public sealed class AiAskServiceTests
         Assert.Equal(0, harness.Provider.Calls);
     }
 
+    [Fact]
+    public void The_shipped_configuration_carries_the_ai_d9_starting_limits_and_keeps_the_runtime_off()
+    {
+        var path = Path.Combine(FindRepositoryRoot(), "src", "backend", "GoymenERP.Api", "appsettings.json");
+        var shipped = new ConfigurationBuilder().AddJsonFile(path, optional: false, reloadOnChange: false).Build()
+            .GetSection(AiRuntimeOptions.SectionName).Get<AiRuntimeOptions>();
+
+        Assert.NotNull(shipped);
+        Assert.False(shipped.Enabled);
+        Assert.Equal(2000, shipped.MaxQuestionLength);
+        Assert.Equal(5, shipped.MaxToolCallsPerRequest);
+        Assert.Equal(16384, shipped.MaxArgumentBytes);
+        Assert.Equal(AiDataClassV1.Internal, shipped.MaxDataClass);
+        Assert.Empty(shipped.AllowedTools);
+        // No AI policy is published in the repository: the events say default-deny and nothing runs (AI-D6).
+        Assert.Null(shipped.PolicyRef);
+        Assert.Null(shipped.PolicyVersion);
+        Assert.Equal(AiRuntimeAvailability.Disabled,
+            AiRuntimeStateEvaluator.Evaluate(shipped, new TestHostEnvironment("Development"), new FakeAiModelProvider()).Availability);
+
+        // Turned on in development with a published policy, the shipped limits are the ones the runtime enforces.
+        shipped.Enabled = true;
+        shipped.Provider = AiProviderKindsV1.Fake;
+        var unpublished = AiRuntimeStateEvaluator.Evaluate(shipped, new TestHostEnvironment("Development"), new FakeAiModelProvider());
+        shipped.PolicyRef = "TEST-AI-POLICY";
+        shipped.PolicyVersion = 1;
+        var ready = AiRuntimeStateEvaluator.Evaluate(shipped, new TestHostEnvironment("Development"), new FakeAiModelProvider());
+
+        Assert.Equal(AiRuntimeAvailability.Misconfigured, unpublished.Availability);
+        Assert.True(ready.IsReady);
+        Assert.Equal(new AiRuntimeLimits(2000, 16384, 5, AiDataClassV1.Internal), ready.Limits);
+    }
+
+    [Fact]
+    public async Task A_question_at_the_decided_length_is_asked_and_one_character_more_is_refused()
+    {
+        var harness = new Harness(UseDecidedLimits);
+
+        var atLimit = await harness.Service().AskAsync(Ask(question: new string('S', 2000)));
+        var overLimit = await harness.Service().AskAsync(Ask(question: new string('S', 2001)));
+
+        Assert.Equal(AiAskStatusV1.Answered, atLimit.Status);
+        Assert.Equal(AiAskStatusV1.Invalid, overLimit.Status);
+        Assert.Equal(AiInvalidFieldsV1.Question, Assert.Single(overLimit.InvalidFields));
+        Assert.Equal(1, harness.Provider.Calls);
+        Assert.Equal(SecurityEventReasonCodesV1.PolicyRefused, harness.Writer.Events[^1].ReasonCode);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task Arguments_at_the_decided_byte_budget_run_and_one_byte_more_is_refused()
+    {
+        const string prefix = "{\"itemId\":\"";
+        const string suffix = "\"}";
+        var fill = 16384 - prefix.Length - suffix.Length;
+        var harness = new Harness(UseDecidedLimits);
+
+        var atBudget = await harness.Service().AskAsync(Ask(arguments: prefix + new string('S', fill) + suffix));
+        var overBudget = await harness.Service().AskAsync(Ask(arguments: prefix + new string('S', fill + 1) + suffix));
+
+        Assert.Equal(AiAskStatusV1.Answered, atBudget.Status);
+        Assert.Equal(AiAskStatusV1.Invalid, overBudget.Status);
+        Assert.Equal(AiInvalidFieldsV1.Arguments, Assert.Single(overBudget.InvalidFields));
+        Assert.Single(harness.Tool.Contexts);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Theory]
+    [InlineData(5, AiAskStatusV1.Answered)]
+    [InlineData(6, AiAskStatusV1.Refused)]
+    public async Task A_plan_within_the_decided_tool_call_ceiling_runs_and_one_call_more_runs_nothing(int calls, AiAskStatusV1 expected)
+    {
+        var harness = new Harness(UseDecidedLimits);
+        harness.Provider.Plan = _ => new AiModelPlanV1(
+            [.. Enumerable.Repeat(new AiPlannedToolCallV1(ToolId, ToolVersion, "{\"itemId\":\"SENTETIK-1\"}"), calls)]);
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(expected, result.Status);
+        if (expected == AiAskStatusV1.Answered)
+        {
+            Assert.Equal(calls, result.Response!.ToolResults.Count);
+            Assert.Equal(calls, harness.Tool.Contexts.Count);
+        }
+        else
+        {
+            Assert.Empty(harness.Tool.Contexts);
+            Assert.Equal(SecurityEventReasonCodesV1.PolicyRefused, Assert.Single(harness.Writer.Events).ReasonCode);
+        }
+
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Theory]
+    [InlineData("MaxDataClass", "Gizli")]
+    [InlineData("MaxDataClass", "9")]
+    [InlineData("MaxQuestionLength", "iki bin")]
+    [InlineData("MaxQuestionLength", "0")]
+    [InlineData("MaxToolCallsPerRequest", "-1")]
+    [InlineData("MaxArgumentBytes", "")]
+    [InlineData("PolicyVersion", "birinci")]
+    public void A_configured_value_that_is_missing_or_cannot_be_read_keeps_the_runtime_unavailable_without_throwing(string key, string value)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Ai:Enabled"] = "true",
+            ["Ai:Provider"] = AiProviderKindsV1.Fake,
+            ["Ai:PolicyRef"] = "TEST-AI-POLICY",
+            ["Ai:PolicyVersion"] = "1",
+            ["Ai:MaxQuestionLength"] = "2000",
+            ["Ai:MaxToolCallsPerRequest"] = "5",
+            ["Ai:MaxArgumentBytes"] = "16384",
+            ["Ai:MaxDataClass"] = "Internal",
+            ["Ai:AllowedTools:0:ToolId"] = ToolId,
+            ["Ai:AllowedTools:0:Version"] = ToolVersion,
+        };
+        var valid = BoundOptions(settings);
+        settings[$"Ai:{key}"] = value;
+        var broken = BoundOptions(settings);
+        var tool = new FakeReadTool(Descriptor(ToolId, AiToolRiskClassV1.Read, ["itemId"]));
+
+        var validState = AiRuntimeStateEvaluator.Evaluate(valid, new TestHostEnvironment("Development"), new FakeAiModelProvider());
+        var brokenState = AiRuntimeStateEvaluator.Evaluate(broken, new TestHostEnvironment("Development"), new FakeAiModelProvider());
+
+        Assert.True(validState.IsReady);
+        Assert.Equal(AiRuntimeAvailability.Misconfigured, brokenState.Availability);
+        Assert.Null(brokenState.Limits);
+        Assert.Single(new AiToolCatalog([tool], valid).Descriptors);
+        // An unreadable section admits no tool; a readable one with an invalid value is refused by the state alone.
+        if (!AiRuntimeOptionsReader.TryRead(broken, out _))
+        {
+            Assert.Empty(new AiToolCatalog([tool], broken).Descriptors);
+        }
+    }
+
+    [Fact]
+    public void The_policy_reference_contract_v1_is_pinned()
+    {
+        Assert.Equal("default-deny", AiPolicyReferenceV1.DefaultDenyPolicyId);
+        Assert.Equal(1, AiPolicyReferenceV1.DefaultDenyPolicyVersion);
+        Assert.Equal(new AiPolicyReference("default-deny", 1), AiPolicyReferenceV1.Resolve(null));
+        Assert.Equal(new AiPolicyReference("default-deny", 1), AiPolicyReferenceV1.Resolve(new AiRuntimeOptions()));
+        Assert.Equal(new AiPolicyReference("TEST-AI-POLICY", 3), AiPolicyReferenceV1.Resolve(Harness.ReadyOptions()));
+    }
+
+    [Fact]
+    public async Task Every_ai_event_carries_the_published_policy_version()
+    {
+        var answered = new Harness();
+        var denied = new Harness();
+        denied.Authority.Revoke(ToolPermission);
+
+        await answered.Service().AskAsync(Ask());
+        await denied.Service().AskAsync(Ask());
+
+        Assert.Equal(2, answered.Writer.Events.Count);
+        Assert.Single(denied.Writer.Events);
+        foreach (var securityEvent in answered.Writer.Events.Concat(denied.Writer.Events))
+        {
+            Assert.Equal("TEST-AI-POLICY", securityEvent.PolicyId);
+            Assert.Equal(3, securityEvent.PolicyVersion);
+        }
+
+        answered.AssertEveryEventIsValid();
+        denied.AssertEveryEventIsValid();
+    }
+
+    [Theory]
+    [InlineData(false, "TEST-AI-POLICY", 3, AiAskStatusV1.Disabled)]
+    [InlineData(false, null, null, AiAskStatusV1.Disabled)]
+    [InlineData(true, null, null, AiAskStatusV1.Unavailable)]
+    [InlineData(true, "TEST-AI-POLICY", null, AiAskStatusV1.Unavailable)]
+    [InlineData(true, "TEST-AI-POLICY", 0, AiAskStatusV1.Unavailable)]
+    [InlineData(true, "TEST AI POLICY", 3, AiAskStatusV1.Unavailable)]
+    [InlineData(true, "default-deny", 3, AiAskStatusV1.Unavailable)]
+    public async Task Without_a_published_policy_the_refusal_says_default_deny_and_the_runtime_stays_closed(
+        bool enabled, string? policyRef, int? policyVersion, AiAskStatusV1 expected)
+    {
+        var harness = new Harness(options =>
+        {
+            options.Enabled = enabled;
+            options.PolicyRef = policyRef;
+            options.PolicyVersion = policyVersion;
+        });
+        var published = enabled is false && policyRef is not null;
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(expected, result.Status);
+        Assert.Equal(0, harness.Provider.Calls);
+        var refusal = Assert.Single(harness.Writer.Events);
+        Assert.Equal(SecurityEventTypesV1.AiRequestRefused, refusal.EventType);
+        Assert.Equal(published ? policyRef : AiPolicyReferenceV1.DefaultDenyPolicyId, refusal.PolicyId);
+        Assert.Equal(published ? policyVersion : AiPolicyReferenceV1.DefaultDenyPolicyVersion, refusal.PolicyVersion);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task An_unreadable_configuration_section_refuses_under_default_deny_and_never_throws()
+    {
+        var options = BoundOptions(new Dictionary<string, string?>
+        {
+            ["Ai:Enabled"] = "true",
+            ["Ai:Provider"] = AiProviderKindsV1.Fake,
+            ["Ai:PolicyRef"] = "TEST-AI-POLICY",
+            ["Ai:PolicyVersion"] = "1",
+            ["Ai:MaxDataClass"] = "Gizli",
+        });
+        var harness = new Harness();
+        var correlation = new CorrelationContext();
+        correlation.Set("corr-ai-sentetik", null, SourceChannels.Web, null, null);
+        var companyScope = new CompanyContext();
+        companyScope.Set(Company);
+        var service = new AiAskService(options, new TestHostEnvironment("Development"), harness.Provider,
+            new AiToolCatalog([harness.Tool], options), new TestUser(Actor, Company), companyScope, harness.Authority,
+            new FixedSessionResolver(), correlation, harness.Writer, TimeProvider.System);
+
+        var result = await service.AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Unavailable, result.Status);
+        Assert.Equal(0, harness.Provider.Calls);
+        var refusal = Assert.Single(harness.Writer.Events);
+        Assert.Equal(AiPolicyReferenceV1.DefaultDenyPolicyId, refusal.PolicyId);
+        Assert.Equal(AiPolicyReferenceV1.DefaultDenyPolicyVersion, refusal.PolicyVersion);
+        harness.AssertEveryEventIsValid();
+    }
+
+    private static void UseDecidedLimits(AiRuntimeOptions options)
+    {
+        options.MaxQuestionLength = 2000;
+        options.MaxToolCallsPerRequest = 5;
+        options.MaxArgumentBytes = 16384;
+        options.MaxDataClass = AiDataClassV1.Internal;
+    }
+
+    private static IOptions<AiRuntimeOptions> BoundOptions(IReadOnlyDictionary<string, string?> settings)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var services = new ServiceCollection();
+        services.AddOptions<AiRuntimeOptions>().Bind(configuration.GetSection(AiRuntimeOptions.SectionName));
+        return services.BuildServiceProvider().GetRequiredService<IOptions<AiRuntimeOptions>>();
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AGENTS.md")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+
     private static AiAskRequestV1 Ask(
         string question = "SENTETIK kalem özeti nedir?",
         string? toolId = ToolId,
@@ -444,6 +702,7 @@ public sealed class AiAskServiceTests
             Enabled = true,
             Provider = AiProviderKindsV1.Fake,
             PolicyRef = "TEST-AI-POLICY",
+            PolicyVersion = 3,
             MaxQuestionLength = 200,
             MaxArgumentBytes = 256,
             MaxToolCallsPerRequest = 1,
@@ -489,6 +748,9 @@ public sealed class AiAskServiceTests
 
         public int Calls { get; private set; }
 
+        /// <summary>Replaces the hinted plan, standing in for untrusted model output.</summary>
+        public Func<AiModelRequestV1, AiModelPlanV1>? Plan { get; set; }
+
         public string ProviderKind => inner.ProviderKind;
 
         public Func<Exception>? Failure { get; set; }
@@ -501,7 +763,7 @@ public sealed class AiAskServiceTests
                 throw failure();
             }
 
-            return inner.PlanAsync(request, cancellationToken);
+            return Plan is { } plan ? Task.FromResult(plan(request)) : inner.PlanAsync(request, cancellationToken);
         }
     }
 

@@ -93,6 +93,12 @@ describe('document version contract (#677)', () => {
     expect(decodeDocumentVersionPage(page([], null), { ...bound, pageSize: 2, cursor: null })).toBeNull();
   });
 
+  it('accepts a downloadable system-generated version (KLN-D60)', () => {
+    const answer = { ...page([2], null), versions: [version(2, { scanState: 'SystemGenerated', downloadable: true })] };
+    const decoded = decodeDocumentVersionPage(answer, { ...bound, pageSize: 2, cursor: null });
+    expect(decoded?.versions.map((v) => [v.scanState, v.downloadable])).toEqual([['SystemGenerated', true]]);
+  });
+
   it.each([
     ['a missing nextCursor', { documentId: DOC, versions: [version(2), version(1)] }, null],
     ['another document id', page([2, 1], null, { documentId: OTHER }), null],
@@ -111,6 +117,7 @@ describe('document version contract (#677)', () => {
     ['a row at the asked cursor', page([5, 4], null), '5'],
     ['a row above the asked cursor', page([6, 4], null), '5'],
     ['a downloadable unscanned version', { ...page([2], null), versions: [version(2, { scanState: 'NotScanned' })] }, null],
+    ['an unknown scan state', { ...page([2], null), versions: [version(2, { scanState: 'Infected', downloadable: false })] }, null],
   ] as const)('refuses %s', (_name, answer, cursor) => {
     expect(decodeDocumentVersionPage(answer, { ...bound, pageSize: 2, cursor })).toBeNull();
   });

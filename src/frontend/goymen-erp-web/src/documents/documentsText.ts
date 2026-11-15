@@ -15,6 +15,7 @@ export const DOCUMENTS_TEXT = {
   none: 'Bu kayda bu şirkette henüz belge eklenmedi.',
   scanClean: 'Tarandı',
   scanPending: 'Taranmadı — indirilemez',
+  scanSystemGenerated: 'Sistem üretimi',
   download: (fileName: string) => `${fileName} dosyasını indir`,
   downloadLabel: 'İndir',
   downloading: 'İndiriliyor…',
