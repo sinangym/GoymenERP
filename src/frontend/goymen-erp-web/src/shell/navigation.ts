@@ -150,6 +150,10 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.tax-master.manage',
   /** F-025 / B-11: the Settings exchange rate screen, drawn only where the server granted its read name. */
   'settings.exchange-rates.read',
+  /** F-029 S4b (SAT-D5): the Settings delivery tolerance screen, drawn only where the server granted its one name. */
+  'settings.sales-delivery-tolerances.manage',
+  /** F-029 S4b (SAT-D6): the Settings approval amount threshold screen, drawn only where the server granted its one name. */
+  'settings.sales-approval-thresholds.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -244,6 +248,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   'settings.exchange-rates.read': 'Kurlar',
+  'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
+  'settings.sales-approval-thresholds.manage': 'Onay tutar eşikleri',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -383,6 +389,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
       'settings.tax-master.manage',
+      // F-029 S4b: the sales policy screens follow the other Sales-facing Settings entries (discount limits, tax).
+      'settings.sales-delivery-tolerances.manage',
+      'settings.sales-approval-thresholds.manage',
       'identity.assignments.list',
       // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
       'identity.audit.list',

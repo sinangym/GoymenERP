@@ -819,7 +819,7 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   it('draws each Ayarlar section label (KLN-D2) above the first granted entry of its section, and only then', async () => {
     const listOf = (scope: HTMLElement) =>
       [...groupButton(scope, 'Ayarlar').parentElement!.querySelector('ul')!.children].map((item) => item.textContent)
-    // Tax master is the last Ana Veriler entry: without Organizasyon the label moves down to it.
+    // Tax master sits inside Ana Veriler: without Organizasyon the label moves down to it.
     const taxOnly = await renderShell('/', [CAPABILITY.settingsTaxMaster])
     expect(listOf(taxOnly)).toEqual(['Ana Veriler', CAPABILITY_NAV_LABEL[CAPABILITY.settingsTaxMaster]])
     cleanup()

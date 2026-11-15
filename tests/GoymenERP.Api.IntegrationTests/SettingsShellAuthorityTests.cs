@@ -21,7 +21,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// SAT-D61…D70: the Settings provider (the discount limit screen) joins the full normal host as its last module, with
 /// one capability on the one non-Critical, company-wide limit name; MOD-03 (Settings 1.1) adds the tax master screen on its
 /// own non-Critical, company-wide name; F-025 (Settings 1.2, B-11) adds the exchange rate screen on the read name with three
-/// command controls (correction, half-day mark, import — the import name also carries the re-verification).
+/// command controls (correction, half-day mark, import — the import name also carries the re-verification); F-029 S4b
+/// (Settings 1.3, URN-D2/D3) adds the delivery tolerance and the approval amount threshold screens, each on its own
+/// non-Critical, company-wide name.
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
@@ -71,8 +73,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(6, declarations.Count);
-        Assert.Equal("1.2", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(8, declarations.Count);
+        Assert.Equal("1.3", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -117,6 +119,34 @@ public sealed class SettingsShellAuthorityTests
         foreach (var name in commands.Prepend(SettingsExchangeRatePermissionManifestV1.Read))
         {
             Assert.False(ErpPermissions.IsCritical(name));
+        }
+    }
+
+    [Fact]
+    public void The_sales_policy_screens_stand_each_on_its_one_name_company_wide_in_one_company()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        (string Id, string Path, string ScreenId, string Permission)[] screens =
+        [
+            ("settings.sales-delivery-tolerances.manage", "/ayarlar/teslim-toleransi", "AY-TSL-01",
+                SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage),
+            ("settings.sales-approval-thresholds.manage", "/ayarlar/onay-esikleri", "AY-ONY-01",
+                SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage),
+        ];
+
+        foreach (var expected in screens)
+        {
+            var declaration = Assert.Single(declarations, candidate => candidate.CapabilityId == expected.Id);
+            Assert.Equal((expected.Id, expected.Id, expected.Path, expected.ScreenId),
+                (declaration.CapabilityId, declaration.RouteId, declaration.RoutePath, declaration.ScreenId));
+            Assert.Equal([expected.Permission], declaration.RequiredPermissions);
+            Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+            Assert.Null(declaration.ParentCapabilityId);
+            Assert.True(declaration.ImplementationAvailable);
+            Assert.False(ErpPermissions.IsCritical(expected.Permission));
+            Assert.True(ErpPermissions.CompanyWideOnly.Contains(expected.Permission));
         }
     }
 }

@@ -14,12 +14,16 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 /// <see cref="SettingsExchangeRatePermissionManifestV1.Read"/>, with three controls that each also need their own
 /// write name — the reasoned correction, the half-day mark and the import (which also carries the re-verification).
 /// None of the four names is granted to a role here; the API re-authorizes every request on its own name.
+/// 1.3 (F-029 S4b, SAT-D5/SAT-D6, URN-D2/D3): the delivery tolerance screen (<c>/ayarlar/teslim-toleransi</c>) on
+/// <see cref="SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage"/> and the approval amount threshold screen
+/// (<c>/ayarlar/onay-esikleri</c>) on <see cref="SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage"/>, each
+/// company-wide, in one company, on its one name. Neither name is granted to a role here (a human gate).
 /// </para>
 /// </summary>
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.2";
+    public const string OwnerContractVersion = "1.3";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -43,6 +47,20 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string ExchangeRatesCorrectCapabilityId = SettingsExchangeRatePermissionManifestV1.Correct;
     public const string ExchangeRatesMarkHalfDayCapabilityId = SettingsExchangeRatePermissionManifestV1.MarkHalfDay;
     public const string ExchangeRatesImportCapabilityId = SettingsExchangeRatePermissionManifestV1.Import;
+
+    // F-029 S4b (SAT-D5, provider 1.3): the delivery tolerance timeline (baseline transfer, new versions) on
+    // settings.sales-delivery-tolerances.manage alone, company-wide, in one company; granted to no role here.
+    public const string SalesDeliveryToleranceCapabilityId = SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage;
+    public const string SalesDeliveryToleranceRouteId = SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage;
+    public const string SalesDeliveryToleranceRoutePath = "/ayarlar/teslim-toleransi";
+    public const string SalesDeliveryToleranceScreenId = "AY-TSL-01";
+
+    // F-029 S4b (SAT-D6, provider 1.3): the approval amount thresholds per currency (baseline transfer, new versions) on
+    // settings.sales-approval-thresholds.manage alone, company-wide, in one company; granted to no role here.
+    public const string SalesApprovalThresholdsCapabilityId = SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage;
+    public const string SalesApprovalThresholdsRouteId = SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage;
+    public const string SalesApprovalThresholdsRoutePath = "/ayarlar/onay-esikleri";
+    public const string SalesApprovalThresholdsScreenId = "AY-ONY-01";
 
     public string Owner => OwnerId;
 
@@ -107,6 +125,26 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 RequiredPermissions =
                     [SettingsExchangeRatePermissionManifestV1.Read, SettingsExchangeRatePermissionManifestV1.Import],
             },
+            new ShellCapabilityDeclaration(
+                SalesDeliveryToleranceCapabilityId,
+                SalesDeliveryToleranceRouteId,
+                SalesDeliveryToleranceRoutePath,
+                SalesDeliveryToleranceScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                SalesApprovalThresholdsCapabilityId,
+                SalesApprovalThresholdsRouteId,
+                SalesApprovalThresholdsRoutePath,
+                SalesApprovalThresholdsScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage],
+                ImplementationAvailable: true),
         ];
     }
 }

@@ -276,6 +276,17 @@ export const CAPABILITY = {
    * (`settings/capabilities.ts` `SETTINGS_EXCHANGE_RATE_CONTROL`). Non-Critical, granted to no role here.
    */
   settingsExchangeRates: 'settings.exchange-rates.read',
+  /**
+   * F-029 S4b, SAT-D5 Ayarlar > Teslim toleransı: the delivery tolerance timeline (warn / approval / block percents),
+   * baseline transfer and new versions. Route `/ayarlar/teslim-toleransi`, owner Settings 1.3; one non-Critical name,
+   * granted to no role here.
+   */
+  settingsSalesDeliveryTolerance: 'settings.sales-delivery-tolerances.manage',
+  /**
+   * F-029 S4b, SAT-D6 Ayarlar > Onay tutar eşikleri: the approval amount thresholds per currency, baseline transfer and
+   * new versions. Route `/ayarlar/onay-esikleri`, owner Settings 1.3; one non-Critical name, granted to no role here.
+   */
+  settingsSalesApprovalThresholds: 'settings.sales-approval-thresholds.manage',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -398,6 +409,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
   [CAPABILITY.settingsExchangeRates]: '/ayarlar/kurlar',
+  [CAPABILITY.settingsSalesDeliveryTolerance]: '/ayarlar/teslim-toleransi',
+  [CAPABILITY.settingsSalesApprovalThresholds]: '/ayarlar/onay-esikleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
