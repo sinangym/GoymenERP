@@ -12,6 +12,10 @@
  *    on the client beyond de-duplicating a repeated id across pages.
  *  - Privacy (Decision No 135): client IP and user agent are never rendered; the before / after / approval payloads
  *    are shown only through `maskAuditJson`.
+ *  - Outcome (F-023, F023-5b): the "Sonuç" filter sends the server's `outcome=Succeeded|Refused`; an unknown URL value
+ *    is never sent and shows the invalid-filter state. A refused row is marked with the text "Reddedildi" and its
+ *    decoded refusal (class, problem code, HTTP status, field errors). Authorization refusals are not audit rows: they
+ *    live in the security event channel only (KIM-D10) and are not shown here.
  *  - Paging: the opaque `nextCursor`; a failed next page keeps the rows already shown and offers a retry of the SAME
  *    cursor; a cursor the server refuses (400) restarts the list from the first page with a message.
  */
@@ -34,13 +38,16 @@ import {
   filterKey,
   filtersFromSearch,
   hasActiveFilter,
+  hasInvalidOutcome,
   overLongFilters,
   type AuditFilterKey,
   type AuditFilters,
 } from './capabilities'
 import type { AuditEvent, AuditEventPage } from './contract'
 import { maskAuditJson, maskFreeText } from './mask'
-import { AUDIT_TEXT as T, FILTER_LABEL, formatInstant } from './auditText'
+import { AUDIT_OUTCOMES, OUTCOME_PARAM, isAuditOutcome } from './auditQueryOutcome'
+import { AuditOutcomeCell, AuditRefusalDetails } from './AuditQueryRefusal'
+import { AUDIT_TEXT as T, FILTER_LABEL, OUTCOME_FILTER_LABEL, formatInstant } from './auditText'
 import styles from './audit.module.css'
 
 /** Why a continuation did not extend the list; the rows already shown stay on screen. */
@@ -97,7 +104,10 @@ export function AuditLogPage() {
 
 function FilterForm({ filters }: { readonly filters: AuditFilters }) {
   const navigate = useNavigate()
-  const [values, setValues] = useState<AuditFilters>(filters)
+  // An unknown outcome from the URL is offered as "Tümü": the user can apply a valid choice or clear the filter.
+  const [values, setValues] = useState<AuditFilters>(
+    hasInvalidOutcome(filters) ? { ...filters, outcome: '' } : filters,
+  )
   const [tooLong, setTooLong] = useState<readonly AuditFilterKey[]>([])
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -106,6 +116,7 @@ function FilterForm({ filters }: { readonly filters: AuditFilters }) {
       correlationId: values.correlationId.trim(),
       entityType: values.entityType.trim(),
       entityId: values.entityId.trim(),
+      outcome: values.outcome,
     }
     const refused = overLongFilters(trimmed)
     setTooLong(refused)
@@ -137,6 +148,26 @@ function FilterForm({ filters }: { readonly filters: AuditFilters }) {
             )}
           </Field>
         ))}
+        <Field label={T.filterOutcome} help={T.filterOutcomeHelp}>
+          {(control) => (
+            <select
+              {...control}
+              name={OUTCOME_PARAM}
+              value={values.outcome}
+              onChange={(event) => {
+                const next = event.target.value
+                setValues({ ...values, outcome: isAuditOutcome(next) ? next : '' })
+              }}
+            >
+              <option value="">{T.filterOutcomeAll}</option>
+              {AUDIT_OUTCOMES.map((outcome) => (
+                <option key={outcome} value={outcome}>
+                  {OUTCOME_FILTER_LABEL[outcome]}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
       </div>
       <div className={styles.actions}>
         <Button type="submit" variant="primary">
@@ -162,8 +193,9 @@ function AuditLogView({ companyId, filters }: { readonly companyId: string; read
   // The filters are fixed for this mount: a filter change remounts the view through its key.
   const filtersRef = useRef(filters)
   const filterActive = hasActiveFilter(filters)
-  // A filter the server would refuse for its length is never sent: the view starts in the invalid-filter state.
-  const refusedLocally = overLongFilters(filters).length > 0
+  // A filter the server would refuse (too long, or an outcome it does not know) is never sent: the view starts in the
+  // invalid-filter state.
+  const refusedLocally = overLongFilters(filters).length > 0 || hasInvalidOutcome(filters)
   const [state, setState] = useState<State>(
     refusedLocally ? { type: 'failed', view: { kind: 'invalid-filter' } } : { type: 'loading', cursorReset: false },
   )
@@ -308,6 +340,7 @@ function AuditLogView({ companyId, filters }: { readonly companyId: string; read
               <th scope="col">{T.columns.permission}</th>
               <th scope="col">{T.columns.reason}</th>
               <th scope="col">{T.columns.correlation}</th>
+              <th scope="col">{T.columns.outcome}</th>
             </tr>
           </thead>
           <tbody>
@@ -347,7 +380,11 @@ function version(value: number | null): string {
 function AuditEventRows({ item }: { readonly item: AuditEvent }) {
   return (
     <>
-      <tr className={styles.eventRow} data-audit-id={item.id}>
+      <tr
+        className={item.outcome === 'Refused' ? `${styles.eventRow} ${styles.refusedRow}` : styles.eventRow}
+        data-audit-id={item.id}
+        data-outcome={item.outcome}
+      >
         <td>
           <time dateTime={item.occurredAtUtc}>{formatInstant(item.occurredAtUtc)}</time>
         </td>
@@ -370,9 +407,12 @@ function AuditEventRows({ item }: { readonly item: AuditEvent }) {
         {/* The reason is free text a person typed: the same free-text masking as the payloads applies (No 135). */}
         <td>{item.reason === '' ? T.noValue : maskFreeText(item.reason)}</td>
         <td className={styles.code}>{item.correlationId}</td>
+        <td>
+          <AuditOutcomeCell item={item} />
+        </td>
       </tr>
       <tr>
-        <td colSpan={9}>
+        <td colSpan={10}>
           <AuditDetails item={item} />
         </td>
       </tr>
@@ -388,6 +428,7 @@ function AuditDetails({ item }: { readonly item: AuditEvent }) {
       <summary>{T.details}</summary>
       {open ? (
         <div className={styles.payloads}>
+          {item.refusal === null ? null : <AuditRefusalDetails refusal={item.refusal} />}
           <Payload title={T.before} text={item.beforeJson} />
           <Payload title={T.after} text={item.afterJson} />
           {item.approvalContextJson === null ? (

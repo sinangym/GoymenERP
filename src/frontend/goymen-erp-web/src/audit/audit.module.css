@@ -181,3 +181,60 @@
 .notice p {
   margin: 0;
 }
+
+.filters select {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  min-height: 2.25rem;
+}
+
+.filters select:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 1px;
+}
+
+/* A refused attempt is marked by the text "Reddedildi"; the colour only repeats it. */
+.refusedRow td:first-child {
+  box-shadow: inset 3px 0 0 #b45309;
+}
+
+.refusedLabel {
+  color: #92400e;
+}
+
+.refusal {
+  grid-column: 1 / -1;
+}
+
+.refusal h3,
+.refusal h4 {
+  font-size: 0.85rem;
+  margin: 0 0 4px;
+  color: #334155;
+}
+
+.refusalFacts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0 0 8px;
+}
+
+.refusalFacts dt {
+  color: #475569;
+  font-weight: 600;
+}
+
+.refusalFacts dd {
+  margin: 0;
+}
+
+.fieldErrors {
+  margin: 0;
+  padding-left: 1.25rem;
+}
