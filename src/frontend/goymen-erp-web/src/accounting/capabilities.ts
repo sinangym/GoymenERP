@@ -1,10 +1,10 @@
 /**
  * Accounting screen mount ids and routes — exactly what the backend's
- * `AccountingShellCapabilityProvider` declares (contract 1.3), pinned by a C# test to this file.
+ * `AccountingShellCapabilityProvider` declares (contract 1.4), pinned by a C# test to this file.
  *
  * STATUS: the provider decides, per declaration. Published: the periods, the journal list AND detail (ACC-V1 phase 1),
  * M-06 Mizan, M-01 and the normal-draft routes. Staged: the reversal propose control and the reversal approval
- * route; the shell never publishes a staged declaration, so `CapabilityRoute` closes such a route onto the neutral
+ * route, and the M-05 Hesap Planı route (FIN-S16); the shell never publishes a staged declaration, so `CapabilityRoute` closes such a route onto the neutral
  * not-found block and calls nothing, and a staged control is simply not rendered.
  * The ids are mount keys, not permissions: each route's service measures its own narrow permission.
  *
@@ -36,6 +36,8 @@ export const ACCOUNTING_CAPABILITY = {
   postingQueues: 'accounting.posting-queues',
   /** M-06 Mizan — posted journal aggregates, read-only. */
   trialBalance: 'accounting.trial-balance',
+  /** M-05 Hesap Planı — the active approved account plan, read-only (FIN-S16; staged). */
+  accountPlan: 'accounting.account-plan',
   /** ACC-V1 — the reversal proposal control of the journal detail (not a route; propose only, never approve). */
   journalReversalPropose: 'accounting.journal-reversals.propose',
   /** ACC-V1 — approve ANOTHER person's pending reversal proposal (maker ≠ checker). */
@@ -55,6 +57,7 @@ export const ACCOUNTING_ROUTE = {
   normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
   postingQueues: '/muhasebe/kontrol',
   trialBalance: '/muhasebe/mizan',
+  accountPlan: '/muhasebe/hesap-plani',
   journalReversalApprove: '/muhasebe/ters-kayit-onay/:proposalId',
 } as const
 

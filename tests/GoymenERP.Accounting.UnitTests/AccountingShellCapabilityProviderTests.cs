@@ -17,7 +17,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(13, declarations.Count);
+        Assert.Equal(14, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
@@ -36,12 +36,14 @@ public sealed class AccountingShellCapabilityProviderTests
             ],
             declarations.Where(declaration => declaration.ImplementationAvailable)
                 .Select(declaration => declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
-        // The reversal PROPOSE control is not browser-walked yet, and the APPROVAL screen has no reopen read yet.
+        // The reversal PROPOSE control is not browser-walked yet, the APPROVAL screen has no reopen read yet, and the
+        // FIN-S16 M-05 account plan waits for its browser walk.
         Assert.All(
             new[]
             {
                 AccountingShellCapabilityProvider.JournalReversalProposeCapabilityId,
                 AccountingShellCapabilityProvider.JournalReversalApproveCapabilityId,
+                AccountingShellCapabilityProvider.AccountPlanCapabilityId,
             },
             id => Assert.False(Assert.Single(declarations, item => item.CapabilityId == id).ImplementationAvailable));
     }
@@ -53,7 +55,8 @@ public sealed class AccountingShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
-        Assert.Equal(("ACCOUNTING", "1.3"), (provider.Owner, provider.ContractVersion));
+        // 1.4: FIN-S16 declares the staged M-05 account plan route.
+        Assert.Equal(("ACCOUNTING", "1.4"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.periods.list", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,
@@ -78,6 +81,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead]),
             ("accounting.trial-balance", "accounting.trial-balance", "/muhasebe/mizan", "M-06",
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead]),
+            ("accounting.account-plan", "accounting.account-plan", "/muhasebe/hesap-plani", "M-05",
+                ShellCapabilityRoutePrecedence.Static, [AccountPlanPermissionNamesV1.Read]),
             ("accounting.journal-reversals.propose", "accounting.journals.detail", "/muhasebe/fisler/:journalId", "M-04-DETAIL",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [AccountingPermissionManifestV1.JournalsRead, AccountingJournalReversalPermissionNamesV1.Propose]),
@@ -90,6 +95,7 @@ public sealed class AccountingShellCapabilityProviderTests
         var ownerPermissions = AccountingPermissionManifestV1.All
             .Concat(NormalJournalPermissionNamesV1.All)
             .Concat([AccountingJournalReversalPermissionNamesV1.Propose, AccountingJournalReversalPermissionNamesV1.Approve])
+            .Concat(AccountPlanPermissionNamesV1.All)
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var item in expected)
@@ -160,7 +166,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-04-REVERSAL-APPROVE", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-04-REVERSAL-APPROVE", "M-05", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]

@@ -29,6 +29,13 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
+                // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
+                ("finance.cash-transfers.commit", "F-32-CASH-TRANSFERS", "finance.cash-transfers.workspace"),
+                ("finance.cash-transfers.workspace", "F-32-CASH-TRANSFERS", null),
+                // F-018 L1 (Finance 1.10, FNS-D45): every change is a proposal; the decision is another person's control.
+                ("finance.credit-limits.approve", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
+                ("finance.credit-limits.list", "F-18-CREDIT-LIMITS", null),
+                ("finance.credit-limits.propose", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
                 ("finance.customer-instruments.list", "F-02-INSTRUMENTS", null),
                 // FNS-D25 (Finance 1.9): the payment not tied to a party; its commands are controls of the workspace.
                 ("finance.expense-payments.approve", "F-25-EXPENSE-PAYMENTS", "finance.expense-payments.workspace"),
@@ -78,7 +85,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(29, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(34, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

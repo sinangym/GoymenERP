@@ -54,6 +54,10 @@ export const FINANCE_CAPABILITY = {
   expensePaymentsApprove: 'finance.expense-payments.approve',
   /** FNS-D25: the final, explicitly confirmed record — the money fact (control of the workspace). */
   expensePaymentsRecord: 'finance.expense-payments.record',
+  /** FNS-D24 (API-32/34): the transfer between two treasury accounts and the currency exchange — one workspace. */
+  cashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  /** FNS-D24: the explicitly confirmed transfer record — the money fact (control of the workspace). */
+  cashTransfersCommit: 'finance.cash-transfers.commit',
   officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',
@@ -66,6 +70,12 @@ export const FINANCE_CAPABILITY = {
   partyLedgerAccounting: 'finance.party-ledger.accounting',
   /** B-05 (KLN-D3, C-04) Cari > Cari Hesap Takibi — the same party-ledger read, entered from Cari. */
   partyLedgerCari: 'finance.party-ledger.cari',
+  /** F-018 L1 Kredi Limitleri — the company accounts' credit limits, under `finance.credit-limits.read`. */
+  creditLimitsList: 'finance.credit-limits.list',
+  /** FNS-D45: propose a set, change or removal (control of the list; nothing changes until another person approves). */
+  creditLimitsPropose: 'finance.credit-limits.propose',
+  /** FNS-D45 / FNS-D46: approve or reject another person's proposal (control of the list; the server refuses a self-decision). */
+  creditLimitsApprove: 'finance.credit-limits.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -83,6 +93,7 @@ export const FINANCE_ROUTE = {
   manualBankPaymentsCreate: '/finans/odemeler/yeni',
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
   expensePayments: '/finans/masraf-odemeleri',
+  cashTransfers: '/finans/virman',
   officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
   allocationsList: '/finans/dagitimlar',
@@ -90,6 +101,7 @@ export const FINANCE_ROUTE = {
   openItemsDetail: '/finans/acik-kalemler/:openItemId',
   partyLedgerAccounting: '/muhasebe/cari-hesaplar',
   partyLedgerCari: '/cari/hesap-takibi',
+  creditLimitsList: '/finans/kredi-limitleri',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`

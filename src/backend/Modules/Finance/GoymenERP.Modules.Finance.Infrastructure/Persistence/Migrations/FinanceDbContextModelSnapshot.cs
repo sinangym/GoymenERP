@@ -441,6 +441,197 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CashTransferCommandRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "TransferId");
+
+                    b.HasIndex("CompanyId", "CommandName", "IdempotencyKeyHash")
+                        .IsUnique();
+
+                    b.ToTable("CashTransferCommands", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CashTransferCommands_Content", "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_CashTransferCommands_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TransferId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CashTransferRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("OccurredOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("RateText")
+                        .HasMaxLength(29)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(29)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("SourceAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceAmountText")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(max)");
+
+                    b.Property<Guid>("SourceCurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SourceKind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceProfileId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(36)");
+
+                    b.Property<string>("SourceProfileVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<Guid>("TargetAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TargetAmountText")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(max)");
+
+                    b.Property<Guid>("TargetCurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("TargetKind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TargetProfileId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(36)");
+
+                    b.Property<string>("TargetProfileVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<bool>("TransferConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly?>("ValueOn")
+                        .HasColumnType("date");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "RecordedAtUtc", "Id");
+
+                    b.HasIndex("CompanyId", "SourceKind", "SourceAccountId");
+
+                    b.HasIndex("CompanyId", "TargetKind", "TargetAccountId");
+
+                    b.ToTable("CashTransfers", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CashTransfers_AccountKinds", "[SourceKind] IN (0, 1) AND [TargetKind] IN (0, 1)");
+
+                            t.HasCheckConstraint("CK_CashTransfers_Confirmed", "[TransferConfirmed] = 1");
+
+                            t.HasCheckConstraint("CK_CashTransfers_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
+
+                            t.HasCheckConstraint("CK_CashTransfers_DistinctAccounts", "NOT ([SourceKind] = [TargetKind] AND [SourceAccountId] = [TargetAccountId])");
+
+                            t.HasCheckConstraint("CK_CashTransfers_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TargetAccountId] <> '00000000-0000-0000-0000-000000000000' AND [SourceCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [TargetCurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_CashTransfers_Kind", "([Kind] = 0 AND [SourceCurrencyId] = [TargetCurrencyId] AND [SourceAmountText] = [TargetAmountText] AND [RateText] IS NULL) OR ([Kind] = 1 AND [SourceCurrencyId] <> [TargetCurrencyId] AND [RateText] IS NOT NULL AND LEN([RateText]) > 0)");
+
+                            t.HasCheckConstraint("CK_CashTransfers_Text", "LEN([SourceAmountText]) > 0 AND LEN([TargetAmountText]) > 0 AND LEN([SourceProfileId]) > 0 AND LEN([SourceProfileVersion]) > 0 AND LEN([TargetProfileId]) > 0 AND LEN([TargetProfileVersion]) > 0 AND LEN([RecordedBy]) > 0 AND ([Reference] IS NULL OR LEN(LTRIM(RTRIM([Reference]))) > 0) AND ([Description] IS NULL OR LEN(LTRIM(RTRIM([Description]))) > 0)");
+
+                            t.HasCheckConstraint("CK_CashTransfers_Version", "[Version] = 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentMovementRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1255,6 +1446,74 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_InvoiceCancellations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_InvoiceCancellations_Text", "LEN([SourceKind]) > 0 AND LEN([InvoiceVersion]) > 0 AND LEN([Reason]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceIdentityClaimRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ClaimedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ClaimedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("HolderBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("HolderSourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("IdentityKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("IdentityValue")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "HolderBatchId", "HolderSourceDocumentId")
+                        .HasDatabaseName("IX_OfficialInvoiceIdentityClaims_Holder");
+
+                    b.HasIndex("CompanyId", "IdentityKind", "IdentityValue", "Generation")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OfficialInvoiceIdentityClaims_Generation");
+
+                    b.ToTable("OfficialInvoiceIdentityClaims", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Content", "[Generation] >= 1 AND LEN([ClaimedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [HolderBatchId] <> '00000000-0000-0000-0000-000000000000' AND [HolderSourceDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Value", "([IdentityKind] = 'official-no' AND LEN([IdentityValue]) > 0 AND DATALENGTH([IdentityValue]) = DATALENGTH(LTRIM(RTRIM([IdentityValue])))) OR ([IdentityKind] = 'ettn' AND LEN([IdentityValue]) = 36 AND DATALENGTH([IdentityValue]) = 72 AND [IdentityValue] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%')");
                         });
                 });
 
@@ -2665,7 +2924,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PartyCreditLimits", "finance", t =>
                         {
-                            t.HasCheckConstraint("CK_PartyCreditLimits_Decision", "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR ([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) AND (([IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2) OR ([IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2))) OR ([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_PartyCreditLimits_Decision", "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR ([Status] IN (2, 4) AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2) OR ([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_PartyCreditLimits_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0");
 
@@ -2966,6 +3225,31 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CashTransferCommandRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.CashTransferRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CashTransferRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.CustomerInstrumentMovementRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
@@ -3146,6 +3430,22 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceIdentityClaimRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "HolderBatchId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

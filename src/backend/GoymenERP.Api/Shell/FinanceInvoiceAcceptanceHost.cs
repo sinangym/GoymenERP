@@ -14,7 +14,9 @@ namespace GoymenERP.Api.Shell;
 /// <c>sales.returns.finalize</c> (SAT-D290: the return invoice is finalised by that grant; SAT-D208: Sales commits first
 /// and re-drives with the same key). Only the Finance side is composed here: the Sales consumer port
 /// (ISalesCustomerReturnFinancePortV1) stays unregistered, so Sales' finalisation keeps answering 503 (SAT-D294 fail-closed)
-/// until the Sales side moves its provisional offer onto this port.
+/// until the Sales side moves its provisional offer onto this port. FIN-S10 (FNS-D44) adds the read side of the same port,
+/// <see cref="IFinanceCustomerReturnInstallmentReadPortV2"/> (the screen's nearest-due prefill), answered by the same
+/// Finance service under the same fence; no new permission is introduced.
 /// </summary>
 public static class FinanceInvoiceAcceptanceHostExtensions
 {
@@ -24,6 +26,7 @@ public static class FinanceInvoiceAcceptanceHostExtensions
         services.AddScoped<IFinanceInvoiceAcceptanceAuthorityV2>(provider =>
             provider.GetRequiredService<FinanceInvoiceAcceptanceAuthority>());
         services.AddScoped<IFinanceInvoiceAcceptancePortV2>(CreateAcceptanceService);
+        services.AddScoped<IFinanceCustomerReturnInstallmentReadPortV2>(CreateAcceptanceService);
         return services;
     }
 

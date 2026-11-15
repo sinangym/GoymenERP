@@ -386,6 +386,7 @@ public sealed class FinanceCashAccountHttpAcceptanceTests(GoymenErpApiFactory fa
     [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_change_pending")]
     [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_change_not_pending")]
     [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_balance_not_zero")]
+    [InlineData(CommandOutcome.ValidationFailed, 422, "cash_account_currency_not_a_candidate")]
     [InlineData(CommandOutcome.VersionConflict, 409, "version_conflict")]
     [InlineData(CommandOutcome.VersionConflict, 409, "concurrent_change")]
     [InlineData(CommandOutcome.IdempotencyConflict, 409, null)]

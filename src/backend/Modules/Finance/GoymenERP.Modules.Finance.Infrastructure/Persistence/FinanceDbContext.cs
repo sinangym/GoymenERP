@@ -68,6 +68,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceOfficialInvoiceImportWorkDeliveryRow> OfficialInvoiceImportWorkDeliveries => Set<FinanceOfficialInvoiceImportWorkDeliveryRow>();
 
+    /// <summary>FIN-S5 / FNS-D19: append-only official number and ETTN claims of admitted v2 file documents.</summary>
+    internal DbSet<FinanceOfficialInvoiceIdentityClaimRow> OfficialInvoiceIdentityClaims => Set<FinanceOfficialInvoiceIdentityClaimRow>();
+
     internal DbSet<FinanceSourceAllocationStateRow> SourceAllocationStates => Set<FinanceSourceAllocationStateRow>();
 
     internal DbSet<FinanceAllocationRow> Allocations => Set<FinanceAllocationRow>();
@@ -105,6 +108,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<ExpensePaymentCommandRow> ExpensePaymentCommands => Set<ExpensePaymentCommandRow>();
 
+    /// <summary>
+    /// FNS-D24 (API-32/34): the transfer between two treasury accounts (one record for both legs, with the rate of a
+    /// currency exchange) and its command receipts. Both append-only.
+    /// </summary>
+    internal DbSet<CashTransferRow> CashTransfers => Set<CashTransferRow>();
+
+    internal DbSet<CashTransferCommandRow> CashTransferCommands => Set<CashTransferCommandRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -119,6 +130,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureMoneyEvents(modelBuilder);
         ConfigureOpenItemSourceBatches(modelBuilder);
         ConfigureOfficialInvoiceImports(modelBuilder);
+        ConfigureOfficialInvoiceIdentityClaims(modelBuilder);
         ConfigureOpenItems(modelBuilder);
         ConfigureInvoiceCancellations(modelBuilder);
         ConfigureCustomerReturnCredits(modelBuilder);
@@ -137,6 +149,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigurePartyCreditLimits(modelBuilder);
         ConfigureOfficialSalesInvoices(modelBuilder);
         ConfigureExpensePayments(modelBuilder);
+        ConfigureCashTransfers(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -397,6 +410,53 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// FIN-S5 / FNS-D19: an identity claim names one official number (D1 length, binary collation) or one canonical
+    /// lowercase ETTN; each identity's generations start at 1 and are unique, so a concurrent second acceptance fails
+    /// on the unique index instead of opening a second receivable.
+    /// </summary>
+    internal const string OfficialInvoiceIdentityClaimValueCheck =
+        "([IdentityKind] = 'official-no' AND LEN([IdentityValue]) > 0 "
+        + "AND DATALENGTH([IdentityValue]) = DATALENGTH(LTRIM(RTRIM([IdentityValue])))) OR "
+        + "([IdentityKind] = 'ettn' AND LEN([IdentityValue]) = 36 AND DATALENGTH([IdentityValue]) = 72 "
+        + "AND [IdentityValue] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%')";
+
+    private void ConfigureOfficialInvoiceIdentityClaims(ModelBuilder modelBuilder)
+    {
+        var claim = modelBuilder.Entity<FinanceOfficialInvoiceIdentityClaimRow>();
+        claim.ToTable("OfficialInvoiceIdentityClaims", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[HolderBatchId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[HolderSourceDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Value", OfficialInvoiceIdentityClaimValueCheck);
+            table.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Content",
+                "[Generation] >= 1 AND LEN([ClaimedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        claim.HasKey(x => x.Id);
+        claim.Property(x => x.Id).ValueGeneratedNever();
+        claim.Property(x => x.IdentityKind).HasMaxLength(32).IsUnicode(false).IsRequired();
+        claim.Property(x => x.IdentityValue).HasMaxLength(OfficialSalesInvoiceMaximumOfficialNoLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        claim.Property(x => x.ClaimedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        claim.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        claim.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        claim.HasIndex(x => new { x.CompanyId, x.IdentityKind, x.IdentityValue, x.Generation }).IsUnique()
+            .HasDatabaseName("UX_OfficialInvoiceIdentityClaims_Generation");
+        claim.HasIndex(x => new { x.CompanyId, x.HolderBatchId, x.HolderSourceDocumentId })
+            .HasDatabaseName("IX_OfficialInvoiceIdentityClaims_Holder");
+        claim.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // The holder is always an uploaded file of the same company.
+        claim.HasOne<FinanceOfficialInvoiceImportBatchRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.HolderBatchId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        claim.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureOfficialInvoiceImports(ModelBuilder modelBuilder)
@@ -1098,6 +1158,91 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureCashTransfers(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CashTransferRow>();
+        entity.ToTable("CashTransfers", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashTransfers_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceCurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetCurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CashTransfers_Text",
+                "LEN([SourceAmountText]) > 0 AND LEN([TargetAmountText]) > 0 AND LEN([SourceProfileId]) > 0 "
+                + "AND LEN([SourceProfileVersion]) > 0 AND LEN([TargetProfileId]) > 0 AND LEN([TargetProfileVersion]) > 0 "
+                + "AND LEN([RecordedBy]) > 0 "
+                + "AND ([Reference] IS NULL OR LEN(LTRIM(RTRIM([Reference]))) > 0) "
+                + "AND ([Description] IS NULL OR LEN(LTRIM(RTRIM([Description]))) > 0)");
+            table.HasCheckConstraint("CK_CashTransfers_AccountKinds", "[SourceKind] IN (0, 1) AND [TargetKind] IN (0, 1)");
+            table.HasCheckConstraint("CK_CashTransfers_DistinctAccounts",
+                "NOT ([SourceKind] = [TargetKind] AND [SourceAccountId] = [TargetAccountId])");
+            // FNS-D24: a same-currency transfer moves the same amount text with no rate; an exchange names two
+            // different currencies and carries its transaction rate on the same record.
+            table.HasCheckConstraint("CK_CashTransfers_Kind",
+                "([Kind] = 0 AND [SourceCurrencyId] = [TargetCurrencyId] AND [SourceAmountText] = [TargetAmountText] "
+                + "AND [RateText] IS NULL) OR "
+                + "([Kind] = 1 AND [SourceCurrencyId] <> [TargetCurrencyId] AND [RateText] IS NOT NULL "
+                + "AND LEN([RateText]) > 0)");
+            table.HasCheckConstraint("CK_CashTransfers_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
+            table.HasCheckConstraint("CK_CashTransfers_Confirmed", "[TransferConfirmed] = 1");
+            table.HasCheckConstraint("CK_CashTransfers_Version", "[Version] = 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.SourceAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.TargetAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.TargetProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.TargetProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        // The rate's storage bound: at most 18 integer digits, a dot and 10 decimals (Settings' rate record bound).
+        entity.Property(x => x.RateText).HasMaxLength(29).IsUnicode(false);
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.ValueOn).HasColumnType("date");
+        entity.Property(x => x.Reference).HasMaxLength(128);
+        entity.Property(x => x.Description).HasMaxLength(1000);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.RecordedAtUtc, x.Id });
+        // The cash passivation reading asks whether a transfer names the account on either leg.
+        entity.HasIndex(x => new { x.CompanyId, x.SourceKind, x.SourceAccountId });
+        entity.HasIndex(x => new { x.CompanyId, x.TargetKind, x.TargetAccountId });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<CashTransferCommandRow>();
+        command.ToTable("CashTransferCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashTransferCommands_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[TransferId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CashTransferCommands_Content",
+                "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 "
+                + "AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+        });
+        command.HasKey(x => x.Id);
+        command.Property(x => x.Id).ValueGeneratedNever();
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ResultJson).IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
+        command.HasOne<CashTransferRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureManualBankPayments(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<ManualBankPaymentRow>();
@@ -1488,8 +1633,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     /// effective record is its one approved row and at most one proposal is pending per account
     /// (<c>UX_PartyCreditLimits_Live</c>); an approved
     /// row's account revision is unique per account, so two concurrent changes from the same revision cannot
-    /// both win. A proposal is decided by another actor (binary collation); a direct record is decided by its
-    /// own author, who holds the approve authority (FNS-D27). No foreign key reaches the party or the company
+    /// both win. Every record is a proposal decided by another actor (binary collation; FNS-D45 closed the
+    /// one-step direct record of FNS-D27, <c>IsDirect</c> is always 0). No foreign key reaches the party or the company
     /// account: they are Counterparty's (read through <see cref="Contracts.IFinancePartyAccountPort"/>).
     /// </summary>
     private void ConfigurePartyCreditLimits(ModelBuilder modelBuilder)
@@ -1580,20 +1725,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Kind] = 2 AND [CurrencyId] IS NULL AND [AmountText] IS NULL)";
 
     /// <summary>
-    /// FNS-D27/D27a: a proposal carries no decision and no revision. An approved record carries a decider and
-    /// a revision: a direct record is decided by its author (FNS-D27, one step by an approver), a proposal by
-    /// someone other than its proposer (FNS-D27a). A rejection is a proposal's, by someone other than its
-    /// proposer, with a reason. A superseded record is either a proposal never decided or an approved record,
-    /// with the same rules as when it was approved. Actors compare in binary collation.
+    /// FNS-D27a/D45: a proposal carries no decision and no revision. An approved record carries a decider and
+    /// a revision and is always a proposal decided by someone other than its proposer: FNS-D45 closed the
+    /// one-step direct record (decided by its own author) for a set, a change and a removal alike, so
+    /// <c>IsDirect</c> is 0 in every state. A rejection is a proposal's, by someone other than its proposer, with
+    /// a reason. A superseded record is either a proposal never decided or an approved record, with the same
+    /// rules as when it was approved. Actors compare in binary collation.
     /// </summary>
     internal const string PartyCreditLimitDecisionCheck =
         "([Status] = 1 AND [IsDirect] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL "
         + "AND [RejectionReason] IS NULL AND [AccountRevision] IS NULL AND [SupersededAtUtc] IS NULL) OR "
-        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
-        + "AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
+        + "([Status] IN (2, 4) AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+        + "AND LEN([DecidedBy]) > 0 AND [AccountRevision] IS NOT NULL AND [RejectionReason] IS NULL "
         + "AND (([Status] = 2 AND [SupersededAtUtc] IS NULL) OR ([Status] = 4 AND [SupersededAtUtc] IS NOT NULL)) "
-        + "AND (([IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2) "
-        + "OR ([IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2))) OR "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2) OR "
         + "([Status] = 3 AND [IsDirect] = 0 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
         + "AND LEN([DecidedBy]) > 0 "
         + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
@@ -1670,6 +1815,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             || ChangeTracker.Entries<FinanceOfficialInvoiceImportCommandRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
             || ChangeTracker.Entries<FinanceOfficialInvoiceImportWorkDeliveryRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialInvoiceIdentityClaimRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
             throw new InvalidOperationException("Resmî fatura import kaynak, onay ve komut kayıtları append-only'dir.");
@@ -1687,6 +1834,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
             throw new InvalidOperationException("Masraf ödemesi komut kayıtları append-only'dir.");
+        }
+
+        // FNS-D24: a committed transfer is the money fact of both legs; it and its receipt never change.
+        if (ChangeTracker.Entries<CashTransferRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<CashTransferCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Virman ve döviz bozdurma kayıtları ile komut kayıtları append-only'dir.");
         }
 
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())
@@ -1709,6 +1865,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             if (!companyContext.IsResolved || entry.Entity.CompanyId != companyContext.CompanyId)
             {
                 throw new InvalidOperationException("Finans kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
+            }
+
+            if (entry.State == EntityState.Added
+                && entry.Entity is PartyCreditLimitRow { } newCreditLimit
+                && !IsAllowedNewPartyCreditLimit(newCreditLimit))
+            {
+                // FNS-D45: every credit limit change is born a proposal; no one-step direct record exists.
+                throw new InvalidOperationException("Kredi limiti kaydı yalnız karar bekleyen bir öneri olarak oluşur.");
             }
 
             if (entry.State == EntityState.Modified
@@ -2189,6 +2353,18 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 && current.RejectionReason is null && current.SupersededAtUtc is not null,
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// FNS-D45: a new credit limit row is a proposal awaiting its decision (status 1, not direct, version 1),
+    /// with no decider, revision, rejection or supersession; only a different approver's decision moves it on.
+    /// </summary>
+    private static bool IsAllowedNewPartyCreditLimit(PartyCreditLimitRow row)
+    {
+        const int proposed = 1;
+        return row.Status == proposed && !row.IsDirect && row.Version == 1
+            && row.DecidedBy is null && row.DecidedAtUtc is null && row.AccountRevision is null
+            && row.RejectionReason is null && row.SupersededAtUtc is null;
     }
 
     private static bool IsAllowedCashAccountDecision(

@@ -118,6 +118,8 @@ export interface CashAccountListItem {
   readonly displayName: string
   readonly status: CashAccountStatus
   readonly isActive: boolean
+  /** FNS-D50: a passivation waits for approval; the server refuses a new payment from this account. */
+  readonly passivationPending: boolean
 }
 
 export interface CashAccountList {
@@ -418,6 +420,7 @@ export function decodeCashAccountList(value: unknown, companyId: string): CashAc
       displayName: account.displayName,
       status: account.status as CashAccountStatus,
       isActive: account.isActive,
+      passivationPending: account.pendingChange === 'Passivation',
     })
   }
   return { companyId, items }

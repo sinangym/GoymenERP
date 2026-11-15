@@ -114,6 +114,9 @@ public enum FinanceAction
     // FNS-D25 (API-25): the payment not tied to a party (single expense item, mandatory description); its own
     // names, so preparing, approving and recording an expense payment stay separate grants from R47's.
     SaveExpensePaymentDraft, ReadExpensePayments, ApproveExpensePayment, RecordExpensePayment,
+    // FNS-D24 (API-32/34): the transfer between two treasury accounts (same currency or currency exchange); its own
+    // names, so reading transfers and committing one stay separate grants.
+    ReadCashTransfers, CommitCashTransfer,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

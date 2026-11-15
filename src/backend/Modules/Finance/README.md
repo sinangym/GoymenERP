@@ -560,6 +560,28 @@ written.
 Not decided, so not built (NEEDS-SINAN): the treasury balance source and opening balances for the record-time check;
 whether a cash account with a pending passivation may pay; a dedicated money operation key.
 
+## FIN-S8 / API-32/34: transfer and currency exchange in one record (virman / döviz bozdurma) — FNS-D24
+
+One committed record carries both legs (bank ↔ bank, bank ↔ cash, cash ↔ cash) of a money move; no second movement
+is produced for either leg.
+
+| Part | Behaviour |
+|---|---|
+| HTTP | `/api/v1/finance/cash-transfers`: `POST …/preview` (`PreviewFinanceCashTransferV1`, writes nothing), `POST` commit (`CommitFinanceCashTransferV1`), `GET` list (`GetFinanceCashTransfersV1`) and detail (`GetFinanceCashTransferV1`), `GET …/account-context` (`GetFinanceCashTransferAccountContextV1`). The commit takes the `Idempotency-Key` header (surrounding whitespace refused) and a strict JSON body; 401/403/404/503 code-less; replay headers on a replay |
+| Authority | `finance.cash-transfers.read`, `finance.cash-transfers.commit`: registered and company-wide, granted to no role or seed (a human gate). Fenced before the first read, on replay and right before the save |
+| Kinds | `SameCurrency`: one currency, the same amount text on both legs, no rate. `CurrencyExchange`: two currencies and the transaction rate (target units per one source unit; ≤ 18 integer and ≤ 10 decimal digits) on the same record. Both legs are checked against Settings' approved money profile of their currency |
+| Rate check | `IFinanceCurrencyExchangeRateRule` answers consistent / inconsistent / unavailable. Rounding, quote direction and rate source are not decided, so the only registration (`UnavailableCurrencyExchangeRateRule`) answers unavailable and an exchange returns 503 `finance_exchange_rate_rule_unavailable` (fail-closed); an inconsistent rate is 422 `finance_exchange_rate_inconsistent` |
+| Balance (FNS-D11/D22) | `IFinanceTreasuryBalanceGuard` on the source leg; insufficient is 422 `finance_treasury_balance_insufficient`, unavailable is 503. The default guard answers unavailable (no treasury balance source yet) |
+| Rules | Accounts must be approved (a bank account also money-movement eligible with an IBAN); the same account on both legs is refused (`cash_transfer_same_account`); the period of `occurredOn` must be open; `transferConfirmed` is required (`cash_transfer_not_confirmed`) |
+| Cash passivation | Once a cash account is named on either leg of a transfer, `TreasuryMovementAwareCashAccountBalanceReader` stops answering `Zero` for it |
+| Money operation | Temporarily the manual bank payment profile (`finance.manual-bank-payment.v1`); a dedicated key is asked of the Settings owner (NEEDS-SINAN) |
+| Persistence | `finance.CashTransfers` (company query filter; append-only; `CK_CashTransfers_Kind`, `_DistinctAccounts`, `_Confirmed`, `_Version`) and `finance.CashTransferCommands` keyed by (company, command, key hash). Only a successful commit is stored; a refusal writes nothing. Audit `finance.cash-transfer.recorded.v1` |
+| Migration `20261115145712_AddCashTransfers` | Pure DDL up (two tables). `Down` refuses with `THROW 51458` while any transfer or command is stored (forward fix) |
+
+Not decided, so not built (NEEDS-SINAN): the exchange rate consistency rule (rounding, rate source, quote direction),
+a second-person approval for transfers, the treasury balance source, a dedicated money operation key, and the
+exchange difference / accounting counterpart.
+
 ## F-005 D1: official sales invoice record — FNS-D17…FNS-D21, FNS-D26
 
 Finance owns the official sales invoice (e-Fatura / e-Arşiv) that was issued outside the ERP. One person records it
@@ -602,20 +624,22 @@ actor to be the recorder.
 Not in this slice: the single "Kaydet" screen (reserve → upload → record, resumable with the same keys), the Sales
 read port (D3), correcting or cancelling an approved record (FNS-D20), reservation expiry and PDF retention.
 
-## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a, F018 §L1
+## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a/D45/D46, F018 §L1
 
 | Part | What |
 |---|---|
-| HTTP | `POST /api/v1/finance/credit-limits` (set, one step), `POST …/credit-limits/removals` (remove, one step), `POST …/credit-limits/proposals` (propose a set or a removal), `POST …/credit-limits/proposals/{proposalId}/approval`, `POST …/credit-limits/proposals/{proposalId}/rejection` (written reason), `GET …/credit-limits`, `GET …/credit-limits/accounts/{companyAccountId}`, `GET …/credit-limits/accounts/{companyAccountId}/history`, `GET …/credit-limits/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
-| Permissions | `finance.credit-limits.read`, `finance.credit-limits.propose`, `finance.credit-limits.approve`: registered, company-wide, **not granted and not Critical** (grant/rol/Critical is a human gate). The approver sets or removes a limit in one save (FNS-D27a); the proposer only proposes, and another approver decides (`finance_approver_is_proposer`, checked by the service and by `CK_PartyCreditLimits_Decision`) |
+| HTTP | `POST /api/v1/finance/credit-limits/proposals` (propose a set, a change or a removal), `POST …/credit-limits/proposals/{proposalId}/approval`, `POST …/credit-limits/proposals/{proposalId}/rejection` (written reason), `GET …/credit-limits`, `GET …/credit-limits/accounts/{companyAccountId}`, `GET …/credit-limits/accounts/{companyAccountId}/history`, `GET …/credit-limits/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
+| Permissions | `finance.credit-limits.read`, `finance.credit-limits.propose`, `finance.credit-limits.approve`: registered, company-wide, **not granted**. Only `approve` is Critical (FNS-D46, Sinan's classification); read and propose are not; granting any of them to a role stays a human step. Every set, change and removal is a proposal that a different approver decides, with no amount threshold (FNS-D45): the former one-step direct set/remove (`POST /credit-limits`, `POST /credit-limits/removals`) is removed, and the proposer's own decision is refused (`finance_approver_is_proposer`, checked by the service, by the save guard and by `CK_PartyCreditLimits_Decision`, which since `RequirePartyCreditLimitSecondPerson` admits no direct record) |
 | Record | Per company account: kind `Set` (positive exact decimal text amount + currency) or `Remove`; status Proposed / Approved / Rejected / Superseded. At most one live (Proposed or Approved) record per account and status (`UX_PartyCreditLimits_Live`); every approval moves the account revision by one (`UX_PartyCreditLimits_Revision`), the previous approved record becomes Superseded. Commands carry `expectedRevision` (account) or `expectedVersion` (proposal) |
 | Idempotency / audit | `finance.PartyCreditLimitCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; a stale revision is a recorded `VersionConflict` |
 | Sales port | `FinanceSalesPartyRiskReadPortV1` reads the approved record (MOD-01 above); the port name and shape are unchanged |
 | Migration `20261114200445_AddPartyCreditLimits` | Pure DDL up (records and commands). `Down` refuses with `THROW 51322` while any credit limit record or recorded attempt exists (forward fix): it is the history of who set which limit; an empty store rolls back |
+| Migration `20261115121907_RequirePartyCreditLimitSecondPerson` | FNS-D45: `CK_PartyCreditLimits_Decision` requires `IsDirect = 0` and decider ≠ proposer (binary collation) for approved and superseded records. `Up` first refuses with `THROW 51362` while a stored direct record exists (it is neither rewritten nor deleted); `Down` only widens the check again and needs no guard |
+| Shell (provider 1.10) | Route `finance.credit-limits.list` at `/finans/kredi-limitleri` (screen `F-18-CREDIT-LIMITS`) under `finance.credit-limits.read`; controls `finance.credit-limits.propose` (read + propose) and `finance.credit-limits.approve` (read + approve) of that route. The screen draws the decision buttons only from the approve control and the proposal form only from the propose control; the server checks every command on its own |
 
-Not in this slice: the threshold-based second approval (OPEN-009 / F018 N-3), the shell route and capability wiring of the
-screen (`src/frontend/goymen-erp-web/src/finance/CreditLimitPage.tsx` is built, not mounted), and the Cari-side ownership check
-of party/account (F018 N-2).
+Not in this slice: the amount/role/currency approval matrix (OPEN-009 stays open; FNS-D45 needs no threshold), the
+Cari-side ownership check of party/account (F018 N-2), and the processed-invoice set on the Sales risk port (SAT-D311 /
+FNS-D53, opened by Sales and filled later by Finance).
 
 ## F-019 / API-11 v2: customer return acceptance (müşteri iadesi kabulü)
 
@@ -624,8 +648,29 @@ of party/account (F018 N-2).
 | Port | `IFinanceInvoiceAcceptancePortV2` (`FinanceInvoiceAcceptanceV2`), kind `CustomerReturn`, Sales producer only; the v1 admission and cancellation ports are unchanged. In-process, no HTTP endpoint |
 | Host | `FinanceInvoiceAcceptanceHost` re-measures `sales.returns.finalize` company-wide before the reads and before the save; no grant, role or Critical is added |
 | Rows | `CustomerReturnCredits`, `CustomerReturnCreditItems` (append-only) and `CustomerReturnInvoiceStates` (one concurrency row per original invoice) |
-| Behaviour | Original invoice link mandatory and admitted (SAT-D288); a separate reversing credit, open items keep their identity (SAT-D291); open items reduced first, the excess stays on the credit as an advance (SAT-D294). A partial return over several open installments is refused (`finance_customer_return_installment_order_not_decided`) until the order is decided |
+| Behaviour | Original invoice link mandatory and admitted (SAT-D288); a separate reversing credit, open items keep their identity (SAT-D291); open items reduced first, the excess stays on the credit as an advance (SAT-D294). A partial return reduces the installments the user selected (FNS-D44, `Allocations`): every part ≤ its item's open amount, total = return amount exactly, never replaced by the prefill; without a selection the nearest due open installment first (FNS-D54). Refusals: `finance_customer_return_allocation_invalid`, `_item_unknown`, `_exceeds_open_amount`, `_total_mismatch`, `_not_applicable` (whole return) |
+| Prefill read (FIN-S10) | `IFinanceCustomerReturnInstallmentReadPortV2`: outstanding installments nearest due first with the prefill part, from the same `FinanceCustomerReturnInstallmentCalculator`; same fence, writes nothing, no new permission, no migration |
 | Migration `20261114231451_AddCustomerReturnCredits` | Pure DDL up. `Down` refuses with `THROW 51320` while any credit or return state is stored (forward fix) |
 
 Not in this slice: the Sales-side adapter (SAT-S2), the party ledger / risk read of the credit and advance, and consuming
 the advance in allocation.
+
+## FIN-S5 / BS-4: official sales invoice file import, CSV v2 — FNS-D28, FNS-D19 (D5), FNS-D17
+
+The controlled file import (FIN-F03) is the primary path for official sales invoices. CSV v1
+(`finance-official-invoice-installment-csv.v1`) is unchanged (FNS-D28 (2)). CSV v2
+(`finance-official-invoice-installment-csv.v2`) is the v1 header followed by
+`officialNo,ettn,taxBaseFunctionalAmount,vatFunctionalAmount,withholdingFunctionalAmount`; the exact header selects the
+template, and the same preview / upload / maker≠checker approval / apply endpoints serve both (no DTO change).
+
+| Part | What |
+|---|---|
+| Parser | `FinanceOfficialInvoiceImportParserV1` detects v1 or v2. v2 columns repeat on every installment row of a `sourceDocumentId` and must be identical there (`official_document_inconsistent`). Official number required, untrimmed text refused, ≤ 64 (`official_no_required`, `official_no_invalid`); ETTN a "D" GUID, stored lowercase (`ettn_required`, `ettn_invalid`); the three TL amounts exact non-negative decimals (`functional_amount_required`, `functional_amount_invalid`). Two documents of one file may not share a number or ETTN (`official_no_duplicate_in_file`, `ettn_duplicate_in_file`) |
+| Admission (D5) | `FinanceOpenItemSourceAdmissionService` re-parses the approved v2 file from its immutable bytes and claims each document's number and ETTN (`FinanceOfficialInvoiceIdentityClaimPolicy`). A claim held by another acceptance whose items are not all cancelled refuses the whole batch (`finance_official_no_already_open`, `finance_ettn_already_open` on `rows[i].officialNo` / `rows[i].ettn`), even when the item is fully collected (D5's safe reading). Installments of one document share one claim. A file whose stored bytes no longer yield the approved documents answers 503-class `finance_official_documents_unavailable`. v1 files claim nothing |
+| Persistence | `finance.OfficialInvoiceIdentityClaims`: append-only (write guard), company query filter, unique (company, kind, value, generation) so two concurrent acceptances of the same identity collide; the holder batch is a FK to the uploaded file |
+| Migration `20261115122126_AddOfficialInvoiceIdentityClaims` | Pure DDL up (one table). `Down` refuses with `THROW 51372` while any claim is stored (forward fix) |
+
+Not decided, so not built (NEEDS-SINAN): the tax base + VAT − withholding = payable consistency check (FNS-D17
+Sınırlar); whether a zero or missing tax amount is allowed; whether an approved D1 manual record blocks a file import
+of the same number/ETTN; an upload-time duplicate warning. The Sales finalization side of D5 waits for #1103
+(FNS-D28 (3)).

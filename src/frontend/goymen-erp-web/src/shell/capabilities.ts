@@ -233,6 +233,12 @@ export const CAPABILITY = {
    * CONTROLS of this workspace, never routes.
    */
   financeExpensePaymentsWorkspace: 'finance.expense-payments.workspace',
+  /** FNS-D24 (API-32/34) Virman ve Döviz Bozdurma. Its commit is a CONTROL of this workspace, never a route. */
+  financeCashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  /**
+   * F-018 L1 (FNS-D45 / FNS-D46) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
+   */
+  financeCreditLimitsList: 'finance.credit-limits.list',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
   accountingPeriodsList: 'accounting.periods.list',
   /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
@@ -386,6 +392,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeManualBankPaymentsCreate]: '/finans/odemeler/yeni',
   [CAPABILITY.financeManualBankPaymentsDetail]: '/finans/odemeler/:paymentId',
   [CAPABILITY.financeExpensePaymentsWorkspace]: '/finans/masraf-odemeleri',
+  [CAPABILITY.financeCashTransfersWorkspace]: '/finans/virman',
+  [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',

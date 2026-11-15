@@ -18,6 +18,7 @@ import { PeriodProposePage } from './PeriodProposePage'
 import { JournalDetailPage, JournalsPage } from './JournalPages'
 import { PostingQueuesPage } from './PostingQueuesPage'
 import { TrialBalancePage } from './TrialBalancePage'
+import { AccountPlanPage } from './AccountPlanPage'
 import { JournalReversalApprovalPage } from './JournalReversalPages'
 import {
   NormalJournalDraftCreatePage,
@@ -62,6 +63,10 @@ export const accountingRoutes: RouteObject[] = [
   {
     path: ACCOUNTING_ROUTE.trialBalance.slice(1),
     element: gate(ACCOUNTING_CAPABILITY.trialBalance, <TrialBalancePage />),
+  },
+  {
+    path: ACCOUNTING_ROUTE.accountPlan.slice(1),
+    element: gate(ACCOUNTING_CAPABILITY.accountPlan, <AccountPlanPage />),
   },
   {
     path: ACCOUNTING_ROUTE.journalReversalApprove.slice(1),

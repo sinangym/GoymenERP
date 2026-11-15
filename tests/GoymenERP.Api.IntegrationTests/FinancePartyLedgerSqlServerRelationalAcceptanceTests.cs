@@ -32,7 +32,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// HTTP case goes through the real host and the real permission port (which needs the two
 /// <c>finance.party-ledger.*</c> names registered centrally) with synthetic roles in this test's own database.
 /// </summary>
-public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
+public sealed partial class FinancePartyLedgerSqlServerRelationalAcceptanceTests
 {
     private const string Operation = "SENTETIK-operation";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;

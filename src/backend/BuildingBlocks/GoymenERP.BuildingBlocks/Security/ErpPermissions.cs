@@ -255,12 +255,13 @@ public static class ErpPermissions
     public const string FinanceCashAccountReactivationApprove = "finance.cash-account.reactivation.approve";
 
     /// <summary>
-    /// Finance party credit limit master (API-85a; F018 plan §L1; FNS-D27/D27a): read; propose (FNS-D27a, a
-    /// proposal awaiting another person's decision); approve (FNS-D27, sets, changes or removes a limit in one
-    /// step, and approves or rejects a proposal). Registering them makes them KNOWN, not granted: no role and no
-    /// user receives them here, and who holds which is a human gate. Company-wide only: a limit belongs to a
-    /// company account of the server-resolved company. Not Critical: whether they are is not decided (human
-    /// gate). A proposer never decides their own proposal, in the service and the database regardless.
+    /// Finance party credit limit master (API-85a; F018 plan §L1; FNS-D27a/D45): read; propose (every set, change
+    /// or removal is a proposal awaiting another person's decision, FNS-D45); approve (approves or rejects someone
+    /// else's proposal; there is no one-step direct change, FNS-D45). Registering them makes them KNOWN, not
+    /// granted: no role and no user receives them here, and who holds which is a human gate. Company-wide only: a
+    /// limit belongs to a company account of the server-resolved company. Only approve is Critical (FNS-D46, the
+    /// user's classification); read and propose are not. A proposer never decides their own proposal, in the
+    /// service and the database regardless.
     /// </summary>
     public const string FinanceCreditLimitsRead = "finance.credit-limits.read";
     public const string FinanceCreditLimitsPropose = "finance.credit-limits.propose";
@@ -472,6 +473,14 @@ public static class ErpPermissions
     public const string FinanceExpensePaymentDraftRead = "finance.expense-payment.draft.read";
     public const string FinanceExpensePaymentApprove = "finance.expense-payment.approve";
     public const string FinanceExpensePaymentRecord = "finance.expense-payment.record";
+
+    /// <summary>
+    /// FNS-D24 (API-32/34): the transfer between two treasury accounts of the company — a same-currency virman or a
+    /// currency exchange, each one record. Company-wide, not Critical; registration grants nothing (grants are a human
+    /// gate).
+    /// </summary>
+    public const string FinanceCashTransfersRead = "finance.cash-transfers.read";
+    public const string FinanceCashTransfersCommit = "finance.cash-transfers.commit";
 
     /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
@@ -1090,6 +1099,14 @@ public static class ErpPermissions
     public const string AccountingPostingMappingsActivate = "accounting.posting-mappings.activate";
 
     /// <summary>
+    /// FIN-S16 (M-05 Hesap Planı, KALAN_MODULLER_HAZIRLIK_PLANI_v1 M-05): the Accounting owner's narrow read of the
+    /// active approved account plan (code and name of each account). Its own name per #66 5738113623 §4 ("each read
+    /// is its own narrow name"). Registered, not granted: which persona reads the account plan is a human grant
+    /// decision. Company-wide only; not Critical.
+    /// </summary>
+    public const string AccountingAccountPlanRead = "accounting.account-plan.read";
+
+    /// <summary>
     /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
     /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
     /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
@@ -1351,6 +1368,7 @@ public static class ErpPermissions
             AccountingPostingMappingsRead,
             AccountingPostingMappingsPrepare,
             AccountingPostingMappingsActivate,
+            AccountingAccountPlanRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -1385,6 +1403,8 @@ public static class ErpPermissions
         FinanceExpensePaymentDraftRead,
         FinanceExpensePaymentApprove,
         FinanceExpensePaymentRecord,
+        FinanceCashTransfersRead,
+        FinanceCashTransfersCommit,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1441,6 +1461,7 @@ public static class ErpPermissions
             FinanceCashAccountPassivationApprove,
             FinanceCashAccountReactivationPropose,
             FinanceCashAccountReactivationApprove,
+            FinanceCreditLimitsApprove,
             CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
@@ -1566,6 +1587,7 @@ public static class ErpPermissions
             AccountingPostingMappingsRead,
             AccountingPostingMappingsPrepare,
             AccountingPostingMappingsActivate,
+            AccountingAccountPlanRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -1600,6 +1622,8 @@ public static class ErpPermissions
         FinanceExpensePaymentDraftRead,
         FinanceExpensePaymentApprove,
         FinanceExpensePaymentRecord,
+        FinanceCashTransfersRead,
+        FinanceCashTransfersCommit,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,

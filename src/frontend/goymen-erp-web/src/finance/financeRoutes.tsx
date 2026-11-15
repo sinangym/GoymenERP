@@ -43,7 +43,10 @@ import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CA
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import { ExpensePaymentPage } from './ExpensePaymentPage'
+import { CreditLimitPage } from './CreditLimitPage'
 import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
+import { CashTransferPage } from './CashTransferPage'
+import { CASH_TRANSFER_TEXT } from './cashTransferText'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -71,12 +74,19 @@ function usePaymentContext() {
   return { ...context, companyId: context.companyId }
 }
 
-/** B-05: the party-ledger workspace on one of its two routes; it needs a single active company. */
-function PartyLedgerWorkspaceRoute({ base, title }: { readonly base: string; readonly title: string }) {
+/**
+ * B-05: the party-ledger workspace on one of its two routes; it needs a single active company. M-03's open-account
+ * panels (`openAccounts`) are Muhasebe > Cari Hesaplar's.
+ */
+function PartyLedgerWorkspaceRoute({ base, title, openAccounts = false }: {
+  readonly base: string
+  readonly title: string
+  readonly openAccounts?: boolean
+}) {
   const context = usePaymentContext()
   return context === null
     ? <StateBlock state={{ kind: 'not-found' }} subject={WORKSPACE_NEEDS_COMPANY} />
-    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} />
+    : <PartyLedgerWorkspacePage companyId={context.companyId} base={base} title={title} openAccounts={openAccounts} />
 }
 
 /** F-25 (FNS-D25): the expense-payment workspace; it needs a single active company. Each control has its own gate. */
@@ -88,6 +98,25 @@ function ExpensePaymentRoute() {
     canDraft={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsDraft)}
     canApprove={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsApprove)}
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsRecord)} />
+}
+
+/** F-32 (FNS-D24): transfers and currency exchanges; it needs a single active company. The commit has its own gate. */
+function CashTransferRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={CASH_TRANSFER_TEXT.subject} />
+  return <CashTransferPage companyId={context.companyId} actorId={context.userId}
+    canCommit={hasCapability(shell, FINANCE_CAPABILITY.cashTransfersCommit)} />
+}
+
+/**
+ * F-018 L1 (FNS-D45): the credit-limit list. Proposing and deciding are controls of it, each behind its own capability;
+ * the screen itself refuses to work without a single active company and the server checks every command anyway.
+ */
+function CreditLimitRoute() {
+  const shell = useShellState()
+  return <CreditLimitPage canPropose={hasCapability(shell, FINANCE_CAPABILITY.creditLimitsPropose)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.creditLimitsApprove)} />
 }
 
 function ManualBankPaymentListRoute() {
@@ -225,6 +254,14 @@ export const financeRoutes: RouteObject[] = [
     path: FINANCE_ROUTE.expensePayments.slice(1),
     element: gate(FINANCE_CAPABILITY.expensePaymentsWorkspace, <ExpensePaymentRoute />),
   },
+  {
+    path: FINANCE_ROUTE.cashTransfers.slice(1),
+    element: gate(FINANCE_CAPABILITY.cashTransfersWorkspace, <CashTransferRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.creditLimitsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.creditLimitsList, <CreditLimitRoute />),
+  },
   { path: FINANCE_ROUTE.openItemsList.slice(1), element: gate(FINANCE_CAPABILITY.openItemsList, <OpenItemListPage />) },
   {
     path: FINANCE_ROUTE.openItemsDetail.slice(1),
@@ -234,7 +271,8 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.partyLedgerAccounting.slice(1),
     element: gate(FINANCE_CAPABILITY.partyLedgerAccounting,
-      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING} />),
+      <PartyLedgerWorkspaceRoute base={FINANCE_ROUTE.partyLedgerAccounting} title={WORKSPACE_TITLE_ACCOUNTING}
+        openAccounts />),
   },
   {
     path: FINANCE_ROUTE.partyLedgerCari.slice(1),
