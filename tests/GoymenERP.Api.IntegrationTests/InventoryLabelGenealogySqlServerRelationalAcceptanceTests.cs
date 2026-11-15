@@ -109,7 +109,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Split_and_merge_inherit_the_usable_remnant_production_status_and_a_mixed_merge_leaves_it_null()
     {
-        // KLN-D46: a split gives every child the source's UsableRemnant production status; a merge result keeps it only
+        // KLN-D46 (in force per KLN-D63): a split gives every child the source's UsableRemnant production status; a merge result keeps it only
         // when every source carries it; a merge of mixed sources stores NULL. The status is read from the stored
         // source rows, never from the request.
         await using var run = await Run.StartAsync();

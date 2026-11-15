@@ -113,7 +113,7 @@ public sealed partial class InventoryStore
         var requiredDocuments = JsonSerializer.Deserialize<string[]>(baseline.RequiredDocumentsJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı.");
 
-        // KLN-D46: the outputs inherit the sources' production status (split: every child; merge: only when every
+        // KLN-D46 (in force per KLN-D63): the outputs inherit the sources' production status (split: every child; merge: only when every
         // source carries it; mixed sources: null). It is read from the stored source labels, never from the request,
         // so it is not part of the payload hash. The classification is not inherited here (unchanged behaviour).
         var inheritedProductionStatus = InventoryLabelTransformation.InheritedProductionStatus(

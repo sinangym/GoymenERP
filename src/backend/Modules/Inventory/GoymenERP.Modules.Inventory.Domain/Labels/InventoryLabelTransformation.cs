@@ -78,14 +78,14 @@ public sealed class InventoryLabelTransformation
     public IReadOnlyList<InventoryLabelTransformationOutput> Outputs => Array.AsReadOnly(outputs);
 
     /// <summary>
-    /// KLN-D46 (owner decision of 2026-11-15): the production status (BS-5) every output label of this repack
-    /// carries. See <see cref="InheritedProductionStatus(IEnumerable{MaterialLabel})"/>.
+    /// KLN-D46, confirmed in force by KLN-D63 (owner decisions of 2026-11-15): the production status (BS-5) every
+    /// output label of this repack carries. See <see cref="InheritedProductionStatus(IEnumerable{MaterialLabel})"/>.
     /// </summary>
     public LabelProductionStatus? OutputProductionStatus => InheritedProductionStatus(sources.Select(source => source.Label));
 
     /// <summary>
-    /// KLN-D46 (owner decision of 2026-11-15): the production status a split or merge output inherits from its
-    /// sources. A split has one source, so every child inherits that source's
+    /// KLN-D46, confirmed in force by KLN-D63 (owner decisions of 2026-11-15): the production status a split or
+    /// merge output inherits from its sources. A split has one source, so every child inherits that source's
     /// <see cref="LabelProductionStatus.UsableRemnant"/>; a merge result is
     /// <see cref="LabelProductionStatus.UsableRemnant"/> only when EVERY source is; any source without it (mixed
     /// sources) leaves the output's production status null. The classification (Standard/SecondQuality, BS-14,
