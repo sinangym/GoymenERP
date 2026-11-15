@@ -94,14 +94,16 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, customerReturnCredits) < Array.IndexOf(migrations, expensePayments));
         const string partyCreditLimitSecondPerson = "20261115121907_RequirePartyCreditLimitSecondPerson";
         Assert.True(Array.IndexOf(migrations, expensePayments) < Array.IndexOf(migrations, partyCreditLimitSecondPerson));
-        // The NEWEST migration is pinned by name on purpose: the credit limit decision check that closes the direct
-        // record (FNS-D45) is the reviewed append, never an unreviewed migration that silently becomes authoritative. By migration id
+        const string cashTransfers = "20261115145712_AddCashTransfers";
+        Assert.True(Array.IndexOf(migrations, partyCreditLimitSecondPerson) < Array.IndexOf(migrations, cashTransfers));
+        // The NEWEST migration is pinned by name on purpose: the transfer and currency exchange record (FNS-D24) is
+        // the reviewed append, never an unreviewed migration that silently becomes authoritative. By migration id
         // the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits between the payment reversals
         // (API-23) and the cash accounts (API-30), whose passivation and reactivation precede the rejection and
         // withdrawal of a pending official sales invoice record (FNS-D39), which the credit limit master
         // (API-85a L1, FNS-D27/D27a) follows; the customer return credits (F-019), the expense payments (FNS-D25) and the second-person
-        // credit limit check (FNS-D45) follow it.
-        Assert.Equal(partyCreditLimitSecondPerson, migrations.Last());
+        // credit limit check (FNS-D45) follow it, and the transfer and currency exchange record (FNS-D24) follows them.
+        Assert.Equal(cashTransfers, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

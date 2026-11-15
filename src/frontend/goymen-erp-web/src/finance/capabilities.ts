@@ -54,6 +54,10 @@ export const FINANCE_CAPABILITY = {
   expensePaymentsApprove: 'finance.expense-payments.approve',
   /** FNS-D25: the final, explicitly confirmed record — the money fact (control of the workspace). */
   expensePaymentsRecord: 'finance.expense-payments.record',
+  /** FNS-D24 (API-32/34): the transfer between two treasury accounts and the currency exchange — one workspace. */
+  cashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  /** FNS-D24: the explicitly confirmed transfer record — the money fact (control of the workspace). */
+  cashTransfersCommit: 'finance.cash-transfers.commit',
   officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',
@@ -89,6 +93,7 @@ export const FINANCE_ROUTE = {
   manualBankPaymentsCreate: '/finans/odemeler/yeni',
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
   expensePayments: '/finans/masraf-odemeleri',
+  cashTransfers: '/finans/virman',
   officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
   allocationsList: '/finans/dagitimlar',

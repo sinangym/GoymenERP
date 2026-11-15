@@ -430,6 +430,14 @@ public static class ErpPermissions
     public const string FinanceExpensePaymentRecord = "finance.expense-payment.record";
 
     /// <summary>
+    /// FNS-D24 (API-32/34): the transfer between two treasury accounts of the company — a same-currency virman or a
+    /// currency exchange, each one record. Company-wide, not Critical; registration grants nothing (grants are a human
+    /// gate).
+    /// </summary>
+    public const string FinanceCashTransfersRead = "finance.cash-transfers.read";
+    public const string FinanceCashTransfersCommit = "finance.cash-transfers.commit";
+
+    /// <summary>
     /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
     /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
     /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
@@ -1318,6 +1326,8 @@ public static class ErpPermissions
         FinanceExpensePaymentDraftRead,
         FinanceExpensePaymentApprove,
         FinanceExpensePaymentRecord,
+        FinanceCashTransfersRead,
+        FinanceCashTransfersCommit,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,
@@ -1527,6 +1537,8 @@ public static class ErpPermissions
         FinanceExpensePaymentDraftRead,
         FinanceExpensePaymentApprove,
         FinanceExpensePaymentRecord,
+        FinanceCashTransfersRead,
+        FinanceCashTransfersCommit,
         FinanceCustomerInstrumentRead,
         FinanceCustomerInstrumentAmountRead,
         FinanceCustomerInstrumentReceive,

@@ -29,6 +29,9 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
+                // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
+                ("finance.cash-transfers.commit", "F-32-CASH-TRANSFERS", "finance.cash-transfers.workspace"),
+                ("finance.cash-transfers.workspace", "F-32-CASH-TRANSFERS", null),
                 // F-018 L1 (Finance 1.10, FNS-D45): every change is a proposal; the decision is another person's control.
                 ("finance.credit-limits.approve", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
                 ("finance.credit-limits.list", "F-18-CREDIT-LIMITS", null),
