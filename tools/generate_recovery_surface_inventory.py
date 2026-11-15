@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 181
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "a256efc4fb7d51efb3143e09e161a7aba6154d4ee2ff0b527d44b5e3f852ce66"
 )
-EXPECTED_DURABLE_STORE_COUNT = 34
+EXPECTED_DURABLE_STORE_COUNT = 38
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -189,10 +189,13 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("documents", "DocumentAttempts"),
     ("finance", "CashAccountCommands"),
     ("finance", "Commands"),
+    ("finance", "CustomerReturnCredits"),
+    ("finance", "ExpensePaymentCommands"),
     ("finance", "InvoiceCancellations"),
     ("finance", "OfficialInvoiceImportCommands"),
     ("finance", "OfficialSalesInvoiceCommands"),
     ("finance", "OpenItemSourceBatches"),
+    ("finance", "PartyCreditLimitCommands"),
     ("idempotency", "CommandExecutions"),
     ("idempotency", "GroupSharedCommandTerminals"),
     ("inventory", "Commands"),
@@ -201,6 +204,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("logistics", "TransferOutgoingDocumentAttempts"),
     ("manufacturing", "Commands"),
     ("product", "PriceListAttempts"),
+    ("product", "ProductDimensionAttempts"),
     ("product", "ProductItemTypeAttempts"),
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
@@ -426,11 +430,25 @@ DURABLE_STORE_SPECS = (
         ("dbContext.CashAccountCommands.Add(new CashAccountCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "finance.customer-return-credits", "Finance", "idempotency", "FinanceDbContext",
+        "FinanceCustomerReturnCreditRow", "finance", "CustomerReturnCredits", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261114231451_AddCustomerReturnCredits.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs",
+        ("dbContext.CustomerReturnCredits.Add(new FinanceCustomerReturnCreditRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "finance.command-replay", "Finance", "idempotency", "FinanceDbContext",
         "FinanceCommandRow", "finance", "Commands", FINANCE_CONTEXT,
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260918200000_InitialFinanceDrafts.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
         ("dbContext.Commands.Add(new FinanceCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "finance.expense-payment-commands", "Finance", "idempotency", "FinanceDbContext",
+        "ExpensePaymentCommandRow", "finance", "ExpensePaymentCommands", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261115000505_AddExpensePayments.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
+        ("dbContext.ExpensePaymentCommands.Add(new ExpensePaymentCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "finance.invoice-cancellations", "Finance", "idempotency", "FinanceDbContext",
@@ -475,6 +493,13 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260924113000_AddFinanceAllocations.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
         ("dbContext.OpenItemSourceBatches.Add(batchRow)",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "finance.party-credit-limit-commands", "Finance", "idempotency", "FinanceDbContext",
+        "PartyCreditLimitCommandRow", "finance", "PartyCreditLimitCommands", FINANCE_CONTEXT,
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261114200445_AddPartyCreditLimits.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCreditLimitService.cs",
+        ("dbContext.PartyCreditLimitCommands.Add(new PartyCreditLimitCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "idempotency.group-shared-command-terminals", "Idempotency", "idempotency",
@@ -579,6 +604,13 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs",
         ("database.ItemTypeAttempts.Add(new ProductItemTypeAttemptRow",),
         mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
+        "product.dimension-attempts", "Product", "idempotency", "ProductPriceListDbContext",
+        "ProductDimensionAttemptRow", "product", "ProductDimensionAttempts", "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDbContext.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/20261114194618_AddProductCardDimensions.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs",
+        ("database.DimensionAttempts.Add(new ProductDimensionAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
         "purchasing.purchase-acceptance-shares", "Purchasing", "idempotency", "PurchasingDbContext",
@@ -696,9 +728,17 @@ WRITER_METHOD_SCOPES = {
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
     ): "AddCommand",
     (
+        "finance.customer-return-credits",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs",
+    ): "AcceptAsync",
+    (
         "finance.command-replay",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
     ): "DraftSaveAsync",
+    (
+        "finance.expense-payment-commands",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
+    ): "AddCommand",
     (
         "finance.invoice-cancellations",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemCancellationService.cs",
@@ -719,6 +759,10 @@ WRITER_METHOD_SCOPES = {
         "finance.open-item-source-batches",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
     ): "AdmitAsync",
+    (
+        "finance.party-credit-limit-commands",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCreditLimitService.cs",
+    ): "AddCommand",
     (
         "idempotency.group-shared-command-terminals",
         "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs",
@@ -762,6 +806,10 @@ WRITER_METHOD_SCOPES = {
     (
         "product.item-type-attempts",
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs",
+    ): "AddAttempt",
+    (
+        "product.dimension-attempts",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs",
     ): "AddAttempt",
     (
         "purchasing.purchase-acceptance-shares",
@@ -979,6 +1027,22 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs",
         "AddCommand",
     ): "7692294ce6b3bfdb42f4f03395b151e6fdae9589e38ef31da538dadc4321bf5b",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs",
+        "AcceptAsync",
+    ): "7269d40ab52966988c14fd866f255324c714319ef0ac6e981cfd5a273890e0b4",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
+        "AddCommand",
+    ): "c2b445bce9cc19a74021c23820719ef4cb0cdd36f380c10d2d69d2c31b80affc",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCreditLimitService.cs",
+        "AddCommand",
+    ): "5c59cb3eca4c72f9d0a92555ebdf17c3af381d245a677ec46137af31a5c0d0e7",
+    (
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs",
+        "AddAttempt",
+    ): "b5443ee7278edd96917b41298631ab00415d88db1c37e2f24de3fa64ebbc4b92",
 }
 
 
@@ -1020,6 +1084,10 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.RiskExceptions.cs": "695a4d2fe5fbcfc1209290390011eaf92f84ced0b20ce33b4679717478ce6fab",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs": "c785617e0b938428647482f80a4ba3a3cc0548e7235c0b68fd49feb90e987c7e",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs": "e39a8514da04cbaae157c51742d7841c4064753564428257b186a3c5e0343df7",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs": "df32d807523b90e307904cf0687c09ae7e55db846f371a340e239afd2b16e6d2",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCreditLimitService.cs": "f9edfa2489c0e1540cd95084c7668b2b5037ce5a1f62db459bea2efff5d9f29d",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs": "02003232234b75392ce5f2f5d8a560873f8379132bf437d1b032bd2f8cb52583",
 }
 
 

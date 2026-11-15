@@ -59,6 +59,9 @@ EXPECTED_STORES = {
     ("finance", "OpenItemSourceBatches"): (
         "FinanceOpenItemSourceBatchRow", "idempotency", "FinanceDbContext"
     ),
+    ("finance", "CustomerReturnCredits"): ("FinanceCustomerReturnCreditRow", "idempotency", "FinanceDbContext"),
+    ("finance", "ExpensePaymentCommands"): ("ExpensePaymentCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "PartyCreditLimitCommands"): ("PartyCreditLimitCommandRow", "idempotency", "FinanceDbContext"),
     ("idempotency", "CommandExecutions"): (
         "CommandExecution", "idempotency", "CommandExecutionDbContext"
     ),
@@ -82,6 +85,9 @@ EXPECTED_STORES = {
     ),
     ("product", "ProductItemTypeAttempts"): (
         "ProductItemTypeAttemptRow", "idempotency", "ProductPriceListDbContext"
+    ),
+    ("product", "ProductDimensionAttempts"): (
+        "ProductDimensionAttemptRow", "idempotency", "ProductPriceListDbContext"
     ),
     ("purchasing", "PurchaseAcceptanceShares"): (
         "PurchaseAcceptanceRow", "idempotency", "PurchasingDbContext"
@@ -454,7 +460,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 181, "durableStores": 32},
+            {"dbContexts": 19, "migrations": 181, "durableStores": 38},
             self.inventory["counts"],
         )
         actual = {
