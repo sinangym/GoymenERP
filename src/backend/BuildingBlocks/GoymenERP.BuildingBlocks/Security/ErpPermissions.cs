@@ -204,6 +204,32 @@ public static class ErpPermissions
     public const string InventoryStockTransferCancel = "inventory.stock-transfer.cancel";
 
     /// <summary>
+    /// B-22c receipt excess approval (KLN-D24: an overage needs a reason and a maker≠approver approval before it enters
+    /// stock). A separate name from <see cref="InventoryStockTransferWrite"/> so the receiver and the approver can be
+    /// different people; the service also refuses the receiver's own approval. Registration grants nothing: no seeded
+    /// role or real user receives this command. Company-wide only because the transfer has no narrower approved scope
+    /// dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
+
+    /// <summary>
+    /// B-22c pending-label loss request (KLN-D23 (c): a pending label may be closed as a loss only with an explanation
+    /// and a maker≠approver approval). Records the explanation; it moves no stock. Registration grants nothing: no
+    /// seeded role or real user receives this command. Company-wide only because the transfer has no narrower approved
+    /// scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferLossRecord = "inventory.stock-transfer.loss-record";
+
+    /// <summary>
+    /// B-22c pending-label loss decision (KLN-D23 (c)): approve (write the line off as a transit loss) or reject one
+    /// recorded loss request. A separate name from <see cref="InventoryStockTransferLossRecord"/>; the service also
+    /// refuses the requester's own decision. Registration grants nothing: no seeded role or real user receives this
+    /// command. Company-wide only because the transfer has no narrower approved scope dimension. Not Critical: no
+    /// approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferLossApprove = "inventory.stock-transfer.loss-approve";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -1254,6 +1280,9 @@ public static class ErpPermissions
             InventoryStockScrapApprove,
             InventoryStockTransferWrite,
             InventoryStockTransferCancel,
+            InventoryStockTransferOverageApprove,
+            InventoryStockTransferLossRecord,
+            InventoryStockTransferLossApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -1463,6 +1492,9 @@ public static class ErpPermissions
             InventoryStockScrapApprove,
             InventoryStockTransferWrite,
             InventoryStockTransferCancel,
+            InventoryStockTransferOverageApprove,
+            InventoryStockTransferLossRecord,
+            InventoryStockTransferLossApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

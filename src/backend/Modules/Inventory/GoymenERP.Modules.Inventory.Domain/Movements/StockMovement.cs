@@ -72,6 +72,26 @@ public enum StockMovementKind
     /// In line that restores one dispatched bucket at its exact source position; the dispatch movement stays as history.
     /// </summary>
     TransferDispatchCancellation = 11,
+
+    /// <summary>
+    /// KLN-D21 (B-22c): the automatic fire of a transfer receipt shortage. Exactly one Out line, free or blocked alike,
+    /// on the destination bucket the same receipt's <see cref="TransferAccept"/> just stocked; the missing kilograms
+    /// are the dispatched kilograms minus the receiver's entered kilograms. It is not the two-step <see cref="Scrap"/>.
+    /// </summary>
+    TransferReceiptShortage = 12,
+
+    /// <summary>
+    /// KLN-D24 (B-22c): the approved excess of a transfer receipt. Exactly one In line on the received destination
+    /// bucket, written only after a person other than the receiver approved it.
+    /// </summary>
+    TransferReceiptOverage = 13,
+
+    /// <summary>
+    /// KLN-D23 (c) (B-22c): the approved transit loss of one pending transfer label. Its kilograms already left the
+    /// source at dispatch, so every line pair is an In and then an Out of the same kilograms on the same source
+    /// position: the loss is recorded as a movement fact without changing any balance.
+    /// </summary>
+    TransferTransitLoss = 14,
 }
 
 public enum StockDirection
@@ -272,6 +292,23 @@ public sealed class StockMovement
             case StockMovementKind.TransferDispatchCancellation:
                 RequireAll(StockDirection.In, "Transfer çıkış iptalinin bütün satırları giriş olmalıdır.");
                 break;
+            case StockMovementKind.TransferReceiptShortage:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Transfer eksik teslim firesi tek satırdır: teslim alınan pozisyondan çıkış.");
+                }
+
+                break;
+            case StockMovementKind.TransferReceiptOverage:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.In)
+                {
+                    throw Invalid("Transfer fazla teslim hareketi tek satırdır: teslim alınan pozisyona giriş.");
+                }
+
+                break;
+            case StockMovementKind.TransferTransitLoss:
+                RequireNetZeroPairs();
+                break;
             case StockMovementKind.ManufacturingOutputReversal:
                 if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
                 {
@@ -292,6 +329,29 @@ public sealed class StockMovement
         if (lines.Any(line => line.Direction != direction))
         {
             throw Invalid(message);
+        }
+    }
+
+    /// <summary>
+    /// A transit loss is In/Out pairs, each pair an In immediately followed by an Out of the same kilograms on the
+    /// same position, so it records kilograms without creating, losing or relocating any balance.
+    /// </summary>
+    private void RequireNetZeroPairs()
+    {
+        if (lines.Length % 2 != 0)
+        {
+            throw Invalid("Transfer yolda kayıp hareketi aynı pozisyonda giriş-çıkış çiftleridir.");
+        }
+
+        for (var index = 0; index < lines.Length; index += 2)
+        {
+            var into = lines[index];
+            var outOf = lines[index + 1];
+            if (into.Direction != StockDirection.In || outOf.Direction != StockDirection.Out
+                || into.Position != outOf.Position || into.Quantity != outOf.Quantity)
+            {
+                throw Invalid("Transfer yolda kayıp hareketi aynı pozisyonda giriş-çıkış çiftleridir.");
+            }
         }
     }
 

@@ -123,9 +123,11 @@ internal static class InventoryLabelDispositionReader
     private static bool ShapeMatches(StockMovementKind kind, StockDirection direction) => kind switch
     {
         StockMovementKind.Receipt or StockMovementKind.Return or StockMovementKind.TransferAccept
-            or StockMovementKind.TransferDispatchCancellation => direction == StockDirection.In,
+            or StockMovementKind.TransferDispatchCancellation
+            or StockMovementKind.TransferReceiptOverage => direction == StockDirection.In,
         StockMovementKind.Issue or StockMovementKind.Scrap or StockMovementKind.TransferDispatch
-            or StockMovementKind.ManufacturingOutputReversal => direction == StockDirection.Out,
+            or StockMovementKind.ManufacturingOutputReversal
+            or StockMovementKind.TransferReceiptShortage => direction == StockDirection.Out,
         _ => true,
     };
 

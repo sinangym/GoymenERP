@@ -494,10 +494,18 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             .ToListAsync(cancellationToken);
         var accepted = await dbContext.TransferAcceptances.AsNoTracking()
             .Where(candidate => candidate.TransferId == transferId).ToListAsync(cancellationToken);
+        var writtenOff = await ApprovedLossDecisionsAsync(transferId, cancellationToken);
+        var lossPending = await LossPendingAsync(transferId, lineId, cancellationToken);
         var labelIds = lines.Select(line => line.LabelId).ToArray();
         var labels = await dbContext.Labels.Where(candidate => labelIds.Contains(candidate.Id))
             .ToDictionaryAsync(candidate => candidate.Id, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (lossPending || writtenOff.Any(candidate => candidate.LineId == lineId))
+        {
+            // KLN-D23: a written-off line is terminal and a line with an undecided loss request is not accepted.
+            throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
+        }
+
         var dispatchLine = dispatchLines.Single(candidate => candidate.LineId == lineId);
         var labelId = lines.Single(candidate => candidate.LineId == lineId).LabelId;
         if (labels.Count != labelIds.Length || !labels.TryGetValue(labelId, out var label))
@@ -509,7 +517,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             throw TransferError(409, InventoryTransferCodesV1.LabelVersionConflict);
         }
 
-        var aggregate = RestoreTransfer(row, lines, dispatch, dispatchLines, accepted, buckets, labels);
+        var aggregate = RestoreTransfer(row, lines, dispatch, dispatchLines, accepted, buckets, labels,
+            writtenOff: writtenOff);
         InventoryTransferAcceptanceEffect effect;
         try
         {
@@ -539,12 +548,13 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             CorrelationId = metadata.CorrelationId.Trim(),
         };
         dbContext.TransferAcceptances.Add(acceptance);
-        var before = TransferView(row, lines, dispatch, dispatchLines, accepted);
+        var writtenOffIds = writtenOff.Select(candidate => candidate.LineId).ToArray();
+        var before = TransferView(row, lines, dispatch, dispatchLines, accepted, writtenOffIds);
         row.Version = effect.TransferVersion;
         row.Status = (int)aggregate.Status;
         row.UpdatedAtUtc = now;
         var afterAccepted = accepted.Append(acceptance).ToArray();
-        var view = TransferView(row, lines, dispatch, dispatchLines, afterAccepted);
+        var view = TransferView(row, lines, dispatch, dispatchLines, afterAccepted, writtenOffIds);
         dbContext.Commands.Add(TransferCommandRow(AcceptTransferLineCommand, keyHash, payloadHash, metadata, row.Id, view));
         Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.line-accepted.v1", "AcceptLine",
             expectedVersion, row.Version, JsonSerializer.Serialize(before, Json), JsonSerializer.Serialize(view, Json),
@@ -609,7 +619,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         IReadOnlyList<InventoryTransferAcceptanceRow> acceptances,
         IReadOnlyList<InventoryTransferBucketRow>? storedBuckets = null,
         IReadOnlyDictionary<Guid, LabelRow>? storedLabels = null,
-        InventoryTransferDispatchCancellationRow? cancellation = null)
+        InventoryTransferDispatchCancellationRow? cancellation = null,
+        IReadOnlyList<InventoryTransferLossDecisionRow>? writtenOff = null)
     {
         var labelRows = storedLabels ?? new Dictionary<Guid, LabelRow>();
         var buckets = storedBuckets ?? [];
@@ -644,7 +655,9 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
                 acceptance.AcceptedAtUtc,
                 new InventoryTransferDocumentReference(acceptance.DocumentKind, acceptance.DocumentId,
                     acceptance.DocumentLineId))),
-            cancellation?.CancelledAtUtc);
+            cancellation?.CancelledAtUtc,
+            writtenOff?.Select(decision => new InventoryTransferWrittenOffLineState(decision.LineId,
+                decision.DecidedAtUtc)));
     }
 
     private async Task<InventoryTransferViewV1> TransferViewAsync(Guid transferId, CancellationToken cancellationToken)
@@ -659,7 +672,9 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             .Where(line => line.TransferId == transferId).ToListAsync(cancellationToken);
         var accepted = await dbContext.TransferAcceptances.AsNoTracking()
             .Where(line => line.TransferId == transferId).ToListAsync(cancellationToken);
-        return TransferView(row, lines, dispatch, actual, accepted);
+        var writtenOff = await ApprovedLossDecisionsAsync(transferId, cancellationToken);
+        return TransferView(row, lines, dispatch, actual, accepted,
+            writtenOff.Select(decision => decision.LineId).ToArray());
     }
 
     private static InventoryTransferViewV1 TransferView(
@@ -667,10 +682,12 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         IReadOnlyList<InventoryTransferLineRow> lines,
         InventoryTransferDispatchRow? dispatch,
         IReadOnlyList<InventoryTransferDispatchLineRow> actual,
-        IReadOnlyList<InventoryTransferAcceptanceRow> accepted)
+        IReadOnlyList<InventoryTransferAcceptanceRow> accepted,
+        IReadOnlyCollection<Guid>? writtenOffLineIds = null)
     {
         var actualByLine = actual.ToDictionary(line => line.LineId);
         var acceptedIds = accepted.Select(line => line.LineId).ToHashSet();
+        var writtenOffIds = writtenOffLineIds?.ToHashSet() ?? [];
         return new InventoryTransferViewV1(row.Id, row.CompanyId, row.Version.ToString(CultureInfo.InvariantCulture),
             ((InventoryTransferStatus)row.Status).ToString(), row.SourceLocationId,
             ((StockPartyKind)row.SourceCustodianKind).ToString(), row.SourceCustodianId,
@@ -680,6 +697,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             {
                 actualByLine.TryGetValue(line.LineId, out var dispatched);
                 var status = acceptedIds.Contains(line.LineId) ? InventoryTransferLineStatus.Accepted
+                    : writtenOffIds.Contains(line.LineId) ? InventoryTransferLineStatus.WrittenOff
                     : dispatched is null ? InventoryTransferLineStatus.Planned
                     : row.Status == (int)InventoryTransferStatus.DispatchCancelled
                         ? InventoryTransferLineStatus.DispatchCancelled

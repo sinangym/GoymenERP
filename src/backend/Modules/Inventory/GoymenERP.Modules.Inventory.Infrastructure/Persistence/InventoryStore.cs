@@ -323,6 +323,12 @@ public sealed partial class InventoryStore(
         }
 
         var balanceRows = await dbContext.Balances.Where(row => labelIds.Contains(row.LabelId)).ToListAsync(cancellationToken);
+        // A second movement staged in the same unit of work (B-22c: acceptance then receipt shortage) must see the
+        // balance rows the first one added but has not saved yet; the query above only returns stored rows.
+        balanceRows.AddRange(dbContext.Balances.Local
+            .Where(row => labelIds.Contains(row.LabelId) && row.CompanyId == movement.CompanyId
+                && dbContext.Entry(row).State == EntityState.Added && !balanceRows.Contains(row))
+            .ToList());
         var labelObjects = labels.ToDictionary(row => row.Id, IdentityOnly);
         var ledger = StockLedger.FromStoredBalances(balanceRows.Select(row =>
             new StockBalance(Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId,
