@@ -43,7 +43,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// permitted actor; 403 without the vault's names; 404 without the Cari read and for another company; the bytes served
 /// are the bytes stored. SENTETIK.
 /// </summary>
-public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
+public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -294,7 +294,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
-            Assert.Equal(["20260930120000_InitialDocuments"], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker"],
+                await context.Database.GetAppliedMigrationsAsync());
             await context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
             await context.Database.MigrateAsync();
@@ -310,7 +311,9 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         {
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase));
             Assert.Equal(51058, error.Number);
-            Assert.Equal(["20260930120000_InitialDocuments"], await context.Database.GetAppliedMigrationsAsync());
+            // The primary-link marker's own Down passes (one upload link, the earliest one, is primary); the initial
+            // migration's guard then refuses, so the documents schema stays applied.
+            Assert.Contains("20260930120000_InitialDocuments", await context.Database.GetAppliedMigrationsAsync());
         }
 
         Assert.Equal((1, 1, 1, 1, 1), await run.CountsAsync());

@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentsPanel } from './DocumentsPanel'
 import { OWNER_KIND, decodeDocumentList, decodeDocumentUpload } from './contract'
-import { DOCUMENTS_TEXT as T, formatSize, refusalText, versionRefusalText } from './documentsText'
+import { DOCUMENTS_TEXT as T, formatSize, linkRefusalText, refusalText, versionRefusalText } from './documentsText'
 
 const COMPANY = 'aaaaaaaa-0000-4000-8000-000000000001'
 const OTHER_COMPANY = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -98,6 +98,7 @@ describe('AT-065 document panel', () => {
         items: [row(), row({ id: 'd0000000-0000-4000-8000-000000000002', fileName: 'Tarama.png', contentType: 'image/png', scanState: 'NotScanned', downloadable: false })],
         canUpload: false,
         limits: LIMITS,
+        canLink: false,
       }),
     )
     renderPanel()
@@ -123,7 +124,7 @@ describe('AT-065 document panel', () => {
   })
 
   it('reads the list under the active company with the owner as query, and refuses another company\'s row as malformed', async () => {
-    const calls = installFetch(() => json({ items: [row({ companyId: OTHER_COMPANY })], canUpload: true, limits: LIMITS }))
+    const calls = installFetch(() => json({ items: [row({ companyId: OTHER_COMPANY })], canUpload: true, limits: LIMITS, canLink: false }))
     renderPanel()
 
     expect(await screen.findByText(T.readFailed)).toBeTruthy()
@@ -137,7 +138,7 @@ describe('AT-065 document panel', () => {
     const calls = installFetch((call) => {
       if (call.method === 'POST') return json({ document: row({ sizeBytes: 2048 }), duplicates: [], isReplay: false, originalCorrelationId: 'c-1' }, 201)
       listReads++
-      return json({ items: listReads === 1 ? [] : [row()], canUpload: true, limits: LIMITS })
+      return json({ items: listReads === 1 ? [] : [row()], canUpload: true, limits: LIMITS, canLink: false })
     })
     renderPanel()
 
@@ -171,7 +172,7 @@ describe('AT-065 document panel', () => {
             },
             201,
           )
-        : json({ items: [row()], canUpload: true, limits: LIMITS }),
+        : json({ items: [row()], canUpload: true, limits: LIMITS, canLink: false }),
     )
     renderPanel()
 
@@ -187,7 +188,7 @@ describe('AT-065 document panel', () => {
   it('keeps the same key and file for a retry after a lost answer and reports the replay', async () => {
     let posts = 0
     const calls = installFetch((call) => {
-      if (call.method !== 'POST') return json({ items: [], canUpload: true, limits: LIMITS })
+      if (call.method !== 'POST') return json({ items: [], canUpload: true, limits: LIMITS, canLink: false })
       posts++
       if (posts === 1) throw new TypeError('network down')
       return json({ document: row(), duplicates: [], isReplay: true, originalCorrelationId: 'c-1' }, 201, { 'Idempotency-Replayed': 'true' })
@@ -211,7 +212,7 @@ describe('AT-065 document panel', () => {
     const calls = installFetch((call) =>
       call.method === 'POST'
         ? json({ code: 'document_content_mismatch', correlationId: 'c' }, 422)
-        : json({ items: [], canUpload: true, limits: LIMITS }),
+        : json({ items: [], canUpload: true, limits: LIMITS, canLink: false }),
     )
     renderPanel()
 
@@ -242,7 +243,7 @@ describe('AT-065 document panel', () => {
           ? new Response(new Uint8Array([37, 80, 68, 70]), { status: 200, headers: { 'Content-Type': 'application/pdf' } })
           : json({ code: 'document_not_scanned', correlationId: 'c' }, 409)
       }
-      return json({ items: [row()], canUpload: false, limits: LIMITS })
+      return json({ items: [row()], canUpload: false, limits: LIMITS, canLink: false })
     })
     renderPanel()
 
@@ -257,11 +258,11 @@ describe('AT-065 document panel', () => {
 
 describe('document contract decoders', () => {
   it('refuses a row that claims a download for a version that was not scanned', () => {
-    expect(decodeDocumentList({ items: [row({ scanState: 'NotScanned', downloadable: true })], canUpload: false, limits: LIMITS }, COMPANY,
+    expect(decodeDocumentList({ items: [row({ scanState: 'NotScanned', downloadable: true })], canUpload: false, limits: LIMITS, canLink: false }, COMPANY,
       OWNER_KIND.counterpartyParty, PARTY)).toBeNull()
-    expect(decodeDocumentList({ items: [row({ ownerId: OTHER_COMPANY })], canUpload: false, limits: LIMITS }, COMPANY, OWNER_KIND.counterpartyParty,
+    expect(decodeDocumentList({ items: [row({ ownerId: OTHER_COMPANY })], canUpload: false, limits: LIMITS, canLink: false }, COMPANY, OWNER_KIND.counterpartyParty,
       PARTY)).toBeNull()
-    expect(decodeDocumentList({ items: [row()], canUpload: 'yes', limits: LIMITS }, COMPANY, OWNER_KIND.counterpartyParty, PARTY)).toBeNull()
+    expect(decodeDocumentList({ items: [row()], canUpload: 'yes', limits: LIMITS, canLink: false }, COMPANY, OWNER_KIND.counterpartyParty, PARTY)).toBeNull()
   })
 
   it('accepts an upload answer only for the company, owner and size that were sent', () => {
@@ -300,7 +301,7 @@ describe('document versions (DOC-VERSION-UI-01)', () => {
 
   const isHistory = (call: Call) => call.method === 'GET' && call.url.startsWith(`${APPEND}?`)
   const isAppend = (call: Call) => call.method === 'POST' && call.url === APPEND
-  const list = (canUpload: boolean, versionNo = 1) => json({ items: [row({ versionNo })], canUpload, limits: LIMITS })
+  const list = (canUpload: boolean, versionNo = 1) => json({ items: [row({ versionNo })], canUpload, limits: LIMITS, canLink: false })
 
   async function openVersions() {
     await userEvent.click(await screen.findByRole('button', { name: T.versionsShow('Sözleşme.pdf') }))
@@ -578,7 +579,7 @@ describe('document versions (DOC-VERSION-UI-01)', () => {
       if (call.url.endsWith('/content')) return new Promise<Response>((resolve) => (releaseContent = resolve))
       if (isAppend(call)) return new Promise<Response>((resolve) => (releaseAppend = resolve))
       if (isHistory(call)) return json(history([1]))
-      return json({ items: [row({ companyId: company })], canUpload: true, limits: LIMITS })
+      return json({ items: [row({ companyId: company })], canUpload: true, limits: LIMITS, canLink: false })
     })
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
     const panel = (companyId: string, generation: number) => (
@@ -630,5 +631,161 @@ describe('document versions (DOC-VERSION-UI-01)', () => {
     release(new Response(new Uint8Array(1001), { status: 200 }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(createObjectURL).not.toHaveBeenCalled()
+  })
+})
+
+/* ── KLN-D49/D50: an existing document linked instead of a second upload ─── */
+
+const LINK_HASH = '0'.repeat(64)
+const LINKED_DOCUMENT = 'd0000000-0000-4000-8000-0000000000aa'
+const SOURCE_ORDER = '22222222-2222-4222-8222-222222222222'
+const PROBE_URL = `/api/v1/documents/link-candidates?ownerKind=counterparty.party&ownerId=${PARTY}&sha256=${LINK_HASH}`
+const LINK_URL = `/api/v1/documents/${LINKED_DOCUMENT}/links`
+
+/** A browser that can hash: every digest is 32 zero bytes, so the probe asks for `LINK_HASH`. */
+function installHashingCrypto() {
+  const digest = vi.fn(async () => new Uint8Array(32).buffer)
+  vi.stubGlobal('crypto', { randomUUID: vi.fn(() => `key-${Math.random().toString(36).slice(2)}`), subtle: { digest } })
+  return digest
+}
+
+/** jsdom's File has no arrayBuffer(); the chosen file gets one so the panel can hash it. */
+function hashable(file: File): File {
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => new ArrayBuffer(file.size) })
+  return file
+}
+
+function candidate(over: Record<string, unknown> = {}) {
+  return {
+    documentId: LINKED_DOCUMENT,
+    versionNo: 1,
+    fileName: 'Sözleşme.pdf',
+    contentType: 'application/pdf',
+    sizeBytes: 2048,
+    uploadedAtUtc: '2026-09-29T08:00:00+00:00',
+    sourceOwnerKind: 'purchasing.purchase-order',
+    sourceOwnerId: SOURCE_ORDER,
+    ...over,
+  }
+}
+
+function candidates(items: readonly unknown[]) {
+  return { ownerKind: OWNER_KIND.counterpartyParty, ownerId: PARTY, sha256: LINK_HASH, items }
+}
+
+function linkWrite(isReplay = false) {
+  return { document: row({ id: LINKED_DOCUMENT }), isReplay, originalCorrelationId: 'c-link' }
+}
+
+describe('KLN-D50 existing document link', () => {
+  it('does not hash or probe when the list does not offer the link', async () => {
+    const digest = installHashingCrypto()
+    const calls = installFetch(() => json({ items: [], canUpload: true, limits: LIMITS, canLink: false }))
+    renderPanel()
+
+    await userEvent.upload(await screen.findByLabelText(T.fileLabel), hashable(pdf()))
+    expect((screen.getByRole('button', { name: T.upload }) as HTMLButtonElement).disabled).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(digest).not.toHaveBeenCalled()
+    expect(calls.filter((c) => c.url.includes('link-candidates'))).toHaveLength(0)
+    expect(screen.queryByText(T.linkProbeLoading)).toBeNull()
+  })
+
+  it('links the earlier document once with one key, the company and the expected version, then re-reads the list', async () => {
+    installHashingCrypto()
+    let listReads = 0
+    const calls = installFetch((call) => {
+      if (call.url === PROBE_URL) return json(candidates([candidate()]))
+      if (call.method === 'POST') return json(linkWrite(), 201)
+      listReads++
+      return json({ items: listReads === 1 ? [] : [row({ id: LINKED_DOCUMENT })], canUpload: true, limits: LIMITS, canLink: true })
+    })
+    renderPanel()
+
+    await userEvent.upload(await screen.findByLabelText(T.fileLabel), hashable(pdf()))
+    const offer = await screen.findByRole('group', { name: T.linkTitle })
+    expect(within(offer).getByText(/^Sözleşme\.pdf — sürüm 1, /)).toBeTruthy()
+    const probe = calls.find((c) => c.url === PROBE_URL)
+    expect(probe?.headers['X-Company-Id']).toBe(COMPANY)
+
+    await userEvent.click(within(offer).getByRole('button', { name: T.linkAction('Sözleşme.pdf') }))
+
+    expect(await screen.findByText(T.linked('Sözleşme.pdf'))).toBeTruthy()
+    const posts = calls.filter((c) => c.method === 'POST')
+    expect(posts.map((c) => c.url)).toEqual([LINK_URL])
+    expect(posts[0].headers['X-Company-Id']).toBe(COMPANY)
+    expect(posts[0].headers['Idempotency-Key']).toMatch(/^key-/)
+    expect(JSON.parse(posts[0].body as string)).toEqual({ ownerKind: 'counterparty.party', ownerId: PARTY, expectedCurrentVersion: 1 })
+    // Nothing was uploaded; the list is read again and now holds the linked document.
+    expect(await screen.findByRole('rowheader', { name: 'Sözleşme.pdf' })).toBeTruthy()
+    expect(listReads).toBeGreaterThanOrEqual(2)
+  })
+
+  it('keeps the same link attempt and key for a retry after a lost answer and reports the replay', async () => {
+    installHashingCrypto()
+    let posts = 0
+    const calls = installFetch((call) => {
+      if (call.url === PROBE_URL) return json(candidates([candidate()]))
+      if (call.method !== 'POST') return json({ items: [], canUpload: true, limits: LIMITS, canLink: true })
+      posts++
+      if (posts === 1) throw new TypeError('network down')
+      return json(linkWrite(true), 201, { 'Idempotency-Replayed': 'true' })
+    })
+    renderPanel()
+
+    await userEvent.upload(await screen.findByLabelText(T.fileLabel), hashable(pdf()))
+    await userEvent.click(await screen.findByRole('button', { name: T.linkAction('Sözleşme.pdf') }))
+    expect(await screen.findByText(T.linkUnknownTitle)).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: T.linkRetry }))
+    expect(await screen.findByText(T.linkReplayed)).toBeTruthy()
+    const sent = calls.filter((c) => c.method === 'POST')
+    expect(sent.map((c) => c.url)).toEqual([LINK_URL, LINK_URL])
+    expect(sent[0].headers['Idempotency-Key']).toBe(sent[1].headers['Idempotency-Key'])
+    expect(sent[0].body).toBe(sent[1].body)
+  })
+
+  it('explains a refused link by its code, keeps the chosen file and asks for the candidates again', async () => {
+    installHashingCrypto()
+    const calls = installFetch((call) => {
+      if (call.url === PROBE_URL) return json(candidates([candidate()]))
+      if (call.method === 'POST') return json({ code: 'document_already_linked', correlationId: 'c' }, 409)
+      return json({ items: [], canUpload: true, limits: LIMITS, canLink: true })
+    })
+    renderPanel()
+
+    await userEvent.upload(await screen.findByLabelText(T.fileLabel), hashable(pdf()))
+    await userEvent.click(await screen.findByRole('button', { name: T.linkAction('Sözleşme.pdf') }))
+
+    expect(await screen.findByText(linkRefusalText(409, 'document_already_linked'))).toBeTruthy()
+    expect((screen.getByRole('button', { name: T.upload }) as HTMLButtonElement).disabled).toBe(false)
+    await waitFor(() => expect(calls.filter((c) => c.url === PROBE_URL).length).toBeGreaterThanOrEqual(2))
+    expect(screen.queryByText(T.linked('Sözleşme.pdf'))).toBeNull()
+  })
+
+  it.each([
+    ['no candidate', () => json(candidates([])), T.linkProbeNone],
+    ['a server failure', () => json({ title: 'x' }, 500), T.linkProbeUnavailable],
+    ['an answer for another hash', () => json({ ...candidates([candidate()]), sha256: 'f'.repeat(64) }), T.linkProbeUnavailable],
+  ])('leaves only the upload after %s', async (_label, probeAnswer, text) => {
+    installHashingCrypto()
+    installFetch((call) => (call.url === PROBE_URL ? probeAnswer() : json({ items: [], canUpload: true, limits: LIMITS, canLink: true })))
+    renderPanel()
+
+    await userEvent.upload(await screen.findByLabelText(T.fileLabel), hashable(pdf()))
+
+    expect(await screen.findByText(text)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.linkAction('Sözleşme.pdf') })).toBeNull()
+    expect((screen.getByRole('button', { name: T.upload }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('sends no probe when the browser cannot hash the file', async () => {
+    const calls = installFetch(() => json({ items: [], canUpload: true, limits: LIMITS, canLink: true }))
+    renderPanel()
+
+    await userEvent.upload(await screen.findByLabelText(T.fileLabel), pdf())
+
+    expect(await screen.findByText(T.linkProbeUnavailable)).toBeTruthy()
+    expect(calls.filter((c) => c.url.includes('link-candidates'))).toHaveLength(0)
   })
 })

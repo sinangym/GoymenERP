@@ -21,6 +21,12 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
     public const string IdentityCollation = "Latin1_General_100_BIN2";
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
 
+    /// <summary>KLN-D49 (4): the filtered unique index that keeps one primary link per document.</summary>
+    internal const string PrimaryLinkIndex = "UX_DocumentLinks_Primary";
+
+    /// <summary>The primary-link index's filter; tests compare the model's filter with it.</summary>
+    internal const string PrimaryLinkFilter = "[IsPrimary] = 1";
+
     internal DbSet<ContentBlobRow> Blobs => Set<ContentBlobRow>();
 
     internal DbSet<DocumentRow> Documents => Set<DocumentRow>();
@@ -140,6 +146,9 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
         entity.Property(x => x.LinkedBy).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.OwnerKind, x.OwnerId, x.LinkedAtUtc })
             .HasDatabaseName("IX_DocumentLinks_CompanyId_OwnerKind_OwnerId_LinkedAtUtc");
+        // KLN-D49 (4): the first link is the primary one; at most one primary link per document.
+        entity.HasIndex(x => new { x.CompanyId, x.DocumentId }).IsUnique().HasDatabaseName(PrimaryLinkIndex)
+            .HasFilter(PrimaryLinkFilter);
         entity.HasOne<DocumentRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DocumentId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })

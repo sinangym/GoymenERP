@@ -71,6 +71,14 @@ public sealed class InventoryDocumentOwnerLinkPortTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => port.CheckReadableAsync(Label, cancellation.Token));
     }
 
+    [Fact]
+    public void The_record_takes_an_existing_document_by_link_KLN_D50()
+    {
+        var (port, _, _) = Port((_, token) => Task.FromCanceled<InventoryLabelDetailV1>(token));
+
+        Assert.True(port.AcceptsExistingDocumentLinks);
+    }
+
     private static (InventoryDocumentOwnerLinkPort Port, MutableUser User, CompanyContext Company) Port(
         Func<Guid, CancellationToken, Task<InventoryLabelDetailV1>> read)
     {

@@ -16,6 +16,14 @@
  *   GET  /api/v1/documents/{id}/versions/{versionNo}/content
  *                                              → that version's own verified bytes
  *
+ * Several links (KLN-D49) and existing documents (KLN-D50). Under `canLink` a record that opted in takes an earlier
+ * document of the same company instead of a second upload of the same file:
+ *
+ *   GET  /api/v1/documents/link-candidates?ownerKind&ownerId&sha256
+ *                                              → DocumentLinkCandidates (the target's linkable documents with that content)
+ *   POST /api/v1/documents/{id}/links  (JSON: ownerKind, ownerId, expectedCurrentVersion; Idempotency-Key)
+ *                                              → 201 DocumentLinkWrite (the document under the newly linked record)
+ *
  * The decoders are strict: a missing or mistyped member makes the whole answer `null` (malformed), never a partial
  * row. There is no delete, rename or overwrite anywhere in the contract: retention/deletion is undecided (OPEN-018/021)
  * and a document is never overwritten (DEC-DOC-003).
@@ -46,6 +54,8 @@ export const DOCUMENT_PROBLEM = {
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   validationFailed: 'validation_failed',
+  alreadyLinked: 'document_already_linked',
+  linkNotAccepted: 'document_link_not_accepted',
 } as const
 
 export type ScanState = 'Clean' | 'NotScanned'
@@ -76,6 +86,8 @@ export interface DocumentList {
   readonly items: readonly DocumentRow[]
   readonly canUpload: boolean
   readonly limits: DocumentLimits
+  /** KLN-D50: the server lets this actor link an existing document to this record (the record opted in). */
+  readonly canLink: boolean
 }
 
 export interface DocumentDuplicate {
@@ -220,7 +232,9 @@ function decodeLimits(value: unknown): DocumentLimits | null {
 
 /** A list is data only when every row is the asked owner's, under the company it was read in. */
 export function decodeDocumentList(value: unknown, companyId: string, ownerKind: OwnerKind, ownerId: string): DocumentList | null {
-  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.canUpload !== 'boolean') return null
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.canUpload !== 'boolean' || typeof value.canLink !== 'boolean') {
+    return null
+  }
   const limits = decodeLimits(value.limits)
   if (limits === null) return null
   const items: DocumentRow[] = []
@@ -229,7 +243,7 @@ export function decodeDocumentList(value: unknown, companyId: string, ownerKind:
     if (row === null || row.companyId !== companyId || row.ownerKind !== ownerKind || row.ownerId !== ownerId) return null
     items.push(row)
   }
-  return { items, canUpload: value.canUpload, limits }
+  return { items, canUpload: value.canUpload, limits, canLink: value.canLink }
 }
 
 function decodeDuplicate(value: unknown): DocumentDuplicate | null {
@@ -331,6 +345,120 @@ export function decodeDocumentVersionWrite(
   ) {
     return null
   }
+  return { document, isReplay: value.isReplay, originalCorrelationId: value.originalCorrelationId }
+}
+
+/* ── Existing documents linked to another record (KLN-D49/D50) ───────────── */
+
+/** A content hash as the server writes it: 64 lowercase hex digits. */
+export function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && SHA256.test(value)
+}
+
+export function linkCandidatesPath(ownerKind: OwnerKind, ownerId: string, sha256: string): string {
+  const params = new URLSearchParams({ ownerKind, ownerId, sha256 })
+  return `${DOCUMENTS_PATH}/link-candidates?${params.toString()}`
+}
+
+export function linkPath(documentId: string): string {
+  return `${DOCUMENTS_PATH}/${encodeURIComponent(documentId)}/links`
+}
+
+/** One earlier document with the same content; `sourceOwner*` is a linked record the actor may read. */
+export interface DocumentLinkCandidate {
+  readonly documentId: string
+  readonly versionNo: number
+  readonly fileName: string
+  readonly contentType: string
+  readonly sizeBytes: number
+  readonly uploadedAtUtc: string
+  readonly sourceOwnerKind: string
+  readonly sourceOwnerId: string
+}
+
+export interface DocumentLinkCandidates {
+  readonly items: readonly DocumentLinkCandidate[]
+}
+
+function decodeLinkCandidate(value: unknown): DocumentLinkCandidate | null {
+  if (
+    !isRecord(value) ||
+    !isGuid(value.documentId) ||
+    !isCount(value.versionNo, 1) ||
+    !isText(value.fileName) ||
+    !isText(value.contentType) ||
+    !isCount(value.sizeBytes, 1) ||
+    !isInstant(value.uploadedAtUtc) ||
+    !isText(value.sourceOwnerKind) ||
+    !isGuid(value.sourceOwnerId)
+  ) {
+    return null
+  }
+  return {
+    documentId: value.documentId,
+    versionNo: value.versionNo,
+    fileName: value.fileName,
+    contentType: value.contentType,
+    sizeBytes: value.sizeBytes,
+    uploadedAtUtc: value.uploadedAtUtc,
+    sourceOwnerKind: value.sourceOwnerKind,
+    sourceOwnerId: value.sourceOwnerId,
+  }
+}
+
+/**
+ * A candidate list is data only when it answers the asked record and hash, every candidate has exactly the size of the
+ * chosen file, no document appears twice, and none is already this record's (the server never lists those).
+ */
+export function decodeDocumentLinkCandidates(
+  value: unknown,
+  asked: { readonly ownerKind: OwnerKind; readonly ownerId: string; readonly sha256: string; readonly sizeBytes: number },
+): DocumentLinkCandidates | null {
+  if (
+    !isRecord(value) ||
+    value.ownerKind !== asked.ownerKind ||
+    typeof value.ownerId !== 'string' ||
+    value.ownerId.toLowerCase() !== asked.ownerId.toLowerCase() ||
+    value.sha256 !== asked.sha256 ||
+    !Array.isArray(value.items)
+  ) {
+    return null
+  }
+  const items: DocumentLinkCandidate[] = []
+  const seen = new Set<string>()
+  for (const raw of value.items) {
+    const candidate = decodeLinkCandidate(raw)
+    if (
+      candidate === null ||
+      candidate.sizeBytes !== asked.sizeBytes ||
+      seen.has(candidate.documentId.toLowerCase()) ||
+      (candidate.sourceOwnerKind === asked.ownerKind && candidate.sourceOwnerId.toLowerCase() === asked.ownerId.toLowerCase())
+    ) {
+      return null
+    }
+    seen.add(candidate.documentId.toLowerCase())
+    items.push(candidate)
+  }
+  return { items }
+}
+
+export interface DocumentLinkWrite {
+  readonly document: DocumentRow
+  readonly isReplay: boolean
+  readonly originalCorrelationId: string
+}
+
+/**
+ * A link answer is this attempt's only when it shows the same document, at the expected version, under the company and
+ * the record it was linked to.
+ */
+export function decodeDocumentLinkWrite(
+  value: unknown,
+  sent: DocumentBinding & { readonly expectedCurrentVersion: number },
+): DocumentLinkWrite | null {
+  if (!isRecord(value) || typeof value.isReplay !== 'boolean' || !isText(value.originalCorrelationId)) return null
+  const document = decodeDocumentRow(value.document)
+  if (document === null || !isBound(document, sent) || document.versionNo !== sent.expectedCurrentVersion) return null
   return { document, isReplay: value.isReplay, originalCorrelationId: value.originalCorrelationId }
 }
 

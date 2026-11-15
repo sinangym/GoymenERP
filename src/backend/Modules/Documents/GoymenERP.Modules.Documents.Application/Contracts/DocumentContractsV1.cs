@@ -15,6 +15,15 @@ public static class DocumentsApiV1
 
     /// <summary>B-26: the sub-route that links an existing document to one more owner record.</summary>
     public const string LinksSegment = "links";
+
+    /// <summary>
+    /// KLN-D50: the probe that lists the earlier documents with the same content a record may link instead of uploading the
+    /// same file again. Its query names are <see cref="OwnerKindField"/>, <see cref="OwnerIdField"/> and
+    /// <see cref="Sha256Query"/>; any other name is refused.
+    /// </summary>
+    public const string LinkCandidatesSegment = "link-candidates";
+
+    public const string Sha256Query = "sha256";
 }
 
 /// <summary>The command names under which an attempt (ADR-011) is recorded.</summary>
@@ -108,8 +117,33 @@ public sealed record DocumentVersionHistoryResponse(Guid DocumentId, IReadOnlyLi
 /// <summary>The upload bounds the client may pre-check against; the server re-checks every upload regardless.</summary>
 public sealed record DocumentUploadLimitsView(long MaximumBytes, IReadOnlyList<string> Extensions, IReadOnlyList<string> ContentTypes);
 
-/// <summary>An owner record's documents, newest first, and whether the actor may upload to it now.</summary>
-public sealed record DocumentListResponse(IReadOnlyList<DocumentView> Items, bool CanUpload, DocumentUploadLimitsView Limits);
+/// <summary>
+/// An owner record's documents, newest first, whether the actor may upload to it now, and (KLN-D50) whether the actor may
+/// link an earlier document to it now: the link name measured company-wide AND the record's kind accepting existing
+/// documents. Both are measurements of the actor's current authority, never grants; every command re-checks.
+/// </summary>
+public sealed record DocumentListResponse(IReadOnlyList<DocumentView> Items, bool CanUpload, DocumentUploadLimitsView Limits,
+    bool CanLink);
+
+/// <summary>
+/// KLN-D50: an earlier document of the SAME company whose current version has the asked content hash, which the target
+/// record may link instead of a second upload. <see cref="SourceOwnerKind"/>/<see cref="SourceOwnerId"/> name a linked
+/// record the actor may read (KLN-D49 (3): the link needs one readable source record); a document none of whose records
+/// the actor may read is not listed at all.
+/// </summary>
+public sealed record DocumentLinkCandidateView(
+    Guid DocumentId,
+    int VersionNo,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTimeOffset UploadedAtUtc,
+    string SourceOwnerKind,
+    Guid SourceOwnerId);
+
+/// <summary>KLN-D50: the target record and its linkable candidates, newest first (bounded; never the already linked ones).</summary>
+public sealed record DocumentLinkCandidatesResponse(string OwnerKind, Guid OwnerId, string Sha256,
+    IReadOnlyList<DocumentLinkCandidateView> Items);
 
 /// <summary>A downloadable version's verified content (its hash re-checked against the stored one).</summary>
 public sealed record DocumentContentV1(Guid DocumentId, string FileName, string ContentType, byte[] Content, string Sha256);
@@ -154,6 +188,13 @@ public interface IDocumentService
 
     /// <summary>B-26 / DEC-DOC-002: links an existing document to one more owner record, without a new upload.</summary>
     Task<DocumentLinkWriteResponse> LinkAsync(Guid documentId, LinkDocumentRequest request, DocumentCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// KLN-D50: the earlier documents with this content the target record may link instead of a second upload (a read; it
+    /// writes nothing). The link itself is <see cref="LinkAsync"/>, which re-checks everything.
+    /// </summary>
+    Task<DocumentLinkCandidatesResponse> ListLinkCandidatesAsync(string? ownerKind, Guid ownerId, string? sha256,
         CancellationToken cancellationToken = default);
 }
 

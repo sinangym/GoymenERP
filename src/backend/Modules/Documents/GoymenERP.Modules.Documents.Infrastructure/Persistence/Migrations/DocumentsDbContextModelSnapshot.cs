@@ -296,6 +296,9 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid>("OwnerId")
                     .HasColumnType("uniqueidentifier");
 
+                b.Property<bool>("IsPrimary")
+                    .HasColumnType("bit");
+
                 b.Property<DateTimeOffset>("LinkedAtUtc")
                     .HasColumnType("datetimeoffset");
 
@@ -305,6 +308,11 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("nvarchar(128)");
 
                 b.HasKey("CompanyId", "DocumentId", "OwnerKind", "OwnerId");
+
+                b.HasIndex("CompanyId", "DocumentId")
+                    .IsUnique()
+                    .HasDatabaseName("UX_DocumentLinks_Primary")
+                    .HasFilter("[IsPrimary] = 1");
 
                 b.HasIndex("CompanyId", "OwnerKind", "OwnerId", "LinkedAtUtc")
                     .HasDatabaseName("IX_DocumentLinks_CompanyId_OwnerKind_OwnerId_LinkedAtUtc");

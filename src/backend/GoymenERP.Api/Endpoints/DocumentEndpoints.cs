@@ -25,6 +25,10 @@ namespace GoymenERP.Api.Endpoints;
 /// of exactly <c>ownerKind</c>, <c>ownerId</c> and <c>expectedCurrentVersion</c>; one canonical <c>Idempotency-Key</c>).
 /// 201 with the document as the new owner shows it; the same key answers the same 201 with the replay headers. No
 /// second document, version or blob is written (DEC-DOC-002).</item>
+/// <item><c>GET /api/v1/documents/link-candidates?ownerKind&amp;ownerId&amp;sha256</c> — KLN-D50: the earlier documents of the
+/// company whose current version has that content, which the record may link instead of uploading the same file again
+/// (the link name; the record's kind opted in; only documents with a record the actor may read; never one already on
+/// the record). A read: nothing is written.</item>
 /// </list>
 /// No delete, rename or overwrite route exists: retention/deletion is undecided (OPEN-018/021) and a document is never
 /// overwritten (DEC-DOC-003). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>; platform
@@ -43,6 +47,8 @@ public static class DocumentEndpoints
     private const long MultipartOverheadBytes = 64 * 1024;
 
     private static readonly HashSet<string> ListQueryNames = new(["ownerKind", "ownerId"], StringComparer.Ordinal);
+    private static readonly HashSet<string> LinkCandidateQueryNames = new([DocumentsApiV1.OwnerKindField, DocumentsApiV1.OwnerIdField,
+        DocumentsApiV1.Sha256Query], StringComparer.Ordinal);
     private static readonly HashSet<string> FormFieldNames = new([DocumentsApiV1.OwnerKindField, DocumentsApiV1.OwnerIdField],
         StringComparer.Ordinal);
     private static readonly HashSet<string> VersionFormFieldNames = new([DocumentsApiV1.ExpectedCurrentVersionField], StringComparer.Ordinal);
@@ -99,6 +105,37 @@ public static class DocumentEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet($"/{DocumentsApiV1.LinkCandidatesSegment}", async ([FromQuery] string? ownerKind, [FromQuery] Guid? ownerId,
+            [FromQuery] string? sha256, HttpContext httpContext, [FromServices] IDocumentService service, ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!httpContext.Request.Query.All(pair => LinkCandidateQueryNames.Contains(pair.Key) && pair.Value.Count == 1)
+                || string.IsNullOrWhiteSpace(ownerKind) || ownerKind.Length > MaximumOwnerKindLength || ownerId is null
+                || string.IsNullOrEmpty(sha256))
+            {
+                return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.ValidationFailed, correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.ListLinkCandidatesAsync(ownerKind, ownerId.Value, sha256, cancellationToken), Json);
+            }
+            catch (DocumentServiceException exception)
+            {
+                return Problem(exception, correlation);
+            }
+        })
+            .WithName("GetDocumentLinkCandidatesV1")
+            .Produces<DocumentLinkCandidatesResponse>()
+            .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity(DocumentProblemCodesV1.LinkNotAccepted)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

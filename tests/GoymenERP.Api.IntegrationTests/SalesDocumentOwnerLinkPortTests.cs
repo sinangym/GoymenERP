@@ -89,6 +89,14 @@ public sealed class SalesDocumentOwnerLinkPortTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => port.CheckReadableAsync(Order, cancellation.Token));
     }
 
+    [Fact]
+    public void The_record_takes_an_existing_document_by_link_KLN_D50()
+    {
+        var (port, _, _) = Port((_, token) => Task.FromCanceled<SalesOrderDraftDetailView>(token));
+
+        Assert.True(port.AcceptsExistingDocumentLinks);
+    }
+
     private static (SalesDocumentOwnerLinkPort Port, MutableUser User, MutableCompany Company) Port(
         Func<Guid, CancellationToken, Task<SalesOrderDraftDetailView>> read)
     {

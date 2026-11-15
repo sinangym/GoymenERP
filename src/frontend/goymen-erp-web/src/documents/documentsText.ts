@@ -82,7 +82,42 @@ export const DOCUMENTS_TEXT = {
   appendUnknownDetail:
     'Sunucudan yanıt alınamadı; sürüm kaydedilmiş olabilir. Aynı denemeyi tekrarlamak ikinci bir sürüm oluşturmaz.',
   appendRetry: 'Aynı sürüm denemesini tekrarla',
+  linkProbeLoading: 'Bu dosyanın bu şirkette daha önce yüklenip yüklenmediği denetleniyor…',
+  linkProbeNone: 'Bu kayda bağlanabilecek var olan bir belge bulunamadı; dosyayı yükleyebilirsiniz.',
+  linkProbeUnavailable: 'Var olan belgeler denetlenemedi; dosyayı yine de yükleyebilirsiniz.',
+  linkTitle: 'Bu dosya bu şirkette daha önce yüklenmiş',
+  linkDetail:
+    'Aynı dosyayı ikinci kez yüklemek yerine var olan belgeyi bu kayda bağlayabilirsiniz. Belge tek kez saklanır; bağlantı belgeyi ve sürümlerini değiştirmez.',
+  linkRow: (fileName: string, versionNo: number, uploadedAt: string) => `${fileName} — sürüm ${versionNo}, ${uploadedAt}`,
+  linkAction: (fileName: string) => `${fileName} belgesini bu kayda bağla`,
+  linkLabel: 'Var olan belgeyi bu kayda bağla',
+  linking: 'Bağlanıyor…',
+  uploadAnyway: 'Yine de yeni bir belge olarak kaydetmek için “Yükle” düğmesini kullanın.',
+  linked: (fileName: string) => `${fileName} bu kayda bağlandı.`,
+  linkReplayed: 'Bu bağlantı daha önce kurulmuştu; aynı kayıt gösteriliyor.',
+  linkUnknownTitle: 'Bağlamanın sonucu bilinmiyor',
+  linkUnknownDetail:
+    'Sunucudan yanıt alınamadı; belge bu kayda bağlanmış olabilir. Aynı denemeyi tekrarlamak ikinci bir bağlantı oluşturmaz.',
+  linkRetry: 'Aynı bağlama denemesini tekrarla',
 } as const
+
+/** Why a link of an existing document was refused, by its stable code. Nothing was linked in any of these cases. */
+export function linkRefusalText(status: number, code: string | null): string {
+  switch (code) {
+    case DOCUMENT_PROBLEM.alreadyLinked:
+      return 'Bu belge bu kayda zaten bağlı.'
+    case DOCUMENT_PROBLEM.concurrentChange:
+      return 'Bu belgeye siz bakarken yeni bir sürüm eklendi. Var olan belgeler yeniden denetlendi; tekrar seçin.'
+    case DOCUMENT_PROBLEM.linkNotAccepted:
+      return 'Bu kayıt türüne var olan bir belge bağlanamaz. Dosyayı yükleyebilirsiniz.'
+    case DOCUMENT_PROBLEM.sameKeyPayloadMismatch:
+      return 'Bu deneme başka bir bağlamayla karıştı. Dosyayı yeniden seçip tekrar deneyin.'
+    default:
+      if (status === 403) return 'Bu belgeyi bu kayda bağlama yetkiniz yok.'
+      if (status === 404) return 'Belge veya kayıt bu şirkette bulunamadı.'
+      return 'Belge bu kayda bağlanamadı.'
+  }
+}
 
 /** Why a new version was refused, by its stable code. No version was added in any of these cases. */
 export function versionRefusalText(status: number, code: string | null): string {

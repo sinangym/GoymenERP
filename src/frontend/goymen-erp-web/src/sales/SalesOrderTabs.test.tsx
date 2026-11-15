@@ -131,7 +131,7 @@ describe('S-04 tabs in the routed page', () => {
     const raw = JSON.parse(detailResponseRaw)
     const harness = installFetch({
       onDetail: () => json(raw),
-      onDocuments: () => json({ items: [], canUpload: false, limits: DOCUMENT_LIMITS }),
+      onDocuments: () => json({ items: [], canUpload: false, limits: DOCUMENT_LIMITS, canLink: false }),
     })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByTestId('sales-order-tabs')

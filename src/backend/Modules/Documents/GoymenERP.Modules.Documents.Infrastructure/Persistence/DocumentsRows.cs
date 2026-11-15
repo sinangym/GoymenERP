@@ -87,6 +87,12 @@ internal sealed class DocumentLinkRow : IDocumentsTenantRow
     public string LinkedBy { get; set; } = string.Empty;
 
     public DateTimeOffset LinkedAtUtc { get; set; }
+
+    /// <summary>
+    /// KLN-D49 (4): the document's first link, written by the upload, is its primary link; every later link is not. At
+    /// most one primary per document (<c>UX_DocumentLinks_Primary</c>); the primary never moves.
+    /// </summary>
+    public bool IsPrimary { get; set; }
 }
 
 /// <summary>ADR-011's attempt: (company, command, key hash) → the document it stored; the raw key is never stored.</summary>
