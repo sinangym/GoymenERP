@@ -9,8 +9,9 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// same cost per kg (SAT-D307 (1)-(2)); a usable remnant label returns at the net raw-material kg cost (URT-D46); a scrap
 /// label carries no amount because its stock cost is not decided (URT-D8), and with scrap out of cost it shows its share
 /// of the separate scrap expense (SAT-D316 (1), URT-D47). The golden tests use the literal numbers of SAT-D326 (1) and
-/// URT-D46 (#66 6857496471 (1), #66 6864631364 (14)); nothing is rounded (URT-S14), so the expected values are the same
-/// unrounded decimal arithmetic, and the rounded checks only anchor the magnitude of the golden examples.
+/// URT-D46 (#66 6857496471 (1), #66 6864631364 (14)); nothing is rounded here (the recorded figures are rounded by
+/// ProductionCostRoundingCalculatorV1, URT-D54), so the expected values are the same unrounded decimal arithmetic, and
+/// the rounded checks only anchor the magnitude of the golden examples.
 /// </summary>
 public sealed class ProductionScrapCostDistributionCalculatorTests
 {
@@ -40,7 +41,10 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
         decimal issueCost = 40m,
         NonKgInputUse nonKg = NonKgInputUse.None) =>
         new(closed,
-            [new IssueCostInput(IssueA, new Kilograms(1000m), IssueCostReadStatus.Value, issueCost)],
+            [
+                new IssueCostInput(IssueA, new Kilograms(1000m), IssueCostReadStatus.Value, issueCost,
+                    IssueCostCurrencyInput.FunctionalCurrency),
+            ],
             [],
             new Kilograms(good),
             new Kilograms(second),
@@ -251,12 +255,28 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     [Fact]
     public void An_unreadable_cost_is_carried_through_with_its_code_and_no_line()
     {
-        var result = Distribute(Cost(issueCost: 0m), GoldenLabels());
+        var result = Distribute(Cost(issueCost: -1m), GoldenLabels());
 
         Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
         Assert.Equal(ProductionReceiptCostCodesV1.InputCostUnreadable, result.UnreadableCode);
         Assert.Empty(result.Lines);
         Assert.Null(result.AllocatedTotal);
+        Assert.Empty(result.IssueReasons);
+    }
+
+    [Fact]
+    public void A_zero_issue_cost_is_carried_through_with_the_issue_named_and_no_line()
+    {
+        // URT-D58 (1): the screen names the input whose cost is zero.
+        var result = Distribute(Cost(issueCost: 0m), GoldenLabels());
+
+        Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
+        Assert.Equal(ProductionReceiptCostCodesV1.InputCostZero, result.UnreadableCode);
+        Assert.Equal([new ProductionReceiptCostIssueReasonV1(IssueA, ProductionReceiptCostCodesV1.InputCostZero)],
+            result.IssueReasons);
+        Assert.Empty(result.Lines);
+        Assert.Null(result.AllocatedTotal);
+        Assert.Null(result.Cost);
     }
 
     [Fact]

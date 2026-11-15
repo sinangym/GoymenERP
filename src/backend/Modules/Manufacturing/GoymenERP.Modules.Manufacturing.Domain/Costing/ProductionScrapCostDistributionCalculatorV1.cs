@@ -63,7 +63,9 @@ public sealed record ProductionScrapCostDistributionLine(
 /// <summary>
 /// The distribution result. A <see cref="ProductionReceiptCostStatus.Value"/> carries the cost result it was built on
 /// and one line per label and scrap weighing; <see cref="AllocatedTotal"/> is the exact sum of the allocated lines
-/// (unrounded). A pending or unreadable result carries no line and no amount (never zero), and its code says why.
+/// (unrounded). A pending or unreadable result carries no line and no amount (never zero), and its code says why;
+/// <see cref="IssueReasons"/> carries the cost result's issue reasons of an <c>input_cost_zero</c> or
+/// <c>input_exchange_rate_missing</c> answer (URT-D58 (1), URT-D55 (2)) and is empty otherwise.
 /// </summary>
 public sealed record ProductionScrapCostDistributionResult(
     ProductionReceiptCostStatus Status,
@@ -78,6 +80,9 @@ public sealed record ProductionScrapCostDistributionResult(
 
     public static ProductionScrapCostDistributionResult Unreadable(string code) =>
         new(ProductionReceiptCostStatus.Unreadable, null, [], null, null, code);
+
+    public IReadOnlyList<ProductionReceiptCostIssueReasonV1> IssueReasons { get; init; } =
+        Array.Empty<ProductionReceiptCostIssueReasonV1>();
 }
 
 /// <summary>
@@ -96,9 +101,9 @@ public sealed record ProductionScrapCostDistributionResult(
 /// cost of a scrap label is not decided. With scrap out of cost the line shows its share of the separate scrap
 /// expense.</item>
 /// </list>
-/// The amounts are TL, as the cost calculator's are, and nothing is rounded here: where SAT-D265's Money rounding (half
-/// away from zero) is applied to a label's amount and where a rounding remainder goes are the port contract's rounding
-/// work (URT-S14), not this calculator's. Pending and unreadable answers of the cost calculator are carried through with
+/// The amounts are TL, as the cost calculator's are, and nothing is rounded here: the calculation runs at full precision
+/// and <see cref="ProductionCostRoundingCalculatorV1"/> rounds the recorded figures once and puts the remainder on the
+/// good product line (URT-D54 (1)-(2), SINAN_KARARLARI_2026-11-14_URETIM_EK4). Pending and unreadable answers of the cost calculator are carried through with
 /// their codes. An open order is pending before the labels are checked (its labels are not final); otherwise a missing
 /// label list or label, a label of class scrap, process loss or an undefined class (<c>cost_label_invalid</c>), a label
 /// id used twice or also used as a scrap output id (<c>cost_label_duplicate</c>), or labels whose kg do not add up to
@@ -144,7 +149,10 @@ public static class ProductionScrapCostDistributionCalculatorV1
                 ProductionReceiptCostStatus.Pending => ProductionScrapCostDistributionResult.Pending(
                     cost.PendingCode ?? ProductionReceiptCostCodesV1.InputInvalid),
                 _ => ProductionScrapCostDistributionResult.Unreadable(
-                    cost.UnreadableCode ?? ProductionReceiptCostCodesV1.InputInvalid),
+                    cost.UnreadableCode ?? ProductionReceiptCostCodesV1.InputInvalid) with
+                {
+                    IssueReasons = cost.IssueReasons,
+                },
             };
         }
         catch (OverflowException)
