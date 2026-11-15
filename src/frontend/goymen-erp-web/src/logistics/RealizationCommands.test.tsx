@@ -13,9 +13,9 @@ const LABEL = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 const SHIPMENT = '12345678-1234-1234-1234-123456789abc'
 const path = `/lojistik/yukleme-talimatlari/${INSTRUCTION}`
 const loadedShare = { shareId: '12345678-1234-1234-1234-123456789abd', lineId: LINE, kind: 'Loaded', quantity: '4',
-  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-25T10:00:00Z' }
+  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-25T10:00:00Z', recordedBy: 'SENTETIK-operator' }
 const shippedShare = { shareId: SHIPMENT, lineId: LINE, kind: 'Shipped', quantity: '2',
-  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-25T11:00:00Z' }
+  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-25T11:00:00Z', recordedBy: 'SENTETIK-operator' }
 const loaded = () => instructionDetail({ status: 'Issued', version: '4' },
   [instructionLine({ loaded: '4', remainingToLoad: '0.5', loadedNotShipped: '4' })], [loadedShare])
 const shipped = (share = shippedShare) => instructionDetail({ status: 'Issued', version: '5' },
@@ -95,7 +95,7 @@ describe('LOG5 owner UI, synthetic NOT_ENV', () => {
       current = instructionDetail({ status: 'Issued', version: '6' },
         [instructionLine({ loaded: '4', shipped: '2', delivered: '1', remainingToLoad: '0.5', loadedNotShipped: '2', shippedNotDelivered: '1' })],
         [loadedShare, shippedShare, { shareId: body.deliveryId, lineId: LINE, kind: 'Delivered', quantity: '1', measurement: null,
-          sourceShipmentId: SHIPMENT, recordedAtUtc: body.occurredAtUtc }])
+          sourceShipmentId: SHIPMENT, recordedAtUtc: body.occurredAtUtc, recordedBy: 'SENTETIK-operator' }])
       return json(mutation(current))
     } })
     renderLogisticsApp(path)

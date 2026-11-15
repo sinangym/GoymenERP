@@ -109,8 +109,13 @@ public sealed record LoadingInstructionLineView(
     string Instructed, string Loaded, string Shipped, string Delivered,
     string RemainingToLoad, string LoadedNotShipped, string ShippedNotDelivered, bool IsBlocked);
 
+/// <summary>
+/// One recorded share of a line. <c>RecordedBy</c> is the server-side actor who recorded it (for a Shipped share,
+/// the person who made the shipment; F-020 ShippedBy column); null for a share stored before the actor was kept.
+/// </summary>
 public sealed record LoadingShareView(
-    Guid ShareId, Guid LineId, string Kind, string Quantity, string? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc);
+    Guid ShareId, Guid LineId, string Kind, string Quantity, string? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc,
+    string? RecordedBy);
 
 /// <summary>
 /// The instruction's manual weighbridge record (AT-053) as exact kilogram text: the two weighings as entered, the

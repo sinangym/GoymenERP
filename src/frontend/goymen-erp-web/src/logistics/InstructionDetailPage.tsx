@@ -522,6 +522,7 @@ export function InstructionView({
                   <th scope="col" className={styles.numeric}>{T.shareQuantity}</th>
                   <th scope="col">{T.shareMeasurement}</th>
                   <th scope="col">{T.shareRecordedAt}</th>
+                  <th scope="col">{T.shareRecordedBy}</th>
                 </tr>
               </thead>
               <tbody>
@@ -532,6 +533,10 @@ export function InstructionView({
                     <td className={styles.numeric}>{share.quantity}</td>
                     <td>{share.measurement === null ? T.unknown : MEASUREMENT_TEXT[share.measurement]}</td>
                     <td>{formatInstant(share.recordedAtUtc)}</td>
+                    {/* F-020: the stored user id (no name lookup); an older share without one says so instead of guessing. */}
+                    <td className={styles.identifier} data-testid={`logistics-share-recorded-by-${share.shareId}`}>
+                      {share.recordedBy ?? T.unknown}
+                    </td>
                   </tr>
                 ))}
               </tbody>

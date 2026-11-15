@@ -14,6 +14,8 @@
  *   POST /api/v1/logistics/loading-instructions/{id}/unload-weighings → 200 LoadingInstructionResponse (LOJ-D17: the manual
  *    unload weighing of a cancelled instruction with loaded goods; the summary carries `unloadRecord` — `Missing` is the
  *    "indirme kaydı yok" mark — and the detail the `unloadWeighing` record or null)
+ *   (F-020: every share also carries `recordedBy` — the user id that recorded it, null for an older share; the detail
+ *    screen shows it as the "Kaydeden" column, for a shipped share the ShippedBy of the shipment.)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
  *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
  *   POST …/{id}/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 LoadingInstructionResponse
@@ -245,6 +247,11 @@ export interface LoadingShare {
   readonly measurement: Measurement | null
   readonly sourceShipmentId: string | null
   readonly recordedAtUtc: string
+  /**
+   * F-020: the server-side user id that recorded the share (for a shipped share, the person who made the shipment; a
+   * user id, as on the dispatch note — no name lookup). Null for a share stored before the actor was kept.
+   */
+  readonly recordedBy: string | null
 }
 
 /**
@@ -627,7 +634,9 @@ function decodeLine(value: unknown): InstructionLine | null {
   }
 }
 
-const SHARE_KEYS = ['shareId', 'lineId', 'kind', 'quantity', 'measurement', 'sourceShipmentId', 'recordedAtUtc'] as const
+const SHARE_KEYS = [
+  'shareId', 'lineId', 'kind', 'quantity', 'measurement', 'sourceShipmentId', 'recordedAtUtc', 'recordedBy',
+] as const
 
 function decodeShare(value: unknown): LoadingShare | null {
   const o = exact(value, SHARE_KEYS)
@@ -640,7 +649,8 @@ function decodeShare(value: unknown): LoadingShare | null {
     !isPositiveQuantityText(o.quantity) ||
     !isNullable(o.measurement, (v): v is string => typeof v === 'string' && MEASUREMENTS.includes(v)) ||
     !isNullable(o.sourceShipmentId, isReferenceId) ||
-    !isInstant(o.recordedAtUtc)
+    !isInstant(o.recordedAtUtc) ||
+    !isNullable(o.recordedBy, isActor)
   ) {
     return null
   }
@@ -657,6 +667,7 @@ function decodeShare(value: unknown): LoadingShare | null {
     measurement: o.measurement as Measurement | null,
     sourceShipmentId: o.sourceShipmentId,
     recordedAtUtc: o.recordedAtUtc,
+    recordedBy: o.recordedBy,
   }
 }
 

@@ -42,9 +42,9 @@ const path = `/lojistik/yukleme-talimatlari/${INSTRUCTION}`
 const CANCEL_URL = `/api/v1/logistics/loading-instructions/${INSTRUCTION}/cancel`
 const REASON = 'Araç gelmedi'
 const loadedShare = { shareId: '00000000-0000-4000-8000-000000000071', lineId: LINE, kind: 'Loaded', quantity: '4.5',
-  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
+  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator' }
 const shippedShare = { shareId: '00000000-0000-4000-8000-000000000072', lineId: LINE, kind: 'Shipped', quantity: '2',
-  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z' }
+  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z', recordedBy: 'SENTETIK-operator' }
 const loadedLine = instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })
 const shippedLine = instructionLine({ loaded: '4.5', remainingToLoad: '0', shipped: '2', loadedNotShipped: '2.5', shippedNotDelivered: '2' })
 
