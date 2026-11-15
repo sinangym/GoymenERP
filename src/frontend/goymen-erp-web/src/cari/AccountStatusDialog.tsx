@@ -15,6 +15,8 @@ import type { AccountStatusIntent, ReasonProblem } from './accountStatusContract
 import { canonicalReason, REASON_MAX_LENGTH } from './accountStatusContract'
 import { CARI_ACCOUNT_STATUS_TEXT as TEXT } from './cariCommandText'
 import styles from './AccountStatusDialog.module.css'
+import type { DeactivationWarningState } from './useAccountStatusFlow'
+import { DEACTIVATION_WARNING_OUTCOME, type DeactivationWarningItem } from './deactivationWarning'
 
 export type CloseConfirm = 'unsaved-reason' | 'unresolved' | null
 
@@ -60,6 +62,125 @@ export interface AccountStatusDialogProps {
   readonly notice?: ReactNode
   /** Focus target after a refused submit. */
   readonly summaryRef: React.RefObject<HTMLParagraphElement | null>
+  /**
+   * ALS-D99: the deactivation warning of this window (`not-needed` for an activation). It never blocks the change; it
+   * blocks the SUBMIT until it is read and, when it requires it, acknowledged.
+   */
+  readonly warning: DeactivationWarningState
+  readonly acknowledged: boolean
+  readonly onAcknowledgedChange: (value: boolean) => void
+  readonly acknowledgementMissing: boolean
+  readonly warningChanged: boolean
+  readonly warningSatisfied: boolean
+  readonly onRetryWarning: () => void
+}
+
+function warningLine(item: DeactivationWarningItem): string {
+  switch (item.outcome) {
+    case DEACTIVATION_WARNING_OUTCOME.open:
+      return TEXT.warning.outcome.open(item.openItemCount ?? 0)
+    case DEACTIVATION_WARNING_OUTCOME.clear:
+      return TEXT.warning.outcome.clear
+    case DEACTIVATION_WARNING_OUTCOME.denied:
+      return TEXT.warning.outcome.denied
+    default:
+      return TEXT.warning.outcome.unavailable
+  }
+}
+
+function DeactivationWarningBlock({
+  warning,
+  acknowledged,
+  onAcknowledgedChange,
+  acknowledgementMissing,
+  warningChanged,
+  onRetryWarning,
+  disabled,
+}: {
+  readonly warning: DeactivationWarningState
+  readonly acknowledged: boolean
+  readonly onAcknowledgedChange: (value: boolean) => void
+  readonly acknowledgementMissing: boolean
+  readonly warningChanged: boolean
+  readonly onRetryWarning: () => void
+  readonly disabled: boolean
+}) {
+  if (warning.status === 'not-needed') return null
+  const ackId = 'cari-account-status-warning-ack'
+  const ackErrorId = 'cari-account-status-warning-ack-error'
+  return (
+    <section aria-labelledby="cari-account-status-warning-title" data-state={`warning-${warning.status}`}>
+      <h3 id="cari-account-status-warning-title" className={styles.confirmTitle}>
+        {TEXT.warning.title}
+      </h3>
+      {warning.status === 'loading' ? (
+        <p role="status" className={styles.scope} data-state="warning-loading">
+          {TEXT.warning.loading}
+        </p>
+      ) : null}
+      {warning.status === 'failed' ? (
+        <div role="alert" className={styles.blocked} data-state="warning-failed">
+          <p style={{ margin: 0 }} className={styles.confirmTitle}>
+            {TEXT.warning.failedTitle}
+          </p>
+          <p style={{ margin: '4px 0 0' }}>
+            {warning.reason === 'forbidden'
+              ? TEXT.warning.forbidden
+              : warning.reason === 'offline'
+                ? TEXT.warning.offline
+                : TEXT.warning.failedDetail}
+          </p>
+          {warning.reason !== 'forbidden' ? (
+            <p style={{ margin: '8px 0 0' }}>
+              <button type="button" className={styles.secondary} onClick={onRetryWarning} disabled={disabled}>
+                {TEXT.warning.retry}
+              </button>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {warning.status === 'ready' ? (
+        warning.view.acknowledgementRequired ? (
+          <div className={styles.blocked} data-state="warning-open">
+            {warningChanged ? (
+              <p role="status" style={{ margin: '0 0 8px' }} data-state="warning-changed">
+                {TEXT.warning.changed}
+              </p>
+            ) : null}
+            <p style={{ margin: 0 }}>{TEXT.warning.intro}</p>
+            <ul data-warning-items>
+              {warning.view.items.map((item) => (
+                <li key={item.kind} data-kind={item.kind} data-outcome={item.outcome}>
+                  {TEXT.warning.kind[item.kind]}: {warningLine(item)}
+                </li>
+              ))}
+            </ul>
+            <label htmlFor={ackId}>
+              <input
+                id={ackId}
+                type="checkbox"
+                checked={acknowledged}
+                onChange={(event) => onAcknowledgedChange(event.target.checked)}
+                aria-invalid={acknowledgementMissing ? 'true' : undefined}
+                aria-describedby={acknowledgementMissing ? ackErrorId : undefined}
+                disabled={disabled}
+              />{' '}
+              {TEXT.warning.acknowledge}
+            </label>
+            {acknowledgementMissing ? (
+              <p id={ackErrorId} className={styles.error}>
+                {TEXT.warning.acknowledgeRequired}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p role="status" className={styles.scope} data-state="warning-clear">
+            {TEXT.warning.clear}
+          </p>
+        )
+      ) : null}
+    </section>
+  )
 }
 
 const FOCUSABLE = 'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])'
@@ -98,6 +219,13 @@ export function AccountStatusDialog({
   onConfirmClose,
   notice,
   summaryRef,
+  warning,
+  acknowledged,
+  onAcknowledgedChange,
+  acknowledgementMissing,
+  warningChanged,
+  warningSatisfied,
+  onRetryWarning,
 }: AccountStatusDialogProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
   const reasonRef = useRef<HTMLTextAreaElement | null>(null)
@@ -186,7 +314,11 @@ export function AccountStatusDialog({
   const reasonId = 'cari-account-status-reason'
   const hintId = 'cari-account-status-reason-hint'
   const errorId = 'cari-account-status-reason-error'
-  const submitBlocked = busy || locked || refreshing || !contractReady || changedSinceOpen || closeConfirm !== null
+  // An unacknowledged warning that is ON SCREEN does not close the button: the click explains what is missing. A
+  // warning that is still loading or failed to load closes it, because there is nothing to acknowledge yet.
+  const warningBlocks = !warningSatisfied && warning.status !== 'ready'
+  const submitBlocked =
+    busy || locked || refreshing || !contractReady || changedSinceOpen || closeConfirm !== null || warningBlocks
 
   return (
     <div className={styles.backdrop} data-dialog="account-status">
@@ -259,11 +391,21 @@ export function AccountStatusDialog({
           </p>
         ) : null}
 
-        {invalid ? (
+        {invalid || acknowledgementMissing ? (
           <p ref={summaryRef} tabIndex={-1} role="alert" className={styles.summary}>
-            {TEXT.errorSummary}
+            {invalid ? TEXT.errorSummary : TEXT.warning.acknowledgeRequired}
           </p>
         ) : null}
+
+        <DeactivationWarningBlock
+          warning={warning}
+          acknowledged={acknowledged}
+          onAcknowledgedChange={onAcknowledgedChange}
+          acknowledgementMissing={acknowledgementMissing}
+          warningChanged={warningChanged}
+          onRetryWarning={onRetryWarning}
+          disabled={busy || locked || refreshing || closeConfirm !== null}
+        />
 
         <form
           onSubmit={(event) => {

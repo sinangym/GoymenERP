@@ -20,8 +20,27 @@ import { CAPABILITY } from '../shell/capabilities'
 import { isLosslessVersion } from './wireGuards'
 
 describe('account active-state contract — the accepted DTO, spelled once', () => {
-  it('names exactly the three properties of SetCompanyPartyAccountActiveState', () => {
-    expect(Object.values(ACCOUNT_STATUS_FIELD).sort()).toEqual(['expectedVersion', 'isActive', 'reason'])
+  it('names exactly the properties of SetCompanyPartyAccountActiveState (ALS-D99 adds the optional acknowledgement)', () => {
+    expect(Object.values(ACCOUNT_STATUS_FIELD).sort()).toEqual([
+      'expectedVersion',
+      'exposureWarningAcknowledged',
+      'isActive',
+      'reason',
+    ])
+  })
+
+  it('ALS-D99: carries the acknowledgement only on a deactivation that was acknowledged, never as false', () => {
+    expect(buildAccountStatusPayload('deactivate', ' r ', true)).toEqual({
+      isActive: false,
+      reason: 'r',
+      exposureWarningAcknowledged: true,
+    })
+    expect(buildAccountStatusPayload('deactivate', 'r', false)).toEqual({ isActive: false, reason: 'r' })
+    expect(buildAccountStatusPayload('deactivate', 'r')).not.toHaveProperty('exposureWarningAcknowledged')
+    // The warning belongs to deactivation; an activation never sends it.
+    expect(buildAccountStatusPayload('activate', 'r', true)).toEqual({ isActive: true, reason: 'r' })
+    // The reason rule still wins.
+    expect(buildAccountStatusPayload('deactivate', '   ', true)).toBeNull()
   })
 
   it('addresses the selected company account of the party in the path, encoded', () => {

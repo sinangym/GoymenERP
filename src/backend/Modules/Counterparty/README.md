@@ -243,3 +243,18 @@ it drops the table and the column. Forward-fix plan otherwise: keep the additive
 Open (NEEDS-SINAN): a separate request/maker step before the approval; one group-level authority instead of the grant in
 every holding company; moving the duplicate's accounts/balances; merging two different VKN/TCKN values; notifying all
 group companies instead of the holding ones.
+
+## ALS-D99 / ALS-D100 / ALS-D101 — deactivation warning, group-wide deactivation (ALC-F1, F-SC23; Sinan, 2026-11-15)
+
+| Rule | Behaviour |
+| --- | --- |
+| Warning (ALS-D99) | `GET /api/v1/counterparties/{partyId}/company-account/deactivation-warning` (permission `counterparty.accounts.status.update`, company-wide) → `companyId`, `partyId`, `accountVersion` (decimal text), `isActive`, one line per owner kind in fixed order (`finance-open-balance`, `sales-open-documents`, `purchasing-open-documents`) with `outcome` `clear` / `open` (with `openItemCount`, counts only, never amounts) / `denied` / `unavailable`, and `acknowledgementRequired` (any line not `clear`). |
+| Owner ports | Each line comes from exactly one `ICounterpartyDeactivationExposureSourceV1` the API host registers over the owner's own read contract (Finance party balance, Sales open documents, Purchasing open orders). Counterparty never reads those tables. **No source is registered yet (NEEDS-PORT)**: a missing, duplicated, failing or malformed source reads `unavailable`, which is a warning to acknowledge, never a silent "nothing open". |
+| Command | The existing `PUT …/company-account/active-state` takes `exposureWarningAcknowledged`. On an active → passive change the server re-reads the warning (the client's preview is never trusted); when it is not clear and the flag is missing the answer is 422 `deactivation_warning_acknowledgement_required`, **not stored** (the same key can be retried with the flag) and not audited. The warning never blocks; the 1-1000 character reason stays mandatory. |
+| Audit | The deactivation audit's `AfterJson` adds `DeactivationWarning {Scope, Shown, AcknowledgementRequired, Acknowledged, Items[{Kind, Outcome, OpenItemCount}]}`. |
+| Group (ALS-D100) | `GET …/{partyId}/group-deactivation-preview` and `POST …/{partyId}/group-deactivation` `{targets[{companyId, expectedVersion}], reason, exposureWarningAcknowledged}` → 200 with one outcome per named company (`deactivated`, `already-passive`, `version-conflict` + `currentVersion`, `not-found`, `forbidden`, `warning-acknowledgement-required`, `idempotency-conflict`, `failed`) plus `not-requested` for every reachable company whose account is still active. Each company runs as its own command in its own scope (own expected version, own key derived from the request key and the company, own audit, own `counterparty.party.deactivated.v1` event, own transaction); one company's failure never rolls back another. Companies the actor cannot reach are never disclosed. |
+| Group permission | `counterparty.parties.group-deactivate`: separate from the per-company name, company-wide only, not Critical, checked in the origin company and again in every target company. **Registered, not granted**: giving it to the personas the decision names is a human gate. Until then every group call is 403. |
+| Tolerance close (ALS-D101) | Not implemented here: the tolerance belongs to Purchasing (API-95 provider) and its value is an OPEN-004 policy; the line close keeps its mandatory reason until that provider exists. |
+
+No migration: the command reuses the existing account, command-execution, audit and outbox tables. The group screen is
+a follow-up (it needs a new shell capability); the frontend carries its decoders and transport (`src/cari/deactivationWarning*.ts`).

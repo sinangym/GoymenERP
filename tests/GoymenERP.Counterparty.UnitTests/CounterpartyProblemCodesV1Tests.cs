@@ -40,9 +40,10 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.SuccessionSuccessorInactive,
             CounterpartyProblemCodesV1.SuccessionCycle,
             CounterpartyProblemCodesV1.SuccessionAlreadyRecorded,
+            CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired,
         };
 
-        Assert.Equal(31, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(32, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -96,6 +97,9 @@ public sealed class CounterpartyProblemCodesV1Tests
     [InlineData(
         CounterpartyCommandResult.SuccessionAlreadyRecorded,
         CounterpartyProblemCodesV1.SuccessionAlreadyRecorded)]
+    [InlineData(
+        CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired,
+        CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)

@@ -87,6 +87,8 @@ public static class ErpPermissions
     /// the merge command measures it in every company that holds an account for either party. Not Critical (#76).
     /// </summary>
     public const string CounterpartyPartiesMergeApprove = "counterparty.parties.merge.approve";
+
+    /// <summary>
     /// KLN-D38 (Sinan, 2026-11-14) rule 2: record that a new legal person succeeds a cari in the active company (the old
     /// company account becomes passive and is linked predecessor → successor). The Counterparty owner's name
     /// (CounterpartyPartySuccessionPermissionsV1). Registered, not granted: no role, seed or user receives it here; who
@@ -94,6 +96,17 @@ public static class ErpPermissions
     /// It moves no balance: the devir fişi is a separate approved Finance voucher.
     /// </summary>
     public const string CounterpartyPartiesSuccessionRecord = "counterparty.parties.succession.record";
+
+    /// <summary>
+    /// ALS-D100 (Sinan, 2026-11-15): deactivate one Cari card's account in every Göymen company in a single group-wide
+    /// command — the Counterparty owner's name (CounterpartyGroupDeactivationPermissionsV1). Separate from
+    /// counterparty.accounts.status.update, which keeps the per-company deactivation; the decision limits the group
+    /// command to the Genel Müdür and Admin personas and keeps it from the Muhasebe Müdürü, so the existing per-company
+    /// grants are not widened. Registered, not granted: no role, seed or user receives it here (human gate). Company-wide
+    /// only, as every Counterparty name; it is checked in the origin company and again in every target company. Not
+    /// Critical: no source makes it a grant-time dual-control duty.
+    /// </summary>
+    public const string CounterpartyPartiesGroupDeactivate = "counterparty.parties.group-deactivate";
 
     /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
@@ -1227,6 +1240,7 @@ public static class ErpPermissions
             CounterpartyPartiesLegalNameUpdate,
             CounterpartyPartiesMergeApprove,
             CounterpartyPartiesSuccessionRecord,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1440,6 +1454,7 @@ public static class ErpPermissions
             CounterpartyPartiesLegalNameUpdate,
             CounterpartyPartiesMergeApprove,
             CounterpartyPartiesSuccessionRecord,
+            CounterpartyPartiesGroupDeactivate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

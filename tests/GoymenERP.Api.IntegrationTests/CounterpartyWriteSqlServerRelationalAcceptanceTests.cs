@@ -288,7 +288,8 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
                 new SetCompanyPartyAccountActiveState(
                     false,
                     1,
-                    "Gerçek SQL durum güncellemesi"));
+                    "Gerçek SQL durum güncellemesi",
+                    ExposureWarningAcknowledged: true));
             Assert.Equal(HttpStatusCode.NoContent, firstStatus.StatusCode);
 
             var staleKey = $"cari-status-stale-{Guid.NewGuid():N}";

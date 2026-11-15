@@ -37,10 +37,17 @@ public sealed record CreateCounterparty(
 public sealed record CreateCompanyPartyAccount(
     PartyRole Roles = PartyRole.None);
 
+/// <summary>
+/// <c>exposureWarningAcknowledged</c> (ALS-D99): deactivating an active account first shows the owner modules' open
+/// balance/documents warning; when the server's own re-read finds anything open, unavailable or denied, the command needs
+/// this acknowledgement (else 422 <c>deactivation_warning_acknowledgement_required</c>, nothing recorded). Ignored for a
+/// reactivation or for an account that is already passive.
+/// </summary>
 public sealed record SetCompanyPartyAccountActiveState(
     [property: JsonRequired] bool IsActive,
     [property: JsonRequired] long ExpectedVersion,
-    string Reason);
+    string Reason,
+    bool ExposureWarningAcknowledged = false);
 
 public sealed record CounterpartyCommandMetadata(
     Guid CompanyId,
@@ -138,6 +145,12 @@ public enum CounterpartyCommandResult
 
     /// <summary>KLN-D38: a successor of this cari is already recorded in the active company (409).</summary>
     SuccessionAlreadyRecorded = 29,
+
+    /// <summary>
+    /// ALS-D99: deactivation found an open, unavailable or denied warning line and the command did not acknowledge the
+    /// warning (422). Never stored as an idempotent answer: the warning is re-read live on the next attempt.
+    /// </summary>
+    DeactivationWarningAcknowledgementRequired = 30,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -211,6 +224,9 @@ public static class CounterpartyProblemCodesV1
 
     public const string SuccessionAlreadyRecorded = "succession_already_recorded";
 
+    /// <summary>ALS-D99: the deactivation warning must be shown and acknowledged before the account becomes passive.</summary>
+    public const string DeactivationWarningAcknowledgementRequired = "deactivation_warning_acknowledgement_required";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -242,6 +258,8 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.SuccessionSuccessorInactive => SuccessionSuccessorInactive,
             CounterpartyCommandResult.SuccessionCycle => SuccessionCycle,
             CounterpartyCommandResult.SuccessionAlreadyRecorded => SuccessionAlreadyRecorded,
+            CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired =>
+                DeactivationWarningAcknowledgementRequired,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };
