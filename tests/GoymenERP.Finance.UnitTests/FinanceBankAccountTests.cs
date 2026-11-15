@@ -101,16 +101,18 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, officialInvoiceIdentityClaims) < Array.IndexOf(migrations, cashTransfers));
         const string partyCreditLimitOneStep = "20261115163811_RestorePartyCreditLimitOneStep";
         Assert.True(Array.IndexOf(migrations, cashTransfers) < Array.IndexOf(migrations, partyCreditLimitOneStep));
-        // The NEWEST migration is pinned by name on purpose: the restored one-step credit limit check (FNS-D56,
-        // FNS-D57(3)) is the reviewed append, never an unreviewed migration that silently becomes authoritative. By
+        const string partyCollaterals = "20261115184536_AddPartyCollaterals";
+        Assert.True(Array.IndexOf(migrations, partyCreditLimitOneStep) < Array.IndexOf(migrations, partyCollaterals));
+        // The NEWEST migration is pinned by name on purpose: the customer collateral master (API-85b, FNS-D57/D31) is
+        // the reviewed append, never an unreviewed migration that silently becomes authoritative. By
         // migration id the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits between the payment
         // reversals (API-23) and the cash accounts (API-30), whose passivation and reactivation precede the
         // rejection and withdrawal of a pending official sales invoice record (FNS-D39), which the credit limit
         // master (API-85a L1, FNS-D27/D27a) follows; the customer return credits (F-019), the expense payments
         // (FNS-D25), the second-person credit limit check (FNS-D45, kept in the chain), the official invoice
         // identity claims (FIN-S5) and the transfer and currency exchange record (FNS-D24) follow it, and the
-        // restored one-step credit limit check follows them.
-        Assert.Equal(partyCreditLimitOneStep, migrations.Last());
+        // restored one-step credit limit check follows them; the customer collateral master follows it.
+        Assert.Equal(partyCollaterals, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
