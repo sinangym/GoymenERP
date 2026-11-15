@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
