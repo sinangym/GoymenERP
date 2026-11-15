@@ -1112,6 +1112,14 @@ public static class ErpPermissions
     public const string SettingsBankCsvMappingsManage = "settings.bank-csv-mappings.manage";
 
     /// <summary>
+    /// F-024 (NS-01): read the company's segregation of duties setting — whether the person who prepared a document may also
+    /// approve it (default: no; a company run by one person may relax it) — and record new versions
+    /// (<c>SettingsSegregationOfDutiesPolicyPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed or user
+    /// receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSegregationOfDutiesManage = "settings.segregation-of-duties.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1392,6 +1400,7 @@ public static class ErpPermissions
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsBankCsvMappingsManage,
+            SettingsSegregationOfDutiesManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1607,6 +1616,7 @@ public static class ErpPermissions
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsBankCsvMappingsManage,
+            SettingsSegregationOfDutiesManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
