@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 // F-019 / MOD-04 / API-40 (SAT-D288, SAT-D291, SAT-D294, DEC-FIN-003): the second version of Finance's invoice acceptance
@@ -11,6 +13,13 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // stays as the customer's advance (SAT-D294 (1)-(2)). Finance makes that split (SAT-D294 (4)); the producer only reports
 // the return amount and the original invoice link. No party-card movement is written (SAT-D291 (3)); the producer never
 // writes Finance tables (SAT-D291 (4)).
+//
+// FIN-S10 (FNS-D44, FNS-D54): a partial return over several outstanding installments is no longer refused. The user chooses
+// the installments (FNS-D44): the screen is prefilled from the nearest due date by Finance's one deterministic calculator,
+// read through IFinanceCustomerReturnInstallmentReadPortV2, and the producer reports the user's selection as Allocations.
+// The selection must total the return amount exactly and no installment may take more than its open amount, otherwise the
+// return is refused; the server never replaces a submitted selection with the prefill. When no selection is reported, the
+// same calculator reduces from the nearest due open installment first (FNS-D54).
 
 /// <summary>The document kinds version 2 accepts. Only the customer return invoice exists today.</summary>
 public enum FinanceInvoiceAcceptanceKindV2
@@ -27,7 +36,9 @@ public enum FinanceInvoiceAcceptanceKindV2
 /// another admitted version is refused. <paramref name="Amount"/> is the return amount in the original invoice's currency,
 /// exact text, already rounded by the producer (SAT-D292); <paramref name="FunctionalAmount"/> is its TL equivalent and is
 /// present exactly when the original invoice is in a foreign currency. <paramref name="BusinessDate"/> is the return
-/// invoice's business date.
+/// invoice's business date. <paramref name="Allocations"/> is the user's installment selection for a partial return
+/// (FNS-D44): absent (null, and then left out of the payload so earlier payloads keep their hash) when the user made no
+/// selection or the return covers the whole outstanding amount.
 /// </summary>
 public sealed record FinanceInvoiceAcceptanceV2(
     Guid AcceptanceId,
@@ -42,7 +53,16 @@ public sealed record FinanceInvoiceAcceptanceV2(
     Guid CurrencyId,
     string Amount,
     string? FunctionalAmount,
-    DateOnly BusinessDate);
+    DateOnly BusinessDate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<FinanceInvoiceAcceptanceAllocationV2>? Allocations = null);
+
+/// <summary>
+/// One installment the user chose for a partial return (FNS-D44): <paramref name="OpenItemId"/> is an outstanding open item
+/// of the original invoice and <paramref name="Amount"/> the exact part of the return it takes, never above the item's open
+/// amount and never finer than the return amount's own scale. The selection's total equals the return amount exactly.
+/// </summary>
+public sealed record FinanceInvoiceAcceptanceAllocationV2(Guid OpenItemId, string Amount);
 
 /// <summary>
 /// The Finance side of the customer return acceptance (API-11 v2). Synchronous, idempotent and in-process (no HTTP
@@ -54,9 +74,14 @@ public sealed record FinanceInvoiceAcceptanceV2(
 /// <item>An original invoice Finance never admitted, another version of it, a cancelled one, or one whose party, company
 /// account or currency differs from the report is refused; so is a total of returns above the invoice's original total.</item>
 /// <item>The credit reduces the original invoice's items' outstanding amounts first; the remainder is the customer's
-/// advance, recorded on the credit. When more than one of the invoice's items still has an outstanding amount and the
-/// return covers only part of them, the order in which the items are reduced is not decided: the acceptance is refused
-/// with <c>finance_customer_return_installment_order_not_decided</c> and nothing is written.</item>
+/// advance, recorded on the credit. A return that covers the whole outstanding amount closes every outstanding item and
+/// takes no selection (<c>finance_customer_return_allocation_not_applicable</c>).</item>
+/// <item>A partial return reduces exactly the installments the user selected (FNS-D44): an item that is not an outstanding
+/// item of the invoice (<c>finance_customer_return_allocation_item_unknown</c>), a part above an item's open amount
+/// (<c>finance_customer_return_allocation_exceeds_open_amount</c>) or a selection whose total is not exactly the return
+/// amount (<c>finance_customer_return_allocation_total_mismatch</c>) is refused and nothing is written. The selection is
+/// never replaced by the prefill. Without a selection the nearest due open installment is reduced first and the rest moves
+/// to the next one (FNS-D54), computed by the same calculator that answers the prefill read.</item>
 /// </list>
 /// Fenced by the host-owned <see cref="IFinanceInvoiceAcceptanceAuthorityV2"/> before any read and right before the save;
 /// the caller's company and actor must equal the server context.
@@ -98,5 +123,61 @@ public interface IFinanceInvoiceAcceptanceAuthorityV2
         FinanceInvoiceProducerV1 producer,
         FinanceInvoiceAcceptanceKindV2 kind,
         Guid documentId,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// The prefill question of the return screen (FNS-D44): the return document being finalised (<paramref name="Producer"/>,
+/// <paramref name="Kind"/>, <paramref name="DocumentId"/> — the authority is measured for it), the admitted original invoice
+/// and its expected version, and the return amount as exact text.
+/// </summary>
+public sealed record FinanceCustomerReturnInstallmentQueryV2(
+    FinanceInvoiceProducerV1 Producer,
+    FinanceInvoiceAcceptanceKindV2 Kind,
+    Guid DocumentId,
+    Guid OriginalInvoiceId,
+    string OriginalInvoiceVersion,
+    string Amount);
+
+/// <summary>
+/// One outstanding installment of the original invoice, nearest due first: its due date, original and open amounts, and the
+/// part of the return the deterministic calculator puts on it (<paramref name="PrefillAmount"/>, "0" when none).
+/// </summary>
+public sealed record FinanceCustomerReturnInstallmentV2(
+    Guid OpenItemId,
+    DateOnly DueOn,
+    string OriginalAmount,
+    string OutstandingAmount,
+    string PrefillAmount);
+
+/// <summary>
+/// The prefill answer. <paramref name="Outcome"/> is <see cref="CommandOutcome.Succeeded"/> when the prefill was computed;
+/// <see cref="CommandOutcome.ValidationFailed"/> with <paramref name="Issues"/> (the same codes the acceptance would answer)
+/// when the question cannot be answered; <see cref="CommandOutcome.Denied"/> or <see cref="CommandOutcome.Unavailable"/>
+/// from the authority fence. <paramref name="SelectionAllowed"/> is true exactly when the return is partial, i.e. the user
+/// may change the prefill and the producer reports the chosen installments as allocations; a whole return takes none.
+/// <paramref name="AppliedAmount"/> is the part that reduces outstanding amounts and <paramref name="AdvanceAmount"/> the part
+/// left as the customer's advance ("0" when none); both are null on a refusal.
+/// </summary>
+public sealed record FinanceCustomerReturnInstallmentPrefillV2(
+    CommandOutcome Outcome,
+    IReadOnlyList<FinanceCustomerReturnInstallmentV2> Installments,
+    bool SelectionAllowed,
+    string? AppliedAmount,
+    string? AdvanceAmount,
+    IReadOnlyList<ValidationIssue> Issues);
+
+/// <summary>
+/// The read side of FNS-D44: the outstanding installments of an admitted original invoice and the nearest-due prefill of a
+/// return amount, computed by the same deterministic Finance calculator the acceptance uses when no selection is reported.
+/// In-process (no HTTP surface), writes nothing, fenced by the same host-owned
+/// <see cref="IFinanceInvoiceAcceptanceAuthorityV2"/> as the acceptance; the caller's company and actor must equal the
+/// server context.
+/// </summary>
+public interface IFinanceCustomerReturnInstallmentReadPortV2
+{
+    Task<FinanceCustomerReturnInstallmentPrefillV2> ReadAsync(
+        FinanceContext context,
+        FinanceCustomerReturnInstallmentQueryV2 query,
         CancellationToken cancellationToken);
 }

@@ -16,9 +16,12 @@ namespace GoymenERP.Api.IntegrationTests;
 /// real <see cref="FinanceInvoiceAcceptanceService"/> against a REAL SQL Server. The return is one separate reversing
 /// credit: it reduces the original invoice's outstanding amounts first, the rest stays as the customer's advance; the
 /// original items keep their identity and original amount and nothing is deleted. The same acceptance replays; a second
-/// acceptance of the same return document, a total above the invoice, a partial return over several outstanding
-/// installments (order not decided), a foreign company, another version, a cancelled invoice or a missing authority
-/// writes nothing; the migration's Down refuses while a credit is stored. Party, authority and grants are SENTETIK inputs.
+/// acceptance of the same return document, a total above the invoice, a foreign company, another version, a cancelled
+/// invoice or a missing authority writes nothing; the migration's Down refuses while a credit is stored. FIN-S10
+/// (FNS-D44, FNS-D54): a partial return over several outstanding installments reduces exactly the user's selection, which
+/// must total the return amount to the kurus and stay within each installment's open amount, or else writes nothing;
+/// without a selection the nearest due installment is reduced first; the prefill read comes from the same calculator, is
+/// fenced like the acceptance and writes nothing. Party, authority and grants are SENTETIK inputs.
 /// </summary>
 public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptanceTests
 {
@@ -106,14 +109,6 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
         var invoice = Invoice(Installment(1, "600.00"), Installment(2, "400.00"));
         Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("advance-1", invoice)).Outcome);
 
-        // Both installments still outstanding: a partial return has no decided order and writes nothing.
-        var undecided = await run.AcceptAsync("advance-undecided", Return(invoice, "500.00"));
-        Assert.Equal(CommandOutcome.ValidationFailed, undecided.Outcome);
-        Assert.Contains(undecided.Issues,
-            issue => issue.Code == FinanceInvoiceAcceptanceService.InstallmentOrderNotDecidedCode);
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCredits"));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnInvoiceStates"));
-
         // SENTETIK: the first installment is already settled (closed, nothing outstanding).
         Assert.Equal(1, await run.ScalarAsync<int>(
             "UPDATE finance.OpenItems SET Status = 2, OutstandingAmountText = N'0' WHERE Id = @id; SELECT @@ROWCOUNT",
@@ -132,6 +127,152 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
             "SELECT COUNT(*) FROM finance.CustomerReturnCredits WHERE AppliedAmountText = N'400.00' "
             + "AND AdvanceAmountText = N'300.00' AND AmountText = N'700.00'"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCreditItems"));
+    }
+
+    [SqlServerFact]
+    public async Task A_partial_return_reduces_exactly_the_users_selection_and_a_wrong_selection_writes_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(Installment(1, "600.00"), Installment(2, "400.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("selection-1", invoice)).Outcome);
+        var first = invoice.Installments[0].OpenItemId;
+        var second = invoice.Installments[1].OpenItemId;
+
+        // The screen's prefill: nearest due first, the whole 500.00 on the first installment.
+        var prefill = await run.ReadAsync(Query(invoice, "500.00"));
+        Assert.Equal(CommandOutcome.Succeeded, prefill.Outcome);
+        Assert.True(prefill.SelectionAllowed);
+        Assert.Equal([first, second], prefill.Installments.Select(row => row.OpenItemId).ToArray());
+        Assert.Equal(["500.00", "0"], prefill.Installments.Select(row => row.PrefillAmount).ToArray());
+        Assert.Equal(["600.00", "400.00"], prefill.Installments.Select(row => row.OutstandingAmount).ToArray());
+        Assert.Equal("500.00", prefill.AppliedAmount);
+        Assert.Equal("0", prefill.AdvanceAmount);
+
+        // A selection that does not total the return amount, exceeds an installment's open amount or names an item that is
+        // not the invoice's is refused and writes nothing.
+        var mismatch = await run.AcceptAsync("selection-mismatch",
+            Return(invoice, "500.00") with { Allocations = [Part(first, "100.00"), Part(second, "399.99")] });
+        Assert.Contains(mismatch.Issues,
+            issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationTotalMismatchCode);
+        var exceeds = await run.AcceptAsync("selection-exceeds",
+            Return(invoice, "500.00") with { Allocations = [Part(first, "99.99"), Part(second, "400.01")] });
+        Assert.Contains(exceeds.Issues,
+            issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationExceedsOpenAmountCode);
+        var unknown = await run.AcceptAsync("selection-unknown",
+            Return(invoice, "500.00") with { Allocations = [Part(Guid.NewGuid(), "100.00"), Part(second, "400.00")] });
+        Assert.Contains(unknown.Issues, issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationItemUnknownCode);
+        Assert.All(new[] { mismatch, exceeds, unknown },
+            result => Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCredits"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnInvoiceStates"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Version = 1", ("@id", invoice.InvoiceId)));
+
+        // The user's own selection is applied as submitted, not the prefill.
+        var acceptance = Return(invoice, "500.00") with { Allocations = [Part(second, "400.00"), Part(first, "100.00")] };
+        var accepted = await run.AcceptAsync("selection-2", acceptance);
+        Assert.Equal(CommandOutcome.Succeeded, accepted.Outcome);
+        Assert.Equal(
+            [new FinanceInvoiceAcceptanceReductionV2(first, "100.00"), new FinanceInvoiceAcceptanceReductionV2(second, "400.00")],
+            accepted.Reductions.ToArray());
+        Assert.Equal("0", accepted.AdvanceAmount);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OriginalAmountText = N'600.00' "
+            + "AND OutstandingAmountText = N'500.00' AND Status = 1 AND Version = 2", ("@id", first)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OriginalAmountText = N'400.00' "
+            + "AND OutstandingAmountText = N'0.00' AND Status = 2 AND Version = 2", ("@id", second)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CustomerReturnCreditItems WHERE CreditId = @id", ("@id", acceptance.AcceptanceId)));
+        Assert.Equal("500.00", await run.ScalarAsync<string>(
+            "SELECT ReturnedAmountText FROM finance.CustomerReturnInvoiceStates WHERE OriginalInvoiceId = @id AND Version = 1",
+            ("@id", invoice.InvoiceId)));
+
+        // The selection is part of the acceptance: the same key replays it, and the same key without it is a conflict.
+        Assert.True((await run.AcceptAsync("selection-2", acceptance)).IsReplay);
+        Assert.Equal(CommandOutcome.IdempotencyConflict,
+            (await run.AcceptAsync("selection-2", acceptance with { Allocations = null })).Outcome);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCredits"));
+    }
+
+    [SqlServerFact]
+    public async Task A_partial_return_without_a_selection_reduces_the_nearest_due_installment_first_as_prefilled()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(Installment(1, "300.00"), Installment(2, "300.00"), Installment(3, "300.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("nearest-1", invoice)).Outcome);
+        var (first, second, third) = (invoice.Installments[0].OpenItemId, invoice.Installments[1].OpenItemId,
+            invoice.Installments[2].OpenItemId);
+        // SENTETIK: the nearest installment is already partly settled.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE finance.OpenItems SET OutstandingAmountText = N'100.00' WHERE Id = @id; SELECT @@ROWCOUNT",
+            ("@id", first)));
+
+        var prefill = await run.ReadAsync(Query(invoice, "250.00"));
+        Assert.Equal(CommandOutcome.Succeeded, prefill.Outcome);
+        Assert.Equal([first, second, third], prefill.Installments.Select(row => row.OpenItemId).ToArray());
+        Assert.Equal(["100.00", "150.00", "0"], prefill.Installments.Select(row => row.PrefillAmount).ToArray());
+
+        var accepted = await run.AcceptAsync("nearest-2", Return(invoice, "250.00"));
+        Assert.Equal(CommandOutcome.Succeeded, accepted.Outcome);
+        Assert.Equal(
+            [new FinanceInvoiceAcceptanceReductionV2(first, "100.00"), new FinanceInvoiceAcceptanceReductionV2(second, "150.00")],
+            accepted.Reductions.ToArray());
+        Assert.Equal("0", accepted.AdvanceAmount);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'0.00' AND Status = 2 "
+            + "AND Version = 2", ("@id", first)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'150.00' AND Status = 1 "
+            + "AND Version = 2", ("@id", second)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'300.00' AND Status = 1 "
+            + "AND Version = 1", ("@id", third)));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCreditItems"));
+    }
+
+    [SqlServerFact]
+    public async Task The_prefill_read_is_fenced_like_the_acceptance_and_writes_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(Installment(1, "100.00"), Installment(2, "100.00"));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync("prefill-1", invoice)).Outcome);
+        // SENTETIK: the first installment is partly settled; 140.00 is still outstanding.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "UPDATE finance.OpenItems SET OutstandingAmountText = N'40.00' WHERE Id = @id; SELECT @@ROWCOUNT",
+            ("@id", invoice.Installments[0].OpenItemId)));
+
+        // A return above the outstanding total closes every installment, the rest is the advance and no selection is taken.
+        var whole = await run.ReadAsync(Query(invoice, "150.00"));
+        Assert.Equal(CommandOutcome.Succeeded, whole.Outcome);
+        Assert.False(whole.SelectionAllowed);
+        Assert.Equal(["40.00", "100.00"], whole.Installments.Select(row => row.PrefillAmount).ToArray());
+        Assert.Equal("140.00", whole.AppliedAmount);
+        Assert.Equal("10.00", whole.AdvanceAmount);
+
+        Assert.Contains((await run.ReadAsync(Query(invoice, "200.01"))).Issues,
+            issue => issue.Code == FinanceInvoiceAcceptanceService.ExceedsInvoiceCode);
+        Assert.Contains((await run.ReadAsync(Query(invoice, "10.00") with { OriginalInvoiceVersion = "invoice-v2" })).Issues,
+            issue => issue.Code == FinanceInvoiceAcceptanceService.VersionMismatchCode);
+        Assert.Contains((await run.ReadAsync(Query(invoice, "10.00") with { OriginalInvoiceId = Guid.NewGuid() })).Issues,
+            issue => issue.Code == FinanceInvoiceAcceptanceService.NotAdmittedCode);
+        Assert.Equal(CommandOutcome.Denied,
+            (await run.ReadAsync(Query(invoice, "10.00"), PermissionDecision.Denied)).Outcome);
+        var unavailable = await run.ReadAsync(Query(invoice, "10.00"), PermissionDecision.Unavailable);
+        Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
+        Assert.Empty(unavailable.Installments);
+        Assert.Equal(CommandOutcome.Denied,
+            (await run.ReadAsync(Query(invoice, "10.00"), contextCompany: CompanyB)).Outcome);
+        // Company B, resolved and authorised in its own context, cannot see company A's invoice.
+        Assert.Contains((await run.ReadAsync(Query(invoice, "10.00"), company: CompanyB)).Issues,
+            issue => issue.Code == FinanceInvoiceAcceptanceService.NotAdmittedCode);
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCredits"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnInvoiceStates"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Version = 1", ("@id", invoice.InvoiceId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = 'finance.customer-return-credits.accepted.v2'"));
     }
 
     [SqlServerFact]
@@ -281,6 +422,12 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
             "return-v1", invoice.InvoiceId, invoice.InvoiceVersion, Party, Account, Lira, amount, null,
             new DateOnly(2026, 11, 14));
 
+    private static FinanceInvoiceAcceptanceAllocationV2 Part(Guid openItemId, string amount) => new(openItemId, amount);
+
+    private static FinanceCustomerReturnInstallmentQueryV2 Query(FinanceInvoiceOpenItemAdmissionV1 invoice, string amount) =>
+        new(FinanceInvoiceProducerV1.Sales, FinanceInvoiceAcceptanceKindV2.CustomerReturn, Guid.NewGuid(), invoice.InvoiceId,
+            invoice.InvoiceVersion, amount);
+
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
@@ -337,6 +484,22 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
             return await service.AcceptAsync(
                 new FinanceContext(contextCompany ?? scopeCompany, actor, $"f019-{Guid.NewGuid():N}", null),
                 new CommandMetadata($"f019-{key}"), acceptance, CancellationToken.None);
+        }
+
+        /// <summary>The prefill read (FIN-S10) through the same service and fence as the acceptance; it writes nothing.</summary>
+        public async Task<FinanceCustomerReturnInstallmentPrefillV2> ReadAsync(FinanceCustomerReturnInstallmentQueryV2 query,
+            PermissionDecision authority = PermissionDecision.Allowed, Guid? contextCompany = null, Guid? company = null)
+        {
+            var scopeCompany = company ?? CompanyA;
+            var (companyContext, collector) = Scope(scopeCompany);
+            await using var dbContext = new FinanceDbContext(Options(companyContext, collector), companyContext);
+            var service = new FinanceInvoiceAcceptanceService(dbContext, companyContext,
+                new FixedCurrentUser(Actor, scopeCompany), new SyntheticAcceptanceAuthority([authority]), collector,
+                new FinanceAuditEnvelope("synthetic.finance.invoice-acceptances.accept", ["SENTETIK-FINANCE"], "Web"),
+                TimeProvider.System);
+            return await service.ReadAsync(
+                new FinanceContext(contextCompany ?? scopeCompany, Actor, $"f019-{Guid.NewGuid():N}", null), query,
+                CancellationToken.None);
         }
 
         /// <summary>Moves Finance's schema to <paramref name="target"/> (null: the latest migration).</summary>
