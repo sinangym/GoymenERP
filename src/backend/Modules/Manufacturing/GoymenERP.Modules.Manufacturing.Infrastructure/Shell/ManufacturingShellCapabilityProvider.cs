@@ -29,6 +29,12 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <item><c>manufacturing.plans.list</c> → <c>/uretim/planlar</c> on
 /// <see cref="ErpPermissions.ManufacturingPlansRead"/> (MFG-PLAN-LIST, contract 1.3): the company's saved plans,
 /// so a plan whose screen was closed is found and reopened. The plan read's own grant; no new permission.</item>
+/// <item><c>manufacturing.scrap-prices.list</c> → <c>/uretim/hurda-fiyatlari</c> on
+/// <see cref="ErpPermissions.ManufacturingScrapPricesRead"/> (URT-S13, contract 1.7): the company's monthly scrap prices
+/// of a year (URT-D47, URT-D65).</item>
+/// <item><c>manufacturing.scrap-prices.record</c> (URT-S13, contract 1.7): a control on that route adding
+/// <see cref="ErpPermissions.ManufacturingScrapPricesWrite"/> — the month's price entry. Both names are registered and
+/// granted to no role: who enters the scrap price is not decided.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens
@@ -42,8 +48,9 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string OwnerId = "MANUFACTURING";
     // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
-    // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control.
-    public const string OwnerContractVersion = "1.6";
+    // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
+    // monthly scrap price route and its record control.
+    public const string OwnerContractVersion = "1.7";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
@@ -72,6 +79,11 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanListRouteId = "manufacturing.plan-list";
     public const string PlanListRoutePath = "/uretim/planlar";
     public const string PlanListScreenId = "MFG-PLAN-LIST";
+    public const string ScrapPriceListCapabilityId = "manufacturing.scrap-prices.list";
+    public const string ScrapPriceRecordCapabilityId = "manufacturing.scrap-prices.record";
+    public const string ScrapPriceListRouteId = "manufacturing.scrap-price-list";
+    public const string ScrapPriceListRoutePath = "/uretim/hurda-fiyatlari";
+    public const string ScrapPriceListScreenId = "MFG-SCRAP-PRICES";
 
     public string Owner => OwnerId;
 
@@ -134,6 +146,17 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             [ErpPermissions.ManufacturingPlansRead],
             ImplementationAvailable: true);
 
+        var scrapPriceList = new ShellCapabilityDeclaration(
+            ScrapPriceListCapabilityId,
+            ScrapPriceListRouteId,
+            ScrapPriceListRoutePath,
+            ScrapPriceListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.ManufacturingScrapPricesRead],
+            ImplementationAvailable: true);
+
         return
         [
             detail,
@@ -194,6 +217,18 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansCancel],
             },
             planList,
+            scrapPriceList,
+            // URT-S13: the month's price entry is a control of the scrap price screen, on its own write permission.
+            scrapPriceList with
+            {
+                CapabilityId = ScrapPriceRecordCapabilityId,
+                ParentCapabilityId = ScrapPriceListCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.ManufacturingScrapPricesRead,
+                    ErpPermissions.ManufacturingScrapPricesWrite,
+                ],
+            },
         ];
     }
 }

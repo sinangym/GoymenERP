@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.6"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(12, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.7"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(14, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -86,6 +86,18 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             (planList.RouteId, planList.RoutePath, planList.ScreenId, planList.RoutePrecedence));
         Assert.Null(planList.ParentCapabilityId);
         Assert.Equal([ErpPermissions.ManufacturingPlansRead], planList.RequiredPermissions);
+
+        // URT-S13: the monthly scrap price screen is its own static route on its own read permission; the entry is a control
+        // adding the write permission. Neither is a plan or order permission.
+        var scrapPrices = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.scrap-prices.list");
+        Assert.Equal(
+            ("manufacturing.scrap-price-list", "/uretim/hurda-fiyatlari", "MFG-SCRAP-PRICES",
+                ShellCapabilityRoutePrecedence.Static),
+            (scrapPrices.RouteId, scrapPrices.RoutePath, scrapPrices.ScreenId, scrapPrices.RoutePrecedence));
+        Assert.Null(scrapPrices.ParentCapabilityId);
+        Assert.Equal([ErpPermissions.ManufacturingScrapPricesRead], scrapPrices.RequiredPermissions);
+        AssertControl(declarations, scrapPrices, "manufacturing.scrap-prices.record",
+            [ErpPermissions.ManufacturingScrapPricesRead, ErpPermissions.ManufacturingScrapPricesWrite]);
 
         // The controls: the same route as the order screen, its permission plus their own.
         AssertControl(declarations, detail, "manufacturing.orders.facts",

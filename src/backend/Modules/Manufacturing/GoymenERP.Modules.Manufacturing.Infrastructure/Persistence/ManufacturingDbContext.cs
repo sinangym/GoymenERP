@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Costing;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +118,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>F-009 D2: output reversals, each linked to the output declaration it takes mass back from (append-only).</summary>
     internal DbSet<OutputReversalRow> OutputReversals => Set<OutputReversalRow>();
 
+    /// <summary>URT-S13: the company's monthly scrap prices, one per calendar month (append-only).</summary>
+    internal DbSet<MonthlyScrapPriceRow> MonthlyScrapPrices => Set<MonthlyScrapPriceRow>();
+
     internal DbSet<CommandRow> Commands => Set<CommandRow>();
 
     /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
@@ -135,6 +139,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') "
         + "OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))";
 
+    /// <summary>URT-S13: the unique index that holds one scrap price per company and month.</summary>
+    internal const string MonthlyScrapPriceMonthIndex = "IX_MonthlyScrapPrices_CompanyId_Year_Month";
+
     /// <summary>F-009 D2: every id of an output reversal is set.</summary>
     internal const string OutputReversalIdentityCheck =
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
@@ -148,6 +155,20 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>F-009 D2: the reason, the recorder and the correlation are never blank.</summary>
     internal const string OutputReversalTextCheck =
         "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>URT-S13: the price row and its company are set.</summary>
+    internal const string MonthlyScrapPriceIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>
+    /// URT-S13: a calendar month (year within the calendar the domain accepts, month 1-12) and a price above zero. A zero
+    /// price is not admitted (whether one may be entered is not decided); the domain refuses it first.
+    /// </summary>
+    internal const string MonthlyScrapPricePeriodCheck =
+        "[Year] >= 1 AND [Year] <= 9999 AND [Month] >= 1 AND [Month] <= 12 AND [TlPerKg] > 0";
+
+    /// <summary>URT-S13: the recorder and the correlation are never blank.</summary>
+    internal const string MonthlyScrapPriceTextCheck = "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -167,6 +188,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigureOrderClosureDecisions(modelBuilder);
         ConfigureFacts(modelBuilder);
         ConfigureOutputReversals(modelBuilder);
+        ConfigureMonthlyScrapPrices(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -732,6 +754,33 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): one scrap price per (company, year, month), keyed by (company, id). The unique index on
+    /// (company, year, month) holds "one price per month" also against a concurrent writer; the row is append-only (the
+    /// default write guard refuses any change or delete).
+    /// </summary>
+    private void ConfigureMonthlyScrapPrices(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<MonthlyScrapPriceRow>();
+        entity.ToTable("MonthlyScrapPrices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Identity", MonthlyScrapPriceIdentityCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Period", MonthlyScrapPricePeriodCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Text", MonthlyScrapPriceTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.TlPerKg).HasPrecision(18, ScrapPriceTlPerKg.Scale);
+        entity.Property(x => x.RecordedBy).HasMaxLength(MonthlyScrapPrice.RecordedByMaximumLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.Year, x.Month })
+            .IsUnique()
+            .HasDatabaseName(MonthlyScrapPriceMonthIndex);
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 

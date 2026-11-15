@@ -187,6 +187,11 @@ export const CAPABILITY = {
   manufacturingPlansDetail: 'manufacturing.plans.detail',
   /** MFG-PLAN-LIST the company's saved plans. Route `/uretim/planlar`; reached from the order list and plan detail. */
   manufacturingPlansList: 'manufacturing.plans.list',
+  /**
+   * URT-S13 the company's monthly scrap prices (URT-D47, URT-D65). Route `/uretim/hurda-fiyatlari`; reached from the
+   * order list. Entering a month's price is the `manufacturing.scrap-prices.record` CONTROL inside it, not a route.
+   */
+  manufacturingScrapPricesList: 'manufacturing.scrap-prices.list',
   /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
   financeReceiptsList: 'finance.receipts.list',
   /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
@@ -361,6 +366,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
   // Its own static segment: `planlar` is never read as `/uretim/plan/:planId`.
   [CAPABILITY.manufacturingPlansList]: '/uretim/planlar',
+  [CAPABILITY.manufacturingScrapPricesList]: '/uretim/hurda-fiyatlari',
   [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
   [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',

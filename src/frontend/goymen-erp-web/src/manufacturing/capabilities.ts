@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY ELEVEN IDS. They map onto the permissions the server enforces separately
+ * WHY FOURTEEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -24,6 +24,8 @@
  *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
  *   manufacturing.plans.edit    <- manufacturing.plans.read + manufacturing.plans.write (MFG-PLAN-EDIT: the plan save's grant)
  *   manufacturing.plans.list    <- manufacturing.plans.read (MFG-PLAN-LIST: the plan read's own grant)
+ *   manufacturing.scrap-prices.list   <- manufacturing.scrap-prices.read (URT-S13: the monthly scrap prices)
+ *   manufacturing.scrap-prices.record <- manufacturing.scrap-prices.read + manufacturing.scrap-prices.write (URT-S13)
  *
  * Reading an order and recording a fact on it are different authorities, so a reader
  * sees the balances and NO form (card D3: without the capability the control is not
@@ -66,6 +68,14 @@ export const MANUFACTURING_CAPABILITY = {
   planEdit: 'manufacturing.plans.edit',
   /** MFG-PLAN-LIST the company's saved plans, so a closed plan is found and reopened. Route `/uretim/planlar`. */
   planList: 'manufacturing.plans.list',
+  /**
+   * URT-S13 (URT-D47, URT-D65) the company's monthly scrap prices, TL per kg, one per month. Route
+   * `/uretim/hurda-fiyatlari`. Its two permissions are registered and granted to no role (who enters the price is not
+   * decided), so until a grant exists the registry publishes it to nobody.
+   */
+  scrapPriceList: 'manufacturing.scrap-prices.list',
+  /** URT-S13: enter one month's scrap price on the scrap price screen. Not a route — a control. */
+  scrapPriceRecord: 'manufacturing.scrap-prices.record',
 } as const
 
 export type ManufacturingCapabilityId =
@@ -78,6 +88,7 @@ export const MANUFACTURING_ROUTE: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
   [MANUFACTURING_CAPABILITY.orderList]: '/uretim/emirler',
   [MANUFACTURING_CAPABILITY.planList]: '/uretim/planlar',
+  [MANUFACTURING_CAPABILITY.scrapPriceList]: '/uretim/hurda-fiyatlari',
 }
 
 /**
@@ -91,6 +102,7 @@ export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.planCreate]: '',
   [MANUFACTURING_CAPABILITY.planDetail]: '',
   [MANUFACTURING_CAPABILITY.planList]: '',
+  [MANUFACTURING_CAPABILITY.scrapPriceList]: '',
 }
 
 export function planCreatePath(): string {
@@ -138,6 +150,11 @@ export function orderDetailPath(orderId: string): string {
 /** The plan list's own path. */
 export function planListPath(): string {
   return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planList]
+}
+
+/** URT-S13: the monthly scrap price list's own path. */
+export function scrapPriceListPath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.scrapPriceList]
 }
 
 /** The order list's own path. */

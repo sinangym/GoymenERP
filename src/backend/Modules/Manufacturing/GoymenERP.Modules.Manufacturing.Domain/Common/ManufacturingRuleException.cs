@@ -181,6 +181,15 @@ public static class ManufacturingRuleCodes
     public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
 
     /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): the company already has a scrap price for this month. A recorded month is never changed
+    /// or replaced here (correcting it is not decided); the answer is a conflict.
+    /// </summary>
+    public const string ScrapPriceAlreadyRecorded = "manufacturing_scrap_price_already_recorded";
+
+    /// <summary>URT-S13: a scrap price carries at most four decimals (its decimal(18,4) column); a fifth is refused, not rounded.</summary>
+    public const string ScrapPricePrecisionExceeded = "manufacturing_scrap_price_precision_exceeded";
+
+    /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace
     /// with only one of its two parts, a version that is not the one its facts add up to, or a
     /// stored cost the domain cannot have produced. The record is refused, never repaired.

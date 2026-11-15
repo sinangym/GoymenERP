@@ -311,6 +311,54 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.MonthlyScrapPriceRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal>("TlPerKg")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "Year", "Month")
+                        .IsUnique()
+                        .HasDatabaseName("IX_MonthlyScrapPrices_CompanyId_Year_Month");
+
+                    b.ToTable("MonthlyScrapPrices", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_MonthlyScrapPrices_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_MonthlyScrapPrices_Period", "[Year] >= 1 AND [Year] <= 9999 AND [Month] >= 1 AND [Month] <= 12 AND [TlPerKg] > 0");
+
+                            t.HasCheckConstraint("CK_MonthlyScrapPrices_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1465,6 +1513,15 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "OrderId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.MonthlyScrapPriceRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

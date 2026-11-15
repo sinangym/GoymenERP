@@ -161,6 +161,20 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanDueDateNoChange,
     ];
 
+    // URT-S13 (URT-D47, URT-D65): the monthly scrap price entry's own 409 and 422 sets — a month that already has a price
+    // is a conflict (never replaced); a fifth decimal is a refusal. Declared on that endpoint only.
+    private static readonly string[] ScrapPriceConflictCodes =
+    [
+        .. ConflictCodes,
+        ManufacturingRuleCodes.ScrapPriceAlreadyRecorded,
+    ];
+
+    private static readonly string[] ScrapPriceUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.ScrapPricePrecisionExceeded,
+    ];
+
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
@@ -648,6 +662,51 @@ public static class ManufacturingEndpoints
             .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
             .WithName("GetManufacturingOutputAboveInputClosureReportV1")
             .Produces<OutputAboveInputClosureReportViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): records the company's scrap price of one calendar month in TL per
+        // kg, under its own grant (registered, granted to no role: who enters it is not decided). A recorded month is never
+        // replaced (409). ADR-011 as the other commands; only the success is replayed.
+        group.MapPost("/scrap-prices", async (
+                RecordMonthlyScrapPriceRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.RecordMonthlyScrapPriceAsync(request, key,
+                ErpPermissions.ManufacturingScrapPricesWrite, cancellationToken),
+                price => $"/api/v1/manufacturing/scrap-prices?year={price.Year.ToString(CultureInfo.InvariantCulture)}"))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingScrapPricesWrite)
+            .WithIdempotencyContract(StatusCodes.Status201Created)
+            .WithName("RecordManufacturingMonthlyScrapPriceV1")
+            .Accepts<RecordMonthlyScrapPriceRequestV1>("application/json")
+            .Produces<MonthlyScrapPriceViewV1>(StatusCodes.Status201Created)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ScrapPriceConflictCodes)
+            .ProducesErpUnprocessableEntity(ScrapPriceUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // URT-S13: the company's recorded scrap prices of one year, the latest month first. A month that is not listed has
+        // no price (its scrap weighings leave the cost pending). A read: nothing is stored.
+        group.MapGet("/scrap-prices", async (
+                int? year,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ListMonthlyScrapPricesAsync(year, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingScrapPricesRead)
+            .WithName("ListManufacturingMonthlyScrapPricesV1")
+            .Produces<MonthlyScrapPriceListViewV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(BadRequestCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
