@@ -17,9 +17,10 @@ namespace GoymenERP.Modules.Documents.Application;
 /// <item><b>Owner</b>: the linked record's owner answers, through its declared port, whether the record exists in the
 /// context company and the actor may read it. Anything else is 404 (non-disclosure) — a document is never more
 /// visible than its owner record, and another company's document is not found.</item>
-/// <item><b>Content</b> (DEC-DOC-009): a safe file name, an allowlisted kind proven by the bytes' signature, a
-/// configured size bound; then the malware scan. Malware is refused and nothing is stored; no scanner, or a scanner
-/// that cannot answer, stores the version as NotScanned — never served.</item>
+/// <item><b>Content</b> (DEC-DOC-009): a safe file name, an allowlisted kind proven by the bytes' signature (or the
+/// structural check of a bank-statement kind), a kind every record the file is shown on accepts (FNS-D52: the standard
+/// kinds unless the owner port opts in to more), a configured size bound; then the malware scan. Malware is refused and
+/// nothing is stored; no scanner, or a scanner that cannot answer, stores the version as NotScanned — never served.</item>
 /// <item><b>Replay</b> (ADR-011): the attempt of (company, command, key hash) answers first; another body or actor under
 /// the same key is one 409.</item>
 /// <item><b>Duplicates</b> (AT-057, DEC-DOC-002): the same content in the same company is a warning, never a refusal —
@@ -58,6 +59,7 @@ public sealed partial class DocumentService(
     private const int DefaultVersionPageSize = 50;
     private const int MaximumVersionPageSize = 100;
     private const int DuplicateLimit = 10;
+    private static readonly IReadOnlyList<DocumentFileKind> AnyKnownKind = [.. DocumentContentPolicy.KnownKinds.Select(info => info.Kind)];
     private readonly IReadOnlyDictionary<string, IDocumentOwnerLinkPortV1> owners = IndexOwners(ownerPorts);
 
     public async Task<DocumentUploadResponse> UploadAsync(UploadDocumentRequest request, DocumentCommandMetadata metadata,
@@ -73,7 +75,9 @@ public sealed partial class DocumentService(
         var fileName = DocumentFileName.TryCreate(request.FileName)
             ?? throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed, [new("file", DocumentRuleCodes.FileNameInvalid)]);
         var content = request.Content ?? [];
-        var decision = DocumentContentPolicy.Classify(fileName, request.DeclaredContentType, content, bindings.MaximumUploadBytes);
+        // FNS-D52: the kinds the owner record accepts (the standard ones unless its owner port opted in to more).
+        var decision = DocumentContentPolicy.Classify(fileName, request.DeclaredContentType, content, bindings.MaximumUploadBytes,
+            owners[owner.Kind].AcceptedFileKinds);
         if (!decision.IsAccepted)
         {
             throw new DocumentServiceException(422, decision.RefusalCode!, [new("file", decision.RefusalCode!)]);
@@ -164,7 +168,10 @@ public sealed partial class DocumentService(
             ?? throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
                 [new("file", DocumentRuleCodes.FileNameInvalid)]);
         var content = request.Content ?? [];
-        var decision = DocumentContentPolicy.Classify(fileName, request.DeclaredContentType, content, bindings.MaximumUploadBytes);
+        // The linked records are not known yet: the bytes are checked against every known kind here, and the kind against
+        // every linked record's accepted kinds once the records are known to be readable (below).
+        var decision = DocumentContentPolicy.Classify(fileName, request.DeclaredContentType, content, bindings.MaximumUploadBytes,
+            AnyKnownKind);
         if (!decision.IsAccepted)
         {
             throw new DocumentServiceException(422, decision.RefusalCode!, [new("file", decision.RefusalCode!)]);
@@ -210,6 +217,12 @@ public sealed partial class DocumentService(
         // B-26: a new version changes the file on EVERY linked record, so every linked record must be readable now.
         var linked = OwnerLinksOf(current);
         await RequireEveryLinkReadableAsync(scope, Permission, linked, cancellationToken);
+        // FNS-D52: the new version is shown on every linked record, so every linked record must accept its kind.
+        if (!linked.All(link => Accepts(link.Kind, kind.Kind)))
+        {
+            throw new DocumentServiceException(422, DocumentRuleCodes.TypeNotAllowed, [new("file", DocumentRuleCodes.TypeNotAllowed)]);
+        }
+
         if (current.VersionNo != request.ExpectedCurrentVersion)
         {
             throw new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
@@ -372,8 +385,8 @@ public sealed partial class DocumentService(
         await RequireStillAsync(scope, Permission, cancellationToken);
         await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         // B-26: a document linked to several records is listed under the record asked for, never under the others.
-        return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId, owner))], canUpload, Limits(),
-            canLink);
+        return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId, owner))], canUpload,
+            Limits(owner.Kind), canLink);
     }
 
     public async Task<DocumentContentV1> GetContentAsync(Guid documentId, CancellationToken cancellationToken = default)
@@ -472,6 +485,14 @@ public sealed partial class DocumentService(
         // The actor must see the document through one of its records AND the record it is linked to now.
         var source = await RequireReadableLinkAsync(current, scope, Permission, cancellationToken);
         await RequireOwnerStillReadableAsync(scope, Permission, target, cancellationToken);
+        // FNS-D52: a record takes an existing document only of a kind it accepts (a statement file never lands on a
+        // record whose type list did not grow), checked once both records are known to be readable (non-disclosure).
+        if (!Accepts(target.Kind, current.Kind))
+        {
+            throw new DocumentServiceException(422, DocumentProblemCodesV1.LinkNotAccepted,
+                [new("ownerKind", DocumentProblemCodesV1.LinkNotAccepted)]);
+        }
+
         if (current.VersionNo != request.ExpectedCurrentVersion)
         {
             throw new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,
@@ -773,9 +794,20 @@ public sealed partial class DocumentService(
             document.ScanState == DocumentScanState.Clean, document.UploadedBy, document.UploadedAtUtc);
     }
 
-    private DocumentUploadLimitsView Limits() => new(bindings.MaximumUploadBytes,
-        [.. DocumentContentPolicy.AllowedKinds.SelectMany(kind => kind.Extensions)],
-        [.. DocumentContentPolicy.AllowedKinds.Select(kind => kind.ContentType)]);
+    /// <summary>The bounds of an upload to a record of <paramref name="ownerKind"/>: only the kinds that record accepts.</summary>
+    private DocumentUploadLimitsView Limits(string ownerKind)
+    {
+        var kinds = DocumentContentPolicy.InfosOf(owners[ownerKind].AcceptedFileKinds);
+        return new DocumentUploadLimitsView(bindings.MaximumUploadBytes, [.. kinds.SelectMany(kind => kind.Extensions)],
+            [.. kinds.Select(kind => kind.ContentType).Distinct(StringComparer.Ordinal)]);
+    }
+
+    /// <summary>
+    /// FNS-D52: whether a record of <paramref name="ownerKind"/> accepts content of <paramref name="kind"/>; an unregistered
+    /// owner kind accepts nothing.
+    /// </summary>
+    private bool Accepts(string ownerKind, DocumentFileKind kind) =>
+        owners.TryGetValue(ownerKind, out var port) && port.AcceptedFileKinds.Contains(kind);
 
     // ---- owner, scan ----------------------------------------------------------------------------
 

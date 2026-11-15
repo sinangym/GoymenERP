@@ -85,8 +85,10 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.Equal("[CommandName] = N'documents.upload.v1'", perDocument.GetFilter());
         Assert.False(attempts.FindProperty(nameof(DocumentAttemptRow.DocumentId))!.IsNullable);
         Assert.Contains(design.FindEntityType(typeof(ContentBlobRow))!.GetCheckConstraints(), check => check.Name == "CK_ContentBlobs_Kind"
-            && check.Sql == "[ContentKind] IN (1, 2, 3)");
-        Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker"], context.Database.GetMigrations());
+            && check.Sql == DocumentsDbContext.ContentKindCheck);
+        Assert.Equal("[ContentKind] IN (1, 2, 3, 4, 5, 6)", DocumentsDbContext.ContentKindCheck);
+        Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker", "20261115134058_WidenDocumentContentKinds"],
+            context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -123,6 +125,25 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.Single(down, operation => operation is SqlOperation);
         Assert.Equal(DocumentsDbContext.PrimaryLinkIndex, Assert.IsType<DropIndexOperation>(down[1]).Name);
         Assert.Equal("IsPrimary", Assert.IsType<DropColumnOperation>(down[2]).Name);
+        Assert.Equal(3, down.Count);
+    }
+
+    [Fact]
+    public void The_content_kind_migration_widens_the_check_and_its_down_refuses_with_51517_while_a_statement_kind_exists()
+    {
+        var migration = new WidenDocumentContentKinds();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Equal("CK_ContentBlobs_Kind", Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[0]).Name);
+        var widened = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[1]);
+        Assert.Equal(("CK_ContentBlobs_Kind", DocumentsDbContext.ContentKindCheck), (widened.Name, widened.Sql));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [documents].[ContentBlobs] WHERE [ContentKind] IN (4, 5, 6))", guard.Sql,
+            StringComparison.Ordinal);
+        Assert.Contains("THROW 51517,", guard.Sql, StringComparison.Ordinal);
+        Assert.Equal("CK_ContentBlobs_Kind", Assert.IsType<DropCheckConstraintOperation>(down[1]).Name);
+        var narrowed = Assert.IsType<AddCheckConstraintOperation>(down[2]);
+        Assert.Equal(("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)"), (narrowed.Name, narrowed.Sql));
         Assert.Equal(3, down.Count);
     }
 

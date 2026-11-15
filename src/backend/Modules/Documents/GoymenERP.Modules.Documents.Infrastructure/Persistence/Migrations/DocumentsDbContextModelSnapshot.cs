@@ -220,7 +220,7 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
                     {
                         t.HasCheckConstraint("CK_ContentBlobs_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Sha256]) = 64 AND LEN([ObjectKey]) > 0 AND LEN([FirstStoredBy]) > 0");
 
-                        t.HasCheckConstraint("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)");
+                        t.HasCheckConstraint("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3, 4, 5, 6)");
 
                         t.HasCheckConstraint("CK_ContentBlobs_Size", "[SizeBytes] > 0");
                     });

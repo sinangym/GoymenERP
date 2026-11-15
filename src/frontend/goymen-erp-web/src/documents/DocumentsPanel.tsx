@@ -1,7 +1,8 @@
 /**
  * AT-065 document panel of an owner record (first owner: the Cari card, C-03).
  *
- * The user's job: on a record, add a document (PDF, PNG or JPEG), see the record's documents after closing and reopening
+ * The user's job: on a record, add a document (PDF, PNG or JPEG; a record whose owner opted in to bank-statement import
+ * also takes XLSX, MT940 or CSV — the list's limits say which), see the record's documents after closing and reopening
  * the card, download one, and be told when the same file was already uploaded in this company (AT-057). Nothing here
  * deletes, renames or overwrites a document — retention/deletion is undecided (OPEN-018/021) and a document is never
  * overwritten (DEC-DOC-003).

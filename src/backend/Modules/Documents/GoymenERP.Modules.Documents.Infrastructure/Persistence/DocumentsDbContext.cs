@@ -27,6 +27,12 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
     /// <summary>The primary-link index's filter; tests compare the model's filter with it.</summary>
     internal const string PrimaryLinkFilter = "[IsPrimary] = 1";
 
+    /// <summary>
+    /// The stored content kinds (<c>DocumentFileKind</c>): the standard PDF/PNG/JPEG and, since FNS-D52,
+    /// the bank-statement import kinds XLSX/MT940/CSV. Tests compare the model's check with it.
+    /// </summary>
+    internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6)";
+
     internal DbSet<ContentBlobRow> Blobs => Set<ContentBlobRow>();
 
     internal DbSet<DocumentRow> Documents => Set<DocumentRow>();
@@ -75,7 +81,7 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
             table.HasCheckConstraint("CK_ContentBlobs_Identity",
                 $"[CompanyId] <> {EmptyGuid} AND LEN([Sha256]) = 64 AND LEN([ObjectKey]) > 0 AND LEN([FirstStoredBy]) > 0");
             table.HasCheckConstraint("CK_ContentBlobs_Size", "[SizeBytes] > 0");
-            table.HasCheckConstraint("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_ContentBlobs_Kind", ContentKindCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Sha256 });
         entity.Property(x => x.Sha256).HasMaxLength(64).IsUnicode(false).IsFixedLength().UseCollation(IdentityCollation).IsRequired();
