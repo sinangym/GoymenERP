@@ -692,6 +692,27 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-S19 (B-27, DEC-PRDCT-009, API-42): the order's cost trace — lots, line, fire, subcontract owner, sales-order
+        // link and fact moments from the stored facts, and the production cost port's answer (never a second formula, never
+        // a zero). Its own grant, registered and granted to no role. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/cost-trace", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetCostTraceAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderCostTraceV1")
+            .Produces<CostTraceViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // URT-D42 (3): the company's already-closed orders whose output exceeded input on a parent roll, per roll — listed,
         // never reopened or changed. The order list's paging and the order read's grant; a read: nothing is stored.
         group.MapGet("/reports/output-above-input-closures", async (
