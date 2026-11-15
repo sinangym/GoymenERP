@@ -47,7 +47,7 @@ export const DOCUMENTS_TEXT = {
   readFailed: 'Belgeler getirilemedi.',
   readAgain: 'Belgeleri yeniden getir',
   tooLargeLocal: (maximumBytes: number) => `Dosya çok büyük. En fazla ${formatSize(maximumBytes)} yüklenebilir.`,
-  typeLocal: 'Bu dosya türü eklenemez. Yalnız PDF, PNG veya JPEG dosyası seçin.',
+  typeLocal: 'Bu dosya türü bu kayda eklenemez. İzin verilen türlerden birini seçin.',
   downloadRefused: 'Belge indirilemedi.',
   notScanned: 'Bu belge güvenlik taramasından geçmediği için indirilemez.',
   versionsShow: (fileName: string) => `${fileName} sürümlerini göster`,
@@ -114,7 +114,7 @@ export function refusalText(status: number, code: string | null): string {
     case DOCUMENT_PROBLEM.tooLarge:
       return 'Dosya izin verilen boyuttan büyük.'
     case DOCUMENT_PROBLEM.typeNotAllowed:
-      return 'Bu dosya türü eklenemez. Yalnız PDF, PNG veya JPEG dosyası yüklenebilir.'
+      return 'Bu dosya türü bu kayda eklenemez. Yalnız bu kayıt için izin verilen türler yüklenebilir.'
     case DOCUMENT_PROBLEM.contentMismatch:
       return 'Dosyanın içeriği uzantısıyla uyuşmuyor. Dosya reddedildi.'
     case DOCUMENT_PROBLEM.contentRejected:
@@ -155,6 +155,13 @@ export function typeLabel(contentType: string): string {
       return 'PNG'
     case 'image/jpeg':
       return 'JPEG'
+    // B-26 / FNS-D52 bank-statement import kinds (only on a record whose owner opted in).
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return 'XLSX'
+    case 'text/plain':
+      return 'MT940'
+    case 'text/csv':
+      return 'CSV'
     default:
       return contentType
   }

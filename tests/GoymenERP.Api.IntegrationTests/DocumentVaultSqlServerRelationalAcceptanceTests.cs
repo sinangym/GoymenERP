@@ -63,6 +63,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     private static readonly DateOnly ProfileFrom = new(2026, 1, 1);
     private static readonly DateTimeOffset T0 = new(2026, 9, 30, 9, 0, 0, TimeSpan.Zero);
     private static readonly byte[] Pdf = "%PDF-1.7\n% SENTETIK sözleşme\n"u8.ToArray();
+    private const string InitialDocumentsMigration = "20260930120000_InitialDocuments";
+    private const string WidenContentKindsMigration = "20261115134058_WidenDocumentContentKinds";
     private static readonly byte[] OtherPdf = "%PDF-1.7\n% SENTETIK başka belge\n"u8.ToArray();
     private static Task PermitWriteAsync(CancellationToken _) => Task.CompletedTask;
 
@@ -294,7 +296,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
-            Assert.Equal(["20260930120000_InitialDocuments"], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal([InitialDocumentsMigration, WidenContentKindsMigration], await context.Database.GetAppliedMigrationsAsync());
             await context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
             await context.Database.MigrateAsync();
@@ -308,12 +310,65 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
+            // Only standard kinds are stored, so the content-kind migration steps back first; the vault's own Down then refuses.
+            await context.GetService<IMigrator>().MigrateAsync(InitialDocumentsMigration);
+            Assert.Equal([InitialDocumentsMigration], await context.Database.GetAppliedMigrationsAsync());
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase));
             Assert.Equal(51058, error.Number);
-            Assert.Equal(["20260930120000_InitialDocuments"], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal([InitialDocumentsMigration], await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
+            Assert.Equal([InitialDocumentsMigration, WidenContentKindsMigration], await context.Database.GetAppliedMigrationsAsync());
         }
 
         Assert.Equal((1, 1, 1, 1, 1), await run.CountsAsync());
+    }
+
+    /// <summary>
+    /// B-26 / FNS-D52: the content-kind migration narrows the check back to PDF/PNG/JPEG while only those kinds are stored,
+    /// stores a bank-statement CSV once it is widened again, and then refuses its Down with 51517 without dropping the check.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_content_kind_migrations_Down_passes_with_only_standard_kinds_and_refuses_with_51517_while_a_statement_kind_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var companyContext = new CompanyContext();
+        companyContext.Set(CompanyA);
+        var options = new DbContextOptionsBuilder<DocumentsDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", DocumentsDbContext.Schema))
+            .Options;
+        const string TakesCsv = "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_ContentBlobs_Kind' AND [definition] LIKE N'%(6)%'";
+        var csv = "\uFEFFTarih;Açıklama;Tutar\r\n2026-11-15;SENTETIK havale;100,00\r\n"u8.ToArray();
+
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Store.StoreUploadAsync(run.Envelope("k-pdf"), Hash("pdf"), Upload(CompanyA, PartyA, Pdf, "A.pdf"), PermitWriteAsync);
+        }
+
+        await using (var context = new DocumentsDbContext(options, companyContext))
+        {
+            Assert.Equal(1, await run.ScalarAsync<int>(TakesCsv));
+            await context.GetService<IMigrator>().MigrateAsync(InitialDocumentsMigration);
+            Assert.Equal([InitialDocumentsMigration], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(0, await run.ScalarAsync<int>(TakesCsv));
+            await context.Database.MigrateAsync();
+            Assert.Equal(1, await run.ScalarAsync<int>(TakesCsv));
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Store.StoreUploadAsync(run.Envelope("k-csv"), Hash("csv"),
+                Upload(CompanyA, PartyA, csv, "Ekstre.csv", kind: DocumentFileKind.Csv), PermitWriteAsync);
+        }
+
+        await using (var context = new DocumentsDbContext(options, companyContext))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(InitialDocumentsMigration));
+            Assert.Equal(51517, error.Number);
+            Assert.Equal([InitialDocumentsMigration, WidenContentKindsMigration], await context.Database.GetAppliedMigrationsAsync());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(TakesCsv));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM documents.ContentBlobs WHERE ContentKind = 6"));
     }
 
     /// <summary>
@@ -722,11 +777,11 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     private static NewDocumentUpload Upload(Guid company, Guid party, byte[] content, string fileName,
-        string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty)
+        string ownerKind = DocumentOwnerLinkKindsV1.CounterpartyParty, DocumentFileKind kind = DocumentFileKind.Pdf)
     {
         var sha = DocumentContentHash.Compute(content);
         return new NewDocumentUpload(Guid.NewGuid(), DocumentOwnerLink.TryCreate(ownerKind, party)!,
-            DocumentFileName.TryCreate(fileName)!, DocumentContentPolicy.Info(DocumentFileKind.Pdf), content.LongLength, sha,
+            DocumentFileName.TryCreate(fileName)!, DocumentContentPolicy.Info(kind), content.LongLength, sha,
             DocumentObjectKeys.For(company, sha), DocumentScanState.Clean, "SENTETIK-scanner-v1", T0);
     }
 
