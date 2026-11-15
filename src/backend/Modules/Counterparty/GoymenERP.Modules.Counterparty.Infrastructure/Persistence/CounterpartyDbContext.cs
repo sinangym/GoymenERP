@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -14,6 +15,21 @@ public sealed class CounterpartyDbContext(
     ICompanyContext companyContext)
     : DbContext(options)
 {
+    /// <summary>EK-18 #76: a merged party points at another party and is passive for good.</summary>
+    internal const string PartyMergedIntoCheck =
+        "[MergedIntoPartyId] IS NULL OR ([MergedIntoPartyId] <> [Id] AND [IsActive] = 0)";
+
+    /// <summary>EK-18 #76: a merge names two different parties and the approving company.</summary>
+    internal const string PartyMergeIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ApprovalCompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [SurvivorPartyId] <> [MergedPartyId]";
+
+    internal const string PartyMergeVersionCheck = "[SurvivorPartyVersion] >= 1 AND [MergedPartyVersion] >= 1";
+
+    internal const string PartyMergeTextCheck =
+        "LEN([Reason]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
     public DbSet<Party> Parties => Set<Party>();
 
     public DbSet<CompanyPartyAccount> CompanyPartyAccounts => Set<CompanyPartyAccount>();
@@ -28,6 +44,9 @@ public sealed class CounterpartyDbContext(
     public DbSet<CustomerEDocumentProfile> CustomerEDocumentProfiles => Set<CustomerEDocumentProfile>();
 
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
+    /// <summary>EK-18 #76-#77: the group-level, append-only record of each approved party merge (no unmerge).</summary>
+    public DbSet<PartyMerge> PartyMerges => Set<PartyMerge>();
 
     /// <summary>F-027: Counterparty-owned events stored in the producer transaction (append-only, unpublished).</summary>
     internal DbSet<CounterpartyOutboxRow> OutboxMessages => Set<CounterpartyOutboxRow>();
@@ -44,6 +63,7 @@ public sealed class CounterpartyDbContext(
         ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
         ConfigureCustomerGroup(modelBuilder);
         ConfigureCustomerEDocumentProfile(modelBuilder);
+        ConfigurePartyMerge(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -95,6 +115,8 @@ public sealed class CounterpartyDbContext(
             table.HasCheckConstraint(
                 "CK_Parties_TaxIdentityNumber",
                 TaxIdentityNumberFormatSql("TaxIdentityNumber", nullable: true));
+            // EK-18 #76: a merged party points at another party and is passive for good.
+            table.HasCheckConstraint("CK_Parties_MergedInto", PartyMergedIntoCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code)
@@ -118,6 +140,53 @@ public sealed class CounterpartyDbContext(
         // firm), never a refusal (user decision 2026-09-30).
         entity.HasIndex(x => x.TaxIdentityNumber)
             .HasFilter("[TaxIdentityNumber] IS NOT NULL");
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.MergedIntoPartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasIndex(x => x.MergedIntoPartyId)
+            .HasFilter("[MergedIntoPartyId] IS NOT NULL");
+    }
+
+    /// <summary>
+    /// EK-18 #76-#77: one row per approved merge, group level (no company query filter: Party is global), naming the
+    /// company the approval was given in. A duplicate is merged at most once (unique), and the row is never updated or
+    /// deleted here (the write guard).
+    /// </summary>
+    private static void ConfigurePartyMerge(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyMerge>();
+        entity.ToTable("PartyMerges", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartyMerges_Identity", PartyMergeIdentityCheck);
+            table.HasCheckConstraint("CK_PartyMerges_Version", PartyMergeVersionCheck);
+            table.HasCheckConstraint("CK_PartyMerges_Text", PartyMergeTextCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Reason).HasMaxLength(PartyMerge.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.ApprovedBy).HasMaxLength(PartyMerge.ActorMaximumLength).IsRequired();
+        entity.Property(x => x.CorrelationId)
+            .HasMaxLength(PartyMerge.CorrelationIdMaximumLength)
+            .UseCollation("Latin1_General_100_BIN2")
+            .IsRequired();
+        entity.HasIndex(x => x.MergedPartyId)
+            .IsUnique()
+            .HasDatabaseName("UX_PartyMerges_MergedParty");
+        entity.HasIndex(x => x.SurvivorPartyId);
+        entity.HasIndex(x => x.ApprovalCompanyId);
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.SurvivorPartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.MergedPartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.ApprovalCompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private void ConfigurePartyTaxIdentityChangeRequest(ModelBuilder modelBuilder)
@@ -380,10 +449,27 @@ public sealed class CounterpartyDbContext(
             if (entry.State == EntityState.Modified
                 && !IsTaxIdentityOnlyPartyChange(entry)
                 && !IsTradeNameOnlyPartyChange(entry)
-                && !IsLegalNameOnlyPartyChange(entry))
+                && !IsLegalNameOnlyPartyChange(entry)
+                && !IsMergedPartyChange(entry)
+                && !IsMergeSurvivorFence(entry))
             {
                 throw new InvalidOperationException(
                     "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
+            }
+
+            // EK-18 #77: a merge is never undone or redirected in place; a wrong merge is corrected forward.
+            if (entry.State == EntityState.Modified
+                && entry.Property(x => x.MergedIntoPartyId).OriginalValue is not null
+                && (entry.Property(x => x.MergedIntoPartyId).IsModified
+                    || entry.Property(x => x.IsActive).IsModified))
+            {
+                throw new InvalidOperationException(
+                    "Birleştirilmiş cari geri alınamaz veya başka cariye yönlendirilemez.");
+            }
+
+            if (entry.State == EntityState.Added && entry.Entity.MergedIntoPartyId is not null)
+            {
+                throw new InvalidOperationException("Yeni cari birleştirilmiş olarak oluşturulamaz.");
             }
 
             if (!companyContext.IsResolved)
@@ -519,6 +605,27 @@ public sealed class CounterpartyDbContext(
             }
         }
 
+        foreach (var entry in ChangeTracker.Entries<PartyMerge>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari birleştirme kaydı değiştirilemez veya silinemez; birleştirme geri alınmaz.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.ApprovalCompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Cari birleştirme onayı aktif şirket bağlamında kaydedilmelidir.");
+            }
+        }
+
         foreach (var entry in ChangeTracker.Entries<CommandExecution>())
         {
             if (entry.State == EntityState.Unchanged)
@@ -554,7 +661,7 @@ public sealed class CounterpartyDbContext(
             }
 
             if (!companyContext.IsResolved
-                || entry.Entity.CompanyId != companyContext.CompanyId)
+                || (entry.Entity.CompanyId != companyContext.CompanyId && !IsPartyMergeNotification(entry.Entity)))
             {
                 throw new InvalidOperationException(
                     "Cari olay kutusu kaydı aktif şirket bağlamıyla eşleşmelidir.");
@@ -589,6 +696,16 @@ public sealed class CounterpartyDbContext(
     private static readonly string[] MutableLegalNamePartyProperties =
     [
         nameof(Party.LegalName),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    /// <summary>EK-18 #76: the merge touches only these on the duplicate (it becomes passive and points at the survivor).</summary>
+    private static readonly string[] MutableMergedPartyProperties =
+    [
+        nameof(Party.MergedIntoPartyId),
+        nameof(Party.IsActive),
         nameof(Party.Version),
         nameof(Party.UpdatedAtUtc),
         nameof(Party.RowVersion),
@@ -640,6 +757,57 @@ public sealed class CounterpartyDbContext(
         return modified.Contains(nameof(Party.LegalName), StringComparer.Ordinal)
             && modified.All(name => MutableLegalNamePartyProperties.Contains(name, StringComparer.Ordinal));
     }
+
+    /// <summary>
+    /// EK-18 #76: the duplicate's merge. Only the merge columns move, the party was not merged before, it now points at
+    /// another party, and the merge record naming this exact pair is added in the same save.
+    /// </summary>
+    private bool IsMergedPartyChange(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        var mergedInto = entry.Entity.MergedIntoPartyId;
+        return modified.Contains(nameof(Party.MergedIntoPartyId), StringComparer.Ordinal)
+            && modified.All(name => MutableMergedPartyProperties.Contains(name, StringComparer.Ordinal))
+            && entry.Property(x => x.MergedIntoPartyId).OriginalValue is null
+            && mergedInto is { } survivorId
+            && survivorId != entry.Entity.Id
+            && !entry.Entity.IsActive
+            && ChangeTracker.Entries<PartyMerge>().Any(merge =>
+                merge.State == EntityState.Added
+                && merge.Entity.MergedPartyId == entry.Entity.Id
+                && merge.Entity.SurvivorPartyId == survivorId);
+    }
+
+    /// <summary>
+    /// EK-18 #76: the survivor's version fence. Its merge column is marked modified without a value change, so the save
+    /// carries its Version + rowversion predicate; this is admitted only beside a merge record naming it as survivor.
+    /// </summary>
+    private bool IsMergeSurvivorFence(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Length == 1
+            && string.Equals(modified[0], nameof(Party.MergedIntoPartyId), StringComparison.Ordinal)
+            && entry.Property(x => x.MergedIntoPartyId).OriginalValue is null
+            && entry.Entity.MergedIntoPartyId is null
+            && ChangeTracker.Entries<PartyMerge>().Any(merge =>
+                merge.State == EntityState.Added
+                && merge.Entity.SurvivorPartyId == entry.Entity.Id);
+    }
+
+    /// <summary>
+    /// EK-18 #76: the one outbox row admitted outside the active company — the merge notification for another company
+    /// that holds a card of either party, written beside the merge record (approved in the active company) it names.
+    /// </summary>
+    private bool IsPartyMergeNotification(CounterpartyOutboxRow row) =>
+        string.Equals(row.EventType, CounterpartyPartyMergedOutboxV1.EventType, StringComparison.Ordinal)
+        && ChangeTracker.Entries<PartyMerge>().Any(merge =>
+            merge.State == EntityState.Added
+            && merge.Entity.Id == row.AggregateId
+            && merge.Entity.ApprovalCompanyId == companyContext.CompanyId);
 
     private sealed class OrganizationCompanyReference
     {

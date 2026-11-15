@@ -110,7 +110,7 @@ function installFetch(config: Config = {}) {
     }),
   )
   // The card's AT-009 VKN/TCKN block, SAT-D57 customer group panel, SAT-D102 e-belge panel and F-027 trade name and
-  // legal name panels read their own sub-resources; they are not the card read these cases count.
+  // legal name panels and the F-027 merge panel read their own sub-resources; they are not the card read these cases count.
   const partyCalls = () =>
     calls.filter(
       (c) =>
@@ -118,6 +118,7 @@ function installFetch(config: Config = {}) {
         !c.url.includes('/tax-identity') &&
         !c.url.includes('/trade-name') &&
         !c.url.includes('/legal-name') &&
+        !c.url.includes('/merge') &&
         !c.url.includes('/company-account/customer-group') &&
         !c.url.includes('/company-account/e-document'),
     )

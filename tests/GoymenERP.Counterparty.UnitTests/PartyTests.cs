@@ -159,6 +159,51 @@ public sealed class PartyTests
     }
 
     [Fact]
+    public void Merge_points_the_duplicate_at_the_survivor_for_good_and_makes_it_passive_once()
+    {
+        // F-027 / EK-18 #76-#77: the duplicate keeps its code, names and tax identity as history; the survivor is untouched.
+        var survivor = new Party(Guid.NewGuid(), PartyCode.FromSequence(20), PartyKind.LegalEntity, "Örnek A.Ş.");
+        var duplicate = new Party(Guid.NewGuid(), PartyCode.FromSequence(21), PartyKind.LegalEntity, "Örnek Anonim");
+        var at = DateTimeOffset.UnixEpoch.AddDays(3);
+
+        duplicate.MergeInto(survivor, at);
+
+        Assert.Equal(survivor.Id, duplicate.MergedIntoPartyId);
+        Assert.False(duplicate.IsActive);
+        Assert.Equal(2, duplicate.Version);
+        Assert.Equal(at, duplicate.UpdatedAtUtc);
+        Assert.Equal("CAR-000021", duplicate.Code.Value);
+        Assert.Equal("Örnek Anonim", duplicate.LegalName);
+        Assert.Null(survivor.MergedIntoPartyId);
+        Assert.True(survivor.IsActive);
+        Assert.Equal(1, survivor.Version);
+        Assert.False(typeof(Party).GetProperty(nameof(Party.MergedIntoPartyId))!.SetMethod?.IsPublic ?? false);
+    }
+
+    [Fact]
+    public void Merge_refuses_itself_a_second_merge_and_a_survivor_that_was_merged_away()
+    {
+        var survivor = new Party(Guid.NewGuid(), PartyCode.FromSequence(22), PartyKind.LegalEntity, "Örnek A.Ş.");
+        var duplicate = new Party(Guid.NewGuid(), PartyCode.FromSequence(23), PartyKind.LegalEntity, "Örnek Anonim");
+        var other = new Party(Guid.NewGuid(), PartyCode.FromSequence(24), PartyKind.LegalEntity, "Örnek Ltd.");
+        var at = DateTimeOffset.UnixEpoch.AddDays(4);
+
+        Assert.Throws<InvalidOperationException>(() => survivor.MergeInto(survivor, at));
+        Assert.Throws<ArgumentNullException>(() => survivor.MergeInto(null!, at));
+        Assert.Equal(1, survivor.Version);
+
+        duplicate.MergeInto(survivor, at);
+
+        Assert.Throws<InvalidOperationException>(() => duplicate.MergeInto(other, at));
+        Assert.Throws<InvalidOperationException>(() => other.MergeInto(duplicate, at));
+        Assert.Equal(survivor.Id, duplicate.MergedIntoPartyId);
+        Assert.Equal(2, duplicate.Version);
+        Assert.Null(other.MergedIntoPartyId);
+        Assert.True(other.IsActive);
+        Assert.Equal(1, other.Version);
+    }
+
+    [Fact]
     public void Default_party_code_cannot_create_a_party()
     {
         Assert.ThrowsAny<ArgumentException>(() => new Party(

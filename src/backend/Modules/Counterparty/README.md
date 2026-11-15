@@ -205,3 +205,41 @@ table yet (consumers satis, alis_cari, finans are a follow-up).
 Migration `20261115132003_AddCounterpartyOutbox` (generated with `dotnet ef`): rollback is refused with `51441` while any outbox
 row exists; with an empty table it drops the table. Forward-fix plan otherwise: keep the additive table and correct with
 a new migration.
+
+## F-027 / EK-18 #76-#77 — duplicate party merge (ALC-S12, `SINAN_KARARLARI_2026-10-21.md`)
+
+A duplicate Cari party is merged into a surviving party at group level. Party is global, so the approval reaches every
+company that holds a card of either party.
+
+- `GET /api/v1/counterparties/{partyId}/merge` — the card's code, name and PARTY version (decimal text), the same-VKN/TCKN
+  candidates the active company holds (unmerged, each with its version), `mergedInto` when the card was merged away
+  (`code` only when the active company also holds the survivor) and `viewer.canApproveMerge`.
+- `PUT /api/v1/counterparties/{partyId}/merge` — body `{mergedPartyId, expectedVersion, mergedPartyExpectedVersion, reason}`;
+  204 on success. Needs `counterparty.parties.merge.approve` and `counterparty.parties.read`, company-wide, in EVERY
+  company that holds a card of either party (measured first, re-measured before the single save). A duplicate in a
+  company the actor cannot reach is the same 404 as an unknown one.
+
+`counterparty.parties.merge.approve` is a catalogue registration only (#76): not Critical, no shipped role or seed
+carries it; the group-manager grant is a human gate. One `Idempotency-Key` (204/404/409 replay); both PARTY versions are
+fenced (the survivor through a no-change predicate on its row). Refusals: `version_conflict`, `party_already_merged`,
+`party_merge_target_merged`, `party_merge_tax_identity_mismatch` (two different VKN/TCKN values; open policy, see below).
+
+In one transaction: the duplicate becomes passive and points at the survivor for good (`[Parties].[MergedIntoPartyId]`,
+check `CK_Parties_MergedInto`), one append-only `[counterparty].[PartyMerges]` record (unique per merged party, no update
+or delete), one audit event `counterparty.party.merged.v1` in the approving company and one outbox row per holding company:
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `counterparty.party.merged.v1` (schema 1, `CounterpartyPartyMergedOutboxV1`, aggregate `Counterparty.PartyMerge` = merge id, sequence 1) | `{companyId, mergeId, survivorPartyId, mergedPartyId, mergedPartyVersion, approvalCompanyId}`; the reason stays in the approving company's record and audit | One row for each company holding a card of either party. A refusal or a replay writes nothing. |
+
+Consumers move their own references to the survivor in their own tables. Company accounts, balances and documents are not
+moved by this command. There is no unmerge (#77): a wrong merge is corrected forward with a new card and reversed links,
+keeping the source ids and the audit trail.
+
+Migration `20261115165158_AddCounterpartyPartyMerge`: Up is pure DDL (nullable column, self foreign key,
+filtered index, new table). Rollback is refused with `51453` while any merge record or merged party exists; with no merge
+it drops the table and the column. Forward-fix plan otherwise: keep the additive schema and correct with a new migration.
+
+Open (NEEDS-SINAN): a separate request/maker step before the approval; one group-level authority instead of the grant in
+every holding company; moving the duplicate's accounts/balances; merging two different VKN/TCKN values; notifying all
+group companies instead of the holding ones.
