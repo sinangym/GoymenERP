@@ -299,6 +299,18 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_return_already_recorded: 'Bu olgu kimliğiyle bir iade zaten var.',
   manufacturing_return_exceeds_issued: 'İade, bu rulodan çıkan kütleyi aşamaz.',
   manufacturing_output_already_declared: 'Bu olgu kimliğiyle bir çıktı zaten bildirildi.',
+  // F-009 D2/D6 (URT-D28, URT-D30): the output reversal's own domain refusals. Nothing is deleted; a reversal is a new
+  // fact linked to the declaration, and its sum never exceeds the declared mass.
+  manufacturing_output_not_declared: 'Düzeltilmek istenen çıktı bu emirde beyan edilmedi.',
+  manufacturing_output_line_missing:
+    'Bu çıktı beyanı bir plan çıktı satırına bağlı değil (satır referansı gelmeden kaydedilmiş). Satır sınırı ' +
+    'hesaplanamadığı için düzeltilemez; emir bugünkü kapanış kurallarıyla kapatılır.',
+  manufacturing_output_line_not_in_plan:
+    'Çıktının bağlandığı satır bu emrin plan çıktı satırlarından biri değil ya da çıktı sınıfına uymuyor.',
+  manufacturing_output_reversal_already_recorded: 'Bu kimlikle bir çıktı düzeltmesi zaten kaydedildi.',
+  manufacturing_output_reversal_exceeds_declared:
+    'Düzeltme, bu çıktı beyanının kalan net kütlesini aşıyor; bir beyanın ters kayıtlarının toplamı beyan edilen ' +
+    'kütleyi geçemez.',
   manufacturing_wip_already_measured: 'Bu olgu kimliğiyle bir WIP ölçümü zaten var.',
   manufacturing_wip_measurement_not_latest: 'WIP ölçümü, rulonun son ölçümünden sonra olmalı.',
   manufacturing_mass_scale_exceeded: 'Kütle, şirketin kg profilinin izin verdiğinden fazla ondalık içeriyor; yuvarlanmadı.',
