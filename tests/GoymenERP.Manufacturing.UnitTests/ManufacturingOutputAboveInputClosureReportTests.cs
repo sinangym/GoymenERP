@@ -70,11 +70,16 @@ public sealed class ManufacturingOutputAboveInputClosureReportTests
         // Per roll: roll B's shortfall does not offset roll A, and roll B is not listed.
         var roll = Assert.Single(first.Rolls);
         Assert.Equal(new OutputAboveInputRollViewV1(RollA, new MassDifferenceViewV1("1000", "1015", "-15", false)), roll);
+        // URT-D52 (1): the cost of such a close gives no amount and reads the decided text.
+        var noAmount = new OutputAboveInputCostViewV1("Unreadable", "output_exceeds_input",
+            "hesaplanamadı — çıkan giren kg'dan fazla");
+        Assert.Equal(noAmount, first.Cost);
 
         var second = report.Closures[1];
         Assert.True(second.ClosedWithExceptionApproval);
         Assert.Equal(new OutputAboveInputRollViewV1(RollA, new MassDifferenceViewV1("1000", "1050", "-50", false)),
             Assert.Single(second.Rolls));
+        Assert.Equal(noAmount, second.Cost);
 
         // The default page and no cursor; the order read's grant measured once, for this company.
         Assert.Equal((50, (string?)null), Assert.Single(fixture.ClosedOrders.Calls));
