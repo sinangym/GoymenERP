@@ -56,8 +56,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
     internal const string CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13 =
-        "sha256:5mKLcdL1fTj0f97nMP3TsF54Z2KIJeMihD4HCK9YmO4";
+        "sha256:O99dXKrRGtcdxBLVqg92wzfCtyhjyUvaUeDp930RJDk";
 
     // Counterparty 1.5 + Organization 1.1 + Product 1.1 (U-01-360): the normal host's set once Product
     // publishes its four screens.
@@ -67,8 +70,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12 =
-        "sha256:BjBtVqa7RKyGpPtF1Zus0xP_IeSp8HdA4WVvRr9fJDM";
+        "sha256:pD1JoyecWreHwKmqDm0WiQwnOrMBACEzRp6Q41SBpLA";
 
     // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (#321): the normal host while Sales'
     // draft screens were staged. Superseded by the published set below (#328); no host serves it now.
@@ -119,8 +125,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:TNApZFY4xQrLYj6V5sHK9_M7sQShhJpOxfX9oisjSRQ";
+        "sha256:nXycALF9HRX4YaQMIQSyy1MmqH7b9XERL0pyTT2b-ro";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -186,11 +195,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:tbiSQvM6sWYSMkfb07v_Dx8FRWKyGgBODYmPCWfE_Xc";
+        "sha256:hWxYMTAVG3Jzblf7Ej9CKgkzr91XQYZq0UH3EaDWS4I";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -243,11 +252,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:ysVEUC0fOvIen8hI2C9iqi0yxgYhwYFxY6B2-hUve-w";
+        "sha256:B3R67e3Ohlbg2xgB958N3or43FnG9UhJeNgqFVq9y4U";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -521,11 +530,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:9YkGmkxYmuWTsIB1puCKgvUK9IlDXWW5RNNPxsenQE0";
+        "sha256:1cjnfvPNFBY8OilSIoxYsGwTyMF-BVwpVSusO4d9rFo";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -546,11 +555,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:imqkPUJWmrhQ95CmRnKSxpkq9EDcE5ibcC0tAkF-dcM";
+        "sha256:p2shEORrKMXMWk6SVizMMKxdNy5lsSEkqIOioDZsq7w";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -571,11 +580,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:T-N4H9GpDMXWmFJIZmLXQwtg5iMgmAv1ROdZRDYdADY";
+        "sha256:Tfs2upzyGVuXBnIrp9oRTYM4bPE8_avyT8ieOT8UOf8";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -596,11 +605,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:z9qe8pqDSzo_o5QlcS6YLD6Zs-eJK_MQoIzZy9KzOtc";
+        "sha256:cbmzpwo5TnhQ7tAZL9lX7BWYinKqOK3yfH4iTZifTrw";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -624,11 +633,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV21PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:vha3JC-myWKA9P2iIb11HTcG0PyUsh-c722igFx6LPc";
+        "sha256:XGgLWHf9w7rcizBgH5pRGG8BgdAV2UiP9aTUyV8cAvE";
     // API-04 merged over UI-80: Sales 1.12 (the header-revision control of the S-04 detail beside the 1.11 reports screen)
     // re-derived this live row IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // SAT-D30: Sales 1.14 (the over-delivery approval control of the S-04 detail, beside 1.13 user closure) re-derived this row
@@ -652,11 +661,11 @@ internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string FullNormalHostWithProductPriceListsAndSalesReports =
-        "sha256:QMN5IJF2o3TYuAz9dQ53t6AwNJAsiw5bxHM8cw6xAdc";
+        "sha256:p_YdiyfdQIjh2VNVi-cqLFgI1w2MH3Hn5ZNeh6VI_28";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
     // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
@@ -685,11 +694,11 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // Tren-1 (GOV-D9) integration: Organization 1.4 (B-15 work-centre calendar edit control), Finance 1.9 (FNS-D25 expense
     // payment workspace and controls) and Settings 1.2 (F-025 exchange rate screen and controls); rows re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
-    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8 and Accounting 1.4 provider
-    // bumps combined; rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
-    // "Actual:"); names stay historical.
+    // Tren-1 wave 2 trial integration: Finance 1.11, Manufacturing 1.8, Purchasing 1.8, Accounting 1.4, Settings 1.3
+    // and Organization 1.5 provider bumps combined; rows re-derived in place by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:z0fRlR6ofBPRAmWYzaF9CEzvdrd-_8crO98rqQKh1_E";
+        "sha256:iuMimzVQE7dpztxekONeeTLFpzBorZdUs6qt5oeaoIo";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
