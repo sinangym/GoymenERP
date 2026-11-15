@@ -98,6 +98,12 @@ function localRefusal(file: File, limits: DocumentLimits): string | null {
   return null
 }
 
+// KLN-D60: a system-generated PDF is served without a scan, so it carries its own marker instead of "Tarandı".
+function scanLabel(version: Pick<DocumentRow, 'scanState' | 'downloadable'>): string {
+  if (version.scanState === 'SystemGenerated') return TEXT.scanSystemGenerated
+  return version.downloadable ? TEXT.scanClean : TEXT.scanPending
+}
+
 /** Saved as a file under its own name; never opened as a page of this application. */
 function saveAttachment(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob)
@@ -593,7 +599,7 @@ function DocumentTable({
                 <td>{typeLabel(row.contentType)}</td>
                 <td>{formatSize(row.sizeBytes)}</td>
                 <td>{formatInstant(row.uploadedAtUtc)}</td>
-                <td data-scan-state={row.scanState}>{row.downloadable ? TEXT.scanClean : TEXT.scanPending}</td>
+                <td data-scan-state={row.scanState}>{scanLabel(row)}</td>
                 <td>
                   <div className={styles.rowActions}>
                     {row.downloadable ? (
@@ -858,7 +864,7 @@ function DocumentVersions({
                     <td data-label={TEXT.columnSize}>{formatSize(version.sizeBytes)}</td>
                     <td data-label={TEXT.columnUploaded}>{formatInstant(version.uploadedAtUtc)}</td>
                     <td data-label={TEXT.columnState} data-scan-state={version.scanState}>
-                      {version.downloadable ? TEXT.scanClean : TEXT.scanPending}
+                      {scanLabel(version)}
                     </td>
                     <td data-label={TEXT.columnAction}>
                       {version.downloadable ? (

@@ -297,7 +297,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
-            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration],
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration],
                 await context.Database.GetAppliedMigrationsAsync());
             await context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
@@ -320,7 +320,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
             Assert.Equal(51058, error.Number);
             Assert.Equal([InitialDocumentsMigration], await context.Database.GetAppliedMigrationsAsync());
             await context.Database.MigrateAsync();
-            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration],
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration],
                 await context.Database.GetAppliedMigrationsAsync());
         }
 
@@ -366,10 +366,15 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
+            // No system-generated version is stored, so the later scan-state migration steps back first (KLN-D60).
+            await context.GetService<IMigrator>().MigrateAsync(WidenContentKindsMigration);
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration],
+                await context.Database.GetAppliedMigrationsAsync());
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(PrimaryLinkMarkerMigration));
             Assert.Equal(51517, error.Number);
             Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration],
                 await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(TakesCsv));

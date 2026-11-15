@@ -46,9 +46,12 @@ public sealed class SecurityEventRecord
         RetainUntilUtc = retainUntilUtc;
         RetentionPolicyRef = retentionPolicyRef;
         LegalHold = false;
-        OccurrenceCount = 1;
-        AggregationWindowStartUtc = null;
-        AggregationWindowEndUtc = null;
+        var summary = securityEvent.RateLimitSummary;
+        OccurrenceCount = summary?.RejectedAttemptCount ?? 1;
+        AggregationWindowStartUtc = summary?.WindowStartUtc;
+        AggregationWindowEndUtc = summary?.WindowEndUtc;
+        RateLimitPermitLimit = summary?.PermitLimit;
+        RateLimitWindowSeconds = summary?.WindowSeconds;
         IntegrityHash = SecurityEventIntegrity.Compute(ToIntegrityEnvelope());
     }
 
@@ -83,13 +86,21 @@ public sealed class SecurityEventRecord
 
     /// <summary>
     /// Number of identical denial/refusal occurrences this row stands for (E7, #66 6806860620 item 15). Always 1
-    /// in AI-2a: the aggregator is follow-up AI-2c and stays off until the window/threshold are configured.
+    /// in AI-2a: the aggregator is follow-up AI-2c and stays off until the window/threshold are configured. An
+    /// <c>auth.login.rate_limited</c> summary carries its refused-attempt count here and its summary window in the
+    /// aggregation window columns (KIM-D29).
     /// </summary>
     public int OccurrenceCount { get; private set; } = 1;
 
     public DateTimeOffset? AggregationWindowStartUtc { get; private set; }
 
     public DateTimeOffset? AggregationWindowEndUtc { get; private set; }
+
+    /// <summary>The login limiter's permitted attempts per window; set only on <c>auth.login.rate_limited</c>.</summary>
+    public int? RateLimitPermitLimit { get; private set; }
+
+    /// <summary>The login limiter's window in whole seconds; set only on <c>auth.login.rate_limited</c>.</summary>
+    public int? RateLimitWindowSeconds { get; private set; }
 
     public string IntegrityHash { get; private set; } = string.Empty;
 
@@ -118,8 +129,10 @@ public sealed class SecurityEventRecord
 
     /// <summary>
     /// True when <paramref name="other"/> carries the same caller-supplied envelope (every field copied from
-    /// <see cref="SecurityEventV1"/>). Server-derived columns (retention, legal hold, aggregation, integrity hash) are
-    /// not compared: retention is resolved from the server clock, so a retry of the same event resolves it again.
+    /// <see cref="SecurityEventV1"/>, including the rate-limit summary counters). Server-derived columns (retention,
+    /// legal hold, integrity hash) are not compared: retention is resolved from the server clock, so a retry of the
+    /// same event resolves it again. The aggregation columns are compared only on <c>auth.login.rate_limited</c>,
+    /// where the caller supplies them.
     /// </summary>
     public bool HasSameCallerContent(SecurityEventRecord other)
     {
@@ -147,7 +160,13 @@ public sealed class SecurityEventRecord
             && string.Equals(AiToolId, other.AiToolId, StringComparison.Ordinal)
             && string.Equals(AiToolVersion, other.AiToolVersion, StringComparison.Ordinal)
             && string.Equals(AiRiskClass, other.AiRiskClass, StringComparison.Ordinal)
-            && string.Equals(AiDataClass, other.AiDataClass, StringComparison.Ordinal);
+            && string.Equals(AiDataClass, other.AiDataClass, StringComparison.Ordinal)
+            && RateLimitPermitLimit == other.RateLimitPermitLimit
+            && RateLimitWindowSeconds == other.RateLimitWindowSeconds
+            && (EventType != SecurityEventTypesV1.LoginRateLimited
+                || (OccurrenceCount == other.OccurrenceCount
+                    && AggregationWindowStartUtc == other.AggregationWindowStartUtc
+                    && AggregationWindowEndUtc == other.AggregationWindowEndUtc));
     }
 
     /// <summary>The canonical envelope the integrity hash covers: every persisted column except the hash.</summary>
@@ -155,5 +174,5 @@ public sealed class SecurityEventRecord
         Id, SchemaVersion, OccurredAtUtc, ScopeKind, CompanyId, RequestedCompanyId, ActorType, ActorId, EventType,
         Phase, Outcome, ReasonCode, Severity, PermissionCode, PolicyId, PolicyVersion, CorrelationId, CausationId,
         SourceChannel, AiToolId, AiToolVersion, AiRiskClass, AiDataClass, RetainUntilUtc, RetentionPolicyRef, LegalHold,
-        OccurrenceCount, AggregationWindowStartUtc, AggregationWindowEndUtc);
+        OccurrenceCount, AggregationWindowStartUtc, AggregationWindowEndUtc, RateLimitPermitLimit, RateLimitWindowSeconds);
 }

@@ -61,7 +61,8 @@ public sealed class SecurityEventsPersistenceModelTests
             checks["CK_SecurityEvents_AiDataClass"]);
         Assert.StartsWith("[ReasonCode] IS NULL OR [ReasonCode] IN (", checks["CK_SecurityEvents_ReasonCode"], StringComparison.Ordinal);
         Assert.All(SecurityEventReasonCodesV1.All, code => Assert.Contains($"'{code}'", checks["CK_SecurityEvents_ReasonCode"], StringComparison.Ordinal));
-        Assert.Equal(16, checks.Count);
+        Assert.Equal(SecurityEventModelBuilderExtensions.RateLimitSummaryCheck, checks["CK_SecurityEvents_RateLimitSummary"]);
+        Assert.Equal(17, checks.Count);
     }
 
     [Fact]
@@ -82,9 +83,68 @@ public sealed class SecurityEventsPersistenceModelTests
     {
         using var context = Context();
         Assert.Equal(
-            ["20261111205852_InitialSecurityEvents", "20261111222917_HardenSecurityEventCodeChecks"],
+            [
+                "20261111205852_InitialSecurityEvents",
+                "20261111222917_HardenSecurityEventCodeChecks",
+                "20261115163955_AddLoginRateLimitedSecurityEvent",
+            ],
             context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Rate_limit_summary_check_binds_the_columns_to_the_platform_anonymous_rate_limited_row()
+    {
+        var check = SecurityEventModelBuilderExtensions.RateLimitSummaryCheck;
+
+        Assert.Contains("[EventType] = 'auth.login.rate_limited' AND [ScopeKind] = 'Platform' AND [ActorType] = 'Anonymous'", check, StringComparison.Ordinal);
+        Assert.Contains("[RateLimitPermitLimit] > 0", check, StringComparison.Ordinal);
+        Assert.Contains("[RateLimitWindowSeconds] > 0", check, StringComparison.Ordinal);
+        Assert.Contains("[AggregationWindowStartUtc] < [AggregationWindowEndUtc]", check, StringComparison.Ordinal);
+        Assert.Contains(
+            "[EventType] <> 'auth.login.rate_limited' AND [RateLimitPermitLimit] IS NULL AND [RateLimitWindowSeconds] IS NULL",
+            check,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rate_limit_columns_are_nullable_integers()
+    {
+        using var context = Context();
+        var entity = DesignEntity(context);
+
+        foreach (var name in new[] { nameof(SecurityEventRecord.RateLimitPermitLimit), nameof(SecurityEventRecord.RateLimitWindowSeconds) })
+        {
+            var property = entity.FindProperty(name)!;
+            Assert.True(property.IsNullable, name);
+            Assert.Equal(typeof(int?), property.ClrType);
+        }
+    }
+
+    [Fact]
+    public void Rate_limited_migration_widens_the_type_check_and_its_down_is_a_forward_fix_guard()
+    {
+        var migration = new AddLoginRateLimitedSecurityEvent();
+
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        var widened = Assert.Single(
+            migration.UpOperations.OfType<AddCheckConstraintOperation>(),
+            op => op.Name == "CK_SecurityEvents_EventType");
+        Assert.Contains("'auth.login.rate_limited'", widened.Sql, StringComparison.Ordinal);
+        Assert.Contains(
+            migration.UpOperations,
+            op => op is AddCheckConstraintOperation { Name: "CK_SecurityEvents_RateLimitSummary" });
+        Assert.Equal(2, migration.UpOperations.OfType<AddColumnOperation>().Count());
+
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains("[EventType] = N'auth.login.rate_limited'", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[RateLimitPermitLimit] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51591", guard.Sql, StringComparison.Ordinal);
+        var restored = Assert.Single(
+            migration.DownOperations.OfType<AddCheckConstraintOperation>(),
+            op => op.Name == "CK_SecurityEvents_EventType");
+        Assert.DoesNotContain("auth.login.rate_limited", restored.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

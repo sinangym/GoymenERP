@@ -7,7 +7,8 @@ namespace GoymenERP.BuildingBlocks.Security.Events;
 /// <summary>
 /// Security event envelope, schema v1 (ADR-SEC-001 §3). It deliberately has no IP address, user agent, username,
 /// e-mail or identifier hash (#66 6806619303 item 11, E5/E8), no free-text reason and no request/prompt payload.
-/// Retention and integrity fields are added by the writer, never by the caller.
+/// Retention and integrity fields are added by the writer, never by the caller. The only structured payload is the
+/// <see cref="RateLimitSummary"/> counters of <see cref="SecurityEventTypesV1.LoginRateLimited"/>.
 /// </summary>
 public sealed record SecurityEventV1
 {
@@ -47,6 +48,9 @@ public sealed record SecurityEventV1
     public string? AiToolVersion { get; init; }
     public AiToolRiskClassV1? AiRiskClass { get; init; }
     public AiDataClassV1? AiDataClass { get; init; }
+
+    /// <summary>Required for <see cref="SecurityEventTypesV1.LoginRateLimited"/>, forbidden for every other type.</summary>
+    public SecurityEventRateLimitSummaryV1? RateLimitSummary { get; init; }
 }
 
 /// <summary>Validates a <see cref="SecurityEventV1"/>; an invalid envelope is never persisted.</summary>
@@ -80,6 +84,7 @@ public static partial class SecurityEventV1Validator
         ValidateEvent(e, errors);
         ValidateReferences(e, errors);
         ValidateAiFields(e, errors);
+        ValidateRateLimitSummary(e, errors);
 
         return errors;
     }
@@ -184,6 +189,7 @@ public static partial class SecurityEventV1Validator
     private static bool IsOutcomeAllowed(string eventType, string phase, string outcome)
     {
         if (eventType == SecurityEventTypesV1.LoginSucceeded) return outcome == SecurityEventOutcomesV1.Allowed;
+        if (eventType == SecurityEventTypesV1.LoginRateLimited) return outcome == SecurityEventOutcomesV1.Denied;
         if (SecurityEventTypesV1.DenialTypes.Contains(eventType, StringComparer.Ordinal)) return outcome == SecurityEventOutcomesV1.Denied;
         if (eventType == SecurityEventTypesV1.AiToolCalled)
         {
@@ -248,6 +254,63 @@ public static partial class SecurityEventV1Validator
         if (!IsBoundedToken(e.AiToolVersion, SecurityEventV1.AiToolVersionMaxLength)) errors.Add("ai_tool_version_invalid");
         if (!Enum.IsDefined(e.AiRiskClass!.Value)) errors.Add("ai_risk_class_unknown");
         if (!Enum.IsDefined(e.AiDataClass!.Value)) errors.Add("ai_data_class_unknown");
+    }
+
+    /// <summary>
+    /// <see cref="SecurityEventTypesV1.LoginRateLimited"/> (KIM-D29): a platform-wide anonymous summary. No company,
+    /// no requested company, no actor id, no permission code; the limiter policy reference (PolicyRef) is the
+    /// required PolicyId/PolicyVersion pair; the refusal reason is the closed <c>policy_refused</c> code; the summary
+    /// window has ended when the event occurs.
+    /// </summary>
+    private static void ValidateRateLimitSummary(SecurityEventV1 e, List<string> errors)
+    {
+        if (e.EventType != SecurityEventTypesV1.LoginRateLimited)
+        {
+            if (e.RateLimitSummary is not null) errors.Add("rate_limit_summary_forbidden_for_event_type");
+            return;
+        }
+
+        if (e.ScopeKind != SecurityEventScopeKindsV1.Platform || e.CompanyId is not null || e.RequestedCompanyId is not null)
+        {
+            errors.Add("rate_limited_requires_platform_scope_without_company");
+        }
+
+        if (e.ActorType != SecurityEventActorTypesV1.Anonymous) errors.Add("rate_limited_requires_anonymous_actor");
+        if (e.PermissionCode is not null) errors.Add("rate_limited_forbids_permission_code");
+        if (e.PolicyId is null || e.PolicyVersion is null) errors.Add("rate_limited_requires_policy_reference");
+        if (e.ReasonCode is not null && e.ReasonCode != SecurityEventReasonCodesV1.PolicyRefused)
+        {
+            errors.Add("rate_limited_reason_code_not_policy_refused");
+        }
+
+        if (e.RateLimitSummary is not { } summary)
+        {
+            errors.Add("rate_limit_summary_required");
+            return;
+        }
+
+        if (summary.WindowStartUtc == default || summary.WindowStartUtc.Offset != TimeSpan.Zero
+            || summary.WindowEndUtc == default || summary.WindowEndUtc.Offset != TimeSpan.Zero)
+        {
+            errors.Add("rate_limit_window_not_utc");
+        }
+        else if (summary.WindowStartUtc >= summary.WindowEndUtc)
+        {
+            errors.Add("rate_limit_window_invalid");
+        }
+        else if (e.OccurredAtUtc.Offset == TimeSpan.Zero && e.OccurredAtUtc < summary.WindowEndUtc)
+        {
+            errors.Add("rate_limit_summary_before_window_end");
+        }
+
+        if (summary.RejectedAttemptCount <= 0) errors.Add("rate_limit_rejected_count_invalid");
+        if (summary.PermitLimit <= 0) errors.Add("rate_limit_permit_limit_invalid");
+        if (summary.Window <= TimeSpan.Zero
+            || summary.Window.Ticks % TimeSpan.TicksPerSecond != 0
+            || summary.Window.Ticks / TimeSpan.TicksPerSecond > int.MaxValue)
+        {
+            errors.Add("rate_limit_window_length_invalid");
+        }
     }
 
     /// <summary>A bounded opaque token: printable ASCII, no whitespace, no free text.</summary>

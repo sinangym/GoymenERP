@@ -1160,10 +1160,10 @@ public static class ErpPermissions
     /// </summary>
     public const string PlatformSecurityEventsRead = "platform.security-events.read";
     /// <summary>
-    /// AI-3 right-panel capability: may ask the READ-only AI runtime in the company context. The name is a reviewed
-    /// assumption (AI_KARAR_PAKETI_2026-11, plan AI-3/AI-5; NEEDS-SINAN for the final name and holders). Registered
-    /// company-wide only and not critical; no seeded role holds it, and granting it is a human gate. Each owner READ
-    /// tool still requires its own permissions in addition to this capability.
+    /// AI-3 right-panel capability: may ask the READ-only AI runtime in the company context. AI-D8 keeps the name and
+    /// makes it company-wide (registered company-wide only, not critical). The decided starting holders are the admin
+    /// and general-manager personas, but no seeded role holds it: applying that grant is a human gate. Each owner READ
+    /// tool still requires its own permissions in addition to this capability, and the runtime itself stays off (AI-D6).
     /// </summary>
     public const string AiPanelUse = "ai.panel.use";
 

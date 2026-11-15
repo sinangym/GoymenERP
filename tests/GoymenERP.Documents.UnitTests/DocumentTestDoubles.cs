@@ -56,7 +56,8 @@ internal sealed class FixedOwnerPort(
     string kind = DocumentOwnerLinkKindsV1.CounterpartyParty,
     bool acceptsExisting = false,
     bool acceptsGenerated = false,
-    IReadOnlyCollection<DocumentFileKind>? acceptedKinds = null) : IDocumentOwnerLinkPortV1
+    IReadOnlyCollection<DocumentFileKind>? acceptedKinds = null,
+    IReadOnlyCollection<string>? producerPermissions = null) : IDocumentOwnerLinkPortV1
 {
     public HashSet<(Guid Company, Guid Party)> Readable => readable;
 
@@ -71,6 +72,8 @@ internal sealed class FixedOwnerPort(
     public bool AcceptsGeneratedDocuments => acceptsGenerated;
 
     public IReadOnlyCollection<DocumentFileKind> AcceptedFileKinds => acceptedKinds ?? DocumentContentPolicy.StandardKinds;
+
+    public IReadOnlyCollection<string> GeneratedDocumentProducerPermissions => producerPermissions ?? [];
 
     public Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
@@ -101,6 +104,9 @@ internal sealed class MemoryObjectStore : IDocumentObjectStoreV1
 
     public Action? BeforeRead { get; set; }
 
+    /// <summary>Runs once the content is in the object store, before the metadata write (KLN-D60: no scan in between).</summary>
+    public Action? AfterPut { get; set; }
+
     public Task PutAsync(string key, ReadOnlyMemory<byte> content, string sha256, CancellationToken cancellationToken = default)
     {
         if (Fail)
@@ -118,6 +124,7 @@ internal sealed class MemoryObjectStore : IDocumentObjectStoreV1
             throw new DocumentObjectStoreUnavailableException("SENTETIK: another content under the key");
         }
 
+        AfterPut?.Invoke();
         return Task.CompletedTask;
     }
 
@@ -264,6 +271,14 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
+        // The real store's guards: a generated PDF names its template and producing command together, and only a generated
+        // PDF is a system-generated (unscanned) version (KLN-D59/D60).
+        if ((upload.Template is null) != (upload.ProducerCommand is null)
+            || (upload.ScanState == DocumentScanState.SystemGenerated) != (upload.Template is not null))
+        {
+            throw new InvalidOperationException("SENTETIK: the generated document's template, producer and scan state go together.");
+        }
+
         BeforeWrite?.Invoke();
         await beforeWrite(cancellationToken);
         var companyId = companyContext.CompanyId;
@@ -279,6 +294,7 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         if (upload.Template is { } template)
         {
             world.Templates[(companyId, upload.DocumentId)] = template;
+            world.ProducerCommands[(companyId, upload.DocumentId)] = upload.ProducerCommand!;
         }
 
         return new DocumentStoreResult(WithLinks(stored), false, envelope.CorrelationId);
@@ -354,6 +370,15 @@ internal sealed class Harness
     /// </summary>
     public const string StatementOwnerKind = "sentetik.bank-statement";
 
+    /// <summary>
+    /// KLN-D59: the synthetic permission of the command that produces the generated PDF; the generated-document owner
+    /// declares it, and the port re-checks it instead of <c>documents.files.upload</c>. Not a real permission name.
+    /// </summary>
+    public const string ProducerPermission = "sentetik.labels.print";
+
+    /// <summary>KLN-D59: the synthetic producing command's stable technical name.</summary>
+    public const string ProducerCommand = "sentetik.material-label.print";
+
     public Harness(Guid company, IDocumentContentScannerV1? scanner = null, bool withObjects = true, string? actor = Actor, long maximumBytes = 4096,
         SharedWorld? world = null)
     {
@@ -368,7 +393,7 @@ internal sealed class Harness
             acceptsExisting: true);
         ClosedTarget = new FixedOwnerPort(Company, World.TargetReadable, World.TargetOutcomes, DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice);
         GeneratedTarget = new FixedOwnerPort(Company, World.GeneratedReadable, World.GeneratedOutcomes, DocumentOwnerLinkKindsV1.InventoryMaterialLabel,
-            acceptsGenerated: true);
+            acceptsGenerated: true, producerPermissions: [ProducerPermission]);
         StatementTarget = new FixedOwnerPort(Company, World.TargetReadable, World.TargetOutcomes, StatementOwnerKind, acceptsExisting: true,
             acceptedKinds: [.. DocumentContentPolicy.StandardKinds, .. DocumentContentPolicy.BankStatementImportKinds]);
 
@@ -448,6 +473,8 @@ internal sealed class Harness
         public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> GeneratedOutcomes { get; } = [];
 
         public Dictionary<(Guid Company, Guid DocumentId), GeneratedDocumentTemplate> Templates { get; } = [];
+
+        public Dictionary<(Guid Company, Guid DocumentId), string> ProducerCommands { get; } = [];
 
         public Dictionary<(Guid Company, Guid DocumentId), List<StoredDocumentLink>> Links { get; } = [];
 
