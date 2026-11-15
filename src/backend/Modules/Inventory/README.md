@@ -549,7 +549,7 @@ or tolerance resolution, and subcontract-order binding.
 
 ## Movement kinds and rollback signal (reference)
 
-`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 9`):
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 10`):
 
 | Kind | Value | Written by | Lines |
 |---|---|---|---|
@@ -562,6 +562,7 @@ or tolerance resolution, and subcontract-order binding.
 | `Scrap` | 7 | an approved scrap write-off (ST-02, `AddInventoryStockScraps`); free or blocked | one Out |
 | `TransferDispatch` | 8 | one INV-R20 transfer dispatch; every source bucket leaves stock atomically | Out |
 | `TransferAccept` | 9 | one accepted INV-R20 line; the captured buckets enter the validated target | In |
+| `ManufacturingOutputReversal` | 10 | the reversal of a manufacturing output receipt (F-009 D1, `AddInventoryManufacturingOutputReversal`); free unallocated kg at the output position only, no cost | one Out |
 
 A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
 exists. An allocation change, a split/merge and a label version bump write NO movement.
@@ -603,6 +604,47 @@ Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
   `IN (1, 2, 3)`. Its `Down` refuses (THROW 51262) while any kind 3 row exists (forward fix).
   `AddInventoryLabelProductionStatus` adds nullable `Labels.ProductionStatus` with `CK_Labels_ProductionStatus`
   (`IS NULL OR IN (1)`); its `Down` refuses (THROW 51291) while any label carries a production status (forward fix).
+
+## Manufacturing output reversal, label disposition and Free kg ports (F-009 D1/D5, STK-S20)
+
+Refs: `docs/delivery/URETIM_EMRI_DUZELTME_ANALIZ_v1.md` §5 D1 and §6; URT-D28, URT-D31 (correction is a new linked
+movement, never an edit of the old one), URT-D34 (Free kg read before allocation).
+
+- **Reversal participant:** `InventoryManufacturingRealizationParticipant` also implements
+  `IInventoryManufacturingOutputReversalParticipantV1.StageOutputReversalAsync`, enlisted in Manufacturing's open
+  transaction like the issue/output/return stages. It writes exactly one `ManufacturingOutputReversal` (10) movement:
+  one Out line at the output receipt's original position, Free block, source kind `manufacturing.output-reversal`,
+  source id = order, source line = Manufacturing's reversal fact id. The old `Receipt` stays unchanged; net output =
+  receipt − reversals. Command name `inventory.manufacturing-output-reversal.stage.v1`; idempotency replay, payload
+  conflict, label expected version (bumped by the movement) and the single audit/command save follow the participant's
+  existing skeleton.
+- **Decision source inside the transaction:** the reversal re-reads the label's disposition with the same pure
+  computation the read port shows (`InventoryLabelDispositionReader`), under the label version fence. Stored figures
+  that do not reconcile are refused 503 `Unavailable` (fail-closed). A request for another order/output than the
+  label's output origin is 404 `InvalidReference`.
+- **Refusals (all 409, `InventoryManufacturingOutputReversalCodesV1`):** `exceeds_produced` (earlier reversals +
+  this one > received kg) first; then, when the kg are not free and unallocated at the output position, the first
+  reason in this fixed order: `shipped` (net of customer return), `issued_to_manufacturing` (net of manufacturing
+  return), `transferred`, `allocated`, `blocked`, otherwise `not_free` (scrap, count, …). Every reason blocks alike; the
+  order is a reversible presentation choice. Releasing the hold is the owning module's own command. The V1 realization
+  code set is unchanged; the reversal-only codes live only in the reversal contract.
+- **No average-cost impact:** a manufacturing receipt is recorded without cost (`CostResult.NotCalculated`) and never
+  enters the average while its order is open (§4.8), so the reversal is also `NotCalculated` and touches no
+  `AverageCostLedger` row.
+- **`IInventoryLabelDispositionReadPortV1`:** `Get(CompanyId, LabelId)` → Value / NotFound / Unreadable. Value carries
+  the label version, `InStock`/`OutOfStock`, the output origin (order, output, receipt movement, produced, reversed,
+  free-unallocated and blocked kg at the output position; null for a non-output label) and gross kg per business reason
+  (shipped, customer-returned, manufacturing issued/returned, transfer dispatched/accepted, scrapped, count in/out,
+  other in/out), physical, blocked and allocated kg. A company other than the resolved one reads as NotFound. It is
+  never the decision source (TOCTOU) and carries no authority.
+- **`IInventoryFreeQuantityReadPortV1`:** `Get(CompanyId, LabelId)` → `FreeKg` (Free balance minus active allocations,
+  summed over Free positions), `FreePositionCount` and the label version. Same status, company and side-effect rules.
+- **`OrderCancelled = 3`:** `InventoryManufacturingPlanReleaseReasonV1` gains `OrderCancelled` (wire code
+  `manufacturing.order-cancelled`) for Manufacturing's cancel path (URT-S4).
+- **Migration:** `AddInventoryManufacturingOutputReversal` widens `CK_Movements_Kind` to `BETWEEN 1 AND 10`. Its `Down`
+  refuses (THROW 51420) while any kind 10 movement exists, then narrows the check back (forward fix).
+- **Not here:** no permission, grant or role (the participant and the ports carry no authority; Manufacturing fences its
+  own command), no HTTP endpoint and no OpenAPI change. The frontend movement-kind decoders do not know kind 10 yet.
 
 ## Average purchase cost ledger and read port V1 (SAT-D262..D267, slice 1)
 

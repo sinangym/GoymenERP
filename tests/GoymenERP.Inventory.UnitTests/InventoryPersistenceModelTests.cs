@@ -187,7 +187,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_WidenInventoryLabelTransformationKindToManufacturing", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferDispatchDocumentVersion", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryLabelProductionStatus", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryLabelProductionStatus", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryManufacturingOutputReversal", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -505,6 +507,27 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("[ProductionStatus] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_output_reversal_migration_widens_the_movement_kind_check_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryManufacturingOutputReversal();
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementRow))!;
+
+        Assert.Equal(10, (int)StockMovementKind.ManufacturingOutputReversal);
+        Assert.Equal("[Kind] BETWEEN 1 AND 10",
+            Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51420", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[Movements]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] = 10", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.DownOperations[^1]);
+        Assert.Equal("[Kind] BETWEEN 1 AND 9", narrowed.Sql);
     }
 
     [Fact]

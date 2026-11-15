@@ -250,6 +250,16 @@ public sealed class InventoryManufacturingRealizationException : Exception
             ? new(status, code, stockShortfall: null)
             : throw new InvalidOperationException(
                 "Inventory manufacturing-realization V2 refusal is outside its closed contract.");
+
+    /// <summary>
+    /// F-009 D1: an output-reversal participant refusal. Its code set is the V1 set plus the reversal-only codes; the
+    /// V1 and V2 closed sets stay unchanged, so neither caller can observe a reversal-only code.
+    /// </summary>
+    public static InventoryManufacturingRealizationException RefusedOutputReversal(int status, string code) =>
+        InventoryManufacturingOutputReversalCodesV1.IsDefined(status, code)
+            ? new(status, code, stockShortfall: null)
+            : throw new InvalidOperationException(
+                "Inventory manufacturing output-reversal refusal is outside its closed contract.");
 }
 
 /// <summary>

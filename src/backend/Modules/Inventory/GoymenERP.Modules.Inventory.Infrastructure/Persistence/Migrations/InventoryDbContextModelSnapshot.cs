@@ -1417,7 +1417,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Movements_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
 
-                            t.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 9");
+                            t.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 10");
 
                             t.HasCheckConstraint("CK_Movements_PayloadHash", "LEN([PayloadHash]) = 64");
 
