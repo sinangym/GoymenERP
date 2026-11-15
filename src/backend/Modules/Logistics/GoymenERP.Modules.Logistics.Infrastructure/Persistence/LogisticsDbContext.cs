@@ -13,7 +13,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// server-resolved company and a write guard that refuses any row of another company, any company change,
 /// any delete and any column move outside the axis a command may move (the header's status / version /
 /// time; a line's four share totals and block flag; a dispatch note's forward-only lifecycle columns and its lines' release flag;
-/// the dispatch-note series' last number; shares, weighbridge records and attempts append only). The attempt key
+/// the dispatch-note series' last number; shares, weighbridge records, unload weighings and attempts append only). The attempt key
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
@@ -36,6 +36,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
     internal DbSet<LoadingAttemptRow> Attempts => Set<LoadingAttemptRow>();
 
     internal DbSet<VehicleWeighingRow> Weighings => Set<VehicleWeighingRow>();
+
+    internal DbSet<UnloadWeighingRow> UnloadWeighings => Set<UnloadWeighingRow>();
 
     internal DbSet<DispatchNoteRow> DispatchNotes => Set<DispatchNoteRow>();
 
@@ -66,6 +68,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureWeighings(modelBuilder);
+        ConfigureUnloadWeighings(modelBuilder);
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
@@ -236,6 +239,42 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         entity.HasIndex(x => new { x.CompanyId, x.WeighingId }).IsUnique().HasDatabaseName("UX_VehicleWeighings_WeighingId");
         foreach (var weight in new[] { nameof(VehicleWeighingRow.FirstWeighingKg), nameof(VehicleWeighingRow.SecondWeighingKg),
                      nameof(VehicleWeighingRow.NetKg), nameof(VehicleWeighingRow.LoadedKgAtWeighing), nameof(VehicleWeighingRow.DifferenceKg) })
+        {
+            entity.Property<decimal>(weight).HasPrecision(18, 3);
+        }
+
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// LOJ-D17: one unload weighing per cancelled instruction (the key), append-only. SQL Server holds the weighbridge shape as
+    /// <c>VehicleWeighings</c> does (direction, gross heavier, net = gross − tare) and the signed difference against the kilograms
+    /// loaded when the instruction was cancelled, which are positive (an instruction with nothing loaded takes no unload weighing).
+    /// No threshold column: the warning is the backend's and is written to the audit record.
+    /// </summary>
+    private void ConfigureUnloadWeighings(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<UnloadWeighingRow>();
+        entity.ToTable("UnloadWeighings", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_UnloadWeighings_Identity", $"[WeighingId] <> {EmptyGuid} AND LEN([RecordedBy]) > 0");
+            table.HasCheckConstraint("CK_UnloadWeighings_Direction", "[Direction] IN (1, 2)");
+            table.HasCheckConstraint("CK_UnloadWeighings_Weights",
+                "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtCancel] > 0");
+            table.HasCheckConstraint("CK_UnloadWeighings_Net",
+                "([Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]) "
+                + "OR ([Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg])");
+            table.HasCheckConstraint("CK_UnloadWeighings_Difference", "[DifferenceKg] = [NetKg] - [LoadedKgAtCancel]");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.InstructionId });
+        entity.HasIndex(x => new { x.CompanyId, x.WeighingId }).IsUnique().HasDatabaseName("UX_UnloadWeighings_WeighingId");
+        foreach (var weight in new[] { nameof(UnloadWeighingRow.FirstWeighingKg), nameof(UnloadWeighingRow.SecondWeighingKg),
+                     nameof(UnloadWeighingRow.NetKg), nameof(UnloadWeighingRow.LoadedKgAtCancel), nameof(UnloadWeighingRow.DifferenceKg) })
         {
             entity.Property<decimal>(weight).HasPrecision(18, 3);
         }

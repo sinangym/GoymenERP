@@ -53,6 +53,11 @@ public static class LogisticsRuleCodes
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
     public const string WeighingUnitUnsupported = "logistics_weighing_unit_unsupported";
 
+    // LOJ-D17 unload weighing after an instruction cancel: only a cancelled instruction with loaded goods takes one, once.
+    public const string InstructionNotCancelled = "logistics_instruction_not_cancelled";
+    public const string UnloadNothingLoaded = "logistics_unload_nothing_loaded";
+    public const string UnloadWeighingAlreadyRecorded = "logistics_unload_weighing_already_recorded";
+
     // AT-055 dispatch note: a definite shipment is on at most one non-cancelled dispatch note; approve / cancel / e-İrsaliye number.
     public const string ShipmentAlreadyDispatched = "logistics_shipment_already_dispatched";
     public const string DuplicateDispatchNoteId = "logistics_duplicate_dispatch_note_id";

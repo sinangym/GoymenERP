@@ -27,6 +27,7 @@ import {
   json,
   mutation,
   renderLogisticsApp,
+  unloadWeighingRecord,
   weighingRecord,
   type RecordedCall,
 } from './testHarness'
@@ -259,10 +260,11 @@ describe('L-02-DETAIL', () => {
   })
 
   it('F-020: a cancelled instruction is shown as "İptal edildi" with its kept records, who cancelled it, when and why, and offers no command', async () => {
+    // LOJ-D17: its unload weighing is recorded too, so not even the unload form is offered.
     const load = { shareId: '00000000-0000-4000-8000-000000000061', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
     const harness = installFetch({
       onDetail: () => json(instructionDetail({ ...CANCELLED_INSTRUCTION, version: '4' },
-        [instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })], [load], weighingRecord())),
+        [instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })], [load], weighingRecord(), [], unloadWeighingRecord())),
     })
     renderLogisticsApp(path)
     await screen.findByTestId('logistics-instruction-id')
@@ -280,6 +282,10 @@ describe('L-02-DETAIL', () => {
     // #1152 review P3-1: the kept share row (keyed by the fixture's share id) and the weighbridge record (its netKg) stay readable.
     expect(screen.getByTestId('logistics-share-00000000-0000-4000-8000-000000000061')).toBeTruthy()
     expect(screen.getByTestId('logistics-weighing-net').textContent).toBe('4.3')
+    // LOJ-D17: the recorded unload weighing, exactly as the backend calculated it; no "İndirme kaydı yok" mark, no form.
+    expect(screen.getByTestId('logistics-unload-weighing-net').textContent).toBe('4')
+    expect(screen.queryByTestId('logistics-unload-missing')).toBeNull()
+    expect(screen.queryByTestId('logistics-unload-weighing-form')).toBeNull()
     expect(screen.queryByTestId('logistics-shares-empty')).toBeNull()
     expect(screen.queryByTestId('logistics-issue-button')).toBeNull()
     expect(screen.queryByTestId('logistics-load')).toBeNull()

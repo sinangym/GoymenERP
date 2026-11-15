@@ -13,7 +13,8 @@
       "lineCount": 1,
       "cancelledBy": null,
       "cancelledAtUtc": null,
-      "cancelReason": null
+      "cancelReason": null,
+      "unloadRecord": "NotApplicable"
     },
     "lines": [
       {
@@ -46,7 +47,8 @@
       }
     ],
     "weighing": null,
-    "dispatchNotes": []
+    "dispatchNotes": [],
+    "unloadWeighing": null
   },
   "isReplay": false,
   "originalCorrelationId": "corr-3"

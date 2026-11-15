@@ -163,7 +163,7 @@ public sealed class LogisticsPersistenceModelTests
             && check.Sql == LogisticsDbContext.InstructionStatusCheck && check.Sql == "[Status] IN (1, 2, 3)");
         Assert.Contains(instructions.GetCheckConstraints(), check => check.Name == "CK_LoadingInstructions_Cancel"
             && check.Sql == LogisticsDbContext.InstructionCancelCheck);
-        Assert.Equal("AddLoadingInstructionCancel", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLoadingInstructionCancel", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLoadingInstructionCancel();
@@ -174,6 +174,80 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Contains("THROW 51265,", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
+
+    [Fact]
+    public void The_unload_weighing_is_one_per_instruction_with_its_calculation_held_by_checks_and_the_migration_down_refuses_with_51266()
+    {
+        // LOJ-D17: an append-only tenant row of its instruction; the net and the signed difference are held by checks, no threshold,
+        // tolerance or verdict column exists (the threshold is a Settings decision) and no stock column exists (no stock movement).
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(UnloadWeighingRow))!;
+        Assert.Equal(("logistics", "UnloadWeighings"), (design.GetSchema(), design.GetTableName()));
+        Assert.Single(context.Model.FindEntityType(typeof(UnloadWeighingRow))!.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "InstructionId"], design.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.True(design.GetIndexes().Single(index => index.GetDatabaseName() == "UX_UnloadWeighings_WeighingId").IsUnique);
+        Assert.Contains(design.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(LoadingInstructionRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "InstructionId"]));
+        Assert.All(new[] { "FirstWeighingKg", "SecondWeighingKg", "NetKg", "LoadedKgAtCancel", "DifferenceKg" },
+            name => Assert.Equal((18, 3), (design.FindProperty(name)!.GetPrecision(), design.FindProperty(name)!.GetScale())));
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_UnloadWeighings_Net"
+            && check.Sql.Contains("[Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]", StringComparison.Ordinal)
+            && check.Sql.Contains("[Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg]", StringComparison.Ordinal));
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_UnloadWeighings_Difference"
+            && check.Sql == "[DifferenceKg] = [NetKg] - [LoadedKgAtCancel]");
+        Assert.DoesNotContain(design.GetProperties(), property => property.Name.Contains("Tolerance", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Threshold", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Stock", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Status", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("AddUnloadWeighings", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddUnloadWeighings();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var down = migration.DownOperations;
+        Assert.Equal(2, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [logistics].[UnloadWeighings])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51266,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[1]);
+        Assert.Equal(("logistics", "UnloadWeighings"), (drop.Schema, drop.Name));
+    }
+
+    [Fact]
+    public async Task A_stored_unload_weighing_is_never_rewritten_or_deleted()
+    {
+        await using (var context = Context())
+        {
+            var row = Unload();
+            context.UnloadWeighings.Attach(row);
+            row.NetKg = 2m;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (var context = Context())
+        {
+            var row = Unload();
+            context.UnloadWeighings.Attach(row);
+            context.Entry(row).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (var context = Context())
+        {
+            var row = Unload();
+            row.CompanyId = Guid.NewGuid();
+            context.UnloadWeighings.Add(row);
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("aktif şirket", refusal.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static UnloadWeighingRow Unload() => new()
+    {
+        CompanyId = CompanyA, InstructionId = Guid.NewGuid(), WeighingId = Guid.NewGuid(), Direction = 1, FirstWeighingKg = 1m, SecondWeighingKg = 2m,
+        NetKg = 1m, LoadedKgAtCancel = 1m, DifferenceKg = 0m, RecordedBy = "SENTETIK", RecordedAtUtc = DateTimeOffset.UtcNow,
+    };
 
     [Fact]
     public void A_shipment_is_on_at_most_one_dispatch_note_line_by_a_unique_key_and_the_drafts_are_tenant_rows_of_their_instruction()
