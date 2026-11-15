@@ -901,7 +901,7 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
       : DEFAULT_REMNANT_CLASSIFICATION,
     productId: snapshot.kind === 'outputs' ? snapshot.productId : '',
     locationId: snapshot.kind === 'outputs' ? snapshot.locationId : '',
-    labelCode: snapshot.kind === 'outputs' ? snapshot.labelCode : '',
+    labelCode: snapshot.kind === 'outputs' ? (snapshot.labelCode ?? '') : '',
     heatNumber: snapshot.kind === 'outputs' ? (snapshot.heatNumber ?? '') : '',
     coilNumber: snapshot.kind === 'outputs' ? (snapshot.coilNumber ?? '') : '',
     requiredDocuments: snapshot.kind === 'outputs' ? snapshot.requiredDocuments.join('\n') : '',
@@ -1197,7 +1197,6 @@ function FactSection({
     if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
     if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
-    if (outputSelected && form.labelCode.trim().length === 0) return setError(OUTPUT_INVENTORY_TEXT.labelRequired)
     if (outputSelected && form.initialBlock === '') return setError(OUTPUT_INVENTORY_TEXT.blockRequired)
     setError(null)
     const common = {
@@ -1229,7 +1228,8 @@ function FactSection({
               expectedProductVersion: selectedProduct?.productVersion ?? '',
               lotId: newId(),
               labelId: newId(),
-              labelCode: form.labelCode.trim(),
+              // URT-S21 (URT-D62): empty sends null and the server numbers the output label from Ayarlar.
+              labelCode: cleanOptional(form.labelCode),
               heatNumber: cleanOptional(form.heatNumber),
               coilNumber: cleanOptional(form.coilNumber),
               requiredDocuments: documents(form.requiredDocuments),
@@ -1449,8 +1449,10 @@ function FactSection({
                   id="mfg-output-label-code"
                   value={form.labelCode}
                   disabled={frozen}
+                  aria-describedby="mfg-output-label-code-help"
                   onChange={(event) => update({ labelCode: event.target.value })}
                 />
+                <span id="mfg-output-label-code-help" className={styles.help}>{OUTPUT_INVENTORY_TEXT.labelCodeHelp}</span>
               </div>
               <div className={styles.control}>
                 <label htmlFor="mfg-output-heat">{OUTPUT_INVENTORY_TEXT.heatNumber}</label>

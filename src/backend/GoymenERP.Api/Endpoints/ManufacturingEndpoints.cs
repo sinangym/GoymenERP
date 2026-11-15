@@ -63,6 +63,21 @@ public static class ManufacturingEndpoints
         InventoryManufacturingRealizationCodesV1.ConcurrentChange,
     ];
 
+    // URT-S21 (URT-D62): the output declaration gives the output label its own code; a code already used in the company
+    // (entered, or no free number in the Ayarlar format) is its 409, a missing or unusable Ayarlar format its 422.
+    private static readonly string[] DeclareOutputConflictCodes =
+    [
+        .. ConflictCodes,
+        ManufacturingStoreCodes.OutputLabelCodeConflict,
+    ];
+
+    private static readonly string[] DeclareOutputUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingStoreCodes.OutputLabelCodeRequired,
+        ManufacturingStoreCodes.OutputLabelCodeFormatInvalid,
+    ];
+
     private static readonly string[] SavePlanConflictCodes =
     [
         .. ConflictCodes,
@@ -621,7 +636,7 @@ public static class ManufacturingEndpoints
             .WithName("DeclareManufacturingOutputV1")
             .Accepts<DeclareInventoryOutputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithDeclareOutputProblems();
 
         // MFG-ORD: the close of an order at the version the caller read. The persisted Settings snapshot
         // supplies the exact company/process/date tolerance; a reasoned out-of-tolerance close additionally
@@ -884,6 +899,17 @@ public static class ManufacturingEndpoints
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
+
+    private static RouteHandlerBuilder WithDeclareOutputProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(DeclareOutputConflictCodes)
+            .ProducesErpUnprocessableEntity(DeclareOutputUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
     // SAT-D318 (owner decision of 2026-11-13): the input issue's 409 is the write set's problem plus an optional
     // `stockShortfall` member that names the issue Inventory refused for physical stock. Same status, same codes.

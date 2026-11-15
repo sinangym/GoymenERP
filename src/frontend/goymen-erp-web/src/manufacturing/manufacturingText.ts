@@ -99,7 +99,6 @@ export const OUTPUT_INVENTORY_TEXT = {
   productRequired: 'Sunucunun doğruladığı bir stok ürünü seçin.',
   locationRequired: 'Sunucunun doğruladığı aktif bir lokasyon seçin.',
   classRequired: 'Çıktı sınıfını seçin.',
-  labelRequired: 'Yeni çıktı etiket kodunu girin.',
   blockRequired: 'İlk stok durumunu açıkça seçin; ekran varsayılan seçmez.',
   productLoading: 'Ürün seçenekleri yükleniyor…',
   locationLoading: 'Lokasyon seçenekleri yükleniyor…',
@@ -130,7 +129,10 @@ export const OUTPUT_INVENTORY_TEXT = {
   moreMatches: 'Daha fazla eşleşme var; aramayı daraltın.',
   locationSearch: 'Lokasyon ara',
   location: 'Lokasyon',
-  labelCode: 'Yeni etiket kodu',
+  labelCode: 'Yeni etiket kodu (opsiyonel)',
+  labelCodeHelp:
+    "Boş bırakılırsa çıktı etiketinin numarası Ayarlar'daki çıktı etiket biçiminden verilir. Girdi rulosunun " +
+    'numarası çıktı etiketine yazılmaz; girdi yalnız soy bağı olarak kalır.',
   heatNumber: 'Döküm no (opsiyonel)',
   coilNumber: 'Rulo no (opsiyonel)',
   documents: 'Belge referansları (satır başına)',

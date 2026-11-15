@@ -4,6 +4,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Costing;
+using GoymenERP.Modules.Manufacturing.Domain.Lineage;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using Microsoft.EntityFrameworkCore;
@@ -132,6 +133,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>URT-S20 (URT-D63): the input-label edges of declared outputs with their consumed kg (append-only).</summary>
     internal DbSet<OutputLineageEdgeRow> OutputLineageEdges => Set<OutputLineageEdgeRow>();
 
+    internal DbSet<OutputLabelCodeRow> OutputLabelCodes => Set<OutputLabelCodeRow>();
+
     internal DbSet<CommandRow> Commands => Set<CommandRow>();
 
     /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
@@ -216,6 +219,34 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>URT-S20: the backward-trace index (which input labels an output label came from).</summary>
     internal const string OutputLineageEdgeOutputLabelIndex = "IX_OutputLineageEdges_CompanyId_OutputLabelId";
 
+    /// <summary>URT-S21: every id of an output label code is set and it names an output declaration (kind 3).</summary>
+    internal const string OutputLabelCodeIdentityCheck =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [OutputKind] = 3";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): an entered code (1) carries no number and no format; a generated code (2) carries its positive
+    /// number and the Ayarlar format it was made with.
+    /// </summary>
+    internal const string OutputLabelCodeSourceCheck =
+        "([Source] = 1 AND [GeneratedNumber] IS NULL AND [Format] IS NULL) "
+        + "OR ([Source] = 2 AND [GeneratedNumber] IS NOT NULL AND [GeneratedNumber] > 0 "
+        + "AND [Format] IS NOT NULL AND LEN([Format]) > 0)";
+
+    /// <summary>URT-S21: the code, the recorder and the correlation are never blank.</summary>
+    internal const string OutputLabelCodeTextCheck =
+        "LEN([LabelCode]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>URT-S21 (URT-D62): one output label code is given once in a company.</summary>
+    internal const string OutputLabelCodeCodeIndex = "IX_OutputLabelCodes_CompanyId_LabelCode";
+
+    /// <summary>URT-S21 (URT-D62): one generated output label number is given once in a company, never reused.</summary>
+    internal const string OutputLabelCodeNumberIndex = "IX_OutputLabelCodes_CompanyId_GeneratedNumber";
+
+    /// <summary>URT-S21: one output label code per output label.</summary>
+    internal const string OutputLabelCodeLabelIndex = "IX_OutputLabelCodes_CompanyId_LabelId";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -236,6 +267,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigureOutputReversals(modelBuilder);
         ConfigureMonthlyScrapPrices(modelBuilder);
         ConfigureOutputLineageEdges(modelBuilder);
+        ConfigureOutputLabelCodes(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -859,6 +891,40 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.InputLabelId }).HasDatabaseName(OutputLineageEdgeInputIndex);
         entity.HasIndex(x => new { x.CompanyId, x.OutputLabelId }).HasDatabaseName(OutputLineageEdgeOutputLabelIndex);
+        entity.HasOne<FactRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// URT-S21 (URT-D62): one own code per (company, output), bound by (company, order) to its order and by (company, kind 3,
+    /// output id) to its output declaration. The code is unique in the company, a generated number is unique in the company
+    /// (the running number is never given twice), and an output label carries one code. Append-only (the default write
+    /// guard refuses any change or delete).
+    /// </summary>
+    private void ConfigureOutputLabelCodes(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutputLabelCodeRow>();
+        entity.ToTable("OutputLabelCodes", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutputLabelCodes_Identity", OutputLabelCodeIdentityCheck);
+            table.HasCheckConstraint("CK_OutputLabelCodes_Source", OutputLabelCodeSourceCheck);
+            table.HasCheckConstraint("CK_OutputLabelCodes_Text", OutputLabelCodeTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OutputId });
+        entity.Property(x => x.LabelCode).HasMaxLength(ProductionOutputLabelCodes.MaximumCodeLength).IsRequired();
+        entity.Property(x => x.Format).HasMaxLength(ProductionOutputLabelCodes.MaximumFormatLength);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.LabelCode }).IsUnique().HasDatabaseName(OutputLabelCodeCodeIndex);
+        entity.HasIndex(x => new { x.CompanyId, x.GeneratedNumber })
+            .IsUnique()
+            .HasFilter("[GeneratedNumber] IS NOT NULL")
+            .HasDatabaseName(OutputLabelCodeNumberIndex);
+        entity.HasIndex(x => new { x.CompanyId, x.LabelId }).IsUnique().HasDatabaseName(OutputLabelCodeLabelIndex);
         entity.HasOne<FactRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })

@@ -620,7 +620,7 @@ describe('fact forms', () => {
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
     await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
-    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'OUT-40')
+    await user.type(screen.getByLabelText('Yeni etiket kodu (opsiyonel)'), 'OUT-40')
     await user.type(screen.getByLabelText('Rulo no (opsiyonel)'), 'COIL-40')
     await user.type(screen.getByLabelText('Belge referansları (satır başına)'), 'CERT-1{enter}CERT-2')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Blocked')
@@ -698,7 +698,7 @@ describe('fact forms', () => {
     if (chosen !== null) await user.selectOptions(remnant, chosen)
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
     await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
-    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'REM-40')
+    await user.type(screen.getByLabelText('Yeni etiket kodu (opsiyonel)'), 'REM-40')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
     await user.type(screen.getByLabelText('Kütle (kg)'), '40')
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
@@ -709,6 +709,39 @@ describe('fact forms', () => {
       remnantClassification: sent,
       labelCode: 'REM-40',
     })
+  })
+
+  it('sends an output without a label code as null so the server numbers it from Ayarlar', async () => {
+    // URT-S21 (URT-D62): the output label code is optional; empty or blank is sent as null, never as the input roll.
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await screen.findByRole('option', { name: /PRD-12/ })
+    await screen.findByRole('option', { name: /HOL-1/ })
+
+    const labelCode = screen.getByLabelText('Yeni etiket kodu (opsiyonel)')
+    expect(labelCode.getAttribute('aria-describedby')).toBe('mfg-output-label-code-help')
+    expect(document.getElementById('mfg-output-label-code-help')?.textContent).toContain('Ayarlar')
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.type(labelCode, '   ')
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    const body = posts(recorded)[0].body as Record<string, unknown>
+    expect(body).toHaveProperty('labelCode', null)
+    expect(body.labelCode).not.toBe(ROLL_1)
   })
 
   it('freezes customer/fason owner and custodian from this order input issue into the output command', async () => {
@@ -734,7 +767,7 @@ describe('fact forms', () => {
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
     await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
-    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'FASON-OUT-40')
+    await user.type(screen.getByLabelText('Yeni etiket kodu (opsiyonel)'), 'FASON-OUT-40')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
     await user.type(screen.getByLabelText('Kütle (kg)'), '40')
 
