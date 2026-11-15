@@ -172,3 +172,25 @@ consistency, override shape); nothing seeded. Rollback is refused with `51122` w
 table it drops the table. Forward-fix plan otherwise: keep the additive table and correct with a new migration.
 
 Screen: the Cari card's account section (`src/frontend/goymen-erp-web/src/cari/CariEDocumentPanel.tsx`).
+
+## F-027 / DEC-CAR-003 / CARI-AC-016 — making a company cari account passive (ALC-S11)
+
+No separate approval: the existing `PUT /api/v1/counterparties/{partyId}/company-account/active-state` command is the
+passive action. It already carries `counterparty.accounts.status.update` (no new permission, no new grant), a 1-1000
+character reason, `expectedVersion` (409 on a stale version), `Idempotency-Key` replay and the
+`counterparty.company-account.active-state.changed.v1` audit event. ALC-S11 adds one outbox row in the same save, so the
+account change, the command execution, the audit event and the event commit or roll back together.
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `counterparty.party.deactivated.v1` (schema 1, `CounterpartyPartyDeactivatedOutboxV1`) | `{companyId, partyId, reason, version}`: the company, the group party, the trimmed reason and the account version after the change | Only on a real active → passive change of the company account. A passive → passive save, a reactivation, a refusal (400/403/404/409) and a replay write nothing. |
+
+The row lives in the module's own append-only `[counterparty].[OutboxMessages]` (company-scoped query filter, company
+foreign key, `ISJSON` and envelope checks, unique `(CompanyId, EventType, AggregateId, Sequence)` with
+`Sequence = AggregateVersion = account version`, so one account version yields at most one event). Update/delete and
+another company's row are refused before the database call. Persisting is not publishing: no dispatcher reads this
+table yet (consumers satis, alis_cari, finans are a follow-up).
+
+Migration `20261115132003_AddCounterpartyOutbox` (generated with `dotnet ef`): rollback is refused with `51441` while any outbox
+row exists; with an empty table it drops the table. Forward-fix plan otherwise: keep the additive table and correct with
+a new migration.

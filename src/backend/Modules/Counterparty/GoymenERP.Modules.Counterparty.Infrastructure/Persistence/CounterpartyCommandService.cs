@@ -244,6 +244,11 @@ internal sealed partial class CounterpartyCommandService(
             metadata.CorrelationId,
             metadata.CausationId,
             metadata.IdempotencyKey));
+        if (stateChanged && !account.IsActive)
+        {
+            // F-027: the passive cari's event rides the same save (it is discarded with the change on a conflict).
+            EnqueuePartyDeactivatedEvent(account, command.Reason, metadata);
+        }
 
         var result = await CompleteCommandAsync(
             SetAccountActiveStateCommandName,
