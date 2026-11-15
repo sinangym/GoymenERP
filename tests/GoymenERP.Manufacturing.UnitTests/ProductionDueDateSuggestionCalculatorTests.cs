@@ -4,7 +4,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Plans;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// URT-S10 (F-010b, B-15): the one termin suggestion calculator. The clock, zone, calendar and capacity are inputs; every
+/// URT-S10 (F-010b, B-15) and URT-SC33 (URT-D86..D89): the one termin suggestion calculator. The clock, zone, calendar and capacity are inputs; every
 /// figure here (shift hours, holidays, kg, kg/h) is a synthetic test value, never a business default.
 /// 2026-09-18 is a Friday.
 /// </summary>
@@ -95,15 +95,24 @@ public sealed class ProductionDueDateSuggestionCalculatorTests
     }
 
     [Fact]
-    public void A_needed_spill_over_part_on_a_holiday_is_an_open_policy_and_gives_no_suggestion()
+    public void The_spill_over_part_on_a_holiday_counts_when_the_shift_started_on_a_working_day()
     {
+        // URT-D88: the overnight shift belongs to its start day; a working start day counts the whole shift.
         var fridayNight = new[] { new DueDateCalendarShiftV1(DayOfWeek.Friday, new TimeOnly(22, 0), new TimeOnly(6, 0)) };
 
         var result = Calculate(fridayNight, kg: 300m, kgPerHour: 100m, holidays: [Saturday]);
 
-        Assert.Equal((DueDateSuggestionStatusV1.Unavailable, (DateOnly?)null,
-                DueDateSuggestionCodesV1.OvernightHolidaySpillUndecided, (long?)180),
-            (result.Status, result.SuggestedDueDate, result.ReasonCode, result.RequiredWorkingMinutes));
+        AssertSuggested(result, Saturday, new DateTime(2026, 9, 19, 1, 0, 0), 180);
+    }
+
+    [Fact]
+    public void An_overnight_shift_whose_start_day_is_a_holiday_is_skipped_entirely()
+    {
+        var fridayNight = new[] { new DueDateCalendarShiftV1(DayOfWeek.Friday, new TimeOnly(22, 0), new TimeOnly(6, 0)) };
+
+        var result = Calculate(fridayNight, kg: 100m, kgPerHour: 100m, holidays: [Friday]);
+
+        AssertSuggested(result, new DateOnly(2026, 9, 25), new DateTime(2026, 9, 25, 23, 0, 0), 60);
     }
 
     [Fact]
@@ -221,5 +230,60 @@ public sealed class ProductionDueDateSuggestionCalculatorTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             Calculate(Weekdays(8, 16), kg: 100m, kgPerHour: decimal.Parse(capacity,
                 System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    private static ProductionDueDateSuggestionV1 CalculateQueued(decimal queuedKg, decimal kg, decimal kgPerHour,
+        DueDateSafetyMarginV1 margin, DateOnly[]? holidays = null) =>
+        ProductionDueDateSuggestionCalculatorV1.Calculate(FridayTen, TimeZoneInfo.Utc, Weekdays(8, 16), holidays ?? [],
+            new Kilograms(queuedKg), new Kilograms(kg), kgPerHour, margin);
+
+    [Fact]
+    public void The_queued_work_is_counted_first_and_then_the_plan()
+    {
+        // URT-D86/URT-D87: (300 queued + 200 plan) input kg at 100 kg/h is five working hours from Friday 10:00.
+        var result = CalculateQueued(300m, 200m, 100m, DueDateSafetyMarginV1.None);
+
+        AssertSuggested(result, Friday, new DateTime(2026, 9, 18, 15, 0, 0), 120);
+        Assert.Equal(((long?)180, (long?)300), (result.QueueWorkingMinutes, result.TotalWorkingMinutes));
+    }
+
+    [Fact]
+    public void The_safety_margin_hours_are_working_time_added_after_the_work()
+    {
+        var result = CalculateQueued(0m, 300m, 100m, new DueDateSafetyMarginV1(TimeSpan.FromHours(6), 0));
+
+        // 3 h of work and 6 h of margin: Friday 10:00-16:00 then Monday 08:00-11:00.
+        AssertSuggested(result, Monday, new DateTime(2026, 9, 21, 11, 0, 0), 180);
+        Assert.Equal((long?)540, result.TotalWorkingMinutes);
+    }
+
+    [Fact]
+    public void The_safety_margin_days_are_working_days_after_the_completion_day()
+    {
+        var result = CalculateQueued(0m, 300m, 100m, new DueDateSafetyMarginV1(TimeSpan.Zero, 1), holidays: [Monday]);
+
+        // Finished Friday 13:00; the weekend has no shift and Monday is a holiday, so one working day later is Tuesday.
+        AssertSuggested(result, Tuesday, new DateTime(2026, 9, 18, 13, 0, 0), 180);
+    }
+
+    [Fact]
+    public void No_queue_and_no_margin_gives_the_same_answer_as_the_plain_form()
+    {
+        var plain = Calculate(Weekdays(8, 16), kg: 1000m, kgPerHour: 100m);
+        var queued = CalculateQueued(0m, 1000m, 100m, DueDateSafetyMarginV1.None);
+
+        Assert.Equal(plain, queued);
+    }
+
+    [Fact]
+    public void A_negative_safety_margin_is_refused_with_a_code()
+    {
+        var hours = CalculateQueued(0m, 300m, 100m, new DueDateSafetyMarginV1(TimeSpan.FromHours(-1), 0));
+        var days = CalculateQueued(0m, 300m, 100m, new DueDateSafetyMarginV1(TimeSpan.Zero, -1));
+
+        Assert.Equal((DueDateSuggestionStatusV1.Unavailable, DueDateSuggestionCodesV1.InputInvalid),
+            (hours.Status, hours.ReasonCode));
+        Assert.Equal((DueDateSuggestionStatusV1.Unavailable, DueDateSuggestionCodesV1.InputInvalid),
+            (days.Status, days.ReasonCode));
     }
 }

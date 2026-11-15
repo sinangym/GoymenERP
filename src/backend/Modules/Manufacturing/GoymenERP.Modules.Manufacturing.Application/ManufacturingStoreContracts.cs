@@ -425,3 +425,28 @@ public interface IManufacturingOrderStore
     Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// URT-SC33 (URT-D86): the planned work queued on one work center ahead of a plan — how many plans and their planned
+/// input kg (the current content of each, its newest revision when revised).
+/// </summary>
+public sealed record ManufacturingWorkCenterQueue(int PlanCount, Kilograms PlannedInputKg);
+
+/// <summary>
+/// URT-SC33 (URT-D86): reads the queue of a work center for the termin suggestion. A port of its own, beside
+/// <see cref="IManufacturingPlanStore"/>, so the plan store's existing implementations are not widened (the plan-list
+/// pattern); the one store implements it. The queue rule (reversible, reported in the slice): the server-resolved
+/// company's APPROVED plans whose current work center is <c>workCenterId</c>, other than <c>excludedPlanId</c>, whose
+/// production order is not closed (no order yet, or an open one). Drafts and cancelled plans are not queued. The queue
+/// order is (approvedAtUtc, id): with <c>queuedBefore</c> only the plans ahead of that key are counted; without it
+/// (the target is still a draft) every queued plan is counted. Each queued plan counts its whole planned input kg (no
+/// progress is netted). Read only.
+/// </summary>
+public interface IManufacturingWorkCenterQueueStore
+{
+    Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid excludedPlanId,
+        ManufacturingWorkCenterQueueKey? queuedBefore, CancellationToken cancellationToken = default);
+}
+
+/// <summary>The queue order key of an approved plan (URT-D86): its approval moment, then its id.</summary>
+public sealed record ManufacturingWorkCenterQueueKey(DateTimeOffset ApprovedAtUtc, Guid PlanId);

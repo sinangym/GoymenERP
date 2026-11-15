@@ -1,7 +1,7 @@
 /**
  * URT-S10 (F-010b, B-15): the plan's termin SUGGESTION inside the open termin form. Nothing is read until the user asks
- * ("Termin önerisi al"); the server computes the day from the work center calendar and the hourly capacity, and this
- * control shows it as it came — no day, hour or capacity is computed here. "Öneriyi kullan" only fills the termin field;
+ * ("Termin önerisi al"); the server computes the day from the work center calendar, the queued work, the input capacity
+ * and the safety margin (URT-SC33), and this control shows it as it came — no day, hour, queue or margin is computed here. "Öneriyi kullan" only fills the termin field;
  * the user still saves it through the hand-entered termin command (or types another day), so every server check holds.
  *
  * A suggestion computed for another plan version or termin revision than the one on screen is shown as stale and cannot
@@ -174,6 +174,39 @@ function SuggestionBody({
             <dt>{DUE_DATE_SUGGESTION_TEXT.requiredTime}</dt>
             <dd>
               {suggestion.requiredWorkingMinutes} {DUE_DATE_SUGGESTION_TEXT.minutes}
+            </dd>
+          </div>
+        )}
+        {suggestion.queuedPlanCount === null || suggestion.queuedKg === null ? null : (
+          <div>
+            <dt>{DUE_DATE_SUGGESTION_TEXT.queue}</dt>
+            <dd data-testid="due-date-suggestion-queue">
+              {suggestion.queuedPlanCount} {DUE_DATE_SUGGESTION_TEXT.queuePlans} · {suggestion.queuedKg} kg
+            </dd>
+          </div>
+        )}
+        {suggestion.queueWorkingMinutes === null ? null : (
+          <div>
+            <dt>{DUE_DATE_SUGGESTION_TEXT.queueTime}</dt>
+            <dd>
+              {suggestion.queueWorkingMinutes} {DUE_DATE_SUGGESTION_TEXT.minutes}
+            </dd>
+          </div>
+        )}
+        {suggestion.safetyMarginHours === null || suggestion.safetyMarginDays === null ? null : (
+          <div>
+            <dt>{DUE_DATE_SUGGESTION_TEXT.safetyMargin}</dt>
+            <dd data-testid="due-date-suggestion-margin">
+              {suggestion.safetyMarginHours} {DUE_DATE_SUGGESTION_TEXT.safetyMarginHoursUnit} ·{' '}
+              {suggestion.safetyMarginDays} {DUE_DATE_SUGGESTION_TEXT.safetyMarginDaysUnit}
+            </dd>
+          </div>
+        )}
+        {suggestion.totalWorkingMinutes === null ? null : (
+          <div>
+            <dt>{DUE_DATE_SUGGESTION_TEXT.totalTime}</dt>
+            <dd>
+              {suggestion.totalWorkingMinutes} {DUE_DATE_SUGGESTION_TEXT.minutes}
             </dd>
           </div>
         )}

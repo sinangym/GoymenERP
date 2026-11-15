@@ -1,6 +1,7 @@
 /**
- * URT-S10 termin suggestion decoder: strict keys, lossless text figures, the plan asked for, a day only when
- * `suggested` (never before the business day) and a reason only when `unavailable`.
+ * URT-S10 / URT-SC33 termin suggestion decoder: strict keys, lossless text figures, the plan asked for, a day only when
+ * `suggested` (never before the business day), the queue and the margin named whole, and a reason only when
+ * `unavailable`.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -18,6 +19,39 @@ describe('decodeDueDateSuggestion', () => {
     expect(suggestion?.requiredKg).toBe('1500.625')
     expect(suggestion?.capacityKgPerHour).toBe('100')
     expect(suggestion?.calendarVersion).toBe(7)
+    expect(suggestion?.queuedPlanCount).toBe(2)
+    expect(suggestion?.queuedKg).toBe('400.5')
+    expect(suggestion?.queueWorkingMinutes).toBe(241)
+    expect(suggestion?.safetyMarginHours).toBe('1.5')
+    expect(suggestion?.safetyMarginDays).toBe(1)
+    expect(suggestion?.totalWorkingMinutes).toBe(1232)
+  })
+
+  it('decodes an empty queue and no margin as zero', () => {
+    const suggestion = decodeDueDateSuggestion(suggestedDueDate({
+      queuedPlanCount: 0,
+      queuedKg: '0',
+      queueWorkingMinutes: 0,
+      safetyMarginHours: '0',
+      safetyMarginDays: 0,
+      totalWorkingMinutes: 901,
+    }), PLAN)
+
+    expect(suggestion?.queuedPlanCount).toBe(0)
+    expect(suggestion?.safetyMarginHours).toBe('0')
+  })
+
+  it('decodes a queue that could not be read (queue_unavailable) with its capacity and margin', () => {
+    const suggestion = decodeDueDateSuggestion(unavailableDueDate('queue_unavailable', {
+      capacityKgPerHour: '100',
+      capacityProfileVersion: '3',
+      capacitySource: 'Settings',
+      safetyMarginHours: '0',
+      safetyMarginDays: 0,
+    }), PLAN)
+
+    expect(suggestion?.reasonCode).toBe('queue_unavailable')
+    expect(suggestion?.queuedPlanCount).toBeNull()
   })
 
   it('decodes an unavailable answer with its reason and no day', () => {
@@ -29,6 +63,12 @@ describe('decodeDueDateSuggestion', () => {
       calendarVersion: 7,
       calendarSource: 'WorkCenter',
       timeZoneId: 'Europe/Istanbul',
+      queuedPlanCount: 2,
+      queuedKg: '400.5',
+      queueWorkingMinutes: 241,
+      safetyMarginHours: '1.5',
+      safetyMarginDays: 1,
+      totalWorkingMinutes: 1232,
     }), PLAN)
 
     expect(suggestion?.status).toBe('unavailable')
@@ -51,7 +91,17 @@ describe('decodeDueDateSuggestion', () => {
       delete body.reasonCode
       return body
     })()],
-    ['another contract version', suggestedDueDate({ contractVersion: 2 })],
+    ['the first contract version', suggestedDueDate({ contractVersion: 1 })],
+    ['a suggestion without its queue', suggestedDueDate({ queuedPlanCount: null, queuedKg: null })],
+    ['a half-named queue', suggestedDueDate({ queuedKg: null })],
+    ['queued kilograms without a queued plan', suggestedDueDate({ queuedPlanCount: 0 })],
+    ['a numeric queued kilogram', suggestedDueDate({ queuedKg: 400.5 })],
+    ['a suggestion without its margin', suggestedDueDate({ safetyMarginHours: null, safetyMarginDays: null })],
+    ['a half-named margin', suggestedDueDate({ safetyMarginDays: null })],
+    ['a negative margin', suggestedDueDate({ safetyMarginHours: '-1' })],
+    ['a fractional margin day', suggestedDueDate({ safetyMarginDays: 1.5 })],
+    ['a plan time without the total', suggestedDueDate({ totalWorkingMinutes: null })],
+    ['a plan time without the queue time', suggestedDueDate({ queueWorkingMinutes: null })],
     ['an unknown status', suggestedDueDate({ status: 'estimated' })],
     ['a numeric kilogram', suggestedDueDate({ requiredKg: 1500.625 })],
     ['a trailing zero', suggestedDueDate({ capacityKgPerHour: '100.0' })],
