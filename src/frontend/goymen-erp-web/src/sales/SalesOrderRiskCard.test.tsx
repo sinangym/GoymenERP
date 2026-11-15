@@ -117,7 +117,7 @@ describe('S-04 customer risk card (API-06 / UI-15)', () => {
       .toBe(riskReasonText('finance_processed_set_unavailable'))
     const reasons = within(within(section).getByTestId('sales-risk-reasons')).getAllByRole('listitem')
     expect(reasons.map((item) => item.getAttribute('data-code')))
-      .toEqual(['finance_processed_set_unavailable', 'vat_inclusive_amount_unavailable', 'finance_credit_limit_owner_missing'])
+      .toEqual(['finance_processed_set_unavailable', 'vat_inclusive_amount_unavailable', 'finance_credit_limit_not_set'])
     expect(within(section).queryByTestId('sales-risk-withheld')).toBeNull()
 
     const reads = riskCalls(harness.calls)

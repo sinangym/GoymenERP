@@ -128,6 +128,8 @@ public sealed partial class SalesDraftServiceTests
         shares.Answer = _ => SharesOf(Share(approved, 1m)) with { HasMore = true };
         await AssertUnbilledAsync(world, approved.Draft.Id, SalesDraftRiskReasonCodesV1.ShipmentReadBoundExceeded);
         Assert.All(shares.Asked, query => Assert.Equal((Account, SalesDraftService.MaximumRiskShares), (query.CompanyAccountId, query.Limit)));
+        // SAT-S3: the order filter is opened for the Logistics owner (STK-S38) but not used until it applies it: the whole account.
+        Assert.All(shares.Asked, query => Assert.Null(query.OrderIds));
 
         // More on approved notes than the delivery owner's definite shipments: the two Logistics facts disagree.
         shares.Answer = _ => SharesOf(Share(approved, 1m), Share(approved, 0.5m));
