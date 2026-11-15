@@ -63,6 +63,10 @@ public static class SettingsModuleExtensions
         // Product / stock-logistics consume. No compiled value: the port refuses until a person records the first version.
         services.AddScoped<ISettingsUnitConversionPolicyAdministrationV1, SettingsUnitConversionPolicyAdministration>();
         services.AddScoped<ISettingsUnitConversionPolicyProviderV1, SettingsUnitConversionPolicyProviderV1>();
+        // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
+        // port approving modules consume. No row answers the decided default: the preparer may not approve.
+        services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();
+        services.AddScoped<ISettingsSegregationOfDutiesPolicyProviderV1, SettingsSegregationOfDutiesPolicyProviderV1>();
         services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
         services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both
