@@ -152,14 +152,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Re-fingerprinted for tren-1 wave 2 trial integration: the team registrations combined, including AI-3's AddAiRuntime (off unless Ai:Enabled);
         // the network-isolation surface needs the K3 review of AI-3 (5653c485... -> 6c36f610...).
         // Re-fingerprinted for tren-1 wave 3 (integration): AddErpSecretStore (E8 secret store reader, no value configured), the ALC-S16 batch host registration and the two Settings policy endpoint maps (KIM-F1) combined; no generation or hosted-service change (6c36f610… -> f11de9cd…).
-        "f11de9cda12ca2abee3f105c08d36e8966cdc458f4ea337989d158608c72e448";
+        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the Product similarity facts host and the Purchasing shortage supply host registrations and the kg/m table endpoint map; no generation or hosted-service change (f11de9cd… -> f66beec7…).
+        "f66beec7248729ada3b1375a38404bdda1c64e138c53a2cb5f19936ed5b735e1";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
         + "Persistence/ProductManufacturingTechnicalRuntimeRegistration.cs";
     private const string ReviewedProductManufacturingTechnicalRegistrationFingerprint =
-        "b9621bcc24ef3dc36923c51ea2887902427a5e14f52f3da1cda09e68825dbdec";
+        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): B-09 (stok): the V2 snapshot port behind the same runtime predicate plus the dimension read port, with its fail-closed 503 default (b9621bcc… -> a577fc64…).
+        "a577fc646d75adf8bd58fe3cfa2a3b2df8625bb3b696f8570ec917c4d351854d";
     private const string ReviewedIdentityReconcilerPath =
         "src/backend/Modules/Identity/"
         + "GoymenERP.Modules.Identity.Infrastructure/Seeding/"
@@ -351,7 +353,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-measured on the combined inventory after merging main 6f1ff559: B-03 (eecee421...) and SAT-D318
                 // (a830a228...) combined, +8 facts in total; neither parent's value.
                 // Re-fingerprinted for tren-1 wave 1: +3 facts and one renamed fact, ordinal-sorted (d7b1ef8c… -> f9b96739…).
-                "b9a25cb6638d35d5ed98f7d0910a84ebb372e2947ecf02ab5e750e154c432376",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +18 facts, ordinal-sorted (b9a25cb6… -> 86ec6a12…).
+                "86ec6a12bdb3d1812fe54fd54484577f91e8c0e3bf39126ddec0601f99c3d8b2",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -367,7 +370,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // RCSI deadlock-victim read closure: +3 SQL facts (the aggregate instructed and loaded SUM reads, one transfer
             // outgoing-document Serializable read), kept ordinal-sorted (15a22a9f... -> 82e1c19f...).
             ["tools/relational_inventory/logistics.txt"] =
-                "82e1c19f55af284e57fb30e0f06d8329f8a9456ef1430ca7e0d0ab6dde221c36",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +5 facts, ordinal-sorted (82e1c19f… -> 3d8ec0f2…).
+                "3d8ec0f2ec8d27e98015e58740c6acbb7da902bc28cc8de0f2696e8ddb42a1be",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -465,7 +469,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // PRODUCT-TECH-FAMILY-02: replace one renamed runtime fact and add two cut-sheet/plate facts.
             ["tools/relational_inventory/product.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +1 facts, ordinal-sorted (100c0a2f… -> 1f399639…).
-                "1f3996393127c12d33fd33085bc18dedc32ede35774d0b8624b0351194503daf",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +3 facts, ordinal-sorted (1f399639… -> ea3dcfbe…).
+                "ea3dcfbeb8caffbb54b25f5cd52d0a884569a798d12a948b7700732a0f8a567f",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -822,7 +827,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // the status check and the cancel-facts check; the same CompanyId query filter and keys, no new entity.
             // Re-measured for the F-020 write guard: the instruction's allow-list admits the three cancel marks and each is written
             // from empty exactly once; no query-filter bypass or direct database surface (0a6d41e6... -> 13659996...).
-                "136599961b6b1cb9577df2b7016c7c6461b0c946960365efc2b9cae9bde17d81",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK unload weighings (AddUnloadWeighings) mapped on the company-filtered context (13659996… -> d4a4b458…).
+                "d4a4b458cf5a29255d337d3c38e698beda0c7eb3b03389e12623b281c2fca01f",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
@@ -954,7 +960,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for SAT-D262: AverageCostLedger table (company filter, company-leading unique position key, write guard); provider tokens unchanged.
                 // Re-fingerprinted for B-03: CK_LabelTransformations_Kind widened to (1, 2, 3) through a named constant; no filter, key or table change.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "8a04bad76281d8a812210cde510d11b9af32fb85bb022b3127dbcf0c9d932340",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK transfer receipts/overage/loss, future supply conversions, substitute allocations and supplier return exit mapped on the company-filtered context (8a04bad7… -> d88129d1…).
+                "d88129d15ab68e97089fa3e6eb4bf928ee1204cbd584d8a10657db450b7fbf58",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -968,7 +975,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // outside a resolved company or naming another acting company, and any column but the type and update facts.
                 // The command answers stay company-filtered.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "7559b7308d235a26fba64dd0a20a1124051cf56fb8dc6694d1da6ab6025767ab",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK kg/m table imports (AddProductProfileWeightImports) mapped on the company-filtered context (7559b730… -> 99a56c77…).
+                "99a56c77557d9fee009063caacf1b58e821f39d93d92462a7a19a979408765b0",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             // Re-fingerprinted for B-24: dispatcher cursor/delivery tables are company-filtered, company-keyed and write-guarded.
@@ -1103,6 +1111,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
                 [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
                 [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1),
+                // tren-1 wave 3 integration (stok_lojistik): the future supply conversion and the supplier return exit each build ONE
+                // InventoryDbContext on the owner's open connection/transaction under the server-resolved company; the demand cap and the
+                // suggestion reader count target-typed result sites only. Exact source counts. Pending the owning team's K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryGoodsReceiptFutureSupplyConversion.cs"] = ("InventoryDbContext", 1),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventorySupplierReturnExitParticipant.cs"] = ("InventoryDbContext", 1),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryAllocationDemandCap.cs"] = ("InventoryDbContext", 2),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryAllocationSuggestionReader.cs"] = ("InventoryDbContext", 1),
                 // tren-1 wave 3 integration: target-typed result/refusal/figure sites only (no explicit DbContext construction, no new
                 // DbContext writer); exact source counts. Pending the owning teams' K3 review.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseGoodsReceiptBatchHost.cs"] = ("PurchasingDbContext", 2),
@@ -1196,7 +1215,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for MOD-03: the named product tax classification service factory and its two port registrations (DI-only, the Settings category reader optional); the database surface and its counts are unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "14f385e36a90a0a6180acaeb80ac6d8395f5643f366fc96857be1b983177e5c1",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the kg/m table import service and the dimension weight source registered; no new provider branch (14f385e3… -> e1edccf5…).
+                        "e1edccf5672076cb9e11ccc12192c6740614e18607add3b0e5efb5b6ca909293",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1363,7 +1383,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for B-01: one scoped registration of the plan-input allocation read port; provider tokens unchanged.
                         // Re-fingerprinted for SAT-D262: one scoped registration of the versioned average-cost read port; provider tokens unchanged.
-                        "1fa2b806e7c2a7a89791c09c79fe277edbdcb9bebfa73ff7189e01e1843cedcf",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the stok wave-3 slices (transfer receipts, future supply conversion, supplier return exit, shortage warnings, substitute allocation) registered (1fa2b806… -> b9269aed…).
+                        "b9269aed95fc8d0cf4e0be61bc8f68111aa3f5a1ec64bbfecedab96d0b8114cd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1464,15 +1485,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for B-01: one internal audit helper for plan-input allocations; provider tokens unchanged.
                 // Re-fingerprinted for B-03: the staged label carries its classification; provider tokens unchanged.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "a1b00519205b7f9f86c837c1003cad99633ad159043a1302ac5b23f872de795f",
+                // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the stok wave-3 store partials (transfer receipts, physical allocation suggestions, substitute flag) over the same filtered context (a1b00519… -> c79a6bb3…).
+                // stok_lojistik (STK-S6 / B-22c): one tracked-entity Balances.Local read so a second movement staged in the same unit of
+                // work (acceptance then receipt shortage) sees the first one's added rows; filtered by the movement's CompanyId and
+                // EntityState.Added in the same save (the InventoryAverageCostLedgerWriter shape). Pending the owning team's K3 review.
+                "c79a6bb3adcc888af2de6216fbeb03eb8320b90e12cb976ceadb418fdfa152e2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["Microsoft.Data.SqlClient"] = 1
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            [".Local"] = 1
                         }),
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
-                        "6ea71ce123d8c94d27aacd26f8e18385391d2a055bb5be230a6ff164510f958f",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the substitute allocation flag and the physical demand cap over the same filtered context (6ea71ce1… -> 6b96062b…).
+                        "6b96062b5d3965fc2eef46a23ed31eae1a49d8079fda9b7920b13194497cc349",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1483,7 +1510,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.AllocationChanges.cs"] =
                     new(
-                        "7df810e1999bdf2c3e32e4a4e49750de396b2cc03a5079b82ab1f2db18b2a5d2",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the substitute allocation flag over the same filtered context (7df810e1… -> 9249f5d0…).
+                        "9249f5d039065ffdd00b13c7d88bb51e9de4931ed14dd54ea46f3348158c006b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1733,7 +1761,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // signature; it opens nothing and runs no statement. Pending K3 review.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryFutureAllocationContractsV1.cs"] =
                     new(
-                        "32b1ac1dd5fc743b403d74586726295a485b6abff852b31b31b240a266d92a29",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the future supply conversion port joins the contracts (32b1ac1d… -> dec5f299…).
+                        "dec5f29948f81fd0ad453a3191e76cfcd8748e960b46bdad2acae59791f13476",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1753,7 +1782,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // and classifies 2601/2627 with SqlClient. Pending K3 review (NEEDS-SINAN item in the integration report).
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationWriter.cs"] =
                     new(
-                        "534220afafa14a2a7def2af1fa2f8562230206c391f24f58c43eda883715b7cd",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the future supply conversion at goods receipt over the same owner session (534220af… -> 2775fb6e…).
+                        "2775fb6e719389e407f03ca9091feda7423bd1468cc85f1124a28e159a7d51e7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1792,12 +1822,81 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             [".Find"] = 1
                         }),
+                // tren-1 wave 3 integration (stok_lojistik, physical demand cap and allocation suggestions): tenant-filtered owner reads;
+                // an empty API set plus exact fingerprint authorizes only their target-typed result constructions. Pending K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryAllocationDemandCap.cs"] =
+                    new(
+                        "548ba9a9dc3a331d1a17a09eb55a486c04b40eaeee57e11f71fba7331e779982",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryAllocationSuggestionReader.cs"] =
+                    new(
+                        "a02d01af717dfd5a06e82095b7992aea972580c6e82f484a25d419104c58170e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                // tren-1 wave 3 integration (stok_lojistik, F017-c future supply conversion): the Application port only names the owner's
+                // borrowed connection/transaction types (EnlistAsync); no provider call. Pending the owning team's K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/"
+                 + "InventoryGoodsReceiptFutureSupplyContractsV1.cs"] =
+                    new(
+                        "bbd91991d1eee1c751ab40bfd21c5cd34773fb0c13dc94325e496b103d08716b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["System.Data.Common"] = 1,
+                        ["DbConnection"] = 1
+                        }),
+                // tren-1 wave 3 integration (stok_lojistik, F017-c): the conversion session builds one InventoryDbContext on the Purchasing
+                // owner's open connection and transaction under the server-resolved company (the goods-receipt participant shape); no own
+                // connection. Pending the owning team's K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryGoodsReceiptFutureSupplyConversion.cs"] =
+                    new(
+                        "fd16f9ec61c3a016aac251e94322549dc3f62ac0cd0e4703c2e0231bfd577179",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["System.Data.Common"] = 1,
+                        ["DbConnection"] = 2
+                        }),
+                // tren-1 wave 3 integration (stok_lojistik, physical demand cap): one GetDbConnection binds the Sales line serialization
+                // locks to the same filtered context's transaction. Pending the owning team's K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryPhysicalAllocationDemandCapWriter.cs"] =
+                    new(
+                        "e626d7226902866b05757d7fbd3c9ba88ec1d5ede21eba85fd7543ce7fa9fd69",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["GetDbConnection"] = 1
+                        }),
+                // tren-1 wave 3 integration (stok_lojistik, supplier return exit): the participant builds one InventoryDbContext on the
+                // owner's open connection and transaction under the server-resolved company; SqlClient classifies key violations only
+                // (the goods-receipt participant shape). Pending the owning team's K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventorySupplierReturnExitParticipant.cs"] =
+                    new(
+                        "36116eed61c020bcb11b7ed0cdfc7c64105267ada848518de7d108883b638385",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["System.Data.Common"] = 1,
+                        ["Microsoft.Data.SqlClient"] = 1,
+                        ["DbConnection"] = 3
+                        }),
+                // tren-1 wave 3 integration (stok_lojistik, kg/m table): .FindAsync is ProductProfileWeightTableService.FindAsync over the
+                // company-filtered context, not an EF DbSet.Find. Pending the owning team's K3 review.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/ProductDimensionService.cs"] =
+                    new(
+                        "1a96c566b9eb8dff8446ecf675ab98d07346911ed12496a4b1f715603cd78119",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        [".FindAsync"] = 2
+                        }),
                 // tren-1 wave 3 integration (ALC-S16 goods-receipt batch): mirrors PurchaseGoodsReceiptHost; the batch host joins the owner
                 // participants over the borrowed connection/transaction (one GetDbConnection, DbConnection/System.Data.Common for the bound
                 // transaction type). Pending the owning team's K3 review.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseGoodsReceiptBatchHost.cs"] =
                     new(
-                        "3f16d9b2c1ace7f741c2e1b96dce2ff5a389651222aee790c31fbcd517d618bc",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the batch host also passes Inventory's future supply port to each label's participants (conflict resolution, K3 review pending) (3f16d9b2… -> 47d40498…).
+                        "47d404985852650258137247e1f4c1e88e49dbe95fea43b29ae2a745e7854c8b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["GetDbConnection"] = 1,
@@ -1873,7 +1972,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryLabelDispositionReader.cs"] =
                     new(
-                        "b0cf25ca5fe84d055f14f31ca13b71bc3cff2f3bd9c24f05de0e8a4cf5acadc5",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the substitute allocation and supplier return exit dispositions (b0cf25ca… -> aac2077a…).
+                        "aac2077ad100d57d984a8720cacac59299d8523726b21e36533f67662ab9168f",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-03: allocation writes stay on the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
@@ -2131,7 +2231,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-06 / API-30 / API-31: one scoped owner implementation of the two Sales-declared
                     // dispatch reads and its two port registrations (DI-only); provider branch and token counts are unchanged.
                     new(
-                        "c695b524d0452fd6cd48bf16a356a28f30c1b5d0a65a341ef0afc9e48b6fd90d",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the unload weighing slice registered (c695b524… -> 1069a748…).
+                        "1069a74858d2dd287f78cbdbcaa65d28bfb34e59cbc30f695936bc01ff6c2993",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2228,7 +2329,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // instructions out and the rebuild comparison covers CancelledAtUtc; no new database API, SqlClient count unchanged.
                         // Re-fingerprinted for the read-phase deadlock closure: a SQL 1205 raised by an aggregate SUM read inside
                         // the Serializable section maps to ConcurrentChange; no new database API and SqlClient count unchanged.
-                        "7045422ac4a58e63b1ba040bf4c509184ecb2dd7bebdbc780063092e1b38868d",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the unload weighing record over the same filtered context (7045422a… -> e0254929…).
+                        "e025492973c6b74836d766f43da183b37f7c2ff3d6b59fcf042e06b9865ff666",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2267,10 +2369,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedPurchaseGoodsReceiptHostPath] =
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration): ALC-S16 (goods-receipt batch) shares the host's helpers; GetDbConnection count unchanged (377d659c… -> 724126ed…).
-                        "724126ed93408f9a2f650ec474bcbc015a08f3dae62c717e563b8091caef94d3",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the Participants record also carries Inventory's future supply port and the owner connection/transaction (conflict resolution, K3 review pending) (724126ed… -> f5285ea4…).
+                        // stok merge: the enlisted Participants record takes the owner's connection/transaction (System.Data.Common,
+                        // DbConnection) and the future supply conversion enlists on a third GetDbConnection. K3 review pending.
+                        "f5285ea43b22a38df77a7638b2e4fdd88b44e800ff6cb2732b70ebaec30f71fe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["GetDbConnection"] = 2
+                            ["GetDbConnection"] = 3,
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 1
                         }),
                 // Owner read projection remains tenant-filtered; an empty API set plus exact fingerprint
                 // authorizes only its three reviewed PurchasingDbContext constructions.
@@ -2451,7 +2558,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 2 trial integration: SAT-S14 contract service/store and the shipment risk gate read port are
                         // DI-only registrations; reviewed tokens unchanged (146d4145... -> bf9e0937...).
-                        "bf9e09379e0f2a19cb67c873a6127d0cce593781a09f74ab0408fad8ae340867",
+                        // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK-S16: the optional allocation read port V2 passed to the cancellation impact read; reviewed tokens unchanged (bf9e0937… -> dbb50d2c…).
+                        "dbb50d2c2112e8356785d379b7147f2b24f98cfa38b156e5d1ea8df269504d3c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2696,6 +2804,60 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // tren-1 wave 3 (stok_lojistik) — STK substitute allocation flag: Down refuses (51653) while a substitute allocation exists (forward fix). One Sql; K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261115183012_AddInventoryAllocationSubstituteFlag.cs"] =
+                    new(
+                        "e85e1d0a2a315d6dcfd24713ac4980e699a8db6c3d75233d39e651b855567b99",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 3 (stok_lojistik) — STK transfer receipts: Down refuses (51646) while receipt/overage/loss movements, receipts, decisions, loss requests or received transfers exist (forward fix). One Sql; K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261115191058_AddInventoryTransferReceipts.cs"] =
+                    new(
+                        "5ef4499d2e550eb551adb1a9e0f7ddda4a74ddc12420733c081746a255b8fd62",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 3 (stok_lojistik) — F017-c future supply conversions: Down refuses (51711) while conversion links exist (forward fix). One Sql; K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261115192415_AddInventoryFutureSupplyConversions.cs"] =
+                    new(
+                        "a91eb54d4d011149b8342a957e37ca35275217437797a1035dace43a515dfe8b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 3 (stok_lojistik) — STK supplier return exit: Down refuses (51654) while a supplier return exit movement exists (forward fix). One Sql; K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261115205912_AddInventorySupplierReturnExit.cs"] =
+                    new(
+                        "405e17b597744f01a3e137efa977b29fb1575957b6b6c497640849222794da21",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 3 (stok_lojistik) — LOG unload weighings: Down refuses (51266) while unload weighings exist (forward fix). One Sql; K3 review pending.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                 + "Persistence/Migrations/20261115180036_AddUnloadWeighings.cs"] =
+                    new(
+                        "06d8c9367017e8171c0efd86f4eac30d77e0f56ca8580eb586f6602affe20971",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 3 (stok_lojistik) — PRD kg/m table imports: Down refuses (51483) while imports, their attempts or profile cards without a stored kg/m exist (forward fix). One Sql; K3 review pending.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/Migrations/20261115184532_AddProductProfileWeightImports.cs"] =
+                    new(
+                        "4d4f7d87c8504aa578ac78372b0a52650358672829c28b87eee435d48dff03ca",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // tren-1 wave 3 — system-generated document scan state: Down refuses (51592) while system-generated versions exist (forward fix). One Sql; K3 review pending.
                 ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/"
                  + "Persistence/Migrations/20261115165534_AddSystemGeneratedDocumentScanState.cs"] =
