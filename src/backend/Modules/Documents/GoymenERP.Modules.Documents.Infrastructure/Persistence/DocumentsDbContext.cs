@@ -33,6 +33,14 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
     /// </summary>
     internal const string ContentKindCheck = "[ContentKind] IN (1, 2, 3, 4, 5, 6)";
 
+    /// <summary>
+    /// DEC-DOC-009 / KLN-D60: a Clean (2) version names its scanner; a NotScanned (1) or a SystemGenerated (3) version —
+    /// a PDF the server itself produced, kept without a malware scan — names none.
+    /// </summary>
+    internal const string ScanCheck =
+        "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL) "
+        + "OR ([ScanState] = 3 AND [ScannerId] IS NULL)";
+
     internal DbSet<ContentBlobRow> Blobs => Set<ContentBlobRow>();
 
     internal DbSet<DocumentRow> Documents => Set<DocumentRow>();
@@ -117,8 +125,8 @@ public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> opti
             table.HasCheckConstraint("CK_DocumentVersions_Text",
                 "LEN([FileName]) > 0 AND LEN([UploadedBy]) > 0 AND LEN([CorrelationId]) > 0");
             // DEC-DOC-009: a version is Clean only with the scanner that cleared it; NotScanned names no scanner.
-            table.HasCheckConstraint("CK_DocumentVersions_Scan",
-                "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)");
+            // KLN-D60: a system-generated PDF (3) was not scanned and names no scanner either.
+            table.HasCheckConstraint("CK_DocumentVersions_Scan", ScanCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.DocumentId, x.VersionNo });
         entity.Property(x => x.FileName).HasMaxLength(200).IsRequired();

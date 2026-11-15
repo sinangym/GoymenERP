@@ -210,6 +210,68 @@ public sealed class SecurityEventWriterTests
     }
 
     [Fact]
+    public async Task Rate_limited_summary_is_written_as_one_pre_counted_platform_row()
+    {
+        var store = new RecordingStore();
+        var writer = new SecurityEventWriter(store, Retention(), ServerClock());
+        var summary = RateLimited();
+
+        var result = await writer.WriteAsync(summary, CancellationToken.None);
+
+        Assert.True(result.Recorded);
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(SecurityEventTypesV1.LoginRateLimited, row.EventType);
+        Assert.Null(row.CompanyId);
+        Assert.Null(row.ActorId);
+        Assert.Equal(7, row.OccurrenceCount);
+        Assert.Equal(summary.RateLimitSummary!.WindowStartUtc, row.AggregationWindowStartUtc);
+        Assert.Equal(summary.RateLimitSummary.WindowEndUtc, row.AggregationWindowEndUtc);
+        Assert.Equal(10, row.RateLimitPermitLimit);
+        Assert.Equal(60, row.RateLimitWindowSeconds);
+        Assert.Equal("TEST-No134", row.RetentionPolicyRef);
+    }
+
+    [Fact]
+    public void Rate_limited_rows_compare_count_window_and_limits_as_caller_content()
+    {
+        var summary = RateLimited();
+        var record = SecurityEventRecord.Create(summary, OccurredAt.AddYears(2), "TEST-No134");
+
+        Assert.True(record.HasSameCallerContent(SecurityEventRecord.Create(summary, OccurredAt.AddYears(2), "TEST-No134")));
+        Assert.False(record.HasSameCallerContent(SecurityEventRecord.Create(
+            summary with { RateLimitSummary = summary.RateLimitSummary! with { RejectedAttemptCount = 8 } },
+            OccurredAt.AddYears(2), "TEST-No134")));
+        Assert.False(record.HasSameCallerContent(SecurityEventRecord.Create(
+            summary with { RateLimitSummary = summary.RateLimitSummary! with { PermitLimit = 11 } },
+            OccurredAt.AddYears(2), "TEST-No134")));
+        Assert.False(record.HasSameCallerContent(SecurityEventRecord.Create(
+            summary with { RateLimitSummary = summary.RateLimitSummary! with { Window = TimeSpan.FromMinutes(2) } },
+            OccurredAt.AddYears(2), "TEST-No134")));
+    }
+
+    [Fact]
+    public void Integrity_hash_of_rows_without_rate_limit_columns_is_unchanged_by_the_new_envelope_fields()
+    {
+        var record = SecurityEventRecord.Create(Denial(), OccurredAt.AddYears(2), "TEST-No134");
+        var envelope = record.ToIntegrityEnvelope();
+
+        Assert.Null(envelope.RateLimitPermitLimit);
+        Assert.Null(envelope.RateLimitWindowSeconds);
+        Assert.DoesNotContain("RateLimit", System.Text.Json.JsonSerializer.Serialize(envelope), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Integrity_hash_covers_rate_limit_columns()
+    {
+        var record = SecurityEventRecord.Create(RateLimited(), OccurredAt.AddYears(2), "TEST-No134");
+        var envelope = record.ToIntegrityEnvelope();
+
+        Assert.Equal(record.IntegrityHash, SecurityEventIntegrity.Compute(envelope));
+        Assert.NotEqual(record.IntegrityHash, SecurityEventIntegrity.Compute(envelope with { RateLimitPermitLimit = 11 }));
+        Assert.NotEqual(record.IntegrityHash, SecurityEventIntegrity.Compute(envelope with { RateLimitWindowSeconds = 61 }));
+    }
+
+    [Fact]
     public void Record_refuses_retention_that_does_not_end_after_the_event()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => SecurityEventRecord.Create(Denial(), OccurredAt, "TEST-No134"));

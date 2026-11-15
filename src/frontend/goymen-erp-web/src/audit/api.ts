@@ -2,9 +2,9 @@
  * Audit log read transport (UI-K02). Thin and hand-written like `../identity/api.ts`; when the generated client lands
  * (Issue #122) the fetch call moves and the decoder in ./contract.ts survives.
  *
- * One GET only: `GET /api/v1/audit/events?pageSize&cursor&correlationId&entityType&entityId`. There is no write,
+ * One GET only: `GET /api/v1/audit/events?pageSize&cursor&correlationId&entityType&entityId&outcome`. There is no write,
  * export or delete function in this file and there must not be one. Filters are exact-match, trimmed, and an empty
- * filter is not sent; the cursor is opaque and sent back exactly as the server issued it.
+ * filter is not sent (an unknown outcome is never sent either); the cursor is opaque and sent back exactly as the server issued it.
  */
 
 import { decodeAuditEventPage, type AuditEventPage } from './contract'
@@ -30,6 +30,7 @@ export function auditEventsPath(filters: AuditFilters, cursor: string | null): s
   if (filters.correlationId !== '') query.set('correlationId', filters.correlationId)
   if (filters.entityType !== '') query.set('entityType', filters.entityType)
   if (filters.entityId !== '') query.set('entityId', filters.entityId)
+  if (filters.outcome === 'Succeeded' || filters.outcome === 'Refused') query.set('outcome', filters.outcome)
   return `/audit/events?${query.toString()}`
 }
 
@@ -62,7 +63,8 @@ export async function fetchAuditEventPage(
     body = null
   }
   if (response.status !== 200) return { type: 'http', status: response.status, body }
-  const page = decodeAuditEventPage(body, companyId)
+  const expectedOutcome = filters.outcome === 'Succeeded' || filters.outcome === 'Refused' ? filters.outcome : null
+  const page = decodeAuditEventPage(body, companyId, expectedOutcome)
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
 }

@@ -3,10 +3,14 @@ namespace GoymenERP.Modules.Documents.Application.Contracts;
 /// <summary>
 /// F-026 (PLT-S9): the in-process port through which a producing module (Sales order PDF, Inventory delivery/label PDF)
 /// stores a PDF it GENERATED into the vault, linked to its own owner record, instead of rendering it and keeping it
-/// nowhere. It is the vault's own write path with every fence of an upload — fresh authority of the context actor,
-/// the owner's readable answer through its declared port, the PDF allowlist and signature check, the malware scan
-/// (DEC-DOC-009: no scanner stores NotScanned, never served), ADR-011 replay and the same-save audit — plus the
-/// DEC-DOC-010 template snapshot. A refusal is an outcome, never an exception (cancellation alone propagates), so the
+/// nowhere. It is the vault's own write path with the fences of an upload — fresh authority of the context actor,
+/// the owner's readable answer through its declared port, the PDF allowlist, signature and size check, ADR-011 replay
+/// and the same-save audit — plus the DEC-DOC-010 template snapshot. KLN-D59: the authority checked is the PRODUCING
+/// command's own permission (<see cref="GeneratedDocumentStoreRequestV1.ProducerPermission"/>, declared by the owner
+/// in <see cref="IDocumentOwnerLinkPortV1.GeneratedDocumentProducerPermissions"/>), not <c>documents.files.upload</c>;
+/// the audit names the initiating user, the producing command and the document. KLN-D60: the server-generated PDF is
+/// not malware-scanned and is stored as <c>SystemGenerated</c> with its SHA-256 (served by the unchanged signed short
+/// access); user uploads keep the scan (DEC-DOC-009). A refusal is an outcome, never an exception (cancellation alone propagates), so the
 /// caller decides whether a vault refusal blocks its own command; the vault never writes the caller's tables.
 /// </summary>
 public interface IGeneratedDocumentStorePortV1
@@ -21,6 +25,11 @@ public interface IGeneratedDocumentStorePortV1
 /// the file name is the Turkish visible name (DEC-DOC-004), independent of any technical id. The idempotency key follows
 /// the route's rules (non-blank, canonical, at most 128 characters, no comma); the same key with another PDF, owner,
 /// name or template is <see cref="GeneratedDocumentStoreOutcomeV1.IdempotencyConflict"/>.
+/// KLN-D59: <see cref="ProducerPermission"/> is the permission the producing command itself already checked; it must be
+/// one the owner declared and the context actor must still hold it now, otherwise the outcome is
+/// <see cref="GeneratedDocumentStoreOutcomeV1.Forbidden"/> — the port cannot be used outside such a command.
+/// <see cref="ProducerCommand"/> is that command's stable technical name (lowercase dotted, e.g. its command constant);
+/// it enters the request hash and the audit.
 /// </summary>
 public sealed record GeneratedDocumentStoreRequestV1(
     Guid CompanyId,
@@ -32,7 +41,9 @@ public sealed record GeneratedDocumentStoreRequestV1(
     string? TemplateVersion,
     string IdempotencyKey,
     string CorrelationId,
-    string? CausationId);
+    string? CausationId,
+    string? ProducerPermission,
+    string? ProducerCommand);
 
 public enum GeneratedDocumentStoreOutcomeV1
 {
@@ -47,7 +58,10 @@ public enum GeneratedDocumentStoreOutcomeV1
 
     Unauthenticated = 4,
 
-    /// <summary>No fresh grant, another company than the context, or the authority changed between the fences.</summary>
+    /// <summary>
+    /// No fresh grant of the producing command's permission, a permission the owner did not declare (KLN-D59), another
+    /// company than the context, or the authority changed between the fences.
+    /// </summary>
     Forbidden = 5,
 
     /// <summary>The owner record does not exist in the context company or the actor may not read it (non-disclosure).</summary>
@@ -56,7 +70,7 @@ public enum GeneratedDocumentStoreOutcomeV1
     /// <summary>The owner kind did not opt in to generated documents; nothing was written.</summary>
     OwnerNotAccepted = 7,
 
-    /// <summary>The malware scan refused the bytes; nothing was stored.</summary>
+    /// <summary>Reserved: KLN-D60 stores a generated PDF without a malware scan, so this port no longer answers it.</summary>
     ContentRejected = 8,
 
     /// <summary>The same idempotency key came with another request or actor (ADR-011).</summary>
@@ -70,8 +84,8 @@ public enum GeneratedDocumentStoreOutcomeV1
 
 /// <summary>
 /// The port's answer. <see cref="DocumentId"/> is set for <see cref="GeneratedDocumentStoreOutcomeV1.Stored"/> and
-/// <see cref="GeneratedDocumentStoreOutcomeV1.Replayed"/>; <see cref="Downloadable"/> is false while the version is
-/// NotScanned. <see cref="Code"/> is the vault's problem or rule code of a refusal.
+/// <see cref="GeneratedDocumentStoreOutcomeV1.Replayed"/>; a newly stored version is <c>SystemGenerated</c> and
+/// <see cref="Downloadable"/> (KLN-D60). <see cref="Code"/> is the vault's problem or rule code of a refusal.
 /// </summary>
 public sealed record GeneratedDocumentStoreResultV1(
     GeneratedDocumentStoreOutcomeV1 Outcome,
@@ -100,4 +114,10 @@ public static class GeneratedDocumentStoreCodesV1
 
     /// <summary>The generated bytes are not a PDF; this port keeps PDFs only.</summary>
     public const string NotPdf = "document_generated_not_pdf";
+
+    /// <summary>KLN-D59: the producer permission is missing or not declared by the owner of this kind.</summary>
+    public const string ProducerNotDeclared = "document_generated_producer_not_declared";
+
+    /// <summary>KLN-D59: the producing command name is missing or malformed.</summary>
+    public const string ProducerCommandInvalid = "document_generated_producer_command_invalid";
 }

@@ -173,6 +173,9 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                    .IsDescending(false, false, true, true);
+
                 b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                 b.ToTable("AuditEvents", "audit", t =>
@@ -404,7 +407,7 @@ partial class DocumentsDbContextModelSnapshot : ModelSnapshot
 
                 b.ToTable("DocumentVersions", "documents", t =>
                     {
-                        t.HasCheckConstraint("CK_DocumentVersions_Scan", "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)");
+                        t.HasCheckConstraint("CK_DocumentVersions_Scan", "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL) OR ([ScanState] = 3 AND [ScannerId] IS NULL)");
 
                         t.HasCheckConstraint("CK_DocumentVersions_Text", "LEN([FileName]) > 0 AND LEN([UploadedBy]) > 0 AND LEN([CorrelationId]) > 0");
 

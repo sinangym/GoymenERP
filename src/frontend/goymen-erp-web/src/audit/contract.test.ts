@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AUDIT_ITEM_FIELDS, decodeAuditEventPage } from './contract'
-import { COMPANY_A, COMPANY_B, auditEvent, page } from './testHarness'
+import { COMPANY_A, COMPANY_B, auditEvent, page, refusalJson, refusedAuditEvent } from './testHarness'
 
 describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', () => {
   it('decodes an exact page and drops client IP and user agent from the decoded item', () => {
@@ -64,6 +64,9 @@ describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', (
       { causationId: 7 },
       { schemaVersion: '1' },
       { integrityHash: null },
+      { outcome: 'Failed' },
+      { outcome: 'refused' },
+      { outcome: null },
     ]
     for (const override of cases) {
       expect(decodeAuditEventPage(page([auditEvent(override)]), COMPANY_A), JSON.stringify(override)).toBeNull()
@@ -74,5 +77,40 @@ describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', (
     expect(decodeAuditEventPage(page([auditEvent(), auditEvent({ companyId: COMPANY_B })]), COMPANY_A)).toBeNull()
     const repeated = auditEvent()
     expect(decodeAuditEventPage(page([repeated, { ...repeated }]), COMPANY_A)).toBeNull()
+  })
+
+  it('decodes the refusal payload of a refused row and leaves a succeeded row without one', () => {
+    const refused = refusedAuditEvent({
+      afterJson: refusalJson({
+        httpStatus: 400,
+        problemCode: 'validation_failed',
+        refusalClass: 'Validation',
+        fieldErrors: [{ field: 'lines[0].quantity', code: 'out_of_range' }],
+      }),
+    })
+    const decoded = decodeAuditEventPage(page([refused, auditEvent()]), COMPANY_A)
+    expect(decoded?.items[0].outcome).toBe('Refused')
+    expect(decoded?.items[0].refusal).toEqual({
+      kind: 'detail',
+      httpStatus: 400,
+      problemCode: 'validation_failed',
+      refusalClass: 'Validation',
+      fieldErrors: [{ field: 'lines[0].quantity', code: 'out_of_range' }],
+    })
+    expect(decoded?.items[1].outcome).toBe('Succeeded')
+    expect(decoded?.items[1].refusal).toBeNull()
+  })
+
+  it('rejects the whole page when a refused row carries no valid refusal payload', () => {
+    for (const afterJson of ['{"status":"Approved"}', 'not json', refusalJson({ httpStatus: 403 })]) {
+      expect(decodeAuditEventPage(page([auditEvent(), refusedAuditEvent({ afterJson })]), COMPANY_A), afterJson).toBeNull()
+    }
+  })
+
+  it('rejects a row of the other outcome when the read asked for one outcome', () => {
+    const refused = refusedAuditEvent()
+    expect(decodeAuditEventPage(page([refused]), COMPANY_A, 'Refused')?.items).toHaveLength(1)
+    expect(decodeAuditEventPage(page([refused, auditEvent()]), COMPANY_A, 'Refused')).toBeNull()
+    expect(decodeAuditEventPage(page([auditEvent(), refused]), COMPANY_A, 'Succeeded')).toBeNull()
   })
 })

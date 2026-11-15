@@ -5,6 +5,7 @@
  */
 
 import type { AuditFilterKey } from './capabilities'
+import type { AuditOutcome, RefusalClass } from './auditQueryOutcome'
 
 export const AUDIT_TEXT = {
   heading: 'Denetim kaydı',
@@ -19,6 +20,9 @@ export const AUDIT_TEXT = {
   filterApply: 'Filtrele',
   filterClear: 'Filtreyi temizle',
   filterTooLong: (maxLength: number) => `En fazla ${maxLength} karakter girilebilir.`,
+  filterOutcome: 'Sonuç',
+  filterOutcomeHelp: 'Reddedilen: iş kuralı, doğrulama, eşzamanlılık veya işlem anahtarı nedeniyle reddedilen denemeler.',
+  filterOutcomeAll: 'Tümü',
   invalidFilterTitle: 'Filtre geçersiz',
   invalidFilterDetail: 'Sunucu bu filtreyi kabul etmedi. Değerleri kontrol edip yeniden deneyin veya filtreyi temizleyin.',
 
@@ -33,6 +37,7 @@ export const AUDIT_TEXT = {
     permission: 'Yetki',
     reason: 'Gerekçe',
     correlation: 'Korelasyon',
+    outcome: 'Sonuç',
   },
   versionArrow: '→',
   noValue: '—',
@@ -43,6 +48,16 @@ export const AUDIT_TEXT = {
   approvalContext: 'Onay bağlamı',
   noApprovalContext: 'Onay bağlamı yok.',
   unreadablePayload: 'Bu yük JSON olarak okunamadı; maskelenemediği için gösterilmiyor.',
+
+  refusalDetail: 'Ret ayrıntısı',
+  refusalClass: 'Ret sınıfı',
+  problemCode: 'Sorun kodu',
+  httpStatusLabel: 'HTTP durumu',
+  httpStatus: (status: number) => `HTTP ${status}`,
+  fieldErrors: 'Alan hataları',
+  noFieldErrors: 'Alan hatası kaydedilmedi.',
+  refusalSummary: (count: number, windowStart: string, windowEnd: string) =>
+    `${count} kez reddedildi (pencere: ${windowStart} – ${windowEnd})`,
 
   shownCount: (count: number) => `${count} olay gösteriliyor.`,
   end: 'Listenin sonu.',
@@ -58,6 +73,45 @@ export const FILTER_LABEL: Record<AuditFilterKey, string> = {
   correlationId: 'Korelasyon kimliği',
   entityType: 'Kayıt türü',
   entityId: 'Kayıt kimliği',
+}
+
+/** The "Sonuç" filter options; the value is the server's outcome, the label what the user reads. */
+export const OUTCOME_FILTER_LABEL: Record<AuditOutcome, string> = {
+  Succeeded: 'Başarılı',
+  Refused: 'Reddedilen',
+}
+
+/** The outcome of one row; a text label, never colour alone. */
+export const OUTCOME_LABEL: Record<AuditOutcome, string> = {
+  Succeeded: 'Başarılı',
+  Refused: 'Reddedildi',
+}
+
+export const REFUSAL_CLASS_LABEL: Record<RefusalClass, string> = {
+  Validation: 'Doğrulama',
+  BusinessRule: 'İş kuralı',
+  Concurrency: 'Eşzamanlılık',
+  Idempotency: 'İşlem anahtarı',
+  RequestShape: 'İstek biçimi',
+}
+
+/**
+ * Turkish labels of the problem codes a refused business attempt commonly carries. A code not listed here is shown
+ * as the server stored it: this screen does not guess the meaning of a code it does not know.
+ */
+const PROBLEM_LABEL: Readonly<Record<string, string>> = {
+  validation_failed: 'Doğrulama hatası',
+  request_invalid: 'İstek geçersiz',
+  version_conflict: 'Sürüm çakışması',
+  expected_version_invalid: 'Beklenen sürüm geçersiz',
+  idempotency_key_invalid: 'İşlem anahtarı geçersiz',
+  idempotency_conflict: 'İşlem anahtarı çakışması',
+  same_key_payload_mismatch: 'Aynı işlem anahtarıyla farklı istek',
+}
+
+/** The Turkish label of a problem code, or `null` when this screen has none (the raw code is then shown alone). */
+export function problemLabel(code: string): string | null {
+  return Object.prototype.hasOwnProperty.call(PROBLEM_LABEL, code) ? PROBLEM_LABEL[code] : null
 }
 
 const DATE = new Intl.DateTimeFormat('tr-TR', {

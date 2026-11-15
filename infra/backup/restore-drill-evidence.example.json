@@ -1,0 +1,28 @@
+{
+  "schema": "goymen-erp-restore-drill-evidence/v1",
+  "isExample": true,
+  "drillId": "DRILL-2026-11",
+  "environment": "restore-drill",
+  "sourceDatabase": "GoymenErp",
+  "targetDatabase": "GoymenErp_Drill",
+  "simulatedIncidentUtc": "2026-11-15T10:00:00Z",
+  "recoveredToUtc": "2026-11-15T09:50:00Z",
+  "restoreStartedUtc": "2026-11-15T10:05:00Z",
+  "serviceVerifiedUtc": "2026-11-15T12:30:00Z",
+  "checks": {
+    "backupVerifyOnly": "passed",
+    "restoreCompleted": "passed",
+    "checkDb": "passed",
+    "migrationHistoryPresent": "passed",
+    "documentObjects": "passed",
+    "dispatchersDisabled": "passed",
+    "applicationSmoke": "passed"
+  },
+  "documentObjects": {
+    "expected": 0,
+    "present": 0,
+    "missing": 0,
+    "mismatched": 0
+  },
+  "notes": "Örnek dosyadır; gerçek deneme kanıtı değildir. isExample true olan kanıt doğrulamadan geçmez."
+}

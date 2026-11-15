@@ -71,6 +71,34 @@ export function auditEvent(overrides: Record<string, unknown> = {}): Record<stri
   }
 }
 
+/** The refused-attempt payload the Audit module writes (`RefusedAttemptAuditDraftMapper`), SENTETIK values. */
+export function refusalJson(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    httpStatus: 409,
+    problemCode: 'version_conflict',
+    refusalClass: 'Concurrency',
+    fieldErrors: [],
+    ...overrides,
+  })
+}
+
+/** One SENTETIK refused business attempt of company A, shaped like the row the Audit module writes. */
+export function refusedAuditEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return auditEvent({
+    eventType: 'sales.sales-order.approve.v1',
+    operation: 'Approve',
+    entityVersionBefore: 3,
+    entityVersionAfter: null,
+    beforeJson: '{}',
+    afterJson: refusalJson(),
+    reason: 'Kayıt bu sırada başka bir işlemle değiştiği için reddedildi.',
+    clientIpAddress: null,
+    userAgent: null,
+    outcome: 'Refused',
+    ...overrides,
+  })
+}
+
 export function page(items: readonly unknown[], nextCursor: string | null = null, pageSize = 25) {
   return { items, pageSize, nextCursor }
 }

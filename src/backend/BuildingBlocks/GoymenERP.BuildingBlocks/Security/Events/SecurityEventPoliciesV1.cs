@@ -33,6 +33,8 @@ public static class SecurityEventWriteFailureModesV1
             [(SecurityEventTypesV1.AiToolCalled, SecurityEventPhasesV1.Completed)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
             [(SecurityEventTypesV1.AiRequestRefused, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
             [(SecurityEventTypesV1.SecurityEventsRead, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailClosed,
+            // Same as auth.login.failed: losing the summary never changes the 429 the limiter already returned.
+            [(SecurityEventTypesV1.LoginRateLimited, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
         };
 
     /// <summary>Every valid (type, phase) pair, in a stable order.</summary>
@@ -53,7 +55,8 @@ public static class SecurityEventWriteFailureModesV1
 
 /// <summary>
 /// Which (event type, phase) pairs may be aggregated into one counted row (#66 6806860620 item 15, E7): only
-/// denial/refusal events. Fail-closed pairs are never aggregated. Window and threshold are configuration
+/// denial/refusal events. Fail-closed pairs are never aggregated. <see cref="SecurityEventTypesV1.LoginRateLimited"/>
+/// is already a counted summary written by its producer, so the aggregator never folds it again. Window and threshold are configuration
 /// (<c>SecurityEvents:Aggregation</c>); while unset, aggregation is disabled and every event is a single row.
 /// </summary>
 public static class SecurityEventAggregationEligibilityV1
@@ -107,6 +110,7 @@ public static class SecurityEventRetentionClassesV1
         [SecurityEventTypesV1.AiToolCalled] = No157,
         [SecurityEventTypesV1.AiRequestRefused] = No157,
         [SecurityEventTypesV1.SecurityEventsRead] = No134,
+        [SecurityEventTypesV1.LoginRateLimited] = No134,
     };
 
     public static string? ForEventType(string? eventType) =>

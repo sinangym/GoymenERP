@@ -116,6 +116,25 @@ describe('AT-065 document panel', () => {
     expect(screen.queryByLabelText(T.fileLabel)).toBeNull()
   })
 
+  it('marks a system-generated pdf as a system product, not as scanned, and offers its download (KLN-D60)', async () => {
+    installFetch(() =>
+      json({
+        items: [row({ fileName: 'Etiket.pdf', scanState: 'SystemGenerated', downloadable: true })],
+        canUpload: false,
+        limits: LIMITS,
+        canLink: false,
+      }),
+    )
+    renderPanel()
+
+    const table = await screen.findByRole('table', { name: T.caption })
+    const [only] = within(table).getAllByRole('row').slice(1)
+    expect(within(only).getByText(T.scanSystemGenerated)).toBeTruthy()
+    expect(within(only).queryByText(T.scanClean)).toBeNull()
+    expect(within(only).getByText(T.scanSystemGenerated).getAttribute('data-scan-state')).toBe('SystemGenerated')
+    expect(within(only).getByRole('button', { name: T.download('Etiket.pdf') })).toBeTruthy()
+  })
+
   it.each([403, 404])('renders nothing at all when the list answers %i', async (status) => {
     const calls = installFetch(() => json({ title: 'x' }, status))
     const { container } = renderPanel()
@@ -260,6 +279,10 @@ describe('document contract decoders', () => {
   it('refuses a row that claims a download for a version that was not scanned', () => {
     expect(decodeDocumentList({ items: [row({ scanState: 'NotScanned', downloadable: true })], canUpload: false, limits: LIMITS, canLink: false }, COMPANY,
       OWNER_KIND.counterpartyParty, PARTY)).toBeNull()
+    expect(decodeDocumentList({ items: [row({ scanState: 'Infected', downloadable: false })], canUpload: false, limits: LIMITS, canLink: false }, COMPANY,
+      OWNER_KIND.counterpartyParty, PARTY)).toBeNull()
+    expect(decodeDocumentList({ items: [row({ scanState: 'SystemGenerated', downloadable: true })], canUpload: false, limits: LIMITS, canLink: false }, COMPANY,
+      OWNER_KIND.counterpartyParty, PARTY)?.items[0].scanState).toBe('SystemGenerated')
     expect(decodeDocumentList({ items: [row({ ownerId: OTHER_COMPANY })], canUpload: false, limits: LIMITS, canLink: false }, COMPANY, OWNER_KIND.counterpartyParty,
       PARTY)).toBeNull()
     expect(decodeDocumentList({ items: [row()], canUpload: 'yes', limits: LIMITS, canLink: false }, COMPANY, OWNER_KIND.counterpartyParty, PARTY)).toBeNull()

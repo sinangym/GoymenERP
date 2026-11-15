@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Domain.Retention;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
@@ -11,12 +12,17 @@ public sealed class CommandExecutionDbContext(
 {
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
+    public DbSet<IdempotencyRetentionPurgeRecord> RetentionPurgeRecords => Set<IdempotencyRetentionPurgeRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: false);
         modelBuilder.Entity<CommandExecution>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+        modelBuilder.ConfigureIdempotencyRetentionPurgeRecord();
+        modelBuilder.Entity<IdempotencyRetentionPurgeRecord>()
+            .HasQueryFilter(record => record.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges()

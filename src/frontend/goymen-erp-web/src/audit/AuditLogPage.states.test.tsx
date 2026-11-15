@@ -117,7 +117,7 @@ describe('Denetim kaydı — read states', () => {
     expect(await stateOf(/Filtre geçersiz/)).toBe('invalid-filter')
     expect(api.fetchPage).toHaveBeenCalledWith(
       COMPANY_A,
-      { correlationId: '', entityType: '', entityId: 'SENTETIK' },
+      { correlationId: '', entityType: '', entityId: 'SENTETIK', outcome: '' },
       null,
       expect.any(AbortSignal),
     )
@@ -126,6 +126,26 @@ describe('Denetim kaydı — read states', () => {
     api.fetchPage.mockResolvedValueOnce({ type: 'http', status: 400, body: null })
     mount()
     expect(await stateOf(/Beklenmeyen yanıt/)).toBe('malformed-response')
+  })
+
+  it('shows the forbidden state for a "Reddedilen" read the server refuses with 403, and reports it', async () => {
+    api.fetchPage.mockResolvedValueOnce({ type: 'http', status: 403, body: null })
+    mount('/ayarlar/denetim-kaydi?sonuc=reddedilen')
+    expect(await stateOf(/Yetkiniz yok/)).toBe('forbidden')
+    expect(api.fetchPage).toHaveBeenCalledWith(
+      COMPANY_A,
+      { correlationId: '', entityType: '', entityId: '', outcome: 'Refused' },
+      null,
+      expect.any(AbortSignal),
+    )
+    expect(scenario.report).toHaveBeenCalledWith(403, { namespace: 'SENTETIK-a' })
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('reads a 400 under the outcome filter as an invalid filter', async () => {
+    api.fetchPage.mockResolvedValueOnce({ type: 'http', status: 400, body: null })
+    mount('/ayarlar/denetim-kaydi?sonuc=basarili')
+    expect(await stateOf(/Filtre geçersiz/)).toBe('invalid-filter')
   })
 
   it('drops every shown row when a continuation is forbidden and reports it', async () => {

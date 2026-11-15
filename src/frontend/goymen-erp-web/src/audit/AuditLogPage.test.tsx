@@ -116,7 +116,7 @@ describe('Denetim kaydı — filters', () => {
     cleanup()
 
     const recorded = installFetch({ respond: () => json(page([])) })
-    renderAt(auditListPath({ correlationId: 'SENTETIK-corr-none', entityType: '', entityId: '' }))
+    renderAt(auditListPath({ correlationId: 'SENTETIK-corr-none', entityType: '', entityId: '', outcome: '' }))
     expect((await screen.findByText(/Sonuç yok/)).closest('[data-state]')?.getAttribute('data-state')).toBe('empty-filtered')
     expect(auditReads(recorded)[0].query.get('correlationId')).toBe('SENTETIK-corr-none')
   })
@@ -170,7 +170,7 @@ describe('Denetim kaydı — filters', () => {
     cleanup()
 
     installFetch({ respond: () => problem(400) })
-    renderAt(auditListPath({ correlationId: 'SENTETIK', entityType: '', entityId: '' }))
+    renderAt(auditListPath({ correlationId: 'SENTETIK', entityType: '', entityId: '', outcome: '' }))
     expect((await screen.findByText(/Filtre geçersiz/)).closest('[data-state]')?.getAttribute('data-state')).toBe('invalid-filter')
     expect(screen.queryByRole('table')).toBeNull()
   })
@@ -187,7 +187,7 @@ describe('Denetim kaydı — paging', () => {
           ? json(page([second, third], null))
           : json(page([first, second], 'SENTETIK+cursor/1')),
     })
-    renderAt(auditListPath({ correlationId: '', entityType: 'SalesOrder', entityId: '' }))
+    renderAt(auditListPath({ correlationId: '', entityType: 'SalesOrder', entityId: '', outcome: '' }))
     const user = userEvent.setup()
     await waitFor(() => expect(eventRows()).toHaveLength(2))
     expect(screen.queryByText('Listenin sonu.')).toBeNull()

@@ -663,7 +663,12 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
     }
 
-    /// <summary>F-026 (PLT-S9): the generated PDF's audit event carries the template snapshot (DEC-DOC-010).</summary>
+    /// <summary>
+    /// F-026 (PLT-S9): the generated PDF's audit event carries the template snapshot (DEC-DOC-010). KLN-D59: it is
+    /// written in the initiating user's name with the producing command and that command's permission (the envelope's
+    /// permission), so the record says who, through which command, stored which document. KLN-D60: a system-generated
+    /// PDF is marked as such (no scanner).
+    /// </summary>
     private void AuditGenerated(DocumentWriteEnvelope envelope, Guid companyId, NewDocumentUpload upload, int earlierVersions,
         GeneratedDocumentTemplate template) =>
         auditEvents.Enqueue(new AuditEventDraft(companyId, GeneratedEventType, EntityType, upload.DocumentId.ToString("D"), "StoreGenerated",
@@ -681,6 +686,9 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                 sameContentEarlierVersions = earlierVersions,
                 templateCode = template.Code,
                 templateVersion = template.Version,
+                producerCommand = upload.ProducerCommand,
+                producerPermission = envelope.PermissionCode,
+                systemGenerated = upload.ScanState == DocumentScanState.SystemGenerated,
             }, Json), "Üretilen belge kasaya kaydedildi", ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
             envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
             envelope.IdempotencyKey));
@@ -727,7 +735,10 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
         if (upload.DocumentId == Guid.Empty || upload.SizeBytes < 1 || !DocumentContentHash.IsWellFormed(upload.Sha256)
             || upload.Owner is null || upload.FileName is null || upload.Kind is null
             || !Enum.IsDefined(upload.ScanState) || (upload.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(upload.ScannerId)
-            || (upload.Template is not null && upload.Kind.Kind != DocumentFileKind.Pdf))
+            || (upload.Template is not null && upload.Kind.Kind != DocumentFileKind.Pdf)
+            // KLN-D59/KLN-D60: the producer's command travels with the template, and only a generated PDF may skip the scan.
+            || (upload.Template is null) != string.IsNullOrWhiteSpace(upload.ProducerCommand)
+            || (upload.ScanState == DocumentScanState.SystemGenerated && upload.Template is null))
         {
             throw new ArgumentException("Belge yüklemesi eksik veya tutarsız.", nameof(upload));
         }
@@ -742,6 +753,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     {
         if (version.DocumentId == Guid.Empty || version.SizeBytes < 1 || !DocumentContentHash.IsWellFormed(version.Sha256)
             || version.FileName is null || version.Kind is null || !Enum.IsDefined(version.ScanState)
+            || version.ScanState == DocumentScanState.SystemGenerated
             || (version.ScanState == DocumentScanState.Clean) != !string.IsNullOrWhiteSpace(version.ScannerId))
         {
             throw new ArgumentException("Belge sürümü eksik veya tutarsız.", nameof(version));

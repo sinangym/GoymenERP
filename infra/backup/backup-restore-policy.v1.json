@@ -1,0 +1,15 @@
+{
+  "schema": "goymen-erp-backup-restore-policy/v1",
+  "decision": "KLN-D36",
+  "decisionSource": "docs/decisions/SINAN_KARARLARI_2026-11-14_NS_CEVAPLARI.md",
+  "openItems": [
+    "OPEN-017",
+    "OPEN-014"
+  ],
+  "rpoMinutes": 15,
+  "rtoMinutes": 240,
+  "fullBackupCadence": "daily",
+  "logBackupIntervalMinutes": 15,
+  "restoreDrillCadence": "monthly",
+  "calendarTimeZone": "UTC"
+}

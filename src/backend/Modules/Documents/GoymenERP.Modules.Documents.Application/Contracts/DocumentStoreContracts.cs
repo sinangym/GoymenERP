@@ -74,6 +74,9 @@ public sealed record DocumentWriteEnvelope(
 /// <summary>
 /// A new upload, already classified, hashed, scanned and written to the object store. F-026 (PLT-S9):
 /// <see cref="Template"/> is set only for a PDF a producing module generated (DEC-DOC-010 snapshot); null is a user upload.
+/// KLN-D59: <see cref="ProducerCommand"/> names the producing command whose own permission gated the write; it is set
+/// exactly when <see cref="Template"/> is. KLN-D60: <see cref="DocumentScanState.SystemGenerated"/> is accepted only
+/// together with a template (the server-internal producer path).
 /// </summary>
 public sealed record NewDocumentUpload(
     Guid DocumentId,
@@ -86,7 +89,8 @@ public sealed record NewDocumentUpload(
     DocumentScanState ScanState,
     string? ScannerId,
     DateTimeOffset UploadedAtUtc,
-    GeneratedDocumentTemplate? Template = null);
+    GeneratedDocumentTemplate? Template = null,
+    string? ProducerCommand = null);
 
 /// <summary>A classified, scanned immutable version to append to one existing logical document.</summary>
 public sealed record NewDocumentVersion(

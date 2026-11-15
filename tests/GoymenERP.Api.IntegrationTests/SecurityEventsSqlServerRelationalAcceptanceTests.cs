@@ -312,6 +312,38 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
         });
     }
 
+    /// <summary>
+    /// Identity debt (PLT-F1): auth.login.rate_limited is stored as one pre-counted platform row with its window,
+    /// count and policy limits. Without such rows the widening migration rolls back and reapplies; once one exists its
+    /// Down refuses with 51591 (forward fix) and the row survives.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Rate_limited_summary_is_stored_and_its_migration_down_refuses_with_51591_on_real_sql()
+    {
+        await WithHostAsync(async (services, connectionString) =>
+        {
+            await using var context = Db(connectionString, TestCompanyIds.CompanyA);
+            await context.GetService<IMigrator>().MigrateAsync(nameof(HardenSecurityEventCodeChecks));
+            Assert.True(string.IsNullOrEmpty(await ScalarAsync(connectionString,
+                "SELECT OBJECT_ID(N'[security].[CK_SecurityEvents_RateLimitSummary]')")));
+            await context.Database.MigrateAsync();
+
+            var writer = services.GetRequiredService<ISecurityEventWriterV1>();
+            Assert.True((await writer.WriteAsync(PlatformLoginRateLimited(), CancellationToken.None)).Recorded);
+            Assert.Equal("7|10|60", await ScalarAsync(connectionString,
+                "SELECT CONCAT([OccurrenceCount], '|', [RateLimitPermitLimit], '|', [RateLimitWindowSeconds]) "
+                + "FROM [security].[SecurityEvents] WHERE [EventType] = N'auth.login.rate_limited' AND [CompanyId] IS NULL"));
+
+            var refusal = await Assert.ThrowsAnyAsync<Exception>(
+                () => context.GetService<IMigrator>().MigrateAsync(nameof(HardenSecurityEventCodeChecks)));
+            Assert.Equal(51591, Sql(refusal).Number);
+            Assert.Equal("1", await ScalarAsync(connectionString,
+                "SELECT COUNT(*) FROM [security].[SecurityEvents] WHERE [EventType] = N'auth.login.rate_limited'"));
+            Assert.False(string.IsNullOrEmpty(await ScalarAsync(connectionString,
+                "SELECT OBJECT_ID(N'[security].[CK_SecurityEvents_RateLimitSummary]')")));
+        });
+    }
+
     [SqlServerFact]
     public async Task Down_drops_an_empty_security_events_table_and_up_reapplies_it_on_real_sql()
     {
@@ -357,6 +389,24 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
         Severity = SecurityEventSeveritiesV1.Warning,
         CorrelationId = $"corr-{Guid.NewGuid():N}",
         SourceChannel = SourceChannels.Web,
+    };
+
+    private static SecurityEventV1 PlatformLoginRateLimited() => new()
+    {
+        EventId = Guid.NewGuid(),
+        OccurredAtUtc = OccurredAt,
+        ScopeKind = SecurityEventScopeKindsV1.Platform,
+        ActorType = SecurityEventActorTypesV1.Anonymous,
+        EventType = SecurityEventTypesV1.LoginRateLimited,
+        Outcome = SecurityEventOutcomesV1.Denied,
+        ReasonCode = SecurityEventReasonCodesV1.PolicyRefused,
+        Severity = SecurityEventSeveritiesV1.Warning,
+        PolicyId = "auth.login.rate-limit",
+        PolicyVersion = 1,
+        CorrelationId = $"corr-{Guid.NewGuid():N}",
+        SourceChannel = SourceChannels.Web,
+        RateLimitSummary = new SecurityEventRateLimitSummaryV1(
+            OccurredAt.AddMinutes(-1), OccurredAt, RejectedAttemptCount: 7, PermitLimit: 10, Window: TimeSpan.FromMinutes(1)),
     };
 
     private static SecurityEventsDbContext Db(string connectionString, Guid companyId)

@@ -63,7 +63,10 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         var design = context.GetService<IDesignTimeModel>().Model;
         var versions = design.FindEntityType(typeof(DocumentVersionRow))!;
         Assert.Contains(versions.GetCheckConstraints(), check => check.Name == "CK_DocumentVersions_Scan"
-            && check.Sql == "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)");
+            && check.Sql == DocumentsDbContext.ScanCheck);
+        // KLN-D60: a system-generated (3) version names no scanner, like a not-scanned (1) one; a clean (2) one names its scanner.
+        Assert.Equal("([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL) "
+            + "OR ([ScanState] = 3 AND [ScannerId] IS NULL)", DocumentsDbContext.ScanCheck);
         Assert.Equal(["CompanyId", "Sha256", "UploadedAtUtc"],
             versions.GetIndexes().Single(index => index.GetDatabaseName() == "IX_DocumentVersions_CompanyId_Sha256_UploadedAtUtc").Properties
                 .Select(property => property.Name));
@@ -87,7 +90,8 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.Contains(design.FindEntityType(typeof(ContentBlobRow))!.GetCheckConstraints(), check => check.Name == "CK_ContentBlobs_Kind"
             && check.Sql == DocumentsDbContext.ContentKindCheck);
         Assert.Equal("[ContentKind] IN (1, 2, 3, 4, 5, 6)", DocumentsDbContext.ContentKindCheck);
-        Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker", "20261115134058_WidenDocumentContentKinds"],
+        Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker", "20261115134058_WidenDocumentContentKinds",
+                "20261115165534_AddSystemGeneratedDocumentScanState"],
             context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
     }
@@ -144,6 +148,28 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.Equal("CK_ContentBlobs_Kind", Assert.IsType<DropCheckConstraintOperation>(down[1]).Name);
         var narrowed = Assert.IsType<AddCheckConstraintOperation>(down[2]);
         Assert.Equal(("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)"), (narrowed.Name, narrowed.Sql));
+        Assert.Equal(3, down.Count);
+    }
+
+    [Fact]
+    public void The_system_generated_scan_state_migration_widens_the_check_and_its_down_refuses_with_51592_while_such_a_version_exists()
+    {
+        var migration = new AddSystemGeneratedDocumentScanState();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Equal("CK_DocumentVersions_Scan", Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[0]).Name);
+        var widened = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[1]);
+        Assert.Equal(("CK_DocumentVersions_Scan", DocumentsDbContext.ScanCheck), (widened.Name, widened.Sql));
+        Assert.Equal(2, migration.UpOperations.Count);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [documents].[DocumentVersions] WHERE [ScanState] = 3)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51592,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down, operation => operation is SqlOperation);
+        Assert.Equal("CK_DocumentVersions_Scan", Assert.IsType<DropCheckConstraintOperation>(down[1]).Name);
+        var narrowed = Assert.IsType<AddCheckConstraintOperation>(down[2]);
+        Assert.Equal(("CK_DocumentVersions_Scan",
+                "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)"),
+            (narrowed.Name, narrowed.Sql));
         Assert.Equal(3, down.Count);
     }
 

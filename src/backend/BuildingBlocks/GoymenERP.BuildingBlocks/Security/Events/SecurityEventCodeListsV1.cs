@@ -20,16 +20,27 @@ public static class SecurityEventTypesV1
     public const string AiRequestRefused = "ai.request.refused";
     public const string SecurityEventsRead = "security.events.read";
 
+    /// <summary>
+    /// One-minute summary of login attempts refused by the login rate limiter (KIM-D29). Platform scope, anonymous
+    /// actor, no company; it carries only the <see cref="SecurityEventRateLimitSummaryV1"/> counters and the policy
+    /// reference, never a username, username hash or IP address.
+    /// </summary>
+    public const string LoginRateLimited = "auth.login.rate_limited";
+
     public static IReadOnlyList<string> All { get; } =
     [
         LoginSucceeded, LoginFailed, AuthorizationDenied, AiAuthorizationDenied, PermissionChanged,
         PolicyPublished, ExportPerformed, RetentionPurgeRequested, AiToolCalled, AiRequestRefused,
-        SecurityEventsRead,
+        SecurityEventsRead, LoginRateLimited,
     ];
 
     public static bool IsDefined(string? value) => value is not null && All.Contains(value, StringComparer.Ordinal);
 
-    /// <summary>Event types whose decision is a denial or refusal; the denial stays in force on write failure.</summary>
+    /// <summary>
+    /// Event types whose decision is a single denial or refusal; the denial stays in force on write failure. They
+    /// are exactly the aggregation-eligible types. <see cref="LoginRateLimited"/> is also always <c>Denied</c>, but it
+    /// is already a counted summary, so it is not listed here and is never aggregated again.
+    /// </summary>
     public static IReadOnlyList<string> DenialTypes { get; } =
         [LoginFailed, AuthorizationDenied, AiAuthorizationDenied, AiRequestRefused];
 

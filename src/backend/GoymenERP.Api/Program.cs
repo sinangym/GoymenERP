@@ -238,6 +238,8 @@ builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySale
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddSecurityEventsModule(builder.Configuration);
+// E8 and the AI provider key: secret store reader only; no secret value is configured here.
+builder.Services.AddErpSecretStore(builder.Configuration);
 // AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
 builder.Services.AddAiRuntime(builder.Configuration);
 builder.Services.AddSettingsModule(

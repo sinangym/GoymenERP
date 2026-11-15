@@ -38,6 +38,7 @@ public sealed class SecurityEventContractTests
     [Theory]
     [InlineData(SecurityEventTypesV1.LoginSucceeded, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
     [InlineData(SecurityEventTypesV1.LoginFailed, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
+    [InlineData(SecurityEventTypesV1.LoginRateLimited, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
     [InlineData(SecurityEventTypesV1.AuthorizationDenied, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
     [InlineData(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
     [InlineData(SecurityEventTypesV1.AiRequestRefused, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
@@ -112,6 +113,7 @@ public sealed class SecurityEventContractTests
     [InlineData(SecurityEventTypesV1.AiRequestRefused, SecurityEventRetentionClassesV1.No157)]
     [InlineData(SecurityEventTypesV1.AuthorizationDenied, SecurityEventRetentionClassesV1.No134)]
     [InlineData(SecurityEventTypesV1.SecurityEventsRead, SecurityEventRetentionClassesV1.No134)]
+    [InlineData(SecurityEventTypesV1.LoginRateLimited, SecurityEventRetentionClassesV1.No134)]
     public void Retention_class_map_follows_No134_No157_and_E9(string eventType, string expected)
     {
         Assert.Equal(expected, SecurityEventRetentionClassesV1.ForEventType(eventType));
@@ -144,6 +146,89 @@ public sealed class SecurityEventContractTests
         Assert.Empty(SecurityEventV1Validator.Validate(PermissionChange()));
         Assert.Empty(SecurityEventV1Validator.Validate(AiToolCall(SecurityEventPhasesV1.Started)));
         Assert.Empty(SecurityEventV1Validator.Validate(AiToolCall(SecurityEventPhasesV1.Completed)));
+        Assert.Empty(SecurityEventV1Validator.Validate(RateLimited()));
+    }
+
+    [Fact]
+    public void Login_rate_limited_type_name_is_pinned_and_is_not_re_aggregated()
+    {
+        Assert.Equal("auth.login.rate_limited", SecurityEventTypesV1.LoginRateLimited);
+        Assert.Contains(SecurityEventTypesV1.LoginRateLimited, SecurityEventTypesV1.All);
+        // The summary is already a count over its own window; the writer never folds it into another row.
+        Assert.DoesNotContain(SecurityEventTypesV1.LoginRateLimited, SecurityEventTypesV1.DenialTypes);
+        Assert.False(SecurityEventAggregationEligibilityV1.IsEligible(SecurityEventTypesV1.LoginRateLimited, SecurityEventPhasesV1.Single));
+    }
+
+    [Fact]
+    public void Rate_limit_summary_carries_only_window_count_and_policy_limits()
+    {
+        var names = typeof(SecurityEventRateLimitSummaryV1)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(p => p.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            ["PermitLimit", "RejectedAttemptCount", "Window", "WindowEndUtc", "WindowSeconds", "WindowStartUtc"],
+            names);
+    }
+
+    public static TheoryData<string, string> InvalidRateLimitedEnvelopes => new()
+    {
+        { "summary_on_other_type", "rate_limit_summary_forbidden_for_event_type" },
+        { "company_scope", "rate_limited_requires_platform_scope_without_company" },
+        { "requested_company", "rate_limited_requires_platform_scope_without_company" },
+        { "system_actor", "rate_limited_requires_anonymous_actor" },
+        { "permission_code", "rate_limited_forbids_permission_code" },
+        { "no_policy", "rate_limited_requires_policy_reference" },
+        { "other_reason", "rate_limited_reason_code_not_policy_refused" },
+        { "allowed", "outcome_not_allowed_for_event_type" },
+        { "no_summary", "rate_limit_summary_required" },
+        { "local_window", "rate_limit_window_not_utc" },
+        { "inverted_window", "rate_limit_window_invalid" },
+        { "before_window_end", "rate_limit_summary_before_window_end" },
+        { "zero_rejections", "rate_limit_rejected_count_invalid" },
+        { "zero_permit_limit", "rate_limit_permit_limit_invalid" },
+        { "zero_window", "rate_limit_window_length_invalid" },
+        { "fractional_window", "rate_limit_window_length_invalid" },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidRateLimitedEnvelopes))]
+    public void Invalid_rate_limited_envelope_reports_stable_error_code(string caseName, string expectedError)
+    {
+        var errors = SecurityEventV1Validator.Validate(InvalidRateLimited(caseName));
+
+        Assert.Contains(expectedError, errors);
+    }
+
+    private static SecurityEventV1 InvalidRateLimited(string caseName)
+    {
+        var valid = RateLimited();
+        var summary = valid.RateLimitSummary!;
+        return caseName switch
+        {
+            "summary_on_other_type" => Denial() with { RateLimitSummary = summary },
+            "company_scope" => valid with { ScopeKind = SecurityEventScopeKindsV1.Company, CompanyId = CompanyA },
+            "requested_company" => valid with { RequestedCompanyId = CompanyA },
+            "system_actor" => valid with { ActorType = SecurityEventActorTypesV1.System, ActorId = "system.scheduler" },
+            "permission_code" => valid with { PermissionCode = "identity.login" },
+            "no_policy" => valid with { PolicyId = null, PolicyVersion = null },
+            "other_reason" => valid with { ReasonCode = SecurityEventReasonCodesV1.CredentialsInvalid },
+            "allowed" => valid with { Outcome = SecurityEventOutcomesV1.Allowed, ReasonCode = null },
+            "no_summary" => valid with { RateLimitSummary = null },
+            "local_window" => valid with
+            {
+                RateLimitSummary = summary with { WindowStartUtc = summary.WindowStartUtc.ToOffset(TimeSpan.FromHours(3)) },
+            },
+            "inverted_window" => valid with { RateLimitSummary = summary with { WindowStartUtc = summary.WindowEndUtc } },
+            "before_window_end" => valid with { OccurredAtUtc = summary.WindowEndUtc.AddSeconds(-1) },
+            "zero_rejections" => valid with { RateLimitSummary = summary with { RejectedAttemptCount = 0 } },
+            "zero_permit_limit" => valid with { RateLimitSummary = summary with { PermitLimit = 0 } },
+            "zero_window" => valid with { RateLimitSummary = summary with { Window = TimeSpan.Zero } },
+            "fractional_window" => valid with { RateLimitSummary = summary with { Window = TimeSpan.FromMilliseconds(1500) } },
+            _ => throw new ArgumentOutOfRangeException(nameof(caseName)),
+        };
     }
 
     public static TheoryData<string, string> InvalidEnvelopes => new()
