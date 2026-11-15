@@ -170,6 +170,26 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getByText('Transfer çıkışı')).not.toBeNull()
     expect(screen.getByText('Transfer kabulü')).not.toBeNull()
   })
+  it('renders the manufacturing output reversal and the transfer dispatch cancellation with their own labels', async () => {
+    const base = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...base,
+      movementTimeline: { ...base.movementTimeline, entries: [
+        { ...base.movementTimeline.entries[0], kind: 'ManufacturingOutputReversal',
+          sourceKind: 'manufacturing.output-reversal', lines: [
+            { ...base.movementTimeline.entries[0].lines[0], direction: 'Out' },
+          ] },
+        { ...base.movementTimeline.entries[0], movementId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          kind: 'TransferDispatchCancellation', lines: base.movementTimeline.entries[0].lines },
+      ] },
+    } })
+
+    mount(); await ready()
+
+    expect(screen.getByText('Üretim çıktısı ters kaydı')).not.toBeNull()
+    expect(screen.getByText('Transfer çıkışı iptali')).not.toBeNull()
+    expect(screen.getByText('manufacturing.output-reversal')).not.toBeNull()
+  })
   it('renders a manufacturing genealogy edge as production in the existing genealogy table', async () => {
     const base = fixture()
     api.detail.mockResolvedValue({ type: 'ok-single', data: {

@@ -22,7 +22,7 @@ import {
   inventoryOpeningDetailPath,
   movementTimelineEntryState,
 } from './capabilities'
-import { MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
+import { MOVEMENT_KIND_TEXT, MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
@@ -39,18 +39,6 @@ import {
   type RowActionTarget,
 } from './stockRowActions'
 import styles from './inventory.module.css'
-
-const MOVEMENT_KIND_TEXT = {
-  Receipt: 'Giriş',
-  Issue: 'Çıkış',
-  Block: 'Blokaj',
-  Release: 'Serbest bırakma',
-  Return: 'İade',
-  CountAdjustment: 'Sayım farkı',
-  Scrap: 'Hurda çıkışı',
-  TransferDispatch: 'Transfer çıkışı',
-  TransferAccept: 'Transfer kabulü',
-} as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
 
