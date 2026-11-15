@@ -10,6 +10,8 @@ namespace GoymenERP.Api.Endpoints;
 /// <summary>
 /// The public create shape. Product identity and version are intentionally absent: the host obtains
 /// both from the approved Sales line and never accepts those authoritative facts from the caller.
+/// <see cref="IsSubstitute"/> (KLN-D39, STK-S30) confirms a suggested label of another, similar product ("muadil");
+/// the server re-verifies the similarity within the Settings tolerance and refuses it otherwise. Absent means false.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateInventoryPhysicalAllocationRequestV1(
@@ -20,7 +22,8 @@ public sealed record CreateInventoryPhysicalAllocationRequestV1(
     [property: JsonRequired] string ExpectedLabelVersion,
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
-    DateTimeOffset? ReservedUntilUtc);
+    DateTimeOffset? ReservedUntilUtc,
+    bool? IsSubstitute = null);
 
 /// <summary>
 /// INV-AL-1 change request. The Sales order/line name the demand the allocation already serves; the host re-reads
@@ -50,7 +53,8 @@ public sealed class InventoryPhysicalAllocationHostService(
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
     ISalesOrderLineReferencePortV1 orderLines,
-    IInventoryPhysicalAllocationWriterV1 writer)
+    IInventoryPhysicalAllocationWriterV1 writer,
+    IInventoryAllocationSuggestionReaderV1 suggestions)
 {
     public async Task<InventoryPhysicalAllocationResultV1> CreateAsync(
         CreateInventoryPhysicalAllocationRequestV1 request,
@@ -80,8 +84,42 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.ExpectedLabelVersion,
             request.QuantityKg,
             request.Reason,
-            request.ReservedUntilUtc);
+            request.ReservedUntilUtc,
+            request.IsSubstitute == true);
         return await writer.CreateAsync(command, Metadata(finalScope, transport), cancellationToken);
+    }
+
+    /// <summary>
+    /// KLN-D34/D39 (STK-S30): the label suggestions for one approved Sales line. The same fences as a create (fresh
+    /// authority before and after the Sales owner read; the line must still be approved), then the Inventory reader
+    /// answers for the line's own product and version, never for caller-supplied product facts. Authority is measured
+    /// once more after the read so a revocation in flight never sees the answer.
+    /// </summary>
+    public async Task<InventoryAllocationSuggestionsV1> SuggestAsync(
+        Guid salesOrderId,
+        Guid salesOrderLineId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await RequireAsync(cancellationToken);
+        if (salesOrderId == Guid.Empty || salesOrderLineId == Guid.Empty)
+        {
+            throw new InventoryPhysicalAllocationHostException(
+                StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed);
+        }
+
+        var (line, finalScope) = await ApprovedLineAsync(scope, salesOrderId, salesOrderLineId, cancellationToken);
+        var answer = await suggestions.ReadAsync(
+            new InventoryAllocationSuggestionQueryV1(salesOrderId, salesOrderLineId, line.ProductId, line.ProductVersion),
+            cancellationToken);
+        await RequireStillAsync(finalScope, cancellationToken);
+        if (answer.CompanyId != finalScope.CompanyId || answer.SalesOrderId != salesOrderId
+            || answer.SalesOrderLineId != salesOrderLineId || answer.ProductId != line.ProductId
+            || !string.Equals(answer.ProductVersion, line.ProductVersion, StringComparison.Ordinal))
+        {
+            throw new InventoryPhysicalAllocationHostException(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return answer;
     }
 
     public async Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
@@ -276,10 +314,12 @@ public static class InventoryPhysicalAllocationHttpCodesV1
     // The Sales ownership gate (InventorySalesOwnershipGuardV1) refuses only a NEW reservation, so only create
     // declares inventory_allocation_owner_not_company; release keeps its single invalid-reference 422. KLN-D66 (3): a
     // kilogram comparison with the Sales order unit that has no conversion source is refused, never guessed.
+    // KLN-D39 (STK-S30): a confirmed substitute that the server does not find similar is refused with its own code.
     public static IReadOnlySet<string> CreateStatus422Codes { get; } = Set(
         InventoryAllocationCodesV1.InvalidReference,
         InventoryAllocationCodesV1.OwnerNotCompany,
-        InventoryAllocationCodesV1.UnitConversionUnavailable);
+        InventoryAllocationCodesV1.UnitConversionUnavailable,
+        InventoryAllocationCodesV1.SubstituteNotSimilar);
 
     public static IReadOnlySet<string> ReleaseStatus422Codes { get; } = Set(InventoryAllocationCodesV1.InvalidReference);
 

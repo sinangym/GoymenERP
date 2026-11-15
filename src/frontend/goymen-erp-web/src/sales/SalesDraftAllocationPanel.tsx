@@ -26,7 +26,8 @@ import {
   type AllocationAttemptScope,
 } from './allocationAttempt'
 import { ALLOCATION_TEXT as T } from './allocationText'
-import { AllocationLabelPicker, type AllocationLabelChoice } from './AllocationLabelPicker'
+import { AllocationLabelPicker } from './AllocationLabelPicker'
+import { AllocationSuggestionList, type AllocationSuggestionChoice } from './AllocationSuggestionList'
 import styles from './SalesPages.module.css'
 import { Button } from '../ui/Button'
 
@@ -59,6 +60,8 @@ function httpRefusalText(status: number, code: string | null): string {
   if (status === 401 || status === 403) return T.forbidden
   // Definite refusal: the label's Free position is not both owned and held by the company.
   if (status === 422 && code === CREATE_ALLOCATION_422_CODES.ownerNotCompany) return T.ownerNotCompany
+  // KLN-D39/D70: the server did not accept the "muadil" label as similar (or no Settings tolerance exists).
+  if (status === 422 && code === CREATE_ALLOCATION_422_CODES.substituteNotSimilar) return T.substituteNotSimilar
   return T.failed
 }
 
@@ -84,7 +87,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       return outcome
     },
   })
-  const [selectedLabel, setSelectedLabel] = useState<AllocationLabelChoice | null>(null)
+  const [selectedLabel, setSelectedLabel] = useState<AllocationSuggestionChoice | null>(null)
   // A recorded allocation or a version conflict makes the picked label's version stale: the picker is
   // remounted empty so the next allocation starts from a fresh Inventory read.
   const [pickerGeneration, setPickerGeneration] = useState(0)
@@ -141,6 +144,8 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       quantityKg: quantityKg.trim(),
       reason: reason.trim(),
       reservedUntilUtc: null,
+      // Only a confirmed similar-product suggestion carries the flag; a plain create keeps its original body.
+      ...(selectedLabel?.isSubstitute === true ? { isSubstitute: true as const } : {}),
     }
     if (!isGuid(candidate.labelId) || !isPositiveVersion(candidate.expectedLabelVersion)
       || candidate.quantityKg.length === 0 || candidate.reason.length === 0) {
@@ -226,7 +231,10 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
                   const pendingRelease = loadAllocationAttempt<ReleasePhysicalAllocationBody>(releaseScope)
                   return (
                     <tr key={allocation.allocationId} data-testid={`sales-allocation-${allocation.allocationId}`}>
-                      <td className={styles.identifier}>{allocation.labelId}</td>
+                      <td className={styles.identifier}>
+                        {allocation.labelId}
+                        {allocation.isSubstitute ? <>{' '}<span className={styles.badge}>{T.substituteBadge}</span></> : null}
+                      </td>
                       <td>{allocation.status === 'Active' ? T.active : allocation.status === 'Consumed' ? T.consumed : T.released}</td>
                       <td>{allocation.allocatedKg}</td><td>{allocation.remainingKg}</td><td>{allocation.version}</td>
                       <td>{allocation.status !== 'Active' ? null : pendingRelease !== null ? (
@@ -242,6 +250,16 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
               </table>
             </div>
           )}
+          {pendingCreate === null ? (
+            <AllocationSuggestionList key={`suggestions-${pickerGeneration}`} scope={scope} lineId={line.lineId}
+              lineProductText={`${line.productCode} — ${line.productName}`} disabled={busy || page.searchWindowFull}
+              selected={selectedLabel} onSelect={setSelectedLabel} />
+          ) : null}
+          {pendingCreate === null && selectedLabel?.isSubstitute === true ? (
+            <p className={styles.notice} data-tone="unknown" data-testid={`sales-allocation-substitute-${line.lineId}`}>
+              {T.substituteSelected(selectedLabel.productText ?? T.suggestionProductUnknown)}
+            </p>
+          ) : null}
           {pendingCreate === null ? (
             <AllocationLabelPicker key={pickerGeneration} companyId={companyId} productId={line.productId}
               lineId={line.lineId} disabled={busy} canOpenLabelHistory={canOpenLabelHistory}

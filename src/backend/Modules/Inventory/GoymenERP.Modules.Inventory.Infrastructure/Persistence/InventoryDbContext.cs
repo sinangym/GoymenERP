@@ -48,6 +48,13 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal const string TransferDispatchSourceScaleSettingCheck = "[SourceScaleSettingAtDispatch] IN (1, 2, 3)";
 
     /// <summary>
+    /// KLN-D39 (STK-S30): only a sales order line allocation may hold a substitute ("muadil") label. The explicit
+    /// IS NOT NULL keeps a null demand from passing the check as UNKNOWN.
+    /// </summary>
+    internal const string AllocationSubstituteCheck =
+        "[IsSubstitute] = 0 OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line')";
+
+    /// <summary>
     /// SAT-D262: a known row holds both numbers (kg >= 0, average >= 0) and no reason; an unreadable row holds a reason
     /// (1..9, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
     /// </summary>
@@ -575,6 +582,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
                 + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND [ReservedUntilUtc] IS NULL)");
+            table.HasCheckConstraint("CK_Allocations_Substitute", AllocationSubstituteCheck);
             table.HasCheckConstraint("CK_Allocations_ReleasedKg",
                 "[ReleasedKg] IS NULL OR ([Status] = 3 AND [ReleasedKg] > 0 AND [ReleasedKg] <= [AllocatedKg])");
             table.HasCheckConstraint("CK_Allocations_Release",

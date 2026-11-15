@@ -1,4 +1,5 @@
 export const PHYSICAL_ALLOCATIONS_PATH = '/inventory/physical-allocations' as const
+export const PHYSICAL_ALLOCATION_SUGGESTIONS_PATH = '/inventory/physical-allocations/suggestions' as const
 
 export type AllocationStatus = 'Active' | 'Consumed' | 'Released'
 
@@ -9,6 +10,8 @@ export type AllocationStatus = 'Active' | 'Consumed' | 'Released'
 export const CREATE_ALLOCATION_422_CODES = {
   invalidReference: 'inventory_allocation_invalid_reference',
   ownerNotCompany: 'inventory_allocation_owner_not_company',
+  /** KLN-D39/D70: the confirmed "muadil" label's product is not similar within the Settings tolerance (or none is set). */
+  substituteNotSimilar: 'inventory_allocation_substitute_not_similar',
 } as const
 
 export interface PhysicalAllocation {
@@ -28,6 +31,8 @@ export interface PhysicalAllocation {
   readonly reservedUntilUtc: string | null
   readonly createdAtUtc: string
   readonly updatedAtUtc: string
+  /** KLN-D39: the allocation reserves a label of a similar product ("muadil"); `productId` stays the line's product. */
+  readonly isSubstitute: boolean
 }
 
 export interface PhysicalAllocationItem {
@@ -57,6 +62,8 @@ export interface CreatePhysicalAllocationBody {
   readonly quantityKg: string
   readonly reason: string
   readonly reservedUntilUtc: string | null
+  /** Sent only for a confirmed similar-product suggestion; the server re-checks the similarity. */
+  readonly isSubstitute?: true
 }
 
 export interface ReleasePhysicalAllocationBody {
@@ -87,14 +94,15 @@ export function decodePhysicalAllocation(value: unknown, expected: AllocationSco
     || !guid(source.demandId) || !guid(source.demandLineId) || !text(source.demandProductVersion)
     || !decimal(source.allocatedKg) || !decimal(source.remainingKg) || !text(source.reason)
     || !(source.reservedUntilUtc === null || instant(source.reservedUntilUtc))
-    || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc)) return null
+    || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc)
+    || !(source.isSubstitute === undefined || typeof source.isSubstitute === 'boolean')) return null
 
   if (source.companyId !== expected.companyId || source.demandId !== expected.salesOrderId
     || source.demandLineId !== expected.salesOrderLineId || source.productId !== expected.productId
     || source.demandProductVersion !== expected.productVersion) return null
   if (source.status === 'Active' ? source.remainingKg === '0' : source.remainingKg !== '0') return null
 
-  return source as unknown as PhysicalAllocation
+  return { ...(source as unknown as PhysicalAllocation), isSubstitute: source.isSubstitute === true }
 }
 
 export function decodePhysicalAllocationPage(value: unknown, expected: AllocationScope): PhysicalAllocationPage | null {
@@ -123,4 +131,87 @@ export function isGuid(value: string): boolean {
 
 export function isPositiveVersion(value: string): boolean {
   return VERSION.test(value)
+}
+
+export type AllocationSuggestionKind = 'same-product' | 'similar-product'
+export type SimilarProductMode = 'same-product-only' | 'dimension-tolerance'
+
+export interface AllocationSuggestion {
+  readonly labelId: string
+  readonly labelVersion: string
+  readonly labelCode: string
+  readonly productId: string
+  readonly productVersion: string | null
+  readonly productCode: string | null
+  readonly productName: string | null
+  readonly kind: AllocationSuggestionKind
+  readonly isSubstitute: boolean
+  readonly unreservedKg: string
+  readonly maximumDeviationPercent: string | null
+}
+
+export interface AllocationSuggestions {
+  readonly similarProductMode: SimilarProductMode
+  readonly aiSuggestions: 'disabled' | 'enabled'
+  readonly truncated: boolean
+  readonly items: readonly AllocationSuggestion[]
+}
+
+const SUGGESTIONS_KEYS = ['aiSuggestions', 'companyId', 'items', 'productId', 'productVersion', 'salesOrderId',
+  'salesOrderLineId', 'similarProductMode', 'truncated']
+const SUGGESTION_KEYS = ['isSubstitute', 'kind', 'labelCode', 'labelId', 'labelVersion', 'maximumDeviationPercent',
+  'productCode', 'productId', 'productName', 'productVersion', 'unreservedKg']
+const POSITIVE_DECIMAL = (value: unknown): value is string => decimal(value) && !/^0(?:\.0+)?$/.test(value)
+const optionalText = (value: unknown): value is string | null => value === null || text(value)
+const exactKeys = (source: Record<string, unknown>, keys: readonly string[]) => {
+  const actual = Object.keys(source).sort()
+  return actual.length === keys.length && actual.every((key, index) => key === keys[index])
+}
+
+function decodeSuggestion(value: unknown, expected: AllocationScope, mode: SimilarProductMode): AllocationSuggestion | null {
+  const source = record(value)
+  if (source === null || !exactKeys(source, SUGGESTION_KEYS) || !guid(source.labelId) || !version(source.labelVersion)
+    || !text(source.labelCode) || !guid(source.productId) || !optionalText(source.productVersion)
+    || !optionalText(source.productCode) || !optionalText(source.productName)
+    || typeof source.isSubstitute !== 'boolean' || !POSITIVE_DECIMAL(source.unreservedKg)
+    || !(source.maximumDeviationPercent === null || decimal(source.maximumDeviationPercent))) return null
+  const sameProduct = source.productId === expected.productId
+  if (source.kind === 'same-product') {
+    // The line's own product: never a substitute and never a deviation.
+    if (!sameProduct || source.isSubstitute || source.maximumDeviationPercent !== null) return null
+  } else if (source.kind === 'similar-product') {
+    // KLN-D39/D40: another product, flagged "muadil", only when Settings configured a tolerance.
+    if (sameProduct || !source.isSubstitute || source.maximumDeviationPercent === null
+      || mode !== 'dimension-tolerance' || source.productVersion === null) return null
+  } else {
+    return null
+  }
+  return source as unknown as AllocationSuggestion
+}
+
+/**
+ * Strict decoder of `GET /inventory/physical-allocations/suggestions` (KLN-D34/D39/D40). The answer must be for the
+ * requested company, order line and the line's exact product version; one torn item rejects the whole list.
+ */
+export function decodeAllocationSuggestions(value: unknown, expected: AllocationScope): AllocationSuggestions | null {
+  const source = record(value)
+  if (source === null || !exactKeys(source, SUGGESTIONS_KEYS) || source.companyId !== expected.companyId
+    || source.salesOrderId !== expected.salesOrderId || source.salesOrderLineId !== expected.salesOrderLineId
+    || source.productId !== expected.productId || source.productVersion !== expected.productVersion
+    || (source.similarProductMode !== 'same-product-only' && source.similarProductMode !== 'dimension-tolerance')
+    || (source.aiSuggestions !== 'disabled' && source.aiSuggestions !== 'enabled')
+    || typeof source.truncated !== 'boolean' || !Array.isArray(source.items)) return null
+  const mode = source.similarProductMode
+  const items: AllocationSuggestion[] = []
+  const labels = new Set<string>()
+  for (const raw of source.items) {
+    const item = decodeSuggestion(raw, expected, mode)
+    if (item === null || labels.has(item.labelId.toLowerCase())) return null
+    labels.add(item.labelId.toLowerCase())
+    items.push(item)
+  }
+  // KLN-D39: similar products are offered only when the line's own product has no label.
+  const kinds = new Set(items.map((item) => item.kind))
+  if (kinds.size > 1) return null
+  return { similarProductMode: mode, aiSuggestions: source.aiSuggestions, truncated: source.truncated, items }
 }

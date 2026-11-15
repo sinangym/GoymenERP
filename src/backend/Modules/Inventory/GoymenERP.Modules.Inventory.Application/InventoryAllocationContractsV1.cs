@@ -18,6 +18,12 @@ public static class InventoryAllocationDemandKindsV1
     public const string ManufacturingPlanInput = "manufacturing.plan-input";
 }
 
+/// <summary>
+/// A physical sales allocation of one label for the approved Sales line. <see cref="IsSubstitute"/> (KLN-D39) is the
+/// user's confirmation that a label of ANOTHER product ("muadil") holds the line: the writer re-verifies on the server
+/// that the label's product is similar within the Settings tolerance (KLN-D40/D70) and refuses otherwise; with no
+/// tolerance configured only the line's own product is allowed. A label of the line's own product never carries the flag.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreatePhysicalSalesAllocationV1(
     [property: JsonRequired] Guid AllocationId,
@@ -29,7 +35,8 @@ public sealed record CreatePhysicalSalesAllocationV1(
     [property: JsonRequired] string ExpectedLabelVersion,
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
-    DateTimeOffset? ReservedUntilUtc);
+    DateTimeOffset? ReservedUntilUtc,
+    bool IsSubstitute = false);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ReleasePhysicalAllocationV1(
@@ -95,7 +102,8 @@ public sealed record InventoryPhysicalAllocationViewV1(
     string Reason,
     DateTimeOffset? ReservedUntilUtc,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    bool IsSubstitute = false);
 
 public sealed record InventoryPhysicalAllocationResultV1(
     InventoryPhysicalAllocationViewV1 Allocation,
@@ -144,6 +152,13 @@ public static class InventoryAllocationCodesV1
     public const string OwnerNotCompany = "inventory_allocation_owner_not_company";
     /// <summary>422: the change would leave the allocation exactly as it is (same label, same kilograms).</summary>
     public const string ChangeUnchanged = "inventory_allocation_change_unchanged";
+
+    /// <summary>
+    /// 422 (KLN-D39/D40/D70): the request confirmed a substitute ("muadil") label but no similar-product tolerance is
+    /// configured in Settings, the label's product is not similar to the line's product within it, or the label is of the
+    /// line's own product. A label of another product without the flag stays <see cref="InvalidReference"/>.
+    /// </summary>
+    public const string SubstituteNotSimilar = "inventory_allocation_substitute_not_similar";
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string ValueDoesNotFit = "inventory_value_does_not_fit";
 

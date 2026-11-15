@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
@@ -23,7 +25,8 @@ public sealed class ProductStockDisplayReferenceService(
     IErpAuthorityRevalidationService authority,
     IProductStockDisplayRecordReader records,
     IProductFamilyDefinitionSourceV2 definitions)
-    : IProductStockDisplayReferencesV1, IProductStockDisplayReferencesV2, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
+    : IProductStockDisplayReferencesV1, IProductStockDisplayReferencesV2, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1,
+        IProductStockSimilarityFactsV1
 {
     public async Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(
         CancellationToken cancellationToken = default)
@@ -303,6 +306,153 @@ public sealed class ProductStockDisplayReferenceService(
 
         await RequireScopeAsync(scope, cancellationToken);
         return new(matches);
+    }
+
+    /// <summary>
+    /// KLN-D39/D70 (STK-S30): the similarity facts of exact product versions, one item per requested pair, in the
+    /// same authority fences as the matcher. A pair that is unknown, not the stored version or not technically
+    /// complete answers with null facts; a synthetic or unreleased definition is 503 as everywhere else.
+    /// </summary>
+    public async Task<ProductStockSimilarityBatchV1> ReadSimilarityAsync(
+        ProductStockSimilarityQueryV1 query,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireScopeAsync(null, cancellationToken);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(query.Selections);
+        if (query.Selections.Count is < 1 or > ProductStockDisplayCodesV1.MaximumBatchSize
+            || query.Selections.Any(selection => selection is null || selection.ProductId == Guid.Empty
+                || string.IsNullOrWhiteSpace(selection.ExpectedProductVersion))
+            || query.Selections.DistinctBy(selection =>
+                    (selection.ProductId, selection.ExpectedProductVersion), ProductVersionKeyComparer.Instance)
+                .Count() != query.Selections.Count)
+        {
+            throw new ProductOperationException(ProductStockDisplayCodesV1.InvalidRequest, 400);
+        }
+
+        var ids = query.Selections.Select(selection => selection.ProductId).ToHashSet();
+        var stored = await FencedAsync(scope,
+            () => records.ReadForStockDisplayAsync(scope, ids, cancellationToken), cancellationToken);
+        if (stored.Count > ids.Count || stored.Select(record => record.Id).Distinct().Count() != stored.Count
+            || stored.Any(record => !ids.Contains(record.Id)))
+        {
+            throw new InvalidOperationException("Product stock-display reader returned an inconsistent batch.");
+        }
+
+        var byId = stored.ToDictionary(record => record.Id);
+        var exact = new Dictionary<ProductStockTechnicalMatchSelectionV1, ProductCardView>();
+        foreach (var selection in query.Selections)
+        {
+            if (!byId.TryGetValue(selection.ProductId, out var record)) continue;
+            try
+            {
+                if (ProductVersion.Parse(selection.ExpectedProductVersion) != record.Version) continue;
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            exact.Add(selection, ProductManufacturingTechnicalSnapshotService.Restore(record));
+        }
+
+        ProductFamilyDefinitionV2? definition = null;
+        if (exact.Count > 0)
+        {
+            definition = await FencedAsync(scope, () => definitions.GetAsync(cancellationToken), cancellationToken);
+            ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+        }
+
+        var items = new List<ProductStockSimilarityResultV1>(query.Selections.Count);
+        foreach (var selection in query.Selections)
+        {
+            if (!exact.TryGetValue(selection, out var card))
+            {
+                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, null, null, null, null, null));
+                continue;
+            }
+
+            var identity = new ProductStockDisplayIdentityV1(
+                card.Product.Id, card.Product.Version, card.Product.Code, card.Product.Name);
+            var family = card.Product.FamilyId is Guid familyId
+                ? definition!.Families.SingleOrDefault(candidate => candidate.Id == familyId)
+                : null;
+            if (family is null)
+            {
+                throw new ProductOperationException(UnacceptedProductFamilyRequirementPolicyV1.UnavailableCode, 503);
+            }
+            var template = ProductFamilyDefinitionRulesV2.TemplateOf(definition!, family.Id)
+                ?? throw new ProductOperationException(ProductFamilyDefinitionRulesV2.InvalidDefinitionCode, 503);
+            if (ProductManufacturingTechnicalSnapshotService.IsSynthetic(family.SourceRef)
+                || ProductManufacturingTechnicalSnapshotService.IsSynthetic(template.SourceRef))
+            {
+                throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+            }
+
+            var errors = ProductManufacturingTechnicalSnapshotService.ValidateTechnicalReferences(
+                card.References, definition!, template);
+            if (errors.Count > 0)
+            {
+                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity, null, null, null, null));
+                continue;
+            }
+            if (ProductManufacturingTechnicalSnapshotService.UsesSyntheticDictionaryValue(
+                    card.References, definition!, template))
+            {
+                throw new ProductOperationException(ProductManufacturingTechnicalSnapshotService.UnavailableCode, 503);
+            }
+
+            var thickness = ProductManufacturingTechnicalSnapshotService.ReadMeasure(
+                card.References, template, ProductTemplateFieldRolesV2.Thickness);
+            var width = ProductManufacturingTechnicalSnapshotService.ReadMeasure(
+                card.References, template, ProductTemplateFieldRolesV2.Width);
+            var length = template.Fields.Any(field => string.Equals(
+                    field.Role, ProductTemplateFieldRolesV2.Length, StringComparison.Ordinal))
+                ? ProductManufacturingTechnicalSnapshotService.ReadMeasure(
+                    card.References, template, ProductTemplateFieldRolesV2.Length)
+                : new ProductManufacturingMeasureReadV1(null, null);
+            var complete = thickness.Error is null && width.Error is null && length.Error is null;
+            items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity,
+                complete ? SimilarityKey(family, template, card.References) : null,
+                complete ? thickness.Millimetres : null,
+                complete ? width.Millimetres : null,
+                complete ? length.Millimetres : null));
+        }
+
+        await RequireScopeAsync(scope, cancellationToken);
+        return new(items);
+    }
+
+    /// <summary>
+    /// The opaque similarity key: family id, template id and release, then every dictionary-reference field of the
+    /// template in ordinal key order with its stored code (an absent optional field is an empty value). Each part is
+    /// length-prefixed so no code can collide with a separator.
+    /// </summary>
+    internal static string SimilarityKey(ProductFamilyV2 family, ProductTemplateV2 template, ProductReferences references)
+    {
+        var key = new StringBuilder();
+        Append(key, family.Id.ToString("N", CultureInfo.InvariantCulture));
+        Append(key, template.Id.ToString("N", CultureInfo.InvariantCulture));
+        Append(key, template.Version);
+        foreach (var field in template.Fields
+                     .Where(field => field.Kind == ProductTemplateFieldKindV2.DictionaryReference)
+                     .OrderBy(field => field.Key, StringComparer.Ordinal))
+        {
+            var code = references.Attributes is not null
+                && references.Attributes.TryGetValue(field.Key, out var value)
+                && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() ?? string.Empty
+                    : string.Empty;
+            Append(key, field.Key);
+            Append(key, code);
+        }
+
+        return key.ToString();
+
+        static void Append(StringBuilder builder, string part) => builder
+            .Append(part.Length.ToString(CultureInfo.InvariantCulture))
+            .Append(':')
+            .Append(part);
     }
 
     private static bool Matches(

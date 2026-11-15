@@ -55,7 +55,8 @@ public sealed partial class InventoryStore(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
-    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
+    TimeProvider timeProvider,
+    IInventorySubstituteProductVerifierV1? substituteVerifier = null) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
     IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1,
     IInventoryLabelClassificationWriterV1
 {

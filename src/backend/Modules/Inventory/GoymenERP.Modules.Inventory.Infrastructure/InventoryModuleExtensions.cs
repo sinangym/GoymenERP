@@ -100,6 +100,14 @@ public static class InventoryModuleExtensions
         // F-017 STOK F017-c: the goods receipt host enlists this port in its own transaction (ALS-D84 order).
         services.AddScoped<IInventoryGoodsReceiptFutureSupplyPortV1, InventoryGoodsReceiptFutureSupplyPort>();
         services.TryAddScoped<IInventoryFutureSupplySourceV1, InventoryUnavailableFutureSupplySourceV1>();
+        // KLN-D34/D39/D40/D70 (STK-S30): label suggestions and the substitute ("muadil") check. The Settings tolerance,
+        // the Product similarity facts and the AI tool are other owners' answers; the defaults are fail-closed (no
+        // tolerance: the same product only; facts unavailable; AI disabled while no provider is configured).
+        services.TryAddScoped<IInventorySimilarProductToleranceSourceV1, UnconfiguredInventorySimilarProductToleranceSourceV1>();
+        services.TryAddScoped<IInventoryProductSimilarityFactsV1, UnavailableInventoryProductSimilarityFactsV1>();
+        services.TryAddSingleton<IInventoryAllocationAiSuggestionToolV1, DisabledInventoryAllocationAiSuggestionToolV1>();
+        services.AddScoped<IInventorySubstituteProductVerifierV1, InventorySubstituteProductVerifier>();
+        services.AddScoped<IInventoryAllocationSuggestionReaderV1, InventoryAllocationSuggestionReader>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }

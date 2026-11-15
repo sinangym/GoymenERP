@@ -785,6 +785,31 @@ public sealed class InventoryPersistenceModelTests
     }
 
     [Fact]
+    public void The_substitute_flag_migration_adds_a_sales_only_flag_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryAllocationSubstituteFlag();
+        using var context = Context();
+        var allocations = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AllocationRow))!;
+
+        var flag = allocations.FindProperty(nameof(AllocationRow.IsSubstitute))!;
+        Assert.False(flag.IsNullable);
+        Assert.Equal(InventoryDbContext.AllocationSubstituteCheck,
+            Assert.Single(allocations.GetCheckConstraints(), check => check.Name == "CK_Allocations_Substitute").Sql);
+        Assert.Contains("[DemandKind] IS NOT NULL", InventoryDbContext.AllocationSubstituteCheck, StringComparison.Ordinal);
+        var added = Assert.Single(migration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>());
+        Assert.Equal(("IsSubstitute", false, (object?)false), (added.Name, added.IsNullable, added.DefaultValue));
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51653", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[Allocations]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[IsSubstitute] = 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropColumnOperation>(migration.DownOperations[^1]);
+    }
+
+    [Fact]
     public void The_canonical_payload_is_stable_and_names_every_fact()
     {
         var movement = Receipt(Position(), 100m);

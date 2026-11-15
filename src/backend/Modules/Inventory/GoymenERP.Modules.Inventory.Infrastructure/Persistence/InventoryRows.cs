@@ -224,6 +224,12 @@ internal sealed class AllocationRow : IInventoryTenantRow
 
     /// <summary>B-01: the kg a plan-input release returned to free stock, so consumed = allocated − remaining − released.</summary>
     public decimal? ReleasedKg { get; set; }
+
+    /// <summary>
+    /// KLN-D39: a sales allocation whose label is of another, similar product ("muadil") than the demand product. Only a
+    /// sales order line allocation can carry it; it is fixed at create and never changes.
+    /// </summary>
+    public bool IsSubstitute { get; set; }
 }
 
 /// <summary>
