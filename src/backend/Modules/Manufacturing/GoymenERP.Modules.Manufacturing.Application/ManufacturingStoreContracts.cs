@@ -125,6 +125,25 @@ public static class ManufacturingStoreCodes
     /// order, an id is empty, or the share calculator cannot read the inputs. Nothing of this write is stored.
     /// </summary>
     public const string LineageInvalid = "manufacturing_lineage_invalid";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the output was declared without a label code and Ayarlar holds no output label number format,
+    /// so no independent number can be given. Nothing of this write is stored; the operator enters a code or the format
+    /// is entered in Ayarlar. A number is never invented.
+    /// </summary>
+    public const string OutputLabelCodeRequired = "manufacturing_output_label_code_required";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the output label number format read from Ayarlar is not usable (it must hold exactly one
+    /// <c>{n}</c> and nothing that is not printable). Nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeFormatInvalid = "manufacturing_output_label_code_format_invalid";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the entered output label code is already taken in the company, or no free number of the Ayarlar
+    /// format was found within the attempt bound. A code is never renamed silently; nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeConflict = "manufacturing_output_label_code_conflict";
 }
 
 /// <summary>

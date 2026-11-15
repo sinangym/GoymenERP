@@ -26,7 +26,7 @@ public sealed class ManufacturingPersistenceModelTests
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
             typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
-            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(CommandRow)];
+            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -141,6 +141,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingMonthlyScrapPriceVersions", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOutputLineageEdges", StringComparison.Ordinal));
+        Assert.EndsWith("_AddManufacturingOutputLabelCodes", context.Database.GetMigrations().Last(),
+            StringComparison.Ordinal);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -309,6 +311,51 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
             { Name: "OutputLineageEdges" });
+    }
+
+    [Fact]
+    public void An_output_label_code_is_one_per_output_unique_per_company_and_its_rollback_refuses_while_one_exists()
+    {
+        // URT-S21 (URT-D62): one append-only row per (company, output declaration), bound by (company, kind 3, output id)
+        // to the output declaration. The code, the label and a generated number are each unique in the company; an entered
+        // code stores no number or format, a generated one both. No column names an input label. Up is pure DDL; Down
+        // refuses (THROW 51731) while any code is stored (forward fix).
+        using var context = Context();
+        var codes = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(OutputLabelCodeRow))!;
+        Assert.Equal(("manufacturing", "OutputLabelCodes"), (codes.GetSchema(), codes.GetTableName()));
+        Assert.Equal(["CompanyId", "OutputId"], codes.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.DoesNotContain(codes.GetProperties(), property => property.Name.Contains("Input", StringComparison.Ordinal));
+        Assert.Equal(64, codes.FindProperty(nameof(OutputLabelCodeRow.LabelCode))!.GetMaxLength());
+        Assert.False(codes.FindProperty(nameof(OutputLabelCodeRow.LabelCode))!.IsNullable);
+        Assert.Equal(32, codes.FindProperty(nameof(OutputLabelCodeRow.Format))!.GetMaxLength());
+        Assert.True(codes.FindProperty(nameof(OutputLabelCodeRow.Format))!.IsNullable);
+        Assert.True(codes.FindProperty(nameof(OutputLabelCodeRow.GeneratedNumber))!.IsNullable);
+        var checks = codes.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(ManufacturingDbContext.OutputLabelCodeIdentityCheck, checks["CK_OutputLabelCodes_Identity"]);
+        Assert.Equal(ManufacturingDbContext.OutputLabelCodeSourceCheck, checks["CK_OutputLabelCodes_Source"]);
+        Assert.Equal(ManufacturingDbContext.OutputLabelCodeTextCheck, checks["CK_OutputLabelCodes_Text"]);
+        Assert.Contains(codes.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLabelCodeCodeIndex
+            && index.IsUnique && index.GetFilter() is null
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LabelCode"]));
+        Assert.Contains(codes.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLabelCodeNumberIndex
+            && index.IsUnique && index.GetFilter() == "[GeneratedNumber] IS NOT NULL"
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "GeneratedNumber"]));
+        Assert.Contains(codes.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLabelCodeLabelIndex
+            && index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LabelId"]));
+        Assert.Contains(codes.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FactRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OutputKind", "OutputId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var migration = new AddManufacturingOutputLabelCodes();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.UpOperations, operation => operation is CreateTableOperation { Name: "OutputLabelCodes" });
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51731", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[OutputLabelCodes]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
+            { Name: "OutputLabelCodes" });
     }
 
     [Fact]
