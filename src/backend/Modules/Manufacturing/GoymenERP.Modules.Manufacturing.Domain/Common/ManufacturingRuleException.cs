@@ -32,6 +32,14 @@ public static class ManufacturingRuleCodes
     public const string InputAlreadyIssued = "manufacturing_input_already_issued";
     public const string ReturnAlreadyRecorded = "manufacturing_return_already_recorded";
     public const string ReturnExceedsIssued = "manufacturing_return_exceeds_issued";
+
+    /// <summary>
+    /// F-009 D4 (analysis §4.4): the return would exceed the input still unconsumed — issued minus returned minus the
+    /// net output minus the latest WIP reading, on the parent roll for a roll-based process and on the order total for
+    /// a process without a main roll input (URT-D49). The outputs are reversed or the WIP re-measured first.
+    /// </summary>
+    public const string ReturnExceedsUnconsumed = "manufacturing_return_exceeds_unconsumed";
+
     public const string OutputAlreadyDeclared = "manufacturing_output_already_declared";
     public const string WipAlreadyMeasured = "manufacturing_wip_already_measured";
     public const string WipMeasurementNotLatest = "manufacturing_wip_measurement_not_latest";

@@ -147,6 +147,10 @@ describe('recordFact', () => {
       { kind: 'version-conflict', expectedVersion: 4, currentVersion: 6, conflictIsCurrent: true },
     ],
     [problem(422, { code: 'manufacturing_return_exceeds_issued' }), { kind: 'rule', code: 'manufacturing_return_exceeds_issued' }],
+    [
+      problem(422, { code: 'manufacturing_return_exceeds_unconsumed' }),
+      { kind: 'rule', code: 'manufacturing_return_exceeds_unconsumed' },
+    ],
     [problem(400, { code: 'manufacturing_request_invalid', field: 'kg' }), { kind: 'validation', field: 'kg' }],
     [problem(403, { code: 'forbidden' }), { kind: 'forbidden' }],
     [problem(404), { kind: 'not-found' }],
