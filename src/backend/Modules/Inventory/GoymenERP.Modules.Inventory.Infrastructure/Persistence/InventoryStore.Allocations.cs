@@ -31,19 +31,7 @@ public sealed partial class InventoryStore
         var companyId = companyContext.CompanyId;
         var parsed = ParseCreate(request);
         var keyHash = AllocationKeyHash(metadata.IdempotencyKey);
-        var payloadHash = AllocationPayloadHash(new
-        {
-            request.AllocationId,
-            request.SalesOrderId,
-            request.SalesOrderLineId,
-            request.ProductId,
-            request.ProductVersion,
-            request.LabelId,
-            expectedLabelVersion = parsed.ExpectedLabelVersion,
-            quantityKg = parsed.Quantity.ToString(),
-            request.Reason,
-            request.ReservedUntilUtc,
-        });
+        var payloadHash = CreatePayloadHash(request, parsed.ExpectedLabelVersion, parsed.Quantity);
         if (await FindAllocationReplayAsync(CreatePhysicalAllocationCommand, keyHash, payloadHash, metadata.ActorId,
                 cancellationToken) is { } replay)
         {
@@ -57,10 +45,7 @@ public sealed partial class InventoryStore
             throw AllocationError(409, InventoryAllocationCodesV1.LabelVersionConflict);
         }
 
-        if (label.ProductId != request.ProductId)
-        {
-            throw AllocationError(422, InventoryAllocationCodesV1.InvalidReference);
-        }
+        await RequireLabelProductAsync(request, label, companyId, cancellationToken);
 
         var freeRows = await dbContext.Balances
             .Where(row => row.LabelId == label.Id && row.Block == (int)BlockState.Free && row.QuantityKg > 0m)
@@ -118,6 +103,7 @@ public sealed partial class InventoryStore
             DemandProductVersion = request.ProductVersion,
             Reason = request.Reason,
             ReservedUntilUtc = request.ReservedUntilUtc,
+            IsSubstitute = request.IsSubstitute,
             AllocatedKg = allocation.Allocated.Value,
             RemainingKg = allocation.Remaining.Value,
             Status = (int)allocation.Status,
@@ -249,6 +235,81 @@ public sealed partial class InventoryStore
         return new(after, false, metadata.CorrelationId.Trim());
     }
 
+    /// <summary>
+    /// The create's idempotency payload. A request without the substitute flag hashes exactly as before the flag existed,
+    /// so a retry of an earlier command still replays; a substitute request hashes the flag too.
+    /// </summary>
+    private static string CreatePayloadHash(
+        CreatePhysicalSalesAllocationV1 request,
+        long expectedLabelVersion,
+        Kilograms quantity)
+    {
+        if (!request.IsSubstitute)
+        {
+            return AllocationPayloadHash(new
+            {
+                request.AllocationId,
+                request.SalesOrderId,
+                request.SalesOrderLineId,
+                request.ProductId,
+                request.ProductVersion,
+                request.LabelId,
+                expectedLabelVersion,
+                quantityKg = quantity.ToString(),
+                request.Reason,
+                request.ReservedUntilUtc,
+            });
+        }
+
+        return AllocationPayloadHash(new
+        {
+            request.AllocationId,
+            request.SalesOrderId,
+            request.SalesOrderLineId,
+            request.ProductId,
+            request.ProductVersion,
+            request.LabelId,
+            expectedLabelVersion,
+            quantityKg = quantity.ToString(),
+            request.Reason,
+            request.ReservedUntilUtc,
+            isSubstitute = true,
+        });
+    }
+
+    /// <summary>
+    /// KLN-D39/D40/D70: the label must be of the line's own product, or — only when the user confirmed a substitute
+    /// ("muadil") — of another product that the server verifies is similar within the Settings tolerance. With no
+    /// tolerance or no verifier the substitute is refused; the flag on the line's own product is refused too.
+    /// </summary>
+    private async Task RequireLabelProductAsync(
+        CreatePhysicalSalesAllocationV1 request,
+        LabelRow label,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        if (!request.IsSubstitute)
+        {
+            if (label.ProductId != request.ProductId)
+            {
+                throw AllocationError(422, InventoryAllocationCodesV1.InvalidReference);
+            }
+
+            return;
+        }
+
+        if (label.ProductId == request.ProductId || string.IsNullOrWhiteSpace(label.ProductVersion)
+            || substituteVerifier is null
+            || !await substituteVerifier.IsSimilarAsync(
+                companyId,
+                new InventoryProductVersionV1(request.ProductId, request.ProductVersion),
+                new InventoryProductVersionV1(label.ProductId, label.ProductVersion),
+                cancellationToken))
+        {
+            throw AllocationError(422, InventoryAllocationCodesV1.SubstituteNotSimilar);
+        }
+    }
+
     private static (long ExpectedLabelVersion, Kilograms Quantity) ParseCreate(CreatePhysicalSalesAllocationV1 request)
     {
         if (request.AllocationId == Guid.Empty || request.SalesOrderId == Guid.Empty || request.SalesOrderLineId == Guid.Empty
@@ -334,7 +395,8 @@ public sealed partial class InventoryStore
             row.Reason,
             row.ReservedUntilUtc,
             row.CreatedAtUtc,
-            row.UpdatedAtUtc);
+            row.UpdatedAtUtc,
+            row.IsSubstitute);
     }
 
     private static string AllocationKeyHash(string key) =>

@@ -287,6 +287,8 @@ builder.Services.AddInventoryModule(
 builder.Services.AddInventoryStockPositionCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddScoped<IInventoryStockProductFilterV1, InventoryStockProductFilterHost>();
+// STK-S30 (KLN-D39/D70): the Product owner's similarity facts behind label suggestions and the substitute check.
+builder.Services.AddScoped<IInventoryProductSimilarityFactsV1, InventoryProductSimilarityFactsHost>();
 builder.Services.AddScoped<IInventoryStockOwnerDisplaySourceV1, InventoryStockOwnerDisplayHost>();
 builder.Services.AddInventoryMovementTimelineCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);

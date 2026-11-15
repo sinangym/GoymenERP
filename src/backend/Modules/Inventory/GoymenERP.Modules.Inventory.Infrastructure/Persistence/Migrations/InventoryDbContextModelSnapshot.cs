@@ -302,6 +302,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(128)");
 
+                    b.Property<bool>("IsSubstitute")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("LabelId")
                         .HasColumnType("uniqueidentifier");
 
@@ -379,6 +382,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Allocations_ReleasedKg", "[ReleasedKg] IS NULL OR ([Status] = 3 AND [ReleasedKg] > 0 AND [ReleasedKg] <= [AllocatedKg])");
 
                             t.HasCheckConstraint("CK_Allocations_State", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] = 1 AND [Status] IN (1, 2, 3) AND [Version] >= 1");
+
+                            t.HasCheckConstraint("CK_Allocations_Substitute", "[IsSubstitute] = 0 OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line')");
                         });
                 });
 
