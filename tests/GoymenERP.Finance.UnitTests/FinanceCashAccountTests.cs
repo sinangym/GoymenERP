@@ -23,7 +23,8 @@ namespace GoymenERP.Finance.UnitTests;
 /// the payload hash and every refusal that must happen before anything is read. Passivation and
 /// reactivation (Issue #66, 13 November 2026) also run through the real service in memory: the two-person
 /// flow, the zero-balance seam, state refusals, replay, stale version, company isolation and authority lost
-/// before the save. What SQL Server enforces is proven by the relational acceptance tests. SENTETIK / NOT_ENV.
+/// before the save; a reactivation re-checks the account's currency against Settings (FNS-D41). What SQL
+/// Server enforces is proven by the relational acceptance tests. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class FinanceCashAccountTests
 {
@@ -907,7 +908,9 @@ public sealed class FinanceCashAccountTests
     [InlineData(CashAccountStateChange.Passivation, "approve", 2)]
     [InlineData(CashAccountStateChange.Passivation, "approve", 1)]
     [InlineData(CashAccountStateChange.Passivation, "reject", 1)]
+    [InlineData(CashAccountStateChange.Reactivation, "propose", 2)]
     [InlineData(CashAccountStateChange.Reactivation, "propose", 1)]
+    [InlineData(CashAccountStateChange.Reactivation, "approve", 2)]
     [InlineData(CashAccountStateChange.Reactivation, "approve", 1)]
     [InlineData(CashAccountStateChange.Reactivation, "reject", 1)]
     public async Task Authority_revoked_before_the_save_refuses_every_state_change_step_and_stores_nothing(
@@ -922,8 +925,8 @@ public sealed class FinanceCashAccountTests
         var before = await run.SnapshotAsync(seeded.Id);
         var key = Key();
 
-        // The step's authority holds for its first `allowed` checks (the start; for a passivation with 2, also after the
-        // balance read) and is gone at the next one, which is the last before the save.
+        // The step's authority holds for its first `allowed` checks (the start; with 2, also after the passivation's
+        // balance read or the reactivation's Settings read) and is gone at the next one, which is the last before the save.
         var refused = await run.StepAsync(actor, change, step, seeded.Id, version, key: key,
             permissions: new RevokingPermission(ActionOf(change, step), allowed));
 
@@ -935,6 +938,86 @@ public sealed class FinanceCashAccountTests
         // Nothing was stored under the key: with the authority back the same command runs for the first time.
         var retried = await run.StepAsync(actor, change, step, seeded.Id, version, key: key);
         Assert.Equal((CommandOutcome.Succeeded, false), (retried.Outcome, retried.IsReplay));
+    }
+
+    [Theory]
+    [InlineData("propose")]
+    [InlineData("approve")]
+    public async Task A_reactivation_is_refused_when_the_account_currency_is_no_longer_allowed_and_keeps_the_currency(
+        string step)
+    {
+        // FNS-D41: Settings no longer offers the account's currency; another currency is offered instead.
+        await using var run = new Run();
+        var seeded = await run.SeedAsync(step == "propose" ? Passive() : PendingReactivation());
+        var before = await run.SnapshotAsync(seeded.Id);
+        var other = new Candidates([new MoneyCurrencyCandidateV1(Guid.NewGuid(), "USD", "SENTETIK Dolar")]);
+        var permissions = new RecordingPermission(PermissionDecision.Allowed);
+
+        var refused = await run.StepAsync(step == "propose" ? Actor : Approver, CashAccountStateChange.Reactivation, step,
+            seeded.Id, FinanceCashAccountService.VersionText(seeded.Version), permissions: permissions,
+            balances: new NoBalanceRead(), currencies: other);
+
+        AssertIssue(refused, CommandOutcome.ValidationFailed, "accountId", "cash_account_currency_not_a_candidate");
+        // The authority is measured at the start and again after Settings answered.
+        var action = ActionOf(CashAccountStateChange.Reactivation, step);
+        Assert.Equal([action, action], permissions.Actions);
+        // Not stored, not audited, still passive and in its own currency: the same request may come again once
+        // Settings allows the currency again.
+        Assert.Equal(before, await run.SnapshotAsync(seeded.Id));
+        var row = await run.RowAsync(seeded.Id);
+        Assert.Equal((Currency, 4), (row.CurrencyId, row.Status));
+
+        var allowed = await run.StepAsync(step == "propose" ? Actor : Approver, CashAccountStateChange.Reactivation, step,
+            seeded.Id, FinanceCashAccountService.VersionText(seeded.Version), balances: new NoBalanceRead());
+        Assert.Equal(CommandOutcome.Succeeded, allowed.Outcome);
+        Assert.Equal(Currency, allowed.Resource!.CurrencyId);
+    }
+
+    [Theory]
+    [InlineData("propose", "settings_provider_unavailable", CommandOutcome.Unavailable)]
+    [InlineData("propose", "settings_access_denied", CommandOutcome.Denied)]
+    [InlineData("approve", "settings_provider_unavailable", CommandOutcome.Unavailable)]
+    [InlineData("approve", "settings_access_denied", CommandOutcome.Denied)]
+    public async Task A_reactivation_whose_currency_cannot_be_checked_is_refused_fail_closed(string step, string fault,
+        CommandOutcome outcome)
+    {
+        await using var run = new Run();
+        var seeded = await run.SeedAsync(step == "propose" ? Passive() : PendingReactivation());
+        var before = await run.SnapshotAsync(seeded.Id);
+
+        var refused = await run.StepAsync(step == "propose" ? Actor : Approver, CashAccountStateChange.Reactivation, step,
+            seeded.Id, FinanceCashAccountService.VersionText(seeded.Version), balances: new NoBalanceRead(),
+            currencies: new FailingCandidates(fault));
+
+        Assert.Equal(outcome, refused.Outcome);
+        Assert.Null(refused.Resource);
+        Assert.False(refused.IsReplay);
+        Assert.Equal(before, await run.SnapshotAsync(seeded.Id));
+    }
+
+    [Theory]
+    [InlineData("propose")]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task A_passivation_and_a_reactivation_rejection_never_ask_Settings_for_the_currency(string step)
+    {
+        // Only a reactivation's proposal and approval re-check the currency; a passivation keeps no currency rule
+        // and a rejection leaves the account passive.
+        await using var run = new Run();
+        var passivation = await run.SeedAsync(step == "propose" ? Approved() : PendingPassivation());
+        var passivated = await run.StepAsync(step == "propose" ? Actor : Approver, CashAccountStateChange.Passivation, step,
+            passivation.Id, FinanceCashAccountService.VersionText(passivation.Version), currencies: new NoCandidates());
+        Assert.Equal(CommandOutcome.Succeeded, passivated.Outcome);
+
+        if (step == "reject")
+        {
+            var reactivation = await run.SeedAsync(PendingReactivation());
+            var rejected = await run.StepAsync(Approver, CashAccountStateChange.Reactivation, "reject", reactivation.Id,
+                FinanceCashAccountService.VersionText(reactivation.Version), balances: new NoBalanceRead(),
+                currencies: new NoCandidates());
+            Assert.Equal((CommandOutcome.Succeeded, CashAccountStatus.Passive),
+                (rejected.Outcome, rejected.Resource!.Status));
+        }
     }
 
     private static FinanceCashAccountService Service(FinanceDbContext context, IFinancePermissionPort permissions,
@@ -1107,9 +1190,10 @@ public sealed class FinanceCashAccountTests
 
         public async Task<CashAccountCommandResult> StepAsync(string actor, CashAccountStateChange change, string step,
             Guid account, string version, string? key = null, IFinancePermissionPort? permissions = null,
-            IFinanceCashAccountBalanceReader? balances = null, string? correlation = null)
+            IFinanceCashAccountBalanceReader? balances = null, string? correlation = null,
+            ISettingsMoneyCandidateReader? currencies = null)
         {
-            var (context, service, finance) = Open(actor, permissions, balances, correlation);
+            var (context, service, finance) = Open(actor, permissions, balances, correlation, currencies);
             await using (context)
             {
                 var metadata = new CommandMetadata(key ?? Key());
@@ -1127,7 +1211,7 @@ public sealed class FinanceCashAccountTests
 
         public async Task<ReadResult<CashAccountMasterPage>> ListAsync(string actor, IFinancePermissionPort? permissions = null)
         {
-            var (context, service, finance) = Open(actor, permissions, balances: null, correlation: null);
+            var (context, service, finance) = Open(actor, permissions, balances: null, correlation: null, currencies: null);
             await using (context)
             {
                 return await service.ListAsync(finance, CancellationToken.None);
@@ -1136,7 +1220,7 @@ public sealed class FinanceCashAccountTests
 
         public async Task<ReadResult<CashAccountView>> GetAsync(string actor, Guid account, IFinancePermissionPort? permissions = null)
         {
-            var (context, service, finance) = Open(actor, permissions, balances: null, correlation: null);
+            var (context, service, finance) = Open(actor, permissions, balances: null, correlation: null, currencies: null);
             await using (context)
             {
                 return await service.GetAsync(finance, account, CancellationToken.None);
@@ -1174,7 +1258,8 @@ public sealed class FinanceCashAccountTests
         }
 
         private (FinanceDbContext Context, FinanceCashAccountService Service, FinanceContext Finance) Open(string actor,
-            IFinancePermissionPort? permissions, IFinanceCashAccountBalanceReader? balances, string? correlation)
+            IFinancePermissionPort? permissions, IFinanceCashAccountBalanceReader? balances, string? correlation,
+            ISettingsMoneyCandidateReader? currencies)
         {
             var company = new CompanyContext();
             company.Set(CompanyA);
@@ -1184,7 +1269,8 @@ public sealed class FinanceCashAccountTests
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options, company);
             var service = new FinanceCashAccountService(context, company, new FixedUser(actor),
                 permissions ?? new RecordingPermission(PermissionDecision.Allowed),
-                new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]), collector, Envelopes(),
+                currencies ?? new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]), collector,
+                Envelopes(),
                 balances ?? new FixedBalance(CashAccountBalanceState.Zero), TimeProvider.System);
             return (context, service, new FinanceContext(CompanyA, actor, correlation ?? "SENTETIK-correlation", null));
         }
@@ -1252,7 +1338,7 @@ public sealed class FinanceCashAccountTests
             throw new SettingsPrerequisiteException(code);
     }
 
-    /// <summary>Never reached by these tests: every refusal comes before Settings is asked.</summary>
+    /// <summary>Never reached: every refusal comes before Settings is asked, or the step never asks it.</summary>
     private sealed class NoCandidates : ISettingsMoneyCandidateReader
     {
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>

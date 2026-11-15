@@ -2831,7 +2831,8 @@ public static class FinanceEndpoints
     /// Passivation or reactivation of a cash account: the proposal, its approval and its rejection, each
     /// with the account's expected version. Same answers as the opening commands; the proposer's own
     /// decision is Denied (403). A passivation whose balance is not zero is 422
-    /// <c>cash_account_balance_not_zero</c>.
+    /// <c>cash_account_balance_not_zero</c>; a reactivation whose currency Settings no longer allows is 422
+    /// <c>cash_account_currency_not_a_candidate</c> (FNS-D41).
     /// </summary>
     private static void MapCashAccountStateChangeEndpoints(IEndpointRouteBuilder endpoints, CashAccountStateChange change,
         string segment, string name)

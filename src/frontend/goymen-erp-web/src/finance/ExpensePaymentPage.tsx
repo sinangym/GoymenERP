@@ -574,7 +574,10 @@ function mapSingle<A, B>(outcome: ViewOutcome<A>, map: (data: A) => B): ViewOutc
   return outcome
 }
 
-/** Only what the server would also take: an approved, active account; for a bank, one declared for money movement. */
+/**
+ * Only what the server would also take: an approved, active account; for a bank, one declared for money movement;
+ * for a cash account, one whose passivation is not waiting for approval (FNS-D50).
+ */
 function useAccounts(companyId: string, binding: Binding, sourceKind: ExpensePaymentSourceKind | '') {
   const boundRead = useBoundRead()
   return useQuery({
@@ -588,7 +591,7 @@ function useAccounts(companyId: string, binding: Binding, sourceKind: ExpensePay
           .map((item) => ({ id: item.account.id, displayName: item.account.displayName, currencyId: item.account.currencyId })))
       }
       return mapSingle(await boundRead(() => fetchCashAccounts(companyId, signal)), (list) => list.items
-        .filter((item) => item.status === 'Approved' && item.isActive)
+        .filter((item) => item.status === 'Approved' && item.isActive && !item.passivationPending)
         .map((item) => ({ id: item.id, displayName: item.displayName, currencyId: item.currencyId })))
     },
   })

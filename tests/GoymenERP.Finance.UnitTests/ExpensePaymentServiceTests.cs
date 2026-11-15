@@ -12,14 +12,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Finance.UnitTests;
 
-/// <summary>FNS-D25 service behavior in memory. SENTETIK / NOT_ENV; not SQL or browser evidence.</summary>
+/// <summary>FNS-D25 (and the FNS-D50 cash passivation gate) service behavior in memory. SENTETIK / NOT_ENV; not SQL or
+/// browser evidence.</summary>
 public sealed class ExpensePaymentServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Currency = Guid.Parse("22222222-2222-4222-8222-222222222222");
     private static readonly Guid Bank = Guid.Parse("33333333-3333-4333-8333-333333333333");
     private static readonly Guid Profile = Guid.Parse("66666666-6666-4666-8666-666666666666");
+    private static readonly Guid Cash = Guid.Parse("44444444-4444-4444-8444-444444444444");
     private static readonly DateOnly OccurredOn = new(2026, 11, 10);
+    private const int PassivationChange = 1;
+    private const int PendingChange = 1;
+    private const int RejectedChange = 3;
 
     [Fact]
     public async Task Draft_approve_record_and_replay_keep_one_recorded_row_and_no_second_movement()
@@ -241,12 +246,72 @@ public sealed class ExpensePaymentServiceTests
             (item.Id, item.Code));
     }
 
-    private static async Task<ExpensePaymentView> DraftAndApproveAsync(Run run)
+    [Fact]
+    public async Task A_cash_account_whose_passivation_waits_pays_nothing_new_and_pays_again_after_a_rejection()
+    {
+        await using var run = await Run.StartAsync();
+        await run.SetCashChangeAsync(PassivationChange, PendingChange);
+
+        // FNS-D50: the draft save refuses the cash account and the draft context does not offer it.
+        await using (var maker = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            var refused = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-pending"), CashDraft(),
+                CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "expense_payment_treasury_account_passivation_pending"),
+                (refused.Outcome, Assert.Single(refused.Issues).Code));
+            Assert.Null(refused.Resource);
+            var offered = await maker.Service.DraftContextAuthorizedAsync(maker.Context, ExpensePaymentSourceKind.Cash,
+                Cash, OccurredOn, CancellationToken.None);
+            Assert.Equal(ReadOutcome.NotFound, offered.Outcome);
+        }
+
+        await using (var verify = run.Context())
+        {
+            Assert.Equal(0, await verify.ExpensePayments.CountAsync());
+            Assert.Equal(0, await verify.ExpensePaymentCommands.CountAsync());
+        }
+
+        // A draft approved before the passivation was proposed is not recorded while it waits.
+        await run.SetCashChangeAsync(null, null);
+        var approved = await DraftAndApproveAsync(run, CashDraft());
+        await run.SetCashChangeAsync(PassivationChange, PendingChange);
+        var request = new RecordExpensePaymentRequest(approved.Id, approved.Version, PaymentConfirmed: true);
+        await using (var recorder = run.Scope("checker", new AllowAll(), new FixedBalance(TreasuryBalanceOutcome.Sufficient)))
+        {
+            var refused = await recorder.Service.RecordAsync(recorder.Context, Key("record-1"), request,
+                CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "expense_payment_treasury_account_passivation_pending"),
+                (refused.Outcome, Assert.Single(refused.Issues).Code));
+        }
+
+        await using (var verify = run.Context())
+        {
+            Assert.Equal(ExpensePaymentStatuses.Approved, (await verify.ExpensePayments.SingleAsync()).Status);
+            Assert.Equal(2, await verify.ExpensePaymentCommands.CountAsync());
+        }
+
+        // The passivation is rejected: no longer pending, so the same key records the payment.
+        await run.SetCashChangeAsync(PassivationChange, RejectedChange);
+        await using (var recorder = run.Scope("checker", new AllowAll(), new FixedBalance(TreasuryBalanceOutcome.Sufficient)))
+        {
+            var recorded = await recorder.Service.RecordAsync(recorder.Context, Key("record-1"), request,
+                CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, ExpensePaymentStatus.Recorded),
+                (recorded.Outcome, recorded.IsReplay, recorded.Resource!.Status));
+            var offered = await recorder.Service.DraftContextAuthorizedAsync(recorder.Context,
+                ExpensePaymentSourceKind.Cash, Cash, OccurredOn, CancellationToken.None);
+            Assert.Equal((ReadOutcome.Found, Currency), (offered.Outcome, offered.Resource!.CurrencyId));
+        }
+    }
+
+    private static async Task<ExpensePaymentView> DraftAndApproveAsync(Run run,
+        ExpensePaymentDraftSaveRequest? draftRequest = null)
     {
         ExpensePaymentCommandResult draft;
         await using (var maker = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
         {
-            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(), CancellationToken.None);
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), draftRequest ?? Draft(),
+                CancellationToken.None);
         }
 
         Assert.Equal((CommandOutcome.Succeeded, ExpensePaymentStatus.Draft), (draft.Outcome, draft.Resource!.Status));
@@ -269,6 +334,12 @@ public sealed class ExpensePaymentServiceTests
         new ExpensePaymentPreparation(ExpensePaymentSourceKind.Bank, Bank,
             expenseItemId ?? SingleExpenseItemCatalog.GeneralExpenseId, new MoneyText("1250.50", Currency),
             new ProfileReference(Profile.ToString("D"), "1"), OccurredOn, null, null, description));
+
+    /// <summary>A SENTETIK cash source of the same currency (the cash account seeded by <see cref="Run"/>).</summary>
+    private static ExpensePaymentDraftSaveRequest CashDraft() => new(null, null,
+        new ExpensePaymentPreparation(ExpensePaymentSourceKind.Cash, Cash, SingleExpenseItemCatalog.GeneralExpenseId,
+            new MoneyText("1250.50", Currency), new ProfileReference(Profile.ToString("D"), "1"), OccurredOn, null, null,
+            "SENTETIK kirtasiye"));
 
     private sealed class Run(string databaseName) : IAsyncDisposable
     {
@@ -294,8 +365,37 @@ public sealed class ExpensePaymentServiceTests
                 ApprovedAtUtc = DateTimeOffset.UtcNow,
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
             });
+            context.CashAccounts.Add(new CashAccountRow
+            {
+                Id = Cash,
+                CompanyId = Company,
+                CurrencyId = Currency,
+                DisplayName = "SENTETIK kasa",
+                Status = 2,
+                Version = 2,
+                ProposedBy = "cash-maker",
+                ProposedAtUtc = DateTimeOffset.UtcNow,
+                DecidedBy = "cash-checker",
+                DecidedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
             await context.SaveChangesAsync();
             return run;
+        }
+
+        /// <summary>Sets the SENTETIK cash account's change columns past the cash account service.</summary>
+        public async Task SetCashChangeAsync(int? kind, int? status)
+        {
+            await using var context = Context();
+            var cash = await context.CashAccounts.SingleAsync(candidate => candidate.Id == Cash);
+            cash.ChangeKind = kind;
+            cash.ChangeStatus = status;
+            cash.ChangeProposedBy = kind is null ? null : "cash-maker";
+            cash.ChangeProposedAtUtc = kind is null ? null : DateTimeOffset.UtcNow;
+            cash.ChangeDecidedBy = status is null or PendingChange ? null : "cash-checker";
+            cash.ChangeDecidedAtUtc = status is null or PendingChange ? null : DateTimeOffset.UtcNow;
+            cash.ChangeRejectionReason = status == RejectedChange ? "SENTETIK gerekce" : null;
+            await context.SaveChangesAsync();
         }
 
         public FinanceDbContext Context()

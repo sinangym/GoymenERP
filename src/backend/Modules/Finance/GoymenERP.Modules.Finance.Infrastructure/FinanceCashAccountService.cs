@@ -34,6 +34,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// exists yet, so its only implementation answers zero. A passive account is not active
 /// (<see cref="CashAccountView.IsActive"/>): a future cash movement command must refuse it. It stays
 /// readable, to a read-only caller too.</item>
+/// <item><b>While a passivation waits (FNS-D40, FNS-D50):</b> the account is still active, so money may
+/// still come in; a new payment out of it is refused (<see cref="ExpensePaymentService"/>). A rejected
+/// passivation is no longer pending: the account pays again.</item>
+/// <item><b>Reactivation currency (FNS-D41):</b> a reactivation is refused, on proposal and again on
+/// approval, when the account's currency is no longer one of Settings' money currency candidates
+/// (<c>cash_account_currency_not_a_candidate</c>); an unavailable Settings source refuses, fail-closed.
+/// A reactivation never changes the currency.</item>
 /// <item><b>Authority:</b> server company/actor must be the request's; the action is checked before
 /// anything is read, after every owner await, on replay and immediately before the save.</item>
 /// <item><b>Visibility:</b> proposals and rejections are shown only to a caller who may propose or
@@ -78,6 +85,8 @@ public sealed class FinanceCashAccountService(
     private const int IdentityMaximumLength = 128;
     private const int DisplayNameMaximumLength = 200;
     private const int ReasonMaximumLength = 500;
+    private const string CurrencyField = "currencyId";
+    private const string CurrencyNotCandidateCode = "currency_not_a_candidate";
 
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
@@ -121,7 +130,8 @@ public sealed class FinanceCashAccountService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("currencyId", "identity_required"));
         }
 
-        if (await CurrencyRefusalAsync(context, FinanceAction.ProposeCashAccount, null, request.CurrencyId, cancellationToken)
+        if (await CurrencyRefusalAsync(context, FinanceAction.ProposeCashAccount, null, request.CurrencyId, CurrencyField,
+            CurrencyNotCandidateCode, cancellationToken)
             is { } currencyRefused)
         {
             return currencyRefused;
@@ -188,7 +198,8 @@ public sealed class FinanceCashAccountService(
             return terminal;
         }
 
-        if (await CurrencyRefusalAsync(context, FinanceAction.ApproveCashAccount, row!.Id, row.CurrencyId, cancellationToken)
+        if (await CurrencyRefusalAsync(context, FinanceAction.ApproveCashAccount, row!.Id, row.CurrencyId, CurrencyField,
+            CurrencyNotCandidateCode, cancellationToken)
             is { } currencyRefused)
         {
             return currencyRefused;
@@ -253,7 +264,7 @@ public sealed class FinanceCashAccountService(
     /// <summary>
     /// Proposes the passivation of an active account or the reactivation of a passive one. The account
     /// does not move: the change waits for a different actor's decision. A passivation is refused unless
-    /// the balance reads zero.
+    /// the balance reads zero; a reactivation unless the account's currency is still a Settings candidate.
     /// </summary>
     public async Task<CashAccountCommandResult> ProposeStateChangeAsync(FinanceContext context, CommandMetadata metadata,
         CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
@@ -303,6 +314,12 @@ public sealed class FinanceCashAccountService(
             return balanceRefused;
         }
 
+        if (kind.Number == ReactivationKind
+            && await ReactivationCurrencyRefusalAsync(context, kind.Propose, row, cancellationToken) is { } currencyRefused)
+        {
+            return currencyRefused;
+        }
+
         var now = timeProvider.GetUtcNow();
         var versionBefore = row.Version;
         var before = AccountAudit(row);
@@ -324,7 +341,8 @@ public sealed class FinanceCashAccountService(
 
     /// <summary>
     /// Approves the pending change: a different actor than its proposer. The account becomes passive
-    /// (passivation; the balance must still read zero) or active again (reactivation).
+    /// (passivation; the balance must still read zero) or active again (reactivation; its currency must
+    /// still be a Settings candidate).
     /// </summary>
     public async Task<CashAccountCommandResult> ApproveStateChangeAsync(FinanceContext context, CommandMetadata metadata,
         CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
@@ -361,6 +379,12 @@ public sealed class FinanceCashAccountService(
             && await BalanceRefusalAsync(context, kind.Approve, row!.Id, cancellationToken) is { } balanceRefused)
         {
             return balanceRefused;
+        }
+
+        if (kind.Number == ReactivationKind
+            && await ReactivationCurrencyRefusalAsync(context, kind.Approve, row!, cancellationToken) is { } currencyRefused)
+        {
+            return currencyRefused;
         }
 
         return await DecideChangeAsync(context, metadata, kind, kind.ApproveCommand, payloadHash, row!, reason: null,
@@ -683,6 +707,15 @@ public sealed class FinanceCashAccountService(
         };
     }
 
+    /// <summary>
+    /// FNS-D41: a passive account comes back only in a currency Settings still allows. The account's own
+    /// currency is checked as it is (a reactivation never changes it); the refusal names the account.
+    /// </summary>
+    private Task<CashAccountCommandResult?> ReactivationCurrencyRefusalAsync(FinanceContext context, FinanceAction action,
+        CashAccountRow row, CancellationToken cancellationToken) =>
+        CurrencyRefusalAsync(context, action, row.Id, row.CurrencyId, "accountId", "cash_account_currency_not_a_candidate",
+            cancellationToken);
+
     private static StateChangeKind KindOf(CashAccountStateChange change) => change switch
     {
         CashAccountStateChange.Passivation => new StateChangeKind(PassivationKind, Approved, Passive,
@@ -788,9 +821,12 @@ public sealed class FinanceCashAccountService(
         return stored with { IsReplay = true };
     }
 
-    /// <summary>The currency must be one of Settings' candidates now; an unavailable source refuses.</summary>
+    /// <summary>
+    /// The currency must be one of Settings' candidates now; an unavailable source refuses. The issue is
+    /// reported on <paramref name="field"/> with <paramref name="notCandidateCode"/>.
+    /// </summary>
     private async Task<CashAccountCommandResult?> CurrencyRefusalAsync(FinanceContext context, FinanceAction action,
-        Guid? accountId, Guid currencyId, CancellationToken cancellationToken)
+        Guid? accountId, Guid currencyId, string field, string notCandidateCode, CancellationToken cancellationToken)
     {
         IReadOnlyList<MoneyCurrencyCandidateV1> candidates;
         try
@@ -807,7 +843,7 @@ public sealed class FinanceCashAccountService(
 
             return exception.Code == "settings_access_denied"
                 ? Refused(context, CommandOutcome.Denied)
-                : Refused(context, CommandOutcome.Unavailable, Issue("currencyId", exception.Code));
+                : Refused(context, CommandOutcome.Unavailable, Issue(field, exception.Code));
         }
 
         if (await FenceAsync(context, action, accountId, cancellationToken) is { } afterSettings)
@@ -817,7 +853,7 @@ public sealed class FinanceCashAccountService(
 
         return candidates.Any(candidate => candidate.CurrencyId == currencyId)
             ? null
-            : Refused(context, CommandOutcome.ValidationFailed, Issue("currencyId", "currency_not_a_candidate"));
+            : Refused(context, CommandOutcome.ValidationFailed, Issue(field, notCandidateCode));
     }
 
     /// <summary>Company/actor still the request's, then a fresh decision on the action.</summary>

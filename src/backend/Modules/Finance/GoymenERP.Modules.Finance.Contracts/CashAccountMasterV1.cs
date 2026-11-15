@@ -22,9 +22,17 @@ namespace GoymenERP.Modules.Finance.Contracts;
 //   3. A passive account accepts no new movement; it stays readable. There is no movement command yet:
 //      a future one MUST refuse unless CashAccountView.IsActive is true (Status == Approved).
 //   4. Reactivation is the same two-person flow.
-// A change proposal carries no reason, like an opening proposal; a rejection carries one. Not decided, so
-// not built (NEEDS-SINAN): whether movements are held while a passivation is pending, and whether a
-// reactivation re-checks the account's currency against today's Settings currencies.
+// A change proposal carries no reason, like an opening proposal; a rejection carries one.
+//
+// While a passivation waits for approval (FNS-D40, FNS-D50): the account is still active, so money may
+// still come in and the account becomes passive only on approval (rules 2 and 3 still hold); a NEW
+// payment out of it is refused (the expense payment's draft save and record answer
+// expense_payment_treasury_account_passivation_pending). A rejected passivation is no longer pending:
+// the account pays again.
+//
+// Reactivation currency (FNS-D41): a reactivation is refused, on proposal and again on approval, when the
+// account's currency is no longer one of Settings' money currency candidates (accountId,
+// cash_account_currency_not_a_candidate). A reactivation never changes the currency.
 
 public sealed record CashAccountProposeRequest(string DisplayName, Guid CurrencyId);
 

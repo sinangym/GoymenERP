@@ -190,7 +190,16 @@ describe('cash account list decoder', () => {
   it('reduces a valid list to what the screen offers', () => {
     expect(decodeCashAccountList({ companyId: COMPANY, items: [item()] }, COMPANY)?.items).toEqual([{
       id: ACCOUNT, currencyId: CURRENCY, displayName: 'SENTETIK Merkez Kasa', status: 'Approved', isActive: true,
+      passivationPending: false,
     }])
+  })
+
+  it('marks only a pending passivation (FNS-D50), not a pending reactivation', () => {
+    expect(decodeCashAccountList({ companyId: COMPANY, items: [item({ pendingChange: 'Passivation' })] }, COMPANY)
+      ?.items.map((account) => account.passivationPending)).toEqual([true])
+    expect(decodeCashAccountList({
+      companyId: COMPANY, items: [item({ status: 'Passive', isActive: false, pendingChange: 'Reactivation' })],
+    }, COMPANY)?.items.map((account) => account.passivationPending)).toEqual([false])
   })
 
   it('refuses a drifted account shape', () => {

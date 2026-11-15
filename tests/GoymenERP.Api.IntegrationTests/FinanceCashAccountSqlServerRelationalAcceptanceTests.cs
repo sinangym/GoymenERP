@@ -773,6 +773,81 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_reactivation_checks_the_account_currency_at_the_proposal_and_at_the_approval_and_stores_nothing_while_it_is_not_a_candidate()
+    {
+        await using var run = await Run.StartAsync();
+        var account = await ApprovedAsync(run, "SENTETIK kasa");
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Accounts.ProposeStateChangeAsync(a.Context, Key("pp-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "2"), CancellationToken.None)).Outcome);
+        }
+
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await b.Accounts.ApproveStateChangeAsync(b.Context, Key("pa-1"),
+                CashAccountStateChange.Passivation, new CashAccountStateChangeRequest(account.Id, "3"), CancellationToken.None)).Outcome);
+        }
+
+        // FNS-D41: while passive the account's currency left Settings' candidates; neither a proposal nor an
+        // unavailable source reactivates it, and the account keeps its currency.
+        await using (var b = run.OpenWith(CompanyA, Approver, new OtherCandidates()))
+        {
+            var refused = await b.Accounts.ProposeStateChangeAsync(b.Context, Key("rp-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "4"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "cash_account_currency_not_a_candidate"),
+                (refused.Outcome, Assert.Single(refused.Issues).Code));
+            Assert.Null(refused.Resource);
+        }
+
+        await using (var b = run.OpenWithUnavailableSettings(CompanyA, Approver))
+        {
+            var unavailable = await b.Accounts.ProposeStateChangeAsync(b.Context, Key("rp-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "4"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Unavailable, "settings_provider_unavailable"),
+                (unavailable.Outcome, Assert.Single(unavailable.Issues).Code));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 4 AND Version = 4 AND CurrencyId = @cur "
+            + "AND ChangeKind = 1 AND ChangeStatus = 2", ("@id", account.Id), ("@cur", Currency)));
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+
+        // With the currency a candidate again the same key is a first attempt; the approval checks the currency once more.
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            var proposed = await b.Accounts.ProposeStateChangeAsync(b.Context, Key("rp-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "4"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, "5"), (proposed.Outcome, proposed.IsReplay, proposed.Resource!.Version));
+        }
+
+        var auditsBeforeDecision = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        await using (var a = run.OpenWith(CompanyA, Proposer, new OtherCandidates()))
+        {
+            var refused = await a.Accounts.ApproveStateChangeAsync(a.Context, Key("ra-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "5"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "cash_account_currency_not_a_candidate"),
+                (refused.Outcome, Assert.Single(refused.Issues).Code));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.CashAccounts WHERE Id = @id AND Status = 4 AND Version = 5 AND CurrencyId = @cur "
+            + "AND ChangeKind = 2 AND ChangeStatus = 1 AND ChangeDecidedBy IS NULL", ("@id", account.Id), ("@cur", Currency)));
+        Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashAccountCommands"));
+        Assert.Equal(auditsBeforeDecision, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var active = await a.Accounts.ApproveStateChangeAsync(a.Context, Key("ra-1"), CashAccountStateChange.Reactivation,
+                new CashAccountStateChangeRequest(account.Id, "5"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, false, CashAccountStatus.Approved, "6"),
+                (active.Outcome, active.IsReplay, active.Resource!.Status, active.Resource.Version));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
+    [SqlServerFact]
     public async Task A_passivation_is_refused_unless_the_balance_reads_zero_at_the_proposal_and_at_the_approval()
     {
         await using var run = await Run.StartAsync();
