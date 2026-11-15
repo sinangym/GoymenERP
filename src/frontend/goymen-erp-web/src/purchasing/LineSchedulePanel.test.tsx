@@ -24,7 +24,7 @@ const clients: QueryClient[] = []
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ token: 1 }), report: scenario.report }),
 }))
-vi.mock('./lineScheduleApi', () => ({ fetchPurchaseOrderLineScheduleHistory: vi.fn() }))
+vi.mock('./lineScheduleApi', () => ({ fetchPurchaseOrderLineScheduleHistory: vi.fn(), setPurchaseOrderLineSchedule: vi.fn() }))
 
 const retimed: readonly PurchaseOrderDeliverySlice[] = [
   { sliceId: SLICE_B, sliceNo: 1, quantity: '4', deliveryDate: '2026-11-20' },

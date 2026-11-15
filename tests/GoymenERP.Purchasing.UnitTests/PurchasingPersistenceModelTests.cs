@@ -144,8 +144,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.7", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(12, declarations.Count);
+        Assert.Equal("1.8", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(13, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -203,9 +203,20 @@ public sealed class PurchasingPersistenceModelTests
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
         Assert.Equal(9, PurchasingPermissionManifestV1.Names.Count);
-        // A3 API-30 (ALS-D94): the revise name measures the schedule command only; the schedule screen (UI-07) brings its control.
+        // A3 API-30 (ALS-D94): the revise name measures the schedule command; F-027 (UI-07, EK16 §2a) brings its one control, a child
+        // of the order detail measured with the read and the revise names (create alone does not show it).
         Assert.Contains("purchasing.orders.revise", PurchasingPermissionManifestV1.Names);
-        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
+        var lineSchedule = byId[PurchasingShellCapabilityProvider.LineScheduleCapabilityId];
+        Assert.Equal("purchasing.orders.line-schedule.write", lineSchedule.CapabilityId);
+        Assert.Equal(
+            (PurchasingShellCapabilityProvider.DetailRoutePath, PurchasingShellCapabilityProvider.DetailScreenId,
+                PurchasingShellCapabilityProvider.DetailCapabilityId),
+            (lineSchedule.RoutePath, lineSchedule.ScreenId, lineSchedule.ParentCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise], lineSchedule.RequiredPermissions);
+        Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScopeRequirement, lineSchedule.ScopeRequirement);
+        var revised = Assert.Single(declarations,
+            declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
+        Assert.Equal(PurchasingShellCapabilityProvider.LineScheduleCapabilityId, revised.CapabilityId);
         // A2a-1 (PRS-02): the price read governs disclosure only; no shell control or route is measured with it.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead));
