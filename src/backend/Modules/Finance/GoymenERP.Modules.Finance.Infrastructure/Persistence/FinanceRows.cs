@@ -341,6 +341,60 @@ internal sealed class PartyCreditLimitCommandRow : IFinanceTenantRow
 }
 
 /// <summary>
+/// API-85b (FNS-D57/D31): one revision of a collateral held for (received) or given to (API-84, later) a company
+/// account. Direction: 1 received, 2 given. SourceKind: 1 Finance manual entry. Kind: 1 record, 2 change, 3 release
+/// (a reverse record that repeats the previous values). Status: 1 effective (at most one per collateral,
+/// <c>UX_PartyCollaterals_Live</c>), 2 superseded. <see cref="Revision"/> starts at 1 and grows by one per revision
+/// (unique per collateral). The type is a Settings collateral type id with the catalog version it was recorded
+/// against; the rate is never stored here (it is applied at read time). Rows are never deleted.
+/// </summary>
+internal sealed class PartyCollateralRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid CollateralId { get; set; }
+    public long Revision { get; set; }
+    public int Direction { get; set; }
+    public int SourceKind { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public int Kind { get; set; }
+    public Guid CollateralTypeId { get; set; }
+    public string CollateralTypeVersion { get; set; } = string.Empty;
+    public Guid CurrencyId { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly ValidFrom { get; set; }
+    public DateOnly? ValidUntil { get; set; }
+    public string? DocumentReference { get; set; }
+    public string? ReleaseReason { get; set; }
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public DateTimeOffset? SupersededAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-85b: one accepted collateral command attempt (ADR-011), kept beside the collateral revisions like
+/// <see cref="PartyCreditLimitCommandRow"/>. (company, command, key hash) is its key; only the key's SHA-256 is kept.
+/// <see cref="PartyCollateralRowId"/> is the revision the command wrote (null only for a recorded refusal).
+/// Append-only.
+/// </summary>
+internal sealed class PartyCollateralCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? PartyCollateralRowId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// One accepted command attempt (ADR-011): (company, command, key hash) is its key. The raw
 /// Idempotency-Key is never stored, only its upper-case SHA-256 (§2). The actor, the canonical
 /// payload hash, the answered result and the first correlation are kept, so the same key with the

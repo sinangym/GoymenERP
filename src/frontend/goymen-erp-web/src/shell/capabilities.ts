@@ -234,6 +234,11 @@ export const CAPABILITY = {
    * F-018 L1 (FNS-D27 / FNS-D46; one step, FNS-D57(3)) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
    */
   financeCreditLimitsList: 'finance.credit-limits.list',
+  /**
+   * F-018 L2 (FNS-D57 / FNS-D31 / FNS-D58) Müşteri Teminatları. Its record (record, change, release in one step) is a
+   * CONTROL of this list, never a route.
+   */
+  financeCollateralsList: 'finance.collaterals.list',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
   accountingPeriodsList: 'accounting.periods.list',
   /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
@@ -388,6 +393,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeExpensePaymentsWorkspace]: '/finans/masraf-odemeleri',
   [CAPABILITY.financeCashTransfersWorkspace]: '/finans/virman',
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
+  [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',

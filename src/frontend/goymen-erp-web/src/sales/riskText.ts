@@ -113,6 +113,8 @@ export const RISK_CHECK_TEXT = {
     finance_credit_limit_not_set: 'Bu cari hesap için Finans\'ta geçerli bir kredi limiti yok; sıfır ya da limitsiz sayılmaz.',
     finance_credit_limit_unreadable: 'Kredi limiti kaydı (Finans) tam okunamadı; limit kıyası yapılmaz.',
     finance_collateral_owner_missing: 'Teminat tanımı (Finans) henüz yok.',
+    finance_collateral_type_rate_unavailable: 'Bir teminat türünün oranı Ayarlar\'dan tam okunamadı; ağırlıklı teminat gösterilmez.',
+    finance_collateral_unreadable: 'Teminat kaydı (Finans) tam okunamadı; kısmi teminat toplamı gösterilmez.',
     finance_open_item_unreadable: 'Açık kalemlerden biri okunamadı; kısmi toplam gösterilmez.',
     finance_customer_unidentified: 'Müşteri Finans tarafında tanımlanamadı.',
   } as Readonly<Record<string, string>>,

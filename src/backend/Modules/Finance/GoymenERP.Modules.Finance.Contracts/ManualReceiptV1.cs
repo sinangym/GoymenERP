@@ -117,6 +117,8 @@ public enum FinanceAction
     // FNS-D24 (API-32/34): the transfer between two treasury accounts (same currency or currency exchange); its own
     // names, so reading transfers and committing one stay separate grants.
     ReadCashTransfers, CommitCashTransfer,
+    // API-85b (FNS-D57): the customer collateral; read and a one-step record/change/release, its own names.
+    ReadCollaterals, RecordCollateral,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

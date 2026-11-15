@@ -59,6 +59,7 @@ const ROUTED = [
     FINANCE_ROUTE.expensePayments],
   [CAPABILITY.financeCashTransfersWorkspace, FINANCE_CAPABILITY.cashTransfersWorkspace, FINANCE_ROUTE.cashTransfers],
   [CAPABILITY.financeCreditLimitsList, FINANCE_CAPABILITY.creditLimitsList, FINANCE_ROUTE.creditLimitsList],
+  [CAPABILITY.financeCollateralsList, FINANCE_CAPABILITY.collateralsList, FINANCE_ROUTE.collateralsList],
 ] as const
 
 /**
@@ -86,6 +87,7 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.cashTransfersCommit,
   FINANCE_CAPABILITY.creditLimitsPropose,
   FINANCE_CAPABILITY.creditLimitsApprove,
+  FINANCE_CAPABILITY.collateralsRecord,
   FINANCE_CAPABILITY.allocationsWrite,
 ]
 
@@ -187,6 +189,7 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.expense-payments.workspace': 'Masraf Ödemeleri',
       'finance.cash-transfers.workspace': 'Virman ve Döviz Bozdurma',
       'finance.credit-limits.list': 'Kredi Limitleri',
+      'finance.collaterals.list': 'Müşteri Teminatları',
     })
   })
 })

@@ -86,6 +86,11 @@ public static class FinanceModuleExtensions
         // API-85a (F018 §L1; FNS-D27/D27a): the party credit limit master. The Sales risk port below reads its
         // effective record; it moves no money.
         services.AddScoped<IFinancePartyCreditLimitMaster>(CreatePartyCreditLimitService);
+        // API-85b (F018 §L2; FNS-D57/D31/D58): the customer collateral master, one step. The type and its rate are
+        // Settings' (FNS-D31); until a Settings adapter registers its catalog the default answers Unavailable, so a
+        // record and the weighted collateral fail closed.
+        services.TryAddScoped<IFinanceCollateralTypeCatalogReader, UnavailableFinanceCollateralTypeCatalogReader>();
+        services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
@@ -112,10 +117,14 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinancePaymentAllocationService>(CreatePaymentAllocationService);
         services.AddScoped<IFinancePaymentAllocationReadService, FinancePaymentAllocationReadService>();
         services.AddScoped<IFinanceOpenItemReadServiceV1, FinanceOpenItemReadService>();
-        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items and (API-85a)
-        // the effective credit limit record; collateral has no master yet (NoSource). It carries no authority; the
-        // Sales risk read measures its own.
-        services.AddScoped<ISalesPartyRiskReadPortV1, FinanceSalesPartyRiskReadPortV1>();
+        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items, (API-85a) the
+        // effective credit limit record and (API-85b) the held received collaterals weighted by the Settings type rate
+        // at read time. It carries no authority; the Sales risk read measures its own.
+        services.AddScoped<ISalesPartyRiskReadPortV1>(provider => new FinanceSalesPartyRiskReadPortV1(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<TimeProvider>()));
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
         // The first-release party ledger (cari hesap ekstresi): a read over the recorded facts above, no writer.
@@ -198,6 +207,26 @@ public static class FinanceModuleExtensions
             new FinancePartyCreditLimitEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceCreditLimitsPropose, permissions, FinanceAction.ProposeCreditLimit),
                 Envelope(provider, ErpPermissions.FinanceCreditLimitsApprove, permissions, FinanceAction.ApproveCreditLimit)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinancePartyCollateralService CreatePartyCollateralService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinancePartyCollateralService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinancePartyCollateralEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCollateralsRecord, permissions, FinanceAction.RecordCollateral)),
             provider.GetRequiredService<TimeProvider>());
     }
 

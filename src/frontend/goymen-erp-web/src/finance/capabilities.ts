@@ -76,6 +76,10 @@ export const FINANCE_CAPABILITY = {
   creditLimitsPropose: 'finance.credit-limits.propose',
   /** FNS-D27 / FNS-D46: set or remove a limit in one step, or decide a proposal (control of the list; FNS-D56 / FNS-D57(3)). */
   creditLimitsApprove: 'finance.credit-limits.approve',
+  /** F-018 L2 Müşteri Teminatları — an account's received collaterals, under `finance.collaterals.read`. */
+  collateralsList: 'finance.collaterals.list',
+  /** FNS-D57: record, change or release a collateral in one step (control of the list; no approval). */
+  collateralsRecord: 'finance.collaterals.record',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -102,6 +106,7 @@ export const FINANCE_ROUTE = {
   partyLedgerAccounting: '/muhasebe/cari-hesaplar',
   partyLedgerCari: '/cari/hesap-takibi',
   creditLimitsList: '/finans/kredi-limitleri',
+  collateralsList: '/finans/teminatlar',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`
