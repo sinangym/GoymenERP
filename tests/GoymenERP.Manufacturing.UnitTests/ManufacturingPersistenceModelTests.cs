@@ -26,7 +26,7 @@ public sealed class ManufacturingPersistenceModelTests
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
             typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
-            typeof(MonthlyScrapPriceRow), typeof(CommandRow)];
+            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -137,6 +137,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingMonthlyScrapPrices", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOrderDueDate", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOutputLineageEdges", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -226,6 +228,45 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
             { Name: "MonthlyScrapPrices" });
+    }
+
+    [Fact]
+    public void An_output_lineage_edge_is_one_per_output_and_input_label_and_its_rollback_refuses_while_one_exists()
+    {
+        // URT-S20 (URT-D62, URT-D63): one append-only row per (company, output declaration, input label), bound by
+        // (company, kind 3, output id) to the output declaration; the consumed kg is decimal(18,3) and the share is never
+        // stored (the calculator derives it). Up is pure DDL; Down refuses (THROW 51543) while any edge is stored (forward
+        // fix).
+        using var context = Context();
+        var edges = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(OutputLineageEdgeRow))!;
+        Assert.Equal(("manufacturing", "OutputLineageEdges"), (edges.GetSchema(), edges.GetTableName()));
+        Assert.Equal(["CompanyId", "OutputId", "InputLabelId"],
+            edges.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var consumed = edges.FindProperty(nameof(OutputLineageEdgeRow.ConsumedKg))!;
+        Assert.Equal(((int?)18, (int?)GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms.Scale),
+            (consumed.GetPrecision(), consumed.GetScale()));
+        Assert.DoesNotContain(edges.GetProperties(), property => property.Name.Contains("Share", StringComparison.Ordinal));
+        var checks = edges.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(ManufacturingDbContext.OutputLineageEdgeIdentityCheck, checks["CK_OutputLineageEdges_Identity"]);
+        Assert.Equal(ManufacturingDbContext.OutputLineageEdgeMassCheck, checks["CK_OutputLineageEdges_Mass"]);
+        Assert.Equal(ManufacturingDbContext.OutputLineageEdgeTextCheck, checks["CK_OutputLineageEdges_Text"]);
+        Assert.Contains(edges.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLineageEdgeInputIndex
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "InputLabelId"]));
+        Assert.Contains(edges.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLineageEdgeOutputLabelIndex
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OutputLabelId"]));
+        Assert.Contains(edges.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FactRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OutputKind", "OutputId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var migration = new AddManufacturingOutputLineageEdges();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.UpOperations, operation => operation is CreateTableOperation { Name: "OutputLineageEdges" });
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51543", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[OutputLineageEdges]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
+            { Name: "OutputLineageEdges" });
     }
 
     [Fact]

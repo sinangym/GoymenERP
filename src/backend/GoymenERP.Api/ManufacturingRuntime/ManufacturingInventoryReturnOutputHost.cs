@@ -7,6 +7,7 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Lineage;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -335,6 +336,12 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 throw Incomplete();
             }
 
+            // URT-S20 (URT-D62, URT-D63): the output label's lineage edges — every input label Inventory staged for the
+            // output's genealogy, with its consumed kg — are recorded in Manufacturing in this same transaction, from
+            // Inventory's port answer (Manufacturing never writes Inventory's label tables). A replayed output replays
+            // its stored edges; a different answer for the same output refuses and rolls back both owners.
+            await RecordOutputLineageAsync(command, inventoryResult, manufacturingOutcome, metadata, cancellationToken);
+
             if (observer is not null)
             {
                 await observer(ManufacturingInventoryReturnOutputStage.BeforeCommit, cancellationToken);
@@ -358,6 +365,29 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         finally
         {
             manufacturing.ChangeTracker.Clear();
+        }
+    }
+
+    private async Task RecordOutputLineageAsync(
+        ManufacturingInventoryOutputCommand command,
+        InventoryManufacturingOutputResultV2 inventoryResult,
+        ManufacturingWriteOutcome manufacturingOutcome,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        var inputs = LineageInputs(inventoryResult.GenealogyInputs, command.LabelId);
+        try
+        {
+            await orders.RecordOutputLineageAsync(
+                command.OrderId, command.OutputId, command.LabelId, inventoryResult.GenealogyTransformationId, inputs,
+                manufacturingOutcome == ManufacturingWriteOutcome.Replayed, metadata, cancellationToken);
+        }
+        catch (ManufacturingStoreException exception)
+            when (exception.Code == ManufacturingStoreCodes.LineageInvalid)
+        {
+            // Inventory's genealogy answer the share calculator cannot read is an incomplete realization, not a
+            // caller error: both owners roll back.
+            throw Incomplete();
         }
     }
 
@@ -421,6 +451,42 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
 
     private static string Quantity(Kilograms value) =>
         value.Value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// URT-S20: Inventory's genealogy inputs as the share calculator's inputs. A missing list or input, an empty or
+    /// self-referencing label id, or a kg Manufacturing cannot read exactly (more than three decimals, negative, not a
+    /// number) is an incomplete realization: the transaction rolls back, nothing is cut or guessed.
+    /// </summary>
+    private static IReadOnlyList<ProductionLineageShareInput> LineageInputs(
+        IReadOnlyList<InventoryManufacturingGenealogyInputV2>? genealogyInputs, Guid outputLabelId)
+    {
+        if (genealogyInputs is null || genealogyInputs.Count == 0)
+        {
+            throw Incomplete();
+        }
+
+        var inputs = new List<ProductionLineageShareInput>(genealogyInputs.Count);
+        foreach (var input in genealogyInputs)
+        {
+            if (input is null || input.LabelId == Guid.Empty || input.LabelId == outputLabelId
+                || !decimal.TryParse(input.QuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                    out var quantity))
+            {
+                throw Incomplete();
+            }
+
+            try
+            {
+                inputs.Add(new ProductionLineageShareInput(input.LabelId, new Kilograms(quantity)));
+            }
+            catch (ManufacturingRuleException)
+            {
+                throw Incomplete();
+            }
+        }
+
+        return inputs;
+    }
 
     private static InventoryCommandMetadata InventoryMetadata(
         ManufacturingCommandMetadata metadata,

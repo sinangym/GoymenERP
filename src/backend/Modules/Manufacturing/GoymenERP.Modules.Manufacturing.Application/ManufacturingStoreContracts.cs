@@ -116,6 +116,12 @@ public static class ManufacturingStoreCodes
     /// listed: a cursor is never guessed and never silently restarted at the first page.
     /// </summary>
     public const string ListCursorInvalid = "manufacturing_list_cursor_invalid";
+
+    /// <summary>
+    /// URT-S20 (URT-D63): an output's lineage edges cannot be recorded as given — the output is not a declaration of this
+    /// order, an id is empty, or the share calculator cannot read the inputs. Nothing of this write is stored.
+    /// </summary>
+    public const string LineageInvalid = "manufacturing_lineage_invalid";
 }
 
 /// <summary>

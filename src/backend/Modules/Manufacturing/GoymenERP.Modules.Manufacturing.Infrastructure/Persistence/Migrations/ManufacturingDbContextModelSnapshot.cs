@@ -607,6 +607,71 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputLineageEdgeRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OutputId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InputLabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CalculatorVersion")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ConsumedKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("GenealogyTransformationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("OutputKind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OutputLabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "OutputId", "InputLabelId");
+
+                    b.HasIndex("CompanyId", "InputLabelId")
+                        .HasDatabaseName("IX_OutputLineageEdges_CompanyId_InputLabelId");
+
+                    b.HasIndex("CompanyId", "OrderId");
+
+                    b.HasIndex("CompanyId", "OutputLabelId")
+                        .HasDatabaseName("IX_OutputLineageEdges_CompanyId_OutputLabelId");
+
+                    b.HasIndex("CompanyId", "OutputKind", "OutputId");
+
+                    b.ToTable("OutputLineageEdges", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutputLineageEdges_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [OutputId] <> '00000000-0000-0000-0000-000000000000' AND [InputLabelId] <> '00000000-0000-0000-0000-000000000000' AND [OutputLabelId] <> '00000000-0000-0000-0000-000000000000' AND [GenealogyTransformationId] <> '00000000-0000-0000-0000-000000000000' AND [InputLabelId] <> [OutputLabelId]");
+
+                            t.HasCheckConstraint("CK_OutputLineageEdges_Mass", "[OutputKind] = 3 AND [ConsumedKg] > 0 AND [CalculatorVersion] >= 1");
+
+                            t.HasCheckConstraint("CK_OutputLineageEdges_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputReversalRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1574,6 +1639,22 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationWorkCenterReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "WorkCenterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputLineageEdgeRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.FactRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OutputKind", "OutputId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
