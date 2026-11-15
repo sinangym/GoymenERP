@@ -44,7 +44,7 @@ public sealed class CompanyTaxIdMigrationScriptTests
             fromMigration: PreviousMigration,
             toMigration: TaxIdMigration);
 
-        var missingVkn = script.IndexOf("THROW 51441", StringComparison.Ordinal);
+        var missingVkn = script.IndexOf("THROW 51445", StringComparison.Ordinal);
         var duplicateVkn = script.IndexOf("THROW 51442", StringComparison.Ordinal);
         var uniqueIndex = script.IndexOf("CREATE UNIQUE INDEX [IX_Companies_Vkn]", StringComparison.Ordinal);
         var requiredCheck = script.IndexOf("CK_Companies_Vkn_RequiredUnlessPlaceholder", StringComparison.Ordinal);
@@ -79,7 +79,7 @@ public sealed class CompanyTaxIdMigrationScriptTests
         Assert.Single(migration.DownOperations.OfType<SqlOperation>());
 
         var upGuards = migration.UpOperations.TakeWhile(operation => operation is SqlOperation).Cast<SqlOperation>().ToArray();
-        Assert.Contains(upGuards, guard => guard.Sql.Contains("THROW 51441", StringComparison.Ordinal));
+        Assert.Contains(upGuards, guard => guard.Sql.Contains("THROW 51445", StringComparison.Ordinal));
         Assert.Contains(upGuards, guard => guard.Sql.Contains("THROW 51442", StringComparison.Ordinal));
         Assert.Equal(upGuards.Length, migration.UpOperations.OfType<SqlOperation>().Count());
         Assert.Single(migration.UpOperations.OfType<CreateTableOperation>());

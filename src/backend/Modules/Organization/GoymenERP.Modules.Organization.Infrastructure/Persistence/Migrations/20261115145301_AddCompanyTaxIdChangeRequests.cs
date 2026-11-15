@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
             // KIM-S23 (KIM-D28, DEC-ORG-005): the schema is not tightened over data that already breaks the rule. A real
             // company without a VKN or two companies sharing one is refused here; the data is corrected by a human
             // (no placeholder VKN is invented and no company is chosen), then the migration is applied again.
-            migrationBuilder.Sql("""IF EXISTS (SELECT 1 FROM [organization].[Companies] WHERE [IsPlaceholder] = 0 AND [Vkn] IS NULL) BEGIN THROW 51441, 'A non-placeholder company has no VKN; AddCompanyTaxIdChangeRequests is not applied until it is corrected.', 1; END;""");
+            migrationBuilder.Sql("""IF EXISTS (SELECT 1 FROM [organization].[Companies] WHERE [IsPlaceholder] = 0 AND [Vkn] IS NULL) BEGIN THROW 51445, 'A non-placeholder company has no VKN; AddCompanyTaxIdChangeRequests is not applied until it is corrected.', 1; END;""");
 
             migrationBuilder.Sql("""IF EXISTS (SELECT [Vkn] FROM [organization].[Companies] WHERE [Vkn] IS NOT NULL GROUP BY [Vkn] HAVING COUNT(*) > 1) BEGIN THROW 51442, 'Two companies share a VKN; AddCompanyTaxIdChangeRequests is not applied until it is corrected.', 1; END;""");
 
