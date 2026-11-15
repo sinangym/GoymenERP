@@ -15,11 +15,17 @@ public static class SettingsSalesPolicyPermissionManifestV1
     public const string ApprovalThresholdManage = "settings.sales-approval-thresholds.manage";
 }
 
-/// <summary>The two policy families kept in Settings tables (the baseline transfer marker is per company and family).</summary>
+/// <summary>The policy families kept in Settings tables (the baseline transfer marker is per company and family).</summary>
 public static class SalesPolicyFamiliesV1
 {
     public const string DeliveryTolerance = "DeliveryTolerance";
     public const string ApprovalAmountThreshold = "ApprovalAmountThreshold";
+
+    /// <summary>F-029 S5: the quote loss reason lists (SAT-D25) and the default quote validity (SAT-D39), transferred together.</summary>
+    public const string SalesQuotePolicy = "SalesQuotePolicy";
+
+    /// <summary>F-029 S6: the e-Fatura scenario code lists and default scenarios (SAT-D102, SAT-D120), transferred together.</summary>
+    public const string EInvoiceScenario = "EInvoiceScenario";
 }
 
 /// <summary>Where a stored policy version comes from (URN spec §5.1 <c>SourceKind</c>).</summary>

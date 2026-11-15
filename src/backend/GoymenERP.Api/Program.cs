@@ -206,10 +206,12 @@ builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrer
 // SettingsSalesPolicyProviderV1 that adds the company's discount limit groups (SAT-D61…D64) to this catalog.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D102: the Settings-owned e-Fatura scenario code list and default (SAT-D120 seeds the code list; the default
-// starts empty); read by Cari.
+// starts empty); read by Cari. AddSettingsModule replaces it with SettingsEInvoiceScenarioPolicyProviderV1 (F-029 S6), which
+// answers from this catalog until the company's baseline is transferred to the Settings table.
 builder.Services.AddScoped<ISettingsEInvoiceScenarioPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D25 / SAT-D39: the Settings-owned Sales quote policies (loss reason list, default validity); the reviewed catalog is
-// empty, so a loss is refused and no validity is suggested until Sinan enters the records.
+// empty, so a loss is refused and no validity is suggested until Sinan enters the records. AddSettingsModule replaces it
+// with SettingsSalesQuotePolicyProviderV1 (F-029 S5), which answers from this catalog until the baseline is transferred.
 builder.Services.AddScoped<ISettingsSalesQuotePolicyProviderV1, ApprovedSettingsSalesQuotePolicyProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
@@ -513,6 +515,7 @@ app.MapDocumentEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
 app.MapSettingsSalesPolicyEndpoints();
+app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();
 app.MapSettingsManufacturingProfileEndpoints();
 app.MapShellEndpoints();

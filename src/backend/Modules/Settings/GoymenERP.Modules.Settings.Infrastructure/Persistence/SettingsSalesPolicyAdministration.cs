@@ -258,6 +258,14 @@ internal sealed partial class SettingsSalesPolicyAdministration(
         ThresholdBaselineEvent =>
             "Sipariş onay tutar eşiği onaylı katalog değerleri Ayarlar tablosuna aktarıldı; gerekçe kayıt içeriğindedir",
         ThresholdRecordedEvent => "Sipariş onay tutar eşiği sürümü kaydedildi; gerekçe kayıt içeriğindedir",
+        QuoteBaselineEvent =>
+            "Teklif politikası onaylı katalog değerleri Ayarlar tablosuna aktarıldı; gerekçe kayıt içeriğindedir",
+        QuoteLossReasonsRecordedEvent => "Teklif kayıp nedeni listesi sürümü kaydedildi; gerekçe kayıt içeriğindedir",
+        QuoteValidityRecordedEvent => "Varsayılan teklif geçerlilik süresi sürümü kaydedildi; gerekçe kayıt içeriğindedir",
+        ScenarioBaselineEvent =>
+            "e-Fatura senaryo politikası onaylı katalog değerleri Ayarlar tablosuna aktarıldı; gerekçe kayıt içeriğindedir",
+        ScenarioCodeListRecordedEvent => "e-Fatura senaryo kodu listesi sürümü kaydedildi; gerekçe kayıt içeriğindedir",
+        ScenarioDefaultRecordedEvent => "Varsayılan e-Fatura senaryosu sürümü kaydedildi; gerekçe kayıt içeriğindedir",
         _ => throw new InvalidOperationException("Tanımsız Ayarlar audit olayı."),
     };
 
