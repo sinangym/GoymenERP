@@ -29,6 +29,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private const string MonthlyScrapPrices = "20261115123405_AddManufacturingMonthlyScrapPrices";
     private const string OrderDueDate = "20261115140512_AddManufacturingOrderDueDate";
     private const string MonthlyScrapPriceVersions = "20261115174427_AddManufacturingMonthlyScrapPriceVersions";
+    private const string OutputLineageEdges = "20261115174432_AddManufacturingOutputLineageEdges";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -56,22 +57,23 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(MonthlyScrapPriceVersions, reapplied[^1]);
-            Assert.Equal(OrderDueDate, reapplied[^2]);
-            Assert.Equal(MonthlyScrapPrices, reapplied[^3]);
-            Assert.Equal(OutputReversals, reapplied[^4]);
-            Assert.Equal(PlanDueDate, reapplied[^5]);
-            Assert.Equal(PlanSalesOrderLinks, reapplied[^6]);
-            Assert.Equal(PlanInputAllocations, reapplied[^7]);
-            Assert.Equal(PlanPreparer, reapplied[^8]);
-            Assert.Equal(PlanProcessSpecs, reapplied[^9]);
-            Assert.Equal(PlanLifecycle, reapplied[^10]);
-            Assert.Equal(PlanParameterSnapshots, reapplied[^11]);
-            Assert.Equal(TechnicalLengthSnapshots, reapplied[^12]);
-            Assert.Equal(PlanCutLines, reapplied[^13]);
-            Assert.Equal(CommercialContexts, reapplied[^14]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^15]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^16]);
+            Assert.Equal(OutputLineageEdges, reapplied[^1]);
+            Assert.Equal(MonthlyScrapPriceVersions, reapplied[^2]);
+            Assert.Equal(OrderDueDate, reapplied[^3]);
+            Assert.Equal(MonthlyScrapPrices, reapplied[^4]);
+            Assert.Equal(OutputReversals, reapplied[^5]);
+            Assert.Equal(PlanDueDate, reapplied[^6]);
+            Assert.Equal(PlanSalesOrderLinks, reapplied[^7]);
+            Assert.Equal(PlanInputAllocations, reapplied[^8]);
+            Assert.Equal(PlanPreparer, reapplied[^9]);
+            Assert.Equal(PlanProcessSpecs, reapplied[^10]);
+            Assert.Equal(PlanLifecycle, reapplied[^11]);
+            Assert.Equal(PlanParameterSnapshots, reapplied[^12]);
+            Assert.Equal(TechnicalLengthSnapshots, reapplied[^13]);
+            Assert.Equal(PlanCutLines, reapplied[^14]);
+            Assert.Equal(CommercialContexts, reapplied[^15]);
+            Assert.Equal(TechnicalSnapshots, reapplied[^16]);
+            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^17]);
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>(
