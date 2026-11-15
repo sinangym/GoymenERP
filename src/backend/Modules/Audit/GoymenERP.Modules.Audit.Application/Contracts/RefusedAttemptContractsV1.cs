@@ -117,18 +117,27 @@ public static class RefusedAttemptRecordFailureKindsV1
 /// </summary>
 public sealed record RefusedAttemptRecordResultV1
 {
-    private RefusedAttemptRecordResultV1(bool recorded, string? failureKind)
+    private RefusedAttemptRecordResultV1(bool recorded, bool aggregated, string? failureKind)
     {
         Recorded = recorded;
+        IsAggregated = aggregated;
         FailureKind = failureKind;
     }
 
     public bool Recorded { get; }
 
+    /// <summary>
+    /// True when the refusal was accepted by the enabled volume control (F023-4) and is counted into its window's
+    /// summary row instead of its own row. <see cref="Recorded"/> is then true as well: nothing failed.
+    /// </summary>
+    public bool IsAggregated { get; }
+
     /// <summary>One of <see cref="RefusedAttemptRecordFailureKindsV1"/> when <see cref="Recorded"/> is false.</summary>
     public string? FailureKind { get; }
 
-    public static RefusedAttemptRecordResultV1 Written() => new(recorded: true, failureKind: null);
+    public static RefusedAttemptRecordResultV1 Written() => new(recorded: true, aggregated: false, failureKind: null);
+
+    public static RefusedAttemptRecordResultV1 Aggregated() => new(recorded: true, aggregated: true, failureKind: null);
 
     public static RefusedAttemptRecordResultV1 NotWritten(string failureKind)
     {
@@ -137,7 +146,7 @@ public sealed record RefusedAttemptRecordResultV1
             throw new ArgumentOutOfRangeException(nameof(failureKind), failureKind, "Unknown refused attempt failure kind.");
         }
 
-        return new(recorded: false, failureKind);
+        return new(recorded: false, aggregated: false, failureKind);
     }
 }
 
@@ -156,7 +165,9 @@ public interface IRefusedAttemptRecorderV1
 
     /// <summary>
     /// Separate short write (422, 400, losing concurrency or idempotency refusal). It never throws except for the
-    /// caller's own cancellation; every failure increments <c>audit_refused_attempt_write_failed</c>.
+    /// caller's own cancellation; every failure increments <c>audit_refused_attempt_write_failed</c>. With the volume
+    /// control enabled (F023-4) a refusal above the window threshold is counted into the window summary instead
+    /// (<see cref="RefusedAttemptRecordResultV1.IsAggregated"/>).
     /// </summary>
     Task<RefusedAttemptRecordResultV1> RecordStandaloneAsync(
         RefusedAttemptV1 attempt,
