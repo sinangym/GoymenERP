@@ -17,7 +17,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (9090f0a5… -> 181bd248…); no filter, set or model change.
     private const string ReviewedCounterpartyDbContextFingerprint =
         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-        "94146948ecf2d9592fe58f32942b72c654860f7578e5c4b19af71929ce5f4e93";
+        // Re-fingerprinted for tren-1 wave 2 (trial integration): + the Counterparty outbox set (alis_cari wave 2);
+        // CommandExecution tenant filter unchanged.
+        "f8ae21fdae4525489906daa27ca6c363931842ddb48c392f4f8d1864a868fb50";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
