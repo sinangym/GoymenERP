@@ -35,11 +35,18 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// child of the order detail, measured with its own name <see cref="PurchasingPermissionManifestV1.OrdersCancel"/>; it carries
 /// the impact preview and the cancellation of the whole unaccepted remainder.
 /// </para>
+/// <para>
+/// 1.8 (F-027, UI-07; EK16 §2a, ALS-D94/ALS-D81): the line delivery schedule control (<see cref="LineScheduleCapabilityId"/>)
+/// is a child of the order detail, measured with its own name <see cref="PurchasingPermissionManifestV1.OrdersRevise"/>, so
+/// holding the create name alone does not show it. It carries the termin change of a draft or approved order's general line;
+/// the approval stays, every save is a new audited revision, and the totals and the received-portion lock are the service's rules.
+/// The name is registered only: its grant is a human gate.
+/// </para>
 /// </summary>
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
 
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -64,6 +71,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string ApproveCapabilityId = "purchasing.orders.approve";
     public const string GoodsReceiptCapabilityId = "purchasing.goods-receipts.record";
     public const string CancelCapabilityId = "purchasing.orders.cancel";
+    public const string LineScheduleCapabilityId = "purchasing.orders.line-schedule.write";
     public const string DetailRoutePath = "/satinalma/siparisler/:orderId";
     public const string DetailScreenId = "P-03-DETAIL";
 
@@ -132,6 +140,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = CancelCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCancel],
+            },
+            detail with
+            {
+                CapabilityId = LineScheduleCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise],
             },
         ];
     }

@@ -1,6 +1,7 @@
 /**
- * F-027 (ALS-D94, ALS-D81): Turkish texts of the read-only line delivery schedule section. The screen shows the server's
- * schedule and its recorded revisions as received; it never edits or recomputes a termin (the edit control is a separate slice).
+ * F-027 (ALS-D94, ALS-D81; UI-07, EK16 §2a): Turkish texts of the line delivery schedule section. The screen shows the server's
+ * schedule and its recorded revisions as received; the termin edit control sends the slices as entered and never recomputes a
+ * total or a lock — the sum, the received-portion lock and every other rule are the server's.
  */
 export const LINE_SCHEDULE_TEXT = {
   heading: 'Teslim terminleri',
@@ -23,4 +24,43 @@ export const LINE_SCHEDULE_TEXT = {
   recordedBy: 'Kaydeden',
   recordedAtUtc: 'Kayıt zamanı (UTC)',
   currentMarker: 'Güncel',
+  editHeading: (lineNo: number) => `Satır ${lineNo} terminini değiştir`,
+  editNote: 'Dilimlerin toplamı satırın sipariş miktarına eşit olmalıdır; teslim alınmış kısım değiştirilemez. Kontrolü sunucu yapar.',
+  editLegend: (index: number) => `Dilim ${index}`,
+  editQuantity: (index: number) => `Dilim ${index} miktarı`,
+  editDeliveryDate: (index: number) => `Dilim ${index} teslim tarihi`,
+  addSlice: 'Dilim ekle',
+  removeSlice: (index: number) => `Dilim ${index} kaldır`,
+  save: 'Termini kaydet',
+  saving: 'Termin kaydediliyor…',
+  retry: 'Aynı termin değişikliğini yeniden gönder',
+  abandon: 'Bekleyen değişikliği bırak',
+  unknown: 'Termin değişikliğinin sonucu bilinmiyor. Aynı değişikliği aynı işlem anahtarıyla yeniden gönderebilirsiniz; ikinci bir kayıt oluşmaz.',
+  applied: 'Termin kaydedildi; sipariş yeni sürümüyle yeniden okundu.',
+  replayed: 'Bu termin değişikliği daha önce kaydedilmişti; aynı sonuç gösteriliyor.',
+  failed: 'Termin kaydedilemedi',
+  reread: 'Sipariş yeniden okundu; güncel termin üzerinden yeniden deneyin.',
+  quantityRequired: (index: number) => `Dilim ${index} miktarı zorunludur.`,
+  quantityInvalid: (index: number) => `Dilim ${index} miktarı geçerli bir sayı değil (ondalık ayırıcı olarak nokta veya virgülden yalnız birini kullanın).`,
+  quantityNotPositive: (index: number) => `Dilim ${index} miktarı sıfırdan büyük olmalıdır.`,
+  dateRequired: (index: number) => `Dilim ${index} teslim tarihi zorunludur.`,
 } as const
+
+/** Known termin change refusal codes in user words; an unknown code is shown as-is beside the generic text. */
+export const LINE_SCHEDULE_PROBLEM_TEXT: Readonly<Record<string, string>> = {
+  version_conflict: 'Sipariş bu sırada değişti; güncel sürüm yeniden okundu.',
+  purchasing_order_state: 'İptal edilmiş siparişin termini değiştirilemez.',
+  purchasing_order_cancelled: 'İptal edilmiş siparişin termini değiştirilemez.',
+  validation_failed: 'Termin dilimleri kabul edilmedi.',
+  unsupported_unit: 'Dilim miktarı satırın birimine uymuyor.',
+  purchasing_quantity_scale_exceeded: 'Dilim miktarı birimin izin verdiği ondalık basamağı aşıyor.',
+  purchasing_schedule_on_technical_line: 'Teknik satıra termin dilimi girilmez.',
+  purchasing_schedule_empty: 'En az bir termin dilimi gerekir.',
+  purchasing_schedule_too_many_slices: 'Termin dilimi sayısı üst sınırı aşıyor.',
+  purchasing_schedule_duplicate_slice_id: 'Aynı dilim iki kez gönderildi.',
+  purchasing_schedule_slice_not_positive: 'Her dilimin miktarı sıfırdan büyük olmalıdır.',
+  purchasing_schedule_total_mismatch: 'Dilimlerin toplamı satırın sipariş miktarına eşit değil.',
+  purchasing_schedule_received_portion_locked: 'Teslim alınmış kısmın termini değiştirilemez.',
+  concurrent_change: 'Sipariş aynı anda başka bir işlemle değişti; kayıt yeniden okundu.',
+  same_key_payload_mismatch: 'Aynı işlem anahtarı başka bir içerikle kullanıldı.',
+}

@@ -237,13 +237,14 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   quantity comparison (`PurchasingEndpoints.cs`); product candidates (`PurchasingProductCandidateEndpoints.cs`).
 - **Permissions (9):** `purchasing.orders.create`, `.read`, `.approve`, `purchasing.goods-receipts.record`,
   `purchasing.requests.approve` (A1-1), `purchasing.requests.withdraw` (A1-1b), `purchasing.orders.cancel` (A1-3),
-  `purchasing.orders.price.read` (A2a-1, disclosure only), `purchasing.orders.revise` (A3 API-30 termin change, ALS-D94; no shell
-  control yet) (`PurchasingPermissionManifestV1`,
+  `purchasing.orders.price.read` (A2a-1, disclosure only), `purchasing.orders.revise` (A3 API-30 termin change, ALS-D94; since
+  F-027 UI-07 the `purchasing.orders.line-schedule.write` detail child) (`PurchasingPermissionManifestV1`,
   `ErpPermissions`; company-wide, not critical, registered only).
-- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.7`) declares P-01 request
+- **Shell and screens:** `PurchasingShellCapabilityProvider` (owner contract `PURCHASING/1.8`) declares P-01 request
   list/new/detail (+ submit, since A1-1 the `purchasing.requests.approve` decision child and since A1-1b the
   `purchasing.requests.withdraw` withdrawal child), P-03 order list, **P-04 new order**, P-03-DETAIL (+ approve, goods-receipt
-  and, since A1-3, the `purchasing.orders.cancel` remainder cancellation children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
+  and, since A1-3, the `purchasing.orders.cancel` remainder cancellation children; since F-027 the `purchasing.orders.line-schedule.write`
+  line termin child, measured with read + `purchasing.orders.revise`), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
   `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage` (+ `PurchaseRequestDecisionPanel`:
   approve / reject with reason, unknown-result resend of the same key; `PurchaseRequestWithdrawalPanel`: "Geri çek"
   with reason, shown only to the recorded preparer or submitter), `PurchaseOrderListPage`,

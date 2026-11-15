@@ -11,6 +11,11 @@ export const PURCHASING_CAPABILITY = {
   orderApprove: 'purchasing.orders.approve',
   /** A1-3 (plan API-10/UI-05): the order remainder cancellation, a child control of the order detail. */
   orderCancel: 'purchasing.orders.cancel',
+  /**
+   * F-027 (UI-07, EK16 §2a; ALS-D94): the line termin change of an order, a child control of the order detail measured with
+   * `purchasing.orders.revise` (name registered only; the grant is a human gate).
+   */
+  orderLineScheduleWrite: 'purchasing.orders.line-schedule.write',
 } as const
 
 export type PurchasingCapabilityId =
