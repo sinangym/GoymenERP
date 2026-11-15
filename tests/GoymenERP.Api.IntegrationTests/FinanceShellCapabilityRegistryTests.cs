@@ -85,7 +85,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(32, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(34, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]
