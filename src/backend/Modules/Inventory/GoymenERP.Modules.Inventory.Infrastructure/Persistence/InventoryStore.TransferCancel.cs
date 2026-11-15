@@ -257,6 +257,14 @@ public sealed partial class InventoryStore
             throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
 
+        if (await HasOpenOrApprovedLossRequestAsync(transferId, cancellationToken))
+        {
+            // KLN-D23 (c): a written-off line is terminal, and a loss request still waiting for its decision is not
+            // overtaken by a dispatch cancel (an implementation reading; a rejected request does not block).
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
+        }
+
         var labelIds = lines.Select(line => line.LabelId).ToArray();
         var labels = await dbContext.Labels.Where(candidate => labelIds.Contains(candidate.Id))
             .ToDictionaryAsync(candidate => candidate.Id, cancellationToken);

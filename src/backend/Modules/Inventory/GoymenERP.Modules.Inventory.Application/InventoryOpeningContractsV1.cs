@@ -69,6 +69,26 @@ public static class InventoryPermissionManifestV1
     /// <see cref="StockTransferWrite"/>; registration/classification and every grant remain central/user-owned.
     /// </summary>
     public const string StockTransferCancel = "inventory.stock-transfer.cancel";
+
+    /// <summary>
+    /// KLN-D24 (B-22c): approve or reject a recorded receipt excess. A separate name from <see cref="StockTransferWrite"/>
+    /// so the receiver and the approver can be different people (the service also refuses self-approval).
+    /// Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
+
+    /// <summary>
+    /// KLN-D23 (c) (B-22c): record a loss request with an explanation for one pending transfer label. Moves no stock.
+    /// Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferLossRecord = "inventory.stock-transfer.loss-record";
+
+    /// <summary>
+    /// KLN-D23 (c) (B-22c): approve (write off as a transit loss) or reject one recorded loss request. A separate name
+    /// from <see cref="StockTransferLossRecord"/> (the service also refuses the requester's own decision).
+    /// Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferLossApprove = "inventory.stock-transfer.loss-approve";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

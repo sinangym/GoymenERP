@@ -14,6 +14,12 @@ public enum InventoryTransferStatus
 
     /// <summary>KLN-D20: the dispatch was reversed by a separate movement before any acceptance; terminal.</summary>
     DispatchCancelled = 5,
+
+    /// <summary>
+    /// KLN-D23: every line is terminal and at least one line was written off as an approved transit loss (the rest
+    /// were received). A transfer whose every line was received stays <see cref="Accepted"/>; terminal.
+    /// </summary>
+    Closed = 6,
 }
 
 public enum InventoryTransferLineStatus
@@ -22,6 +28,9 @@ public enum InventoryTransferLineStatus
     InTransit = 2,
     Accepted = 3,
     DispatchCancelled = 4,
+
+    /// <summary>KLN-D23 (c): the pending label was written off as an approved transit loss; terminal.</summary>
+    WrittenOff = 5,
 }
 
 /// <summary>An outgoing or incoming delivery-document identity. Its kind is an owner token, not a closed policy list.</summary>
@@ -64,6 +73,9 @@ public sealed record InventoryTransferAcceptedLineState(
     Guid LineId,
     DateTimeOffset AcceptedAtUtc,
     InventoryTransferDocumentReference IncomingDocument);
+
+/// <summary>KLN-D23 (c): an approved transit-loss decision of one still pending line.</summary>
+public sealed record InventoryTransferWrittenOffLineState(Guid LineId, DateTimeOffset WrittenOffAtUtc);
 
 public sealed record InventoryTransferBucketEffect(StockPosition Position, Kilograms Quantity);
 
@@ -109,6 +121,79 @@ public sealed record InventoryTransferAcceptanceEffect(
 }
 
 /// <summary>
+/// KLN-D21: the automatic fire of a receipt shortage. The receiver's entered kilograms are final; the dispatched
+/// label is first accepted whole at the destination and this separate Out line then removes the missing kilograms
+/// from that destination bucket. No tolerance and no extra approval apply (an application reading, revocable).
+/// </summary>
+public sealed record InventoryTransferReceiptShortageEffect(
+    Guid TransferId,
+    Guid LineId,
+    DateTimeOffset ReceivedAtUtc,
+    InventoryTransferBucketEffect Bucket)
+{
+    public StockMovement Movement(Guid movementId, Guid companyId) => new(
+        movementId,
+        companyId,
+        StockMovementKind.TransferReceiptShortage,
+        ReceivedAtUtc,
+        new StockSourceReference(InventoryTransfer.SourceKind, TransferId, LineId),
+        [new StockMovementLine(Bucket.Position, StockDirection.Out, Bucket.Quantity)]);
+}
+
+/// <summary>
+/// B-22c: one received line. <see cref="Acceptance"/> always moves the whole dispatched label to the destination;
+/// a shortage adds <see cref="Shortage"/>; an overage is only reported here, because KLN-D24 keeps the excess out of
+/// stock until a different person approves it.
+/// </summary>
+public sealed record InventoryTransferReceiptEffect(
+    InventoryTransferAcceptanceEffect Acceptance,
+    Kilograms DispatchedQuantity,
+    Kilograms ReceivedQuantity,
+    Kilograms ShortageQuantity,
+    Kilograms OverageQuantity,
+    InventoryTransferReceiptShortageEffect? Shortage);
+
+/// <summary>KLN-D24: the approved receipt excess, one In line on the received destination bucket.</summary>
+public sealed record InventoryTransferReceiptOverageEffect(
+    Guid TransferId,
+    Guid LineId,
+    DateTimeOffset ApprovedAtUtc,
+    InventoryTransferBucketEffect Bucket)
+{
+    public StockMovement Movement(Guid movementId, Guid companyId) => new(
+        movementId,
+        companyId,
+        StockMovementKind.TransferReceiptOverage,
+        ApprovedAtUtc,
+        new StockSourceReference(InventoryTransfer.SourceKind, TransferId, LineId),
+        [new StockMovementLine(Bucket.Position, StockDirection.In, Bucket.Quantity)]);
+}
+
+/// <summary>
+/// KLN-D23 (c): the approved transit loss of one pending line. The dispatched kilograms already left the source at
+/// dispatch, so the loss changes no balance: every dispatched bucket is recorded as an In and an Out of the same
+/// kilograms on its exact source position, which keeps the written-off quantity a movement fact of its own.
+/// </summary>
+public sealed record InventoryTransferTransitLossEffect(
+    Guid TransferId,
+    long TransferVersion,
+    DateTimeOffset WrittenOffAtUtc,
+    InventoryTransferLineEffect Line)
+{
+    public StockMovement Movement(Guid movementId, Guid companyId) => new(
+        movementId,
+        companyId,
+        StockMovementKind.TransferTransitLoss,
+        WrittenOffAtUtc,
+        new StockSourceReference(InventoryTransfer.SourceKind, TransferId, Line.LineId),
+        Line.Buckets.SelectMany(bucket => new[]
+        {
+            new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity),
+            new StockMovementLine(bucket.Position, StockDirection.Out, bucket.Quantity),
+        }));
+}
+
+/// <summary>
 /// KLN-D20: the reverse of a whole dispatch. The dispatch row and its movement stay; this separate inbound movement
 /// puts every dispatched bucket back at its exact source position (same block, owner, custodian and location). Cost is
 /// not touched here: KLN-D64 (2), while transfers do not post to the cost ledger the cancellation does not either. When
@@ -135,8 +220,9 @@ public sealed record InventoryTransferDispatchCancellationEffect(
 /// DEC-STK-008 / INV-R20: a same-company two-leg transfer. Planning changes no stock. Dispatch derives the actual
 /// shipped quantity from every stored bucket of every named label and moves those whole labels into transit. Acceptance
 /// moves one whole dispatched label to the target context; accepting a subset of lines is the supported partial-accept
-/// grain. Accepting only some kilograms of one physical label is deliberately absent: it needs the existing split
-/// workflow first. Loss, damage and missing acceptance remain separate events.
+/// grain. B-22c receipt adds the receiver's weighed kilograms: a shortage is a separate automatic fire (KLN-D21), an
+/// excess waits for a maker-checker approval (KLN-D24) and a pending label may be written off as an approved transit
+/// loss (KLN-D23 (c)). Loss, damage and missing acceptance remain separate events.
 /// </summary>
 public sealed class InventoryTransfer
 {
@@ -206,15 +292,17 @@ public sealed class InventoryTransfer
         InventoryTransferDocumentReference? outgoingDocument,
         IEnumerable<InventoryTransferDispatchLine>? dispatchedLines,
         IEnumerable<InventoryTransferAcceptedLineState>? acceptedLines,
-        DateTimeOffset? dispatchCancelledAtUtc = null)
+        DateTimeOffset? dispatchCancelledAtUtc = null,
+        IEnumerable<InventoryTransferWrittenOffLineState>? writtenOffLines = null)
     {
         var transfer = new InventoryTransfer(id, companyId, sourceLocationId, sourceCustodian,
             destinationLocationId, destinationCustodian, plannedAtUtc, plannedLines);
         var accepted = acceptedLines?.OrderBy(line => line.AcceptedAtUtc).ThenBy(line => line.LineId).ToArray() ?? [];
+        var writtenOff = writtenOffLines?.ToArray() ?? [];
         if (storedStatus == InventoryTransferStatus.Planned)
         {
             if (storedVersion != 1 || dispatchedAtUtc is not null || outgoingDocument is not null
-                || dispatchedLines is not null || accepted.Length != 0)
+                || dispatchedLines is not null || accepted.Length != 0 || writtenOff.Length != 0)
             {
                 throw Invalid("Kayıtlı planlanmış transfer durumu tutarsız.");
             }
@@ -230,18 +318,35 @@ public sealed class InventoryTransfer
         transfer.Dispatch(1, dispatchedAtUtc.Value, outgoingDocument, dispatchedLines);
         if (dispatchCancelledAtUtc is { } cancelledAtUtc)
         {
-            if (accepted.Length != 0)
+            if (accepted.Length != 0 || writtenOff.Length != 0)
             {
-                throw Invalid("İptal edilmiş transfer çıkışında kabul kaydı olamaz.");
+                throw Invalid("İptal edilmiş transfer çıkışında kabul veya kayıp kaydı olamaz.");
             }
 
             transfer.CancelDispatch(transfer.Version, cancelledAtUtc);
         }
 
-        foreach (var acceptance in accepted)
+        // Acceptances and write-offs are replayed in their recorded order; a line in both is refused by the second.
+        var events = accepted
+            .Select(acceptance => (At: acceptance.AcceptedAtUtc, acceptance.LineId,
+                Acceptance: (InventoryTransferAcceptedLineState?)acceptance,
+                WriteOff: (InventoryTransferWrittenOffLineState?)null))
+            .Concat(writtenOff.Select(writeOff => (At: writeOff.WrittenOffAtUtc, writeOff.LineId,
+                Acceptance: (InventoryTransferAcceptedLineState?)null, WriteOff: (InventoryTransferWrittenOffLineState?)writeOff)))
+            .OrderBy(item => item.At)
+            .ThenBy(item => item.LineId)
+            .ToArray();
+        foreach (var item in events)
         {
-            transfer.AcceptLine(transfer.Version, acceptance.LineId, acceptance.AcceptedAtUtc,
-                acceptance.IncomingDocument);
+            if (item.Acceptance is { } acceptance)
+            {
+                transfer.AcceptLine(transfer.Version, acceptance.LineId, acceptance.AcceptedAtUtc,
+                    acceptance.IncomingDocument);
+            }
+            else if (item.WriteOff is { } writeOff)
+            {
+                transfer.WriteOffLine(transfer.Version, writeOff.LineId, writeOff.WrittenOffAtUtc);
+            }
         }
 
         if (transfer.Version != storedVersion || transfer.Status != storedStatus)
@@ -330,11 +435,136 @@ public sealed class InventoryTransfer
             .ToArray();
         line.Accept(acceptedAtUtc, incomingDocument);
         Version = checked(Version + 1);
-        Status = lines.All(candidate => candidate.Status == InventoryTransferLineStatus.Accepted)
-            ? InventoryTransferStatus.Accepted
-            : InventoryTransferStatus.PartiallyAccepted;
+        Status = Settle();
         var effect = line.Effect with { Buckets = targetBuckets };
         return new(Id, Version, incomingDocument, acceptedAtUtc, effect);
+    }
+
+    /// <summary>
+    /// B-22c receipt of one in-transit line with the receiver's weighed kilograms (KLN-D21: the entered kg is final).
+    /// The whole dispatched label is accepted at the destination exactly as <see cref="AcceptLine"/> does. A shortage
+    /// becomes a separate automatic fire movement; an overage is only reported (KLN-D24 approval comes later). A
+    /// difference on a label dispatched in more than one block bucket is refused: how it splits is not decided.
+    /// </summary>
+    public InventoryTransferReceiptEffect ReceiveLine(
+        long expectedVersion,
+        Guid lineId,
+        DateTimeOffset receivedAtUtc,
+        InventoryTransferDocumentReference incomingDocument,
+        Kilograms receivedQuantity)
+    {
+        if (receivedQuantity.Value <= 0m)
+        {
+            throw Invalid("Teslim alınan miktar sıfırdan büyük olmalıdır.");
+        }
+
+        var candidate = lines.SingleOrDefault(item => item.LineId == lineId);
+        if (candidate?.Effect is { } dispatched && dispatched.Buckets.Count != 1
+            && receivedQuantity != dispatched.ActualQuantity)
+        {
+            throw Invalid("Birden çok blok kovasıyla çıkan etikette teslim farkının bölüşümü kararlaştırılmadı.");
+        }
+
+        var acceptance = AcceptLine(expectedVersion, lineId, receivedAtUtc, incomingDocument);
+        var dispatchedQuantity = acceptance.Line.ActualQuantity;
+        var shortage = dispatchedQuantity > receivedQuantity
+            ? Kilograms.Of(dispatchedQuantity.Value - receivedQuantity.Value)
+            : Kilograms.Zero;
+        var overage = receivedQuantity > dispatchedQuantity
+            ? Kilograms.Of(receivedQuantity.Value - dispatchedQuantity.Value)
+            : Kilograms.Zero;
+        var shortageEffect = shortage.Value > 0m
+            ? new InventoryTransferReceiptShortageEffect(Id, lineId, receivedAtUtc,
+                new InventoryTransferBucketEffect(acceptance.Line.Buckets[0].Position, shortage))
+            : null;
+        return new(acceptance, dispatchedQuantity, receivedQuantity, shortage, overage, shortageEffect);
+    }
+
+    /// <summary>
+    /// KLN-D24: the stock effect of an approved receipt excess on an already received single-bucket line. It changes
+    /// no transfer state; the maker-checker rule and the excess quantity are the writer's stored facts.
+    /// </summary>
+    public InventoryTransferReceiptOverageEffect ReceiptOverage(
+        Guid lineId,
+        Kilograms overageQuantity,
+        DateTimeOffset approvedAtUtc)
+    {
+        RequireUtc(approvedAtUtc, "Onay zamanı");
+        if (overageQuantity.Value <= 0m)
+        {
+            throw Invalid("Fazla teslim miktarı sıfırdan büyük olmalıdır.");
+        }
+
+        var line = lines.SingleOrDefault(candidate => candidate.LineId == lineId)
+            ?? throw Invalid("Transfer satırı bulunamadı.");
+        if (line.Status != InventoryTransferLineStatus.Accepted || line.Effect is null
+            || line.AcceptedAtUtc is not { } acceptedAtUtc)
+        {
+            throw Invalid("Fazla teslim yalnız teslim alınmış satırda onaylanabilir.");
+        }
+
+        if (line.Effect.Buckets.Count != 1)
+        {
+            throw Invalid("Birden çok blok kovasıyla çıkan etikette teslim farkının bölüşümü kararlaştırılmadı.");
+        }
+
+        if (approvedAtUtc < acceptedAtUtc)
+        {
+            throw Invalid("Onay zamanı teslim almadan önce olamaz.");
+        }
+
+        var position = line.Effect.Buckets[0].Position.Relocate(DestinationCustodian, DestinationLocationId);
+        return new(Id, lineId, approvedAtUtc, new InventoryTransferBucketEffect(position, overageQuantity));
+    }
+
+    /// <summary>
+    /// KLN-D23 (c): writes one pending (in-transit) line off as an approved transit loss. The maker-checker approval is
+    /// the writer's stored fact; this method guards the transfer state. A transfer closes only when no pending line is
+    /// left; <see cref="InventoryTransferStatus.Closed"/> marks one that closed with at least one written-off line.
+    /// </summary>
+    public InventoryTransferTransitLossEffect WriteOffLine(
+        long expectedVersion,
+        Guid lineId,
+        DateTimeOffset writtenOffAtUtc)
+    {
+        RequireVersion(expectedVersion);
+        RequireUtc(writtenOffAtUtc, "Kayıp zamanı");
+        if (Status is not (InventoryTransferStatus.InTransit or InventoryTransferStatus.PartiallyAccepted))
+        {
+            throw Invalid("Yalnız yoldaki transfer satırı kayıp olarak kapatılabilir.");
+        }
+
+        if (DispatchedAtUtc is null || writtenOffAtUtc < DispatchedAtUtc)
+        {
+            throw Invalid("Kayıp zamanı transfer çıkışından önce olamaz.");
+        }
+
+        var line = lines.SingleOrDefault(candidate => candidate.LineId == lineId)
+            ?? throw Invalid("Transfer satırı bulunamadı.");
+        if (line.Status != InventoryTransferLineStatus.InTransit || line.Effect is null)
+        {
+            throw Invalid("Transfer satırı yolda değil veya daha önce kapatıldı.");
+        }
+
+        line.WriteOff(writtenOffAtUtc);
+        Version = checked(Version + 1);
+        Status = Settle();
+        return new(Id, Version, writtenOffAtUtc, line.Effect);
+    }
+
+    private InventoryTransferStatus Settle()
+    {
+        if (lines.All(line => line.Status is InventoryTransferLineStatus.Accepted
+                or InventoryTransferLineStatus.WrittenOff))
+        {
+            return lines.Any(line => line.Status == InventoryTransferLineStatus.WrittenOff)
+                ? InventoryTransferStatus.Closed
+                : InventoryTransferStatus.Accepted;
+        }
+
+        return lines.Any(line => line.Status == InventoryTransferLineStatus.Accepted)
+            ? InventoryTransferStatus.PartiallyAccepted
+            : InventoryTransferStatus.InTransit;
     }
 
     /// <summary>
@@ -470,6 +700,14 @@ public sealed class InventoryTransfer
         }
 
         public void CancelDispatch() => Status = InventoryTransferLineStatus.DispatchCancelled;
+
+        public DateTimeOffset? WrittenOffAtUtc { get; private set; }
+
+        public void WriteOff(DateTimeOffset writtenOffAtUtc)
+        {
+            WrittenOffAtUtc = writtenOffAtUtc;
+            Status = InventoryTransferLineStatus.WrittenOff;
+        }
 
         public InventoryTransferLineSnapshot Snapshot() => new(LineId, LabelId, ExpectedLabelVersion,
             PlannedQuantity, Effect?.ActualQuantity, Effect?.DifferenceKg, Status, AcceptedAtUtc, IncomingDocument);

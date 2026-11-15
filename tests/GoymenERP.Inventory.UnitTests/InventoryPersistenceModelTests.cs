@@ -31,6 +31,8 @@ public sealed class InventoryPersistenceModelTests
             typeof(InventoryTransferBucketRow), typeof(InventoryTransferAcceptanceRow), typeof(AverageCostLedgerRow),
             typeof(FutureSupplyAllocationRow), typeof(FutureSupplyLineRow),
             typeof(InventoryTransferDispatchCancelClosureRow), typeof(InventoryTransferDispatchCancellationRow),
+            typeof(InventoryTransferReceiptRow), typeof(InventoryTransferOverageDecisionRow),
+            typeof(InventoryTransferLossRequestRow), typeof(InventoryTransferLossDecisionRow),
         ];
 
     [Fact]
@@ -195,7 +197,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryManufacturingOutputReversal", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryFutureSupplyAllocations", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryTransferDispatchCancellation", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryTransferReceipts", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -567,7 +571,7 @@ public sealed class InventoryPersistenceModelTests
         var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementRow))!;
 
         Assert.Equal(10, (int)StockMovementKind.ManufacturingOutputReversal);
-        Assert.Equal("[Kind] BETWEEN 1 AND 11",
+        Assert.Equal("[Kind] BETWEEN 1 AND 14",
             Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51420", guard.Sql, StringComparison.Ordinal);
@@ -593,9 +597,9 @@ public sealed class InventoryPersistenceModelTests
         var cancellations = model.FindEntityType(typeof(InventoryTransferDispatchCancellationRow))!;
 
         Assert.Equal(11, (int)StockMovementKind.TransferDispatchCancellation);
-        Assert.Equal("[Kind] BETWEEN 1 AND 11",
+        Assert.Equal("[Kind] BETWEEN 1 AND 14",
             Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
-        Assert.Contains("[Status] BETWEEN 1 AND 5",
+        Assert.Contains("[Status] BETWEEN 1 AND 6",
             Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
             StringComparison.Ordinal);
         Assert.Equal(InventoryDbContext.TransferDispatchSourceScaleSettingCheck,
@@ -628,6 +632,74 @@ public sealed class InventoryPersistenceModelTests
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);
         Assert.Equal("[Kind] BETWEEN 1 AND 10", narrowed.Sql);
+    }
+
+    [Fact]
+    public void The_transfer_receipt_migration_adds_one_row_per_line_widens_the_checks_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferReceipts();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var movements = model.FindEntityType(typeof(MovementRow))!;
+        var transfers = model.FindEntityType(typeof(InventoryTransferRow))!;
+        var receipts = model.FindEntityType(typeof(InventoryTransferReceiptRow))!;
+        var overageDecisions = model.FindEntityType(typeof(InventoryTransferOverageDecisionRow))!;
+        var lossRequests = model.FindEntityType(typeof(InventoryTransferLossRequestRow))!;
+        var lossDecisions = model.FindEntityType(typeof(InventoryTransferLossDecisionRow))!;
+
+        Assert.Equal((12, 13, 14), ((int)StockMovementKind.TransferReceiptShortage,
+            (int)StockMovementKind.TransferReceiptOverage, (int)StockMovementKind.TransferTransitLoss));
+        Assert.Equal("[Kind] BETWEEN 1 AND 14",
+            Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_Movements_Kind").Sql);
+        Assert.Contains("[Status] BETWEEN 1 AND 6",
+            Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
+            StringComparison.Ordinal);
+
+        foreach (var entity in new[] { receipts, overageDecisions, lossRequests, lossDecisions })
+        {
+            Assert.Equal(["CompanyId", "TransferId", "LineId"],
+                entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
+            Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        }
+
+        // KLN-D21: the receiver's kilograms balance the dispatched kilograms through exactly one of shortage/overage.
+        Assert.Contains("[ReceivedKg] + [ShortageKg] - [OverageKg] = [DispatchedKg]",
+            Assert.Single(receipts.GetCheckConstraints(), check => check.Name == "CK_TransferReceipts_Quantities").Sql,
+            StringComparison.Ordinal);
+        // KLN-D24: an excess always carries its reason; no reason without an excess.
+        Assert.Contains("[OverageReason] IS NOT NULL",
+            Assert.Single(receipts.GetCheckConstraints(), check => check.Name == "CK_TransferReceipts_Overage").Sql,
+            StringComparison.Ordinal);
+        Assert.Contains(receipts.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferAcceptanceRow));
+        Assert.Contains(receipts.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "ShortageMovementId"]));
+        Assert.Contains(overageDecisions.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferReceiptRow));
+        Assert.Contains(lossRequests.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLineRow));
+        Assert.Contains(lossDecisions.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLossRequestRow));
+        foreach (var decision in new[] { overageDecisions, lossDecisions })
+        {
+            Assert.Contains(decision.GetIndexes(), index => index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "MovementId"]));
+            Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(MovementRow));
+        }
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51646", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] IN (12, 13, 14)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferReceipts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferOverageDecisions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossRequests]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossDecisions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] = 6", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.DownOperations[^1]);
+        Assert.Equal("[Kind] BETWEEN 1 AND 11", narrowed.Sql);
     }
 
     [Fact]
