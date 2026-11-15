@@ -101,6 +101,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureSalesQuoteAndEInvoicePolicies(modelBuilder);
         ConfigureTaxRateLists(modelBuilder);
         ConfigureUnitConversionPolicies(modelBuilder);
+        ConfigureBankCsvMappings(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.

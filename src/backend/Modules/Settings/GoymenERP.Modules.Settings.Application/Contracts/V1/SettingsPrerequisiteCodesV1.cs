@@ -69,4 +69,17 @@ public static class SettingsPrerequisiteCodesV1
     /// tolerance values are Settings values), so a consumer refuses to convert ("kaynak yok"), never guesses a value.
     /// </summary>
     public const string UnitConversionPolicyNotFound = "settings_unit_conversion_policy_not_found";
+
+    /// <summary>
+    /// FNS-D52: the company has no CSV column mapping for the bank key asked about (none recorded, or a malformed or empty
+    /// key). There are no compiled or seeded mappings for real banks, so a CSV statement import refuses ("eşleme yok") until
+    /// an authorized person records the bank's mapping in Settings; XLSX and MT940 imports need no mapping.
+    /// </summary>
+    public const string BankCsvMappingNotFound = "settings_bank_csv_mapping_not_found";
+
+    /// <summary>
+    /// FNS-D52: the bank's latest CSV column mapping version is <c>Inactive</c>. A permanent answer about this bank until a
+    /// new active version is recorded; kept apart from <see cref="BankCsvMappingNotFound"/> so the importer can say which.
+    /// </summary>
+    public const string BankCsvMappingInactive = "settings_bank_csv_mapping_inactive";
 }

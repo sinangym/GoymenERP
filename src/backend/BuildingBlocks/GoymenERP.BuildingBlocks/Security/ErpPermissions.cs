@@ -1092,6 +1092,13 @@ public static class ErpPermissions
     public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
 
     /// <summary>
+    /// FNS-D52: read the company's per-bank CSV column mappings of the bank statement import (XLSX and MT940 need none) and
+    /// record new versions (<c>SettingsBankCsvMappingPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed
+    /// or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsBankCsvMappingsManage = "settings.bank-csv-mappings.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1362,6 +1369,7 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsBankCsvMappingsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1573,6 +1581,7 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsBankCsvMappingsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
