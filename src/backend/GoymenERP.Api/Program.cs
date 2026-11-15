@@ -194,6 +194,7 @@ builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockCountPend
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockScrapPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, SalesOrderDraftPendingApprovalAdapterV1>();
 builder.Services.AddScoped<NativeApprovalReadQueryV1>();
+builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
@@ -499,6 +500,7 @@ app.MapProductDimensionEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
+app.MapWorkQueueEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();

@@ -110,7 +110,8 @@ internal sealed class NativeApprovalReadQueryV1
         return ValidateDetail(kind, approvalId, context, result);
     }
 
-    private static NativeApprovalReadResultV1<NativeApprovalReadPageV1> ValidatePage(
+    /// <summary>The list answer rules, shared with the Work queue's bridge over the typed sources (B-25).</summary>
+    internal static NativeApprovalReadResultV1<NativeApprovalReadPageV1> ValidatePage(
         string kind,
         NativeApprovalReadContextV1 context,
         NativeApprovalReadResultV1<NativeApprovalReadPageV1> result)

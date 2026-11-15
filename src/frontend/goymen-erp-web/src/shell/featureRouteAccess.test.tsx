@@ -44,7 +44,7 @@ const USER = '11111111-1111-1111-1111-111111111111'
 const DIRECTORY = [{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }]
 
 /** Business endpoints of the lanes: an ungranted route must reach none of them. */
-const BUSINESS_PATHS = ['/api/v1/products', '/api/v1/organization/sites', '/api/v1/organization/locations', '/api/v1/work/approvals']
+const BUSINESS_PATHS = ['/api/v1/products', '/api/v1/organization/sites', '/api/v1/organization/locations', '/api/v1/work/approvals', '/api/v1/work/queue']
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
