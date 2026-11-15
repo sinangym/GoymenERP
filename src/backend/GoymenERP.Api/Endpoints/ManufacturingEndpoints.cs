@@ -459,6 +459,29 @@ public static class ManufacturingEndpoints
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithRevisePlanProblems();
 
+        // URT-S10 (F-010b, SINAN-CEVAP 14 NS-10): the plan's termin SUGGESTION from the work center calendar and the
+        // profile's hourly capacity. Read only, under the plan read grant: it sets no termin (the user takes the day
+        // through POST /plans/{planId}/due-date). A suggestion that cannot be given is a 200 "unavailable" with its
+        // reason; another company's plan is the code-less 404 of the plan read; a retryable failure is 503.
+        group.MapGet("/plans/{planId:guid}/due-date-suggestion", async (
+                Guid planId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanDueDateSuggestionAsync(planId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanDueDateSuggestionV1")
+            .Produces<PlanDueDateSuggestionViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // MFG-PLAN-EDIT: the plan's history under the plan read's grant — revision 0 as created, then every recorded
         // Draft edit with its reason, actor and time. Another company's plan is the same code-less 404 as an unknown id.
         group.MapGet("/plans/{planId:guid}/revisions", async (
