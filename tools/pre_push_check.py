@@ -46,6 +46,8 @@ LIGHT = (
     # Test-group inventory: group/shard partition logic and proof schema.
     unittest_step("tests/backend_test_group_verifier"),
     unittest_step("tests/rcsi_relational_acceptance_verifier"),
+    # Offline backup/restore verifier (KLN-D36); never touches SQL Server.
+    unittest_step("tests/backup_restore_verifier"),
     unittest_step("tests/ci_safe_trx_summary"),
     unittest_step("tests/openapi_contract_drift"),
     unittest_step("tests/pre_push_check"),
