@@ -1,6 +1,7 @@
 /**
- * F-010a (URT-D29) plan termin text, in Turkish and in its own file. The termin is entered by hand: the system never
- * computes it from line speed, a calendar or capacity, and these words never suggest it does. URT-D66: a plan is approved
+ * F-010a (URT-D29) plan termin text, in Turkish and in its own file. The termin is saved only as the user enters it; the
+ * system never sets it by itself. URT-S10 (F-010b) may SUGGEST a day from the work center calendar and capacity (its
+ * words are in `dueDateSuggestionText.ts`); the user takes or changes it before saving. URT-D66: a plan is approved
  * only with a termin, and no termin is earlier than the server's Europe/Istanbul business day (the screen never compares
  * days itself; the server refuses).
  */
@@ -9,7 +10,7 @@ export const DUE_DATE_TEXT = {
   label: 'Termin',
   none: 'Termin girilmedi',
   revision: 'termin revizyonu',
-  manualNote: 'Termin elle girilir; hat hızından veya takvimden hesaplanmaz.',
+  manualNote: 'Termini siz girersiniz; sistem kendiliğinden termin koymaz. İsterseniz takvim ve kapasiteye dayalı öneriyi alıp alana aktarabilir, sonra kaydedebilirsiniz.',
   inputLabel: 'Termin tarihi',
   inputHint: 'Gün olarak girin (saat yok). Boş bırakıp kaydederseniz termin kaldırılır. Bugünkü iş gününden (İstanbul) önceki bir gün sunucu tarafından reddedilir.',
   inputHintApproved: 'Gün olarak girin (saat yok). Bugünkü iş gününden (İstanbul) önceki bir gün sunucu tarafından reddedilir.',
