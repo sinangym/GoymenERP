@@ -66,6 +66,9 @@ public static class InventoryModuleExtensions
         // DEC-SAL-005: Inventory answers the Sales-declared active-allocation read over its own company-filtered allocations.
         // Registered here, in the owner's module (no host file), so that Sales reads allocations only through this port.
         services.AddScoped<ISalesOrderAllocationReadPortV1, InventorySalesOrderAllocationReadPort>();
+        // F-017 STOK §5.1 (STK-S16): the same read with its kind — physical (kg) and future supply (purchase unit) kept apart.
+        // V1 above stays registered and unchanged for every physical-only caller.
+        services.AddScoped<ISalesOrderAllocationReadPortV2, InventorySalesOrderAllocationReadPortV2>();
         // SAT-D262: Inventory owns the moving-average purchase cost and answers Sales only through this versioned read port.
         services.AddScoped<IInventoryAverageCostReadPortV1, InventoryAverageCostReadPort>();
         // SAT-D272 / SAT-D347 / SAT-D350 (STK-S35): the company-wide (all locations) average; the aggregation is Inventory's.

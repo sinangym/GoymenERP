@@ -75,7 +75,8 @@ public sealed partial class SalesDraftService(
     IEnumerable<ISalesOrderLinkedSupplyReadPortV1>? linkedSupplies = null,
     IEnumerable<ISalesOrderLinkedSupplyRecorderV1>? linkedSupplyRecorders = null,
     ISalesInvoiceStore? invoiceRecords = null,
-    ISalesInvoiceableShipmentReadPortV1? postedShares = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesInvoiceableShipmentReadPortV1? postedShares = null,
+    ISalesOrderAllocationReadPortV2? allocationsV2 = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
