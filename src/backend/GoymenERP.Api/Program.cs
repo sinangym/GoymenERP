@@ -485,6 +485,8 @@ if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
 app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
+// F023-2 / KIM-D10: an endpoint's own 401/403 (service fence) is recorded once as authz.denied.
+app.UseMiddleware<AuthorizationDenialResponseMiddleware>();
 
 app.MapErpHealthEndpoints();
 app.MapOrganizationEndpoints();

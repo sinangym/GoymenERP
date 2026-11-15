@@ -1,3 +1,4 @@
+using GoymenERP.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Authentication;
@@ -24,6 +25,15 @@ public sealed class ErpAuthorizationMiddlewareResultHandler(
         var statusCode = authorizeResult.Challenged
             ? StatusCodes.Status401Unauthorized
             : StatusCodes.Status403Forbidden;
+
+        // F023-2 / KIM-D10: the refusal is recorded once, as authz.denied, before the response is written.
+        await AuthorizationDenialHttp.RecordAsync(
+            context,
+            authorizeResult.Challenged
+                ? AuthorizationDenialHttp.SessionInvalid()
+                : AuthorizationDenialHttp.ForForbidden(
+                    context,
+                    policy.Requirements.OfType<ErpPermissionRequirement>().Select(requirement => requirement.Permission)));
 
         if (context.GetEndpoint()?.Metadata
                 .GetMetadata<PrivateNoStoreOnAuthorizationFailureMetadata>() is not null)

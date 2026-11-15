@@ -1,4 +1,5 @@
 using GoymenERP.Api.Errors;
+using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 
@@ -27,6 +28,10 @@ public sealed class CompanyContextMiddleware(RequestDelegate next)
             || !Guid.TryParse(headerValue[0], out var companyId)
             || companyId == Guid.Empty)
         {
+            // F023-2: an unreadable company header is a company context refusal; no company is stored for it.
+            await AuthorizationDenialHttp.RecordAsync(
+                httpContext,
+                AuthorizationDenialHttp.CompanyContextMismatch(requestedCompanyId: null));
             await ErpRequestMetadataProblem
                 .WriteCompanyContextInvalidAsync(httpContext);
             return;
@@ -34,6 +39,10 @@ public sealed class CompanyContextMiddleware(RequestDelegate next)
 
         if (!currentUser.CanAccessCompany(companyId))
         {
+            // F023-2 scenario 7: platform scope, no company id; the requested company is kept for the user actor.
+            await AuthorizationDenialHttp.RecordAsync(
+                httpContext,
+                AuthorizationDenialHttp.CompanyContextMismatch(companyId));
             await Results.Problem(
                     title: "Erişim reddedildi.",
                     detail: "Seçili şirket için erişim yetkiniz bulunmuyor.",
