@@ -1688,10 +1688,14 @@ public sealed partial class SalesDraftServiceTests
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
 
+        /// <summary>Plan S2: the server company context the draft service gets instead of the resolved test company (null = the default).</summary>
+        public ICompanyContext? CompanyOverride { get; set; }
+
         public SalesDraftService Service()
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            var resolved = new CompanyContext();
+            resolved.Set(Company);
+            var company = CompanyOverride ?? resolved;
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),

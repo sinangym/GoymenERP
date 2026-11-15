@@ -105,6 +105,10 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderRiskOutcomeSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
+        // F-018 / plan S2 (FNS-D30, SAT-D310): the shipment risk gate read for the Logistics gate — the same deterministic risk
+        // evaluation as a company-scoped system read, with the shipment's risk exception embedded. Read-only; amount-free.
+        services.AddScoped<ISalesShipmentRiskGateSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        services.AddScoped<ISalesShipmentRiskGateReadPortV1, SalesShipmentRiskGateReadPort>();
         // API-40 (SAT-D288…SAT-D294): the customer return invoice over the Sales store and the invoice store. The Finance reversal
         // port is the Finance owner's and is NOT composed here: without it the finalisation is 503 before any read (SAT-D294).
         services.AddScoped<ISalesCustomerReturnStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
