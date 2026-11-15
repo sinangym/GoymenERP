@@ -146,6 +146,18 @@ public static class InventoryAllocationCodesV1
     public const string ChangeUnchanged = "inventory_allocation_change_unchanged";
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string ValueDoesNotFit = "inventory_value_does_not_fit";
+
+    /// <summary>
+    /// 409 (KLN-D65 (1)/(2)): physical + active future allocations of the Sales line, with this request, would exceed the line's
+    /// open quantity (KLN-D28 (4)). Nothing is written; existing allocations stay as they are.
+    /// </summary>
+    public const string ExceedsDemandOpenQuantity = "inventory_allocation_exceeds_demand_open_quantity";
+
+    /// <summary>
+    /// 422 (KLN-D66 (3)): the cap must compare in kilograms but no central conversion source can bring the Sales order unit (or a
+    /// future allocation's purchase unit) to kilograms for this product. Fail-closed, never a guess.
+    /// </summary>
+    public const string UnitConversionUnavailable = "inventory_allocation_unit_conversion_unavailable";
 }
 
 public sealed class InventoryAllocationException(

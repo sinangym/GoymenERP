@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
@@ -257,11 +258,14 @@ public static class InventoryPhysicalAllocationHttpCodesV1
 {
     public static IReadOnlySet<string> Status400Codes { get; } = Set(InventoryAllocationCodesV1.ValidationFailed);
 
+    // KLN-D65: a new reservation over the Sales line's open quantity, or the Sales line lock held by the other path.
     public static IReadOnlySet<string> CreateStatus409Codes { get; } = Set(
         InventoryAllocationCodesV1.IdempotencyConflict,
         InventoryAllocationCodesV1.LabelVersionConflict,
         InventoryAllocationCodesV1.InsufficientFreeStock,
-        InventoryAllocationCodesV1.ConcurrentChange);
+        InventoryAllocationCodesV1.ConcurrentChange,
+        InventoryAllocationCodesV1.ExceedsDemandOpenQuantity,
+        SalesOrderLineSerializationLockContractV1.BusyCode);
 
     public static IReadOnlySet<string> ReleaseStatus409Codes { get; } = Set(
         InventoryAllocationCodesV1.IdempotencyConflict,
@@ -270,27 +274,33 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.ConcurrentChange);
 
     // The Sales ownership gate (InventorySalesOwnershipGuardV1) refuses only a NEW reservation, so only create
-    // declares inventory_allocation_owner_not_company; release keeps its single invalid-reference 422.
+    // declares inventory_allocation_owner_not_company; release keeps its single invalid-reference 422. KLN-D66 (3): a
+    // kilogram comparison with the Sales order unit that has no conversion source is refused, never guessed.
     public static IReadOnlySet<string> CreateStatus422Codes { get; } = Set(
         InventoryAllocationCodesV1.InvalidReference,
-        InventoryAllocationCodesV1.OwnerNotCompany);
+        InventoryAllocationCodesV1.OwnerNotCompany,
+        InventoryAllocationCodesV1.UnitConversionUnavailable);
 
     public static IReadOnlySet<string> ReleaseStatus422Codes { get; } = Set(InventoryAllocationCodesV1.InvalidReference);
 
-    // INV-AL-1 change: stale allocation or label version, a non-active allocation, too little free stock, a race.
+    // INV-AL-1 change: stale allocation or label version, a non-active allocation, too little free stock, a race; KLN-D65
+    // growing past the Sales line's open quantity, or the Sales line lock held by the other path.
     public static IReadOnlySet<string> ChangeStatus409Codes { get; } = Set(
         InventoryAllocationCodesV1.IdempotencyConflict,
         InventoryAllocationCodesV1.AllocationVersionConflict,
         InventoryAllocationCodesV1.AllocationStateConflict,
         InventoryAllocationCodesV1.LabelVersionConflict,
         InventoryAllocationCodesV1.InsufficientFreeStock,
-        InventoryAllocationCodesV1.ConcurrentChange);
+        InventoryAllocationCodesV1.ConcurrentChange,
+        InventoryAllocationCodesV1.ExceedsDemandOpenQuantity,
+        SalesOrderLineSerializationLockContractV1.BusyCode);
 
     // A change adds a reservation part, so the Sales ownership gate applies as on create; the same label and kg is no change.
     public static IReadOnlySet<string> ChangeStatus422Codes { get; } = Set(
         InventoryAllocationCodesV1.InvalidReference,
         InventoryAllocationCodesV1.OwnerNotCompany,
-        InventoryAllocationCodesV1.ChangeUnchanged);
+        InventoryAllocationCodesV1.ChangeUnchanged,
+        InventoryAllocationCodesV1.UnitConversionUnavailable);
 
     private static IReadOnlySet<string> Set(params string[] codes) => codes.ToHashSet(StringComparer.Ordinal);
 }

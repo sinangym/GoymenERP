@@ -2,6 +2,8 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -51,8 +53,15 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryLabelStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryMovementStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryOpeningStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
+        // KLN-D65: the physical allocation writer is the store behind the shared total cap, under the host's Sales line lock
+        // (without the lock binder a create or a growing change is refused fail-closed, never capped without the lock).
         services.AddScoped<IInventoryPhysicalAllocationWriterV1>(serviceProvider =>
-            serviceProvider.GetRequiredService<InventoryStore>());
+            new InventoryPhysicalAllocationDemandCapWriter(
+                serviceProvider.GetRequiredService<InventoryStore>(),
+                serviceProvider.GetRequiredService<InventoryDbContext>(),
+                serviceProvider.GetRequiredService<IInventoryFutureDemandSourceV1>(),
+                serviceProvider.GetRequiredService<IInventoryFutureUnitConverterV1>(),
+                serviceProvider.GetService<ISalesOrderLineSerializationLockBinderV1>()));
         services.AddScoped<IInventoryGoodsReceiptSourceV1, InventoryGoodsReceiptSourceService>();
         // DEC-SAL-005: Inventory answers the Sales-declared active-allocation read over its own company-filtered allocations.
         // Registered here, in the owner's module (no host file), so that Sales reads allocations only through this port.
@@ -80,7 +89,11 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryFutureAllocationReadPortV1, InventoryFutureAllocationReadPort>();
         services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
         services.AddScoped<IInventoryFutureDemandSourceV1, InventoryFutureDemandSource>();
-        services.TryAddScoped<IInventoryFutureUnitConverterV1, InventoryIdentityFutureUnitConverterV1>();
+        // KLN-D66: over the Settings unit identities when the host has them (kg only today), identity-only otherwise.
+        services.TryAddScoped<IInventoryFutureUnitConverterV1>(serviceProvider =>
+            serviceProvider.GetService<ISettingsUnitIdentityCatalogV1>() is { } units
+                ? (IInventoryFutureUnitConverterV1)new InventorySettingsFutureUnitConverterV1(units)
+                : new InventoryIdentityFutureUnitConverterV1());
         services.TryAddScoped<IInventoryFutureSupplySourceV1, InventoryUnavailableFutureSupplySourceV1>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;

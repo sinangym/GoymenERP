@@ -18,7 +18,18 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// are declared here (F017-b2); the host authorises first and hands a fence that re-checks the same authority after the locks
 /// and right before the save. Each call is ONE transaction on Inventory's connection: idempotency replay → Sales line lock →
 /// purchase line lock → fence → source reads → checks → allocation + ledger + command + audit + outbox → one save → commit.
-/// A refusal writes nothing (rule refusals are fixed by retrying with new input, the same as the physical allocation store).
+/// <para>
+/// Terminal refusals (STK-S14 technical item, SINAN-CEVAP 27 application note): a 409 state refusal or a 422 rule refusal decided
+/// under the locks is recorded in the same idempotency command row (status + code, no allocation) with its own audit event and no
+/// allocation, ledger or outbox change; the same key replays the refusal, a different payload under the key is 409
+/// idempotency_conflict. Shape refusals (400), a missing reference (404), an unreadable source (503), a busy lock and a lost race
+/// write nothing and may be retried with the same key.
+/// </para>
+/// <para>
+/// KLN-D65 / KLN-D66 / KLN-D67: physical + future + this request stays within the Sales line's open quantity
+/// (<see cref="InventoryAllocationDemandCap"/>, the same check the physical allocation path makes under the same Sales line lock);
+/// a different unit is compared in kilograms, and the product identity (not the card revision) must match.
+/// </para>
 /// </summary>
 public sealed class InventoryFutureAllocationWriter(
     InventoryDbContext dbContext,
@@ -80,6 +91,32 @@ public sealed class InventoryFutureAllocationWriter(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            return await CreateLockedAsync(transaction, request, requested, reason, metadata, fence, companyId, keyHash,
+                payloadHash, cancellationToken);
+        }
+        catch (InventoryAllocationException refusal) when (!refusal.IsReplay && RecordableCreateRefusals.Contains(
+            (refusal.Status, refusal.Code)))
+        {
+            return await RecordRefusalAsync(transaction, fence, InventoryFutureAllocationCommandsV1.Create, keyHash, payloadHash,
+                metadata, companyId, request.AllocationId, refusal, CreateRefusedEventType, CreateRefusedOperation, reason,
+                cancellationToken);
+        }
+    }
+
+    private async Task<InventoryFutureAllocationResultV1> CreateLockedAsync(
+        IDbContextTransaction transaction,
+        CreateFutureSupplyAllocationV1 request,
+        FutureSupplyQuantity requested,
+        string reason,
+        InventoryCommandMetadata metadata,
+        IInventoryFutureAllocationAuthorityFenceV1 fence,
+        Guid companyId,
+        string keyHash,
+        string payloadHash,
+        CancellationToken cancellationToken)
+    {
         var connection = dbContext.Database.GetDbConnection();
         var dbTransaction = transaction.GetDbTransaction();
         await AcquireSalesLineAsync(connection, dbTransaction, request.SalesOrderLineId, cancellationToken);
@@ -88,6 +125,7 @@ public sealed class InventoryFutureAllocationWriter(
 
         var demand = await ReadDemandAsync(request.SalesOrderId, request.SalesOrderLineId, cancellationToken);
         var supply = await ReadSupplyAsync(request.PurchaseOrderId, request.PurchaseOrderLineId, cancellationToken);
+        // KLN-D67: the product identity decides; the Sales and purchase card revisions may differ (each row keeps its own).
         if (supply.ProductId != demand.ProductId)
         {
             throw Engine.Error(422, InventoryFutureAllocationCodesV1.InvalidReference);
@@ -120,7 +158,7 @@ public sealed class InventoryFutureAllocationWriter(
             throw Engine.Error(422, InventoryFutureAllocationCodesV1.ValidationFailed, exception);
         }
 
-        await RequireDemandRoomAsync(demand, requested, request.UnitId, cancellationToken);
+        await RequireDemandRoomAsync(demand, quantity, supply.UnitId, cancellationToken);
 
         var allocation = FutureSupplyAllocation.Create(request.AllocationId, companyId, quantity);
         var now = timeProvider.GetUtcNow();
@@ -220,6 +258,34 @@ public sealed class InventoryFutureAllocationWriter(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            return await ReleaseLockedAsync(transaction, allocationId, expectedVersion, quantity, reasonCode, reasonText,
+                metadata, fence, companyId, keyHash, payloadHash, cancellationToken);
+        }
+        catch (InventoryAllocationException refusal) when (!refusal.IsReplay && RecordableReleaseRefusals.Contains(
+            (refusal.Status, refusal.Code)))
+        {
+            return await RecordRefusalAsync(transaction, fence, InventoryFutureAllocationCommandsV1.Release, keyHash, payloadHash,
+                metadata, companyId, allocationId, refusal, ReleaseRefusedEventType, ReleaseRefusedOperation, reasonText,
+                cancellationToken);
+        }
+    }
+
+    private async Task<InventoryFutureAllocationResultV1> ReleaseLockedAsync(
+        IDbContextTransaction transaction,
+        Guid allocationId,
+        long expectedVersion,
+        FutureSupplyQuantity? quantity,
+        string reasonCode,
+        string reasonText,
+        InventoryCommandMetadata metadata,
+        IInventoryFutureAllocationAuthorityFenceV1 fence,
+        Guid companyId,
+        string keyHash,
+        string payloadHash,
+        CancellationToken cancellationToken)
+    {
         var purchaseLineId = await dbContext.FutureSupplyAllocations.AsNoTracking()
             .Where(row => row.Id == allocationId)
             .Select(row => (Guid?)row.PurchaseOrderLineId)
@@ -381,59 +447,27 @@ public sealed class InventoryFutureAllocationWriter(
     }
 
     /// <summary>
-    /// F-017 STOK §3.2 step 5: physical active + future active + this request must not exceed the Sales line's open quantity, all
-    /// in the Sales order unit (exact decimals; Sales may keep more decimals than a purchase line). The physical allocations hold
-    /// kilograms (INV-AL-1); they are converted only when some are held, so a line without physical allocations needs no kilogram
-    /// source. Any missing conversion is a 422, never a guess.
+    /// F-017 STOK §3.2 step 5 / KLN-D65: physical active + future active + this request must not exceed the Sales line's open
+    /// quantity. The shared <see cref="InventoryAllocationDemandCap"/> compares exactly in the Sales order unit when nothing needs a
+    /// conversion, and in kilograms otherwise (KLN-D66); a missing conversion is a 422, never a guess.
     /// </summary>
-    private async Task RequireDemandRoomAsync(InventoryFutureDemandLineV1 demand, FutureSupplyQuantity requested,
-        Guid requestUnitId, CancellationToken cancellationToken)
+    private async Task RequireDemandRoomAsync(InventoryFutureDemandLineV1 demand, FutureSupplyQuantity quantity,
+        Guid purchaseUnitId, CancellationToken cancellationToken)
     {
-        if (!decimal.TryParse(demand.OpenQuantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
-                out var open) || open < 0m)
+        var outcome = await InventoryAllocationDemandCap.CheckAsync(dbContext, unitConverter, demand,
+            InventoryAllocationDemandCapRequest.Future(quantity.Value, purchaseUnitId), 0m, cancellationToken);
+        switch (outcome)
         {
-            throw Engine.Error(503, InventoryFutureAllocationCodesV1.ServiceUnavailable);
-        }
-
-        var held = 0m;
-        var physicalKilograms = await dbContext.Allocations.AsNoTracking()
-            .Where(row => row.DemandKind == InventoryAllocationDemandKindsV1.SalesOrderLine
-                && row.DemandId == demand.OrderId && row.DemandLineId == demand.LineId
-                && row.Status == (int)StockAllocationStatus.Active)
-            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
-        if (physicalKilograms > 0m)
-        {
-            var converted = await unitConverter.ConvertFromKilogramsAsync(demand.ProductId, demand.ProductVersion,
-                physicalKilograms, demand.UnitId, cancellationToken);
-            held += RequireConverted(converted);
-        }
-
-        var futureByUnit = await dbContext.FutureSupplyAllocations.AsNoTracking()
-            .Where(row => row.DemandKind == InventoryFutureAllocationKindsV1.SalesOrderLine
-                && row.DemandId == demand.OrderId && row.DemandLineId == demand.LineId
-                && row.Status == (int)FutureSupplyAllocationStatus.Active)
-            .GroupBy(row => row.PurchaseUnitId)
-            .Select(group => new { UnitId = group.Key, Remaining = group.Sum(row => row.RemainingQuantity) })
-            .ToListAsync(cancellationToken);
-        foreach (var future in futureByUnit.OrderBy(item => item.UnitId))
-        {
-            var converted = await unitConverter.ConvertAsync(demand.ProductId, demand.ProductVersion, future.Remaining,
-                future.UnitId, demand.UnitId, cancellationToken);
-            held += RequireConverted(converted);
-        }
-
-        var asked = await unitConverter.ConvertAsync(demand.ProductId, demand.ProductVersion, requested.Value, requestUnitId,
-            demand.UnitId, cancellationToken);
-        if (held + RequireConverted(asked) > open)
-        {
-            throw Engine.Error(409, InventoryFutureAllocationCodesV1.ExceedsDemandOpenQuantity);
+            case InventoryAllocationDemandCapOutcome.Fits:
+                return;
+            case InventoryAllocationDemandCapOutcome.Exceeds:
+                throw Engine.Error(409, InventoryFutureAllocationCodesV1.ExceedsDemandOpenQuantity);
+            case InventoryAllocationDemandCapOutcome.ConversionUnavailable:
+                throw Engine.Error(422, InventoryFutureAllocationCodesV1.UnitConversionUnavailable);
+            default:
+                throw Engine.Error(503, InventoryFutureAllocationCodesV1.ServiceUnavailable);
         }
     }
-
-    private static decimal RequireConverted(InventoryFutureUnitConversionV1 converted) =>
-        converted.Outcome == InventoryFutureUnitConversionOutcomeV1.Converted && converted.Quantity is { } value && value >= 0m
-            ? value
-            : throw Engine.Error(422, InventoryFutureAllocationCodesV1.UnitConversionUnavailable);
 
     private async Task<InventoryFutureAllocationResultV1> SaveAndCommitAsync(
         IDbContextTransaction transaction,
@@ -485,7 +519,76 @@ public sealed class InventoryFutureAllocationWriter(
 
         var stored = JsonSerializer.Deserialize<CommandResult>(prior.ResultJson, Engine.Json)
             ?? throw new InvalidOperationException("Kayıtlı gelecek tedarik ayırma komut sonucu okunamadı.");
-        return new InventoryFutureAllocationResultV1(stored.Allocation, true, prior.CorrelationId);
+        if (stored.Allocation is { } allocation)
+        {
+            return new InventoryFutureAllocationResultV1(allocation, true, prior.CorrelationId);
+        }
+
+        // A recorded terminal refusal answers the same key with the same refusal (and the first attempt's correlation).
+        if (stored.RefusalStatus is { } status && !string.IsNullOrEmpty(stored.RefusalCode))
+        {
+            throw new InventoryAllocationException(status, stored.RefusalCode, isReplay: true,
+                originalCorrelationId: prior.CorrelationId);
+        }
+
+        throw new InvalidOperationException("Kayıtlı gelecek tedarik ayırma komut sonucu okunamadı.");
+    }
+
+    /// <summary>
+    /// Records a terminal refusal decided under the locks: the tracked changes are dropped, the command row keeps status + code
+    /// (no allocation) and one audit event names the refusal; nothing else is written. A lost race on the key answers the winner.
+    /// </summary>
+    private async Task<InventoryFutureAllocationResultV1> RecordRefusalAsync(
+        IDbContextTransaction transaction,
+        IInventoryFutureAllocationAuthorityFenceV1 fence,
+        string command,
+        string keyHash,
+        string payloadHash,
+        InventoryCommandMetadata metadata,
+        Guid companyId,
+        Guid targetId,
+        InventoryAllocationException refusal,
+        string eventType,
+        string operation,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        var now = timeProvider.GetUtcNow();
+        dbContext.Commands.Add(new InventoryCommandRow
+        {
+            CompanyId = companyId,
+            CommandName = command,
+            IdempotencyKeyHash = keyHash,
+            ActorId = metadata.ActorId,
+            PayloadHash = payloadHash,
+            TargetId = targetId,
+            ResultJson = JsonSerializer.Serialize(new CommandResult(null, refusal.Status, refusal.Code), Engine.Json),
+            CorrelationId = metadata.CorrelationId,
+            RecordedAtUtc = now,
+        });
+        Engine.Audit(auditEvents, metadata, companyId, targetId, eventType, operation, null, null, "{}",
+            JsonSerializer.Serialize(new { status = refusal.Status, code = refusal.Code }, Engine.Json), reason);
+        await fence.RequireStillAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            dbContext.ChangeTracker.Clear();
+            await transaction.RollbackAsync(CancellationToken.None);
+            if (await FindReplayAsync(command, keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } winner)
+            {
+                return winner;
+            }
+
+            throw Engine.Error(409, InventoryFutureAllocationCodesV1.ConcurrentChange, exception);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        throw refusal;
     }
 
     private static InventoryCommandRow CommandRow(Guid companyId, string command, string keyHash, string payloadHash,
@@ -497,10 +600,35 @@ public sealed class InventoryFutureAllocationWriter(
             ActorId = metadata.ActorId,
             PayloadHash = payloadHash,
             TargetId = targetId,
-            ResultJson = JsonSerializer.Serialize(new CommandResult(view), Engine.Json),
+            ResultJson = JsonSerializer.Serialize(new CommandResult(view, null, null), Engine.Json),
             CorrelationId = metadata.CorrelationId,
             RecordedAtUtc = now,
         };
 
-    private sealed record CommandResult(InventoryFutureAllocationViewV1 Allocation);
+    internal const string CreateRefusedEventType = "inventory.future-allocation.create-refused.v1";
+    internal const string ReleaseRefusedEventType = "inventory.future-allocation.release-refused.v1";
+    private const string CreateRefusedOperation = "CreateRefused";
+    private const string ReleaseRefusedOperation = "ReleaseRefused";
+
+    /// <summary>Create refusals decided under the locks that the same input can never pass (recorded, replayed by the key).</summary>
+    internal static readonly IReadOnlySet<(int Status, string Code)> RecordableCreateRefusals = new HashSet<(int, string)>
+    {
+        (409, InventoryFutureAllocationCodesV1.StateConflict),
+        (409, InventoryFutureAllocationCodesV1.InsufficientFutureSupply),
+        (409, InventoryFutureAllocationCodesV1.ExceedsDemandOpenQuantity),
+        (422, InventoryFutureAllocationCodesV1.InvalidReference),
+        (422, InventoryFutureAllocationCodesV1.UnitConversionUnavailable),
+        (422, InventoryFutureAllocationCodesV1.ValidationFailed),
+    };
+
+    /// <summary>Release refusals decided under the purchase line lock (stale version, closed allocation, invalid selection).</summary>
+    internal static readonly IReadOnlySet<(int Status, string Code)> RecordableReleaseRefusals = new HashSet<(int, string)>
+    {
+        (409, InventoryFutureAllocationCodesV1.StateConflict),
+        (409, InventoryFutureAllocationCodesV1.VersionConflict),
+        (422, InventoryFutureAllocationCodesV1.ReleaseSelectionInvalid),
+    };
+
+    /// <summary>The stored answer of a key: the allocation, or a terminal refusal's status and code (never both).</summary>
+    private sealed record CommandResult(InventoryFutureAllocationViewV1? Allocation, int? RefusalStatus, string? RefusalCode);
 }
