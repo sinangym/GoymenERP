@@ -1509,7 +1509,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 ],
                 new SalesDraftRiskFigureV1("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Unavailable", null, null,
                     SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
-                new SalesDraftRiskFigureV1("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"),
+                new SalesDraftRiskFigureV1("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"),
                 new SalesDraftRiskFigureV1("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"))),
         };
         using var host = CreateHost(service);
@@ -1554,7 +1554,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 (components[3].GetProperty("amounts").ValueKind, components[3].GetProperty("source").GetString(),
                     components[3].GetProperty("reasonCode").GetString()));
             Assert.Equal((JsonValueKind.Array, 0), (components[2].GetProperty("amounts").ValueKind, components[2].GetProperty("amounts").GetArrayLength()));
-            Assert.Equal(("NoSource", "finance_credit_limit_owner_missing"), (body.GetProperty("creditLimit").GetProperty("state").GetString(),
+            Assert.Equal(("NoSource", "finance_credit_limit_not_set"), (body.GetProperty("creditLimit").GetProperty("state").GetString(),
                 body.GetProperty("creditLimit").GetProperty("reasonCode").GetString()));
         }
 

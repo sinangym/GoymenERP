@@ -48,7 +48,7 @@ public sealed partial class SalesDraftServiceTests
             [
                 new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.ShipmentProviderUnavailable),
                 new SalesDraftRiskReasonV1("ApprovedUnshippedRemainder", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
-                new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_owner_missing"),
+                new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_not_set"),
             ],
             check.Reasons);
         Assert.Equal(
@@ -65,7 +65,7 @@ public sealed partial class SalesDraftServiceTests
             check.Components.Select(Flat));
         // SAT-D48: this order's current revision is approved — already in the remainder, it adds nothing.
         Assert.Equal(("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Available", "IncludingTax", "", null), Flat(check.ThisOrder));
-        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"), Flat(check.CreditLimit));
+        Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_not_set"), Flat(check.CreditLimit));
         Assert.Equal(("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"), Flat(check.Collateral));
 
         // The owners were asked for this customer and its one open approved order only.
@@ -95,7 +95,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(noLocal.InLocalCurrency);
         Assert.Equal(SalesDraftRiskResultsV1.Unavailable, noLocal.Result);
         Assert.DoesNotContain(noLocal.Reasons, reason => reason.Code == "local_currency_unavailable");
-        Assert.Contains(new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_owner_missing"), noLocal.Reasons);
+        Assert.Contains(new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_not_set"), noLocal.Reasons);
     }
 
     [Fact]
@@ -448,7 +448,7 @@ public sealed partial class SalesDraftServiceTests
     private static Func<Guid, Guid, SalesPartyRiskReadAnswerV1> FinanceLike(IReadOnlyList<SalesPartyRiskAmountV1> receivables) =>
         (party, account) => new SalesPartyRiskReadAnswerV1(Company, party, account,
             new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, "finance.open-items", receivables, true, null),
-            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-credit-limit", [], null, "finance_credit_limit_owner_missing"),
+            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-credit-limit", [], null, "finance_credit_limit_not_set"),
             new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-collateral", [], null, "finance_collateral_owner_missing"));
 
     /// <summary>A SYNTHETIC customer-finance owner: answers what the case gives it and records the customers asked.</summary>

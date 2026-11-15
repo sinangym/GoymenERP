@@ -23,11 +23,14 @@ namespace GoymenERP.Modules.Sales.Application;
 /// remainder: the payable amount (SAT-D46 / SAT-D183) from API-03's calculator at the order's approved basis, one amount per
 /// order. SAT-D311: a finalized invoice Finance has not processed stays in this total and is shown as the
 /// <c>InvoicedAwaitingFinance</c> sub-row; whether Finance processed it must come from the same Finance answer as the open
-/// receivables (plan S0 (b)), which does not carry it yet — so a customer with a finalized share gets both "Unavailable"
-/// (<c>finance_processed_set_unavailable</c>), never a double count or a gap. Posted shares beyond the definite shipments of a
-/// line, an owner not composed, failing or malformed, or more shares than one read takes are "Unavailable" with their reason.
-/// SAT-D313 (the shipment-plan basis of the remainder) waits for the Logistics plan-quantity read; until then the remainder
-/// below is unchanged.</item>
+/// receivables (plan S0 (b)). V1 does not carry it; <see cref="ISalesPartyRiskReadPortV2"/> (SAT-S3) does, and the
+/// customer-finance owner fills it in FIN-S20 — until this read is switched to it, a customer with a finalized share gets both
+/// "Unavailable" (<c>finance_processed_set_unavailable</c>), never a double count or a gap. The share read still asks for the
+/// whole account (no <see cref="SalesInvoiceableShipmentQueryV1.OrderIds"/> filter until the Logistics owner applies it,
+/// STK-S38). Posted shares beyond the definite shipments of a line, an owner not composed, failing or malformed, or more shares
+/// than one read takes are "Unavailable" with their reason.
+/// SAT-D352: a definite shipment whose dispatch note is not approved is counted here (from the delivery owner's shipped total),
+/// once. SAT-D351: the remainder below stays approved − definitely shipped; no plan-quantity read is needed.</item>
 /// <item><b>Approved, not shipped</b> (SAT-D50: every internally approved order, customer acceptance or not): for every open
 /// approved order of the same customer account (the store's <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per
 /// line the approved quantity − the delivery owner's shipped total, not below zero. The approved basis is the current lines while
@@ -51,9 +54,10 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
 {
     /// <summary>
     /// The most open approved orders of one customer one risk read takes (a technical response bound, not a business policy):
-    /// above it the remainder is "Unavailable" rather than a truncated, smaller sum.
+    /// above it the remainder is "Unavailable" rather than a truncated, smaller sum. The same bound caps the order filter of the
+    /// Logistics share read (<see cref="SalesInvoiceableShipmentQueryV1.MaximumOrderIds"/>).
     /// </summary>
-    public const int MaximumRiskOrders = 200;
+    public const int MaximumRiskOrders = SalesInvoiceableShipmentQueryV1.MaximumOrderIds;
 
     /// <summary>
     /// The most posted shipment shares of one customer account one risk read takes — the Logistics read's own candidate bound (a

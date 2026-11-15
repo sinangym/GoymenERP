@@ -6,7 +6,7 @@
   "reasons": [
     { "component": "ShippedNotInvoiced", "code": "finance_processed_set_unavailable" },
     { "component": "ThisOrder", "code": "vat_inclusive_amount_unavailable" },
-    { "component": "CreditLimit", "code": "finance_credit_limit_owner_missing" }
+    { "component": "CreditLimit", "code": "finance_credit_limit_not_set" }
   ],
   "amountDisclosure": "Visible",
   "inLocalCurrency": {
@@ -63,7 +63,7 @@
     "state": "NoSource",
     "taxBasis": null,
     "amounts": null,
-    "reasonCode": "finance_credit_limit_owner_missing"
+    "reasonCode": "finance_credit_limit_not_set"
   },
   "collateral": {
     "kind": "Collateral",
