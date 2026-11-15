@@ -21,6 +21,15 @@ internal static partial class RefusedAttemptAuditDraftMapper
     /// </summary>
     internal const string MissingIdempotencyKeyPrefix = "refused-attempt:no-idempotency-key:";
 
+    /// <summary>
+    /// The technical idempotency source of an aggregation summary row (F023-4): this prefix and the summary's own
+    /// correlation identity, so a summary never shares the digest of a refusal the client sent.
+    /// </summary>
+    internal const string AggregationSummaryKeyPrefix = "refused-attempt:aggregation-summary:";
+
+    /// <summary>The prefix of the correlation identity a summary row is written under (a fresh identity per row).</summary>
+    internal const string AggregationSummaryCorrelationPrefix = "refused-attempt-summary-";
+
     private const int EventTypeMaxLength = 160;
     private const int EntityTypeMaxLength = 160;
     private const int EntityIdMaxLength = 128;
@@ -124,6 +133,49 @@ internal static partial class RefusedAttemptAuditDraftMapper
             causationId,
             idempotencyKey,
             AuditOutcomes.Refused);
+    }
+
+    /// <summary>
+    /// The append-only summary row of one closed aggregation window (F-023, F023-4). It goes through the same
+    /// restricted draft as a single refusal (closed codes and identifiers only) with the actor, command, permission,
+    /// roles, channel and class of the first folded refusal; it names no target, version or field, and is caused by
+    /// the first folded refusal's correlation. <c>AfterJson</c> carries exactly <c>count</c>, <c>windowStartUtc</c>,
+    /// <c>windowEndUtc</c>, <c>refusalClass</c> and <c>problemCode</c>.
+    /// </summary>
+    internal static AuditEventDraft ToSummaryDraft(RefusedAttemptAggregationSummary summary, string summaryCorrelationId)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+        ArgumentNullException.ThrowIfNull(summary.Template);
+        if (summary.Count <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(summary), summary.Count, "A summary folds at least one refusal.");
+        }
+
+        if (summary.WindowEndUtc < summary.WindowStartUtc)
+        {
+            throw new ArgumentException("A summary window cannot end before it starts.", nameof(summary));
+        }
+
+        var template = summary.Template;
+        var draft = ToDraft(template with
+        {
+            TargetType = RefusedAttemptV1.NoTarget,
+            TargetId = RefusedAttemptV1.NoTarget,
+            ExpectedVersion = null,
+            FieldErrors = [],
+            CorrelationId = summaryCorrelationId,
+            CausationId = template.CorrelationId,
+            IdempotencyKey = AggregationSummaryKeyPrefix + summaryCorrelationId,
+        });
+        var afterJson = JsonSerializer.Serialize(new
+        {
+            count = summary.Count,
+            windowStartUtc = summary.WindowStartUtc.UtcDateTime,
+            windowEndUtc = summary.WindowEndUtc.UtcDateTime,
+            refusalClass = template.RefusalClass,
+            problemCode = template.ProblemCode,
+        }, Json);
+        return draft with { AfterJson = afterJson };
     }
 
     private static string? AiContextJson(RefusedAttemptV1 attempt, string aiInvolvement, string correlationId)

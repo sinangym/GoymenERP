@@ -4,6 +4,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Modules.Audit.Infrastructure;
 
@@ -28,9 +29,10 @@ public static class AuditModuleExtensions
                 "SQL Server bağlantı dizesi DB_CONNECTION_STRING secret/env değeriyle tanımlanmalıdır.");
         }
 
-        // F-023 (F023-1): both settings fail closed at startup, before any service is registered.
+        // F-023 (F023-1, F023-4): the settings fail closed at startup, before any service is registered.
         var refusedAttemptRetention = RefusedAttemptRetentionOptions.FromConfiguration(configuration);
         var refusedAttemptStandaloneWrite = RefusedAttemptStandaloneWriteOptions.FromConfiguration(configuration);
+        var refusedAttemptAggregation = RefusedAttemptAggregationOptions.FromConfiguration(configuration);
 
         services.AddDbContext<AuditDbContext>(options =>
             options.UseSqlServer(
@@ -43,6 +45,10 @@ public static class AuditModuleExtensions
         services.AddScoped<IAuditQueryService, AuditQueryService>();
         services.AddSingleton(refusedAttemptRetention);
         services.AddSingleton(refusedAttemptStandaloneWrite);
+        services.AddSingleton(refusedAttemptAggregation);
+        services.TryAddSingleton(TimeProvider.System);
+        // KIM-D11: disabled by the shipped empty setting; it admits every refusal until Sinan's values are entered.
+        services.AddSingleton<RefusedAttemptAggregator>();
         services.AddScoped<IRefusedAttemptRecorderV1, RefusedAttemptRecorder>();
 
         return services;
