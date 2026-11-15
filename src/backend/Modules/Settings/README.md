@@ -245,6 +245,19 @@ literals to `FinanceMoneyOperations.ManualBankReceiptV1` and
 `SalesMoneyOperations.OrderDraftV1`. The profile answers for the operation asked, so
 consumers' exact-operation check holds.
 
+**Expense payment key (FNS-D48; KIM-S26).** Sinan's FNS-D48
+(`SINAN_KARARLARI_2026-11-15_DALGA1_EK.md`) gives the Finance expense payment (FIN-S15) its own money-operation key,
+`finance.expense-payment.v1`, whose limits and rules are managed apart from `finance.manual-bank-payment.v1`. The
+decision names the key, not its values: no scale, company list or window is approved for it, so no approved profile
+lists it. Today every read for the key — `GetMoneyProfileAsync` and the operation-aware candidate read, in GDC, GSP
+and GIN — answers `settings_provider_unavailable` (fail-closed), and it is never answered from the manual bank
+payment's profile. Because it is listed on no profile, GDC's TRY stays "unrestricted" for the operation-less candidate
+read. It is enabled only by a reviewed approved catalog version that names it with its own profile identity and
+values (open question to Sinan: those values). Finance publishes its constant and switches
+`ExpensePaymentBinding` (FIN-S18); until a profile is approved that switch makes the expense payment fail-closed.
+Tests: `ApprovedMoneyProfileExpensePaymentKeyTests` (unit) and
+`SettingsHostWiringTests.The_expense_payment_money_key_stays_unavailable_through_the_host_until_a_profile_is_approved`.
+
 **Unit-price scale (A2a-1b; ALS-D72, EK11).** `MoneyProfileV1.UnitPriceScale` (optional, additive; null by
 default) carries the unit-price decimals approved for the operation asked, from the entry's
 per-operation `UnitPriceScales`. Only `purchasing.order.v1` has one (4, on GDC, GSP and GIN);
