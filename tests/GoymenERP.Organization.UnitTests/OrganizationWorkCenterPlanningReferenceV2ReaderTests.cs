@@ -142,7 +142,9 @@ public sealed class OrganizationWorkCenterPlanningReferenceV2ReaderTests
     [Fact]
     public void Calendar_tables_are_tenant_scoped_with_their_checks_and_unique_keys()
     {
-        using var context = Context($"organization-work-center-calendar-model-{Guid.NewGuid():N}", new CompanyContext());
+        // Table, check and column-type facts are relational: read them from the SQL Server design-time model (no
+        // connection is opened), not from the in-memory provider the reader tests use.
+        using var context = RelationalModelContext();
         var model = context.GetService<IDesignTimeModel>().Model;
 
         var head = model.FindEntityType(typeof(WorkCenterCalendar))!;
@@ -284,6 +286,13 @@ public sealed class OrganizationWorkCenterPlanningReferenceV2ReaderTests
         context.Set(companyId);
         return context;
     }
+
+    private static OrganizationDbContext RelationalModelContext() => new(
+        new DbContextOptionsBuilder<OrganizationDbContext>()
+            .UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=GoymenErpOrganizationCalendarModel;Trusted_Connection=True;")
+            .Options,
+        new CompanyContext(),
+        new OrganizationBootstrapWriteScope());
 
     private static OrganizationDbContext Context(string database, ICompanyContext companyContext) => new(
         new DbContextOptionsBuilder<OrganizationDbContext>().UseInMemoryDatabase(database).Options,

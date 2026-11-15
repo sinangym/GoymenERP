@@ -109,7 +109,9 @@ public sealed class PlanDueDateTests
         var plan = Draft();
         plan.ChangeDueDate(1, 0, DayA, orderClosed: false);
 
-        plan.Revise(1, WorkCenter, ManufacturingProcess.ColdRolling, [Input()], null);
+        // A real revision (the planned quantity changes); an unchanged one is refused as no change.
+        plan.Revise(1, WorkCenter, ManufacturingProcess.ColdRolling,
+            [new PlannedInput(Roll, new Kilograms(1_200m), 1, null)], null);
 
         Assert.Equal((DayA, 1L, 2L), (plan.RequestedDueDate, plan.DueDateRevision, plan.Version));
     }

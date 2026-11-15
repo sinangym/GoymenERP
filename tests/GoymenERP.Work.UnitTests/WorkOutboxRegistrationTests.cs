@@ -73,7 +73,11 @@ public sealed class WorkOutboxRegistrationTests
             new WorkInboxSubscriptionV1(SalesSource, InvoiceFinalized, 1),
             new WorkInboxSubscriptionV1(SalesSource, InvoiceFinalized, 1)));
 
-        // Only the accepted registrations are visible to the dispatcher.
+        // Only the accepted registrations are visible to the dispatcher. The scoped source and consumer resolve their
+        // test dependencies (the shared in-memory outbox, the handled list and the company context) as the harness does.
+        services.AddSingleton(new EventStore());
+        services.AddSingleton(new List<WorkInboxEventV1>());
+        services.AddScoped<ICompanyContext, CompanyContext>();
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         Assert.Equal(new[] { SalesSource }, scope.ServiceProvider.GetServices<IOutboxSourceV1>().Select(s => s.SourceName));
@@ -275,6 +279,8 @@ public sealed class WorkOutboxRegistrationTests
         listener.Start();
 
         await harness.RunAsync();
+        // The source sends the same message again at a later position: the second cycle counts one duplicate.
+        harness.Events.Add(source, Event(CompanyA, 1) with { Position = "2" });
         await harness.RunAsync();
         listener.Dispose();
 

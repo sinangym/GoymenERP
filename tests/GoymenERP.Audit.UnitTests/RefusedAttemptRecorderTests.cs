@@ -9,6 +9,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -125,7 +126,7 @@ public sealed class RefusedAttemptRecorderTests
         Assert.Equal(AuditEvent.CompanySubject, auditEvent.SubjectKind);
         Assert.Equal(AuditEventIntegrity.Compute(auditEvent.ToIntegrityEnvelope()), auditEvent.IntegrityHash);
         Assert.Equal(Sha256Hex("idem-1"), auditEvent.IdempotencyKeyHash, ignoreCase: true);
-        Assert.Throws<ArgumentException>(() => AuditEventFactory.Create(
+        Assert.Throws<ArgumentOutOfRangeException>(() => AuditEventFactory.Create(
             RefusedAttemptAuditDraftMapper.ToDraft(Attempt(CompanyA)) with { Outcome = "Failed" }));
     }
 
@@ -486,10 +487,13 @@ public sealed class RefusedAttemptRecorderTests
     private static ServiceProvider CreateServices()
     {
         var databaseName = "refused-attempts-" + Guid.NewGuid().ToString("N");
+        // Without provider caching each context builds its own internal provider; the shared root keeps every scope
+        // (the request scope, the standalone write scope and the read scope) on the same in-memory store.
+        var databaseRoot = new InMemoryDatabaseRoot();
         var collection = new ServiceCollection();
         collection.AddScoped<ICompanyContext, CompanyContext>();
         collection.AddDbContext<AuditDbContext>(options => options
-            .UseInMemoryDatabase(databaseName)
+            .UseInMemoryDatabase(databaseName, databaseRoot)
             .EnableServiceProviderCaching(false));
         collection.AddScoped<AuditEventCollector>();
         collection.AddScoped<IAuditEventCollector>(provider => provider.GetRequiredService<AuditEventCollector>());
