@@ -125,6 +125,14 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
             provider.GetRequiredService<TimeProvider>()));
+        // FIN-S6 (F-005 D3): the official sales invoice record read by official number + ETTN over Finance's own store,
+        // and the Sales-declared API-35 port answered from it (approved records only). Neither carries authority; the
+        // Sales match measures its own.
+        services.AddScoped<IFinanceOfficialSalesInvoiceReadPortV1>(provider => new FinanceOfficialSalesInvoiceReadPortV1(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>()));
+        services.AddScoped<ISalesOfficialInvoiceReadPortV1>(provider => new FinanceSalesOfficialInvoiceReadPortV1(
+            provider.GetRequiredService<IFinanceOfficialSalesInvoiceReadPortV1>()));
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
         // The first-release party ledger (cari hesap ekstresi): a read over the recorded facts above, no writer.
