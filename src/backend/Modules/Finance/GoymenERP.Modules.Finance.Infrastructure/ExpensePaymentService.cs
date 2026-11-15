@@ -31,6 +31,9 @@ public sealed record ExpensePaymentAuditEnvelopes(
 /// the money fact: the recorded row itself (no second movement row is written for it). Before the record the
 /// treasury balance guard must answer Sufficient (FNS-D11 / FNS-D22: refused, never clipped); an unavailable
 /// answer refuses the record.
+/// FNS-D50: a cash account whose passivation waits for approval pays nothing new — the draft save and the record
+/// refuse it (<c>expense_payment_treasury_account_passivation_pending</c>) and the draft context does not offer it.
+/// A rejected passivation is no longer pending, so the account pays again. (A bank account has no passivation yet.)
 /// </summary>
 public sealed class ExpensePaymentService(
     FinanceDbContext dbContext,
@@ -52,6 +55,8 @@ public sealed class ExpensePaymentService(
 
     private const string EntityType = "Finance.ExpensePayment";
     private const int ApprovedTreasuryAccountStatus = 2;
+    private const int CashAccountPassivationChange = 1;
+    private const int CashAccountChangePending = 1;
     private const int IdentityMaximumLength = 128;
     private const int PageSize = 50;
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -416,9 +421,14 @@ public sealed class ExpensePaymentService(
         var cash = await dbContext.CashAccounts.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == treasuryAccountId, cancellationToken);
         return cash is not null && cash.Status == ApprovedTreasuryAccountStatus && cash.CurrencyId != Guid.Empty
+            && !PassivationPending(cash)
             ? cash.CurrencyId
             : null;
     }
+
+    /// <summary>FNS-D50: the cash account's passivation is proposed and not yet decided.</summary>
+    private static bool PassivationPending(CashAccountRow cash) =>
+        cash.ChangeKind == CashAccountPassivationChange && cash.ChangeStatus == CashAccountChangePending;
 
     internal static string Hash<T>(T request) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, Json))))
@@ -429,7 +439,8 @@ public sealed class ExpensePaymentService(
 
     /// <summary>
     /// A bank source must be an approved, money-movement-eligible account with an IBAN; a cash source an approved
-    /// cash account. Both must hold the payment currency. Each read is Finance's own table.
+    /// cash account whose passivation is not pending (FNS-D50). Both must hold the payment currency. Each read is
+    /// Finance's own table.
     /// </summary>
     private async Task<ExpensePaymentCommandResult?> RequireEligibleTreasuryAsync(
         FinanceContext context,
@@ -439,6 +450,7 @@ public sealed class ExpensePaymentService(
         CancellationToken cancellationToken)
     {
         bool eligible;
+        var passivationPending = false;
         if (preparation.SourceKind == ExpensePaymentSourceKind.Bank)
         {
             var bank = await dbContext.BankAccounts.AsNoTracking()
@@ -453,13 +465,17 @@ public sealed class ExpensePaymentService(
                 .SingleOrDefaultAsync(candidate => candidate.Id == preparation.TreasuryAccountId, cancellationToken);
             eligible = cash is not null && cash.Status == ApprovedTreasuryAccountStatus
                 && cash.CurrencyId == preparation.Money.CurrencyId;
+            passivationPending = eligible && PassivationPending(cash!);
         }
 
         if (await FenceAsync(context, action, paymentId, cancellationToken) is { } fenced) return fenced;
-        return eligible
-            ? null
-            : Refused(context, CommandOutcome.ValidationFailed,
+        if (!eligible)
+            return Refused(context, CommandOutcome.ValidationFailed,
                 Issue("treasuryAccountId", "expense_payment_treasury_account_ineligible"));
+        return passivationPending
+            ? Refused(context, CommandOutcome.ValidationFailed,
+                Issue("treasuryAccountId", "expense_payment_treasury_account_passivation_pending"))
+            : null;
     }
 
     private async Task<ExpensePaymentCommandResult?> ValidateMoneyProfileAsync(

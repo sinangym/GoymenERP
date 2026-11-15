@@ -36,6 +36,7 @@ const PAYMENT = '33333333-3333-4333-8333-333333333333'
 const ACCOUNT = '44444444-4444-4444-8444-444444444444'
 const ITEM = '55555555-5555-4555-8555-555555555555'
 const PROFILE = '66666666-6666-4666-8666-666666666666'
+const PENDING_ACCOUNT = '77777777-7777-4777-8777-777777777777'
 const ACTOR = 'checker-b'
 const MAKER = 'maker-a'
 
@@ -313,6 +314,25 @@ describe('ExpensePaymentPage record', () => {
     expect(calls.find((call) => call.method === 'POST')?.body)
       .toEqual({ paymentId: PAYMENT, expectedVersion: '2', paymentConfirmed: true })
   })
+
+  it('shows the server refusal for a cash account whose passivation waits for approval (FNS-D50)', async () => {
+    reads(() => json(page([approved()])), (call) => {
+      if (call.method === 'GET' && call.url === DETAIL_URL) return json(approved())
+      if (call.method === 'POST' && call.url === RECORD_URL) {
+        return json({
+          outcome: 'ValidationFailed', resource: null, isReplay: false, originalCorrelationId: 'corr-1',
+          issues: [{ field: 'treasuryAccountId', code: 'expense_payment_treasury_account_passivation_pending' }],
+        }, 422)
+      }
+      return undefined
+    })
+    show()
+    const { user, detail } = await openPayment()
+    await user.click(await within(detail).findByRole('checkbox', { name: T.recordConfirm }))
+    await user.click(within(detail).getByRole('button', { name: T.record }))
+    expect(await within(detail).findByText(
+      'Seçilen kasanın pasife alma talebi onay bekliyor; bu kasadan yeni ödeme kaydedilemez.')).toBeTruthy()
+  })
 })
 
 describe('ExpensePaymentPage draft', () => {
@@ -331,6 +351,31 @@ describe('ExpensePaymentPage draft', () => {
     companyId: COMPANY, sourceKind: 'Cash', treasuryAccountId: ACCOUNT, currencyId: CURRENCY,
     profile: { profileId: PROFILE, version: '3' }, occurredOn: '2026-11-10',
   }
+
+  it('does not offer a cash account whose passivation waits for approval (FNS-D50)', async () => {
+    const pending = {
+      account: {
+        ...cashList.items[0].account, id: PENDING_ACCOUNT, displayName: 'SENTETIK Şube Kasa', pendingChange: 'Passivation',
+        version: '3',
+      },
+      isOwnProposal: false,
+      isOwnPendingChange: false,
+    }
+    reads(() => json(page([])), (call) => {
+      if (call.method === 'GET' && call.url === CASH_URL) return json({ ...cashList, items: [...cashList.items, pending] })
+      return undefined
+    })
+    show({ canDraft: true })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: T.newPayment }))
+    const form = screen.getByRole('form', { name: T.formHeading })
+    await user.selectOptions(within(form).getByLabelText(T.sourceKind), 'Cash')
+    // The account select is drawn only once the list has answered.
+    const account = await within(form).findByLabelText(T.account)
+    const offered = within(account).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)
+    expect(offered).toContain(ACCOUNT)
+    expect(offered).not.toContain(PENDING_ACCOUNT)
+  })
 
   it('requires a description and then sends the item by identity with the server-given currency', async () => {
     const calls = reads(() => json(page([])), (call) => {

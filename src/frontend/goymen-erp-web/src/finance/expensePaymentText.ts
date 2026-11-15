@@ -118,6 +118,8 @@ const ISSUE_MESSAGE: Readonly<Record<string, string>> = {
   expense_payment_reference_invalid: 'Referans geçersiz.',
   value_date_before_occurred_date: 'Valör tarihi işlem tarihinden önce olamaz.',
   expense_payment_treasury_account_ineligible: 'Seçilen hesap ödeme için uygun değil.',
+  expense_payment_treasury_account_passivation_pending:
+    'Seçilen kasanın pasife alma talebi onay bekliyor; bu kasadan yeni ödeme kaydedilemez.',
   expense_payment_not_approved: 'Ödeme onaylanmadan kesin kayda alınamaz.',
   expense_payment_not_confirmed: 'Ödemenin çıktığını onaylamanız gerekir.',
   payment_not_found: 'Ödeme bulunamadı.',
