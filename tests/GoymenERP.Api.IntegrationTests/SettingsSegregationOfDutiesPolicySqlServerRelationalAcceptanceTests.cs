@@ -6,6 +6,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
@@ -28,8 +29,11 @@ namespace GoymenERP.Api.IntegrationTests;
 /// (the preparer may not approve) and the read port answers it with version 0; a reasoned record is one save (row + execution
 /// + audit), the same key replays, a changed body under the same key is 409, a stale version 409, an unchanged setting a
 /// stored no-op without audit, restoring the default is a new version, another company sees nothing and its port refuses a
-/// foreign company id, 403 without the name, and the migration's Down refuses (51622) while any version exists. Every grant
-/// is a fresh synthetic role; every reason is SENTETIK; every value in the requests is test data, not a policy choice.
+/// foreign company id, 403 without the name, and the migration's Down refuses (51622) while any version exists. KIM-D39: the
+/// relaxation is recorded only while the company has exactly one active user (otherwise 409, stored for its key); a second
+/// active user makes the read port answer the default at once and the administration's read close it durably with one
+/// system version and one system audit event. Every grant is a fresh synthetic role; every reason is SENTETIK; every value in
+/// the requests is test data, not a policy choice.
 /// </summary>
 public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptanceTests
 {
@@ -40,6 +44,7 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
     private const string Migration = "AddSegregationOfDutiesPolicyVersions";
     private const string Manage = SettingsSegregationOfDutiesPolicyPermissionManifestV1.Manage;
     private const string RecordedEvent = "settings.segregation-of-duties.recorded.v1";
+    private const string ClosedAutomaticallyEvent = "settings.segregation-of-duties.closed-automatically.v1";
     private const string CountRows = "SELECT COUNT(*) FROM [settings].[SegregationOfDutiesPolicyVersions]";
 
     [SqlServerFact]
@@ -48,7 +53,7 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         await using var run = await HostRun.StartAsync();
         var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage);
         var (viewerSubject, _) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SettingsExchangeRatePermissionManifestV1.Read);
-        var (editorBSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Manage);
+        var (editorBSubject, editorBActor) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Manage);
         using var editor = run.Client(editorSubject, CompanyA);
         using var viewer = run.Client(viewerSubject, CompanyA);
         using var editorB = run.Client(editorBSubject, CompanyB);
@@ -67,12 +72,16 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
 
         Assert.Equal(0, await run.ScalarAsync<int>(CountRows));
 
+        // KIM-D39: the relaxation needs a company run by one person; the editor is made the only active member of A.
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+
         // No recorded version: the decided default (preparer may not approve), version "0"; the port answers it, version 0.
         var empty = await run.JsonAsync(editor, Root);
         Assert.False(empty.GetProperty("preparerMayApprove").GetBoolean());
         Assert.Equal("0", empty.GetProperty("version").GetString());
         Assert.Empty(empty.GetProperty("versions").EnumerateArray());
-        await run.AssertPortAnswersAsync(CompanyA, preparerMayApprove: false, version: 0);
+        Assert.True(empty.GetProperty("relaxationPermitted").GetBoolean());
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 0);
 
         // A missing choice, a malformed version or a blank reason is refused before anything is stored (not replayed).
         using (var missing = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-missing",
@@ -138,10 +147,10 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         Assert.True(relaxed.GetProperty("preparerMayApprove").GetBoolean());
         Assert.Equal("1", relaxed.GetProperty("version").GetString());
         var first = Assert.Single(relaxed.GetProperty("versions").EnumerateArray());
-        Assert.Equal(("1", true, "SENTETIK tek kişilik şirket gevşetmesi"),
+        Assert.Equal(("1", true, "SENTETIK tek kişilik şirket gevşetmesi", false),
             (first.GetProperty("version").GetString(), first.GetProperty("preparerMayApprove").GetBoolean(),
-                first.GetProperty("reason").GetString()));
-        await run.AssertPortAnswersAsync(CompanyA, preparerMayApprove: true, version: 1);
+                first.GetProperty("reason").GetString(), first.GetProperty("recordedAutomatically").GetBoolean()));
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: true, version: 1);
 
         // Restoring the default is a new version (the history keeps the relaxation).
         await run.CommandAsync(editor, Versions, "k-r-2", new RecordSegregationOfDutiesPolicyRequestV1("1", false,
@@ -153,15 +162,15 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         Assert.False(restored.GetProperty("preparerMayApprove").GetBoolean());
         Assert.Equal(new[] { "2", "1" }, restored.GetProperty("versions").EnumerateArray()
             .Select(version => version.GetProperty("version").GetString() ?? string.Empty).ToArray());
-        await run.AssertPortAnswersAsync(CompanyA, preparerMayApprove: false, version: 2);
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 2);
 
         // Another company sees nothing of A's, and a port asked for a foreign company refuses.
         var other = await run.JsonAsync(editorB, Root);
         Assert.False(other.GetProperty("preparerMayApprove").GetBoolean());
         Assert.Equal("0", other.GetProperty("version").GetString());
         Assert.Empty(other.GetProperty("versions").EnumerateArray());
-        await run.AssertPortAnswersAsync(CompanyB, preparerMayApprove: false, version: 0);
-        await using (var port = run.Port(CompanyB))
+        await run.AssertPortAnswersAsync(CompanyB, editorBActor, preparerMayApprove: false, version: 0);
+        await using (var port = run.Port(CompanyB, editorBActor))
         {
             var refused = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
                 port.Value.GetSegregationOfDutiesPolicyAsync(CompanyA));
@@ -175,6 +184,86 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         Assert.Equal(2, await run.ScalarAsync<int>(CountRows));
         await run.ExecuteAsync("DELETE FROM [settings].[SegregationOfDutiesPolicyVersions];");
         await run.ExecuteAsync(guard);
+    }
+
+    [SqlServerFact]
+    public async Task Segregation_of_duties_relaxation_needs_a_single_active_user_and_a_second_user_closes_it_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage);
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SettingsExchangeRatePermissionManifestV1.Read);
+        using var editor = run.Client(editorSubject, CompanyA);
+        var relax = new RecordSegregationOfDutiesPolicyRequestV1("0", true, "SENTETIK tek kişilik şirket gevşetmesi");
+
+        // Another active user in the company: the relaxation is refused (409, stored and replayed under its key); no row,
+        // no audit. The view says it is not permitted now.
+        var shared = await run.JsonAsync(editor, Root);
+        Assert.False(shared.GetProperty("relaxationPermitted").GetBoolean());
+        Assert.False(shared.GetProperty("preparerMayApprove").GetBoolean());
+        using (var refused = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-shared", relax)))
+        {
+            await AssertProblemAsync(refused, HttpStatusCode.Conflict,
+                SegregationOfDutiesPolicyProblemCodesV1.RelaxationRequiresSingleUser);
+            Assert.False(refused.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        using (var replayedRefusal = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-shared", relax)))
+        {
+            await AssertProblemAsync(replayedRefusal, HttpStatusCode.Conflict,
+                SegregationOfDutiesPolicyProblemCodesV1.RelaxationRequiresSingleUser);
+            Assert.True(replayedRefusal.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e", ("@e", RecordedEvent)));
+
+        // The editor alone: the relaxation is recorded and answered.
+        await run.MakeSoleActiveMemberAsync(CompanyA, editorActor);
+        Assert.True((await run.JsonAsync(editor, Root)).GetProperty("relaxationPermitted").GetBoolean());
+        await run.CommandAsync(editor, Versions, "k-single", relax, HttpStatusCode.NoContent);
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: true, version: 1);
+
+        // A second active user: the read port answers the default at once and writes nothing.
+        await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SettingsExchangeRatePermissionManifestV1.Read);
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 1);
+        Assert.Equal(1, await run.ScalarAsync<int>(CountRows));
+
+        // The administration's read closes it durably: one system version and one system audit event.
+        var closed = await run.JsonAsync(editor, Root);
+        Assert.False(closed.GetProperty("preparerMayApprove").GetBoolean());
+        Assert.False(closed.GetProperty("relaxationPermitted").GetBoolean());
+        Assert.Equal("2", closed.GetProperty("version").GetString());
+        var history = closed.GetProperty("versions").EnumerateArray().ToArray();
+        Assert.Equal(2, history.Length);
+        Assert.Equal(("2", false, true, SegregationOfDutiesRuleV1.AutomaticCloseActorId),
+            (history[0].GetProperty("version").GetString(), history[0].GetProperty("preparerMayApprove").GetBoolean(),
+                history[0].GetProperty("recordedAutomatically").GetBoolean(), history[0].GetProperty("recordedBy").GetString()));
+        Assert.Equal(("1", true, false),
+            (history[1].GetProperty("version").GetString(), history[1].GetProperty("preparerMayApprove").GetBoolean(),
+                history[1].GetProperty("recordedAutomatically").GetBoolean()));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[SegregationOfDutiesPolicyVersions] WHERE [CompanyId] = @c AND [Version] = 2 "
+            + "AND [PreparerMayApprove] = 0 AND [RecordedBy] = @a", ("@c", CompanyA), ("@a", SegregationOfDutiesRuleV1.AutomaticCloseActorId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e AND [CompanyId] = @c AND [ActorType] = @t "
+            + "AND [ActorId] = @a AND [EntityVersionBefore] = 1 AND [EntityVersionAfter] = 2",
+            ("@e", ClosedAutomaticallyEvent), ("@c", CompanyA), ("@t", AuditActorTypes.System),
+            ("@a", SegregationOfDutiesRuleV1.AutomaticCloseActorId)));
+
+        // Reading again closes nothing more; the port answers the system version.
+        Assert.Equal("2", (await run.JsonAsync(editor, Root)).GetProperty("version").GetString());
+        Assert.Equal(2, await run.ScalarAsync<int>(CountRows));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @e", ("@e", ClosedAutomaticallyEvent)));
+        await run.AssertPortAnswersAsync(CompanyA, editorActor, preparerMayApprove: false, version: 2);
+
+        // With several users again the relaxation stays refused under a new key.
+        using (var again = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-again", relax with { ExpectedVersion = "2" })))
+        {
+            await AssertProblemAsync(again, HttpStatusCode.Conflict,
+                SegregationOfDutiesPolicyProblemCodesV1.RelaxationRequiresSingleUser);
+        }
     }
 
     [SqlServerFact]
@@ -228,6 +317,15 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
         public ValueTask DisposeAsync() => owner.DisposeAsync();
     }
 
+    private sealed class Owners(SettingsDbContext settings, IdentityDbContext identity) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await settings.DisposeAsync();
+            await identity.DisposeAsync();
+        }
+    }
+
     /// <summary>The REAL host over a fresh database, with Identity grants for the HTTP routes.</summary>
     private sealed class HostRun : IAsyncDisposable
     {
@@ -279,16 +377,26 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
 
         public SettingsDbContext SettingsContext(Guid company) => NewSettingsContext(company, out _);
 
-        public PortScope<ISettingsSegregationOfDutiesPolicyProviderV1> Port(Guid company)
+        /// <summary>
+        /// The read port as a consumer module composes it: the Settings provider over its own context, asking the Identity
+        /// owner (its own context, through the host adapter) for the single active user check (KIM-D39).
+        /// </summary>
+        public PortScope<ISettingsSegregationOfDutiesPolicyProviderV1> Port(Guid company, string actorId)
         {
             var database = NewSettingsContext(company, out var companyContext);
-            return new PortScope<ISettingsSegregationOfDutiesPolicyProviderV1>(database,
-                new SettingsSegregationOfDutiesPolicyProviderV1(database, companyContext, new FixedActor("SENTETIK-sod", company)));
+            var identity = new IdentityDbContext(new DbContextOptionsBuilder<IdentityDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity"))
+                .Options);
+            var actor = new FixedActor(actorId, company);
+            var activeUsers = new SettingsCompanyActiveUsersHost(new UserDirectoryReadPortV1(identity, companyContext, actor));
+            return new PortScope<ISettingsSegregationOfDutiesPolicyProviderV1>(new Owners(database, identity),
+                new SettingsSegregationOfDutiesPolicyProviderV1(database, companyContext, actor, activeUsers));
         }
 
-        public async Task AssertPortAnswersAsync(Guid company, bool preparerMayApprove, long version)
+        public async Task AssertPortAnswersAsync(Guid company, string actorId, bool preparerMayApprove, long version)
         {
-            await using var port = Port(company);
+            await using var port = Port(company, actorId);
             var policy = await port.Value.GetSegregationOfDutiesPolicyAsync(company);
             Assert.Equal((company, preparerMayApprove, version), (policy.CompanyId, policy.PreparerMayApprove, policy.Version));
         }
@@ -326,6 +434,22 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
             dbContext.RoleAssignments.Add(assignment);
             await dbContext.SaveChangesAsync();
             return (developmentUser, actor.ToString("D"));
+        }
+
+        /// <summary>
+        /// Leaves <paramref name="actorId"/> the company's only active member: every other active assignment in the company
+        /// (seeded or granted) is marked expired. A later grant makes another user active again.
+        /// </summary>
+        public async Task MakeSoleActiveMemberAsync(Guid company, string actorId)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                "UPDATE [identity].[RoleAssignments] SET [Status] = N'Expired' "
+                + "WHERE [CompanyId] = @c AND [UserId] <> @u AND [Status] = N'Active';", connection);
+            command.Parameters.AddWithValue("@c", company);
+            command.Parameters.AddWithValue("@u", Guid.Parse(actorId));
+            await command.ExecuteNonQueryAsync();
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)

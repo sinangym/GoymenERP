@@ -15,8 +15,11 @@ namespace GoymenERP.Api.Endpoints;
 /// here), re-authorized by the service. Responses are private, no-store.
 /// <list type="bullet">
 /// <item><c>GET /api/v1/settings/segregation-of-duties</c> — the setting in force and its history (the default until the first
-/// version is recorded).</item>
-/// <item><c>POST /api/v1/settings/segregation-of-duties/versions</c> (204) — a new version, in force when saved.</item>
+/// version is recorded). KIM-D39: a stored relaxation found while the company has more than one active user is first closed
+/// by a system version.</item>
+/// <item><c>POST /api/v1/settings/segregation-of-duties/versions</c> (204) — a new version, in force when saved. KIM-D39: the
+/// relaxation is accepted only while the company has exactly one active user (409
+/// <c>settings_segregation_of_duties_relaxation_requires_single_user</c> otherwise).</item>
 /// </list>
 /// Commands: one Idempotency-Key (stored terminal answers replay with <c>Idempotency-Replayed</c>), the expected version as
 /// decimal text, a mandatory reason (≤ 4000).
@@ -75,7 +78,8 @@ public static class SettingsSegregationOfDutiesPolicyEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(
                 SegregationOfDutiesPolicyProblemCodesV1.IdempotencyConflict,
-                SegregationOfDutiesPolicyProblemCodesV1.VersionConflict)
+                SegregationOfDutiesPolicyProblemCodesV1.VersionConflict,
+                SegregationOfDutiesPolicyProblemCodesV1.RelaxationRequiresSingleUser)
             .ProducesErpServiceUnavailable(SegregationOfDutiesPolicyProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 

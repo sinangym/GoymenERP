@@ -92,6 +92,14 @@ public sealed class SettingsUnitConversionPolicySqlServerRelationalAcceptanceTes
             Assert.False(tooMany.Headers.Contains("Idempotency-Replayed"));
         }
 
+        // KLN-D88: the coefficient rounding is decided (AwayFromZero); any other listed mode is refused, never rewritten.
+        using (var toEven = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-coefficient-mode",
+                   record with { CoefficientRounding = UnitConversionRoundingModesV1.ToEven })))
+        {
+            await AssertProblemAsync(toEven, HttpStatusCode.BadRequest, UnitConversionPolicyProblemCodesV1.RequestInvalid);
+            Assert.False(toEven.Headers.Contains("Idempotency-Replayed"));
+        }
+
         using (var noReason = await editor.SendAsync(Json(HttpMethod.Post, Versions, "k-reason", record with { Reason = " " })))
         {
             await AssertProblemAsync(noReason, HttpStatusCode.BadRequest, UnitConversionPolicyProblemCodesV1.ReasonRequired);
@@ -169,6 +177,11 @@ public sealed class SettingsUnitConversionPolicySqlServerRelationalAcceptanceTes
         }
 
         await run.AssertPortRefusesAsync(CompanyA, run.Today.AddDays(-1), SettingsPrerequisiteCodesV1.UnitConversionPolicyNotFound);
+
+        // KLN-D88: a stored row whose coefficient mode is not the decided one is malformed for the port (no silent rewrite).
+        await run.ExecuteAsync("UPDATE [settings].[UnitConversionPolicyVersions] SET [CoefficientRounding] = 'ToEven';");
+        await run.AssertPortRefusesAsync(CompanyA, run.Today, "settings_profile_invalid");
+        await run.ExecuteAsync("UPDATE [settings].[UnitConversionPolicyVersions] SET [CoefficientRounding] = 'AwayFromZero';");
 
         // A later version from tomorrow: today keeps version 1 (now closed), tomorrow answers version 2.
         var tomorrow = run.Today.AddDays(1);

@@ -5,7 +5,7 @@
  * calculations' refusal are the backend's Settings unit conversion policy tests. What these cases establish: the states
  * (loading, empty naming the fail-closed refusal, the timeline, unavailable with retry, off-contract answer, an answer for
  * another company, ungranted route), that the decision's suggestions are shown as reminders and never pre-fill the form,
- * that the coefficient rounding direction has no suggestion (URN-D8 is open), what is SENT (company header,
+ * that the coefficient rounding direction is decided (KLN-D88: shown, not chosen, always sent as AwayFromZero), what is SENT (company header,
  * Idempotency-Key, the exact body with the expected version, values as text, today as null), invalid input and a past
  * start held back, the same key on a retry after an unknown outcome, the replay notice, the stale refusal that closes the
  * form and re-reads, and a definite refusal kept inside the form.
@@ -82,7 +82,6 @@ function choose(legend: string, label: string) {
 async function fillEverything(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(T.densityLabel, { exact: false }), ' 7.85 ')
   await user.type(screen.getByLabelText(T.coefficientDecimalsLabel, { exact: false }), '3')
-  await user.click(choose(T.coefficientRoundingLegend, roundingLabel('ToZero')))
   await user.type(screen.getByLabelText(T.documentTotalDecimalsLabel, { exact: false }), '2')
   await user.click(choose(T.documentTotalRoundingLegend, roundingLabel('AwayFromZero')))
   await user.click(choose(T.wholeUnitRoundingLegend, roundingLabel('ToNegativeInfinity')))
@@ -181,7 +180,7 @@ describe('Birim çevrim politikası — reads', () => {
 })
 
 describe('Birim çevrim politikası — commands', () => {
-  it('shows the suggestions as reminders only, with no suggestion for the coefficient direction, and pre-fills nothing', async () => {
+  it('shows the suggestions as reminders only, the decided coefficient direction as fixed text, and pre-fills nothing', async () => {
     const user = userEvent.setup()
     install((url) => (isRead(url) ? json(emptyView()) : undefined))
     renderAt(PATH)
@@ -196,6 +195,11 @@ describe('Birim çevrim politikası — commands', () => {
       expect((screen.getByLabelText(label, { exact: false }) as HTMLInputElement).value).toBe('')
     }
     for (const radio of screen.getAllByRole('radio')) expect((radio as HTMLInputElement).checked).toBe(false)
+
+    const coefficient = screen.getByRole('group', { name: T.coefficientRoundingLegend })
+    expect(within(coefficient).queryAllByRole('radio')).toHaveLength(0)
+    expect(within(coefficient).getByText(roundingLabel('AwayFromZero'))).toBeTruthy()
+    expect(within(coefficient).getByText(T.coefficientRoundingDecided)).toBeTruthy()
   })
 
   it('records the first version with every value as typed, today as null and one Idempotency-Key, then reads again', async () => {
@@ -222,7 +226,7 @@ describe('Birim çevrim politikası — commands', () => {
       expectedVersion: '0',
       densityGramsPerCubicCentimetre: '7.85',
       coefficientDecimals: 3,
-      coefficientRounding: 'ToZero',
+      coefficientRounding: 'AwayFromZero',
       documentTotalDecimals: 2,
       documentTotalRounding: 'AwayFromZero',
       wholeUnitRounding: 'ToNegativeInfinity',
@@ -248,7 +252,6 @@ describe('Birim çevrim politikası — commands', () => {
 
     await openForm(user)
     expect((screen.getByLabelText(T.densityLabel, { exact: false }) as HTMLInputElement).value).toBe('2.5')
-    expect((choose(T.coefficientRoundingLegend, roundingLabel('AwayFromZero')) as HTMLInputElement).checked).toBe(true)
     expect((choose(T.baseLegend, baseLabel('WeighedKg')) as HTMLInputElement).checked).toBe(true)
     fireEvent.change(screen.getByLabelText(POLICY_TEXT.effectiveFromLabel, { exact: false }), {
       target: { value: '2026-12-01' },
@@ -271,6 +274,24 @@ describe('Birim çevrim politikası — commands', () => {
       reason: 'SENTETIK',
       effectiveFrom: '2026-12-01',
     })
+  })
+
+  it('sends the decided coefficient direction even when the version in force carries another one', async () => {
+    const user = userEvent.setup()
+    const view = recordedView()
+    const legacy = { ...view, versions: [{ ...view.versions[0], coefficientRounding: 'ToZero' }, view.versions[1]] }
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json(legacy)
+      return isRecord(url, init) ? noContent() : undefined
+    })
+    renderAt(PATH)
+
+    await openForm(user)
+    await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK')
+    await user.click(screen.getByRole('button', { name: T.save }))
+
+    expect(await screen.findByText(T.saved)).toBeTruthy()
+    expect((commands(recorded)[0].body as { coefficientRounding: string }).coefficientRounding).toBe('AwayFromZero')
   })
 
   it('holds back a value the server would not read, a missing direction and a past start', async () => {

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -24,6 +25,13 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// audit event per real change (none for a no-op).</item>
 /// <item><b>Effect</b>: a version is in force from the moment it is saved; rows are insert-only, so the history of who allowed
 /// what and why never changes.</item>
+/// <item><b>Single user only</b> (KIM-D39, <c>docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK12.md</c>): <c>true</c> is
+/// accepted only while the Identity owner reports exactly one active user in the company, checked when it is recorded
+/// (otherwise a stored 409). A stored relaxation found by the read while the company has more than one active user is closed
+/// by a system version (<see cref="SegregationOfDutiesRuleV1.AutomaticCloseActorId"/>) with one system audit event; the
+/// provider already answers <c>false</c> from that moment on every read, so the relaxation never outlives the second user.</item>
+/// <item><b>Scope</b> (KIM-D38): the setting relaxes only the general "preparer ≠ approver" check; locked dual controls never
+/// consult it (<see cref="SegregationOfDutiesControlKindV1"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
@@ -34,13 +42,18 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
     IErpAuthorityRevalidationService revalidation,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    ILogger<SettingsSegregationOfDutiesPolicyAdministration> logger) : ISettingsSegregationOfDutiesPolicyAdministrationV1
+    ICorrelationContext correlation,
+    ILogger<SettingsSegregationOfDutiesPolicyAdministration> logger,
+    ISettingsCompanyActiveUsersV1? activeUsers = null) : ISettingsSegregationOfDutiesPolicyAdministrationV1
 {
     private const int CommandExecutionSchemaVersion = 1;
     private const string Permission = SettingsSegregationOfDutiesPolicyPermissionManifestV1.Manage;
     private const string EntityType = "Settings.SegregationOfDutiesPolicy";
     private const string RecordCommandName = "settings.segregation-of-duties.record.v1";
     private const string RecordedEvent = "settings.segregation-of-duties.recorded.v1";
+    private const string ClosedAutomaticallyEvent = "settings.segregation-of-duties.closed-automatically.v1";
+    private const string AutomaticCloseReason =
+        "Şirkette ikinci aktif kullanıcı olduğu için hazırlayanın onaylaması gevşetmesi sistem tarafından kapatıldı (KIM-D39).";
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<SegregationOfDutiesPolicyViewV1> GetAsync(CancellationToken cancellationToken = default)
@@ -48,13 +61,20 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
         var companyId = RequireContextCompany();
         await RequireAsync(companyId, cancellationToken);
         var rows = await ReadAsync(() => SegregationOfDutiesPolicyReads.LoadAsync(database, cancellationToken));
+        var single = await HasSingleActiveUserAsync(companyId, cancellationToken);
+        if (rows.Length != 0 && rows[0].PreparerMayApprove && !single)
+        {
+            rows = await CloseAutomaticallyAsync(companyId, rows, cancellationToken);
+        }
+
         await RequireStillAsync(companyId, cancellationToken);
         var latest = rows.Length == 0 ? null : rows[0];
         return new SegregationOfDutiesPolicyViewV1(
             companyId,
-            latest?.PreparerMayApprove ?? SegregationOfDutiesRuleV1.DefaultPreparerMayApprove,
+            (latest?.PreparerMayApprove ?? SegregationOfDutiesRuleV1.DefaultPreparerMayApprove) && single,
             Text(latest?.Version ?? 0),
-            rows.Select(View).ToArray());
+            rows.Select(View).ToArray(),
+            single);
     }
 
     public async Task<SegregationOfDutiesPolicyCommandResultV1> RecordAsync(RecordSegregationOfDutiesPolicyRequestV1 request,
@@ -102,6 +122,15 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
                 await StoreRefusalAsync(Answers.VersionConflict(), keyHash, requestHash, metadata, cancellationToken));
         }
 
+        // KIM-D39: the relaxation only while the company has exactly one active user, measured at record time.
+        if (preparerMayApprove && !await HasSingleActiveUserAsync(companyId, cancellationToken))
+        {
+            await RequireStillAsync(companyId, cancellationToken);
+            return Done(metadata, subject,
+                await StoreRefusalAsync(Answers.RelaxationRequiresSingleUser(), keyHash, requestHash, metadata,
+                    cancellationToken));
+        }
+
         var inForce = current?.PreparerMayApprove ?? SegregationOfDutiesRuleV1.DefaultPreparerMayApprove;
         if (inForce == preparerMayApprove)
         {
@@ -127,6 +156,7 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
             row.Version,
             row.PreparerMayApprove,
             PreviousPreparerMayApprove = inForce,
+            SingleActiveUserAtRecord = preparerMayApprove ? true : (bool?)null,
         }, reason, metadata);
         await RequireStillAsync(companyId, cancellationToken);
         return Done(metadata, subject, await SaveChangeAsync(Answers.NoContent(), keyHash, requestHash, metadata,
@@ -139,7 +169,92 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
             row.PreparerMayApprove,
             row.RecordedBy,
             row.RecordedAtUtc,
-            row.Reason);
+            row.Reason,
+            SegregationOfDutiesRuleV1.IsRecordedAutomatically(row.RecordedBy));
+
+    /// <summary>KIM-D39: the Identity owner's answer for the server-resolved company and the authenticated caller.</summary>
+    private Task<bool> HasSingleActiveUserAsync(Guid companyId, CancellationToken cancellationToken) =>
+        SegregationOfDutiesSingleUserCheck.HasSingleActiveUserAsync(activeUsers, companyId, currentUser.UserId ?? string.Empty,
+            cancellationToken);
+
+    /// <summary>
+    /// KIM-D39: closes a stored relaxation found while the company has more than one active user — one system version
+    /// (<c>false</c>, <see cref="SegregationOfDutiesRuleV1.AutomaticCloseActorId"/>, a fixed reason) and one system audit event
+    /// in the same save, after a fresh authority check of the reader. A lost race (another read closed it first, the version
+    /// primary key) or any save failure re-reads the history; the answer stays <c>false</c> either way because the provider and
+    /// the view measure the active users on every read. Without a resolved correlation (no request) nothing is written.
+    /// </summary>
+    private async Task<SegregationOfDutiesPolicyVersionRow[]> CloseAutomaticallyAsync(Guid companyId,
+        SegregationOfDutiesPolicyVersionRow[] rows, CancellationToken cancellationToken)
+    {
+        var relaxed = rows[0];
+        if (!correlation.IsResolved || string.IsNullOrWhiteSpace(correlation.CorrelationId))
+        {
+            logger.LogWarning(
+                "Settings segregation of duties relaxation not closed durably: no correlation. CompanyId={CompanyId} Version={Version}",
+                companyId, relaxed.Version);
+            return rows;
+        }
+
+        await RequireStillAsync(companyId, cancellationToken);
+        var version = checked(relaxed.Version + 1);
+        var row = new SegregationOfDutiesPolicyVersionRow
+        {
+            CompanyId = companyId,
+            Version = version,
+            PreparerMayApprove = false,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+            RecordedBy = SegregationOfDutiesRuleV1.AutomaticCloseActorId,
+            Reason = AutomaticCloseReason,
+        };
+        database.ChangeTracker.Clear();
+        database.SegregationOfDutiesPolicyVersions.Add(row);
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            ClosedAutomaticallyEvent,
+            EntityType,
+            companyId.ToString("D"),
+            "CloseAutomatically",
+            relaxed.Version,
+            version,
+            AuditActorTypes.System,
+            SegregationOfDutiesRuleV1.AutomaticCloseActorId,
+            Permission,
+            [],
+            "{}",
+            AfterJson(new
+            {
+                CompanyId = companyId,
+                row.Version,
+                row.PreparerMayApprove,
+                PreviousPreparerMayApprove = true,
+                Trigger = "SecondActiveUser",
+                ObservedBy = currentUser.UserId,
+            }, AutomaticCloseReason),
+            "Görev ayrılığı gevşetmesi ikinci aktif kullanıcı nedeniyle sistem tarafından kapatıldı",
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            SourceChannels.System,
+            correlation.ClientIpAddress,
+            correlation.UserAgent,
+            correlation.CorrelationId,
+            correlation.CausationId,
+            string.Create(CultureInfo.InvariantCulture, $"{ClosedAutomaticallyEvent}:{companyId:D}:{version}")));
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+            logger.LogInformation(
+                "Settings segregation of duties relaxation closed automatically. CompanyId={CompanyId} Version={Version} CorrelationId={CorrelationId}",
+                companyId, version, correlation.CorrelationId);
+        }
+        catch (DbUpdateException)
+        {
+            database.ChangeTracker.Clear();
+        }
+
+        return await ReadAsync(() => SegregationOfDutiesPolicyReads.LoadAsync(database, cancellationToken));
+    }
 
     private Guid RequireContextCompany()
     {
@@ -394,6 +509,10 @@ internal sealed class SettingsSegregationOfDutiesPolicyAdministration(
         public static SegregationOfDutiesPolicyCommandAnswerV1 VersionConflict() =>
             Problem(409, SegregationOfDutiesPolicyProblemCodesV1.VersionConflict, "Kayıt değişmiş.",
                 "Kayıt siz açtıktan sonra değişti; güncel hâlini okuyup yeniden deneyin.");
+
+        public static SegregationOfDutiesPolicyCommandAnswerV1 RelaxationRequiresSingleUser() =>
+            Problem(409, SegregationOfDutiesPolicyProblemCodesV1.RelaxationRequiresSingleUser, "Gevşetme açılamaz.",
+                "Hazırlayanın onaylaması yalnız şirkette tek aktif kullanıcı varken açılabilir.");
 
         public static SegregationOfDutiesPolicyCommandAnswerV1 Problem(int status, string code, string title, string detail) =>
             new SegregationOfDutiesPolicyCommandAnswerV1(status, code, title, detail);

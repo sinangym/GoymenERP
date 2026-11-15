@@ -11,6 +11,13 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// other than the server-resolved one → <c>settings_access_denied</c>; an unreadable store →
 /// <c>settings_provider_unavailable</c>; a stored row of another company → <c>settings_profile_invalid</c>. An error never
 /// falls back to a permissive answer.
+/// <para>
+/// KIM-D39: a stored relaxation answers only while the Identity owner reports exactly one active user in the company, asked
+/// on every read through <see cref="ISettingsCompanyActiveUsersV1"/>. With a second active user the answer is
+/// <c>PreparerMayApprove = false</c> at the same version (the relaxation closed by itself; the read writes nothing, the
+/// durable system version is written by the administration's read). A refused fence → <c>settings_access_denied</c>; an
+/// owner failure or no composed port → <c>settings_provider_unavailable</c>.
+/// </para>
 /// </summary>
 public sealed class SettingsSegregationOfDutiesPolicyProviderV1 : ISettingsSegregationOfDutiesPolicyProviderV1
 {
@@ -18,9 +25,10 @@ public sealed class SettingsSegregationOfDutiesPolicyProviderV1 : ISettingsSegre
     private readonly SettingsDbContext _database;
     private readonly ICompanyContext _companyContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ISettingsCompanyActiveUsersV1? _activeUsers;
 
     public SettingsSegregationOfDutiesPolicyProviderV1(SettingsDbContext database, ICompanyContext companyContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser, ISettingsCompanyActiveUsersV1? activeUsers = null)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(companyContext);
@@ -28,6 +36,7 @@ public sealed class SettingsSegregationOfDutiesPolicyProviderV1 : ISettingsSegre
         _database = database;
         _companyContext = companyContext;
         _currentUser = currentUser;
+        _activeUsers = activeUsers;
     }
 
     public async Task<SettingsSegregationOfDutiesPolicyV1> GetSegregationOfDutiesPolicyAsync(Guid companyId,
@@ -54,7 +63,15 @@ public sealed class SettingsSegregationOfDutiesPolicyProviderV1 : ISettingsSegre
             throw new SettingsPrerequisiteException(ProfileInvalidCode);
         }
 
-        return new SettingsSegregationOfDutiesPolicyV1(companyId, row.PreparerMayApprove, row.Version);
+        if (!row.PreparerMayApprove)
+        {
+            return new SettingsSegregationOfDutiesPolicyV1(companyId, false, row.Version);
+        }
+
+        var single = await SegregationOfDutiesSingleUserCheck.HasSingleActiveUserAsync(
+            _activeUsers, companyId, _currentUser.UserId!, cancellationToken);
+        RequireAccess(companyId, cancellationToken);
+        return new SettingsSegregationOfDutiesPolicyV1(companyId, single, row.Version);
     }
 
     /// <summary>

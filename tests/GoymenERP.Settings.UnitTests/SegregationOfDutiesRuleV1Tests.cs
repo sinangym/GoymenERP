@@ -70,4 +70,59 @@ public sealed class SegregationOfDutiesRuleV1Tests
         Assert.Throws<ArgumentNullException>(() =>
             SegregationOfDutiesRuleV1.PermitsApproval(null!, "preparer-actor", "approver-actor"));
     }
+
+    [Fact]
+    public void A_locked_dual_control_never_lets_the_preparer_approve_even_when_the_company_is_relaxed()
+    {
+        var relaxed = new SettingsSegregationOfDutiesPolicyV1(CompanyId, true, 3);
+
+        Assert.True(SegregationOfDutiesRuleV1.PermitsApproval(relaxed, SegregationOfDutiesControlKindV1.General,
+            "preparer-actor", "preparer-actor"));
+        Assert.False(SegregationOfDutiesRuleV1.PermitsApproval(relaxed, SegregationOfDutiesControlKindV1.LockedDualControl,
+            "preparer-actor", "preparer-actor"));
+        Assert.True(SegregationOfDutiesRuleV1.PermitsApproval(relaxed, SegregationOfDutiesControlKindV1.LockedDualControl,
+            "preparer-actor", "approver-actor"));
+    }
+
+    [Fact]
+    public void An_unknown_control_kind_is_treated_as_locked()
+    {
+        var relaxed = new SettingsSegregationOfDutiesPolicyV1(CompanyId, true, 3);
+
+        Assert.False(SegregationOfDutiesRuleV1.PermitsApproval(relaxed, (SegregationOfDutiesControlKindV1)0,
+            "preparer-actor", "preparer-actor"));
+    }
+
+    [Fact]
+    public void The_policy_free_locked_rule_needs_a_different_present_person()
+    {
+        Assert.True(SegregationOfDutiesRuleV1.PermitsLockedDualControlApproval("preparer-actor", "approver-actor"));
+        Assert.False(SegregationOfDutiesRuleV1.PermitsLockedDualControlApproval("preparer-actor", " preparer-actor "));
+        Assert.False(SegregationOfDutiesRuleV1.PermitsLockedDualControlApproval(null, "approver-actor"));
+        Assert.False(SegregationOfDutiesRuleV1.PermitsLockedDualControlApproval("preparer-actor", "   "));
+    }
+
+    [Fact]
+    public void The_two_argument_rule_is_the_general_check()
+    {
+        var relaxed = new SettingsSegregationOfDutiesPolicyV1(CompanyId, true, 4);
+        var separated = new SettingsSegregationOfDutiesPolicyV1(CompanyId, false, 4);
+
+        Assert.Equal(
+            SegregationOfDutiesRuleV1.PermitsApproval(relaxed, SegregationOfDutiesControlKindV1.General, "preparer-actor", "preparer-actor"),
+            SegregationOfDutiesRuleV1.PermitsApproval(relaxed, "preparer-actor", "preparer-actor"));
+        Assert.Equal(
+            SegregationOfDutiesRuleV1.PermitsApproval(separated, SegregationOfDutiesControlKindV1.General, "preparer-actor", "preparer-actor"),
+            SegregationOfDutiesRuleV1.PermitsApproval(separated, "preparer-actor", "preparer-actor"));
+    }
+
+    [Fact]
+    public void Only_the_system_marker_is_read_as_an_automatic_close()
+    {
+        Assert.True(SegregationOfDutiesRuleV1.IsRecordedAutomatically(SegregationOfDutiesRuleV1.AutomaticCloseActorId));
+        Assert.False(SegregationOfDutiesRuleV1.IsRecordedAutomatically(Guid.NewGuid().ToString("D")));
+        Assert.False(SegregationOfDutiesRuleV1.IsRecordedAutomatically(null));
+        Assert.False(SegregationOfDutiesRuleV1.IsRecordedAutomatically(
+            SegregationOfDutiesRuleV1.AutomaticCloseActorId.ToUpperInvariant()));
+    }
 }

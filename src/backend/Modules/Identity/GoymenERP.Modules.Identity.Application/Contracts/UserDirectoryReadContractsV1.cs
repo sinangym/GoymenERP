@@ -135,3 +135,31 @@ public sealed record UserCompanyMembershipRequestV1(
 public sealed record UserCompanyMembershipAnswerV1(
     UserDirectoryOutcomeV1 Outcome,
     IReadOnlyList<Guid> ActiveCompanyIds);
+
+/// <summary>
+/// KIM-D39 (<c>docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK12.md</c>): does the company have exactly one active member
+/// NOW — the same membership predicate as <see cref="IUserDirectoryReadPortV1"/>. Used by the Settings owner to accept the
+/// segregation of duties relaxation only in a single-user company and to close it by itself once a second active user exists;
+/// it is a module-to-module port, not an endpoint.
+/// <para>
+/// Fail-closed fence: the company and the actor are copies of the server-resolved context; the caller must be authenticated,
+/// may access the company and is an active member there now. Anything else is <see cref="UserDirectoryOutcomeV1.Denied"/>; an
+/// owner failure is <see cref="UserDirectoryOutcomeV1.Unavailable"/>. Only the yes/no answer leaves the module: no count, name
+/// or id.
+/// </para>
+/// </summary>
+public interface ICompanySingleActiveMemberReadPortV1
+{
+    Task<CompanySingleActiveMemberAnswerV1> GetAsync(
+        CompanySingleActiveMemberRequestV1 request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record CompanySingleActiveMemberRequestV1(
+    Guid CompanyId,
+    string ActorId);
+
+/// <summary><c>HasSingleActiveMember</c> is meaningful only with <see cref="UserDirectoryOutcomeV1.Found"/>.</summary>
+public sealed record CompanySingleActiveMemberAnswerV1(
+    UserDirectoryOutcomeV1 Outcome,
+    bool HasSingleActiveMember);
