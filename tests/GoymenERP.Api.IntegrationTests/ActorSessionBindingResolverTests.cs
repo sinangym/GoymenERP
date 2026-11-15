@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using Microsoft.AspNetCore.Authentication;
@@ -78,6 +79,66 @@ public sealed class ActorSessionBindingResolverTests
         Assert.Null(await resolver.ResolveAsync());
     }
 
+    [Fact]
+    public async Task ProviderSelector_BindsLikeBearerWhenTheBearerSchemeAuthenticatedTheRequest()
+    {
+        var userId = Guid.NewGuid();
+        var httpContext = CreateAuthenticatedContext(userId);
+        httpContext.Request.Headers.Authorization = "Bearer token-a";
+        using var bearerServices = BuildSchemeProvider(JwtBearerDefaults.AuthenticationScheme);
+        using var selectorServices = BuildSchemeProvider(ErpAuthenticationExtensions.ProviderSelectorScheme);
+        using var protector = new ShellCapabilityGenerationProtector();
+        var accessor = new HttpContextAccessor { HttpContext = httpContext };
+        var bearerResolver = new ActorSessionBindingResolver(
+            accessor,
+            bearerServices.GetRequiredService<IAuthenticationSchemeProvider>(),
+            new FakeCurrentUser(userId),
+            protector);
+        var selectorResolver = new ActorSessionBindingResolver(
+            accessor,
+            selectorServices.GetRequiredService<IAuthenticationSchemeProvider>(),
+            new FakeCurrentUser(userId),
+            protector);
+
+        Assert.Null(await selectorResolver.ResolveAsync());
+
+        httpContext.Features.Set<IAuthenticateResultFeature>(new RecordedAuthenticateResult
+        {
+            AuthenticateResult = AuthenticateResult.Success(
+                new AuthenticationTicket(httpContext.User, JwtBearerDefaults.AuthenticationScheme)),
+        });
+        var expected = await bearerResolver.ResolveAsync();
+        var actual = await selectorResolver.ResolveAsync();
+
+        Assert.NotNull(expected);
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("LocalAccount")]
+    [InlineData("GoymenErpProviderSelector")]
+    [InlineData("UnsupportedScheme")]
+    public async Task ProviderSelector_HasNoBindingForANonBearerAuthenticatedScheme(string authenticatedScheme)
+    {
+        var userId = Guid.NewGuid();
+        var httpContext = CreateAuthenticatedContext(userId);
+        httpContext.Request.Headers.Authorization = "Bearer token-a";
+        httpContext.Features.Set<IAuthenticateResultFeature>(new RecordedAuthenticateResult
+        {
+            AuthenticateResult = AuthenticateResult.Success(
+                new AuthenticationTicket(httpContext.User, authenticatedScheme)),
+        });
+        using var services = BuildSchemeProvider(ErpAuthenticationExtensions.ProviderSelectorScheme);
+        using var protector = new ShellCapabilityGenerationProtector();
+        var resolver = new ActorSessionBindingResolver(
+            new HttpContextAccessor { HttpContext = httpContext },
+            services.GetRequiredService<IAuthenticationSchemeProvider>(),
+            new FakeCurrentUser(userId),
+            protector);
+
+        Assert.Null(await resolver.ResolveAsync());
+    }
+
     private static DefaultHttpContext CreateAuthenticatedContext(Guid userId)
     {
         var claims = new[]
@@ -112,6 +173,11 @@ public sealed class ActorSessionBindingResolverTests
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>();
 
         public bool CanAccessCompany(Guid companyId) => false;
+    }
+
+    private sealed class RecordedAuthenticateResult : IAuthenticateResultFeature
+    {
+        public AuthenticateResult? AuthenticateResult { get; set; }
     }
 
     private sealed class NoOpAuthenticationHandler(
