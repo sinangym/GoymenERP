@@ -5,7 +5,8 @@ using GoymenERP.Modules.Sales.Domain.SalesContracts;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// S-11 sales contract (SAT-D28 EK3, NS-13, SAT-D346) — the domain half: the closed validity window, the installment payment plan
+/// S-11 sales contract (SAT-D28 EK3, NS-13, SAT-D346) — the domain half: the validity window (a required start; SAT-D362: an
+/// optional end — null is open-ended — never before the start), the installment payment plan
 /// (positive, due-date ordered, fitting the money profile's scale, never rounded), the line / total discount rules (valid
 /// percentages, unique labels per kind, at most one total rule), the bounded clauses, the approval decision against the limit
 /// snapshotted at creation (no rule → active; no configured limit → every discount pending; above the limit → pending; at the
@@ -41,9 +42,11 @@ public sealed class SalesContractTests
         MoneyProfileSnapshot? money = null,
         DateOnly? validFrom = null,
         DateOnly? validThrough = null,
-        string? clauses = "SENTETIK teslim maddesi") =>
+        string? clauses = "SENTETIK teslim maddesi",
+        bool openEnded = false) =>
         SalesContract.Create(Guid.NewGuid(), Company, 1, Party, Account, money ?? MoneyProfile(), validFrom ?? new DateOnly(2026, 11, 1),
-            validThrough ?? new DateOnly(2027, 10, 31), installments ?? TwoInstallments, rules, clauses, limit, Seller, T0);
+            openEnded ? null : validThrough ?? new DateOnly(2027, 10, 31), installments ?? TwoInstallments, rules, clauses, limit, Seller,
+            T0);
 
     private static SalesContractDiscountRuleInput Line(decimal rate, string label = "SENTETIK hacim") =>
         new(SalesContractDiscountKind.Line, label, rate);
@@ -104,11 +107,37 @@ public sealed class SalesContractTests
     }
 
     [Fact]
-    public void Validity_must_be_closed_and_ordered()
+    public void Validity_needs_a_start_and_an_optional_end_that_is_never_before_it()
     {
         Assert.Equal(SalesRuleCodes.ContractValidityInvalid,
             CodeOf(() => Create(validFrom: new DateOnly(2027, 1, 1), validThrough: new DateOnly(2026, 12, 31))));
         Assert.Equal(SalesContractState.Active, Create(validFrom: Day, validThrough: Day).State);
+        // SAT-D362: no end date is an open-ended contract, not an invalid window.
+        Assert.Null(Create(validFrom: Day, openEnded: true).ValidThrough);
+        Assert.True(SalesContract.IsValidWindow(Day, null));
+        Assert.True(SalesContract.IsValidWindow(Day, Day));
+        Assert.False(SalesContract.IsValidWindow(Day, Day.AddDays(-1)));
+    }
+
+    [Fact]
+    public void An_open_ended_contract_is_in_effect_from_its_start_with_no_last_day()
+    {
+        var contract = Create(validFrom: Day, openEnded: true);
+
+        Assert.False(contract.IsInEffectOn(Day.AddDays(-1)));
+        Assert.True(contract.IsInEffectOn(Day));
+        Assert.True(contract.IsInEffectOn(new DateOnly(2099, 12, 31)));
+    }
+
+    [Fact]
+    public void An_open_ended_pending_contract_is_not_in_effect_until_its_discount_is_approved()
+    {
+        var contract = Create(rules: [Line(5m)], validFrom: Day, openEnded: true);
+
+        Assert.Equal(SalesContractState.PendingDiscountApproval, contract.State);
+        Assert.False(contract.IsInEffectOn(Day));
+        contract.ApproveDiscount(1, Manager, T0);
+        Assert.True(contract.IsInEffectOn(Day.AddYears(5)));
     }
 
     [Fact]
@@ -286,10 +315,22 @@ public sealed class SalesContractTests
         Assert.Throws<InvalidOperationException>(() => Restore(created, SalesContractState.Active, null, 1, moneyScale: 0));
     }
 
+    [Fact]
+    public void Restore_rebuilds_an_open_ended_contract_and_refuses_a_stored_end_before_the_start()
+    {
+        var openEnded = Create(openEnded: true);
+        Assert.Null(Restore(openEnded, SalesContractState.Active, null, 1).ValidThrough);
+
+        var closed = Create();
+        Assert.Throws<InvalidOperationException>(() =>
+            Restore(closed, SalesContractState.Active, null, 1, validThrough: closed.ValidFrom.AddDays(-1)));
+    }
+
     private static SalesContract Restore(SalesContract source, SalesContractState state, SalesContractDecision? decision,
-        long version, IReadOnlyList<SalesContractInstallment>? installments = null, int? moneyScale = null) =>
+        long version, IReadOnlyList<SalesContractInstallment>? installments = null, int? moneyScale = null,
+        DateOnly? validThrough = null) =>
         SalesContract.Restore(source.Id, source.CompanyId, source.ContractNo, source.PartyId, source.CompanyAccountId,
             source.CurrencyId, source.MoneyProfileId, source.MoneyProfileVersion, moneyScale ?? source.MoneyScale, source.ValidFrom,
-            source.ValidThrough, installments ?? source.Installments, source.DiscountRules, source.Clauses,
+            validThrough ?? source.ValidThrough, installments ?? source.Installments, source.DiscountRules, source.Clauses,
             source.DiscountLimitPercent, state, source.CreatedBy, source.CreatedAtUtc, decision, version, source.UpdatedAtUtc);
 }

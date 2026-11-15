@@ -2,7 +2,8 @@
  * S-11 (SAT-D28, NS-13, SAT-D346): the strict sales contract decoder. A body is believed only when every key is present and typed,
  * the plan and the rules are numbered in order, amounts are the money profile's text at its scale, the limit flag and value agree,
  * and the state agrees with the approval facts (no rule never needs approval; rules without a configured limit always do; the
- * creator never decides their own discount). Every identity here is synthetic.
+ * creator never decides their own discount). SAT-D362: the end date may be null (open-ended) but never before the start. SAT-D361:
+ * amounts are present exactly when the disclosure is Visible and null exactly when it is Withheld. Every identity here is synthetic.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -31,6 +32,7 @@ const activeWithoutDiscount = (overrides: Body = {}): Body => ({
   version: '1',
   validFrom: '2026-11-01',
   validThrough: '2027-10-31',
+  amountDisclosure: 'Visible',
   installments: [
     { installmentNo: 1, dueDate: '2026-12-01', amount: '1500.00' },
     { installmentNo: 2, dueDate: '2027-01-01', amount: '1500.25' },
@@ -140,6 +142,48 @@ describe('S-11 sales contract decoder', () => {
   it('refuses validity that ends before it starts and clauses above the bound', () => {
     expect(decodeSalesContract(activeWithoutDiscount({ validThrough: '2026-10-31' }))).toBeNull()
     expect(decodeSalesContract(activeWithoutDiscount({ clauses: 'x'.repeat(SALES_CONTRACT_LIMITS.clauses + 1) }))).toBeNull()
+  })
+
+  it('reads an open-ended contract whose end date is null (SAT-D362)', () => {
+    const contract = decodeSalesContract(activeWithoutDiscount({ validThrough: null }))
+    expect(contract).not.toBeNull()
+    expect(contract?.validThrough).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ validThrough: '2026-11-01' }))?.validThrough).toBe('2026-11-01')
+    expect(decodeSalesContract(activeWithoutDiscount({ validThrough: '' }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ validThrough: 20271031 }))).toBeNull()
+    const { validThrough: _validThrough, ...missing } = activeWithoutDiscount()
+    expect(decodeSalesContract(missing)).toBeNull()
+  })
+
+  it('reads withheld amounts as null while terms, dates and rates stay visible (SAT-D361)', () => {
+    const [first, second] = activeWithoutDiscount().installments as Body[]
+    const withheld = pendingWithoutLimit({
+      amountDisclosure: 'Withheld',
+      installments: [{ ...first, amount: null }, { ...second, amount: null }],
+      plannedTotalAmount: null,
+    })
+    const contract = decodeSalesContract(withheld)
+    expect(contract).not.toBeNull()
+    expect(contract?.amountDisclosure).toBe('Withheld')
+    expect(contract?.plannedTotalAmount).toBeNull()
+    expect(contract?.installments.map((item) => [item.dueDate, item.amount])).toEqual([['2026-12-01', null], ['2027-01-01', null]])
+    expect(contract?.discountRules.map((rule) => rule.ratePercent)).toEqual(['5', '2.5'])
+    expect(decodeSalesContract(activeWithoutDiscount())?.amountDisclosure).toBe('Visible')
+  })
+
+  it('refuses amounts that disagree with the disclosure or an unknown disclosure (SAT-D361)', () => {
+    const [first, second] = activeWithoutDiscount().installments as Body[]
+    const nullPlan = [{ ...first, amount: null }, { ...second, amount: null }]
+    expect(decodeSalesContract(activeWithoutDiscount({ amountDisclosure: 'Withheld' }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ amountDisclosure: 'Withheld', installments: nullPlan }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ amountDisclosure: 'Withheld', plannedTotalAmount: null,
+      installments: [first, { ...second, amount: null }] }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ plannedTotalAmount: null }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ installments: [first, { ...second, amount: null }] }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ amountDisclosure: 'Hidden' }))).toBeNull()
+    expect(decodeSalesContract(activeWithoutDiscount({ amountDisclosure: null }))).toBeNull()
+    const { amountDisclosure: _disclosure, ...missing } = activeWithoutDiscount()
+    expect(decodeSalesContract(missing)).toBeNull()
   })
 
   it('pins a detail read to the requested id', () => {

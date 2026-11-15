@@ -2,6 +2,8 @@
  * S-11 (SAT-D28, NS-13, SAT-D346): the sales contract screen's user texts. Turkish, in one place, so they stay localizable. They
  * only say what the server decided: whether a discount needs approval is the server's comparison with the configured limit, and
  * without a configured limit every discount goes to approval ("sınır tanımlı değil"); no text implies a default limit.
+ * SAT-D361: an amount the server withheld (no sales price read) is said to be hidden, never shown as 0. SAT-D362: a contract
+ * without an end date is "süresiz".
  */
 import type { SalesContractDiscountKind, SalesContractState } from './salesContract'
 
@@ -18,7 +20,8 @@ export const SALES_CONTRACT_TEXT = {
   serviceUnavailable: 'Sözleşme servisi şu an kullanılamıyor; bir sözleşmenin yürürlükte olduğu varsayılmaz.',
   contractHeading: (no: number) => `Sözleşme #${no}`,
   versionFact: (version: string) => `Sürüm ${version}`,
-  validity: (from: string, through: string) => `Geçerlilik: ${from} – ${through}`,
+  validity: (from: string, through: string | null) =>
+    through === null ? `Geçerlilik: ${from} tarihinden itibaren (süresiz)` : `Geçerlilik: ${from} – ${through}`,
   inEffectToday: 'Bugün yürürlükte.',
   notInEffectToday: 'Bugün yürürlükte değil.',
   partyFact: (id: string) => `Müşteri: ${id}`,
@@ -27,6 +30,11 @@ export const SALES_CONTRACT_TEXT = {
   installmentsCaption: 'Ödeme planı',
   installmentColumn: { no: 'Taksit', dueDate: 'Vade', amount: 'Tutar' },
   plannedTotal: (amount: string) => `Plan toplamı: ${amount}`,
+  /** SAT-D361: the server withheld the amounts (no sales price read); never shown as 0. */
+  amountWithheld: 'Gizli',
+  amountWithheldLabel: 'Tutar gizli: fiyat görme yetkiniz yok',
+  plannedTotalWithheld: 'Plan toplamı gizli.',
+  amountsWithheld: 'Tutarları görmek için satış fiyatı görme yetkisi gerekir; vadeler, oranlar ve diğer bilgiler gösteriliyor.',
   discountCaption: 'İskonto kuralları',
   discountColumn: { no: 'No', kind: 'Tür', label: 'Ad', rate: 'Oran (%)' },
   noDiscount: 'İskonto kuralı yok; onay gerekmez.',
@@ -50,7 +58,8 @@ export const SALES_CONTRACT_TEXT = {
   account: 'Cari hesap kimliği',
   currency: 'Para birimi kimliği',
   validFrom: 'Geçerlilik başlangıcı',
-  validThrough: 'Geçerlilik bitişi',
+  validThrough: 'Geçerlilik bitişi (isteğe bağlı)',
+  validThroughHint: 'Boş bırakılırsa sözleşme süresiz olur.',
   installmentDueDate: (no: number) => `${no}. taksit vadesi`,
   installmentAmount: (no: number) => `${no}. taksit tutarı`,
   addInstallment: 'Taksit ekle',
@@ -67,7 +76,7 @@ export const SALES_CONTRACT_TEXT = {
   rejectionReason: 'Ret gerekçesi',
   retry: 'Aynı isteği yeniden gönder',
   invalidReference: 'Müşteri, cari hesap ve para birimi için geçerli kimlik girin.',
-  invalidValidity: 'Geçerlilik başlangıcı ve bitişi geçerli tarih olmalı; bitiş başlangıçtan önce olamaz.',
+  invalidValidity: 'Geçerlilik başlangıcı geçerli bir tarih olmalı; bitiş isteğe bağlıdır, verilirse başlangıçtan önce olamaz.',
   invalidInstallments: (max: number) => `Ödeme planı en az 1, en fazla ${max} taksit taşır; vadeler sırayla verilir.`,
   invalidInstallment: (no: number) => `${no}. taksitte geçerli bir vade ve sıfırdan büyük bir tutar girin (örnek: 1500 ya da 1500,25).`,
   invalidRules: (max: number) => `En fazla ${max} iskonto kuralı verilir.`,

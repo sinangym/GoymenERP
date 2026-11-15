@@ -24,7 +24,8 @@ internal sealed class ContractRow : ISalesTenantRow
     public string MoneyProfileVersion { get; set; } = string.Empty;
     public int MoneyScale { get; set; }
     public DateOnly ValidFrom { get; set; }
-    public DateOnly ValidThrough { get; set; }
+    /// <summary>SAT-D362: null = open-ended (no end date).</summary>
+    public DateOnly? ValidThrough { get; set; }
     public string InstallmentsJson { get; set; } = string.Empty;
     public string DiscountRulesJson { get; set; } = string.Empty;
     public string? Clauses { get; set; }

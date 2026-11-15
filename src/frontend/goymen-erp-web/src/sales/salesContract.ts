@@ -13,6 +13,11 @@
  * discount rule never needs approval and one recorded while no limit was configured always did (SAT-D346). Anything else is
  * refused as a whole (`null`), never partly shown. Amounts are the server's exact text at the money profile's scale; the
  * planned total is the server's sum, never added up here.
+ *
+ * SAT-D361: the amounts (every installment amount and the planned total) come only beside `amountDisclosure: "Visible"` —
+ * the server asks the sales order price read on every answer. `"Withheld"` carries every amount as null (and a Visible
+ * answer carries none as null); a mixture is refused. Rates are not amounts and stay visible.
+ * SAT-D362: `validThrough` is optional — null is an open-ended contract; a given end is never before the start.
  */
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
@@ -55,10 +60,14 @@ export const SALES_CONTRACT_LIMITS = {
   listed: 200,
 } as const
 
+/** SAT-D361: whether the caller may see the contract's amounts (the sales order price read). Never absent. */
+export type SalesContractAmountDisclosure = 'Visible' | 'Withheld'
+
 export interface SalesContractInstallment {
   readonly installmentNo: number
   readonly dueDate: string
-  readonly amount: string
+  /** Null only when the contract's `amountDisclosure` is Withheld (SAT-D361). */
+  readonly amount: string | null
 }
 
 export interface SalesContractDiscountRule {
@@ -78,9 +87,12 @@ export interface SalesContract {
   readonly state: SalesContractState
   readonly version: string
   readonly validFrom: string
-  readonly validThrough: string
+  /** SAT-D362: null = open-ended ("süresiz"). */
+  readonly validThrough: string | null
+  readonly amountDisclosure: SalesContractAmountDisclosure
   readonly installments: readonly SalesContractInstallment[]
-  readonly plannedTotalAmount: string
+  /** Null only when `amountDisclosure` is Withheld (SAT-D361). */
+  readonly plannedTotalAmount: string | null
   readonly discountRules: readonly SalesContractDiscountRule[]
   readonly clauses: string | null
   readonly discountApprovalRequired: boolean
@@ -101,7 +113,8 @@ export interface CreateSalesContractBody {
   readonly companyAccountId: string
   readonly currencyId: string
   readonly validFrom: string
-  readonly validThrough: string
+  /** SAT-D362: null = open-ended; sent as null, never left out (the server reads every member). */
+  readonly validThrough: string | null
   readonly installments: readonly { readonly dueDate: string; readonly amount: string }[]
   readonly discountRules: readonly { readonly kind: SalesContractDiscountKind; readonly label: string; readonly ratePercent: string }[]
   readonly clauses: string | null
@@ -122,7 +135,7 @@ type Obj = Record<string, unknown>
 
 const KEYS = [
   'id', 'contractNo', 'partyId', 'companyAccountId', 'currencyId', 'moneyScale', 'state', 'version', 'validFrom',
-  'validThrough', 'installments', 'plannedTotalAmount', 'discountRules', 'clauses', 'discountApprovalRequired',
+  'validThrough', 'amountDisclosure', 'installments', 'plannedTotalAmount', 'discountRules', 'clauses', 'discountApprovalRequired',
   'discountLimitDefined', 'discountLimitPercent', 'isInEffectToday', 'createdBy', 'createdAtUtc', 'decidedBy', 'decidedAtUtc',
   'rejectionReason',
 ] as const
@@ -160,11 +173,14 @@ export function isRateText(value: unknown, positive: boolean): value is string {
   return !positive || /[1-9]/.test(value)
 }
 
-function decodeInstallment(value: unknown, index: number, scale: number): SalesContractInstallment | null {
+function decodeInstallment(value: unknown, index: number, scale: number, visible: boolean): SalesContractInstallment | null {
   const o = exact(value, INSTALLMENT_KEYS)
-  if (o === null || !ordinal(o.installmentNo, index + 1) || !isDateOnly(o.dueDate) || !isAmountAtScale(o.amount, scale, true)) return null
-  return { installmentNo: o.installmentNo as number, dueDate: o.dueDate, amount: o.amount }
+  if (o === null || !ordinal(o.installmentNo, index + 1) || !isDateOnly(o.dueDate)
+    || !(visible ? isAmountAtScale(o.amount, scale, true) : o.amount === null)) return null
+  return { installmentNo: o.installmentNo as number, dueDate: o.dueDate, amount: o.amount as string | null }
 }
+
+const disclosures: readonly string[] = ['Visible', 'Withheld']
 
 function decodeRule(value: unknown, index: number): SalesContractDiscountRule | null {
   const o = exact(value, RULE_KEYS)
@@ -180,17 +196,19 @@ export function decodeSalesContract(value: unknown, expectedId?: string): SalesC
     || typeof o.contractNo !== 'number' || !Number.isInteger(o.contractNo) || o.contractNo < 1
     || !isReferenceId(o.partyId) || !isReferenceId(o.companyAccountId) || !isReferenceId(o.currencyId) || !isScale(o.moneyScale)
     || typeof o.state !== 'string' || !states.includes(o.state) || !isVersionString(o.version)
-    || !isDateOnly(o.validFrom) || !isDateOnly(o.validThrough) || o.validThrough < o.validFrom
+    || !isDateOnly(o.validFrom) || !(o.validThrough === null || (isDateOnly(o.validThrough) && o.validThrough >= o.validFrom))
+    || typeof o.amountDisclosure !== 'string' || !disclosures.includes(o.amountDisclosure)
     || !Array.isArray(o.installments) || o.installments.length < 1 || o.installments.length > SALES_CONTRACT_LIMITS.installments
-    || !isAmountAtScale(o.plannedTotalAmount, o.moneyScale, true)
+    || !(o.amountDisclosure === 'Visible' ? isAmountAtScale(o.plannedTotalAmount, o.moneyScale, true) : o.plannedTotalAmount === null)
     || !Array.isArray(o.discountRules) || o.discountRules.length > SALES_CONTRACT_LIMITS.discountRules
     || !(o.clauses === null || (text(o.clauses) && o.clauses.length <= SALES_CONTRACT_LIMITS.clauses))
     || typeof o.discountApprovalRequired !== 'boolean' || typeof o.discountLimitDefined !== 'boolean'
     || typeof o.isInEffectToday !== 'boolean' || !text(o.createdBy) || !instant(o.createdAtUtc)) return null
   const scale = o.moneyScale
+  const visible = o.amountDisclosure === 'Visible'
   const installments: SalesContractInstallment[] = []
   for (const [index, item] of o.installments.entries()) {
-    const installment = decodeInstallment(item, index, scale)
+    const installment = decodeInstallment(item, index, scale, visible)
     if (installment === null || (index > 0 && installment.dueDate < installments[index - 1].dueDate)) return null
     installments.push(installment)
   }
@@ -236,9 +254,10 @@ export function decodeSalesContract(value: unknown, expectedId?: string): SalesC
     state,
     version: o.version,
     validFrom: o.validFrom,
-    validThrough: o.validThrough,
+    validThrough: o.validThrough as string | null,
+    amountDisclosure: o.amountDisclosure as SalesContractAmountDisclosure,
     installments,
-    plannedTotalAmount: o.plannedTotalAmount,
+    plannedTotalAmount: o.plannedTotalAmount as string | null,
     discountRules: rules,
     clauses: o.clauses as string | null,
     discountApprovalRequired: o.discountApprovalRequired,

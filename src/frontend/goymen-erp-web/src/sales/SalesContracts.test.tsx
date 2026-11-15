@@ -3,11 +3,14 @@
  * "sınır tanımlı değil" when no limit was configured at recording time — offers the create form only with the create capability
  * and the discount decision only on a pending contract with the approve capability, sends exactly one key per attempt and the same
  * key again on an unknown outcome, names the server's refusal and refreshes on success or a conflict. The container is not routed
- * (the shell capability is not published yet), so the panel is checked directly with a stub transport. Every identity is synthetic.
+ * (the shell capability is not published yet), so the panel is checked directly with a stub transport. SAT-D362: an empty end date
+ * is sent as null and an open-ended contract reads "süresiz". SAT-D361: withheld amounts read "Gizli" with a note, never 0. Every
+ * identity is synthetic.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { OrderCommandOutcome } from './orderAttempt'
+import { formatBusinessDate } from './format'
 import { decodeSalesContract, type SalesContract } from './salesContract'
 import type { SalesContractMutation } from './salesContractApi'
 import { SALES_CONTRACT_TEXT as T } from './salesContractText'
@@ -23,7 +26,7 @@ const CURRENCY = '33333333-3333-4333-8333-333333333333'
 const wire = (overrides: Body = {}): Body => ({
   id: '5c5c5c5c-5c5c-4c5c-8c5c-5c5c5c5c5c5c', contractNo: 1, partyId: PARTY, companyAccountId: ACCOUNT, currencyId: CURRENCY,
   moneyScale: 2, state: 'Active', version: '1', validFrom: '2026-11-01', validThrough: '2027-10-31',
-  installments: [{ installmentNo: 1, dueDate: '2026-12-01', amount: '1500.00' }], plannedTotalAmount: '1500.00',
+  amountDisclosure: 'Visible', installments: [{ installmentNo: 1, dueDate: '2026-12-01', amount: '1500.00' }], plannedTotalAmount: '1500.00',
   discountRules: [], clauses: null, discountApprovalRequired: false, discountLimitDefined: false, discountLimitPercent: null,
   isInEffectToday: true, createdBy: 'synthetic-seller', createdAtUtc: '2026-11-15T08:00:00Z', decidedBy: null, decidedAtUtc: null,
   rejectionReason: null, ...overrides,
@@ -113,6 +116,34 @@ describe('S-11 sales contracts panel', () => {
     const limit = within(section).getByTestId('sales-contract-1-limit').textContent
     expect(limit).toContain(T.limitDefined('10'))
     expect(limit).toContain(T.approvalNotRequired)
+  })
+
+  it('shows an open-ended contract as "süresiz" (SAT-D362)', () => {
+    const openEnded = contract(wire({ validThrough: null }))
+    const { section } = renderPanel({ outcome: { type: 'ok-single', data: [openEnded] } })
+    const validity = within(section).getByTestId('sales-contract-1-validity').textContent
+    expect(validity).toContain(T.validity(formatBusinessDate('2026-11-01'), null))
+    expect(validity).toContain('süresiz')
+  })
+
+  it('says withheld amounts are hidden, never 0, and keeps dates and rates visible (SAT-D361)', () => {
+    const hidden = contract(pendingWire({
+      amountDisclosure: 'Withheld',
+      installments: [{ installmentNo: 1, dueDate: '2026-12-01', amount: null }],
+      plannedTotalAmount: null,
+    }))
+    const { section } = renderPanel({ outcome: { type: 'ok-single', data: [ACTIVE, hidden] } })
+    const card = within(section).getByTestId('sales-contract-2')
+    const amount = within(card).getByTestId('sales-contract-2-installment-1-amount')
+    expect(amount.textContent).toBe(T.amountWithheld)
+    expect(amount.getAttribute('aria-label')).toBe(T.amountWithheldLabel)
+    expect(within(card).getByTestId('sales-contract-2-total').textContent).toBe(T.plannedTotalWithheld)
+    expect(within(card).getByTestId('sales-contract-2-amounts-withheld').getAttribute('role')).toBe('note')
+    expect(card.textContent).not.toContain('0.00')
+    expect(card.textContent).toContain('SENTETIK hacim')
+    const visible = within(section).getByTestId('sales-contract-1')
+    expect(within(visible).queryByTestId('sales-contract-1-amounts-withheld')).toBeNull()
+    expect(within(visible).getByTestId('sales-contract-1-total').textContent).toBe(T.plannedTotal('1500.00'))
   })
 
   it('offers neither the form nor a decision without the capabilities, and no decision on a decided contract', () => {
@@ -233,6 +264,11 @@ describe('S-11 sales contracts panel', () => {
     }
     expect(readContractForm(base).ok).toBe(true)
     expect(readContractForm({ ...base, validThrough: '2026-10-01' })).toEqual({ ok: false, error: T.invalidValidity })
+    const openEnded = readContractForm({ ...base, validThrough: '  ' })
+    expect(openEnded.ok ? openEnded.body.validThrough : 'refused').toBeNull()
+    const sameDay = readContractForm({ ...base, validThrough: '2026-11-01' })
+    expect(sameDay.ok ? sameDay.body.validThrough : 'refused').toBe('2026-11-01')
+    expect(readContractForm({ ...base, validThrough: '31.10.2027' })).toEqual({ ok: false, error: T.invalidValidity })
     expect(readContractForm({ ...base, installments: [] }).ok).toBe(false)
     expect(readContractForm({ ...base, installments: [{ dueDate: '2026-12-01', amount: '0' }] }))
       .toEqual({ ok: false, error: T.invalidInstallment(1) })

@@ -26,7 +26,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     MoneyProfileVersion = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     MoneyScale = table.Column<int>(type: "int", nullable: false),
                     ValidFrom = table.Column<DateOnly>(type: "date", nullable: false),
-                    ValidThrough = table.Column<DateOnly>(type: "date", nullable: false),
+                    ValidThrough = table.Column<DateOnly>(type: "date", nullable: true),
                     InstallmentsJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     DiscountRulesJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     Clauses = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: true),
@@ -55,7 +55,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     table.CheckConstraint("CK_Contracts_State", "([DiscountApprovalRequired] = 0 AND [State] = 2 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [Version] >= 1) OR ([DiscountApprovalRequired] = 1 AND [State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [Version] >= 1) OR ([DiscountApprovalRequired] = 1 AND [State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL AND [Version] >= 2) OR ([DiscountApprovalRequired] = 1 AND [State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [Version] >= 2)");
                     table.CheckConstraint("CK_Contracts_StateAxis", "[State] IN (1, 2, 3)");
                     table.CheckConstraint("CK_Contracts_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND ([Clauses] IS NULL OR LEN([Clauses]) > 0)");
-                    table.CheckConstraint("CK_Contracts_Validity", "[ValidThrough] >= [ValidFrom]");
+                    table.CheckConstraint("CK_Contracts_Validity", "[ValidThrough] IS NULL OR [ValidThrough] >= [ValidFrom]");
                     table.ForeignKey(
                         name: "FK_Contracts_Companies_CompanyId",
                         column: x => x.CompanyId,

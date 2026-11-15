@@ -17,7 +17,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// S-11 (SAT-D28, NS-13, SAT-D346) against a REAL SQL Server and the REAL host composition: a sales contract with a discount and no
 /// configured limit is recorded pending through the real Sales store in one save (row, attempt, audit) and approved once by another
-/// actor (version 2). The database itself refuses a changed fact, a skipped version, a second decision and a delete (TR 51471), the
+/// actor (version 2); it is open-ended (SAT-D362: NULL end date, still refused before its start). The database itself refuses a changed fact, a skipped version, a second decision and a delete (TR 51471), the
 /// creator deciding their own discount (CK maker-checker) and any change of an attempt (TR 51472). Another company never sees the
 /// contract. The migration refuses to roll back over a recorded contract (THROW 51473, forward fix). No other module's table is
 /// written. SENTETIK / NOT_ENV.
@@ -39,8 +39,12 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
     public async Task A_pending_contract_discount_is_approved_once_by_another_actor_and_the_database_refuses_changed_facts_a_second_decision_a_delete_and_attempt_changes()
     {
         await using var run = await Run.StartAsync();
-        var pending = await run.PendingContractAsync("k-create");
-        Assert.Equal((SalesContractState.PendingDiscountApproval, 1L, (decimal?)null), (pending.State, pending.Version, pending.DiscountLimitPercent));
+        // SAT-D362: an open-ended contract (no end date) is stored with a NULL [ValidThrough].
+        var pending = await run.PendingContractAsync("k-create", validThrough: null);
+        Assert.Equal((SalesContractState.PendingDiscountApproval, 1L, (decimal?)null, (DateOnly?)null),
+            (pending.State, pending.Version, pending.DiscountLimitPercent, pending.ValidThrough));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[Contracts] WHERE [Id] = @id AND [ValidThrough] IS NULL", ("@id", pending.Id)));
 
         const string where = " WHERE [Id] = @id; SELECT 1";
         // CK_Contracts_MakerChecker: the creator never decides their own discount, even through raw SQL (checked before the trigger).
@@ -56,6 +60,13 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
             + "[Version] = [Version] + 2" + where, ("@id", pending.Id)))).Number);
         Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [InstallmentsJson] = N'[]'" + where, ("@id", pending.Id)))).Number);
+        // SAT-D362: CK_Contracts_Validity still refuses an end before the start (checked before the trigger), and the guard's
+        // EXCEPT comparison sees NULL → a date as a changed fact (null-safe, never "unknown = equal").
+        Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[Contracts] SET [ValidThrough] = DATEADD(DAY, -1, [ValidFrom])" + where, ("@id", pending.Id)))).Number);
+        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[Contracts] SET [State] = 2, [DecidedBy] = N'SENTETIK-raw', [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
+            + "[ValidThrough] = [ValidFrom], [Version] = [Version] + 1" + where, ("@id", pending.Id)))).Number);
 
         // The real store: another actor approves the pending discount in one save (row, attempt, audit).
         SalesContractStoreResult? approved;
@@ -67,7 +78,8 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
         }
 
         Assert.NotNull(approved);
-        Assert.Equal((SalesContractState.Active, 2L, Manager), (approved.Contract.State, approved.Contract.Version, approved.Contract.Decision!.DecidedBy));
+        Assert.Equal((SalesContractState.Active, 2L, Manager, (DateOnly?)null),
+            (approved.Contract.State, approved.Contract.Version, approved.Contract.Decision!.DecidedBy, approved.Contract.ValidThrough));
 
         // TR_Contracts_Guard: the decision is taken once; an active contract is never rejected afterwards.
         Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
@@ -172,12 +184,16 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A contract of company A with one line discount and no configured limit (SAT-D346: pending), through the real store.</summary>
-        public async Task<SalesContract> PendingContractAsync(string key)
+        public async Task<SalesContract> PendingContractAsync(string key) =>
+            await PendingContractAsync(key, new DateOnly(2027, 10, 31));
+
+        /// <summary>SAT-D362: <paramref name="validThrough"/> null stores an open-ended contract.</summary>
+        public async Task<SalesContract> PendingContractAsync(string key, DateOnly? validThrough)
         {
             await using var scope = SalesStore(CompanyA);
             var stored = await scope.Store.StoreContractAsync(Envelope(key, Seller, SalesPermissionManifestV1.ContractsWrite), Hash('a'),
                 (number, now) => SalesContract.Create(Guid.NewGuid(), CompanyA, number, Guid.NewGuid(), Guid.NewGuid(), Money(),
-                    new DateOnly(2026, 11, 1), new DateOnly(2027, 10, 31),
+                    new DateOnly(2026, 11, 1), validThrough,
                     [new SalesContractInstallmentInput(new DateOnly(2026, 12, 1), 1500m), new SalesContractInstallmentInput(new DateOnly(2027, 1, 1), 1500.25m)],
                     [new SalesContractDiscountRuleInput(SalesContractDiscountKind.Line, "SENTETIK hacim", 5m)],
                     "SENTETIK teslim maddesi", null, Seller, now), Created);

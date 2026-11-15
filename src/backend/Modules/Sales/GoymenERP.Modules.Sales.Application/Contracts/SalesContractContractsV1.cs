@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // S-11 — satış sözleşmesi kaydı (SAT-D28 EK3; NS-13, SAT-D346). The contract is a separate Sales record: number, version, state,
 // validity window, installment payment plan, line/total discount rules and clauses. A discount above the configured limit needs an
 // authorized approval; the limit has no default and while it is not configured every discount goes to approval. The PDF vault link
-// and the agreement price tier (SAT-D58) are out of this slice.
+// and the agreement price tier (SAT-D58) are out of this slice. SAT-D362: the end date is optional (null = open-ended). SAT-D361: the
+// amounts (installment amounts and the planned total) are disclosed only to a caller who also holds sales.orders.price.read.
 
 /// <summary>The versioned command names the contract attempt record is keyed by (ADR-011 §2).</summary>
 public static class SalesContractCommands
@@ -51,7 +52,7 @@ public static class SalesContractApiV1
 /// <summary>The stable problem codes of S-11 besides the shared draft codes.</summary>
 public static class SalesContractProblemCodesV1
 {
-    /// <summary>422: the validity window is not ordered.</summary>
+    /// <summary>422: an end date was given and it is before the start date (SAT-D362; no end date is an open-ended contract).</summary>
     public const string ValidityInvalid = SalesRuleCodes.ContractValidityInvalid;
 
     /// <summary>422: the payment plan is empty, too long, carries a non-positive or over-scale amount, or is not in due-date order.</summary>
@@ -82,26 +83,35 @@ public sealed record SalesContractDiscountRuleRequest(string Kind, string Label,
 /// <summary>
 /// S-11 request body. The company is the server's, never an input; the party and the company account are Counterparty owner
 /// references read under the command's fence; the currency's money profile is read from Settings for today's business date.
-/// Both validity dates are required (an open-ended contract is not accepted).
+/// SAT-D362: the start date is required; the end date is optional (null = open-ended) and, when given, not before the start.
 /// </summary>
 public sealed record CreateSalesContractRequest(
     Guid PartyId,
     Guid CompanyAccountId,
     Guid CurrencyId,
     DateOnly ValidFrom,
-    DateOnly ValidThrough,
+    DateOnly? ValidThrough,
     IReadOnlyList<SalesContractInstallmentRequest> Installments,
     IReadOnlyList<SalesContractDiscountRuleRequest>? DiscountRules = null,
     string? Clauses = null);
 
-public sealed record SalesContractInstallmentView(int InstallmentNo, DateOnly DueDate, string Amount);
+/// <summary>One installment as read: its amount is null when the contract's <c>AmountDisclosure</c> is <c>Withheld</c> (SAT-D361).</summary>
+public sealed record SalesContractInstallmentView(int InstallmentNo, DateOnly DueDate, string? Amount);
 
 public sealed record SalesContractDiscountRuleView(int RuleNo, string Kind, string Label, string RatePercent);
 
 /// <summary>
 /// One contract as the screens see it. <see cref="State"/> is the stored axis (<c>PendingDiscountApproval</c>, <c>Active</c>,
 /// <c>DiscountRejected</c>). <see cref="DiscountLimitDefined"/> false means no limit was configured when the contract was recorded
-/// (SAT-D346: every discount went to approval; the screen says "sınır tanımlı değil").
+/// (SAT-D346: every discount went to approval; the screen says "sınır tanımlı değil"). <see cref="ValidThrough"/> null is an
+/// open-ended contract (SAT-D362).
+/// <para>
+/// SAT-D361: <see cref="AmountDisclosure"/> is never absent and follows the sales order price read exactly
+/// (<c>sales.orders.price.read</c>, asked, never required): <c>Visible</c> → every installment amount and
+/// <see cref="PlannedTotalAmount"/> are the exact texts; <c>Withheld</c> → they are null BECAUSE the caller may not see them
+/// (never zero, never empty). Every other field stays visible. The discount rules carry percentage rates only, no amount, so they
+/// are not withheld.
+/// </para>
 /// </summary>
 public sealed record SalesContractView(
     Guid Id,
@@ -113,9 +123,10 @@ public sealed record SalesContractView(
     string State,
     string Version,
     DateOnly ValidFrom,
-    DateOnly ValidThrough,
+    DateOnly? ValidThrough,
+    SalesPriceDisclosure AmountDisclosure,
     IReadOnlyList<SalesContractInstallmentView> Installments,
-    string PlannedTotalAmount,
+    string? PlannedTotalAmount,
     IReadOnlyList<SalesContractDiscountRuleView> DiscountRules,
     string? Clauses,
     bool DiscountApprovalRequired,
@@ -294,6 +305,9 @@ public interface ISalesContractStore
 /// <item>Approve and reject need <c>sales.contracts.discount.approve</c> and the expected version; the creator never decides
 /// their own contract's discount.</item>
 /// <item>Reads need <c>sales.contracts.read</c>.</item>
+/// <item>SAT-D361: every answer (reads, command results and replays) discloses the amounts only when
+/// <c>sales.orders.price.read</c> is also granted company-wide; otherwise <c>AmountDisclosure: Withheld</c> and the amounts are
+/// null. The price read is asked, never required.</item>
 /// </list>
 /// </summary>
 public interface ISalesContractService
@@ -319,8 +333,13 @@ public interface ISalesContractService
 /// Until a host registers this port, Sales reads no limit: the limit is not configured, so every discount goes to approval and the
 /// screen says "sınır tanımlı değil" — never "unlimited". A null answer means the same. An owner that cannot answer throws
 /// <see cref="SalesContractDiscountLimitSourceException"/>: denied → 403, otherwise 503 (<c>sales_discount_limit_unavailable</c>);
-/// never a null answer. Whether this limit is the order discount limit (SAT-D2) or a separate contract setting, and its scope
-/// (company or group), is NEEDS-SINAN; the port keeps the decision outside Sales.
+/// never a null answer.
+/// </para>
+/// <para>
+/// SAT-D358: the contract discount limit is a separate Settings value (not the SAT-D2 order discount limit), held per company
+/// (CompanyId), entered by Sinan and without a default. The Settings owner implements and registers this port (the key name and
+/// the provider are its implementation detail); Sales only reads it. While it is unset (no port registered, or a null answer)
+/// SAT-D346 holds unchanged: every contract discount needs approval and the screen says "sınır tanımlı değil".
 /// </para>
 /// </summary>
 public interface ISalesContractDiscountLimitSourceV1

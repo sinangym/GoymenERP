@@ -13,7 +13,9 @@ namespace GoymenERP.Sales.UnitTests;
 /// S-11 service skeleton (K3; SAT-D28, NS-13, SAT-D346): the operation's own name is measured before anything is read, the replay
 /// comes before any owner read, no limit source (or a null answer) means "not configured" so every discount goes to approval, a
 /// limit source that cannot answer fails closed, the creator deciding their own discount and a stale version are terminal refusals
-/// recorded under the key, and a rule refusal (missing reason, over-scale amount) writes nothing. Every identity is synthetic.
+/// recorded under the key, and a rule refusal (missing reason, over-scale amount) writes nothing. SAT-D361: the amounts (plan and
+/// planned total) are answered only beside the sales order price read granted company-wide, otherwise null beside Withheld; the
+/// price read is asked, never required. SAT-D362: no end date is an open-ended contract. Every identity is synthetic.
 /// </summary>
 public sealed class SalesContractServiceTests
 {
@@ -327,6 +329,101 @@ public sealed class SalesContractServiceTests
     }
 
     [Fact]
+    public async Task With_the_price_read_the_contract_answers_its_amounts_and_asks_the_price_read_last_SAT_D361()
+    {
+        var (service, _, _, authority) = Build();
+
+        var result = await service.CreateContractAsync(Request(LineRule("0.5")), Metadata);
+
+        Assert.Equal(SalesPriceDisclosure.Visible, result.Contract.AmountDisclosure);
+        Assert.Equal(["1500.00", "1500.25"], result.Contract.Installments.Select(item => item.Amount));
+        Assert.Equal("3000.25", result.Contract.PlannedTotalAmount);
+        Assert.Equal(SalesPermissionManifestV1.OrdersPriceRead, authority.Asked[^1]);
+    }
+
+    [Fact]
+    public async Task Without_the_price_read_the_contract_is_still_recorded_and_answered_with_its_amounts_withheld_SAT_D361()
+    {
+        var (service, store, _, authority) = Build();
+        authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+
+        var result = await service.CreateContractAsync(Request(LineRule("0.5")), Metadata);
+
+        Assert.Equal(1, store.Calls.Count(call => call == "store"));
+        Assert.Equal(SalesPriceDisclosure.Withheld, result.Contract.AmountDisclosure);
+        Assert.All(result.Contract.Installments, item => Assert.Null(item.Amount));
+        Assert.Null(result.Contract.PlannedTotalAmount);
+        // Everything that is not an amount stays visible: the plan's dates, the rates, the state and the validity.
+        Assert.Equal([new DateOnly(2026, 12, 1), new DateOnly(2027, 1, 1)], result.Contract.Installments.Select(item => item.DueDate));
+        Assert.Equal("0.5", Assert.Single(result.Contract.DiscountRules).RatePercent);
+        Assert.Equal(("PendingDiscountApproval", new DateOnly(2026, 11, 1), (DateOnly?)new DateOnly(2027, 10, 31), "SENTETIK teslim maddesi"),
+            (result.Contract.State, result.Contract.ValidFrom, result.Contract.ValidThrough, result.Contract.Clauses));
+    }
+
+    [Fact]
+    public async Task A_price_read_that_is_not_company_wide_withholds_the_amounts_on_reads_lists_and_replays_SAT_D361()
+    {
+        var (service, store, _, authority) = Build(Manager);
+        authority.Narrow.Add(SalesPermissionManifestV1.OrdersPriceRead);
+        store.Stored = Pending();
+
+        var one = await service.GetContractAsync(ContractId);
+        var list = await service.GetContractsAsync();
+        store.Replay = new SalesContractReplay(Pending(), null, "SENTETIK-original-correlation");
+        var replayed = await service.CreateContractAsync(Request(LineRule("5")), Metadata);
+
+        foreach (var view in new[] { one, Assert.Single(list.Items), replayed.Contract })
+        {
+            Assert.Equal(SalesPriceDisclosure.Withheld, view.AmountDisclosure);
+            Assert.Null(Assert.Single(view.Installments).Amount);
+            Assert.Null(view.PlannedTotalAmount);
+        }
+
+        authority.Narrow.Clear();
+        var visible = await service.GetContractAsync(ContractId);
+        Assert.Equal((SalesPriceDisclosure.Visible, "1500.00", "1500.00"),
+            (visible.AmountDisclosure, Assert.Single(visible.Installments).Amount, visible.PlannedTotalAmount));
+    }
+
+    [Fact]
+    public async Task A_decision_answer_withholds_the_amounts_without_the_price_read_and_the_decision_still_holds_SAT_D361()
+    {
+        var (service, store, _, authority) = Build(Manager);
+        authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+        store.Stored = Pending();
+
+        var result = await service.ApproveContractDiscountAsync(ContractId, new SalesDraftStateCommandRequest("1"), Metadata);
+
+        Assert.Equal(("Active", SalesPriceDisclosure.Withheld, (string?)null), (result.Contract.State, result.Contract.AmountDisclosure,
+            result.Contract.PlannedTotalAmount));
+        Assert.Equal(SalesContractState.Active, store.Stored!.State);
+    }
+
+    [Fact]
+    public async Task A_contract_without_an_end_date_is_recorded_open_ended_and_in_effect_SAT_D362()
+    {
+        var (service, store, _, _) = Build();
+
+        var result = await service.CreateContractAsync(Request() with { ValidThrough = null }, Metadata);
+
+        Assert.Equal(("Active", (DateOnly?)null, true), (result.Contract.State, result.Contract.ValidThrough, result.Contract.IsInEffectToday));
+        Assert.Null(store.Stored!.ValidThrough);
+        Assert.NotEqual(SalesContractHash.Compute(Request()), SalesContractHash.Compute(Request() with { ValidThrough = null }));
+    }
+
+    [Fact]
+    public async Task An_end_date_before_the_start_is_still_422_and_nothing_is_stored_SAT_D362()
+    {
+        var (service, store, _, _) = Build();
+
+        var refused = await Refused(() => service.CreateContractAsync(Request() with { ValidThrough = new DateOnly(2026, 10, 31) }, Metadata));
+
+        Assert.Equal((422, SalesContractProblemCodesV1.ValidityInvalid), (refused.Status, refused.Code));
+        Assert.Equal("validThrough", Assert.Single(refused.Errors!).Field);
+        Assert.Null(store.Stored);
+    }
+
+    [Fact]
     public void Another_reason_under_the_same_key_is_a_different_request()
     {
         var first = SalesContractHash.Compute(SalesContractCommands.RejectDiscountV1, ContractId, new SalesDraftStateCommandRequest("1", "A"));
@@ -357,6 +454,9 @@ public sealed class SalesContractServiceTests
     private sealed class Authority : IErpAuthorityRevalidationService
     {
         public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Granted, but only for some sites — never company-wide.</summary>
+        public HashSet<string> Narrow { get; } = new(StringComparer.Ordinal);
         public List<string> Asked { get; } = [];
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
@@ -365,8 +465,8 @@ public sealed class SalesContractServiceTests
             Asked.Add(permission);
             return Task.FromResult(Denied.Contains(permission)
                 ? PermissionScope.Denied
-                : new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(),
-                    new HashSet<Guid>()));
+                : new PermissionScope(true, !Narrow.Contains(permission), new HashSet<string>(StringComparer.Ordinal),
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
 

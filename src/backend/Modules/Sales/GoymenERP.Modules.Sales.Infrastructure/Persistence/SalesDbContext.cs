@@ -456,6 +456,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         "[DiscountLimitPercent] IS NULL OR ([DiscountLimitPercent] >= 0 AND [DiscountLimitPercent] <= 100)";
 
     /// <summary>
+    /// CK_Contracts_Validity (SAT-D362): the end date is optional — null is an open-ended contract — and never before the start.
+    /// </summary>
+    internal const string ContractValidityConstraint = "[ValidThrough] IS NULL OR [ValidThrough] >= [ValidFrom]";
+
+    /// <summary>
     /// TR_Contracts_Guard (S-11): the contract facts are immutable, the state takes the one discount decision (1 → 2 | 3), the
     /// version moves by exactly one and no row is deleted (THROW 51471). Declared so EF Core does not use OUTPUT without INTO.
     /// </summary>
@@ -2017,7 +2022,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_Contracts_StateAxis", "[State] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_Contracts_State", ContractStateConstraint);
             table.HasCheckConstraint("CK_Contracts_MakerChecker", ContractMakerCheckerConstraint);
-            table.HasCheckConstraint("CK_Contracts_Validity", "[ValidThrough] >= [ValidFrom]");
+            table.HasCheckConstraint("CK_Contracts_Validity", ContractValidityConstraint);
             table.HasCheckConstraint("CK_Contracts_Money", "[MoneyScale] >= 0 AND [MoneyScale] <= 8 AND LEN([MoneyProfileVersion]) > 0");
             table.HasCheckConstraint("CK_Contracts_DiscountLimit", ContractDiscountLimitConstraint);
             table.HasCheckConstraint("CK_Contracts_Json", "ISJSON([InstallmentsJson]) = 1 AND ISJSON([DiscountRulesJson]) = 1");

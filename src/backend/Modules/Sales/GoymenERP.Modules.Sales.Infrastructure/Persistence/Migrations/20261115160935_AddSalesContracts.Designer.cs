@@ -338,7 +338,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("ValidFrom")
                         .HasColumnType("date");
 
-                    b.Property<DateOnly>("ValidThrough")
+                    b.Property<DateOnly?>("ValidThrough")
                         .HasColumnType("date");
 
                     b.Property<long>("Version")
@@ -374,7 +374,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Contracts_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND ([Clauses] IS NULL OR LEN([Clauses]) > 0)");
 
-                            t.HasCheckConstraint("CK_Contracts_Validity", "[ValidThrough] >= [ValidFrom]");
+                            t.HasCheckConstraint("CK_Contracts_Validity", "[ValidThrough] IS NULL OR [ValidThrough] >= [ValidFrom]");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);

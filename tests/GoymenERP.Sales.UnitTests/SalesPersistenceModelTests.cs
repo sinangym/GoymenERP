@@ -363,7 +363,8 @@ public sealed class SalesPersistenceModelTests
     }
 
     /// <summary>S-11 (SAT-D28, NS-13, SAT-D346): the sales contract and its attempts — company-filtered, the contract number unique per
-    /// company, the version a concurrency token, the maker-checker and limit checks declared, both guard triggers declared; Up adds
+    /// company, the version a concurrency token, the maker-checker, limit and validity (SAT-D362: optional end) checks declared, both
+    /// guard triggers declared; Up adds
     /// the one-decision guard (51471) and the append-only attempts guard (51472); Down is a forward fix (51473) first.</summary>
     [Fact]
     public void The_sales_contract_migration_adds_two_triggers_and_its_down_refuses_with_51473_first()
@@ -387,6 +388,10 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(checks, check => check.Name == "CK_Contracts_State" && check.Sql == SalesDbContext.ContractStateConstraint);
         Assert.Contains(checks, check => check.Name == "CK_Contracts_MakerChecker" && check.Sql == SalesDbContext.ContractMakerCheckerConstraint);
         Assert.Contains(checks, check => check.Name == "CK_Contracts_DiscountLimit" && check.Sql == SalesDbContext.ContractDiscountLimitConstraint);
+        // SAT-D362: the end date is an optional column (null = open-ended), still never before the start.
+        Assert.Contains(checks, check => check.Name == "CK_Contracts_Validity" && check.Sql == SalesDbContext.ContractValidityConstraint);
+        Assert.Equal((false, true), (contract.FindProperty(nameof(ContractRow.ValidFrom))!.IsNullable,
+            contract.FindProperty(nameof(ContractRow.ValidThrough))!.IsNullable));
         var attemptChecks = design.FindEntityType(typeof(ContractAttemptRow))!.GetCheckConstraints().ToArray();
         Assert.Contains(attemptChecks, check => check.Name == "CK_ContractAttempts_Command" && check.Sql == SalesDbContext.ContractAttemptCommandConstraint);
         Assert.Contains(attemptChecks, check => check.Name == "CK_ContractAttempts_Outcome" && check.Sql == SalesDbContext.ContractAttemptOutcomeConstraint);
@@ -400,6 +405,11 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(2, up.Length);
         Assert.Contains(up, op => op.Sql.Contains("TR_Contracts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51471,", StringComparison.Ordinal));
         Assert.Contains(up, op => op.Sql.Contains("TR_ContractAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51472,", StringComparison.Ordinal));
+        var table = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>()
+            .Single(op => op.Name == "Contracts");
+        Assert.True(table.Columns.Single(column => column.Name == "ValidThrough").IsNullable);
+        Assert.Equal(SalesDbContext.ContractValidityConstraint,
+            table.CheckConstraints.Single(check => check.Name == "CK_Contracts_Validity").Sql);
         var down = migration.DownOperations;
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
         Assert.Contains("THROW 51473,", guard.Sql, StringComparison.Ordinal);

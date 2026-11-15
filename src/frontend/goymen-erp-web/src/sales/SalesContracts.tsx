@@ -5,7 +5,9 @@
  * Whether a discount needs approval is the server's comparison with the limit configured in Settings at recording time; without a
  * configured limit every discount goes to approval and the screen says "sınır tanımlı değil" (SAT-D346). No limit, rate or amount
  * is computed here: amounts are the server's text at the money profile's scale and the plan total is the server's sum. The creator
- * never decides their own contract's discount; the server refuses it and the screen only shows the refusal. A command whose
+ * never decides their own contract's discount; the server refuses it and the screen only shows the refusal. SAT-D361: without
+ * the sales price read the server sends every amount null beside `amountDisclosure: Withheld`; the screen says "Gizli", never 0.
+ * SAT-D362: the end date is optional; an empty end is sent as null and the card says "süresiz". A command whose
  * outcome is unknown (offline, network error, malformed answer, or a 502/503/504 gateway answer) keeps its key in memory and is
  * retried with the same key, never as a new request.
  *
@@ -127,7 +129,9 @@ export function readContractForm(form: {
   const account = form.account.trim()
   const currency = form.currency.trim()
   if (!isReferenceId(party) || !isReferenceId(account) || !isReferenceId(currency)) return { ok: false, error: T.invalidReference }
-  if (!isDateOnly(form.validFrom) || !isDateOnly(form.validThrough) || form.validThrough < form.validFrom) {
+  // SAT-D362: the start is required; an empty end is an open-ended contract (sent as null), a given end never precedes the start.
+  const validThrough = form.validThrough.trim() === '' ? null : form.validThrough
+  if (!isDateOnly(form.validFrom) || (validThrough !== null && (!isDateOnly(validThrough) || validThrough < form.validFrom))) {
     return { ok: false, error: T.invalidValidity }
   }
   if (form.installments.length < 1 || form.installments.length > SALES_CONTRACT_LIMITS.installments) {
@@ -158,7 +162,7 @@ export function readContractForm(form: {
   return {
     ok: true,
     body: {
-      partyId: party, companyAccountId: account, currencyId: currency, validFrom: form.validFrom, validThrough: form.validThrough,
+      partyId: party, companyAccountId: account, currencyId: currency, validFrom: form.validFrom, validThrough,
       installments, discountRules, clauses: clauses === '' ? null : form.clauses,
     },
   }
@@ -310,7 +314,8 @@ export function SalesContractsPanel({
               onChange={(event) => setValidFrom(event.target.value)} />
             <label htmlFor="sales-contract-valid-through">{T.validThrough}</label>
             <input id="sales-contract-valid-through" type="date" value={validThrough} disabled={locked}
-              onChange={(event) => setValidThrough(event.target.value)} />
+              aria-describedby="sales-contract-valid-through-hint" onChange={(event) => setValidThrough(event.target.value)} />
+            <p id="sales-contract-valid-through-hint" className={pages.muted}>{T.validThroughHint}</p>
             <fieldset data-testid="sales-contract-installments">
               <legend>{T.installmentsCaption}</legend>
               {installments.map((item, index) => (
@@ -406,6 +411,11 @@ export function SalesContractsPanel({
   )
 }
 
+/** SAT-D361: an amount the server withheld; said to be hidden, never rendered as 0 or left blank. */
+function WithheldAmount({ id }: { readonly id: string }) {
+  return <span data-testid={id} aria-label={T.amountWithheldLabel} title={T.amountWithheldLabel}>{T.amountWithheld}</span>
+}
+
 function ContractCard({
   item, canDecide, locked, rejectionReason, onRejectionReason, onApprove, onReject,
 }: {
@@ -425,7 +435,7 @@ function ContractCard({
           {T.state[item.state]}</span>
       </h3>
       <p data-testid={`${id}-validity`}>
-        {T.validity(formatBusinessDate(item.validFrom), formatBusinessDate(item.validThrough))} ·{' '}
+        {T.validity(formatBusinessDate(item.validFrom), item.validThrough === null ? null : formatBusinessDate(item.validThrough))} ·{' '}
         {item.isInEffectToday ? T.inEffectToday : T.notInEffectToday}
       </p>
       <p className={pages.muted}>
@@ -446,13 +456,18 @@ function ContractCard({
               <tr key={installment.installmentNo}>
                 <td>{installment.installmentNo}</td>
                 <td>{formatBusinessDate(installment.dueDate)}</td>
-                <td className={pages.numeric}>{installment.amount}</td>
+                <td className={pages.numeric}>{installment.amount ?? <WithheldAmount id={`${id}-installment-${installment.installmentNo}-amount`} />}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p data-testid={`${id}-total`}>{T.plannedTotal(item.plannedTotalAmount)}</p>
+      <p data-testid={`${id}-total`}>
+        {item.plannedTotalAmount === null ? T.plannedTotalWithheld : T.plannedTotal(item.plannedTotalAmount)}
+      </p>
+      {item.amountDisclosure === 'Withheld'
+        ? <p className={pages.muted} role="note" data-testid={`${id}-amounts-withheld`}>{T.amountsWithheld}</p>
+        : null}
       {item.discountRules.length === 0 ? <p data-testid={`${id}-no-discount`}>{T.noDiscount}</p> : (
         <div className={pages.tableWrap}>
           <table className={pages.table} data-testid={`${id}-rules`}>

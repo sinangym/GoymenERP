@@ -20,10 +20,16 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>Create</b> (<c>sales.contracts.write</c>): the customer (party + company account, active, this company) is the
 /// Counterparty owner's answer; the currency's money profile is the Settings owner's for today's Europe/Istanbul business date; the
 /// contract discount limit is read through <see cref="ISalesContractDiscountLimitSourceV1"/>. Without that port, or when it
-/// answers null, no limit is configured: every discount goes to approval (SAT-D346) — never "unlimited".</item>
+/// answers null, no limit is configured: every discount goes to approval (SAT-D346) — never "unlimited". SAT-D358: the limit is a
+/// separate per-company Settings value whose provider the Settings owner implements; until it does, the unset limit holds.
+/// SAT-D362: the end date is optional (null = open-ended).</item>
 /// <item><b>Approve / reject the discount</b> (<c>sales.contracts.discount.approve</c>, NS-13): the expected version, only a
 /// pending contract, never by its creator; a rejection takes a reason.</item>
 /// <item><b>Read</b> (<c>sales.contracts.read</c>): the company's contracts, newest first, and one contract.</item>
+/// <item><b>Amounts</b> (SAT-D361): every answer asks <c>sales.orders.price.read</c> — the sales order price read, the same name and
+/// the same company-wide measurement the order and invoice reads use — at the moment of answering. Granted → the installment amounts
+/// and the planned total are disclosed (<c>AmountDisclosure: Visible</c>); otherwise they are null beside
+/// <c>AmountDisclosure: Withheld</c>, server-side. The price read is asked, never required: its absence never refuses the call.</item>
 /// </list>
 /// The contract is a separate record: no order, quote or price is read or changed. The agreement price tier (SAT-D58) is not
 /// evaluated here.
@@ -42,6 +48,9 @@ public sealed class SalesContractService(
     private const string WritePermission = SalesPermissionManifestV1.ContractsWrite;
     private const string ApprovePermission = SalesPermissionManifestV1.ContractsDiscountApprove;
     private const string ReadPermission = SalesPermissionManifestV1.ContractsRead;
+
+    /// <summary>SAT-D361: the sales order price read (SALES-P2) also governs the contract's amounts.</summary>
+    private const string PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead;
 
     private static readonly SalesDraftStateAudit CreatedAudit =
         new("sales.contract.created.v1", "CreateContract", "Satış sözleşmesi kaydedildi");
@@ -73,7 +82,7 @@ public sealed class SalesContractService(
             cancellationToken);
         if (replay is not null)
         {
-            return Replayed(replay);
+            return await ReplayedAsync(scope, replay, cancellationToken);
         }
 
         await RequireAccountAsync(scope, request.PartyId, request.CompanyAccountId, cancellationToken);
@@ -116,7 +125,7 @@ public sealed class SalesContractService(
             // ADR-011 §8: a racing caller of the same key answers the winner; a lost number race is the caller's concurrent_change.
             var won = await FindReplayAsync(scope, WritePermission, envelope, requestHash, SalesContractCommands.CreateV1,
                 cancellationToken);
-            return won is null ? throw Store(exception) : Replayed(won);
+            return won is null ? throw Store(exception) : await ReplayedAsync(scope, won, cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -124,7 +133,7 @@ public sealed class SalesContractService(
         }
 
         // No fence after the commit (S03): the stored contract is answered; the next request of the key meets the fence first.
-        return Result(stored, stored.Outcome == SalesDraftWriteOutcome.Replayed);
+        return await ResultAsync(scope, stored, stored.Outcome == SalesDraftWriteOutcome.Replayed, cancellationToken);
     }
 
     public Task<SalesContractCommandResult> ApproveContractDiscountAsync(Guid contractId, SalesDraftStateCommandRequest request,
@@ -149,7 +158,8 @@ public sealed class SalesContractService(
         // Another company's contract is null under the tenant filter: 404.
         var contract = await StoreAsync(scope, ReadPermission, () => contracts.FindContractAsync(contractId, cancellationToken),
             cancellationToken) ?? throw new SalesDraftServiceException(404, "not_found");
-        return View(contract, Day(timeProvider.GetUtcNow()));
+        var disclosure = await DiscloseAmountsAsync(scope, cancellationToken);
+        return View(contract, Day(timeProvider.GetUtcNow()), disclosure);
     }
 
     public async Task<SalesContractListResponse> GetContractsAsync(CancellationToken cancellationToken = default)
@@ -158,7 +168,8 @@ public sealed class SalesContractService(
         var items = await StoreAsync(scope, ReadPermission,
             () => contracts.ListContractsAsync(SalesContractApiV1.MaximumListed, cancellationToken), cancellationToken);
         var today = Day(timeProvider.GetUtcNow());
-        return new SalesContractListResponse([.. items.Select(item => View(item, today))]);
+        var disclosure = await DiscloseAmountsAsync(scope, cancellationToken);
+        return new SalesContractListResponse([.. items.Select(item => View(item, today, disclosure))]);
     }
 
     private async Task<SalesContractCommandResult> DecideAsync(Guid contractId, SalesDraftStateCommandRequest? request,
@@ -179,7 +190,7 @@ public sealed class SalesContractService(
         var replay = await FindReplayAsync(scope, ApprovePermission, envelope, requestHash, commandName, cancellationToken);
         if (replay is not null)
         {
-            return Replayed(replay);
+            return await ReplayedAsync(scope, replay, cancellationToken);
         }
 
         if (contractId == Guid.Empty)
@@ -230,7 +241,7 @@ public sealed class SalesContractService(
         {
             // ADR-011 §8: a lost same-key race answers the winner; a lost version race is the caller's concurrent_change.
             var won = await FindReplayAsync(scope, ApprovePermission, envelope, requestHash, commandName, cancellationToken);
-            return won is null ? throw Store(exception) : Replayed(won);
+            return won is null ? throw Store(exception) : await ReplayedAsync(scope, won, cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -239,7 +250,7 @@ public sealed class SalesContractService(
 
         return result is null
             ? throw new SalesDraftServiceException(404, "not_found")
-            : Result(result, result.Outcome == SalesDraftWriteOutcome.Replayed);
+            : await ResultAsync(scope, result, result.Outcome == SalesDraftWriteOutcome.Replayed, cancellationToken);
     }
 
     /// <summary>The field each create rule names on the wire; null for a rule that is not the create's own (generic 422).</summary>
@@ -379,7 +390,8 @@ public sealed class SalesContractService(
             () => contracts.FindContractReplayAsync(envelope, requestHash, commandName, cancellationToken), cancellationToken);
 
     /// <summary>ADR-011 §4/§7: the stored contract as the replay, or the recorded refusal as the same refusal.</summary>
-    private SalesContractCommandResult Replayed(SalesContractReplay replay)
+    private async Task<SalesContractCommandResult> ReplayedAsync(Scope scope, SalesContractReplay replay,
+        CancellationToken cancellationToken)
     {
         if (replay.Refusal is { } refusal)
         {
@@ -387,7 +399,8 @@ public sealed class SalesContractService(
                 originalCorrelationId: replay.OriginalCorrelationId);
         }
 
-        return new SalesContractCommandResult(View(replay.Contract!, Day(timeProvider.GetUtcNow())), true,
+        var disclosure = await DiscloseAmountsAsync(scope, cancellationToken);
+        return new SalesContractCommandResult(View(replay.Contract!, Day(timeProvider.GetUtcNow()), disclosure), true,
             replay.OriginalCorrelationId);
     }
 
@@ -406,7 +419,7 @@ public sealed class SalesContractService(
             var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
             if (won is not null)
             {
-                return Replayed(won);
+                return await ReplayedAsync(scope, won, cancellationToken);
             }
         }
         catch (SalesDraftStoreException exception)
@@ -417,12 +430,39 @@ public sealed class SalesContractService(
         throw new SalesDraftServiceException(refusal.Status, refusal.Code, refusal.Errors);
     }
 
-    private SalesContractCommandResult Result(SalesContractStoreResult stored, bool isReplay) =>
-        new(View(stored.Contract, Day(timeProvider.GetUtcNow())), isReplay, stored.OriginalCorrelationId);
+    private async Task<SalesContractCommandResult> ResultAsync(Scope scope, SalesContractStoreResult stored, bool isReplay,
+        CancellationToken cancellationToken)
+    {
+        var disclosure = await DiscloseAmountsAsync(scope, cancellationToken);
+        return new(View(stored.Contract, Day(timeProvider.GetUtcNow()), disclosure), isReplay, stored.OriginalCorrelationId);
+    }
+
+    /// <summary>
+    /// SAT-D361: the sales order price read ASKED, never required — the operation's own name was required before this, exactly as
+    /// the order (SALES-P2) and invoice (SAT-D238) reads ask it. Unregistered → 503 (a setup gap, never a grant); granted
+    /// company-wide for this actor in this company → <c>Visible</c>; anything else → <c>Withheld</c>. Asked last, at the moment
+    /// of answering, so the disclosure is the authority's freshest word.
+    /// </summary>
+    private async Task<SalesPriceDisclosure> DiscloseAmountsAsync(Scope scope, CancellationToken cancellationToken)
+    {
+        if (!ErpPermissions.IsKnown(PriceReadPermission))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
+        }
+
+        var read = await authority.RevalidatePermissionScopeAsync(PriceReadPermission, scope.CompanyId, cancellationToken);
+        return read.IsGranted && read.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId)
+            ? SalesPriceDisclosure.Visible
+            : SalesPriceDisclosure.Withheld;
+    }
 
     // ---- mapping --------------------------------------------------------------------------------------------------------------
 
-    internal static SalesContractView View(SalesContract item, DateOnly today) => new(
+    /// <summary>SAT-D361: a withheld contract carries no amount at all (null beside <c>Withheld</c>), never a zero.</summary>
+    internal static SalesContractView View(SalesContract item, DateOnly today, SalesPriceDisclosure disclosure)
+    {
+        var visible = disclosure == SalesPriceDisclosure.Visible;
+        return new(
         item.Id,
         item.ContractNo,
         item.PartyId,
@@ -433,9 +473,10 @@ public sealed class SalesContractService(
         item.Version.ToString(CultureInfo.InvariantCulture),
         item.ValidFrom,
         item.ValidThrough,
-        [.. item.Installments.Select(installment =>
-            new SalesContractInstallmentView(installment.InstallmentNo, installment.DueDate, Amount(installment.Amount.Amount, item.MoneyScale)))],
-        Amount(item.PlannedTotal.Amount, item.MoneyScale),
+        visible ? SalesPriceDisclosure.Visible : SalesPriceDisclosure.Withheld,
+        [.. item.Installments.Select(installment => new SalesContractInstallmentView(installment.InstallmentNo, installment.DueDate,
+            visible ? Amount(installment.Amount.Amount, item.MoneyScale) : null))],
+        visible ? Amount(item.PlannedTotal.Amount, item.MoneyScale) : null,
         [.. item.DiscountRules.Select(rule => new SalesContractDiscountRuleView(rule.RuleNo, rule.Kind.ToString(), rule.Label, Rate(rule.RatePercent)))],
         item.Clauses,
         item.DiscountApprovalRequired,
@@ -447,6 +488,7 @@ public sealed class SalesContractService(
         item.Decision?.DecidedBy,
         item.Decision?.DecidedAtUtc,
         item.Decision?.RejectionReason);
+    }
 
     /// <summary>The exact amount at the money profile's scale as invariant decimal text (never a JSON number, never rounded).</summary>
     private static string Amount(decimal amount, int scale) =>

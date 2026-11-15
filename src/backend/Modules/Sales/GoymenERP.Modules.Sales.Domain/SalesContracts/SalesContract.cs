@@ -78,7 +78,7 @@ public sealed class SalesContract
     private bool restored;
 
     private SalesContract(Guid id, Guid companyId, int contractNo, Guid partyId, Guid companyAccountId, Guid currencyId,
-        Guid moneyProfileId, string moneyProfileVersion, int moneyScale, DateOnly validFrom, DateOnly validThrough,
+        Guid moneyProfileId, string moneyProfileVersion, int moneyScale, DateOnly validFrom, DateOnly? validThrough,
         IReadOnlyList<SalesContractInstallment> installments, IReadOnlyList<SalesContractDiscountRule> discountRules,
         string? clauses, decimal? discountLimitPercent, string createdBy, DateTimeOffset now)
     {
@@ -136,8 +136,11 @@ public sealed class SalesContract
     /// <summary>The first day the contract governs (inclusive).</summary>
     public DateOnly ValidFrom { get; }
 
-    /// <summary>The last day the contract governs (inclusive).</summary>
-    public DateOnly ValidThrough { get; }
+    /// <summary>
+    /// The last day the contract governs (inclusive); null when the contract is open-ended (SAT-D362). Closing an open-ended
+    /// contract is the user's own action.
+    /// </summary>
+    public DateOnly? ValidThrough { get; }
 
     /// <summary>NS-13: the payment plan, ordered by <see cref="SalesContractInstallment.InstallmentNo"/>.</summary>
     public IReadOnlyList<SalesContractInstallment> Installments { get; }
@@ -184,20 +187,21 @@ public sealed class SalesContract
     }
 
     /// <summary>
-    /// Records a contract: the validity window is closed and ordered, the payment plan has 1..<see cref="MaximumInstallments"/>
+    /// Records a contract: the validity window starts on <paramref name="validFrom"/> and, when an end date is given, does not end
+    /// before it (SAT-D362: a null <paramref name="validThrough"/> is an open-ended contract), the payment plan has 1..<see cref="MaximumInstallments"/>
     /// positive amounts in due-date order fitting the money profile's scale, the discount rules are valid percentages with unique
     /// labels and at most one total rule, and the clauses are bounded. The money profile must be the contract currency's, active
     /// and in effect on its read date. <paramref name="discountLimitPercent"/> is the configured limit (null = not configured).
     /// </summary>
     public static SalesContract Create(Guid id, Guid companyId, int contractNo, Guid partyId, Guid companyAccountId,
-        MoneyProfileSnapshot money, DateOnly validFrom, DateOnly validThrough,
+        MoneyProfileSnapshot money, DateOnly validFrom, DateOnly? validThrough,
         IReadOnlyList<SalesContractInstallmentInput> installments, IReadOnlyList<SalesContractDiscountRuleInput>? discountRules,
         string? clauses, decimal? discountLimitPercent, string createdBy, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(money);
         ArgumentNullException.ThrowIfNull(installments);
         RequireMoney(money, companyId);
-        if (validThrough < validFrom)
+        if (!IsValidWindow(validFrom, validThrough))
         {
             throw new SalesRuleException(SalesRuleCodes.ContractValidityInvalid, "Sözleşme bitiş tarihi başlangıç tarihinden önce olamaz.");
         }
@@ -246,9 +250,16 @@ public sealed class SalesContract
         Decide(SalesContractState.DiscountRejected, new SalesContractDecision(actor, now.ToUniversalTime(), text), now);
     }
 
-    /// <summary>Whether the contract is active and its validity window contains <paramref name="businessDate"/>.</summary>
+    /// <summary>
+    /// Whether the contract is active and its validity window contains <paramref name="businessDate"/>; an open-ended contract
+    /// (SAT-D362) governs every day from its start.
+    /// </summary>
     public bool IsInEffectOn(DateOnly businessDate) =>
-        State == SalesContractState.Active && businessDate >= ValidFrom && businessDate <= ValidThrough;
+        State == SalesContractState.Active && businessDate >= ValidFrom && (ValidThrough is not { } through || businessDate <= through);
+
+    /// <summary>SAT-D362: the start is required; an end date, when given, is not before the start (null = open-ended).</summary>
+    public static bool IsValidWindow(DateOnly validFrom, DateOnly? validThrough) =>
+        validThrough is not { } through || through >= validFrom;
 
     /// <summary>
     /// Rebuilds a stored contract (persistence only): the facts are validated as on creation (without the money profile's
@@ -258,7 +269,7 @@ public sealed class SalesContract
     /// never repaired.
     /// </summary>
     public static SalesContract Restore(Guid id, Guid companyId, int contractNo, Guid partyId, Guid companyAccountId,
-        Guid currencyId, Guid moneyProfileId, string moneyProfileVersion, int moneyScale, DateOnly validFrom, DateOnly validThrough,
+        Guid currencyId, Guid moneyProfileId, string moneyProfileVersion, int moneyScale, DateOnly validFrom, DateOnly? validThrough,
         IReadOnlyList<SalesContractInstallment> installments, IReadOnlyList<SalesContractDiscountRule> discountRules,
         string? clauses, decimal? discountLimitPercent, SalesContractState state, string createdBy, DateTimeOffset createdAtUtc,
         SalesContractDecision? decision, long storedVersion, DateTimeOffset updatedAtUtc)
@@ -274,7 +285,7 @@ public sealed class SalesContract
                 discountRules.Select(rule => new SalesContractDiscountRuleInput(rule.Kind, rule.Label, rule.RatePercent)).ToArray());
             var numbered = installments.Select((item, index) => item.InstallmentNo == index + 1).All(match => match)
                 && discountRules.Select((rule, index) => rule.RuleNo == index + 1).All(match => match);
-            if (!numbered || validThrough < validFrom
+            if (!numbered || !IsValidWindow(validFrom, validThrough)
                 || discountLimitPercent is { } limit && !IsRate(limit, allowZero: true))
             {
                 throw new InvalidOperationException("Kayıtlı sözleşme olguları tutarsız.");

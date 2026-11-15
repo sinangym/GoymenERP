@@ -15,7 +15,9 @@ namespace GoymenERP.Api.Endpoints;
 /// configured every discount waits (the screen says "sınır tanımlı değil"). The draft routes' wire rules apply unchanged: exactly one
 /// canonical <c>Idempotency-Key</c> (else 400 <c>command_metadata_invalid</c>), JSON only (415), the strict body (400
 /// <c>validation_failed</c>), 201 + <c>Location</c>, the replay headers on the same key again (ADR-011 §4), another company's
-/// contract 404, and every 401/403/404/503 code-less.
+/// contract 404, and every 401/403/404/503 code-less. SAT-D362: <c>validThrough</c> is nullable (null = open-ended) and is still
+/// sent, as null, by the strict body. SAT-D361: every contract answer carries <c>amountDisclosure</c>; without the company-wide
+/// sales price read the installment amounts and the planned total are null (an unregistered price read is the code-less 503).
 /// </summary>
 public static partial class SalesEndpoints
 {
