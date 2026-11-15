@@ -1068,6 +1068,22 @@ public static class ErpPermissions
     public const string SettingsSalesApprovalThresholdsManage = "settings.sales-approval-thresholds.manage";
 
     /// <summary>
+    /// F-029 S5 (URUN_F029 spec §5.4(2); URN-D2…D5): read the Sales quote policies — the closed loss reason list (SAT-D25)
+    /// and the default quote validity (SAT-D39) — transfer their reviewed compiled baseline once and record new versions
+    /// (<c>SettingsSalesQuoteAndEInvoicePolicyPermissionManifestV1.SalesQuotePolicyManage</c>). Registered, not granted: no
+    /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
+
+    /// <summary>
+    /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
+    /// and the default scenario (SAT-D102) — transfer its reviewed compiled baseline once and record new versions
+    /// (<c>SettingsSalesQuoteAndEInvoicePolicyPermissionManifestV1.EInvoiceScenarioManage</c>). Registered, not granted: no
+    /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsEInvoiceScenariosManage = "settings.einvoice-scenarios.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1342,6 +1358,8 @@ public static class ErpPermissions
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
+            SettingsSalesQuotePoliciesManage,
+            SettingsEInvoiceScenariosManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1551,6 +1569,8 @@ public static class ErpPermissions
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
+            SettingsSalesQuotePoliciesManage,
+            SettingsEInvoiceScenariosManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,

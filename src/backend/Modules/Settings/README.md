@@ -458,6 +458,29 @@ to the version table at a one-time, audited **baseline transfer**. Values are no
 Not in this slice: a draft/publish or withdraw step (a same-date record supersedes), per-product/operation tolerance
 overrides, the frontend screen and its shell capabilities.
 
+## Persistent quote policies and e-Fatura scenarios (F-029 S5/S6; SAT-D25, SAT-D39, SAT-D102, SAT-D120)
+
+Source: `docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md` §5.4(2), URN-D2…D5; B-12 in
+`docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md`. `ISettingsSalesQuotePolicyProviderV1` (consumer: Sales) and
+`ISettingsEInvoiceScenarioPolicyProviderV1` (consumer: Counterparty) keep their signatures; per company and family their source
+moves from the compiled catalogs (`ApprovedSalesQuotePolicyCatalog`, `ApprovedEInvoiceScenarioCatalog`) to version tables at a
+one-time, audited **baseline transfer** (families `SalesQuotePolicy` and `EInvoiceScenario` in `SalesPolicyBaselineTransfers`).
+The transfer copies the catalog unchanged (reason ids, codes, labels, flags, day count, code list); the S6 default stays
+**empty** (SAT-D102) and is only ever entered by a person.
+
+| Part | What |
+|---|---|
+| Tables | `SalesQuoteLossReasonListVersions` + `SalesQuoteLossReasonEntries` (ordered entries; id and code unique per list; BIN2 code), `SalesQuoteDefaultValidityVersions` (`ValidityDays > 0`), `EInvoiceScenarioCodeListVersions` + `EInvoiceScenarioCodes` (`EInvoiceScenarioCodeFormatV1` shape CHECK, BIN2), `EInvoiceScenarioDefaultVersions`. Every row carries `CompanyId` under the company query filter; versions are insert-only with a start date and derived windows (`SalesPolicyTimelineV1`); a later version on the same date supersedes the earlier one. |
+| Migration | `20261115132145_AddSalesQuoteAndEInvoiceScenarioPolicies` (dotnet ef, pure DDL Up; widens the transfer family CHECK). `Down` refuses with `THROW 51312` while any row of the six tables or a marker of the two families exists (forward fix); an empty store rolls back freely. |
+| Provider | Until the family's marker exists the catalog answers (the InMemory host and any untransferred company); afterwards only the tables answer. An unreadable table is 503 (`settings_provider_unavailable`), never a catalog fallback. |
+| Names | `settings.sales-quote-policies.manage`, `settings.einvoice-scenarios.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/sales-policies/quote-policy`, `POST …/quote-policy/baseline-transfer`, `POST …/quote-policy/loss-reasons/versions`, `POST …/quote-policy/default-validity/versions`, `GET …/einvoice-scenarios`, `POST …/einvoice-scenarios/baseline-transfer`, `POST …/einvoice-scenarios/code-lists/versions`, `POST …/einvoice-scenarios/defaults/versions` (commands answer 204). |
+| Commands | Idempotency-Key, expected version, reason, one save with the execution row and one audit event (`settings.sales-quote-policy.*` / `settings.einvoice-scenario.*`). Terminal refusals are stored and replay: baseline required / already transferred / version conflict (409), a start date before today (Europe/Istanbul, 422), a reason id that changes code or a new reason that takes a stored code (422 `settings_sales_policy_loss_reason_identity_conflict`), a default outside the code list in force on any of its dates — also a new list that drops a default's code (422 `settings_sales_policy_einvoice_default_not_in_list`). |
+| Evidence | Unit: `SalesQuoteAndEInvoicePolicyContractTests`. Model: `SettingsSalesQuoteAndEInvoicePolicyPersistenceModelTests`. Names: `SettingsSalesQuoteAndEInvoicePolicyPermissionRegistrationTests`. Real SQL: `SettingsSalesQuoteAndEInvoicePolicySqlServerRelationalAcceptanceTests`. |
+
+Not in this slice: clearing or ending an entered e-Fatura default, a draft/publish step, the frontend screen and its shell
+capabilities. The two catalog sections below describe the compiled source that still answers before a company's transfer.
+
 ## e-Fatura scenario policy (SAT-D102)
 
 Sources: SAT-D102 (`docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK13.md`): the e-Fatura scenario default is a
