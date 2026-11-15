@@ -105,7 +105,8 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 /// <summary>
 /// One order line with its shares as stored totals (§7.2, §13): Ordered is the first commitment, Technical the
 /// part moved into technical lines, Accepted the accepted share, Cancelled (A1-3, No.161 §2) the unaccepted remainder
-/// cancelled with the order; committed = Ordered − Technical and remaining = committed − Accepted − Cancelled are derived
+/// cancelled with the order, Closed (API-11, F-017 §3.6) the unaccepted remainder closed by a short-delivery closure (zero again
+/// after a reopening); committed = Ordered − Technical and remaining = committed − Accepted − Cancelled − Closed are derived
 /// (master INV-006). The request binding (SourceRequestLineId) is the share this supplier takes.
 /// A2a-1 (ALS-D5): the general line's manual price (UnitPrice, PriceUnitId, DiscountPercent or DiscountAmount), all null for a line
 /// without a price ("fiyat bekliyor", ALS-D18) and always null on a technical line; written once with the line. A2a-2 (ALS-D38,
@@ -128,6 +129,7 @@ internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
     public decimal Technical { get; set; }
     public decimal Accepted { get; set; }
     public decimal Cancelled { get; set; }
+    public decimal Closed { get; set; }
     public decimal? UnitPrice { get; set; }
     public Guid? PriceUnitId { get; set; }
     public decimal? DiscountPercent { get; set; }

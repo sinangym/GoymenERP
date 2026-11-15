@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// rows — the APPROVED orders' lines whose remaining (committed − accepted − cancelled, where committed = ordered − technical,
 /// the same shares <see cref="PurchaseSupplyReferencePort"/> answers through the domain) is above zero. A1-3 (No.161 §2,
 /// master INV-006): a cancelled order is not Approved, so none of its lines is open; the cancelled share is subtracted as well
-/// so the remaining is the owner's one formula. Untracked, creates
+/// so the remaining is the owner's one formula. API-11 (ALS-D87, F-017 §2): a closed remainder (short-delivery closure) is not
+/// open either, so remaining = committed − accepted − cancelled − closed; a fully closed line is not listed. Untracked, creates
 /// nothing: no attempt, audit or version effect. Newest order first (created time, then id, descending, as the order list),
 /// then by line number; the keyset cursor (created time, order id, line number) is bound to the company that read it.
 /// Every quantity is the owner's exact value in its unit's canonical text (Ö2: trailing zeros dropped, never rounded; a
@@ -43,7 +44,7 @@ internal sealed class PurchaseOpenLineReadPort(PurchasingDbContext dbContext, IC
         var query =
             from line in dbContext.OrderLines.AsNoTracking()
             join order in dbContext.Orders.AsNoTracking() on new { line.CompanyId, Id = line.OrderId } equals new { order.CompanyId, order.Id }
-            where order.Status == ApprovedStatus && line.Ordered - line.Technical - line.Accepted - line.Cancelled > 0m
+            where order.Status == ApprovedStatus && line.Ordered - line.Technical - line.Accepted - line.Cancelled - line.Closed > 0m
             select new
             {
                 order.CompanyId,
@@ -63,6 +64,7 @@ internal sealed class PurchaseOpenLineReadPort(PurchasingDbContext dbContext, IC
                 line.Technical,
                 line.Accepted,
                 line.Cancelled,
+                line.Closed,
             };
 
         if (cursor is not null)
@@ -91,7 +93,7 @@ internal sealed class PurchaseOpenLineReadPort(PurchasingDbContext dbContext, IC
             var committed = row.Ordered - row.Technical;
             items.Add(new PurchaseOpenLineReferenceV1(row.CompanyId, row.OrderId, row.EffectiveOn, row.LineId, row.LineNo,
                 ((PurchaseOrderLineKind)row.Kind).ToString(), row.SupplierPartyId, row.CompanyAccountId, row.ProductId, row.ProductVersion,
-                row.UnitId, Text(committed, unit), Text(row.Accepted, unit), Text(committed - row.Accepted - row.Cancelled, unit)));
+                row.UnitId, Text(committed, unit), Text(row.Accepted, unit), Text(committed - row.Accepted - row.Cancelled - row.Closed, unit)));
         }
 
         var last = page.LastOrDefault();

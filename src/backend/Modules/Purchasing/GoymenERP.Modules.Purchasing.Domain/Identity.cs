@@ -98,6 +98,33 @@ public static class PurchasingRuleCodes
     /// <summary>A3 API-30 (ALS-D33): a delivery schedule is recorded on a general line; a technical line's quantity is counted in its general line's schedule.</summary>
     public const string ScheduleOnTechnicalLine = "purchasing_schedule_on_technical_line";
 
+    /// <summary>API-11 (ALS-D10/D12): only an APPROVED order's line is closed or reopened (a Draft order's is not).</summary>
+    public const string LineNotClosable = "purchasing_line_not_closable";
+
+    /// <summary>API-11: a technical slice is closed or reopened with its general line, never alone.</summary>
+    public const string LineClosureOnTechnicalLine = "purchasing_line_closure_on_technical_line";
+
+    /// <summary>API-11 (fail-closed): the line is fully accepted; a closure that would close nothing is not recorded.</summary>
+    public const string LineNothingToClose = "purchasing_line_nothing_to_close";
+
+    /// <summary>API-11: the line is already closed; a second closure is refused.</summary>
+    public const string LineAlreadyClosed = "purchasing_line_already_closed";
+
+    /// <summary>API-11 (ALS-D12): a closure needs a reason.</summary>
+    public const string LineClosureReasonRequired = "purchasing_line_closure_reason_required";
+
+    /// <summary>API-11: a closure reason longer than the stored bound is refused, never cut.</summary>
+    public const string LineClosureReasonTooLong = "purchasing_line_closure_reason_too_long";
+
+    /// <summary>API-11 reopening (ALS-D10): only a closed line is reopened.</summary>
+    public const string LineNotClosed = "purchasing_line_not_closed";
+
+    /// <summary>API-11 reopening: a reopening needs a reason.</summary>
+    public const string LineReopenReasonRequired = "purchasing_line_reopen_reason_required";
+
+    /// <summary>API-11 reopening: a reopening reason longer than the stored bound is refused, never cut.</summary>
+    public const string LineReopenReasonTooLong = "purchasing_line_reopen_reason_too_long";
+
     /// <summary>A3 API-30: a delivery schedule has at least one slice (a schedule is replaced as a whole, never emptied).</summary>
     public const string ScheduleEmpty = "purchasing_schedule_empty";
 

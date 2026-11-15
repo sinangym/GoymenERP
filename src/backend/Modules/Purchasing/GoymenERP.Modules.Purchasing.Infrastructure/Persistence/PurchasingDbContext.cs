@@ -12,8 +12,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// SALES-P2 / Logistics LOG-4a shape). Every row is a tenant row of the record's company: a global query
 /// filter on the server-resolved company and a write guard that refuses any row of another company, any
 /// company change, any delete and any column move outside the axis a command may move (a header's status /
-/// version / time, a request's sourcing version; an order line's technical, accepted and (A1-3) cancelled totals; attempts
-/// and (A3 API-30) delivery-slice revisions append only). The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key
+/// version / time, a request's sourcing version; an order line's technical, accepted, (A1-3) cancelled and (API-11) closed totals;
+/// attempts, (A3 API-30) delivery-slice revisions, (API-11) line-closure events and outbox messages append only). The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key
 /// is never stored. The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// Nothing here is physical: an approved order is expected supply, never stock.
 /// </summary>
@@ -101,11 +101,22 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "AND [ApprovedBy] COLLATE " + IdentityCollation + " <> [CreatedBy] COLLATE " + IdentityCollation + ")";
 
     /// <summary>
-    /// §7.2 / §13 and A1-3 (master INV-006): technical slices, the accepted share and the cancelled remainder are never negative
-    /// and together never exceed the first commitment.
+    /// §7.2 / §13, A1-3 and API-11 (master INV-006): technical slices, the accepted share, the cancelled remainder and the closed
+    /// remainder are never negative and together never exceed the first commitment.
     /// </summary>
     internal const string OrderLineSharesCheck =
-        "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]";
+        "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Closed] >= 0 "
+        + "AND [Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]";
+
+    /// <summary>
+    /// API-11 (F-017 §3.6): a remainder is either cancelled with the order or closed on the line, never both — closing refuses a
+    /// cancelled order and cancelling counts only the remainder still open (the domain's rule, held here as defence in depth).
+    /// </summary>
+    internal const string OrderLineClosedOrCancelledCheck = "[Closed] = 0 OR [Cancelled] = 0";
+
+    /// <summary>The outbox's message types (the store writes nothing else).</summary>
+    internal static readonly string OutboxEventTypeCheck =
+        "[EventType] = '" + PurchasingOrderLineClosedEventV1.EventType + "'";
 
     /// <summary>
     /// A2a-1 (TEK-01): the order's money snapshot is all five facts or none — a non-empty currency and profile, a non-blank code, a
@@ -169,6 +180,12 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     internal DbSet<PurchaseAttemptRow> Attempts => Set<PurchaseAttemptRow>();
 
+    /// <summary>API-11 (F-017 §3.6): every closure and reopening of a general order line (append only).</summary>
+    internal DbSet<PurchaseOrderLineClosureEventRow> LineClosureEvents => Set<PurchaseOrderLineClosureEventRow>();
+
+    /// <summary>API-11 (ADR-009): Purchasing's transactional outbox (append only).</summary>
+    internal DbSet<PurchasingOutboxRow> OutboxMessages => Set<PurchasingOutboxRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -183,6 +200,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureOrderLines(modelBuilder);
         ConfigureAcceptances(modelBuilder);
         ConfigureDeliverySlices(modelBuilder);
+        ConfigureLineClosureEvents(modelBuilder);
+        ConfigureOutbox(modelBuilder);
         ConfigureAttempts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -321,6 +340,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                 "([Kind] = 1 AND [ParentLineId] IS NULL) OR ([Kind] = 2 AND [ParentLineId] IS NOT NULL)");
             // §7.2 / §13: technical slices, the accepted share and (A1-3) the cancelled remainder never exceed the first commitment.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Shares", OrderLineSharesCheck);
+            // API-11: a remainder is cancelled with the order or closed on the line, never both.
+            table.HasCheckConstraint("CK_PurchaseOrderLines_ClosedOrCancelled", OrderLineClosedOrCancelledCheck);
             // A2a-1 (ALS-D5, ALS-D18): unpriced, or a general line with a price ≥ 0 and at most one bounded discount.
             table.HasCheckConstraint("CK_PurchaseOrderLines_Price", OrderLinePriceCheck);
             // A2a-2 (ALS-D38, ALS-D75): at most one maturity surcharge, only beside a unit price above 0.
@@ -335,7 +356,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         foreach (var quantity in new[]
                  {
                      nameof(PurchaseOrderLineRow.Ordered), nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted),
-                     nameof(PurchaseOrderLineRow.Cancelled),
+                     nameof(PurchaseOrderLineRow.Cancelled), nameof(PurchaseOrderLineRow.Closed),
                  })
         {
             entity.Property<decimal>(quantity).HasPrecision(18, 3);
@@ -471,6 +492,73 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// API-11 (ALS-D10/ALS-D12, F-017 §3.6): one row per closure or reopening, keyed by the order version it produced (one command,
+    /// one row); bound to the order and to the line itself (the line's alternate key), never to another company's. Each row has its
+    /// actor, time and non-blank reason. That the line is a general line and the events alternate (close, reopen, close…) is the
+    /// domain's rule, measured again on every rebuild.
+    /// </summary>
+    private void ConfigureLineClosureEvents(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PurchaseOrderLineClosureEventRow>();
+        entity.ToTable("PurchaseOrderLineClosureEvents", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseOrderLineClosureEvents_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} AND [LineId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_PurchaseOrderLineClosureEvents_Version", "[OrderVersionAfter] >= 3");
+            table.HasCheckConstraint("CK_PurchaseOrderLineClosureEvents_Text",
+                "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OrderId, x.OrderVersionAfter });
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.LineId, x.OrderVersionAfter })
+            .HasDatabaseName("IX_PurchaseOrderLineClosureEvents_OrderLineVersion");
+        entity.Property(x => x.Reason).HasMaxLength(PurchaseOrder.MaximumReasonLength).IsRequired();
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasOne<PurchaseOrderRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PurchaseOrderLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// API-11 (ADR-009; the Sales <c>sales.OutboxMessages</c> shape): an envelope with non-empty identities, a known event type, a
+    /// schema version and sequence from 1 and a JSON payload; (company, type, aggregate, sequence) is unique. Append only (the write
+    /// guard below).
+    /// </summary>
+    private void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PurchasingOutboxRow>();
+        entity.ToTable("OutboxMessages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Identity",
+                $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [AggregateId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope",
+                "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 "
+                + "AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 "
+                + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+            table.HasCheckConstraint("CK_OutboxMessages_EventType", OutboxEventTypeCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
+            .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+        entity.HasIndex(x => new { x.CompanyId, x.RecordedAtUtc, x.Id }).HasDatabaseName("IX_OutboxMessages_CompanyId_RecordedAtUtc_Id");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
@@ -514,7 +602,10 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                         nameof(PurchaseOrderRow.CancelledBy), nameof(PurchaseOrderRow.CancelledAtUtc), nameof(PurchaseOrderRow.CancellationReason),
                     ],
                     PurchaseOrderLineRow =>
-                        [nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled)],
+                    [
+                        nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled),
+                        nameof(PurchaseOrderLineRow.Closed),
+                    ],
                     _ => [],
                 };
                 var changed = entry.Properties

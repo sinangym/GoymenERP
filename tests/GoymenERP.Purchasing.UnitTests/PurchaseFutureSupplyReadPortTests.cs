@@ -116,7 +116,7 @@ public sealed class PurchaseFutureSupplyReadPortTests
         string[] names = [.. typeof(PurchaseFutureSupplyLineV1).GetProperties().Select(property => property.Name)];
         Assert.Equal(
             ["CompanyId", "OrderId", "LineId", "LineNo", "SupplierPartyId", "CompanyAccountId", "ProductId", "ProductVersion", "UnitId",
-                "Kind", "CommittedText", "AcceptedText", "CancelledText", "AllocatableText", "SalesSourceOrderId", "SalesSourceOrderLineId",
+                "Kind", "CommittedText", "AcceptedText", "CancelledText", "ClosedText", "AllocatableText", "SalesSourceOrderId", "SalesSourceOrderLineId",
                 "ObservedOrderVersion"],
             names);
         string[] barred = ["price", "amount", "discount", "currency", "payment", "money", "tax", "cost"];

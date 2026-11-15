@@ -341,6 +341,56 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineClosureEventRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("OrderVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Closed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "OrderId", "OrderVersionAfter");
+
+                    b.HasIndex("CompanyId", "OrderId", "LineId", "OrderVersionAfter")
+                        .HasDatabaseName("IX_PurchaseOrderLineClosureEvents_OrderLineVersion");
+
+                    b.ToTable("PurchaseOrderLineClosureEvents", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseOrderLineClosureEvents_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PurchaseOrderLineClosureEvents_Text", "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseOrderLineClosureEvents_Version", "[OrderVersionAfter] >= 3");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineDeliverySliceRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -423,6 +473,10 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal>("Closed")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<decimal?>("DeferralAmount")
                         .HasPrecision(24, 6)
                         .HasColumnType("decimal(24,6)");
@@ -494,6 +548,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PurchaseOrderLines", "purchasing", t =>
                         {
+                            t.HasCheckConstraint("CK_PurchaseOrderLines_ClosedOrCancelled", "[Closed] = 0 OR [Cancelled] = 0");
+
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Deferral", "([DeferralPercent] IS NULL AND [DeferralAmount] IS NULL) OR ([UnitPrice] IS NOT NULL AND [UnitPrice] > 0 AND ([DeferralPercent] IS NULL OR [DeferralAmount] IS NULL) AND ([DeferralPercent] IS NULL OR ([DeferralPercent] >= 0 AND [DeferralPercent] <= 100)) AND ([DeferralAmount] IS NULL OR [DeferralAmount] >= 0))");
 
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProductVersion]) > 0 AND ([ParentLineId] IS NULL OR [ParentLineId] <> '00000000-0000-0000-0000-000000000000') AND ([SourceRequestLineId] IS NULL OR [SourceRequestLineId] <> '00000000-0000-0000-0000-000000000000')");
@@ -504,7 +560,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PurchaseOrderLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL AND [DiscountPercent] IS NULL AND [DiscountAmount] IS NULL) OR ([Kind] = 1 AND [UnitPrice] IS NOT NULL AND [UnitPrice] >= 0 AND [PriceUnitId] IS NOT NULL AND [PriceUnitId] <> '00000000-0000-0000-0000-000000000000' AND ([DiscountPercent] IS NULL OR [DiscountAmount] IS NULL) AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))");
 
-                            t.HasCheckConstraint("CK_PurchaseOrderLines_Shares", "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]");
+                            t.HasCheckConstraint("CK_PurchaseOrderLines_Shares", "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Closed] >= 0 AND [Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]");
                         });
                 });
 
@@ -790,6 +846,84 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchasingOutboxRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AggregateType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<long>("AggregateVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceOperation")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "RecordedAtUtc", "Id")
+                        .HasDatabaseName("IX_OutboxMessages_CompanyId_RecordedAtUtc_Id");
+
+                    b.HasIndex("CompanyId", "EventType", "AggregateId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+
+                    b.ToTable("OutboxMessages", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutboxMessages_Envelope", "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+
+                            t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] = 'purchasing.order-line.closed.v1'");
+
+                            t.HasCheckConstraint("CK_OutboxMessages_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAcceptanceRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderRow", null)
@@ -826,6 +960,23 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "RequestId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineClosureEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId", "LineId")
+                        .HasPrincipalKey("CompanyId", "OrderId", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineDeliverySliceRow", b =>
@@ -881,6 +1032,15 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseRequestRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchasingOutboxRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()

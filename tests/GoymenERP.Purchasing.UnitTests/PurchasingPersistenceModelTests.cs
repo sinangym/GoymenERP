@@ -65,9 +65,9 @@ public sealed class PurchasingPersistenceModelTests
         var orderLines = designModel.FindEntityType(typeof(PurchaseOrderLineRow))!;
         Assert.True(orderLines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseOrderLines_LineId").IsUnique);
         Assert.Contains(orderLines.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseOrderLines_SourceRequestLine");
-        // A1-3 (master INV-006): the cancelled remainder is inside the shares bound.
+        // A1-3 (master INV-006) and API-11: the cancelled and the closed remainders are inside the shares bound.
         Assert.Contains(orderLines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares"
-            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] <= [Ordered]", StringComparison.Ordinal)
+            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]", StringComparison.Ordinal)
             && check.Sql.Contains("[Cancelled] >= 0", StringComparison.Ordinal));
         Assert.Equal((3, 3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
             orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale(),
@@ -202,7 +202,10 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(9, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(10, PurchasingPermissionManifestV1.Names.Count);
+        // API-11 (ALS-D10/D12): the close name measures the line closure and reopening commands only; no shell control yet (frontend lane).
+        Assert.Contains("purchasing.orders.close", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersClose));
         // A3 API-30 (ALS-D94): the revise name measures the schedule command; F-027 (UI-07, EK16 §2a) brings its one control, a child
         // of the order detail measured with the read and the revise names (create alone does not show it).
         Assert.Contains("purchasing.orders.revise", PurchasingPermissionManifestV1.Names);
@@ -247,15 +250,15 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_and_A3_API_30_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
+    public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_A3_API_30_and_API_11_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
         Assert.Equal(["20261102125710_AddPurchaseRequestDecisions", "20261102161658_AddPurchaseRequestWithdrawal",
                 "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
                 "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale",
                 "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
-                "20261112014446_AddPurchaseOrderLineDeliverySchedule"],
-            context.Database.GetMigrations().TakeLast(9));
+                "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure"],
+            context.Database.GetMigrations().TakeLast(10));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -433,6 +436,130 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("[purchasing].[PurchaseOrderLineDeliverySlices]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[^1]);
+    }
+
+    [Fact]
+    public void The_API_11_closed_share_its_events_and_the_outbox_are_tenant_tables_with_their_checks_and_a_Down_that_refuses_while_one_is_used()
+    {
+        using PurchasingDbContext context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        // The closed remainder is a fourth share of the first commitment, never beside a cancelled one.
+        var lines = model.FindEntityType(typeof(PurchaseOrderLineRow))!;
+        var closed = lines.FindProperty(nameof(PurchaseOrderLineRow.Closed))!;
+        Assert.Equal((18, 3, false), (closed.GetPrecision(), closed.GetScale(), closed.IsNullable));
+        var lineChecks = lines.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(PurchasingDbContext.OrderLineSharesCheck, lineChecks["CK_PurchaseOrderLines_Shares"]);
+        Assert.Contains("[Closed] >= 0", lineChecks["CK_PurchaseOrderLines_Shares"], StringComparison.Ordinal);
+        Assert.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]", lineChecks["CK_PurchaseOrderLines_Shares"],
+            StringComparison.Ordinal);
+        Assert.Equal("[Closed] = 0 OR [Cancelled] = 0", lineChecks["CK_PurchaseOrderLines_ClosedOrCancelled"]);
+
+        // One closure event per order version, bound to the order and to the line of the same company.
+        var events = model.FindEntityType(typeof(PurchaseOrderLineClosureEventRow))!;
+        Assert.Equal(("PurchaseOrderLineClosureEvents", PurchasingDbContext.Schema), (events.GetTableName(), events.GetSchema()));
+        Assert.Equal([nameof(PurchaseOrderLineClosureEventRow.CompanyId), nameof(PurchaseOrderLineClosureEventRow.OrderId),
+                nameof(PurchaseOrderLineClosureEventRow.OrderVersionAfter)],
+            events.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var eventChecks = events.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal("[OrderVersionAfter] >= 3", eventChecks["CK_PurchaseOrderLineClosureEvents_Version"]);
+        Assert.Contains("[LineId] <> '00000000-0000-0000-0000-000000000000'", eventChecks["CK_PurchaseOrderLineClosureEvents_Identity"],
+            StringComparison.Ordinal);
+        Assert.Contains("LEN([Reason]) > 0", eventChecks["CK_PurchaseOrderLineClosureEvents_Text"], StringComparison.Ordinal);
+        Assert.Equal((4000, 128, 128), (events.FindProperty(nameof(PurchaseOrderLineClosureEventRow.Reason))!.GetMaxLength(),
+            events.FindProperty(nameof(PurchaseOrderLineClosureEventRow.RecordedBy))!.GetMaxLength(),
+            events.FindProperty(nameof(PurchaseOrderLineClosureEventRow.CorrelationId))!.GetMaxLength()));
+        Assert.Contains(events.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PurchaseOrderLineRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual([nameof(PurchaseOrderLineClosureEventRow.CompanyId),
+                nameof(PurchaseOrderLineClosureEventRow.OrderId), nameof(PurchaseOrderLineClosureEventRow.LineId)]));
+        Assert.Contains(events.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PurchaseOrderRow));
+        Assert.All(events.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+
+        // The outbox: an envelope with a known type, unique per (company, type, aggregate, sequence).
+        var outbox = model.FindEntityType(typeof(PurchasingOutboxRow))!;
+        Assert.Equal(("OutboxMessages", PurchasingDbContext.Schema), (outbox.GetTableName(), outbox.GetSchema()));
+        Assert.Equal([nameof(PurchasingOutboxRow.Id)], outbox.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var outboxChecks = outbox.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal("[EventType] = '" + PurchasingOrderLineClosedEventV1.EventType + "'", outboxChecks["CK_OutboxMessages_EventType"]);
+        Assert.Equal("[EventType] = 'purchasing.order-line.closed.v1'", outboxChecks["CK_OutboxMessages_EventType"]);
+        Assert.Contains("ISJSON([PayloadJson]) = 1", outboxChecks["CK_OutboxMessages_Envelope"], StringComparison.Ordinal);
+        Assert.Contains("[Sequence] >= 1", outboxChecks["CK_OutboxMessages_Envelope"], StringComparison.Ordinal);
+        Assert.Contains("[AggregateId] <> '00000000-0000-0000-0000-000000000000'", outboxChecks["CK_OutboxMessages_Identity"], StringComparison.Ordinal);
+        var sequence = Assert.Single(outbox.GetIndexes(), index => index.GetDatabaseName() == "UX_OutboxMessages_AggregateSequence");
+        Assert.True(sequence.IsUnique);
+        Assert.Equal([nameof(PurchasingOutboxRow.CompanyId), nameof(PurchasingOutboxRow.EventType), nameof(PurchasingOutboxRow.AggregateId),
+                nameof(PurchasingOutboxRow.Sequence)],
+            sequence.Properties.Select(property => property.Name));
+        Assert.All(outbox.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+
+        // Up adds the share NOT NULL with 0 for every existing line and creates the two tables, no SQL; Down refuses (51174) before
+        // any drop while a closed share, a closure event or an outbox message exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderLineClosure();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var share = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(),
+            column => column.Name == "Closed");
+        Assert.Equal((false, 0m), (share.IsNullable, (decimal)share.DefaultValue!));
+        Assert.Equal(2, migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>().Count());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51174", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseOrderLineClosureEvents]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[OutboxMessages]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Closed] <> 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        // The restored shares check is the A1-3 one exactly.
+        Assert.Contains(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(),
+            check => check.Name == "CK_PurchaseOrderLines_Shares"
+                && check.Sql == "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Technical] + [Accepted] + [Cancelled] <= [Ordered]");
+    }
+
+    [Fact]
+    public async Task The_write_guard_lets_the_closed_share_move_but_refuses_a_changed_closure_event_or_outbox_message()
+    {
+        await using (PurchasingDbContext context = Context())
+        {
+            var line = new PurchaseOrderLineRow
+            {
+                CompanyId = CompanyA, OrderId = Guid.NewGuid(), LineNo = 1, LineId = Guid.NewGuid(), Kind = 1, ProductId = Guid.NewGuid(),
+                ProductVersion = "7", UnitId = Guid.NewGuid(), UnitIsKilogram = true, Ordered = 6m,
+            };
+            context.OrderLines.Attach(line);
+            line.Closed = 6m;
+            // The closed share is on the allow-list: the guard passes it (only the database is unreachable here).
+            var onlyShare = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+            Assert.DoesNotContain("izinli alan", onlyShare.Message, StringComparison.Ordinal);
+            Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyShare.InnerException);
+        }
+
+        await using (PurchasingDbContext context = Context())
+        {
+            var closure = new PurchaseOrderLineClosureEventRow
+            {
+                CompanyId = CompanyA, OrderId = Guid.NewGuid(), LineId = Guid.NewGuid(), OrderVersionAfter = 4, Closed = true,
+                Reason = "SENTETIK", RecordedBy = "SENTETIK", RecordedAtUtc = DateTimeOffset.UtcNow, CorrelationId = "SENTETIK",
+            };
+            context.LineClosureEvents.Attach(closure);
+            closure.Reason = "SENTETIK-other"; // append only: an event never changes
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (PurchasingDbContext context = Context())
+        {
+            var message = new PurchasingOutboxRow
+            {
+                Id = Guid.NewGuid(), CompanyId = CompanyA, EventType = PurchasingOrderLineClosedEventV1.EventType, SchemaVersion = 1,
+                SourceOperation = "SENTETIK", AggregateType = "SENTETIK", AggregateId = Guid.NewGuid(), AggregateVersion = 4, Sequence = 4,
+                PayloadJson = "{}", OccurredAtUtc = DateTimeOffset.UtcNow, CorrelationId = "SENTETIK", RecordedAtUtc = DateTimeOffset.UtcNow,
+            };
+            context.OutboxMessages.Attach(message);
+            message.PayloadJson = "{\"closed\":false}"; // append only: a message never changes
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+
+            context.Entry(message).State = EntityState.Deleted; // and is never deleted
+            var deletion = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", deletion.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

@@ -397,6 +397,77 @@ public sealed class PurchaseOrder
     }
 
     /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87; plan API-11 "iptalden ayrı eksen"): closes the not-yet-accepted remainder of one
+    /// GENERAL line of an APPROVED order (eksik teslim kapanışı). The general line's remaining and every one of its technical slices'
+    /// remaining become their closed share, so the line's future supply (and its allocatable amount, §2) is zero; the accepted
+    /// shares, the cancelled shares, the delivery schedule and the source request binding stay as they are. Nothing physical or
+    /// financial happens here. The reason is required, never defaulted or cut (ALS-D12; the ALS-D10 in-tolerance suggestion needs
+    /// the tolerance band, which is not decided: OPEN-004 / API-95, so no closure is reason-optional).
+    /// <para>
+    /// Refusals: a cancelled order is <see cref="PurchasingRuleCodes.OrderCancelled"/>; a Draft order is
+    /// <see cref="PurchasingRuleCodes.LineNotClosable"/>; a technical slice is <see cref="PurchasingRuleCodes.LineClosureOnTechnicalLine"/>
+    /// (its general line is closed instead); an already closed line is <see cref="PurchasingRuleCodes.LineAlreadyClosed"/>; a line with
+    /// nothing left (fully accepted) is <see cref="PurchasingRuleCodes.LineNothingToClose"/> (fail-closed: a closure that closes
+    /// nothing is not recorded). Who may close is the service's permission, not this record's.
+    /// </para>
+    /// </summary>
+    public void CloseLine(long expectedVersion, Guid lineId, string closedBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(closedBy, nameof(closedBy));
+        var line = RequireClosureTarget(lineId, PurchasingRuleCodes.LineNotClosable, "Yalnız onaylı siparişin satırı kapatılır.");
+        if (line.IsClosed)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineAlreadyClosed, "Satır zaten kapalı.");
+        }
+
+        RequireClosureReason(reason, PurchasingRuleCodes.LineClosureReasonRequired, "Satır kapanışı gerekçe ister.",
+            PurchasingRuleCodes.LineClosureReasonTooLong, "Kapanış gerekçesi");
+        var slices = TechnicalSlicesOf(line.Id);
+        if (line.RemainingQuantity.IsZero && slices.All(slice => slice.RemainingQuantity.IsZero))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineNothingToClose,
+                "Satırın kabul edilmemiş kalanı yok; kapatılacak miktar bulunmuyor.");
+        }
+
+        line.CloseRemainder(new PurchaseOrderLineClosure(actor, now.ToUniversalTime(), reason!));
+        foreach (var slice in slices)
+        {
+            slice.CloseRemainder(null);
+        }
+
+        Touch(now);
+    }
+
+    /// <summary>
+    /// API-11 reopening (ALS-D10; ALIS_F017 v1 §3.6): returns a closed GENERAL line's closed share — its own and its technical
+    /// slices' — to the remainder, so the opened remainder is future supply (and allocatable) again. Future allocations released by
+    /// the closure do not come back (author reading, closed direction; ALS-D93 is its revival counterpart). The reason is required,
+    /// never defaulted or cut. Refusals mirror <see cref="CloseLine"/>; a line that is not closed is
+    /// <see cref="PurchasingRuleCodes.LineNotClosed"/>.
+    /// </summary>
+    public void ReopenLine(long expectedVersion, Guid lineId, string reopenedBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(reopenedBy, nameof(reopenedBy));
+        var line = RequireClosureTarget(lineId, PurchasingRuleCodes.LineNotClosable, "Yalnız onaylı siparişin satırı yeniden açılır.");
+        if (!line.IsClosed)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineNotClosed, "Satır kapalı değil; yeniden açılacak kapanış yok.");
+        }
+
+        RequireClosureReason(reason, PurchasingRuleCodes.LineReopenReasonRequired, "Satırın yeniden açılması gerekçe ister.",
+            PurchasingRuleCodes.LineReopenReasonTooLong, "Yeniden açma gerekçesi");
+        line.Reopen(new PurchaseOrderLineClosureChange(false, actor, now.ToUniversalTime(), reason!));
+        foreach (var slice in TechnicalSlicesOf(line.Id))
+        {
+            slice.Reopen(null);
+        }
+
+        Touch(now);
+    }
+
+    /// <summary>
     /// A3 API-30 (ALS-D33, ALS-D21, master §7.3 "Miktar bazlı birden fazla termin dilimi desteklenir"): replaces the delivery schedule
     /// (termin dilimleri) of one GENERAL line with a full new set of quantity slices, each with its expected delivery date — the
     /// "sıra"s of hubvogal's bağlantı (ALS-D21: the bağlantı is the order line). The slices are numbered 1..n in the given order
@@ -654,6 +725,42 @@ public sealed class PurchaseOrder
         lines.Where(line => line.Quantity.Unit == unit)
             .Aggregate(Quantity.Zero(unit), (sum, line) => sum.Add(line.RemainingQuantity));
 
+    private PurchaseOrderLine RequireClosureTarget(Guid lineId, string notApprovedCode, string notApprovedMessage)
+    {
+        if (Status == PurchaseOrderStatus.Cancelled)
+        {
+            // Fail-closed (ALIS_F017 v1 §2: the Cancelled / API-11 closed intersection): a cancelled order's lines are neither closed
+            // nor reopened here; reviving them is the API-44/API-60 slice's (§3.8, ALS-D92).
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderCancelled, "Kalanı iptal edilmiş siparişin satırı kapatılmaz veya açılmaz.");
+        }
+
+        RequireStatus(PurchaseOrderStatus.Approved, notApprovedCode, notApprovedMessage);
+        var line = FindLine(lineId);
+        if (line.Kind != PurchaseOrderLineKind.General)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.LineClosureOnTechnicalLine,
+                "Teknik kırılım satırı ayrı kapatılmaz veya açılmaz; bağlı olduğu genel satır kullanılır.");
+        }
+
+        return line;
+    }
+
+    private static void RequireClosureReason(string? reason, string requiredCode, string requiredMessage, string tooLongCode, string label)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new PurchasingRuleException(requiredCode, requiredMessage);
+        }
+
+        if (reason.Length > MaximumReasonLength)
+        {
+            throw new PurchasingRuleException(tooLongCode, $"{label} en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+        }
+    }
+
+    private List<PurchaseOrderLine> TechnicalSlicesOf(Guid generalLineId) =>
+        lines.Where(candidate => candidate.Kind == PurchaseOrderLineKind.Technical && candidate.ParentLineId == generalLineId).ToList();
+
     private PurchaseOrderLine FindLine(Guid lineId) =>
         lines.FirstOrDefault(line => line.Id == lineId)
         ?? throw new PurchasingRuleException(PurchasingRuleCodes.LineNotFound, "Sipariş satırı bulunamadı.");
@@ -709,6 +816,12 @@ public sealed record PurchaseOrderApproval(string ApprovedBy, DateTimeOffset App
 
 /// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
 public sealed record PurchaseOrderCancellation(string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
+
+/// <summary>API-11 (ALS-D10/D12): the recorded closure of a general line's unaccepted remainder — who, when and why.</summary>
+public sealed record PurchaseOrderLineClosure(string ClosedBy, DateTimeOffset ClosedAtUtc, string Reason);
+
+/// <summary>API-11 (ALS-D10/D12): one recorded closure (<paramref name="Closed"/> true) or reopening (false) of a general line.</summary>
+public sealed record PurchaseOrderLineClosureChange(bool Closed, string RecordedBy, DateTimeOffset RecordedAtUtc, string Reason);
 
 /// <summary>One recorded acceptance share. Not a receipt document and not a stock movement.</summary>
 public sealed record PurchaseAcceptanceShare(Guid AcceptanceId, Guid LineId, Quantity Quantity, DateTimeOffset RecordedAtUtc);

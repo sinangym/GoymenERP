@@ -76,7 +76,15 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string OrdersRevise = "purchasing.orders.revise";
 
+    /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87; the plan's API-11 name): close an APPROVED order's general line's unaccepted
+    /// remainder (eksik teslim kapanışı) and reopen a closed line. Apart from entering, approving, receiving, cancelling and revising;
+    /// none confers another. Company-wide, not critical. Registered only: the grant is a human gate (only SENTETIK browser-suite
+    /// personas in disposable stacks hold it).
+    /// </summary>
+    public const string OrdersClose = "purchasing.orders.close";
+
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
-            OrdersRevise];
+            OrdersRevise, OrdersClose];
 }
