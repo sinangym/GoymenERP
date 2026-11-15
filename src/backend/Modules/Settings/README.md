@@ -709,3 +709,26 @@ answer is reported as `Conflict` and nothing is written; one audit event per run
 - The invoice-candidate groups (SAT-D90/D101) take the rate of the shipment day from the port and group by bulletin day and
   value; an unresolved rate keeps the shipment day apart.
 - Purchasing uses the same rule (ALS-D6).
+
+## Unit conversion policy (F-004; BS-9, BS-13, BS-16, BS-17, URN-D7…D9)
+
+Sources: `docs/decisions/SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-9/BS-13/BS-16/BS-17 and
+`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN_EK1.md` URN-D7…D9. Every value of the U-08 unit conversion is a company
+Settings value ("Ayarlar'dan değiştirilebilir; kodda sabit olarak yazılmaz"). This slice adds the persistent, versioned
+record and its read port; **it contains no compiled value**. The decided values (density e.g. 7.85 g/cm³, coefficient 3
+decimals, kg→unit floor, document kg total 2 decimals, tolerance 1 % with `<=`, base theoretical kg) are recorded by an
+authorized person through the route below; until then the port refuses.
+
+| Part | What |
+|---|---|
+| Table | `UnitConversionPolicyVersions`: density `decimal(12,6)`, coefficient and document total decimals (0…12) with their rounding mode codes, the whole-unit rounding mode, tolerance percent `decimal(7,4)` (0…100), boundary (`Inclusive`/`Exclusive`, BS-16) and base (`TheoreticalKg`/`WeighedKg`, BS-17). Every row carries `CompanyId` under the company query filter; PK `(CompanyId, Version)`; insert-only with a start date; windows are derived (`SalesPolicyTimelineV1`), a later version on the same date supersedes the earlier one. CHECKs hold the code lists and the technical bounds. |
+| Migration | `AddUnitConversionPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51330` while any version exists (forward fix); an empty store rolls back freely. |
+| Port | `ISettingsUnitConversionPolicyProviderV1.GetUnitConversionPolicyAsync(date)` → `SettingsUnitConversionPolicyV1` (typed `MidpointRounding`, boundary and base enums, the stored `ProfileVersionV1`). None in force on the date → `settings_unit_conversion_policy_not_found`; unreadable store → `settings_provider_unavailable`; malformed stored codes → `settings_profile_invalid`. No fallback. Consumers: Product unit conversion and stock/logistics weighbridge checks (their wiring is their own slice). |
+| Separate settings | The coefficient rounding mode (URN-D8) is its own setting, distinct from the document total rounding; the URN-D8 "en yakın, yarım yukarı" direction is an author reading recorded as a value, not a code default. URN-D9 (document line kg → Quantity) is a fixed calculator rule and is **not** a setting here. |
+| Name | `settings.unit-conversion-policies.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/unit-conversion-policy` (timeline; version "0" and an empty list when none), `POST /api/v1/settings/unit-conversion-policy/versions` (204). |
+| Commands | Idempotency-Key, expected version ("0" for the first), reason (≤ 4000), lossless invariant decimal text (`7.85`; `7,85` is 400), one save with the execution row and one audit event (`settings.unit-conversion-policy.recorded.v1`). Terminal refusals are stored and replay; a start date before today (Europe/Istanbul) is 422; an unchanged in-force policy is a stored no-op without audit. |
+| Evidence | Unit: `UnitConversionPolicyRulesV1Tests`. Model: `SettingsUnitConversionPolicyPersistenceModelTests`. Names: `SettingsUnitConversionPolicyPermissionRegistrationTests`. Real SQL: `SettingsUnitConversionPolicySqlServerRelationalAcceptanceTests`. |
+
+Not in this slice: the frontend screen and its shell capability, product-level overrides (URN-D8: none), the consumers'
+switch from their own settings record to this port.

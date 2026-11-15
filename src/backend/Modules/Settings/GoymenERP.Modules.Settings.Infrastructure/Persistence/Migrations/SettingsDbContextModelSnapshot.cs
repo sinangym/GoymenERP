@@ -2240,6 +2240,98 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.UnitConversionPolicyVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CoefficientDecimals")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CoefficientRounding")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<decimal>("DensityGramsPerCubicCentimetre")
+                        .HasPrecision(12, 6)
+                        .HasColumnType("decimal(12,6)");
+
+                    b.Property<int>("DocumentTotalDecimals")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DocumentTotalRounding")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ToleranceBase")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("ToleranceBoundary")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<decimal>("WeighbridgeTolerancePercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("decimal(7,4)");
+
+                    b.Property<string>("WholeUnitRounding")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.HasIndex("CompanyId", "ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("UnitConversionPolicyVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Decimals", "[CoefficientDecimals] BETWEEN 0 AND 12 AND [DocumentTotalDecimals] BETWEEN 0 AND 12");
+
+                            t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Density", "[DensityGramsPerCubicCentimetre] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Rounding", "[CoefficientRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity') AND [DocumentTotalRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity') AND [WholeUnitRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity')");
+
+                            t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Tolerance", "[WeighbridgeTolerancePercent] >= 0 AND [WeighbridgeTolerancePercent] <= 100 AND [ToleranceBoundary] IN ('Inclusive','Exclusive') AND [ToleranceBase] IN ('TheoreticalKg','WeighedKg')");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.EInvoiceScenarioCodeRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.EInvoiceScenarioCodeListVersionRow", null)

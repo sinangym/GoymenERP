@@ -1084,6 +1084,14 @@ public static class ErpPermissions
     public const string SettingsEInvoiceScenariosManage = "settings.einvoice-scenarios.manage";
 
     /// <summary>
+    /// F-004 (BS-9/BS-13/BS-16/BS-17; URN-D7…D9): read the company's unit conversion policy timeline — the steel density, the
+    /// coefficient and document total decimals and rounding, the whole-unit rounding and the weighbridge tolerance with its
+    /// boundary and base — and record new versions (<c>SettingsUnitConversionPolicyPermissionManifestV1.Manage</c>).
+    /// Registered, not granted: no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1360,6 +1368,7 @@ public static class ErpPermissions
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
+            SettingsUnitConversionPoliciesManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1571,6 +1580,7 @@ public static class ErpPermissions
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
+            SettingsUnitConversionPoliciesManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
