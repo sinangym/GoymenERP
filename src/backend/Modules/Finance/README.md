@@ -611,8 +611,21 @@ read port (D3), correcting or cancelling an approved record (FNS-D20), reservati
 | Record | Per company account: kind `Set` (positive exact decimal text amount + currency) or `Remove`; status Proposed / Approved / Rejected / Superseded. At most one live (Proposed or Approved) record per account and status (`UX_PartyCreditLimits_Live`); every approval moves the account revision by one (`UX_PartyCreditLimits_Revision`), the previous approved record becomes Superseded. Commands carry `expectedRevision` (account) or `expectedVersion` (proposal) |
 | Idempotency / audit | `finance.PartyCreditLimitCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; a stale revision is a recorded `VersionConflict` |
 | Sales port | `FinanceSalesPartyRiskReadPortV1` reads the approved record (MOD-01 above); the port name and shape are unchanged |
-| Migration `20261114200445_AddPartyCreditLimits` | Pure DDL up (records and commands). `Down` refuses with `THROW 51274` while any credit limit record or recorded attempt exists (forward fix): it is the history of who set which limit; an empty store rolls back |
+| Migration `20261114200445_AddPartyCreditLimits` | Pure DDL up (records and commands). `Down` refuses with `THROW 51322` while any credit limit record or recorded attempt exists (forward fix): it is the history of who set which limit; an empty store rolls back |
 
 Not in this slice: the threshold-based second approval (OPEN-009 / F018 N-3), the shell route and capability wiring of the
 screen (`src/frontend/goymen-erp-web/src/finance/CreditLimitPage.tsx` is built, not mounted), and the Cari-side ownership check
 of party/account (F018 N-2).
+
+## F-019 / API-11 v2: customer return acceptance (müşteri iadesi kabulü)
+
+| Part | What |
+|---|---|
+| Port | `IFinanceInvoiceAcceptancePortV2` (`FinanceInvoiceAcceptanceV2`), kind `CustomerReturn`, Sales producer only; the v1 admission and cancellation ports are unchanged. In-process, no HTTP endpoint |
+| Host | `FinanceInvoiceAcceptanceHost` re-measures `sales.returns.finalize` company-wide before the reads and before the save; no grant, role or Critical is added |
+| Rows | `CustomerReturnCredits`, `CustomerReturnCreditItems` (append-only) and `CustomerReturnInvoiceStates` (one concurrency row per original invoice) |
+| Behaviour | Original invoice link mandatory and admitted (SAT-D288); a separate reversing credit, open items keep their identity (SAT-D291); open items reduced first, the excess stays on the credit as an advance (SAT-D294). A partial return over several open installments is refused (`finance_customer_return_installment_order_not_decided`) until the order is decided |
+| Migration `20261114231451_AddCustomerReturnCredits` | Pure DDL up. `Down` refuses with `THROW 51320` while any credit or return state is stored (forward fix) |
+
+Not in this slice: the Sales-side adapter (SAT-S2), the party ledger / risk read of the credit and advance, and consuming
+the advance in allocation.

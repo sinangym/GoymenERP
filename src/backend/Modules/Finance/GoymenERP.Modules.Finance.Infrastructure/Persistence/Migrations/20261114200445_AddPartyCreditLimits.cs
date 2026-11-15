@@ -136,7 +136,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                 IF EXISTS (SELECT 1 FROM [finance].[PartyCreditLimits])
                     OR EXISTS (SELECT 1 FROM [finance].[PartyCreditLimitCommands])
                 BEGIN
-                    THROW 51274, 'Party credit limit records exist; AddPartyCreditLimits is not rolled back (forward fix).', 1;
+                    THROW 51322, 'Party credit limit records exist; AddPartyCreditLimits is not rolled back (forward fix).', 1;
                 END;
                 """);
 

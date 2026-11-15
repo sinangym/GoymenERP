@@ -29,7 +29,7 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     private const string Approver = "SENTETIK-approver";
     private const string SecondApprover = "SENTETIK-approver-2";
     private const string Reason = "SENTETIK gerekçe";
-    private const int DownGuardNumber = 51274;
+    private const int DownGuardNumber = 51322;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Currency = Guid.Parse("8f2e3d4c-5b6a-4798-8a1b-2c3d4e5f6a01");

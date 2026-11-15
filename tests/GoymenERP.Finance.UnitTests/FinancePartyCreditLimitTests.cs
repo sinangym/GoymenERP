@@ -112,7 +112,7 @@ public sealed class FinancePartyCreditLimitTests
         // Forward fix: the first Down operation is the one guard; only an empty store rolls back.
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
-        Assert.Contains("THROW 51274", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51322", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[finance].[PartyCreditLimits]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[finance].[PartyCreditLimitCommands]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("AddPartyCreditLimits is not rolled back (forward fix).", guard.Sql, StringComparison.Ordinal);
