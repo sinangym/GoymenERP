@@ -112,10 +112,21 @@ public sealed partial class InventoryStore
         var baselineBalance = balances.Single(row => row.LabelId == baseline.Id);
         var requiredDocuments = JsonSerializer.Deserialize<string[]>(baseline.RequiredDocumentsJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı.");
+
+        // KLN-D46: the outputs inherit the sources' production status (split: every child; merge: only when every
+        // source carries it; mixed sources: null). It is read from the stored source labels, never from the request,
+        // so it is not part of the payload hash. The classification is not inherited here (unchanged behaviour).
+        var inheritedProductionStatus = InventoryLabelTransformation.InheritedProductionStatus(
+            sourceModels.Select(source => source.Label));
         var outputModels = parsed.Outputs.Select(output =>
         {
             var label = new MaterialLabel(output.LabelId, companyId, output.Code, baseline.ProductId, baseline.LotId,
                 baseline.ProductVersion, requiredDocuments, baseline.HeatNumber, baseline.CoilNumber);
+            if (inheritedProductionStatus is { } productionStatus)
+            {
+                label.MarkProductionStatus(productionStatus);
+            }
+
             var position = Position(companyId, baselineBalance.OwnerKind, baselineBalance.OwnerId,
                 baselineBalance.CustodianKind, baselineBalance.CustodianId, baselineBalance.LocationId,
                 label, baselineBalance.Block);
@@ -190,6 +201,7 @@ public sealed partial class InventoryStore
                 HeatNumber = output.Label.HeatNumber,
                 CoilNumber = output.Label.CoilNumber,
                 RequiredDocumentsJson = JsonSerializer.Serialize(output.Label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
+                ProductionStatus = output.Label.ProductionStatus is { } productionStatus ? (int)productionStatus : null,
                 Version = 1,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
