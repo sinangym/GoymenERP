@@ -77,7 +77,7 @@ function installServer(documentsStatus = 200) {
           stored.push(row)
           return json({ document: row, duplicates: [], isReplay: false, originalCorrelationId: 'c-1' }, 201)
         }
-        return json({ items: [...stored], canUpload: true, limits: LIMITS })
+        return json({ items: [...stored], canUpload: true, limits: LIMITS, canLink: false })
       }
       if (/\/counterparties\/[^?]+/.test(url))
         return json({

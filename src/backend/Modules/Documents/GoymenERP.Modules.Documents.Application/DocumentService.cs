@@ -30,6 +30,16 @@ namespace GoymenERP.Modules.Documents.Application;
 /// document through one of its records AND the new record, and the new record's owner opted in. A document with several
 /// links is readable through ANY readable link (each answer shows only that readable record); a new version changes the
 /// file on every linked record, so appending requires EVERY link to be readable.</item>
+/// <item><b>Several links</b> (KLN-D49, DEC-DOC-002): (1) the document is read by whoever may read at least one linked
+/// record; (2) a new version is added only by whoever may read every linked record; (3) a new link is made by whoever may
+/// read one existing source record and the target record; (4) the first link (the upload's) is the primary one and never
+/// moves. The company boundary holds on every link on its own: each link row is keyed company-first and bound to the
+/// document of the same company, the store reads only the context company, and every owner port answers for the context
+/// company — a record of another company is never readable through any link.</item>
+/// <item><b>Existing documents</b> (KLN-D50): on a kind that opted in (the Cari party, the stock label, the purchase
+/// order, the sales order…) the list measures <see cref="DocumentListResponse.CanLink"/>, and
+/// <see cref="ListLinkCandidatesAsync"/> names the earlier documents with the same content the actor may link instead
+/// of uploading the same file again; the link itself is <see cref="LinkAsync"/>.</item>
 /// </list>
 /// </summary>
 public sealed partial class DocumentService(
@@ -350,10 +360,20 @@ public sealed partial class DocumentService(
         // Whether the upload is offered: the upload name measured now, for this company (a measurement, not a grant).
         var upload = await authority.RevalidatePermissionScopeAsync(DocumentsPermissionManifestV1.FilesUpload, scope.CompanyId, cancellationToken);
         var canUpload = upload.IsGranted && upload.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId);
+        // KLN-D50: whether linking an earlier document is offered — the record's kind opted in AND the link name measured
+        // now, for this company (a measurement, not a grant; the link command re-checks everything).
+        var canLink = false;
+        if (owners[owner.Kind].AcceptsExistingDocumentLinks)
+        {
+            var link = await authority.RevalidatePermissionScopeAsync(DocumentsPermissionManifestV1.FilesLink, scope.CompanyId, cancellationToken);
+            canLink = link.IsGranted && link.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId);
+        }
+
         await RequireStillAsync(scope, Permission, cancellationToken);
         await RequireOwnerStillReadableAsync(scope, Permission, owner, cancellationToken);
         // B-26: a document linked to several records is listed under the record asked for, never under the others.
-        return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId, owner))], canUpload, Limits());
+        return new DocumentListResponse([.. documents.Select(document => View(document, scope.CompanyId, owner))], canUpload, Limits(),
+            canLink);
     }
 
     public async Task<DocumentContentV1> GetContentAsync(Guid documentId, CancellationToken cancellationToken = default)
@@ -483,6 +503,84 @@ public sealed partial class DocumentService(
         {
             throw Store(exception);
         }
+    }
+
+    public async Task<DocumentLinkCandidatesResponse> ListLinkCandidatesAsync(string? ownerKind, Guid ownerId, string? sha256,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        const string Permission = DocumentsPermissionManifestV1.FilesLink;
+        var scope = await RequireAsync(Permission, cancellationToken);
+        var target = RequireOwnerLink(ownerKind, ownerId);
+        if (!owners[target.Kind].AcceptsExistingDocumentLinks)
+        {
+            throw new DocumentServiceException(422, DocumentProblemCodesV1.LinkNotAccepted,
+                [new("ownerKind", DocumentProblemCodesV1.LinkNotAccepted)]);
+        }
+
+        // The hash only SELECTS earlier documents (whose own hashes the server computed at upload); nothing is stored from it.
+        if (!DocumentContentHash.IsWellFormed(sha256))
+        {
+            throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
+                [new(DocumentsApiV1.Sha256Query, DocumentProblemCodesV1.ValidationFailed)]);
+        }
+
+        // KLN-D49 (3): the target record must be readable; otherwise it does not exist for this actor (non-disclosure).
+        if (!IsReadableOwner(await GuardedAsync(scope, Permission,
+                () => CheckOwnerAsync(target.Kind, target.OwnerId, cancellationToken), cancellationToken)))
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
+        IReadOnlyList<StoredDocument> sameContent;
+        try
+        {
+            // The store reads only the context company (tenant filter): another company's document is never a candidate.
+            sameContent = await GuardedAsync(scope, Permission,
+                () => store.FindByContentAsync(sha256!, Guid.Empty, DuplicateLimit, cancellationToken), cancellationToken);
+        }
+        catch (DocumentStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        var readable = new Dictionary<(string, Guid), bool>();
+        var candidates = new List<DocumentLinkCandidateView>();
+        foreach (var candidate in sameContent)
+        {
+            if (candidate.CompanyId != scope.CompanyId || candidate.OwnerLinks.Any(link =>
+                    string.Equals(link.OwnerKind, target.Kind, StringComparison.Ordinal) && link.OwnerId == target.OwnerId))
+            {
+                // Another company's row is never shown; a document already on the target is not offered again.
+                continue;
+            }
+
+            // KLN-D49 (3): the candidate is named under its first record (primary first) the actor may read now; a document
+            // none of whose records is readable is withheld entirely. An owner that cannot answer is not readable here: the
+            // probe offers, it never refuses because of a third record (the link command decides with 409/503).
+            foreach (var link in candidate.OwnerLinks)
+            {
+                var key = (link.OwnerKind, link.OwnerId);
+                if (!readable.TryGetValue(key, out var isReadable))
+                {
+                    isReadable = IsReadableDuplicateOwner(await GuardedAsync(scope, Permission,
+                        () => CheckOwnerAsync(link.OwnerKind, link.OwnerId, cancellationToken), cancellationToken));
+                    readable[key] = isReadable;
+                }
+
+                if (isReadable)
+                {
+                    candidates.Add(new DocumentLinkCandidateView(candidate.Id, candidate.VersionNo, candidate.FileName,
+                        DocumentContentPolicy.Info(candidate.Kind).ContentType, candidate.SizeBytes, candidate.UploadedAtUtc,
+                        link.OwnerKind, link.OwnerId));
+                    break;
+                }
+            }
+        }
+
+        await RequireStillAsync(scope, Permission, cancellationToken);
+        await RequireOwnerStillReadableAsync(scope, Permission, target, cancellationToken);
+        return new DocumentLinkCandidatesResponse(target.Kind, target.OwnerId, sha256!, candidates);
     }
 
     private async Task<DocumentOwnerLink> FindReadableDocumentAsync(Guid documentId, Scope scope, string permission,

@@ -66,4 +66,10 @@ public sealed class InventoryDocumentOwnerLinkPort(
             return DocumentOwnerAccessV1.Unavailable;
         }
     }
+
+    /// <summary>
+    /// KLN-D50: a stock (material) label takes an earlier document of the same company by a link (KLN-D49: one readable
+    /// source record and this record readable), so the same file is never uploaded twice.
+    /// </summary>
+    public bool AcceptsExistingDocumentLinks => true;
 }
