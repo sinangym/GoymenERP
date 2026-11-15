@@ -6,6 +6,7 @@
  *   GET  …/loading-instructions?pageSize&cursor&status     → LoadingInstructionListResponse
  *   GET  …/loading-instructions/{id}                       → LoadingInstructionDetailView
  *   POST …/loading-instructions/{id}/issue                 → 200 (Draft → Issued); replay 200 + header
+ *   POST …/loading-instructions/{id}/cancel                → 200 (F-020: Draft/Issued → Cancelled); replay 200 + header
  *   POST …/loading-instructions/{id}/lines/{lineId}/loads → 200 (a loaded share); replay 200 + header
  *   POST …/loading-instructions/{id}/weighings             → 200 (AT-053 weighbridge record); replay 200 + header
  *   POST …/loading-instructions/{id}/dispatch-notes        → 200 (AT-055 dispatch-note draft); replay 200 + header
@@ -34,8 +35,10 @@ import {
   decodeApprovedOrderLinePage,
   decodeSalesOrderDispatchNotes,
   DISPATCH_NOTE_STATUS,
+  INSTRUCTION_STATUS,
   approveDispatchNotePath,
   cancelDispatchNotePath,
+  cancelInstructionPath,
   dispatchNotesPath,
   eDispatchNumberPath,
   decodeInstructionDetail,
@@ -49,6 +52,7 @@ import {
   type ApprovedOrderLinePage,
   type ApproveDispatchNoteRequest,
   type CancelDispatchNoteRequest,
+  type CancelInstructionRequest,
   type CreateDispatchNoteRequest,
   type DispatchNote,
   type SalesOrderDispatchNotes,
@@ -310,7 +314,7 @@ export interface CommandContext {
 async function sendTransition(
   path: string,
   payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest | RecordWeighingRequest | CreateDispatchNoteRequest
-    | ApproveDispatchNoteRequest | CancelDispatchNoteRequest | SetEDispatchNumberRequest,
+    | ApproveDispatchNoteRequest | CancelDispatchNoteRequest | SetEDispatchNumberRequest | CancelInstructionRequest,
   context: CommandContext,
   signal: AbortSignal | undefined,
 ): Promise<CommandOutcome<InstructionMutation>> {
@@ -347,6 +351,21 @@ export function issueInstruction(
   signal?: AbortSignal,
 ): Promise<CommandOutcome<InstructionMutation>> {
   return sendTransition(issuePath(context.instructionId), payload, context, signal)
+}
+
+/**
+ * F-020 (LOJ-D6): cancel the instruction with a reason. The answer must carry THIS instruction Cancelled with exactly the reason
+ * sent; anything else is `malformed` (the cancel may be recorded, so the key is kept).
+ */
+export async function cancelInstruction(
+  payload: CancelInstructionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(cancelInstructionPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const { instruction } = outcome.data.detail
+  return instruction.status !== INSTRUCTION_STATUS.cancelled || instruction.cancelReason !== payload.reason ? { type: 'malformed' } : outcome
 }
 
 /** One loaded share on a line: the answer must be THIS instruction, and the share sent must be in it. */

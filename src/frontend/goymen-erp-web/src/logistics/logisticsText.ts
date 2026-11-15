@@ -197,6 +197,23 @@ export const INSTRUCTION_DETAIL_TEXT = {
   unknown: 'Bilinmiyor',
 } as const
 
+/** F-020 — cancelling the instruction itself on L-02-DETAIL (LOJ-D6/D7/D8, LOJ-D15). */
+export const INSTRUCTION_CANCEL_TEXT = {
+  heading: 'Talimat iptali',
+  note:
+    'Kesin sevk kaydı olmayan talimat gerekçeyle iptal edilir. İptal, talimatın sevk edilmemiş miktarını (yüklenmiş ama ' +
+    'sevk edilmemiş kısım dahil) serbest bırakır; bu miktar sipariş satırının talimat ve yükleme sınırlarında artık sayılmaz. ' +
+    'Kayıtlar silinmez: paylar ve kantar tartımı iptal işaretiyle görünür kalır. Sunucu iptal yetkisini her gönderimde yeniden ölçer.',
+  undecided:
+    'Yüklenmiş malın araçtan fiziksel olarak boşaltılması veya aracın yeniden tartılması bu işlemle kaydedilmez; bu kural henüz karara bağlanmadı.',
+  shipped: 'Bu talimatta kesin sevk kaydı var; sevk kesinleştikten sonra talimat iptal edilemez.',
+  cancel: 'Talimatı iptal et',
+  reasonLabel: 'İptal gerekçesi (zorunlu)',
+  reasonRequired: 'İptal gerekçesi girin (en fazla 500 karakter).',
+  confirm: 'İptali kaydet',
+  dismiss: 'Vazgeç',
+} as const
+
 /** Messages for the stable codes the routes answer (`LogisticsProblemCodesV1`). Never parsed from `title`. */
 export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.validationFailed]: 'Gönderilen bilgi geçerli değil.',
@@ -208,6 +225,8 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.versionConflict]: 'Talimat siz okuduktan sonra değişti; güncel durum gösteriliyor.',
   [LOGISTICS_PROBLEM_CODE.instructionState]:
     'Bu işlem talimatın şu anki durumunda yapılamaz (taslak pay almaz; yayımlanmış talimat yeniden yayımlanmaz).',
+  [LOGISTICS_PROBLEM_CODE.instructionShipped]:
+    'Bu talimatta kesin sevk kaydı var; sevk kesinleştikten sonra talimat iptal edilemez. Talimat değişmedi.',
   [LOGISTICS_PROBLEM_CODE.loadExceedsInstructed]: 'Yükleme payı talimat kalanını aşıyor; pay kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.lineBlocked]: 'Satır bloklu; yeni yükleme payı kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.duplicateShare]: 'Bu yükleme kaydı daha önce işlendi; ikinci kez kaydedilmedi.',
@@ -283,6 +302,9 @@ export const WEIGHING_TEXT = {
   record: 'Tartımı kaydet',
   onlyOnce: 'Bir talimata tek kantar tartımı kaydedilir; hatalı bir kaydın nasıl düzeltileceği henüz karara bağlanmadı.',
   invalidDirection: 'Brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır; yönü ve tartımları kontrol edin.',
+  /** F-020 (LOJ-D7): the record of a cancelled instruction is kept, never deleted, and shown with this mark. */
+  cancelledMark: 'İptal edildi',
+  cancelledNote: 'Talimat iptal edildi; kantar tartımı silinmez, iptal işaretiyle saklanır.',
 } as const
 
 /** AT-055 — the dispatch-note (irsaliye) DRAFT from definite shipments (L-08 Satış İrsaliyesi Hazırlığı). */
