@@ -5,8 +5,6 @@
  * Without `product.dimension.manage` (granted to no role here) the server answers 403 and the panel shows nothing; an ended
  * session (401), a missing card (404), an unwired provider (503) and a failed read each say so instead of "girilmemiş".
  * The form checks the shape only to help the person; the server and the database hold the rule.
- * KLN-D48 (STK-S37): the new section families; a structural profile names its series and size and shows the kg/m read from the
- * company's standard weight table with its source and version, or "kaynak yok" — it is never typed here (KLN-D54).
  */
 
 import { useState, type FormEvent } from 'react'
@@ -14,70 +12,23 @@ import { useQuery } from '@tanstack/react-query'
 import {
   DIMENSION_MEASURES,
   DIMENSION_PROBLEM,
-  DIMENSION_TEXTS,
   PRODUCT_SECTION_KINDS,
-  PROFILE_SERIES,
-  PROFILE_SIZE_MAXIMUM_LENGTH,
   SECTION_MEASURES,
-  SURFACE_FINISH_MAXIMUM_LENGTH,
   fetchDimension,
-  isProfileSize,
-  isSurfaceFinish,
   parseMeasure,
   setDimension,
-  type DimensionField,
   type DimensionMeasure,
   type DimensionMeasures,
-  type DimensionTexts,
   type ProductDimensionView,
   type ProductSectionKind,
 } from './dimensionApi'
-import {
-  DIMENSION_TEXT,
-  KG_SOURCE_LABEL,
-  MEASURE_LABEL,
-  MEASURE_LABEL_FOR_KIND,
-  SECTION_KIND_LABEL,
-} from './dimensionText'
+import { DIMENSION_TEXT, MEASURE_LABEL, SECTION_KIND_LABEL } from './dimensionText'
 import styles from './ProductDetailPage.module.css'
 
 const HEADING_ID = 'product-dimension-heading'
 
 function Heading() {
   return <h2 id={HEADING_ID}>{DIMENSION_TEXT.heading}</h2>
-}
-
-function measureLabel(kind: ProductSectionKind, measure: DimensionMeasure): string {
-  return MEASURE_LABEL_FOR_KIND[kind]?.[measure] ?? MEASURE_LABEL[measure]
-}
-
-/** A structural profile's kg/m: the table value with its source and version, or "kaynak yok" — never an estimate. */
-function StandardWeight({ view }: { readonly view: ProductDimensionView }) {
-  const weight = view.weight
-  if (weight.source !== 'StandardTable' || weight.standardKgPerMetre === null) {
-    return (
-      <div data-testid="product-dimension-weight-no-source">
-        <dt>{DIMENSION_TEXT.standardKgLabel}</dt>
-        <dd>{DIMENSION_TEXT.standardKgNoSource}</dd>
-      </div>
-    )
-  }
-  return (
-    <>
-      <div data-testid="product-dimension-weight-standard">
-        <dt>{DIMENSION_TEXT.standardKgLabel}</dt>
-        <dd>{String(weight.standardKgPerMetre)}</dd>
-      </div>
-      <div>
-        <dt>{DIMENSION_TEXT.standardKgSource}</dt>
-        <dd>{weight.tableSourceLabel ?? KG_SOURCE_LABEL.StandardTable}</dd>
-      </div>
-      <div>
-        <dt>{DIMENSION_TEXT.standardKgTable}</dt>
-        <dd>{weight.tableVersion}</dd>
-      </div>
-    </>
-  )
 }
 
 export function ProductDimensionPanel({
@@ -146,25 +97,12 @@ export function ProductDimensionPanel({
             <dt>{DIMENSION_TEXT.kindLabel}</dt>
             <dd>{SECTION_KIND_LABEL[view.sectionKind]}</dd>
           </div>
-          {view.texts.profileSeries !== null && view.texts.profileSize !== null ? (
-            <div>
-              <dt>{DIMENSION_TEXT.profileSeriesLabel}</dt>
-              <dd>{`${view.texts.profileSeries} ${view.texts.profileSize}`}</dd>
-            </div>
-          ) : null}
           {DIMENSION_MEASURES.filter((measure) => view.measures[measure] !== null).map((measure) => (
             <div key={measure}>
-              <dt>{measureLabel(view.sectionKind as ProductSectionKind, measure)}</dt>
+              <dt>{MEASURE_LABEL[measure]}</dt>
               <dd>{String(view.measures[measure])}</dd>
             </div>
           ))}
-          {view.texts.surfaceFinish !== null ? (
-            <div>
-              <dt>{DIMENSION_TEXT.surfaceFinishLabel}</dt>
-              <dd>{view.texts.surfaceFinish}</dd>
-            </div>
-          ) : null}
-          {view.sectionKind === 'StructuralProfile' ? <StandardWeight view={view} /> : null}
         </dl>
       )}
       <p className={styles.note}>{DIMENSION_TEXT.shared}</p>
@@ -189,62 +127,17 @@ export function ProductDimensionPanel({
   )
 }
 
-type Draft = Record<DimensionField, string>
+type Draft = Record<DimensionMeasure, string>
 
 function draftOf(view: ProductDimensionView): Draft {
-  return {
-    ...Object.fromEntries(
-      DIMENSION_MEASURES.map((measure) => [measure, view.measures[measure] === null ? '' : String(view.measures[measure])]),
-    ),
-    ...Object.fromEntries(DIMENSION_TEXTS.map((field) => [field, view.texts[field] ?? ''])),
-  } as Draft
+  return Object.fromEntries(
+    DIMENSION_MEASURES.map((measure) => [measure, view.measures[measure] === null ? '' : String(view.measures[measure])]),
+  ) as Draft
 }
 
-type Checked =
-  | { readonly ok: true; readonly measures: DimensionMeasures; readonly texts: DimensionTexts }
-  | { readonly ok: false; readonly error: string }
+type Checked = { readonly ok: true; readonly measures: DimensionMeasures } | { readonly ok: false; readonly error: string }
 
-/** The kind's text fields from the draft (never re-cased or trimmed into something else: a mismatch is refused). */
-function checkTexts(kind: ProductSectionKind, draft: Draft): { readonly ok: true; readonly texts: DimensionTexts } | { readonly ok: false; readonly error: string } {
-  const texts = {} as Record<(typeof DIMENSION_TEXTS)[number], string | null>
-  for (const field of DIMENSION_TEXTS) {
-    const presence = SECTION_MEASURES[kind][field]
-    const value = draft[field]
-    if (presence === 'forbidden' || (value === '' && presence === 'optional')) {
-      texts[field] = null
-      continue
-    }
-    if (value === '') return { ok: false, error: DIMENSION_TEXT.measureMissing }
-    const valid = field === 'profileSeries' ? PROFILE_SERIES.includes(value as (typeof PROFILE_SERIES)[number])
-      : field === 'profileSize' ? isProfileSize(value) : isSurfaceFinish(value)
-    if (!valid) return { ok: false, error: field === 'surfaceFinish' ? DIMENSION_TEXT.surfaceInvalid : DIMENSION_TEXT.profileInvalid }
-    texts[field] = value
-  }
-  return { ok: true, texts }
-}
-
-/** The geometric fits of the kind (`ProductDimensionShape` fits); null when they hold. */
-function fitError(kind: ProductSectionKind, measures: Record<DimensionMeasure, number | null>): string | null {
-  const { thicknessMm: thickness, widthMm: width, heightMm: height, wallThicknessMm: wall } = measures
-  const tube = kind === 'RoundTube' || kind === 'ErwTube' || kind === 'PaintedErwTube'
-  const box = kind === 'Profile' || kind === 'ErwProfile' || kind === 'PaintedErwProfile'
-  const outers = tube ? [measures.outerDiameterMm] : box ? [width, height] : []
-  if (wall !== null && outers.some((outer) => outer !== null && wall + wall > outer)) return DIMENSION_TEXT.wallTooThick
-  if (thickness !== null) {
-    const strict = kind === 'EqualAngle' || kind === 'UnequalAngle' || kind === 'TeeBar'
-    const bounded = kind === 'FlatBar' || kind === 'NarrowFlatBar'
-    const sides = kind === 'UnequalAngle' || kind === 'TeeBar' ? [width, height] : [width]
-    if (strict && sides.some((side) => side !== null && thickness >= side)) return DIMENSION_TEXT.thicknessTooLarge
-    if (bounded && width !== null && thickness > width) return DIMENSION_TEXT.thicknessTooLarge
-  }
-  if (kind === 'WeldedMesh' && measures.outerDiameterMm !== null && measures.meshSpacingMm !== null
-    && measures.outerDiameterMm >= measures.meshSpacingMm) {
-    return DIMENSION_TEXT.wireTooThick
-  }
-  return null
-}
-
-/** The kind's fields from the draft; the others are sent as null, whatever was typed before the kind changed. */
+/** The kind's measures from the draft; the others are sent as null, whatever was typed before the kind changed. */
 function check(kind: ProductSectionKind, draft: Draft): Checked {
   const measures = {} as Record<DimensionMeasure, number | null>
   for (const measure of DIMENSION_MEASURES) {
@@ -258,11 +151,12 @@ function check(kind: ProductSectionKind, draft: Draft): Checked {
     if (parsed.value === null && presence === 'required') return { ok: false, error: DIMENSION_TEXT.measureMissing }
     measures[measure] = parsed.value
   }
-  const texts = checkTexts(kind, draft)
-  if (!texts.ok) return texts
-  const fit = fitError(kind, measures)
-  if (fit !== null) return { ok: false, error: fit }
-  return { ok: true, measures, texts: texts.texts }
+  const wall = measures.wallThicknessMm
+  const outers = kind === 'RoundTube' ? [measures.outerDiameterMm] : kind === 'Profile' ? [measures.widthMm, measures.heightMm] : []
+  if (wall !== null && outers.some((outer) => outer !== null && wall + wall > outer)) {
+    return { ok: false, error: DIMENSION_TEXT.wallTooThick }
+  }
+  return { ok: true, measures }
 }
 
 function DimensionForm({
@@ -290,7 +184,7 @@ function DimensionForm({
       setError(checked.error)
       return
     }
-    const body = { expectedVersion: view.version, sectionKind: kind, ...checked.measures, ...checked.texts, reason: reason.trim() }
+    const body = { expectedVersion: view.version, sectionKind: kind, ...checked.measures, reason: reason.trim() }
     const fingerprint = JSON.stringify(body)
     const key = pending !== null && pending.fingerprint === fingerprint ? pending.key : crypto.randomUUID()
     setBusy(true)
@@ -334,44 +228,11 @@ function DimensionForm({
           ))}
         </select>
       </label>
-      {kind !== '' && SECTION_MEASURES[kind].profileSeries !== 'forbidden' ? (
-        <>
-          <label>
-            {DIMENSION_TEXT.profileSeriesLabel}
-            <select
-              required
-              value={draft.profileSeries}
-              onChange={(event) => setDraft((current) => ({ ...current, profileSeries: event.target.value }))}
-            >
-              <option value="" disabled>
-                {DIMENSION_TEXT.chooseSeries}
-              </option>
-              {PROFILE_SERIES.map((series) => (
-                <option key={series} value={series}>
-                  {series}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {DIMENSION_TEXT.profileSizeLabel}
-            <input
-              type="text"
-              required
-              maxLength={PROFILE_SIZE_MAXIMUM_LENGTH}
-              aria-describedby="product-dimension-size-hint"
-              value={draft.profileSize}
-              onChange={(event) => setDraft((current) => ({ ...current, profileSize: event.target.value }))}
-            />
-          </label>
-          <p id="product-dimension-size-hint" className={styles.note}>{DIMENSION_TEXT.profileSizeHint}</p>
-        </>
-      ) : null}
       {kind === ''
         ? null
         : DIMENSION_MEASURES.filter((measure) => SECTION_MEASURES[kind][measure] !== 'forbidden').map((measure) => (
           <label key={measure}>
-            {measureLabel(kind, measure)}
+            {MEASURE_LABEL[measure]}
             {SECTION_MEASURES[kind][measure] === 'optional' ? ` ${DIMENSION_TEXT.optional}` : ''}
             <input
               type="text"
@@ -382,22 +243,7 @@ function DimensionForm({
             />
           </label>
         ))}
-      {kind !== '' && SECTION_MEASURES[kind].surfaceFinish !== 'forbidden' ? (
-        <label>
-          {DIMENSION_TEXT.surfaceFinishLabel}
-          <input
-            type="text"
-            required={SECTION_MEASURES[kind].surfaceFinish === 'required'}
-            maxLength={SURFACE_FINISH_MAXIMUM_LENGTH}
-            value={draft.surfaceFinish}
-            onChange={(event) => setDraft((current) => ({ ...current, surfaceFinish: event.target.value }))}
-          />
-        </label>
-      ) : null}
-      {kind === 'RoundTube' || kind === 'ErwTube' || kind === 'PaintedErwTube'
-        ? <p className={styles.note}>{DIMENSION_TEXT.tubeKgNote}</p>
-        : null}
-      {kind === 'StructuralProfile' ? <p className={styles.note}>{DIMENSION_TEXT.standardKgNote}</p> : null}
+      {kind === 'RoundTube' ? <p className={styles.note}>{DIMENSION_TEXT.tubeKgNote}</p> : null}
       <label>
         {DIMENSION_TEXT.reasonLabel}
         <textarea required rows={2} maxLength={4000} value={reason} onChange={(event) => setReason(event.target.value)} />

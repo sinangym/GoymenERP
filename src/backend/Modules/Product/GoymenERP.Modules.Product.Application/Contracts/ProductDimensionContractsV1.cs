@@ -13,28 +13,9 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// <item><see cref="Profile"/> (F-C/F-D, kutu / dikdörtgen profil): width, height and wall thickness, and the kg/m itself —
 /// there is no corner formula; the kg/m comes from this table (#66 6810051185 m.21).</item>
 /// </list>
-/// KLN-D48 (Sinan, 2026-11-15, <c>docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA1_EK.md</c>) adds six families; the box profile
-/// stays <see cref="Profile"/>. The field list per kind (STK-S37 slice spec, after 19.26):
-/// <list type="bullet">
-/// <item>Long products (uzun mamul) — <see cref="EqualAngle"/> (kanat = width, thickness), <see cref="UnequalAngle"/> (two
-/// flanges = width and height, thickness), <see cref="FlatBar"/> (lama: width, thickness), <see cref="NarrowFlatBar"/> (silme:
-/// width, thickness), <see cref="RoundBar"/> (mil: diameter), <see cref="SquareBar"/> (width), <see cref="HexBar"/> (across
-/// flats = width), <see cref="TeeBar"/> (T demiri: width, height, thickness). The stock length is optional; the card holds no
-/// kg/m for them (no table value is decided for these; a geometric estimate is the calculator's, never stored).</item>
-/// <item><see cref="StructuralProfile"/> (NPU/UPN, NPI, IPE, HEA/HEB/HEM): the standard series, the size designation and the
-/// length are entered; the kg/m is NEVER typed — it is read from the company's structural profile weight table
-/// (KLN-D54, <see cref="ProductProfileWeightPermissionsV1"/>) and is "no source" while the table or its row is missing.</item>
-/// <item><see cref="Rebar"/> (inşaat demiri: nominal diameter, optional length), <see cref="WireRod"/> (filmaşin: diameter),
-/// <see cref="WeldedMesh"/> (hasır çelik: wire diameter, mesh spacing, width and length). No kg/m on the card.</item>
-/// <item>Sheet derivatives <see cref="ChequeredSheet"/> (baklavalı), <see cref="PerforatedSheet"/> (delikli) and
-/// <see cref="CorrugatedSheet"/> (trapez/oluklu): the measures of <see cref="Sheet"/>.</item>
-/// <item><see cref="ErwTube"/> / <see cref="ErwProfile"/>: the measures of <see cref="RoundTube"/> / <see cref="Profile"/>;
-/// <see cref="PaintedErwTube"/> / <see cref="PaintedErwProfile"/> add the surface (paint / colour) text, required.</item>
-/// </list>
 /// Every measure is millimetres (at most three decimals) and kg/m at most six decimals: the inputs stay at full precision and
 /// the coefficient is rounded once where it is produced (URN-D8), never here. The density is the company Settings value
 /// (BS-9); the card stores none. Storing kg/m directly keeps the section-area unit question (mm² / m²) out of the table.
-/// A consumer that meets a kind it does not know treats the row as no source (fail-closed).
 /// </summary>
 public static class ProductDimensionSectionKindsV1
 {
@@ -50,102 +31,9 @@ public static class ProductDimensionSectionKindsV1
     /// <summary>Kutu / dikdörtgen profil (F-C / F-D with the table kg/m).</summary>
     public const string Profile = "Profile";
 
-    /// <summary>Eşit kanatlı köşebent.</summary>
-    public const string EqualAngle = "EqualAngle";
+    public static IReadOnlyList<string> All { get; } = [Sheet, Coil, RoundTube, Profile];
 
-    /// <summary>Eşit olmayan kanatlı köşebent.</summary>
-    public const string UnequalAngle = "UnequalAngle";
-
-    /// <summary>Lama.</summary>
-    public const string FlatBar = "FlatBar";
-
-    /// <summary>Silme.</summary>
-    public const string NarrowFlatBar = "NarrowFlatBar";
-
-    /// <summary>Dolu yuvarlak (mil).</summary>
-    public const string RoundBar = "RoundBar";
-
-    /// <summary>Dolu kare.</summary>
-    public const string SquareBar = "SquareBar";
-
-    /// <summary>Altıgen.</summary>
-    public const string HexBar = "HexBar";
-
-    /// <summary>T demiri.</summary>
-    public const string TeeBar = "TeeBar";
-
-    /// <summary>Yapısal profil (NPU/UPN, NPI, IPE, HEA/HEB/HEM): standard name and length; kg/m from the standard table.</summary>
-    public const string StructuralProfile = "StructuralProfile";
-
-    /// <summary>İnşaat demiri.</summary>
-    public const string Rebar = "Rebar";
-
-    /// <summary>Filmaşin.</summary>
-    public const string WireRod = "WireRod";
-
-    /// <summary>Hasır çelik.</summary>
-    public const string WeldedMesh = "WeldedMesh";
-
-    /// <summary>Baklavalı sac.</summary>
-    public const string ChequeredSheet = "ChequeredSheet";
-
-    /// <summary>Delikli sac.</summary>
-    public const string PerforatedSheet = "PerforatedSheet";
-
-    /// <summary>Trapez / oluklu sac.</summary>
-    public const string CorrugatedSheet = "CorrugatedSheet";
-
-    /// <summary>ERW boru (the measures of <see cref="RoundTube"/>).</summary>
-    public const string ErwTube = "ErwTube";
-
-    /// <summary>ERW profil (the measures of <see cref="Profile"/>).</summary>
-    public const string ErwProfile = "ErwProfile";
-
-    /// <summary>Boyalı ERW boru: <see cref="ErwTube"/> plus the surface (paint / colour).</summary>
-    public const string PaintedErwTube = "PaintedErwTube";
-
-    /// <summary>Boyalı ERW profil: <see cref="ErwProfile"/> plus the surface (paint / colour).</summary>
-    public const string PaintedErwProfile = "PaintedErwProfile";
-
-    public static IReadOnlyList<string> All { get; } =
-    [
-        Sheet, Coil, RoundTube, Profile, EqualAngle, UnequalAngle, FlatBar, NarrowFlatBar, RoundBar, SquareBar, HexBar, TeeBar,
-        StructuralProfile, Rebar, WireRod, WeldedMesh, ChequeredSheet, PerforatedSheet, CorrugatedSheet, ErwTube, ErwProfile,
-        PaintedErwTube, PaintedErwProfile,
-    ];
-
-    public static bool IsKnown(string? sectionKind) => sectionKind is not null && All.Contains(sectionKind, StringComparer.Ordinal);
-}
-
-/// <summary>
-/// KLN-D48 (2): the structural profile series a <see cref="ProductDimensionSectionKindsV1.StructuralProfile"/> names. NPU and UPN
-/// are the same series and are written <see cref="Upn"/>.
-/// </summary>
-public static class ProductProfileSeriesV1
-{
-    public const string Upn = "UPN";
-    public const string Npi = "NPI";
-    public const string Ipe = "IPE";
-    public const string Hea = "HEA";
-    public const string Heb = "HEB";
-    public const string Hem = "HEM";
-
-    public static IReadOnlyList<string> All { get; } = [Upn, Npi, Ipe, Hea, Heb, Hem];
-
-    public static bool IsKnown(string? series) => series is not null && All.Contains(series, StringComparer.Ordinal);
-}
-
-/// <summary>Where the kg/m a reader gets comes from.</summary>
-public static class ProductKgPerMetreSourcesV1
-{
-    /// <summary>The kg/m stored on the card (box profile / round tube / ERW).</summary>
-    public const string Card = "Card";
-
-    /// <summary>The company's structural profile weight table (KLN-D54), with its version and source label.</summary>
-    public const string StandardTable = "StandardTable";
-
-    /// <summary>A structural profile whose table or table row is missing: the weight is "kaynak yok", never estimated.</summary>
-    public const string NoSource = "NoSource";
+    public static bool IsKnown(string? sectionKind) => sectionKind is Sheet or Coil or RoundTube or Profile;
 }
 
 public static class ProductDimensionPermissionsV1
@@ -173,12 +61,6 @@ public static class ProductDimensionProblemCodesV1
 public static class ProductDimensionInputLimitsV1
 {
     public const int ReasonMaximumLength = 4000;
-
-    /// <summary>The longest structural profile size text (e.g. "100", "200"); ASCII capitals, digits and dots, kept as the table names it (KLN-D48).</summary>
-    public const int ProfileSizeMaximumLength = 16;
-
-    /// <summary>The longest surface attribute of a painted ERW product (KLN-D48, e.g. "RAL 7016 boyalı").</summary>
-    public const int SurfaceFinishMaximumLength = 200;
 
     /// <summary>Millimetre measures keep at most three decimals (Ö2, the card's nominal measures).</summary>
     public const int MillimetreDecimals = 3;
@@ -208,17 +90,11 @@ public sealed record SetProductDimensionRequestV1(
     decimal? OuterDiameterMm,
     decimal? WallThicknessMm,
     decimal? KgPerMetre,
-    string? Reason,
-    string? ProfileSeries = null,
-    string? ProfileSize = null,
-    decimal? MeshSpacingMm = null,
-    string? SurfaceFinish = null);
+    string? Reason);
 
 /// <summary>
 /// The shared card's "Ebat/kalınlık" row ("0" and nulls while none is stored), read in <c>CompanyId</c> (the server-resolved
-/// company); <c>UpdatedInCompanyId</c> is the company in which the last change was made. <c>KgPerMetre</c> is the card's own
-/// value; for a structural profile <c>StandardKgPerMetre</c> is the company table's value, <c>KgPerMetreSource</c> says where the
-/// usable kg/m comes from and the table version / source label name the table (null when not applicable).
+/// company); <c>UpdatedInCompanyId</c> is the company in which the last change was made.
 /// </summary>
 public sealed record ProductDimensionViewV1(
     Guid CompanyId,
@@ -234,15 +110,7 @@ public sealed record ProductDimensionViewV1(
     decimal? KgPerMetre,
     DateTimeOffset? UpdatedAtUtc,
     string? UpdatedBy,
-    Guid? UpdatedInCompanyId,
-    string? ProfileSeries = null,
-    string? ProfileSize = null,
-    decimal? MeshSpacingMm = null,
-    string? SurfaceFinish = null,
-    decimal? StandardKgPerMetre = null,
-    string? KgPerMetreSource = null,
-    string? WeightTableVersion = null,
-    string? WeightTableSourceLabel = null);
+    Guid? UpdatedInCompanyId);
 
 /// <summary>Server-derived command metadata; company and actor never come from a payload.</summary>
 public sealed record ProductDimensionCommandMetadataV1(
@@ -293,11 +161,7 @@ public enum ProductDimensionOutcomeV1
     Found = 4,
 }
 
-/// <summary>
-/// The stored row as the U-08 conversion reads it; every field is null unless <c>Outcome</c> is Found. <c>KgPerMetre</c> is the
-/// usable kg/m: the card's own value, or for a structural profile the company table's value (<c>KgPerMetreSource</c> names
-/// which, <see cref="ProductKgPerMetreSourcesV1"/>; <c>NoSource</c> leaves it null). The trailing fields are KLN-D48 additions.
-/// </summary>
+/// <summary>The stored row as the U-08 conversion reads it; every field is null unless <c>Outcome</c> is Found.</summary>
 public sealed record ProductDimensionReadV1(
     ProductDimensionOutcomeV1 Outcome,
     string? SectionKind,
@@ -308,14 +172,7 @@ public sealed record ProductDimensionReadV1(
     decimal? OuterDiameterMm,
     decimal? WallThicknessMm,
     decimal? KgPerMetre,
-    long? Version,
-    string? ProfileSeries = null,
-    string? ProfileSize = null,
-    decimal? MeshSpacingMm = null,
-    string? SurfaceFinish = null,
-    string? KgPerMetreSource = null,
-    long? WeightTableVersion = null,
-    string? WeightTableSourceLabel = null)
+    long? Version)
 {
     public static ProductDimensionReadV1 Without(ProductDimensionOutcomeV1 outcome) =>
         new(outcome, null, null, null, null, null, null, null, null, null);

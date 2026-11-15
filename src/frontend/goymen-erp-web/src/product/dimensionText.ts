@@ -1,49 +1,12 @@
-/** BS-9 / KLN-D48: the texts of the product card's "Ebat/kalınlık" panel (localizable; never inline). */
+/** BS-9: the texts of the product card's "Ebat/kalınlık" panel (localizable; never inline). */
 
-import type { DimensionMeasure, KgPerMetreSource, ProductSectionKind } from './dimensionApi'
+import type { DimensionMeasure, ProductSectionKind } from './dimensionApi'
 
 export const SECTION_KIND_LABEL: Record<ProductSectionKind, string> = {
   Sheet: 'Sac / levha',
   Coil: 'Rulo / bant',
   RoundTube: 'Yuvarlak boru',
   Profile: 'Kutu / dikdörtgen profil',
-  EqualAngle: 'Eşit kanatlı köşebent',
-  UnequalAngle: 'Eşit olmayan kanatlı köşebent',
-  FlatBar: 'Lama',
-  NarrowFlatBar: 'Silme',
-  RoundBar: 'Dolu yuvarlak (mil)',
-  SquareBar: 'Dolu kare',
-  HexBar: 'Altıgen',
-  TeeBar: 'T demiri',
-  StructuralProfile: 'Yapısal profil (UPN, NPI, IPE, HEA, HEB, HEM)',
-  Rebar: 'İnşaat demiri',
-  WireRod: 'Filmaşin',
-  WeldedMesh: 'Hasır çelik',
-  ChequeredSheet: 'Baklavalı sac',
-  PerforatedSheet: 'Delikli sac',
-  CorrugatedSheet: 'Trapez / oluklu sac',
-  ErwTube: 'ERW boru',
-  ErwProfile: 'ERW profil',
-  PaintedErwTube: 'Boyalı ERW boru',
-  PaintedErwProfile: 'Boyalı ERW profil',
-}
-
-/** The kind-specific label of a measure where the generic one would mislead (a wing, a wire, a key width). */
-export const MEASURE_LABEL_FOR_KIND: Partial<Record<ProductSectionKind, Partial<Record<DimensionMeasure, string>>>> = {
-  EqualAngle: { widthMm: 'Kanat (mm)' },
-  UnequalAngle: { widthMm: 'Birinci kanat (mm)', heightMm: 'İkinci kanat (mm)' },
-  RoundBar: { outerDiameterMm: 'Çap (mm)' },
-  SquareBar: { widthMm: 'Kenar (mm)' },
-  HexBar: { widthMm: 'Anahtar ağzı (mm)' },
-  Rebar: { outerDiameterMm: 'Çap (mm)' },
-  WireRod: { outerDiameterMm: 'Çap (mm)' },
-  WeldedMesh: { outerDiameterMm: 'Tel çapı (mm)' },
-}
-
-export const KG_SOURCE_LABEL: Record<KgPerMetreSource, string> = {
-  Card: 'kartta girilen değer',
-  StandardTable: 'standart ağırlık tablosu',
-  NoSource: 'kaynak yok',
 }
 
 export const MEASURE_LABEL: Record<DimensionMeasure, string> = {
@@ -53,7 +16,6 @@ export const MEASURE_LABEL: Record<DimensionMeasure, string> = {
   heightMm: 'Yükseklik (mm)',
   outerDiameterMm: 'Dış çap (mm)',
   wallThicknessMm: 'Et kalınlığı (mm)',
-  meshSpacingMm: 'Göz aralığı (mm)',
   kgPerMetre: 'Metre ağırlığı (kg/m)',
 }
 
@@ -62,21 +24,7 @@ export const DIMENSION_TEXT = {
   kindLabel: 'Kesit türü',
   unset: 'Girilmemiş — birim çevriminde bu ürün için tahmin yapılmaz ("kaynak yok")',
   note: 'Birim çevrimi (kg ↔ adet / metre / m²) bu ölçüleri kullanır; yoğunluk Ayarlar\'daki şirket değeridir, kartta tutulmaz. Ölçüler yuvarlanmaz.',
-  profileSeriesLabel: 'Standart seri',
-  profileSizeLabel: 'Ölçü adı',
-  profileSizeHint: 'Büyük harf, rakam ve nokta; örneğin 200 veya 100A.',
-  chooseSeries: 'Seri seçin',
-  surfaceFinishLabel: 'Yüzey (boya / renk)',
-  standardKgLabel: 'Metre ağırlığı (kg/m)',
-  standardKgSource: 'Kaynak',
-  standardKgTable: 'Tablo sürümü',
-  standardKgNoSource: 'Kaynak yok — standart ağırlık tablosunda bu profil yok; ağırlık tahmin edilmez.',
-  standardKgNote: 'Yapısal profilin metre ağırlığı elle girilmez; Ayarlar\'daki standart ağırlık tablosundan okunur.',
-  profileInvalid: 'Seri listeden seçilmeli; ölçü adı en fazla 16 karakter büyük harf, rakam ve nokta olmalıdır.',
-  surfaceInvalid: 'Yüzey (boya/renk) boşlukla başlamayan/bitmeyen, en fazla 200 karakterlik bir metin olmalıdır.',
-  thicknessTooLarge: 'Kalınlık kanat/en ölçüsünü aşamaz.',
-  wireTooThick: 'Tel çapı göz aralığından küçük olmalıdır.',
-  tubeKgNote: 'Yuvarlak veya ERW boruda metre ağırlığı girilirse tablo değeri olarak formülün önüne geçer.',
+  tubeKgNote: 'Yuvarlak boruda metre ağırlığı girilirse tablo değeri olarak formülün önüne geçer.',
   shared: 'Ebat/kalınlık ortak ürün kartındadır: üç şirkette de aynıdır; burada yapılan değişiklik hepsini etkiler.',
   changedElsewhere: 'Son değişiklik başka bir şirkette yapıldı.',
   loading: 'Ebat/kalınlık yükleniyor…',

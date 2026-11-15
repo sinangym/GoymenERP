@@ -108,14 +108,6 @@ public static class ErpPermissions
     public const string ProductDimensionManage = "product.dimension.manage";
 
     /// <summary>
-    /// KLN-D54 (STK-S37): the Product owner's ONE name for reading and importing the company's structural profile weight table
-    /// (kg/m per standard profile, versioned and source-labelled; <c>ProductProfileWeightPermissionsV1.Import</c>). Registered,
-    /// not granted: no role, seed or user receives it here; who receives it is a human grant gate. Company-wide only. Not
-    /// Critical.
-    /// </summary>
-    public const string ProductProfileWeightsImport = "product.profile-weights.import";
-
-    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -1204,7 +1196,6 @@ public static class ErpPermissions
             ProductPriceListsPublish,
             ProductItemTypeManage,
             ProductDimensionManage,
-            ProductProfileWeightsImport,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1414,7 +1405,6 @@ public static class ErpPermissions
             ProductPriceListsPublish,
             ProductItemTypeManage,
             ProductDimensionManage,
-            ProductProfileWeightsImport,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,

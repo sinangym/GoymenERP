@@ -5,40 +5,10 @@
  * company only; the command carries one caller-owned `Idempotency-Key` (kept for a retry after an unknown outcome). Success is
  * exactly the contract's status; a 5xx or an off-contract answer is an UNKNOWN outcome; a refusal is read by its status and
  * `code`. The measures are never rounded here: the server refuses a value with more decimals than its column holds (URN-D8).
- * KLN-D48 (STK-S37) adds the long products, structural profiles, rebar/wire rod/mesh, sheet derivatives and (painted) ERW; a
- * structural profile's kg/m is read from the company's standard weight table (KLN-D54) and shown with its source, never typed.
  */
 
-export const PRODUCT_SECTION_KINDS = [
-  'Sheet',
-  'Coil',
-  'RoundTube',
-  'Profile',
-  'EqualAngle',
-  'UnequalAngle',
-  'FlatBar',
-  'NarrowFlatBar',
-  'RoundBar',
-  'SquareBar',
-  'HexBar',
-  'TeeBar',
-  'StructuralProfile',
-  'Rebar',
-  'WireRod',
-  'WeldedMesh',
-  'ChequeredSheet',
-  'PerforatedSheet',
-  'CorrugatedSheet',
-  'ErwTube',
-  'ErwProfile',
-  'PaintedErwTube',
-  'PaintedErwProfile',
-] as const
+export const PRODUCT_SECTION_KINDS = ['Sheet', 'Coil', 'RoundTube', 'Profile'] as const
 export type ProductSectionKind = (typeof PRODUCT_SECTION_KINDS)[number]
-
-/** KLN-D48 (2): the structural profile series (`ProductProfileSeriesV1`). */
-export const PROFILE_SERIES = ['UPN', 'NPI', 'IPE', 'HEA', 'HEB', 'HEM'] as const
-export type ProfileSeries = (typeof PROFILE_SERIES)[number]
 
 export const DIMENSION_MEASURES = [
   'thicknessMm',
@@ -47,93 +17,38 @@ export const DIMENSION_MEASURES = [
   'heightMm',
   'outerDiameterMm',
   'wallThicknessMm',
-  'meshSpacingMm',
   'kgPerMetre',
 ] as const
 export type DimensionMeasure = (typeof DIMENSION_MEASURES)[number]
 
-/** The text fields of a row: the structural profile designation and the painted ERW surface. */
-export const DIMENSION_TEXTS = ['profileSeries', 'profileSize', 'surfaceFinish'] as const
-export type DimensionTextField = (typeof DIMENSION_TEXTS)[number]
-
-export type DimensionField = DimensionMeasure | DimensionTextField
-
 export type MeasurePresence = 'required' | 'optional' | 'forbidden'
 
-type Shape = Record<DimensionField, MeasurePresence>
-
-const R = 'required'
-const O = 'optional'
-const F = 'forbidden'
-
-function shape(
-  thicknessMm: MeasurePresence, widthMm: MeasurePresence, lengthMm: MeasurePresence, heightMm: MeasurePresence,
-  outerDiameterMm: MeasurePresence, wallThicknessMm: MeasurePresence, meshSpacingMm: MeasurePresence,
-  kgPerMetre: MeasurePresence, profile: MeasurePresence, surfaceFinish: MeasurePresence,
-): Shape {
-  return {
-    thicknessMm, widthMm, lengthMm, heightMm, outerDiameterMm, wallThicknessMm, meshSpacingMm, kgPerMetre,
-    profileSeries: profile, profileSize: profile, surfaceFinish,
-  }
-}
-
-const SHEET = shape(R, R, R, F, F, F, F, F, F, F)
-const TUBE = shape(F, F, F, F, R, R, F, O, F, F)
-const BOX = shape(F, R, F, R, F, R, F, R, F, F)
-
 /**
- * Which fields a section kind holds — the same rule table the server and the database check (`ProductDimensionShape`,
- * `CK_ProductCardDimensions_Shape`). A round/ERW tube's kg/m is the optional table value; a box/ERW profile's kg/m is required;
- * a structural profile carries its series and size designation and NEVER a typed kg/m (KLN-D54: it comes from the standard table).
+ * Which measures a section kind holds — the same rule the server and the database check (`ProductDimensionShape`,
+ * `CK_ProductCardDimensions_Shape`). A round tube's kg/m is the optional table value; a profile's kg/m is required.
  */
-export const SECTION_MEASURES: Record<ProductSectionKind, Shape> = {
-  Sheet: SHEET,
-  Coil: shape(R, R, F, F, F, F, F, F, F, F),
-  RoundTube: TUBE,
-  Profile: BOX,
-  EqualAngle: shape(R, R, O, F, F, F, F, F, F, F),
-  UnequalAngle: shape(R, R, O, R, F, F, F, F, F, F),
-  FlatBar: shape(R, R, O, F, F, F, F, F, F, F),
-  NarrowFlatBar: shape(R, R, O, F, F, F, F, F, F, F),
-  RoundBar: shape(F, F, O, F, R, F, F, F, F, F),
-  SquareBar: shape(F, R, O, F, F, F, F, F, F, F),
-  HexBar: shape(F, R, O, F, F, F, F, F, F, F),
-  TeeBar: shape(R, R, O, R, F, F, F, F, F, F),
-  StructuralProfile: shape(F, F, R, F, F, F, F, F, R, F),
-  Rebar: shape(F, F, O, F, R, F, F, F, F, F),
-  WireRod: shape(F, F, F, F, R, F, F, F, F, F),
-  WeldedMesh: shape(F, R, R, F, R, F, R, F, F, F),
-  ChequeredSheet: SHEET,
-  PerforatedSheet: SHEET,
-  CorrugatedSheet: SHEET,
-  ErwTube: TUBE,
-  ErwProfile: BOX,
-  PaintedErwTube: { ...TUBE, surfaceFinish: R },
-  PaintedErwProfile: { ...BOX, surfaceFinish: R },
+export const SECTION_MEASURES: Record<ProductSectionKind, Record<DimensionMeasure, MeasurePresence>> = {
+  Sheet: {
+    thicknessMm: 'required', widthMm: 'required', lengthMm: 'required', heightMm: 'forbidden',
+    outerDiameterMm: 'forbidden', wallThicknessMm: 'forbidden', kgPerMetre: 'forbidden',
+  },
+  Coil: {
+    thicknessMm: 'required', widthMm: 'required', lengthMm: 'forbidden', heightMm: 'forbidden',
+    outerDiameterMm: 'forbidden', wallThicknessMm: 'forbidden', kgPerMetre: 'forbidden',
+  },
+  RoundTube: {
+    thicknessMm: 'forbidden', widthMm: 'forbidden', lengthMm: 'forbidden', heightMm: 'forbidden',
+    outerDiameterMm: 'required', wallThicknessMm: 'required', kgPerMetre: 'optional',
+  },
+  Profile: {
+    thicknessMm: 'forbidden', widthMm: 'required', lengthMm: 'forbidden', heightMm: 'required',
+    outerDiameterMm: 'forbidden', wallThicknessMm: 'required', kgPerMetre: 'required',
+  },
 }
-
-/** Where the usable kg/m of a row comes from (`ProductKgPerMetreSourcesV1`). */
-export const KG_PER_METRE_SOURCES = ['Card', 'StandardTable', 'NoSource'] as const
-export type KgPerMetreSource = (typeof KG_PER_METRE_SOURCES)[number]
 
 /** The decimals each measure may carry (`ProductDimensionInputLimitsV1`): millimetres three, kg/m six. */
 export const MEASURE_DECIMALS: Record<DimensionMeasure, number> = {
-  thicknessMm: 3, widthMm: 3, lengthMm: 3, heightMm: 3, outerDiameterMm: 3, wallThicknessMm: 3, meshSpacingMm: 3, kgPerMetre: 6,
-}
-
-/** `ProductDimensionInputLimitsV1`: the designation and surface text lengths. */
-export const PROFILE_SIZE_MAXIMUM_LENGTH = 16
-export const SURFACE_FINISH_MAXIMUM_LENGTH = 200
-
-/** A structural profile size designation as the server accepts it: 1..16 of capitals, digits and dots. */
-export function isProfileSize(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= PROFILE_SIZE_MAXIMUM_LENGTH && /^[A-Z0-9.]+$/.test(value)
-}
-
-/** A surface (paint/colour) text as the server accepts it: no leading/trailing space, no control character. */
-export function isSurfaceFinish(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= SURFACE_FINISH_MAXIMUM_LENGTH
-    && value.trim() === value && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+  thicknessMm: 3, widthMm: 3, lengthMm: 3, heightMm: 3, outerDiameterMm: 3, wallThicknessMm: 3, kgPerMetre: 6,
 }
 
 export const DIMENSION_PROBLEM = {
@@ -145,24 +60,11 @@ export const DIMENSION_PROBLEM = {
 
 export type DimensionMeasures = Readonly<Record<DimensionMeasure, number | null>>
 
-export type DimensionTexts = Readonly<Record<DimensionTextField, string | null>>
-
-/** The usable kg/m of a structural profile and where it came from (KLN-D54). */
-export interface DimensionWeight {
-  /** Null while the table or its row is missing ("kaynak yok"). */
-  readonly standardKgPerMetre: number | null
-  readonly source: KgPerMetreSource | null
-  readonly tableVersion: string | null
-  readonly tableSourceLabel: string | null
-}
-
 export interface ProductDimensionView {
   readonly productId: string
   readonly version: string
   readonly sectionKind: ProductSectionKind | null
   readonly measures: DimensionMeasures
-  readonly texts: DimensionTexts
-  readonly weight: DimensionWeight
   /** The value is shared: the last change was made in another company. */
   readonly changedInAnotherCompany: boolean
 }
@@ -210,68 +112,26 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 
 /** `ProductDimensionViewV1`'s members. */
 const DIMENSION_VIEW_KEYS = [
-  'companyId', 'productId', 'version', 'sectionKind', ...DIMENSION_MEASURES, ...DIMENSION_TEXTS, 'updatedAtUtc', 'updatedBy',
-  'updatedInCompanyId', 'standardKgPerMetre', 'kgPerMetreSource', 'weightTableVersion', 'weightTableSourceLabel',
+  'companyId', 'productId', 'version', 'sectionKind', ...DIMENSION_MEASURES, 'updatedAtUtc', 'updatedBy', 'updatedInCompanyId',
 ] as const
 
 function isPositiveNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
-function isTextValue(field: DimensionTextField, value: unknown): boolean {
-  if (field === 'profileSeries') return PROFILE_SERIES.includes(value as ProfileSeries)
-  if (field === 'profileSize') return isProfileSize(value)
-  return isSurfaceFinish(value)
-}
-
-/** True when the fields follow the kind's shape: required ones present and well-formed, forbidden ones null. */
-export function fitsSection(kind: ProductSectionKind, fields: Readonly<Record<DimensionField, unknown>>): boolean {
-  const measuresFit = DIMENSION_MEASURES.every((measure) => {
+/** True when the measures follow the kind's shape: required ones present, forbidden ones null. */
+export function fitsSection(kind: ProductSectionKind, measures: Readonly<Record<DimensionMeasure, unknown>>): boolean {
+  return DIMENSION_MEASURES.every((measure) => {
     const presence = SECTION_MEASURES[kind][measure]
-    const value = fields[measure]
+    const value = measures[measure]
     if (value === null) return presence !== 'required'
     return presence !== 'forbidden' && isPositiveNumber(value)
   })
-  return measuresFit && DIMENSION_TEXTS.every((field) => {
-    const presence = SECTION_MEASURES[kind][field]
-    const value = fields[field]
-    if (value === null) return presence !== 'required'
-    return presence !== 'forbidden' && isTextValue(field, value)
-  })
-}
-
-const VERSION = /^(0|[1-9]\d*)$/
-
-/** The weight members: a structural profile names its table source; other kinds say "Card" only when the card holds kg/m. */
-function decodeWeight(raw: Record<string, unknown>, kind: ProductSectionKind | null): DimensionWeight | null {
-  const standard = raw.standardKgPerMetre
-  const source = raw.kgPerMetreSource
-  const tableVersion = raw.weightTableVersion
-  const label = raw.weightTableSourceLabel
-  if (!(standard === null || isPositiveNumber(standard))) return null
-  if (!(source === null || KG_PER_METRE_SOURCES.includes(source as KgPerMetreSource))) return null
-  if (!(tableVersion === null || (typeof tableVersion === 'string' && VERSION.test(tableVersion) && tableVersion !== '0'))) return null
-  if (!(label === null || typeof label === 'string')) return null
-  if (kind === 'StructuralProfile') {
-    if (source === 'StandardTable' ? standard === null || tableVersion === null : source !== 'NoSource' || standard !== null) {
-      return null
-    }
-    if ((tableVersion === null) !== (label === null)) return null
-  } else {
-    const expected = kind !== null && raw.kgPerMetre !== null ? 'Card' : null
-    if (source !== expected || standard !== null || tableVersion !== null || label !== null) return null
-  }
-  return {
-    standardKgPerMetre: standard as number | null,
-    source: source as KgPerMetreSource | null,
-    tableVersion: tableVersion as string | null,
-    tableSourceLabel: label as string | null,
-  }
 }
 
 export function decodeDimension(raw: unknown, companyId: string, productId: string): ProductDimensionView | null {
   if (!isRecord(raw) || !hasExactKeys(raw, DIMENSION_VIEW_KEYS) || raw.companyId !== companyId || raw.productId !== productId
-    || typeof raw.version !== 'string' || !VERSION.test(raw.version)) {
+    || typeof raw.version !== 'string' || !/^(0|[1-9]\d*)$/.test(raw.version)) {
     return null
   }
   if (!(raw.updatedAtUtc === null || typeof raw.updatedAtUtc === 'string')
@@ -279,25 +139,17 @@ export function decodeDimension(raw: unknown, companyId: string, productId: stri
   const kind = raw.sectionKind
   if (kind !== null && !PRODUCT_SECTION_KINDS.includes(kind as ProductSectionKind)) return null
   if ((raw.version === '0') !== (kind === null)) return null
-  const fields = Object.fromEntries(
-    [...DIMENSION_MEASURES, ...DIMENSION_TEXTS].map((field) => [field, raw[field]]),
-  ) as Record<DimensionField, unknown>
-  if (kind === null
-    ? [...DIMENSION_MEASURES, ...DIMENSION_TEXTS].some((field) => fields[field] !== null)
-    : !fitsSection(kind as ProductSectionKind, fields)) {
+  const measures = Object.fromEntries(DIMENSION_MEASURES.map((measure) => [measure, raw[measure]])) as Record<DimensionMeasure, unknown>
+  if (kind === null ? DIMENSION_MEASURES.some((measure) => measures[measure] !== null) : !fitsSection(kind as ProductSectionKind, measures)) {
     return null
   }
-  const weight = decodeWeight(raw, kind as ProductSectionKind | null)
-  if (weight === null) return null
   const updatedIn = raw.updatedInCompanyId
   if (kind === null ? updatedIn !== null : typeof updatedIn !== 'string' || !UUID.test(updatedIn)) return null
   return {
     productId,
     version: raw.version,
     sectionKind: kind as ProductSectionKind | null,
-    measures: Object.fromEntries(DIMENSION_MEASURES.map((measure) => [measure, fields[measure]])) as DimensionMeasures,
-    texts: Object.fromEntries(DIMENSION_TEXTS.map((field) => [field, fields[field]])) as DimensionTexts,
-    weight,
+    measures: measures as DimensionMeasures,
     changedInAnotherCompany: typeof updatedIn === 'string' && updatedIn.toLowerCase() !== companyId.toLowerCase(),
   }
 }
@@ -317,7 +169,7 @@ export async function fetchDimension(companyId: string, productId: string, signa
   }
 }
 
-export interface SetDimensionBody extends DimensionMeasures, DimensionTexts {
+export interface SetDimensionBody extends DimensionMeasures {
   readonly expectedVersion: string
   readonly sectionKind: ProductSectionKind
   readonly reason: string
