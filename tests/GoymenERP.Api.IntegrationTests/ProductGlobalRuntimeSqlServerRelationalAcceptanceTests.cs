@@ -46,7 +46,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 // Reuses the repository's real SQL host/lifecycle. These grants name only the
 // existing synthetic development actor, never Sinan or a normal deployment.
-public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
+public sealed partial class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
 {
     private const string ProductPreFamilyRegistryMigration = "20260912175128_InitialProductDrafts";
     private const string ProductFamilyRegistryMigration = "20260919100000_AddProductFamilyRegistry";
