@@ -240,6 +240,8 @@ NON_MESSAGE_DELIVERY_TABLES = (
     ("sales", "DraftDeliverySlices"),
     # SAT-D30 / SAT-D213: append-only over-delivery approvals (business records; "Delivery" is in the name only).
     ("sales", "DraftOverDeliveryApprovals"),
+    # F-029 S4b: append-only Sales delivery tolerance policy versions in Settings (business records; "Delivery" is in the name only).
+    ("settings", "SalesDeliveryToleranceVersions"),
 )
 DOCUMENT_PATH_CLASSIFICATIONS = (
     ("Documents:ObjectStore:RootPath", "RECOVERY_SET_CONTENT"),

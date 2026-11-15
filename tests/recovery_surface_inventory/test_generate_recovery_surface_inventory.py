@@ -750,7 +750,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         # S5 API-36: + sales.OutboxMessages (the Sales transactional outbox, a message-delivery table).
         # B-24: + work.OutboxDeliveries / work.OutboxSourceCursors (Work outbox dispatcher).
         # A3 API-30: + purchasing.PurchaseOrderLineDeliverySlices, a business table whose name matches "deliver".
-        self.assertEqual(13, len(discovered))
+        # F-029 S4b: + settings.SalesDeliveryToleranceVersions, a business table whose name matches "deliver".
+        self.assertEqual(14, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
