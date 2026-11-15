@@ -43,6 +43,7 @@ import {
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { FINANCE_ROUTE, partyLedgerPath } from '../finance/capabilities'
+import { CreditPanel } from '../finance/CreditPanel'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -457,6 +458,18 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             companyId={activeCompanyId}
             namespace={namespace}
             contractContext={contractContext}
+          />
+        ) : null}
+        {/* F018 §L3: Finance's credit limit and collateral figures of this account. Read only; Finance owns them. */}
+        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&
+        (hasCapability(shell, CAPABILITY.financeCreditLimitsList) || hasCapability(shell, CAPABILITY.financeCollateralsList)) ? (
+          <CreditPanel
+            partyId={detail.id}
+            companyAccountId={account.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            canOpenCreditLimits={hasCapability(shell, CAPABILITY.financeCreditLimitsList)}
+            canOpenCollaterals={hasCapability(shell, CAPABILITY.financeCollateralsList)}
           />
         ) : null}
         {canEditContact ? (

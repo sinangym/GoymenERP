@@ -512,12 +512,17 @@ public sealed class FinancePartyCollateralService(
                 FinancePartyCollateralFigures.DocumentaryRiskWithheld);
         }
 
-        var instruments = await dbContext.CustomerInstruments.AsNoTracking()
-            .Where(row => row.CompanyId == context.CompanyId && row.CompanyAccountId == companyAccountId)
-            .Select(row => new FinancePartyCollateralFigures.PortfolioInstrument(row.Status, row.CurrencyId, row.AmountText))
-            .ToListAsync(cancellationToken);
+        var instruments = await PortfolioAsync(dbContext, context.CompanyId, companyAccountId, cancellationToken);
         return FigureView(FinancePartyCollateralFigures.DocumentaryRisk(instruments));
     }
+
+    /// <summary>FNS-D58: every customer instrument of the account (the documentary risk's input). Untracked.</summary>
+    internal static Task<List<FinancePartyCollateralFigures.PortfolioInstrument>> PortfolioAsync(
+        FinanceDbContext dbContext, Guid companyId, Guid companyAccountId, CancellationToken cancellationToken) =>
+        dbContext.CustomerInstruments.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.CompanyAccountId == companyAccountId)
+            .Select(row => new FinancePartyCollateralFigures.PortfolioInstrument(row.Status, row.CurrencyId, row.AmountText))
+            .ToListAsync(cancellationToken);
 
     private static PartyCollateralFigureView FigureView(FinancePartyCollateralFigures.Figure figure) =>
         figure.IsAvailable

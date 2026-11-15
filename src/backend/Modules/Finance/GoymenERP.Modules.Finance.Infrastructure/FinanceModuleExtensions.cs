@@ -91,6 +91,16 @@ public static class FinanceModuleExtensions
         // record and the weighted collateral fail closed.
         services.TryAddScoped<IFinanceCollateralTypeCatalogReader, UnavailableFinanceCollateralTypeCatalogReader>();
         services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
+        // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
+        // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
+        services.AddScoped<IFinancePartyCreditPanelReader>(provider => new FinancePartyCreditPanelService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<FinancePermissionPort>(),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();

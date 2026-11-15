@@ -131,7 +131,7 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
     /// API-85a: the account's effective credit limit — its one approved record. A proposal (pending, rejected or superseded)
     /// and a superseded approved record never count.
     /// </summary>
-    private async Task<SalesPartyRiskFigureV1> CreditLimitAsync(Guid companyId, Guid partyId, Guid companyAccountId,
+    internal async Task<SalesPartyRiskFigureV1> CreditLimitAsync(Guid companyId, Guid partyId, Guid companyAccountId,
         CancellationToken cancellationToken)
     {
         const int approved = FinancePartyCreditLimitService.Approved;
@@ -173,7 +173,7 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
             [new SalesPartyRiskAmountV1(currencyId, amount)], IncludesTax: null, null);
     }
 
-    private async Task<SalesPartyRiskFigureV1> OpenReceivablesAsync(Guid companyId, Guid partyId, Guid companyAccountId,
+    internal async Task<SalesPartyRiskFigureV1> OpenReceivablesAsync(Guid companyId, Guid partyId, Guid companyAccountId,
         CancellationToken cancellationToken)
     {
         var open = FinanceOpenItemStatuses.Open;

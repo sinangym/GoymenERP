@@ -24,6 +24,7 @@ public static class FinanceEndpoints
     public const string CashAccountCurrencyCandidatesPath = "/api/v1/finance/cash-accounts/currency-candidates";
     public const string CreditLimitsPath = "/api/v1/finance/credit-limits";
     public const string CollateralsPath = "/api/v1/finance/collaterals";
+    public const string PartyCreditPanelPath = "/api/v1/finance/party-credit-panel";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string PaymentReversalProposalsPath = "/api/v1/finance/manual-bank-payments/reversal-proposals";
     public const string ExpensePaymentsPath = "/api/v1/finance/expense-payments";
@@ -107,6 +108,7 @@ public static class FinanceEndpoints
         MapCashAccountEndpoints(endpoints);
         MapCreditLimitEndpoints(endpoints);
         MapCollateralEndpoints(endpoints);
+        MapPartyCreditPanelEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
         return endpoints;
@@ -2830,6 +2832,42 @@ public static class FinanceEndpoints
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// F018 §L3: the Cari card's Finance panel — one company account's credit limit, open receivables, held and weighted
+    /// collateral, collateral utilization and documentary risk, each with its own state (Withheld when the caller may not
+    /// read it, Unavailable when Finance cannot compute it). Under the credit limit read or the collateral read; neither
+    /// is 403, an account the caller cannot see is 404, an authority that cannot be measured is 503. Gross risk and the
+    /// limit headroom are the Sales risk read's, not this one's.
+    /// </summary>
+    private static void MapPartyCreditPanelEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(PartyCreditPanelPath + "/parties/{partyId:guid}/accounts/{companyAccountId:guid}", async (
+                Guid partyId,
+                Guid companyAccountId,
+                HttpContext httpContext,
+                IFinancePartyCreditPanelReader reader,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await reader.GetAsync(Context(companyContext, currentUser, correlation), partyId,
+                    companyAccountId, cancellationToken));
+            })
+            .WithName("GetFinancePartyCreditPanelV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyCreditPanelView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable();
     }
 
