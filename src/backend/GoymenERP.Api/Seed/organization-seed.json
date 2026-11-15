@@ -23,7 +23,7 @@
         "Id": "10000000-0000-0000-0000-000000000003",
         "Code": "GIN",
         "LegalName": "Göymen İnşaat",
-        "Vkn": "1111111111",
+        "Vkn": null,
         "IsPlaceholder": true,
         "InvoiceCapable": false,
         "ApplyTopologyTemplates": false

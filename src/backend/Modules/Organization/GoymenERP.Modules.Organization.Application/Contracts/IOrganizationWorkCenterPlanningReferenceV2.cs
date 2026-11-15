@@ -15,8 +15,10 @@ public sealed record OrganizationWorkCenterShiftV2(DayOfWeek Day, TimeOnly Start
 /// default, <paramref name="Source"/> <c>Default</c>; the saved revision otherwise, <c>WorkCenter</c>), so a consumer can
 /// record which calendar it used. <paramref name="Holidays"/> are the closed business dates of that revision, ascending.
 /// <para>
-/// URT-D29: capacity and calendar computation are outside v1; this reference is published so a consumer can show or
-/// store the calendar, not so it derives a termin. <see cref="IOrganizationWorkCenterPlanningReferenceV1"/> stays as it is.
+/// URT-D29 kept capacity and calendar computation out of v1; NS-10 (Issue #66, SINAN-CEVAP 14: "calendar + suggestion")
+/// now lets a consumer derive a due-date SUGGESTION from this calendar, which a person accepts and records through the
+/// consumer's own command; nothing is written automatically and Organization computes no termin itself.
+/// <see cref="IOrganizationWorkCenterPlanningReferenceV1"/> stays as it is.
 /// </para>
 /// </summary>
 public sealed record OrganizationWorkCenterPlanningReferenceV2(

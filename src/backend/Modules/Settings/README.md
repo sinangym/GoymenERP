@@ -765,3 +765,48 @@ defaulted. Until an authorized person records a bank's mapping, the port refuses
 
 Not in this slice: the frontend screen and its shell capability, the FIN-S21 importer and its wiring, linking a bank
 account to a bank key, XLSX/MT940 parsing, CSV formula-injection neutralization and B-26 file checks (importer side).
+
+## Segregation of duties (F-024; NS-01)
+
+Source: the 14th answer on Issue #66 (NS-01): "Hazırlayan onaylayamaz (ayrı kişi şart); tek kişilik şirket için şirket
+ayarıyla gevşetilebilir, varsayılan ayrı." This slice adds the company setting, its history and the shared rule an approving
+module applies. **The decided default needs no row**: with no recorded version the preparer may not approve.
+
+| Part | What |
+|---|---|
+| Table | `SegregationOfDutiesPolicyVersions`: `PreparerMayApprove` (`bit`), recorded by/at and the mandatory reason. Every row carries `CompanyId` under the company query filter; PK `(CompanyId, Version)` is the concurrency fence; insert-only, the latest version is in force when it is saved (no start date). CHECKs hold the identity and the non-blank actor and reason. |
+| Migration | `AddSegregationOfDutiesPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51622` while any version exists (forward fix); an empty store rolls back freely. |
+| Port | `ISettingsSegregationOfDutiesPolicyProviderV1.GetSegregationOfDutiesPolicyAsync(companyId)` → `SettingsSegregationOfDutiesPolicyV1(CompanyId, PreparerMayApprove, Version)`. No version → the decided default, version 0. A company other than the server-resolved one → `settings_access_denied`; unreadable store → `settings_provider_unavailable`; malformed stored row → `settings_profile_invalid`. No permissive fallback: a consumer refuses the approval on an error. |
+| Rule | `SegregationOfDutiesRuleV1.PermitsApproval(policy, preparedBy, approvedBy)`: a different person always passes; the preparer passes only when `PreparerMayApprove` is true; a missing preparer or approver never passes (actor ids, trimmed, ordinal). A consumer keeps the policy version beside the approval it records. |
+| Scope | The setting relaxes only the generic "preparer = approver" check of the consuming flows. It does **not** relax the locked four-eyes rules that have their own decisions (Organization VKN change dual approval, Identity Critical grant dual control, a module's own locked maker ≠ checker rule); which document flows consume it is each owning module's slice. |
+| Name | `settings.segregation-of-duties.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/segregation-of-duties` (the setting in force, version "0" and an empty history when none), `POST /api/v1/settings/segregation-of-duties/versions` (204). |
+| Commands | Idempotency-Key, expected version ("0" for the first), mandatory `preparerMayApprove` (no code default in the request), reason (≤ 4000), one save with the execution row and one audit event (`settings.segregation-of-duties.recorded.v1`). Terminal refusals are stored and replay; recording the setting already in force (the default included) is a stored no-op without audit. |
+| Evidence | Unit: `SegregationOfDutiesRuleV1Tests`. Model: `SettingsSegregationOfDutiesPolicyPersistenceModelTests`. Names: `SettingsSegregationOfDutiesPolicyPermissionRegistrationTests`. Real SQL: `SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptanceTests`. |
+
+Not in this slice: the frontend screen and its shell capability, the consumers' enforcement (Logistics dispatch note approval
+first; sales, purchasing, finance and manufacturing approvals by their owners), a system check that the company really has
+one active user before the relaxation is allowed (NEEDS-SINAN).
+
+## Login attempt limit (KIM-D34; KIM-D29)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK9.md` KIM-D34. The local-account login rate limit of KIM-D29
+is a **group-wide** Settings record: one value for every company's login, versioned, recorded from Ayarlar with audit.
+Nothing is seeded. The decided starting value (10 attempts per minute per IP address + normalized user name) stays in the
+host configuration (`Identity:LocalAccount:RateLimit:Login`), which applies until the first version is recorded and remains
+the fallback while the record cannot be read.
+
+| Part | What |
+|---|---|
+| Table | `LoginRateLimitVersions`: permit limit (1…1 000 000), window seconds (1…86 400), partition (`IpAddress`/`IpAddressAndUserName`), recorded by, the company the person worked in, time and reason. **No `CompanyId` key and no company filter** (group-wide); PK `Version` is the concurrency fence; insert-only, the latest version is in force. CHECKs hold the code list and the technical bounds. |
+| Migration | `AddLoginRateLimitVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51331` while any version exists (forward fix); an empty store rolls back freely. |
+| Port | `ISettingsLoginRateLimitProviderV1.GetLoginRateLimitAsync()` → `SettingsLoginRateLimitV1` or `null` when none is recorded. It runs on the anonymous login path, so it asks for no user and no company. The API's `LocalAccountLoginRateLimiter` reads it at most once per `SettingsRefreshInterval` (a technical cache interval; one read at a time) and keeps the limit in force when the read fails. |
+| Name | `settings.login-rate-limit.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/login-rate-limit` (versions newest first; version "0" and an empty list when none), `POST /api/v1/settings/login-rate-limit/versions` (204). |
+| Commands | Idempotency-Key, expected version ("0" for the first), reason (≤ 4000), one save with the execution row and one audit event (`settings.login-rate-limit.recorded.v1`) under the server-resolved company. No second approval. Terminal refusals are stored and replay; an unchanged value is a stored no-op without audit. |
+| Screen | Ayarlar → Giriş deneme sınırı (`/ayarlar/giris-deneme-siniri`): the decision value is a reminder text only and never pre-fills the form. |
+| Evidence | Unit: `LoginRateLimitRulesV1Tests`. Model: `SettingsLoginRateLimitPersistenceModelTests`. Names: `SettingsLoginRateLimitPermissionRegistrationTests`. Limiter: `LocalAccountLoginRateLimiterSettingsTests`. Screen: `LoginRateLimitPage.test.tsx`. |
+
+Open: the client IP behind a reverse proxy (forwarded headers) decides the partition key; it is NEEDS-SINAN and not changed
+here. The unit conversion policy screen (Ayarlar → Birim çevrim politikası, KIM-D37) is in this slice too: no value is
+seeded, the decision values are reminder texts, and the coefficient rounding direction (URN-D8) has no suggestion.

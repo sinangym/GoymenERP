@@ -22,6 +22,8 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
     private const string GinLegalName = "Göymen İnşaat";
     private const string GdcVkn = "4100046586";
     private const string GspVkn = "4101507252";
+    // KIM-D35: the stand-in value the fiscal migration once wrote for the placeholder company. It is not a VKN; the
+    // ClearPlaceholderCompanyVkn migration clears it and the company is "VKN girilmemiş" (null) from then on.
     private const string GinPlaceholderVkn = "1111111111";
 
     private static readonly Guid LegacySiteId = Guid.Parse(
@@ -265,10 +267,11 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                GinPlaceholderVkn,
+                vkn: null,
                 isPlaceholder: true,
                 invoiceCapable: false);
-            Assert.Equal(12, company.Version);
+            // 11 -> 12 by the fiscal migration's normalization, 12 -> 13 by KIM-D35 clearing the stand-in VKN.
+            Assert.Equal(13, company.Version);
             Assert.Equal(
                 4,
                 await ScalarAsync<int>(
@@ -840,7 +843,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                GinPlaceholderVkn,
+                vkn: null,
                 isPlaceholder: true,
                 invoiceCapable: false),
             company => AssertCompany(
@@ -858,7 +861,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
         Guid id,
         string code,
         string legalName,
-        string vkn,
+        string? vkn,
         bool isPlaceholder,
         bool invoiceCapable)
     {
@@ -890,7 +893,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 reader.GetGuid(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                reader.GetString(3),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetBoolean(4),
                 reader.GetBoolean(5),
                 reader.GetBoolean(6),
@@ -963,7 +966,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
         Guid Id,
         string Code,
         string LegalName,
-        string Vkn,
+        string? Vkn,
         bool IsPlaceholder,
         bool InvoiceCapable,
         bool IsActive,

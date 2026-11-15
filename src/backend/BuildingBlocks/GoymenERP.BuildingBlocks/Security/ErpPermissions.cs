@@ -1260,11 +1260,26 @@ public static class ErpPermissions
     public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
 
     /// <summary>
+    /// KIM-D34: read the group-wide login attempt limit timeline (attempts per window, window length, what a window counts per)
+    /// and record new versions (<c>SettingsLoginRateLimitPermissionManifestV1.Manage</c>). Registered, not granted: no role,
+    /// seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsLoginRateLimitManage = "settings.login-rate-limit.manage";
+
+    /// <summary>
     /// FNS-D52: read the company's per-bank CSV column mappings of the bank statement import (XLSX and MT940 need none) and
     /// record new versions (<c>SettingsBankCsvMappingPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed
     /// or user receives it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
     public const string SettingsBankCsvMappingsManage = "settings.bank-csv-mappings.manage";
+
+    /// <summary>
+    /// F-024 (NS-01): read the company's segregation of duties setting — whether the person who prepared a document may also
+    /// approve it (default: no; a company run by one person may relax it) — and record new versions
+    /// (<c>SettingsSegregationOfDutiesPolicyPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed or user
+    /// receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsSegregationOfDutiesManage = "settings.segregation-of-duties.manage";
 
     /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
@@ -1572,7 +1587,9 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsLoginRateLimitManage,
             SettingsBankCsvMappingsManage,
+            SettingsSegregationOfDutiesManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1808,7 +1825,9 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsLoginRateLimitManage,
             SettingsBankCsvMappingsManage,
+            SettingsSegregationOfDutiesManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
