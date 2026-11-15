@@ -17,6 +17,12 @@ describe('lifecycleFailureText', () => {
     )
   })
 
+  it('names the missing termin refusal of the approval (URT-D66)', () => {
+    expect(lifecycleFailureText('approve', 422, 'manufacturing_plan_due_date_required')).toBe(
+      'Termini girilmemiş plan onaylanmaz; önce planın terminini girin.',
+    )
+  })
+
   it('keeps the generic texts for other refusals', () => {
     expect(lifecycleFailureText('approve', 409, 'manufacturing_version_conflict')).toBe(
       'Plan onayı uygulanmadı (manufacturing_version_conflict).',

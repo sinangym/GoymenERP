@@ -45,7 +45,7 @@ public sealed class PlanLifecycleTests
     private static ProductionPlan Approved()
     {
         var plan = Draft();
-        plan.Approve(plan.Version, Approver, At);
+        plan.WithDueDate().Approve(plan.Version, Approver, At);
         return plan;
     }
 
@@ -62,7 +62,7 @@ public sealed class PlanLifecycleTests
         Assert.Equal(new PlanRejection(1, "Rulo miktarı yanlış", Approver, At, 2), rejection);
         // The planner revises at the version after the rejection; the approver approves later.
         plan.Revise(2, OtherWorkCenter, ManufacturingProcess.ColdRolling, [Input(7_000m)], null);
-        plan.Approve(3, Approver, At);
+        plan.WithDueDate().Approve(3, Approver, At);
         Assert.Equal(PlanStatus.Approved, plan.Status);
     }
 
@@ -115,7 +115,7 @@ public sealed class PlanLifecycleTests
         Assert.Equal(ManufacturingRuleCodes.PlanCancelled,
             Assert.Throws<ManufacturingRuleException>(() => cancelled.Reject(2, Approver, At, "yine")).Code);
         Assert.Equal(ManufacturingRuleCodes.PlanNotDraft,
-            Assert.Throws<ManufacturingRuleException>(() => cancelled.Approve(2, Approver, At)).Code);
+            Assert.Throws<ManufacturingRuleException>(() => cancelled.WithDueDate().Approve(2, Approver, At)).Code);
         Assert.Equal(ManufacturingRuleCodes.PlanNotDraft, Assert.Throws<ManufacturingRuleException>(
             () => cancelled.Revise(2, WorkCenter, ManufacturingProcess.ColdRolling, [Input(1m)], null)).Code);
         Assert.Equal(ManufacturingRuleCodes.PlanNotApproved, Assert.Throws<ManufacturingRuleException>(
@@ -199,7 +199,7 @@ public sealed class PlanLifecycleTests
         // 10 pieces × 6 m = 60 m at the plan's 30 m/min (not the profile's 12) = 2 minutes.
         Assert.Equal(2m, run.Values.Single(value => value.Name == "runMinutes").Value);
 
-        plan.Approve(1, Approver, At, parameters: null, profile);
+        plan.WithDueDate().Approve(1, Approver, At, parameters: null, profile);
         var captured = Assert.Single(plan.ParameterSnapshot!.Values);
         Assert.Equal(new PlanParameterValueV1("lineSpeedMetresPerMinute", "m/min", 30m, null,
             PlanParameterValueV1.PlanSource), captured);
@@ -238,7 +238,7 @@ public sealed class PlanLifecycleTests
 
         // Without the plan's entries the gate names them (and the label state no read supplied).
         var bare = SlittingPlan(null, null);
-        var missing = Assert.Throws<ManufacturingRuleException>(() => bare.Approve(1, Approver, At,
+        var missing = Assert.Throws<ManufacturingRuleException>(() => bare.WithDueDate().Approve(1, Approver, At,
             SlittingPlanParameters.FromCaptured(bare.Inputs, density), density));
         Assert.Equal(ManufacturingRuleCodes.PlanParametersUnavailable, missing.Code);
         Assert.Equal(["labelState", "lineSpeedMetresPerMinute", "netUsableWidthMm"], missing.Parameters);
@@ -246,14 +246,14 @@ public sealed class PlanLifecycleTests
         // A blocked or unusable roll is refused.
         var blocked = SlittingPlan(980m, 50m);
         Assert.Equal(ManufacturingRuleCodes.PlanLabelNotUsable, Assert.Throws<ManufacturingRuleException>(
-            () => blocked.Approve(1, Approver, At,
+            () => blocked.WithDueDate().Approve(1, Approver, At,
                 SlittingPlanParameters.FromCaptured(blocked.Inputs, density,
                     new Dictionary<Guid, bool> { [Roll] = false }), density)).Code);
         Assert.Equal(PlanStatus.Draft, blocked.Status);
 
         // Everything known and usable: approved, the line speed captured from the plan.
         var plan = SlittingPlan(980m, 50m);
-        plan.Approve(1, Approver, At,
+        plan.WithDueDate().Approve(1, Approver, At,
             SlittingPlanParameters.FromCaptured(plan.Inputs, density, new Dictionary<Guid, bool> { [Roll] = true }),
             density);
         Assert.Equal(PlanStatus.Approved, plan.Status);

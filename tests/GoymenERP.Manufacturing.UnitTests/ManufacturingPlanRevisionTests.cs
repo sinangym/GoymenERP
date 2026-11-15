@@ -60,7 +60,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         Assert.Equal(ManufacturingProcess.Slitting, plan.Process);
 
         // The next step reads the edited plan: approval, then an order whose own snapshot is the revised content.
-        plan.Approve(plan.Version, Actor, At);
+        plan.WithDueDate().Approve(plan.Version, Actor, At);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
         Assert.Equal((OtherLine, 3L), (order.WorkCenterId, plan.Version));
         Assert.Equal([(RollB, 800m, (long?)4), (RollA, 150.5m, (long?)3)],
@@ -84,7 +84,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     public void An_approved_plan_is_never_revised_because_it_has_a_downstream_decision()
     {
         var plan = Draft();
-        plan.Approve(1, Actor, At);
+        plan.WithDueDate().Approve(1, Actor, At);
 
         var refused = Assert.Throws<ManufacturingRuleException>(() =>
             plan.Revise(2, WorkCenter, ManufacturingProcess.Slitting, Inputs(RollA, 5m), null));
@@ -435,7 +435,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     {
         var fixture = new Fixture();
         var plan = fixture.StoreDraft();
-        plan.Approve(1, Actor, At);
+        plan.WithDueDate().Approve(1, Actor, At);
 
         var result = await fixture.Service.RevisePlanAsync(plan.Id, Request(2, WorkCenter, "900", "7"), "key-1",
             Permission, CancellationToken.None);

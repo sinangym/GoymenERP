@@ -34,7 +34,14 @@ import {
   fetchMassBalance,
   fetchOrder,
 } from './api'
-import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
+import {
+  ORDER_DUE_DATE_CHANGED,
+  changeOrderDueDate,
+  closeOrder,
+  recordFact,
+  type FactFailure,
+  type FactUnknown,
+} from './commandApi'
 import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
 import type { InventoryLabelDetailWithMovementTimeline } from '../inventory/labelDetailContract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
@@ -42,6 +49,7 @@ import {
   FACT_KINDS,
   INVENTORY_OUTPUT_CLASSES,
   OUTPUT_CLASSES,
+  calendarDate,
   isKilogramText,
   type CloseSnapshot,
   type EngineAnswer,
@@ -50,6 +58,7 @@ import {
   type MassBalanceView,
   type ManufacturingOutputLocationCandidate,
   type ManufacturingOutputProductCandidate,
+  type OrderDueDateSnapshot,
   type ProductionOrderView,
   type RollBalance,
 } from './contract'
@@ -102,6 +111,7 @@ import {
   failureText,
   unknownText,
 } from './manufacturingText'
+import { ORDER_DUE_DATE_TEXT, orderDueDateFailureText } from './orderDueDateText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -151,6 +161,8 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
     shell,
     MANUFACTURING_CAPABILITY.orderCloseExceptionApprove,
   )
+  // URT-D66 (5): the order's termin is changed under the order edit grant, a control of its own.
+  const canChangeDueDate = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDueDate)
   const storeKey = pendingFactKey(
     shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
@@ -223,6 +235,14 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           canReadInventoryLabel={canReadInventoryLabel}
           storeKey={storeKey}
           refreshing={query.isFetching}
+          onRefresh={refresh}
+        />
+      ) : null}
+      {canChangeDueDate ? (
+        <OrderDueDateSection
+          key={`${order.orderId}:${order.dueDateRevision}`}
+          order={order}
+          companyId={activeCompanyId ?? ''}
           onRefresh={refresh}
         />
       ) : null}
@@ -490,6 +510,151 @@ function CloseSection({
   )
 }
 
+/**
+ * URT-D66 (3): the order's own termin, a control of this screen for a holder of `manufacturing.orders.write`.
+ *
+ *  - The day is typed by the user; nothing here computes or compares it against "today". The server refuses a day earlier
+ *    than the Europe/Istanbul business day (`manufacturing_due_date_in_past`), a closed order and a no-change request.
+ *  - The termin revision sent is the one this screen READ; the attempt is frozen once (key, revision and day together),
+ *    so a re-send of an unknown outcome is the same command. A new attempt is a new key.
+ *  - After an accepted (or replayed) change, or a moved termin, the order is re-read; the plan's termin is never touched.
+ *  - The section is keyed by the termin revision: a re-read with a new revision starts it afresh, and an outcome notice
+ *    that belongs to the earlier revision is kept above it by the parent's re-read only through the summary.
+ */
+function OrderDueDateSection({
+  order,
+  companyId,
+  onRefresh,
+}: {
+  readonly order: ProductionOrderView
+  readonly companyId: string
+  readonly onRefresh: () => Promise<void>
+}) {
+  const [attempt, setAttempt] = useState<OrderDueDateAttempt>({ phase: 'idle' })
+  const [value, setValue] = useState(order.dueDate ?? '')
+
+  const send = async (snapshot: OrderDueDateSnapshot) => {
+    setAttempt({ phase: 'sending', snapshot })
+    const outcome = await changeOrderDueDate(companyId, order.orderId, snapshot)
+    if (outcome.type === 'applied') {
+      setAttempt({ phase: 'applied', replayed: outcome.replayed })
+      await onRefresh()
+      return
+    }
+    if (outcome.type === 'failed') {
+      setAttempt({ phase: 'refused', failure: outcome.failure })
+      if (outcome.failure.kind === 'concurrent-change'
+        || (outcome.failure.kind === 'rule' && outcome.failure.code === ORDER_DUE_DATE_CHANGED)) {
+        await onRefresh()
+      }
+      return
+    }
+    setAttempt({ phase: 'unknown', snapshot, unknown: outcome.unknown })
+  }
+
+  const trimmed = value.trim()
+  const valid = calendarDate(trimmed)
+  const unchanged = valid && trimmed === order.dueDate
+  const sending = attempt.phase === 'sending'
+  const hintId = 'mfg-order-due-date-hint'
+
+  return (
+    <section aria-labelledby="mfg-order-due-date-heading" className={styles.section} data-testid="order-due-date">
+      <h2 id="mfg-order-due-date-heading">{ORDER_DUE_DATE_TEXT.heading}</h2>
+      <p className={styles.help}>{ORDER_DUE_DATE_TEXT.help}</p>
+      {order.status === 'Closed' ? (
+        <p className={styles.help} data-testid="order-due-date-closed">{ORDER_DUE_DATE_TEXT.closedReadOnly}</p>
+      ) : attempt.phase === 'unknown' ? (
+        <div className={styles.actions}>
+          <Button type="button" onClick={() => void send(attempt.snapshot)}>
+            {ORDER_DUE_DATE_TEXT.resend}
+          </Button>
+        </div>
+      ) : attempt.phase === 'editing' || sending ? (
+        <div className={styles.form}>
+          <div className={styles.control}>
+            <label htmlFor="mfg-order-due-date">{ORDER_DUE_DATE_TEXT.inputLabel}</label>
+            <input
+              id="mfg-order-due-date"
+              type="date"
+              value={value}
+              disabled={sending}
+              aria-invalid={!valid}
+              aria-describedby={hintId}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </div>
+          <p id={hintId} className={valid ? styles.help : styles.error}>
+            {!valid ? ORDER_DUE_DATE_TEXT.invalid : unchanged ? ORDER_DUE_DATE_TEXT.unchanged : ORDER_DUE_DATE_TEXT.inputHint}
+          </p>
+          <div className={styles.actions}>
+            <Button
+              type="button"
+              disabled={sending || !valid || unchanged}
+              aria-busy={sending}
+              onClick={() => {
+                if (!valid || unchanged) return
+                void send({
+                  idempotencyKey: newId(),
+                  expectedDueDateRevision: order.dueDateRevision,
+                  dueDate: trimmed,
+                })
+              }}
+            >
+              {sending ? ORDER_DUE_DATE_TEXT.saving : ORDER_DUE_DATE_TEXT.save}
+            </Button>
+            <Button type="button" disabled={sending} onClick={() => setAttempt({ phase: 'idle' })}>
+              {ORDER_DUE_DATE_TEXT.dismiss}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.actions}>
+          <Button
+            type="button"
+            onClick={() => {
+              setValue(order.dueDate ?? '')
+              setAttempt({ phase: 'editing' })
+            }}
+          >
+            {ORDER_DUE_DATE_TEXT.edit}
+          </Button>
+        </div>
+      )}
+      {attempt.phase === 'applied' ? (
+        <div className={styles.noticeOk} role="status" data-outcome={attempt.replayed ? 'replayed' : 'applied'}>
+          <p className={styles.noticeTitle}>
+            {attempt.replayed ? ORDER_DUE_DATE_TEXT.replayedTitle : ORDER_DUE_DATE_TEXT.appliedTitle}
+          </p>
+          <p>{attempt.replayed ? ORDER_DUE_DATE_TEXT.replayedDetail : ORDER_DUE_DATE_TEXT.appliedDetail}</p>
+        </div>
+      ) : null}
+      {attempt.phase === 'refused' ? (
+        <div className={styles.noticeError} role="alert" data-outcome="refused">
+          <p className={styles.noticeTitle}>{ORDER_DUE_DATE_TEXT.refusedTitle}</p>
+          <p data-testid="order-due-date-refusal">{orderDueDateFailureText(attempt.failure)}</p>
+        </div>
+      ) : null}
+      {attempt.phase === 'unknown' ? (
+        <div className={styles.noticeWarn} role="alert" data-outcome="unknown">
+          <p className={styles.noticeTitle}>{ORDER_DUE_DATE_TEXT.unknownTitle}</p>
+          <p>{unknownText(attempt.unknown)}</p>
+          <p>{ORDER_DUE_DATE_TEXT.unknownHelp}</p>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+/** One order termin change on this screen; the snapshot is kept exactly while its outcome is unknown. */
+type OrderDueDateAttempt =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'editing' }
+  | { readonly phase: 'sending'; readonly snapshot: OrderDueDateSnapshot }
+  | { readonly phase: 'applied'; readonly replayed: boolean }
+  | { readonly phase: 'refused'; readonly failure: FactFailure }
+  | { readonly phase: 'unknown'; readonly snapshot: OrderDueDateSnapshot; readonly unknown: FactUnknown }
+
 /** One close attempt on this screen; the snapshot is kept exactly while its outcome is unknown. */
 type CloseAttempt =
   | { readonly phase: 'idle' }
@@ -571,6 +736,33 @@ function OrderSummary({ order }: { readonly order: ProductionOrderView }) {
           {remaining.basis === null
             ? REMAINING_UNAVAILABLE
             : ORDER_DETAIL_TEXT.remaining(remaining.remainingKg, remaining.achievedKg, remaining.targetKg)}
+        </dd>
+      </div>
+      <div className={styles.field}>
+        <dt>{ORDER_DUE_DATE_TEXT.label}</dt>
+        <dd data-testid="order-due-date-value">
+          {order.dueDate === null ? (
+            ORDER_DUE_DATE_TEXT.none
+          ) : (
+            <>
+              <span className={styles.mono}>{order.dueDate}</span>
+              {` · ${ORDER_DUE_DATE_TEXT.revision} ${order.dueDateRevision}`}
+            </>
+          )}
+          {order.dueDateDiffersFromPlan ? (
+            <>
+              {' '}
+              <span className={styles.badgeDifference} data-testid="order-due-date-differs">
+                {ORDER_DUE_DATE_TEXT.differsFromPlan}
+              </span>
+            </>
+          ) : null}
+        </dd>
+      </div>
+      <div className={styles.field}>
+        <dt>{ORDER_DUE_DATE_TEXT.planLabel}</dt>
+        <dd data-testid="order-plan-due-date">
+          {order.planDueDate === null ? ORDER_DUE_DATE_TEXT.none : <span className={styles.mono}>{order.planDueDate}</span>}
         </dd>
       </div>
       <div className={styles.field}>

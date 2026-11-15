@@ -266,7 +266,8 @@ public sealed record RemainingTargetViewV1(string? Basis, string? TargetKg, stri
 public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
-    string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+    string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
+    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -413,6 +414,7 @@ public static class ManufacturingCommandNames
     public const string CancelPlan = "manufacturing.plan.cancel.v1";
     public const string ChangePlanSalesOrderLink = "manufacturing.plan.sales-order-link.v1";
     public const string ChangePlanDueDate = "manufacturing.plan.due-date.v1";
+    public const string ChangeOrderDueDate = "manufacturing.order.due-date.v1";
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
@@ -479,7 +481,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingSubcontractServiceOrderPortV1? subcontractServiceOrders = null,
     IManufacturingClosedOrderListStore? closedOrders = null,
     IManufacturingPlanDueDateStore? planDueDates = null,
-    IManufacturingMonthlyScrapPriceStore? scrapPrices = null)
+    IManufacturingMonthlyScrapPriceStore? scrapPrices = null,
+    IManufacturingOrderDueDateStore? orderDueDates = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -2275,10 +2278,12 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingRuleException exception)
         {
             // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request; F-010a
-            // (URT-D29): a moved termin likewise; URT-S13: a month whose scrap price is already recorded likewise.
+            // (URT-D29): a moved termin likewise (URT-D66: the order's termin as well); URT-S13: a month whose scrap price is
+            // already recorded likewise.
             result = new ManufacturingApiResult<T>(
                 exception.Code is ManufacturingRuleCodes.PlanSalesOrderLinkChanged
                     or ManufacturingRuleCodes.PlanDueDateChanged
+                    or ManufacturingRuleCodes.OrderDueDateChanged
                     or ManufacturingRuleCodes.ScrapPriceAlreadyRecorded
                     ? ManufacturingApiStatus.Conflict
                     : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
@@ -3041,7 +3046,8 @@ public sealed partial class ManufacturingCommandService(
                     Text(balance.WorkInProgress.Value), Text(balance.Unexplained), balance.IsFullyAccounted,
                     CommercialContextView(input.CommercialContext));
             })],
-            nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc);
+            nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc,
+            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan);
     }
 
     /// <summary>

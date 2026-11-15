@@ -34,7 +34,7 @@ public sealed class OutputReversalTests
         ]);
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.CutToLength,
             [new PlannedInput(Roll, Kg(1_000m))], target, cutToLengthSpec: spec);
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -43,7 +43,7 @@ public sealed class OutputReversalTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, Kg(1_000m))]);
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 

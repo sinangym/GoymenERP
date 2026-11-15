@@ -504,6 +504,13 @@ public sealed class ProductionPlan
         }
 
         SlittingApprovalGate.Require(this, parameters);
+        // URT-D66 (2): a plan without a termin is not approved — the last refusal, so every earlier rule keeps its answer.
+        if (RequestedDueDate is null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateRequired,
+                "Termini girilmemiş plan onaylanmaz; önce planın terminini girin.");
+        }
+
         ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
         // U2-a (URT-D9): the plan-entered line speed replaces the profile's value in the captured snapshot.
         ParameterSnapshot = parameterSnapshot is null ? null : CaptureWithPlanValues(parameterSnapshot);
@@ -640,14 +647,18 @@ public sealed class ProductionPlan
 
     /// <summary>
     /// Üretim F-010a (URT-D29): enters, changes or removes (<paramref name="dueDate"/> null) the termin by hand. The plan's
-    /// version does not move; the termin revision advances by one. No date is computed and no date rule is chosen here
-    /// (a past or weekend day is the user's entry). In order, and nothing is applied on a refusal: the version fence;
-    /// cancelled (<see cref="ManufacturingRuleCodes.PlanCancelled"/>); the termin revision the caller read
-    /// (<see cref="ManufacturingRuleCodes.PlanDueDateChanged"/>); the plan's order is closed
-    /// (<see cref="ManufacturingRuleCodes.PlanDueDateOrderClosed"/>); no change
-    /// (<see cref="ManufacturingRuleCodes.PlanDueDateNoChange"/>).
+    /// version does not move; the termin revision advances by one. No date is computed. URT-D66: a day earlier than
+    /// <paramref name="businessToday"/> (the company's Europe/Istanbul business day, from the server's clock) is refused,
+    /// and an approved plan's termin is changed but never removed (an approved plan always has one). In order, and nothing
+    /// is applied on a refusal: the version fence; cancelled (<see cref="ManufacturingRuleCodes.PlanCancelled"/>); the
+    /// termin revision the caller read (<see cref="ManufacturingRuleCodes.PlanDueDateChanged"/>); the plan's order is
+    /// closed (<see cref="ManufacturingRuleCodes.PlanDueDateOrderClosed"/>); no change
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateNoChange"/>); removal on an approved plan
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateRequired"/>); a past day
+    /// (<see cref="ManufacturingRuleCodes.DueDateInPast"/>).
     /// </summary>
-    public void ChangeDueDate(long expectedVersion, long expectedDueDateRevision, DateOnly? dueDate, bool orderClosed)
+    public void ChangeDueDate(long expectedVersion, long expectedDueDateRevision, DateOnly? dueDate, bool orderClosed,
+        DateOnly businessToday)
     {
         RequireFence(expectedVersion);
         if (Status == PlanStatus.Cancelled)
@@ -672,6 +683,18 @@ public sealed class ProductionPlan
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateNoChange,
                 "İstek planın termininde hiçbir şeyi değiştirmiyor.");
+        }
+
+        if (dueDate is null && Status == PlanStatus.Approved)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateRequired,
+                "Onaylı planın termini kaldırılmaz; yalnız değiştirilebilir.");
+        }
+
+        if (dueDate is { } day && day < businessToday)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.DueDateInPast,
+                "Termin şirketin bugünkü iş gününden önce olamaz.");
         }
 
         RequestedDueDate = dueDate;

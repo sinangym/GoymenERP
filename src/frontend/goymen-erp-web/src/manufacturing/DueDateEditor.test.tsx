@@ -212,4 +212,34 @@ describe('F-010a hand-entered plan termin (URT-D29)', () => {
     expect(await screen.findByText('İptal edilmiş planın termini değiştirilemez.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Termini değiştir' })).toBeNull()
   })
+
+  it('keeps an approved plan termin: no remove control, an empty day is not sent (URT-D66)', async () => {
+    const user = userEvent.setup()
+    installFetch({
+      capabilities: EDIT_CAPABILITIES,
+      respond: (url, init) =>
+        url.endsWith(`/manufacturing/plans/${PLAN}`) && init?.method !== 'POST'
+          ? json(plan({
+            status: 'Approved',
+            version: 2,
+            approvedByUserId: APPROVER,
+            approvedAtUtc: '2026-09-24T09:00:00Z',
+            requestedDueDate: '2026-12-31',
+            dueDateRevision: 1,
+          }))
+          : undefined,
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Termini değiştir' }))
+    expect(screen.getByText('Onaylı planın termini değiştirilebilir ama kaldırılamaz.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Termini kaldır' })).toBeNull()
+  })
+
+  it('names the past day and the kept termin refusals (URT-D66)', () => {
+    expect(dueDateFailureText(422, 'manufacturing_due_date_in_past')).toMatch(/İstanbul/)
+    expect(dueDateFailureText(422, 'manufacturing_plan_due_date_required')).toBe(
+      'Onaylı planın termini kaldırılamaz; termin kaydedilmedi.',
+    )
+  })
 })

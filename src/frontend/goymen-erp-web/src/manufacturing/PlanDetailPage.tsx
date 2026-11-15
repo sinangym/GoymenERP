@@ -582,6 +582,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {plan.status === 'Draft' && canApprove && selfPrepared ? (
               <p className={styles.note}>{PLAN_DETAIL_TEXT.selfApprovalNote}</p>
             ) : null}
+            {/* URT-D66 (2): the server refuses an approval without a termin; the note only says so beforehand. */}
+            {plan.status === 'Draft' && canApprove && !selfPrepared && !editing && plan.requestedDueDate === null ? (
+              <p className={styles.note}>{DUE_DATE_TEXT.approvalNeedsTermin}</p>
+            ) : null}
             {plan.status === 'Draft' && canApprove && !selfPrepared && !editing ? (
               <div className={styles.actions}>
                 <Button

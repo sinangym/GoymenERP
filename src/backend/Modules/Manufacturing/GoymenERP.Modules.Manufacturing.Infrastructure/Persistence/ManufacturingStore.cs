@@ -42,7 +42,7 @@ public sealed partial class ManufacturingStore(
     TimeProvider timeProvider)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
         IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore, IManufacturingPlanDueDateStore,
-        IManufacturingClosedOrderListStore
+        IManufacturingClosedOrderListStore, IManufacturingOrderDueDateStore
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -677,10 +677,12 @@ public sealed partial class ManufacturingStore(
     /// Üretim F-010a (URT-D29): enters, changes or removes the plan's hand-entered termin in one save — the plan row's termin
     /// column, termin revision and update time, the audit event (<c>manufacturing.plan.due-date-changed.v1</c>) and the
     /// command record — or nothing. The plan's version does not move; a concurrent write to the row is refused by its row
-    /// version. The plan's order status is read here so the domain refuses a change under a closed order.
+    /// version. The plan's order status is read here so the domain refuses a change under a closed order. URT-D66: the
+    /// caller's <paramref name="businessToday"/> (the Istanbul business day of the server's clock) refuses a past day.
     /// </summary>
     public async Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
-        DateOnly? dueDate, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        DateOnly? dueDate, DateOnly businessToday, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
@@ -693,8 +695,9 @@ public sealed partial class ManufacturingStore(
         var before = DueDateAudit(plan);
         var revisionBefore = plan.DueDateRevision;
 
-        // The domain decides: the version fence, not cancelled, the termin revision, the order, a change.
-        plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, orderClosed);
+        // The domain decides: the version fence, not cancelled, the termin revision, the order, a change, not removed from
+        // an approved plan, not before the business day.
+        plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, orderClosed, businessToday);
 
         row.RequestedDueDate = plan.RequestedDueDate;
         row.DueDateRevision = plan.DueDateRevision;
@@ -706,6 +709,47 @@ public sealed partial class ManufacturingStore(
         await SaveAsync(cancellationToken);
         return plan;
     }
+
+    /// <summary>
+    /// URT-D66 (3): changes the order's termin on the order alone in one save — the order row's termin column, termin
+    /// revision and update time, the audit event (<c>manufacturing.order.due-date-changed.v1</c>) and the command record —
+    /// or nothing. The plan's termin never moves with it (URT-D66 (4)); the plan's termin is read only for the answer's
+    /// "differs from the plan" flag. The order's version does not move; a concurrent write to the row (a fact, a close or
+    /// another termin change) is refused by its row version.
+    /// </summary>
+    public async Task<ProductionOrder> ChangeOrderDueDateAsync(Guid orderId, long expectedDueDateRevision, DateOnly dueDate,
+        DateOnly businessToday, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var before = OrderDueDateAudit(order);
+        var revisionBefore = order.DueDateRevision;
+
+        // The domain decides: the termin revision, an open order, a change, not before the business day.
+        order.ChangeDueDate(expectedDueDateRevision, dueDate, businessToday);
+
+        row.DueDate = order.DueDate;
+        row.DueDateRevision = order.DueDateRevision;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.due-date-changed.v1", "SetDueDate",
+            revisionBefore, order.DueDateRevision, before, OrderDueDateAudit(order), "Emir termini değiştirildi");
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+        return order;
+    }
+
+    private static string OrderDueDateAudit(ProductionOrder order) => JsonSerializer.Serialize(new
+    {
+        order.Id,
+        order.PlanId,
+        order.Version,
+        dueDateRevision = order.DueDateRevision,
+        dueDate = order.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        planDueDate = order.PlanDueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+    }, Json);
 
     private static string DueDateAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
     {
@@ -805,7 +849,8 @@ public sealed partial class ManufacturingStore(
                         : input.ExpectedLabelVersion,
                     input.TechnicalSnapshot, input.CommercialContext)),
                 [], [], [], [], null, null, order.Version, null, null,
-                plannedOutputLines: order.PlannedOutputLines);
+                plannedOutputLines: order.PlannedOutputLines,
+                dueDate: order.DueDate, dueDateRevision: order.DueDateRevision, planDueDate: order.PlanDueDate);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -821,6 +866,9 @@ public sealed partial class ManufacturingStore(
             TargetBasis = order.Target is null ? null : (int)order.Target.Basis,
             TargetKg = order.Target?.Mass.Value,
             Version = order.Version,
+            // URT-D66 (3): the plan's termin, copied once when the order opens.
+            DueDate = order.DueDate,
+            DueDateRevision = order.DueDateRevision,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         });
@@ -848,6 +896,7 @@ public sealed partial class ManufacturingStore(
                 order.PlanId,
                 order.WorkCenterId,
                 rolls = order.PlannedInputs.Count,
+                dueDate = order.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 inputs = order.PlannedInputs.Select(input => new
                 {
                     input.ParentRollId,
@@ -1321,6 +1370,8 @@ public sealed partial class ManufacturingStore(
             .ToListAsync(cancellationToken);
         var outputLines = await ReadPlanOutputLinesAsync(page.Select(row => row.PlanId).Distinct().ToArray(),
             cancellationToken);
+        var planDueDates = await ReadPlanDueDatesAsync(page.Select(row => row.PlanId).Distinct().ToArray(),
+            cancellationToken);
 
         var orders = new List<ProductionOrder>(page.Count);
         foreach (var row in page)
@@ -1330,7 +1381,8 @@ public sealed partial class ManufacturingStore(
             orders.Add(RestoreOrder(row, orderInputs, kind => orderFacts.Where(fact => fact.Kind == (int)kind),
                 decisions.SingleOrDefault(decision => decision.OrderId == row.Id),
                 reversals.Where(reversal => reversal.OrderId == row.Id).ToList(),
-                outputLines.TryGetValue(row.PlanId, out var lines) ? lines : []));
+                outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
+                planDueDates.GetValueOrDefault(row.PlanId)));
         }
 
         var last = page[^1];
@@ -1676,12 +1728,14 @@ public sealed partial class ManufacturingStore(
             .Where(reversal => reversal.OrderId == row.Id)
             .ToListAsync(cancellationToken);
         var outputLines = await ReadPlanOutputLinesAsync([row.PlanId], cancellationToken);
+        var planDueDates = await ReadPlanDueDatesAsync([row.PlanId], cancellationToken);
         IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
 
         try
         {
             return RestoreOrder(row, inputs, Of, closureDecision, reversals,
-                outputLines.TryGetValue(row.PlanId, out var lines) ? lines : []);
+                outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
+                planDueDates.GetValueOrDefault(row.PlanId));
         }
         catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
         {
@@ -1703,9 +1757,21 @@ public sealed partial class ManufacturingStore(
         }
     }
 
+    /// <summary>
+    /// URT-D66 (4): the plans' termins, read only as the reference of an order's "differs from the plan" flag. A plan
+    /// without a termin is absent from the answer.
+    /// </summary>
+    private async Task<Dictionary<Guid, DateOnly?>> ReadPlanDueDatesAsync(Guid[] planIds,
+        CancellationToken cancellationToken) =>
+        await dbContext.Plans.AsNoTracking()
+            .Where(plan => planIds.Contains(plan.Id) && plan.RequestedDueDate != null)
+            .Select(plan => new { plan.Id, plan.RequestedDueDate })
+            .ToDictionaryAsync(plan => plan.Id, plan => plan.RequestedDueDate, cancellationToken);
+
     private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
         Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision,
-        IReadOnlyList<OutputReversalRow> reversals, IReadOnlyList<PlanOutputLineReference> plannedOutputLines)
+        IReadOnlyList<OutputReversalRow> reversals, IReadOnlyList<PlanOutputLineReference> plannedOutputLines,
+        DateOnly? planDueDate)
     {
         var (policy, approval) = RestoreClosureDecision(closureDecision);
         if (reversals.Any(reversal => reversal.OutputKind != (int)FactKind.OutputDeclaration))
@@ -1733,7 +1799,8 @@ public sealed partial class ManufacturingStore(
             row.ClosedByUserId, row.ClosedAtUtc, row.Version, policy, approval,
             plannedOutputLines,
             reversals.Select(reversal => new OutputReversal(reversal.Id, reversal.OutputId, new Kilograms(reversal.MassKg),
-                reversal.Reason, reversal.OccurredAtUtc)));
+                reversal.Reason, reversal.OccurredAtUtc)),
+            row.DueDate, row.DueDateRevision, planDueDate);
     }
 
     /// <summary>

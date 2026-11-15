@@ -40,7 +40,7 @@ public sealed class SlittingPlanApprovalTests
     {
         var plan = Plan(spec: null);
 
-        plan.Approve(1, Approver, At);
+        plan.WithDueDate().Approve(1, Approver, At);
 
         Assert.Equal((PlanStatus.Approved, 2L), (plan.Status, plan.Version));
     }
@@ -50,7 +50,7 @@ public sealed class SlittingPlanApprovalTests
     {
         var plan = Plan(new SlittingSpec(GoldenLines));
 
-        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(1, Approver, At));
+        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.WithDueDate().Approve(1, Approver, At));
 
         Assert.Equal(ManufacturingRuleCodes.PlanParametersUnavailable, refusal.Code);
         Assert.Equal(
@@ -65,7 +65,7 @@ public sealed class SlittingPlanApprovalTests
         var plan = Plan(new SlittingSpec(GoldenLines, new Kilograms(2000m)));
 
         var refusal = Assert.Throws<ManufacturingRuleException>(
-            () => plan.Approve(1, Approver, At, SlittingPlanParameters.Unknown));
+            () => plan.WithDueDate().Approve(1, Approver, At, SlittingPlanParameters.Unknown));
 
         Assert.Equal(ManufacturingRuleCodes.PlanParametersUnavailable, refusal.Code);
         // The fit's computed inputs (walking / required metres, the outer diameter) are not outside
@@ -82,18 +82,18 @@ public sealed class SlittingPlanApprovalTests
         var spec = new SlittingSpec(GoldenLines, new Kilograms(2000m));
 
         var complete = Plan(spec);
-        complete.Approve(1, Approver, At, Known());
+        complete.WithDueDate().Approve(1, Approver, At, Known());
         Assert.Equal((PlanStatus.Approved, 2L, (Guid?)Approver), (complete.Status, complete.Version, complete.ApprovedByUserId));
 
         var noSpeed = Plan(spec);
         var refusal = Assert.Throws<ManufacturingRuleException>(
-            () => noSpeed.Approve(1, Approver, At, Known() with { LineSpeedMetresPerMinute = null }));
+            () => noSpeed.WithDueDate().Approve(1, Approver, At, Known() with { LineSpeedMetresPerMinute = null }));
         Assert.Equal((ManufacturingRuleCodes.PlanParametersUnavailable, "lineSpeedMetresPerMinute"),
             (refusal.Code, Assert.Single(refusal.Parameters)));
 
         // A roll the parameters do not mention is unknown as a whole.
         var otherRoll = Plan(spec);
-        var unknownRoll = Assert.Throws<ManufacturingRuleException>(() => otherRoll.Approve(1, Approver, At,
+        var unknownRoll = Assert.Throws<ManufacturingRuleException>(() => otherRoll.WithDueDate().Approve(1, Approver, At,
             Known() with { Rolls = new Dictionary<Guid, SlittingRollParameters> { [Guid.NewGuid()] = KnownRoll() } }));
         Assert.Equal(["densityKgPerCubicMetre", "labelState", "netUsableWidthMm", "parentWidthMm", "thicknessMm"],
             unknownRoll.Parameters);
@@ -104,13 +104,13 @@ public sealed class SlittingPlanApprovalTests
     {
         // The slit lines use more width than the coil has (master §28.4 invariant), while the density is missing too.
         var tooWide = Plan(new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 4)]));
-        var refusal = Assert.Throws<ManufacturingRuleException>(() => tooWide.Approve(1, Approver, At,
+        var refusal = Assert.Throws<ManufacturingRuleException>(() => tooWide.WithDueDate().Approve(1, Approver, At,
             Known() with { Rolls = Rolls(KnownRoll() with { DensityKgPerCubicMetre = null }) }));
         Assert.Equal((ManufacturingRuleCodes.PlanEngineRefused, EngineCodes.UsedWidthExceedsNetWidth, "lines"),
             (refusal.Code, refusal.Parameters[0], refusal.Parameters[1]));
 
         var notUsable = Plan(new SlittingSpec(GoldenLines));
-        var label = Assert.Throws<ManufacturingRuleException>(() => notUsable.Approve(1, Approver, At,
+        var label = Assert.Throws<ManufacturingRuleException>(() => notUsable.WithDueDate().Approve(1, Approver, At,
             Known() with { Rolls = Rolls(KnownRoll() with { LabelUsable = false }) }));
         Assert.Equal((ManufacturingRuleCodes.PlanLabelNotUsable, SlittingApprovalGate.LabelStateParameter),
             (label.Code, Assert.Single(label.Parameters)));
@@ -123,7 +123,7 @@ public sealed class SlittingPlanApprovalTests
     {
         var plan = Plan(new SlittingSpec(GoldenLines, new Kilograms(targetKg)));
 
-        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(1, Approver, At,
+        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.WithDueDate().Approve(1, Approver, At,
             Known() with { MaximumOuterDiameterMm = maximumOuterDiameterMm }));
 
         Assert.Equal((ManufacturingRuleCodes.PlanWindingDoesNotFit, check), (refusal.Code, Assert.Single(refusal.Parameters)));
@@ -134,7 +134,7 @@ public sealed class SlittingPlanApprovalTests
     public void The_version_fence_and_the_draft_rule_come_before_the_gate()
     {
         var plan = Plan(new SlittingSpec(GoldenLines));
-        Assert.Throws<ManufacturingVersionConflictException>(() => plan.Approve(7, Approver, At));
+        Assert.Throws<ManufacturingVersionConflictException>(() => plan.WithDueDate().Approve(7, Approver, At));
     }
 
     [Fact]

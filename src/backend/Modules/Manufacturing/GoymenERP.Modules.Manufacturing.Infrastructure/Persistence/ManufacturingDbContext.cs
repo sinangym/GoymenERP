@@ -40,6 +40,13 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     internal const string PlanDueDateRevisionCheck =
         "[DueDateRevision] >= 0 AND ([RequestedDueDate] IS NULL OR [DueDateRevision] >= 1)";
 
+    /// <summary>
+    /// URT-D66 (3): an order's termin revision is never negative, and a termin changed on the order always keeps a day (an
+    /// order termin is changed, never removed). Revision 0 is the copy of the plan's termin, null on an older order.
+    /// </summary>
+    internal const string OrderDueDateRevisionCheck =
+        "[DueDateRevision] >= 0 AND ([DueDateRevision] = 0 OR [DueDate] IS NOT NULL)";
+
     private const string TechnicalSnapshotCheck =
         "([TechnicalProductId] IS NULL AND [TechnicalProductVersion] IS NULL "
         + "AND [TechnicalFamilyId] IS NULL AND [TechnicalFamilyCode] IS NULL AND [TechnicalFamilySourceRevision] IS NULL "
@@ -561,11 +568,14 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) "
                 + "OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_Orders_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_Orders_DueDateRevision", OrderDueDateRevisionCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.TargetKg).HasPrecision(18, 3);
+        entity.Property(x => x.DueDate).HasColumnType("date");
+        entity.Property(x => x.DueDateRevision).HasDefaultValue(0L);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         // U2-a (URT-D1): one plan opens exactly one order — held by SQL too, so racing writers cannot open two.
@@ -874,7 +884,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                         // F-010a (URT-D29): the hand-entered termin and its own revision move together.
                         nameof(PlanRow.RequestedDueDate), nameof(PlanRow.DueDateRevision)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
-                        nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc)],
+                        nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc),
+                        // URT-D66 (3): the order's termin and its own revision move together.
+                        nameof(OrderRow.DueDate), nameof(OrderRow.DueDateRevision)],
                     // MFG-PLAN-EDIT: a revision is APPEND-ONLY — it adds its rows and moves only the plan's version and
                     // update time (admitted above). Nothing of a recorded revision may change afterwards.
                     PlanRevisionRow => [],

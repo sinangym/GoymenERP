@@ -111,10 +111,12 @@ public static class ManufacturingEndpoints
 
     // Üretim U2-d (URT-D2): the approval's and the rejection's 422 sets add "the preparer of the current version may not
     // decide". Declared on those two endpoints only, so the cancellation and every other endpoint keep their contract.
+    // URT-D66 (2): the approval also refuses a plan without a termin.
     private static readonly string[] ApprovePlanUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.PlanSelfApproval,
+        ManufacturingRuleCodes.PlanDueDateRequired,
     ];
 
     private static readonly string[] RejectPlanUnprocessableCodes =
@@ -159,6 +161,25 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanCancelled,
         ManufacturingRuleCodes.PlanDueDateOrderClosed,
         ManufacturingRuleCodes.PlanDueDateNoChange,
+        // URT-D66 (1)/(2): a day before the Istanbul business day; an approved plan's termin removed.
+        ManufacturingRuleCodes.DueDateInPast,
+        ManufacturingRuleCodes.PlanDueDateRequired,
+    ];
+
+    // URT-D66 (3): the order termin's own 409 and 422 sets — a moved order termin revision is a conflict; a closed order,
+    // no change and a day before the Istanbul business day are refusals. Declared on that endpoint only.
+    private static readonly string[] OrderDueDateConflictCodes =
+    [
+        .. ConflictCodes,
+        ManufacturingRuleCodes.OrderDueDateChanged,
+    ];
+
+    private static readonly string[] OrderDueDateUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.OrderDueDateOrderClosed,
+        ManufacturingRuleCodes.OrderDueDateNoChange,
+        ManufacturingRuleCodes.DueDateInPast,
     ];
 
     // URT-S13 (URT-D47, URT-D65): the monthly scrap price entry's own 409 and 422 sets — a month that already has a price
@@ -584,6 +605,32 @@ public static class ManufacturingEndpoints
             .Accepts<CloseOrderRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
+
+        // URT-D66 (3)-(5): changes the open order's termin on the order alone — the plan's termin does not move — under the
+        // order edit grant (no termin permission of its own). The order's version does not move; its termin revision does
+        // (409 when it moved). A day before the Istanbul business day is 422. ADR-011 as the other order commands.
+        group.MapPost("/orders/{orderId:guid}/due-date", async (
+                Guid orderId,
+                ChangeOrderDueDateRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ChangeOrderDueDateAsync(orderId, request, key,
+                ErpPermissions.ManufacturingOrdersWrite, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersWrite)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ChangeManufacturingOrderDueDateV1")
+            .Accepts<ChangeOrderDueDateRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(OrderDueDateConflictCodes)
+            .ProducesErpUnprocessableEntity(OrderDueDateUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
         // MFG-ORD: the company's orders, newest first, from the stored rows only — no balance and no
         // roll label (the label is Inventory's read). The same read grant as the order screen.

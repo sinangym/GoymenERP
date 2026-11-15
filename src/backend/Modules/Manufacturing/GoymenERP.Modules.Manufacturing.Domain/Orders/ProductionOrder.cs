@@ -38,6 +38,9 @@ public sealed class ProductionOrder
         _plannedInputs = plan.Inputs.ToList();
         _plannedOutputLines = PlanOutputLineReference.LinesOf(plan.Spec, plan.CutToLengthSpec).ToList();
         Status = OrderStatus.Open;
+        // URT-D66 (3): the order opens with the plan's termin, copied once; from then on each keeps its own.
+        DueDate = plan.RequestedDueDate;
+        PlanDueDate = plan.RequestedDueDate;
     }
 
     public Guid Id { get; }
@@ -72,6 +75,25 @@ public sealed class ProductionOrder
 
     /// <summary>The dedicated exception approval used by an out-of-tolerance close, if one was required.</summary>
     public ClosureExceptionApprovalV1? ClosureExceptionApproval { get; private set; }
+
+    /// <summary>
+    /// URT-D66 (3): the order's termin, a calendar day. Copied from the plan's termin when the order opens and changed on
+    /// the order alone afterwards (the plan's termin never moves with it). Null only for an order opened before the copy
+    /// existed. Not a fact of the order: its <see cref="Version"/> does not move; <see cref="DueDateRevision"/> does.
+    /// </summary>
+    public DateOnly? DueDate { get; private set; }
+
+    /// <summary>URT-D66 (3): how many times the order's termin was changed on the order (0 = as copied from the plan).</summary>
+    public long DueDateRevision { get; private set; }
+
+    /// <summary>
+    /// URT-D66 (4): the plan's termin as read with the order — the reference for <see cref="DueDateDiffersFromPlan"/>. Never
+    /// written by the order.
+    /// </summary>
+    public DateOnly? PlanDueDate { get; private set; }
+
+    /// <summary>URT-D66 (4): the screen's "emir termini plandan farklı" flag — the order has a termin and it is not the plan's.</summary>
+    public bool DueDateDiffersFromPlan => DueDate is { } own && own != PlanDueDate;
 
     // Read-only views (ÜRÜN #280 P3-1): a cast cannot reach the lists behind them, so the
     // duplicate, roll and closed-order rules below cannot be bypassed.
@@ -156,7 +178,10 @@ public sealed class ProductionOrder
         ClosureTolerancePolicySnapshotV1? closurePolicy = null,
         ClosureExceptionApprovalV1? closureExceptionApproval = null,
         IEnumerable<PlanOutputLineReference>? plannedOutputLines = null,
-        IEnumerable<OutputReversal>? outputReversals = null)
+        IEnumerable<OutputReversal>? outputReversals = null,
+        DateOnly? dueDate = null,
+        long dueDateRevision = 0,
+        DateOnly? planDueDate = null)
     {
         ArgumentNullException.ThrowIfNull(issues);
         ArgumentNullException.ThrowIfNull(returns);
@@ -252,7 +277,56 @@ public sealed class ProductionOrder
                 ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı emir sürümü olgularının toplamıyla uyuşmuyor.");
         }
 
+        // URT-D66 (3): a termin changed on the order always has a day; a revision is never negative.
+        if (dueDateRevision < 0 || (dueDateRevision > 0 && dueDate is null))
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı emir termini revizyonuyla uyuşmuyor.");
+        }
+
+        order.DueDate = dueDate;
+        order.DueDateRevision = dueDateRevision;
+        order.PlanDueDate = planDueDate;
         return order;
+    }
+
+    /// <summary>
+    /// URT-D66 (3): changes the order's termin on the order alone — the plan's termin does not move (URT-D66 (4)). The
+    /// order's <see cref="Version"/> does not move either (a termin is no fact); its termin revision advances by one. A
+    /// termin is changed, never removed. In order, and nothing is applied on a refusal: the termin revision the caller read
+    /// (<see cref="ManufacturingRuleCodes.OrderDueDateChanged"/>); a closed order
+    /// (<see cref="ManufacturingRuleCodes.OrderDueDateOrderClosed"/>); no change
+    /// (<see cref="ManufacturingRuleCodes.OrderDueDateNoChange"/>); a day earlier than <paramref name="businessToday"/>, the
+    /// company's Europe/Istanbul business day from the server's clock (<see cref="ManufacturingRuleCodes.DueDateInPast"/>).
+    /// </summary>
+    public void ChangeDueDate(long expectedDueDateRevision, DateOnly dueDate, DateOnly businessToday)
+    {
+        if (expectedDueDateRevision != DueDateRevision)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderDueDateChanged,
+                "Emrin termini siz okuduktan sonra değişti; emri yeniden okuyun.");
+        }
+
+        if (Status != OrderStatus.Open)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderDueDateOrderClosed,
+                "Emir kapanmış; termini artık değişmez.");
+        }
+
+        if (dueDate == DueDate)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderDueDateNoChange,
+                "İstek emrin termininde hiçbir şeyi değiştirmiyor.");
+        }
+
+        if (dueDate < businessToday)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.DueDateInPast,
+                "Termin şirketin bugünkü iş gününden önce olamaz.");
+        }
+
+        DueDate = dueDate;
+        DueDateRevision++;
     }
 
     /// <summary>Input actually taken from a planned parent roll into production.</summary>

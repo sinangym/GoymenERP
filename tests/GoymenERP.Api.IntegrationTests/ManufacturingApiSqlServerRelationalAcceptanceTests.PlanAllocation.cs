@@ -31,6 +31,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             [new PlannedInputRequestV1(roll.Id, "600.125", roll.Version)], null);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
 
+        await run.EnterTerminAsync(plan.PlanId);
         var approver = await run.ApproverAsync(CompanyA);
         using var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
             new ApprovePlanRequestV1(1), "approve-alloc");
@@ -92,6 +93,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", first)).StatusCode);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", second)).StatusCode);
 
+        await run.EnterTerminAsync(first.PlanId);
+        await run.EnterTerminAsync(second.PlanId);
         Assert.Equal(HttpStatusCode.OK, (await approver.PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
             new ApprovePlanRequestV1(1))).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await approver.PostWithKeyAsync($"{Base}/plans/{second.PlanId}/approval",
@@ -124,6 +127,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             [new PlannedInputRequestV1(roll.Id, "400.126", roll.Version)], null);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", first)).StatusCode);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", second)).StatusCode);
+        await run.EnterTerminAsync(first.PlanId);
+        await run.EnterTerminAsync(second.PlanId);
         Assert.Equal(HttpStatusCode.OK, (await approver.PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
             new ApprovePlanRequestV1(1))).StatusCode);
         var auditBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
@@ -160,6 +165,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
         var approver = await run.ApproverAsync(CompanyA);
 
+        await run.EnterTerminAsync(plan.PlanId);
         var attempts = await Task.WhenAll(Enumerable.Range(0, 2).Select(index => approver.PostWithKeyAsync(
             $"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), $"approve-race-{index}")));
         Assert.Equal(1, attempts.Count(response => response.StatusCode == HttpStatusCode.OK));
@@ -192,6 +198,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var cancelled = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
             [new PlannedInputRequestV1(roll.Id, "700", roll.Version)], null);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", cancelled)).StatusCode);
+        await run.EnterTerminAsync(cancelled.PlanId);
         Assert.Equal(HttpStatusCode.OK, (await approver.PostWithKeyAsync($"{Base}/plans/{cancelled.PlanId}/approval",
             new ApprovePlanRequestV1(1))).StatusCode);
         using (var cancel = await client.PostWithKeyAsync($"{Base}/plans/{cancelled.PlanId}/cancellation",
@@ -261,6 +268,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var plan = new SavePlanRequestV1(Guid.NewGuid(), await run.WorkCenterOfAsync(CompanyA),
             [new PlannedInputRequestV1(roll.Id, "500", roll.Version)], null);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
+        await run.EnterTerminAsync(plan.PlanId);
         using (var portlessApprover = PortlessClient(TestUsers.SiteAuditReader))
         using (var refused = await portlessApprover.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
                    new ApprovePlanRequestV1(1), "approve-portless"))

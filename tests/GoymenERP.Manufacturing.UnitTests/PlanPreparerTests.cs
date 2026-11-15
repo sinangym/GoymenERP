@@ -36,7 +36,7 @@ public sealed class PlanPreparerTests
     {
         var plan = Draft(Planner);
 
-        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(1, Planner, At));
+        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.WithDueDate().Approve(1, Planner, At));
 
         Assert.Equal(ManufacturingRuleCodes.PlanSelfApproval, refusal.Code);
         Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
@@ -63,7 +63,7 @@ public sealed class PlanPreparerTests
         Assert.Equal(2L, rejected.Version);
 
         var approved = Draft(Planner);
-        approved.Approve(1, Approver, At);
+        approved.WithDueDate().Approve(1, Approver, At);
         Assert.Equal((PlanStatus.Approved, Approver), (approved.Status, approved.ApprovedByUserId));
     }
 
@@ -77,9 +77,9 @@ public sealed class PlanPreparerTests
         Assert.True(plan.IsPreparedBy(Reviser));
         Assert.False(plan.IsPreparedBy(Planner));
         Assert.Equal(ManufacturingRuleCodes.PlanSelfApproval,
-            Assert.Throws<ManufacturingRuleException>(() => plan.Approve(2, Reviser, At)).Code);
+            Assert.Throws<ManufacturingRuleException>(() => plan.WithDueDate().Approve(2, Reviser, At)).Code);
 
-        plan.Approve(2, Planner, At);
+        plan.WithDueDate().Approve(2, Planner, At);
         Assert.Equal((PlanStatus.Approved, Planner), (plan.Status, plan.ApprovedByUserId));
     }
 
@@ -89,7 +89,7 @@ public sealed class PlanPreparerTests
         var plan = Draft();
 
         Assert.Null(plan.PreparedBy);
-        plan.Approve(1, Planner, At);
+        plan.WithDueDate().Approve(1, Planner, At);
 
         Assert.Equal(PlanStatus.Approved, plan.Status);
     }
@@ -100,7 +100,7 @@ public sealed class PlanPreparerTests
         var plan = Draft();
         plan.RecordPreparer("integration-service");
 
-        plan.Approve(1, Planner, At);
+        plan.WithDueDate().Approve(1, Planner, At);
 
         Assert.Equal(PlanStatus.Approved, plan.Status);
     }
@@ -139,7 +139,7 @@ public sealed class PlanPreparerTests
 
         Assert.Equal((2L, Planner.ToString("D")), (plan.Version, plan.PreparedBy));
         Assert.Equal(ManufacturingRuleCodes.PlanSelfApproval,
-            Assert.Throws<ManufacturingRuleException>(() => plan.Approve(2, Planner, At)).Code);
+            Assert.Throws<ManufacturingRuleException>(() => plan.WithDueDate().Approve(2, Planner, At)).Code);
     }
 
     [Fact]

@@ -371,6 +371,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             new ProductionTarget(TargetBasis.InputMass, new Kilograms(quantity)));
         var orderId = Guid.NewGuid();
         await store.SavePlanAsync(plan, ManufacturingHostMetadata(run, "seed-plan"));
+        // URT-D66 (2): a plan without a termin is not approved; the termin does not move the plan version.
+        await store.ChangeDueDateAsync(plan.Id, plan.Version, 0, TerminDay, TerminToday,
+            ManufacturingHostMetadata(run, "seed-due-date"));
         // U2-d (URT-D2): another user approves than the actor who saved the plan.
         await store.ApprovePlanAsync(plan.Id, plan.Version, Guid.NewGuid(), At,
             ManufacturingHostMetadata(run, "seed-approval"));
