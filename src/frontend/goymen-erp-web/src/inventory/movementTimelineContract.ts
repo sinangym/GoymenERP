@@ -8,6 +8,7 @@
 
 export const MOVEMENT_KINDS = [
   'Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment', 'Scrap', 'TransferDispatch', 'TransferAccept',
+  'ManufacturingOutputReversal', 'TransferDispatchCancellation',
 ] as const
 export type InventoryMovementKind = typeof MOVEMENT_KINDS[number]
 
@@ -139,6 +140,7 @@ function linesFitKind(kind: InventoryMovementKind, lines: readonly InventoryMove
     case 'Receipt':
     case 'Return':
     case 'TransferAccept':
+    case 'TransferDispatchCancellation':
       return lines.every((item) => item.direction === 'In')
     case 'Issue':
       return lines.every((item) => item.direction === 'Out' && item.block === 'Free')
@@ -146,6 +148,8 @@ function linesFitKind(kind: InventoryMovementKind, lines: readonly InventoryMove
       return lines.every((item) => item.direction === 'Out')
     case 'Scrap':
       return lines.length === 1 && lines[0].direction === 'Out'
+    case 'ManufacturingOutputReversal':
+      return lines.length === 1 && lines[0].direction === 'Out' && lines[0].block === 'Free'
     case 'CountAdjustment':
       return lines.length === 1
     case 'Block':

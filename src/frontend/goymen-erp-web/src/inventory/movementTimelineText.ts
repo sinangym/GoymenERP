@@ -60,6 +60,8 @@ export const MOVEMENT_KIND_TEXT: Readonly<Record<InventoryMovementKind, string>>
   Scrap: 'Hurda çıkışı',
   TransferDispatch: 'Transfer çıkışı',
   TransferAccept: 'Transfer kabulü',
+  ManufacturingOutputReversal: 'Üretim çıktısı ters kaydı',
+  TransferDispatchCancellation: 'Transfer çıkışı iptali',
 }
 
 export const MOVEMENT_DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
