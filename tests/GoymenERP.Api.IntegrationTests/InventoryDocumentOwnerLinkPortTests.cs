@@ -17,6 +17,7 @@ public sealed class InventoryDocumentOwnerLinkPortTests
         var (port, _, _) = Port((id, _) => Task.FromResult(Detail(id, Company)));
 
         Assert.Equal(DocumentOwnerLinkKindsV1.InventoryMaterialLabel, port.Kind);
+        Assert.True(port.AcceptsGeneratedDocuments);
         Assert.Equal(DocumentOwnerAccessV1.Readable, await port.CheckReadableAsync(Label));
     }
 

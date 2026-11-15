@@ -45,14 +45,16 @@ internal sealed class GrantedAuthority : IErpAuthorityRevalidationService
 
 /// <summary>
 /// One owner kind (the Cari owner unless another kind is given) as a set of (company, record) pairs the actor may read;
-/// <paramref name="acceptsExisting"/> is the B-26 opt-in for linking an existing document.
+/// <paramref name="acceptsExisting"/> is the B-26 opt-in for linking an existing document and
+/// <paramref name="acceptsGenerated"/> the F-026 opt-in for generated documents.
 /// </summary>
 internal sealed class FixedOwnerPort(
     ICompanyContext companyContext,
     HashSet<(Guid Company, Guid Party)> readable,
     Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> outcomes,
     string kind = DocumentOwnerLinkKindsV1.CounterpartyParty,
-    bool acceptsExisting = false) : IDocumentOwnerLinkPortV1
+    bool acceptsExisting = false,
+    bool acceptsGenerated = false) : IDocumentOwnerLinkPortV1
 {
     public HashSet<(Guid Company, Guid Party)> Readable => readable;
 
@@ -63,6 +65,8 @@ internal sealed class FixedOwnerPort(
     public string Kind => kind;
 
     public bool AcceptsExistingDocumentLinks => acceptsExisting;
+
+    public bool AcceptsGeneratedDocuments => acceptsGenerated;
 
     public Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
@@ -266,8 +270,13 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         Documents.Add(stored);
         world.Versions.Add(stored);
         world.Links[(companyId, upload.DocumentId)] = [new StoredDocumentLink(upload.Owner.Kind, upload.Owner.OwnerId)];
-        Attempts.Add((companyId, DocumentCommands.UploadV1, envelope.IdempotencyKey, requestHash, envelope.ActorId, upload.DocumentId, 1,
-            envelope.CorrelationId));
+        Attempts.Add((companyId, upload.Template is null ? DocumentCommands.UploadV1 : DocumentCommands.StoreGeneratedV1, envelope.IdempotencyKey,
+            requestHash, envelope.ActorId, upload.DocumentId, 1, envelope.CorrelationId));
+        if (upload.Template is { } template)
+        {
+            world.Templates[(companyId, upload.DocumentId)] = template;
+        }
+
         return new DocumentStoreResult(WithLinks(stored), false, envelope.CorrelationId);
     }
 
@@ -348,11 +357,13 @@ internal sealed class Harness
         LinkTarget = new FixedOwnerPort(Company, World.TargetReadable, World.TargetOutcomes, DocumentOwnerLinkKindsV1.ManufacturingOrder,
             acceptsExisting: true);
         ClosedTarget = new FixedOwnerPort(Company, World.TargetReadable, World.TargetOutcomes, DocumentOwnerLinkKindsV1.FinanceOfficialSalesInvoice);
+        GeneratedTarget = new FixedOwnerPort(Company, World.GeneratedReadable, World.GeneratedOutcomes, DocumentOwnerLinkKindsV1.InventoryMaterialLabel,
+            acceptsGenerated: true);
 
         Store = new MemoryDocumentStore(Company, World);
         Objects = World.Objects;
         Scanner = scanner;
-        Service = new DocumentService(Company, User, Authority, Correlation, [Owner, LinkTarget, ClosedTarget], Store, withObjects ? Objects : null,
+        Service = new DocumentService(Company, User, Authority, Correlation, [Owner, LinkTarget, ClosedTarget, GeneratedTarget], Store, withObjects ? Objects : null,
             scanner, new DocumentsServiceBindings(maximumBytes), TimeProvider.System);
     }
 
@@ -374,6 +385,9 @@ internal sealed class Harness
     /// <summary>B-26: an owner kind that does not take existing documents (the official sales invoice, FNS-D36/D38).</summary>
     public FixedOwnerPort ClosedTarget { get; }
 
+    /// <summary>F-026: an owner kind that takes generated PDFs (the Inventory material label stands for every opted-in kind).</summary>
+    public FixedOwnerPort GeneratedTarget { get; }
+
     public MemoryDocumentStore Store { get; }
 
     public MemoryObjectStore Objects { get; }
@@ -381,6 +395,9 @@ internal sealed class Harness
     public IDocumentContentScannerV1? Scanner { get; }
 
     public DocumentService Service { get; }
+
+    /// <summary>The same scoped service as the producing modules see it (F-026).</summary>
+    public IGeneratedDocumentStorePortV1 Generated => Service;
 
     public Harness Grant(params string[] permissions)
     {
@@ -409,6 +426,12 @@ internal sealed class Harness
         public HashSet<(Guid Company, Guid Party)> TargetReadable { get; } = [];
 
         public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> TargetOutcomes { get; } = [];
+
+        public HashSet<(Guid Company, Guid Party)> GeneratedReadable { get; } = [];
+
+        public Dictionary<(Guid Company, Guid Party), DocumentOwnerAccessV1> GeneratedOutcomes { get; } = [];
+
+        public Dictionary<(Guid Company, Guid DocumentId), GeneratedDocumentTemplate> Templates { get; } = [];
 
         public Dictionary<(Guid Company, Guid DocumentId), List<StoredDocumentLink>> Links { get; } = [];
 
