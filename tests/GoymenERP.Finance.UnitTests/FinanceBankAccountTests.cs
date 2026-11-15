@@ -92,13 +92,16 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, partyCreditLimits) < Array.IndexOf(migrations, customerReturnCredits));
         const string expensePayments = "20261115000505_AddExpensePayments";
         Assert.True(Array.IndexOf(migrations, customerReturnCredits) < Array.IndexOf(migrations, expensePayments));
-        // The NEWEST migration is pinned by name on purpose: the payment not tied to a party (FNS-D25) is the
-        // reviewed append, never an unreviewed migration that silently becomes authoritative. By migration id
+        const string officialInvoiceIdentityClaims = "20261115122126_AddOfficialInvoiceIdentityClaims";
+        Assert.True(Array.IndexOf(migrations, expensePayments) < Array.IndexOf(migrations, officialInvoiceIdentityClaims));
+        // The NEWEST migration is pinned by name on purpose: the official invoice identity claims (FIN-S5, BS-4,
+        // FNS-D19 D5) are the reviewed append, never an unreviewed migration that silently becomes authoritative. By migration id
         // the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits between the payment reversals
         // (API-23) and the cash accounts (API-30), whose passivation and reactivation precede the rejection and
         // withdrawal of a pending official sales invoice record (FNS-D39), which the credit limit master
-        // (API-85a L1, FNS-D27/D27a) follows; the customer return credits (F-019) and the expense payments follow it.
-        Assert.Equal(expensePayments, migrations.Last());
+        // (API-85a L1, FNS-D27/D27a) follows; the customer return credits (F-019) and the expense payments (FNS-D25) follow it, then the
+        // official invoice identity claims.
+        Assert.Equal(officialInvoiceIdentityClaims, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

@@ -864,7 +864,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
-            // The newest Finance migration adds the expense payments (FNS-D25). It follows the customer return
+            // The newest Finance migration adds the official invoice identity claims (FIN-S5, FNS-D19 D5), which
+            // follow the expense payments (FNS-D25). Those follow the customer return
             // credits (F-019) and the party credit limit master (API-85a L1, FNS-D27/D27a), which follow the rejection
             // and withdrawal of a pending official sales invoice record (FNS-D39), which follows the
             // cash account passivation and reactivation and the cash accounts themselves (API-30), the official sales invoice record (F-005 D1), the payment reversals (API-23), the
@@ -873,23 +874,24 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             // source. The source migration still follows DEC-FIN-016's customer instruments, DEC-FIN-014's POS facts
             // and F-03's allocations.
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddExpensePayments", applied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddCustomerReturnCredits", applied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPartyCreditLimits", applied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal", applied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddCashAccountStateChanges", applied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddCashAccounts", applied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialSalesInvoices", applied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPaymentReversals", applied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPaymentAllocations", applied[^9], StringComparison.Ordinal);
-            Assert.EndsWith("_AddInvoiceCancellations", applied[^10], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOpenItemInvoiceExchange", applied[^11], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOpenItemDirection", applied[^12], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1", applied[^13], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", applied[^14], StringComparison.Ordinal);
-            Assert.EndsWith("_AddCustomerInstruments", applied[^15], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPosCollectionFacts", applied[^16], StringComparison.Ordinal);
-            Assert.EndsWith("_AddFinanceAllocations", applied[^17], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceIdentityClaims", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddExpensePayments", applied[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCustomerReturnCredits", applied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPartyCreditLimits", applied[^4], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal", applied[^5], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCashAccountStateChanges", applied[^6], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCashAccounts", applied[^7], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialSalesInvoices", applied[^8], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPaymentReversals", applied[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPaymentAllocations", applied[^10], StringComparison.Ordinal);
+            Assert.EndsWith("_AddInvoiceCancellations", applied[^11], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOpenItemInvoiceExchange", applied[^12], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOpenItemDirection", applied[^13], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1", applied[^14], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", applied[^15], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCustomerInstruments", applied[^16], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPosCollectionFacts", applied[^17], StringComparison.Ordinal);
+            Assert.EndsWith("_AddFinanceAllocations", applied[^18], StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);

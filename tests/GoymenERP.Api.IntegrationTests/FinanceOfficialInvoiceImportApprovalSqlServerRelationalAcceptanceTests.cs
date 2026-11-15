@@ -169,9 +169,10 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
         // The rollback above also ran MOD-15's AddOpenItemDirection, MOD-04's AddOpenItemInvoiceExchange, F2b's
         // AddInvoiceCancellations, F3a's AddPaymentAllocations, API-23's AddPaymentReversals, F-005 D1's
         // AddOfficialSalesInvoices, API-30's AddCashAccounts and AddCashAccountStateChanges, FNS-D39's
-        // AddOfficialSalesInvoiceRejectionAndWithdrawal, API-85a's AddPartyCreditLimits, F-019's AddCustomerReturnCredits
-        // and FNS-D25's AddExpensePayments Downs on an empty store; the reapply ends with the newest one.
-        Assert.EndsWith("_AddExpensePayments",
+        // AddOfficialSalesInvoiceRejectionAndWithdrawal, API-85a's AddPartyCreditLimits, F-019's AddCustomerReturnCredits,
+        // FNS-D25's AddExpensePayments and FIN-S5's AddOfficialInvoiceIdentityClaims Downs on an empty store; the
+        // reapply ends with the newest one.
+        Assert.EndsWith("_AddOfficialInvoiceIdentityClaims",
             (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
     }
 

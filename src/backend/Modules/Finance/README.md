@@ -629,3 +629,23 @@ of party/account (F018 N-2).
 
 Not in this slice: the Sales-side adapter (SAT-S2), the party ledger / risk read of the credit and advance, and consuming
 the advance in allocation.
+
+## FIN-S5 / BS-4: official sales invoice file import, CSV v2 — FNS-D28, FNS-D19 (D5), FNS-D17
+
+The controlled file import (FIN-F03) is the primary path for official sales invoices. CSV v1
+(`finance-official-invoice-installment-csv.v1`) is unchanged (FNS-D28 (2)). CSV v2
+(`finance-official-invoice-installment-csv.v2`) is the v1 header followed by
+`officialNo,ettn,taxBaseFunctionalAmount,vatFunctionalAmount,withholdingFunctionalAmount`; the exact header selects the
+template, and the same preview / upload / maker≠checker approval / apply endpoints serve both (no DTO change).
+
+| Part | What |
+|---|---|
+| Parser | `FinanceOfficialInvoiceImportParserV1` detects v1 or v2. v2 columns repeat on every installment row of a `sourceDocumentId` and must be identical there (`official_document_inconsistent`). Official number required, untrimmed text refused, ≤ 64 (`official_no_required`, `official_no_invalid`); ETTN a "D" GUID, stored lowercase (`ettn_required`, `ettn_invalid`); the three TL amounts exact non-negative decimals (`functional_amount_required`, `functional_amount_invalid`). Two documents of one file may not share a number or ETTN (`official_no_duplicate_in_file`, `ettn_duplicate_in_file`) |
+| Admission (D5) | `FinanceOpenItemSourceAdmissionService` re-parses the approved v2 file from its immutable bytes and claims each document's number and ETTN (`FinanceOfficialInvoiceIdentityClaimPolicy`). A claim held by another acceptance whose items are not all cancelled refuses the whole batch (`finance_official_no_already_open`, `finance_ettn_already_open` on `rows[i].officialNo` / `rows[i].ettn`), even when the item is fully collected (D5's safe reading). Installments of one document share one claim. A file whose stored bytes no longer yield the approved documents answers 503-class `finance_official_documents_unavailable`. v1 files claim nothing |
+| Persistence | `finance.OfficialInvoiceIdentityClaims`: append-only (write guard), company query filter, unique (company, kind, value, generation) so two concurrent acceptances of the same identity collide; the holder batch is a FK to the uploaded file |
+| Migration `20261115122126_AddOfficialInvoiceIdentityClaims` | Pure DDL up (one table). `Down` refuses with `THROW 51372` while any claim is stored (forward fix) |
+
+Not decided, so not built (NEEDS-SINAN): the tax base + VAT − withholding = payable consistency check (FNS-D17
+Sınırlar); whether a zero or missing tax amount is allowed; whether an approved D1 manual record blocks a file import
+of the same number/ETTN; an upload-time duplicate warning. The Sales finalization side of D5 waits for #1103
+(FNS-D28 (3)).

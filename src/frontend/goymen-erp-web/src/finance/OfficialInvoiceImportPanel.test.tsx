@@ -137,6 +137,27 @@ describe('official invoice import panel', () => {
     expect(api.apply).not.toHaveBeenCalled()
   })
 
+  it('names an official identity refusal in Turkish and keeps the stable code visible', async () => {
+    const user = userEvent.setup()
+    const api = client({
+      apply: vi.fn().mockResolvedValue({
+        kind: 'refused',
+        issues: [{ rowNumber: 1, field: 'rows[0].ettn', code: 'finance_ettn_already_open' }],
+      } satisfies OfficialInvoiceApplyReply),
+    })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    expect(await screen.findByText(`SHA-256: ${checksum}`)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /yetkili uygula/i }))
+
+    expect(await screen.findByText(
+      /satır 1, rows\[0\]\.ettn: finance_ettn_already_open — bu ettn ile iptal edilmemiş bir alacak zaten kayıtlı/i,
+    )).toBeTruthy()
+    expect(screen.queryByText(/açık kalem finans'tan yeniden okundu/i)).toBeNull()
+  })
+
   it('retries an unknown result with the same file, body identity and idempotency key', async () => {
     const user = userEvent.setup()
     const apply = vi.fn()

@@ -68,6 +68,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceOfficialInvoiceImportWorkDeliveryRow> OfficialInvoiceImportWorkDeliveries => Set<FinanceOfficialInvoiceImportWorkDeliveryRow>();
 
+    /// <summary>FIN-S5 / FNS-D19: append-only official number and ETTN claims of admitted v2 file documents.</summary>
+    internal DbSet<FinanceOfficialInvoiceIdentityClaimRow> OfficialInvoiceIdentityClaims => Set<FinanceOfficialInvoiceIdentityClaimRow>();
+
     internal DbSet<FinanceSourceAllocationStateRow> SourceAllocationStates => Set<FinanceSourceAllocationStateRow>();
 
     internal DbSet<FinanceAllocationRow> Allocations => Set<FinanceAllocationRow>();
@@ -119,6 +122,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureMoneyEvents(modelBuilder);
         ConfigureOpenItemSourceBatches(modelBuilder);
         ConfigureOfficialInvoiceImports(modelBuilder);
+        ConfigureOfficialInvoiceIdentityClaims(modelBuilder);
         ConfigureOpenItems(modelBuilder);
         ConfigureInvoiceCancellations(modelBuilder);
         ConfigureCustomerReturnCredits(modelBuilder);
@@ -397,6 +401,53 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// FIN-S5 / FNS-D19: an identity claim names one official number (D1 length, binary collation) or one canonical
+    /// lowercase ETTN; each identity's generations start at 1 and are unique, so a concurrent second acceptance fails
+    /// on the unique index instead of opening a second receivable.
+    /// </summary>
+    internal const string OfficialInvoiceIdentityClaimValueCheck =
+        "([IdentityKind] = 'official-no' AND LEN([IdentityValue]) > 0 "
+        + "AND DATALENGTH([IdentityValue]) = DATALENGTH(LTRIM(RTRIM([IdentityValue])))) OR "
+        + "([IdentityKind] = 'ettn' AND LEN([IdentityValue]) = 36 AND DATALENGTH([IdentityValue]) = 72 "
+        + "AND [IdentityValue] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%')";
+
+    private void ConfigureOfficialInvoiceIdentityClaims(ModelBuilder modelBuilder)
+    {
+        var claim = modelBuilder.Entity<FinanceOfficialInvoiceIdentityClaimRow>();
+        claim.ToTable("OfficialInvoiceIdentityClaims", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[HolderBatchId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[HolderSourceDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Value", OfficialInvoiceIdentityClaimValueCheck);
+            table.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Content",
+                "[Generation] >= 1 AND LEN([ClaimedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        claim.HasKey(x => x.Id);
+        claim.Property(x => x.Id).ValueGeneratedNever();
+        claim.Property(x => x.IdentityKind).HasMaxLength(32).IsUnicode(false).IsRequired();
+        claim.Property(x => x.IdentityValue).HasMaxLength(OfficialSalesInvoiceMaximumOfficialNoLength)
+            .UseCollation(IdentityCollation).IsRequired();
+        claim.Property(x => x.ClaimedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        claim.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        claim.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        claim.HasIndex(x => new { x.CompanyId, x.IdentityKind, x.IdentityValue, x.Generation }).IsUnique()
+            .HasDatabaseName("UX_OfficialInvoiceIdentityClaims_Generation");
+        claim.HasIndex(x => new { x.CompanyId, x.HolderBatchId, x.HolderSourceDocumentId })
+            .HasDatabaseName("IX_OfficialInvoiceIdentityClaims_Holder");
+        claim.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // The holder is always an uploaded file of the same company.
+        claim.HasOne<FinanceOfficialInvoiceImportBatchRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.HolderBatchId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        claim.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureOfficialInvoiceImports(ModelBuilder modelBuilder)
@@ -1670,6 +1721,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             || ChangeTracker.Entries<FinanceOfficialInvoiceImportCommandRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
             || ChangeTracker.Entries<FinanceOfficialInvoiceImportWorkDeliveryRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinanceOfficialInvoiceIdentityClaimRow>()
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
             throw new InvalidOperationException("Resmî fatura import kaynak, onay ve komut kayıtları append-only'dir.");
