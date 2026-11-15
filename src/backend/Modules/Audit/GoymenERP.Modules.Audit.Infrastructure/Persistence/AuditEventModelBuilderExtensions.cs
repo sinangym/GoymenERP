@@ -100,6 +100,10 @@ public static class AuditEventModelBuilderExtensions
         entity.HasIndex(x => new { x.CompanyId, x.OccurredAtUtc, x.Id })
             .IsDescending(false, true, true);
         entity.HasIndex(x => new { x.CompanyId, x.CorrelationId });
+        // F023-5a: the outcome-filtered company read (e.g. only refused attempts) keeps the same
+        // (OccurredAtUtc DESC, Id DESC) keyset as the unfiltered read above.
+        entity.HasIndex(x => new { x.CompanyId, x.Outcome, x.OccurredAtUtc, x.Id })
+            .IsDescending(false, false, true, true);
         entity.HasIndex(x => new { x.CompanyId, x.EntityType, x.EntityId, x.OccurredAtUtc });
         entity.HasIndex(x => new { x.SubjectKind, x.EntityType, x.EntityId, x.OccurredAtUtc, x.Id });
     }
