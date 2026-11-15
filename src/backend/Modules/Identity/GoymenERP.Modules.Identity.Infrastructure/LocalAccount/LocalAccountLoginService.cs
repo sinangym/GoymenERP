@@ -65,10 +65,11 @@ internal sealed class LocalAccountLoginService(
             return await RefuseAsync(SecurityEventReasonCodesV1.CredentialsInvalid, nowUtc, cancellationToken);
         }
 
-        if (state.MustChangePassword || state.TemporaryPasswordIssuedAtUtc is not null)
+        if (state.TemporaryPasswordIssuedAtUtc is not null)
         {
-            // The forced-change fence and the temporary password flow belong to ID-2/ID-3. Until they exist such
-            // an account cannot open a session (fail-closed); nothing is written.
+            // The KIM-D23 temporary password flow belongs to ID-2r/ID-3. Until it exists such an account cannot open
+            // a session (fail-closed); nothing is written. MustChangePassword alone opens a fenced session (ID-2):
+            // the session validator then allows only the password change and logout.
             return await RefuseAsync(SecurityEventReasonCodesV1.PolicyRefused, nowUtc, cancellationToken);
         }
 

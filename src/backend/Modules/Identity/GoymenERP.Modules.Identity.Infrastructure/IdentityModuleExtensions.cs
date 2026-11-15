@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.SqlServer;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Identity.Infrastructure.Bootstrap;
 using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
@@ -85,6 +86,14 @@ public static class IdentityModuleExtensions
         services.AddScoped<ILocalAccountSessionValidator, LocalAccountSessionValidator>();
         // KIM-D30: logout renews the security stamp; every open session then fails the per-request check.
         services.AddScoped<ILocalAccountLogoutService, LocalAccountLogoutService>();
+        // ID-2: the session's own password change (KIM-D12 policy) and its idempotency record.
+        services.AddScoped<ILocalCredentialCommandStore, SqlLocalCredentialCommandStore>();
+        services.AddScoped<ILocalPasswordContextTermSource, SqlLocalPasswordContextTermSource>();
+        services.AddScoped<ILocalAccountPasswordChangeService, LocalAccountPasswordChangeService>();
+        // ID-2 one-shot founder bootstrap (KIM-D5/KIM-D18); the Admin role code has no default.
+        services.AddOptions<IdentityBootstrapOptions>()
+            .Bind(configuration.GetSection(IdentityBootstrapOptions.SectionName));
+        services.AddScoped<IFounderBootstrapService, FounderBootstrapService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);

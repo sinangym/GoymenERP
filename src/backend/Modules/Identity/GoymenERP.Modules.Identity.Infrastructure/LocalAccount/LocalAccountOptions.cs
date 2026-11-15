@@ -17,6 +17,12 @@ public sealed class LocalAccountOptions
     /// </summary>
     public const int MinimumPbkdf2Iterations = 100_000;
 
+    /// <summary>
+    /// Spec (NIST SP 800-63B): the accepted maximum password length must be at least 64. A configured
+    /// <c>PasswordPolicy:MaximumLength</c> below this is refused at startup.
+    /// </summary>
+    public const int MinimumAcceptedMaximumPasswordLength = 64;
+
     public LocalAccountLockoutSettings Lockout { get; set; } = new();
 
     public LocalAccountSessionSettings Session { get; set; } = new();
@@ -24,6 +30,8 @@ public sealed class LocalAccountOptions
     public LocalAccountPasswordHashingSettings PasswordHashing { get; set; } = new();
 
     public LocalAccountRateLimitSettings RateLimit { get; set; } = new();
+
+    public LocalAccountPasswordPolicySettings PasswordPolicy { get; set; } = new();
 
     /// <summary>Returns Turkish startup messages; an empty list means the settings are complete and valid.</summary>
     public IReadOnlyList<string> Validate()
@@ -80,8 +88,58 @@ public sealed class LocalAccountOptions
             errors.Add($"{SectionName}:RateLimit:Login:PartitionBy tanımlanmalıdır (KIM-D29).");
         }
 
+        ValidatePasswordPolicy(errors);
         return errors;
     }
+
+    private void ValidatePasswordPolicy(List<string> errors)
+    {
+        var policy = PasswordPolicy;
+        if (policy.MinimumLength is not >= 1)
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:MinimumLength tanımlanmalı ve en az 1 olmalıdır (KIM-D4).");
+        }
+
+        if (policy.MaximumLength is not { } maximum || maximum < MinimumAcceptedMaximumPasswordLength)
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:MaximumLength tanımlanmalı ve en az {MinimumAcceptedMaximumPasswordLength} olmalıdır (NIST SP 800-63B).");
+        }
+        else if (policy.MinimumLength is { } minimum && minimum > maximum)
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:MinimumLength azami uzunluktan büyük olamaz.");
+        }
+
+        if (policy.BlocklistEnabled is null)
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:BlocklistEnabled tanımlanmalıdır (KIM-D4).");
+        }
+
+        // KIM-D12: both rules are decided "off by default, can be turned on". What "on" means (which classes, which
+        // age and what happens at expiry) is not decided yet, so turning either on stops the host instead of
+        // guessing a rule.
+        if (policy.RequireCharacterClasses is not false)
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:RequireCharacterClasses tanımlanmalı ve şimdilik false olmalıdır; açık kuralı karara bağlı değil (KIM-D12).");
+        }
+
+        if (policy.MaximumAgeDays is not null)
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:MaximumAgeDays şimdilik tanımlanamaz (kapalı); süre dolum davranışı karara bağlı değil (KIM-D12).");
+        }
+
+        if (policy.BlockedTerms is { } terms && terms.Any(string.IsNullOrWhiteSpace))
+        {
+            errors.Add($"{SectionName}:PasswordPolicy:BlockedTerms boş öğe içeremez.");
+        }
+    }
+
+    /// <summary>The validated password policy; call only after <see cref="EnsureValid"/>.</summary>
+    public LocalPasswordPolicy ToPasswordPolicy() =>
+        new(
+            PasswordPolicy.MinimumLength!.Value,
+            PasswordPolicy.MaximumLength!.Value,
+            PasswordPolicy.BlocklistEnabled!.Value,
+            PasswordPolicy.BlockedTerms ?? []);
 
     /// <summary>Throws with every Turkish message when the settings are incomplete or invalid.</summary>
     public void EnsureValid()
@@ -126,6 +184,28 @@ public sealed class LocalAccountPasswordHashingSettings
     public string? Algorithm { get; set; }
 
     public int? Pbkdf2Iterations { get; set; }
+}
+
+/// <summary>
+/// Password policy (KIM-D4, KIM-D12). Starting values are decided (minimum length 8, blocklist on, character classes
+/// and maximum age off) but every value stays configuration; the code has no default.
+/// </summary>
+public sealed class LocalAccountPasswordPolicySettings
+{
+    public string? PolicyRef { get; set; }
+
+    public int? MinimumLength { get; set; }
+
+    public int? MaximumLength { get; set; }
+
+    public bool? RequireCharacterClasses { get; set; }
+
+    public bool? BlocklistEnabled { get; set; }
+
+    /// <summary>Extra blocked terms (common passwords); <c>admin</c>, the user name and company names are always added.</summary>
+    public string[]? BlockedTerms { get; set; }
+
+    public int? MaximumAgeDays { get; set; }
 }
 
 public sealed class LocalAccountRateLimitSettings

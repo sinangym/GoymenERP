@@ -16,8 +16,15 @@ public sealed partial class DefaultCredentialGuardTests
     /// <summary>The single reviewed exception (spec item 5: narrow, visible in review).</summary>
     private const string DocumentationExceptionGlob = "docs/**/*.md";
 
-    /// <summary>Source files allowed to construct a <c>LocalCredential</c>. None in ID-1; the ID-2 bootstrap adds itself.</summary>
-    private static readonly string[] ReviewedLocalCredentialCreationSites = [];
+    /// <summary>
+    /// Source files allowed to construct a <c>LocalCredential</c>. None in ID-1; ID-2 adds the one-time
+    /// <c>bootstrap-founder</c> command, whose password is typed by the operator and always marked
+    /// <c>MustChangePassword</c>.
+    /// </summary>
+    private static readonly string[] ReviewedLocalCredentialCreationSites =
+    [
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs",
+    ];
 
     /// <summary>Well-known default passwords that are never a configuration value or a backend string literal.</summary>
     private static readonly string[] KnownDefaultPasswords =
@@ -34,7 +41,9 @@ public sealed partial class DefaultCredentialGuardTests
     public void The_documentation_exception_is_markdown_under_docs_only()
     {
         Assert.Equal("docs/**/*.md", DocumentationExceptionGlob);
-        Assert.Empty(ReviewedLocalCredentialCreationSites);
+        Assert.Equal(
+            ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs"],
+            ReviewedLocalCredentialCreationSites);
         Assert.False(IsDocumentationException("docs/operations/example.json"));
         Assert.False(IsDocumentationException("src/backend/README.md"));
         Assert.True(IsDocumentationException("docs/features/example.md"));

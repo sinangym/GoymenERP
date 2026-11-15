@@ -484,6 +484,8 @@ if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
 }
 app.UseAuthentication();
 app.UseLocalAccountAntiforgery();
+// ID-2: a session whose credential still requires a password change reaches only the allow-listed endpoints.
+app.UseLocalAccountPasswordChangeFence();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
 
@@ -555,6 +557,19 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeDocumentsModuleAsync();
 }
 
+// ID-2 operator command (identity bootstrap-founder): runs once and exits; the web host is never started.
+if (IdentityCommandLine.IsIdentityCommand(args))
+{
+    return await IdentityCommandLine.RunAsync(
+        app.Services,
+        args,
+        new ConsoleFounderBootstrapConsole(Console.Out),
+        Console.Out,
+        Console.Error,
+        CancellationToken.None);
+}
+
 await app.RunAsync();
+return IdentityCommandLine.ExitCompleted;
 
 public partial class Program;

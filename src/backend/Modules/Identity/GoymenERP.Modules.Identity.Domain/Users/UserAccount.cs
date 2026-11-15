@@ -2,6 +2,9 @@ namespace GoymenERP.Modules.Identity.Domain.Users;
 
 public sealed class UserAccount
 {
+    /// <summary>Upper bound of <see cref="DisplayName"/> (column <c>nvarchar(200)</c>).</summary>
+    public const int DisplayNameMaxLength = 200;
+
     private UserAccount()
     {
     }
