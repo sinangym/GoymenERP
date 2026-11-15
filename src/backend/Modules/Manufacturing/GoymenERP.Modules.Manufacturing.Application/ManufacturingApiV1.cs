@@ -1679,7 +1679,8 @@ public sealed partial class ManufacturingCommandService(
     /// Closes the order at the version the caller read. Settings supplies the exact company/line/process/date tolerance
     /// (URT-D6: the order's work center version, else the process version, else the version-0 catalog, URT-D23);
     /// Manufacturing persists it with its source and version and derives fire (Scrap + ProcessLoss) and net issued mass
-    /// from its own facts. Output above input on any planned parent roll is refused
+    /// from its own facts. Output above input on any planned parent roll — on the order total for a process without a
+    /// main roll input (URT-D49) — is refused
     /// (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>, URT-D41 (1)-(2), URT-D42 (1)-(2)): the tolerance does
     /// not apply in that direction and the refusal is answered before any approval step, with or without a reason.
     /// A roll's unexplained shortfall within the mass-balance tolerance is accepted as it is (URT-D5; never

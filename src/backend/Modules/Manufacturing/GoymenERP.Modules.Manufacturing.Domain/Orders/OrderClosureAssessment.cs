@@ -16,7 +16,8 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// <item><see cref="MassBalanceDifferenceTolerancePercent"/> (URT-D6): the percent of a roll's unexplained shortfall
 /// accepted without approval; null = unknown (a version published before the field existed): a shortfall then keeps
 /// the earlier fail-closed answer (declare a fact). Since URT-D41 (2) it applies only to a shortfall: output above input
-/// on a roll is refused whatever the value (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>).</item>
+/// is refused whatever the value (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>; per roll, or on the order
+/// total for a process without a main roll input, URT-D49).</item>
 /// <item><see cref="WorkCenterId"/>: the line the version is scoped to; null for a process-wide version.</item>
 /// </list>
 /// </summary>
@@ -131,7 +132,9 @@ public static class ClosureAssessmentCodesV1
     /// <summary>
     /// URT-D41 (1)-(2), URT-D42 (1)-(2): on at least one planned parent roll the accounted output is above the issued
     /// input. Refused: the ± tolerance does not apply in this direction and there is no approval path, even when the
-    /// order as a whole is short.
+    /// order as a whole is short. URT-D49: for a process without a main roll input
+    /// (<see cref="ManufacturingProcessMainInputV1"/>) the comparison is the order total; the answer is the same. The
+    /// accounted output includes usable remnant, the latest WIP reading and the recorded corrections (URT-D48 (1)).
     /// </summary>
     public const string OutputExceedsInput = "manufacturing_closure_output_exceeds_input";
 
@@ -284,10 +287,22 @@ public static class OrderClosureAssessmentCalculatorV1
         }
 
         var supplied = inputs.ToDictionary(input => input.ParentRollId);
-        // URT-D42 (1): every planned parent roll is measured on its own; rolls never offset each other.
-        var rolls = order.PlannedInputs
-            .Select(input => AssessRoll(order.BalanceOf(input.ParentRollId), supplied.GetValueOrDefault(input.ParentRollId),
-                policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent, replayingStoredClose))
+        var balances = order.PlannedInputs.Select(input => order.BalanceOf(input.ParentRollId)).ToArray();
+
+        // Where "output above input" is measured (URT-D41 (1), URT-D42 (1)-(2), URT-D49):
+        // - a roll-based process: every planned parent roll on its own; rolls never offset each other (URT-D42 (1),
+        //   URT-D49 (2));
+        // - a process without a main roll input: the order's total net issued kg against its total accounted kg
+        //   (URT-D49 (1)). When the total is above input, every input whose own account is above input carries the
+        //   refusal (the total cannot be negative without one); when it is not, no input is refused for it (URT-D49 (3):
+        //   the refusal itself is unchanged, only where it is measured).
+        // The output side is the whole BAL-003 accounted mass in both scopes (URT-D48 (1)). A stored close replays the rule
+        // it was written under (URT-D42 (3)).
+        var refuseOutputAboveInput = !replayingStoredClose
+            && (order.MeasuresOutputAboveInputPerRoll || OrderMassTotalV1.Of(balances).OutputExceedsInput);
+        var rolls = balances
+            .Select(balance => AssessRoll(balance, supplied.GetValueOrDefault(balance.ParentRollId),
+                policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent, refuseOutputAboveInput))
             .ToArray();
 
         var disposition = rolls.Select(roll => roll.Disposition).OrderByDescending(Priority).First();
@@ -302,14 +317,15 @@ public static class OrderClosureAssessmentCalculatorV1
         RollScrapPercentInputV1? supplied,
         decimal maximumFirePercent,
         decimal? massBalanceTolerancePercent,
-        bool replayingStoredClose)
+        bool refuseOutputAboveInput)
     {
         var difference = balance.Unexplained;
 
-        // URT-D41 (1)-(2), URT-D42 (1)-(2): output above input on a planned parent roll refuses the close — the ±
-        // tolerance is not consulted in this direction and no approval can carry it, even when the order total is short.
-        // A stored close replays the rule it was written under (URT-D42 (3)).
-        if (balance.OutputExceedsInput && !replayingStoredClose)
+        // URT-D41 (1)-(2), URT-D42 (1)-(2): output above input refuses the close — the ± tolerance is not consulted in
+        // this direction and no approval can carry it. For a roll-based process this holds on each planned parent roll
+        // even when the order total is short; for a process without a main roll input it holds when the order total is
+        // above input (URT-D49). The caller decides the scope (<paramref name="refuseOutputAboveInput"/>).
+        if (balance.OutputExceedsInput && refuseOutputAboveInput)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
                 code: ClosureAssessmentCodesV1.OutputExceedsInput);
@@ -321,9 +337,11 @@ public static class OrderClosureAssessmentCalculatorV1
         {
             // URT-D5/D6: the unexplained difference is measured against the roll's net issued mass and compared with the
             // tolerance. It stays its own category either way — within tolerance it is accepted as it is (never
-            // reclassified as fire or any output), outside it the close needs the exception approval. A new close
-            // reaches this point only with a shortfall (URT-D41 (2)); a replayed earlier close keeps the ± comparison
-            // it was written under.
+            // reclassified as fire or any output), outside it the close needs the exception approval. A new close of a
+            // roll-based process reaches this point only with a shortfall (URT-D41 (2)); a replayed earlier close keeps
+            // the ± comparison it was written under. An input of a process without a main roll input whose order total
+            // is not above input (URT-D49 (1)) also reaches it with its own negative difference: the per-input tolerance
+            // and fire assessment are unchanged by URT-D49, which measures only the "output above input" refusal.
             var percent = MassBalanceEngineV1.DifferencePercent(
                 new MassDifferencePercentInputV1(difference, balance.NetIssued.Value));
             if (percent.Outcome == EngineOutcome.Unavailable)
@@ -343,7 +361,9 @@ public static class OrderClosureAssessmentCalculatorV1
         }
         else if (difference < 0m)
         {
-            // Reached only by a replayed earlier close (the plus direction is refused above for a new one).
+            // Reached by a replayed earlier close, or by an input of a process without a main roll input whose order
+            // total is not above input (URT-D49 (1)); a new close of a roll-based process is refused above. Without a
+            // known mass-balance tolerance it is still not accepted silently.
             return Roll(balance.ParentRollId, ClosureDispositionV1.ReviewRequired, difference,
                 code: ClosureAssessmentCodesV1.NegativeDifferenceReview);
         }

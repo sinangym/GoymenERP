@@ -23,6 +23,15 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 /// of the order's recorded corrections: the order has no correction fact yet, so that sum is 0 — a fact of
 /// the data, not a default.
 /// </para>
+/// <para>
+/// Every mass here is weighed kg (URT-D50, URT-D51 (2)): an input is a parent roll or label issued and returned in kg,
+/// and every output — a coil, a strip or a package of pieces or metres (tube and profile especially) — is declared with
+/// its weighed <see cref="Kilograms"/>, so a piece or metre output enters the comparison as its weighed kg equivalent.
+/// An input consumed in pieces, litres or metres (paint litres and the like) is not an order input and never enters
+/// this account (URT-D50 (1)); its cost stays outside the product as before (URT-D45 (1)). The theoretical weight
+/// (pieces × the card's kg per piece) is not read here: it is a helper with a Settings deviation warning
+/// (URT-D51 (3), its own slice), never the checked mass.
+/// </para>
 /// </summary>
 public sealed record MassBalance(
     Guid ParentRollId,
@@ -69,10 +78,10 @@ public sealed record MassBalance(
     /// <summary>
     /// URT-D41 (1), URT-D42 (1): more mass is accounted on this parent roll than was issued to it (BAL-003 below zero).
     /// The one definition the close (<see cref="OrderClosureAssessmentCalculatorV1"/>) and the read-only report of
-    /// earlier closes use. "Output" here is the whole BAL-003 accounted mass (every output class, the latest WIP reading
-    /// and the recorded corrections, none of which can be recorded yet) — never less than good + second + scrap + process
-    /// loss, so it refuses at least every case that narrower reading would. Where usable remnant, WIP and a correction
-    /// belong in that comparison (DEC-PRDCT-006) is not decided yet.
+    /// earlier closes use per roll; a process without a main roll input compares the order total instead
+    /// (<see cref="OrderMassTotalV1"/>, URT-D49 (1)). "Output" here is the whole BAL-003 accounted mass: every output
+    /// class, usable remnant included, the latest WIP reading and the recorded corrections (none of which can be
+    /// recorded yet) all count on the output side (URT-D48 (1)-(2): the code already read it so; no change).
     /// </summary>
     public bool OutputExceedsInput => Unexplained < 0m;
 

@@ -195,10 +195,10 @@ public sealed class OutputAboveInputClosureTests
     }
 
     [Fact]
-    public void Usable_remnant_and_the_latest_wip_reading_count_on_the_output_side_until_DEC_PRDCT_006_says_otherwise()
+    public void Usable_remnant_and_the_latest_wip_reading_count_on_the_output_side()
     {
-        // Fail-closed reading (DEC-PRDCT-006 open): 30 scrap + 940 good + 20 usable remnant + 15 WIP = 1005 kg against
-        // 1000 kg issued. Good + second + scrap + process loss alone (970) would be short; the close is still refused.
+        // URT-D48 (1)-(2): 30 scrap + 940 good + 20 usable remnant + 15 WIP = 1005 kg against 1000 kg issued. Good +
+        // second + scrap + process loss alone (970) would be short; the close is still refused.
         var order = Order(RollA);
         Realize(order, RollA, 1_000m, 30m, 940m);
         order.Declare(RollA, OutputClass.UsableRemnant, Kg(20m));
