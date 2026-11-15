@@ -500,6 +500,7 @@ app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
 app.MapProductItemTypeEndpoints();
 app.MapProductDimensionEndpoints();
+app.MapProductProfileWeightTableEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();

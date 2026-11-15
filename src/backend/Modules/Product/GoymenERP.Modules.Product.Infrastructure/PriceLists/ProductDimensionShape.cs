@@ -7,7 +7,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// rule is held by <see cref="ProductPriceListDbContext.DimensionShapeCheck"/> and
 /// <see cref="ProductPriceListDbContext.DimensionMeasureCheck"/>; this copy only answers a person with a 400 before the save.
 /// A measure is never rounded here: a value with more decimals than its column holds is refused, not stored rounded (URN-D8 —
-/// inputs stay at full precision).
+/// inputs stay at full precision). URN-D16 (STK-S37R): the card never takes a kg/m — a profile's (and optionally a round tube's)
+/// kg/m is the company's imported table value (<see cref="ProductProfileWeightTableService"/>), so the request has no such field.
 /// </summary>
 internal static class ProductDimensionShape
 {
@@ -18,8 +19,7 @@ internal static class ProductDimensionShape
         decimal? LengthMm,
         decimal? HeightMm,
         decimal? OuterDiameterMm,
-        decimal? WallThicknessMm,
-        decimal? KgPerMetre);
+        decimal? WallThicknessMm);
 
     /// <summary>Null when the request is a valid row of a known section kind; otherwise the reason (Turkish, for the detail).</summary>
     internal static string? Refusal(SetProductDimensionRequestV1 request, out Measures? measures)
@@ -37,34 +37,25 @@ internal static class ProductDimensionShape
             return $"Ölçüler sıfırdan büyük ve en fazla {ProductDimensionInputLimitsV1.MillimetreDecimals} ondalıklı milimetre olmalıdır.";
         }
 
-        if (!IsKgPerMetre(request.KgPerMetre))
-        {
-            return $"Metre ağırlığı sıfırdan büyük ve en fazla {ProductDimensionInputLimitsV1.KgPerMetreDecimals} ondalıklı olmalıdır.";
-        }
-
         var refusal = request.SectionKind switch
         {
             ProductDimensionSectionKindsV1.Sheet =>
-                Requires(request, thickness: true, width: true, length: true, height: false, diameter: false, wall: false,
-                    kgPerMetre: Presence.Forbidden)
+                Requires(request, thickness: true, width: true, length: true, height: false, diameter: false, wall: false)
                     ? null
                     : "Sac/levha için kalınlık, en ve boy girilir; diğer ölçüler boş kalır.",
             ProductDimensionSectionKindsV1.Coil =>
-                Requires(request, thickness: true, width: true, length: false, height: false, diameter: false, wall: false,
-                    kgPerMetre: Presence.Forbidden)
+                Requires(request, thickness: true, width: true, length: false, height: false, diameter: false, wall: false)
                     ? null
                     : "Rulo/bant için kalınlık ve en girilir; diğer ölçüler boş kalır.",
             ProductDimensionSectionKindsV1.RoundTube =>
-                !Requires(request, thickness: false, width: false, length: false, height: false, diameter: true, wall: true,
-                    kgPerMetre: Presence.Optional)
-                    ? "Yuvarlak boru için dış çap ve et kalınlığı girilir; metre ağırlığı isteğe bağlıdır, diğer ölçüler boş kalır."
+                !Requires(request, thickness: false, width: false, length: false, height: false, diameter: true, wall: true)
+                    ? "Yuvarlak boru için dış çap ve et kalınlığı girilir; diğer ölçüler boş kalır."
                     : WallFits(request.WallThicknessMm!.Value, request.OuterDiameterMm!.Value)
                         ? null
                         : "Et kalınlığının iki katı dış çaptan büyük olamaz.",
             _ =>
-                !Requires(request, thickness: false, width: true, length: false, height: true, diameter: false, wall: true,
-                    kgPerMetre: Presence.Required)
-                    ? "Profil için en, yükseklik, et kalınlığı ve metre ağırlığı girilir; diğer ölçüler boş kalır."
+                !Requires(request, thickness: false, width: true, length: false, height: true, diameter: false, wall: true)
+                    ? "Profil için en, yükseklik ve et kalınlığı girilir; diğer ölçüler boş kalır."
                     : WallFits(request.WallThicknessMm!.Value, request.WidthMm!.Value)
                       && WallFits(request.WallThicknessMm!.Value, request.HeightMm!.Value)
                         ? null
@@ -77,7 +68,7 @@ internal static class ProductDimensionShape
 
         measures = new Measures(request.SectionKind!, Canonical(request.ThicknessMm), Canonical(request.WidthMm),
             Canonical(request.LengthMm), Canonical(request.HeightMm), Canonical(request.OuterDiameterMm),
-            Canonical(request.WallThicknessMm), Canonical(request.KgPerMetre));
+            Canonical(request.WallThicknessMm));
         return null;
     }
 
@@ -85,34 +76,21 @@ internal static class ProductDimensionShape
     internal static decimal? Canonical(decimal? value) =>
         value is { } number ? number / 1.0000000000000000000000000000m : null;
 
-    private enum Presence
-    {
-        Forbidden,
-        Optional,
-        Required,
-    }
-
     private static bool Requires(SetProductDimensionRequestV1 request, bool thickness, bool width, bool length, bool height,
-        bool diameter, bool wall, Presence kgPerMetre) =>
+        bool diameter, bool wall) =>
         request.ThicknessMm.HasValue == thickness && request.WidthMm.HasValue == width && request.LengthMm.HasValue == length
         && request.HeightMm.HasValue == height && request.OuterDiameterMm.HasValue == diameter
-        && request.WallThicknessMm.HasValue == wall
-        && kgPerMetre switch
-        {
-            Presence.Forbidden => !request.KgPerMetre.HasValue,
-            Presence.Required => request.KgPerMetre.HasValue,
-            _ => true,
-        };
+        && request.WallThicknessMm.HasValue == wall;
 
     /// <summary>A hollow section: the two walls fit inside the outer measure (equal = solid, as the F-C formula accepts).</summary>
-    private static bool WallFits(decimal wall, decimal outer) => wall + wall <= outer;
+    internal static bool WallFits(decimal wall, decimal outer) => wall + wall <= outer;
 
-    private static bool IsMillimetre(decimal? value) =>
+    internal static bool IsMillimetre(decimal? value) =>
         value is not { } measure
         || (measure > 0 && measure < ProductDimensionInputLimitsV1.MillimetreExclusiveMaximum
             && decimal.Round(measure, ProductDimensionInputLimitsV1.MillimetreDecimals) == measure);
 
-    private static bool IsKgPerMetre(decimal? value) =>
+    internal static bool IsKgPerMetre(decimal? value) =>
         value is not { } kg
         || (kg > 0 && kg < ProductDimensionInputLimitsV1.KgPerMetreExclusiveMaximum
             && decimal.Round(kg, ProductDimensionInputLimitsV1.KgPerMetreDecimals) == kg);

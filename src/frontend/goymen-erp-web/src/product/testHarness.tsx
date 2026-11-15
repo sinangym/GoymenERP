@@ -203,6 +203,8 @@ export interface HarnessConfig {
   readonly onItemType?: (method: string, body: string | null) => Response | Promise<Response>
   /** `GET/PUT /product-dimensions/{id}` (BS-9); defaults to 403 — `product.dimension.manage` is granted to no role. */
   readonly onDimension?: (method: string, body: string | null) => Response | Promise<Response>
+  /** `GET/POST /product-profile-weight-tables` (URN-D13…D16); defaults to 403 — the import name is granted to no role. */
+  readonly onProfileWeights?: (method: string, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -322,6 +324,9 @@ export function installFetch(config: HarnessConfig = {}) {
     }
     if (url.includes('/product-dimensions/')) {
       return (await config.onDimension?.(method, body)) ?? json({}, 403)
+    }
+    if (url.includes('/product-profile-weight-tables')) {
+      return (await config.onProfileWeights?.(method, body)) ?? json({}, 403)
     }
     throw new Error(`unexpected fetch: ${url}`)
   })

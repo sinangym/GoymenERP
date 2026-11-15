@@ -4,7 +4,9 @@
  * "kaynak yok": the conversion makes no estimate. The density is the company Settings value and the card stores none.
  * Without `product.dimension.manage` (granted to no role here) the server answers 403 and the panel shows nothing; an ended
  * session (401), a missing card (404), an unwired provider (503) and a failed read each say so instead of "girilmemiş".
- * The form checks the shape only to help the person; the server and the database hold the rule.
+ * The form checks the shape only to help the person; the server and the database hold the rule. URN-D16 (STK-S37R): the kg/m is
+ * not an input; the panel shows the acting company's table value with its source label and table version, or that the table
+ * holds none, and reads the server's refusal of a profile the table does not hold.
  */
 
 import { useState, type FormEvent } from 'react'
@@ -14,6 +16,7 @@ import {
   DIMENSION_PROBLEM,
   PRODUCT_SECTION_KINDS,
   SECTION_MEASURES,
+  SECTION_TABLE_WEIGHT,
   fetchDimension,
   parseMeasure,
   setDimension,
@@ -103,11 +106,37 @@ export function ProductDimensionPanel({
               <dd>{String(view.measures[measure])}</dd>
             </div>
           ))}
+          {view.tableWeight !== null ? (
+            <>
+              <div>
+                <dt>{DIMENSION_TEXT.kgPerMetreLabel}</dt>
+                <dd data-testid="product-dimension-kg-per-metre">{String(view.tableWeight.kgPerMetre)}</dd>
+              </div>
+              <div>
+                <dt>{DIMENSION_TEXT.kgPerMetreSource}</dt>
+                <dd>{view.tableWeight.sourceLabel}</dd>
+              </div>
+              <div>
+                <dt>{DIMENSION_TEXT.kgPerMetreTableVersion}</dt>
+                <dd>{view.tableWeight.tableVersion}</dd>
+              </div>
+            </>
+          ) : SECTION_TABLE_WEIGHT[view.sectionKind] === 'none' ? null : (
+            <div>
+              <dt>{DIMENSION_TEXT.kgPerMetreLabel}</dt>
+              <dd data-testid="product-dimension-kg-per-metre-missing">
+                {SECTION_TABLE_WEIGHT[view.sectionKind] === 'required'
+                  ? DIMENSION_TEXT.kgPerMetreMissing
+                  : DIMENSION_TEXT.kgPerMetreTubeMissing}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
       <p className={styles.note}>{DIMENSION_TEXT.shared}</p>
       {view.changedInAnotherCompany ? <p className={styles.note}>{DIMENSION_TEXT.changedElsewhere}</p> : null}
       <p className={styles.note}>{DIMENSION_TEXT.note}</p>
+      <p className={styles.note}>{DIMENSION_TEXT.weightNote}</p>
       {editing ? (
         <DimensionForm
           companyId={companyId}
@@ -206,7 +235,8 @@ function DimensionForm({
       setError(
         outcome.code === DIMENSION_PROBLEM.reasonRequired ? DIMENSION_TEXT.reasonRequired
           : outcome.code === DIMENSION_PROBLEM.measureInvalid ? DIMENSION_TEXT.measureInvalid
-            : DIMENSION_TEXT.refused,
+            : outcome.code === DIMENSION_PROBLEM.weightSourceMissing ? DIMENSION_TEXT.weightSourceMissing
+              : DIMENSION_TEXT.refused,
       )
     }
   }
@@ -244,6 +274,7 @@ function DimensionForm({
           </label>
         ))}
       {kind === 'RoundTube' ? <p className={styles.note}>{DIMENSION_TEXT.tubeKgNote}</p> : null}
+      {kind === 'Profile' ? <p className={styles.note}>{DIMENSION_TEXT.profileWeightNote}</p> : null}
       <label>
         {DIMENSION_TEXT.reasonLabel}
         <textarea required rows={2} maxLength={4000} value={reason} onChange={(event) => setReason(event.target.value)} />
