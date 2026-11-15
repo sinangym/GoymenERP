@@ -8,14 +8,17 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// <list type="bullet">
 /// <item><see cref="Sheet"/> (F-A, kesilmiş sac/levha): thickness, width and length.</item>
 /// <item><see cref="Coil"/> (F-B, rulo / dilinmiş bant): thickness and width.</item>
-/// <item><see cref="RoundTube"/> (F-C/F-D, yuvarlak boru): outer diameter and wall thickness (2 × wall ≤ diameter); a stored
-/// kg/m is the table value and wins over the formula (#66 6810163182 m.24) — without it the formula only suggests.</item>
-/// <item><see cref="Profile"/> (F-C/F-D, kutu / dikdörtgen profil): width, height and wall thickness, and the kg/m itself —
-/// there is no corner formula; the kg/m comes from this table (#66 6810051185 m.21).</item>
+/// <item><see cref="RoundTube"/> (F-C/F-D, yuvarlak boru): outer diameter and wall thickness (2 × wall ≤ diameter); its kg/m is
+/// OPTIONAL and, when the company's imported table holds the (diameter, wall) pair, the table value (URN-D11/D16) — without it
+/// an operation that needs kg is refused by its consumer (KLN-D66).</item>
+/// <item><see cref="Profile"/> (F-C/F-D, kutu / dikdörtgen profil): width, height and wall thickness; its kg/m is REQUIRED and
+/// comes only from the company's imported table (URN-D16, KLN-D54) — a card whose measures the acting company's current table
+/// does not hold is not saved.</item>
 /// </list>
-/// Every measure is millimetres (at most three decimals) and kg/m at most six decimals: the inputs stay at full precision and
-/// the coefficient is rounded once where it is produced (URN-D8), never here. The density is the company Settings value
-/// (BS-9); the card stores none. Storing kg/m directly keeps the section-area unit question (mm² / m²) out of the table.
+/// URN-D16 (STK-S37R): a kg/m is NEVER typed on the card; the view and the read port resolve it live from the server-resolved
+/// company's current table (<see cref="IProductProfileWeightTableServiceV1"/>) and name its source label and version. Every
+/// measure is millimetres (at most three decimals): the inputs stay at full precision and the coefficient is rounded once where
+/// it is produced (URN-D8), never here. The density is the company Settings value (BS-9); the card stores none.
 /// </summary>
 public static class ProductDimensionSectionKindsV1
 {
@@ -55,6 +58,9 @@ public static class ProductDimensionProblemCodesV1
     public const string ReasonTooLong = "product_dimension_reason_too_long";
     public const string IdempotencyConflict = "product_dimension_idempotency_conflict";
     public const string VersionConflict = "product_dimension_version_conflict";
+
+    /// <summary>URN-D16: a profile card whose measures the acting company's current kg/m table does not hold is not saved.</summary>
+    public const string WeightSourceMissing = "product_dimension_weight_source_missing";
     public const string ProviderUnavailable = "product_dimension_provider_unavailable";
 }
 
@@ -65,7 +71,7 @@ public static class ProductDimensionInputLimitsV1
     /// <summary>Millimetre measures keep at most three decimals (Ö2, the card's nominal measures).</summary>
     public const int MillimetreDecimals = 3;
 
-    /// <summary>The table kg/m keeps at most six decimals; the coefficient decimals of Settings round it later (URN-D8).</summary>
+    /// <summary>The imported table kg/m keeps at most six decimals; the coefficient decimals of Settings round it later (URN-D8).</summary>
     public const int KgPerMetreDecimals = 6;
 
     /// <summary>The largest millimetre measure the column (decimal(18,3)) holds, exclusive.</summary>
@@ -78,7 +84,8 @@ public static class ProductDimensionInputLimitsV1
 /// <summary>
 /// Set the "Ebat/kalınlık" row of a product on the shared card, acting in the server-resolved company. <c>SectionKind</c> is one
 /// of <see cref="ProductDimensionSectionKindsV1"/>; the measures the kind needs are required and the others must be null
-/// (see the kinds). <c>ExpectedVersion</c> is the row's version as decimal text ("0" = none yet).
+/// (see the kinds). <c>ExpectedVersion</c> is the row's version as decimal text ("0" = none yet). There is no kg/m field: the kg/m
+/// is the company's imported table value (URN-D16).
 /// </summary>
 public sealed record SetProductDimensionRequestV1(
     string? ExpectedVersion,
@@ -89,12 +96,13 @@ public sealed record SetProductDimensionRequestV1(
     decimal? HeightMm,
     decimal? OuterDiameterMm,
     decimal? WallThicknessMm,
-    decimal? KgPerMetre,
     string? Reason);
 
 /// <summary>
 /// The shared card's "Ebat/kalınlık" row ("0" and nulls while none is stored), read in <c>CompanyId</c> (the server-resolved
-/// company); <c>UpdatedInCompanyId</c> is the company in which the last change was made.
+/// company); <c>UpdatedInCompanyId</c> is the company in which the last change was made. <c>KgPerMetre</c> is the value of
+/// <c>CompanyId</c>'s current kg/m table for the stored measures (null when the table holds none), with that table's
+/// <c>KgPerMetreSourceLabel</c> and <c>KgPerMetreTableVersion</c> (URN-D14/D16).
 /// </summary>
 public sealed record ProductDimensionViewV1(
     Guid CompanyId,
@@ -110,7 +118,9 @@ public sealed record ProductDimensionViewV1(
     decimal? KgPerMetre,
     DateTimeOffset? UpdatedAtUtc,
     string? UpdatedBy,
-    Guid? UpdatedInCompanyId);
+    Guid? UpdatedInCompanyId,
+    string? KgPerMetreSourceLabel,
+    string? KgPerMetreTableVersion);
 
 /// <summary>Server-derived command metadata; company and actor never come from a payload.</summary>
 public sealed record ProductDimensionCommandMetadataV1(
@@ -161,7 +171,11 @@ public enum ProductDimensionOutcomeV1
     Found = 4,
 }
 
-/// <summary>The stored row as the U-08 conversion reads it; every field is null unless <c>Outcome</c> is Found.</summary>
+/// <summary>
+/// The stored row as the U-08 conversion reads it; every field is null unless <c>Outcome</c> is Found. <c>KgPerMetre</c> is the
+/// server-resolved company's current imported table value for the measures (URN-D16), with its source label and table version;
+/// null when the table holds none (a profile or round tube without a table value: an operation needing kg is refused, KLN-D66).
+/// </summary>
 public sealed record ProductDimensionReadV1(
     ProductDimensionOutcomeV1 Outcome,
     string? SectionKind,
@@ -172,7 +186,9 @@ public sealed record ProductDimensionReadV1(
     decimal? OuterDiameterMm,
     decimal? WallThicknessMm,
     decimal? KgPerMetre,
-    long? Version)
+    long? Version,
+    string? KgPerMetreSourceLabel = null,
+    long? KgPerMetreTableVersion = null)
 {
     public static ProductDimensionReadV1 Without(ProductDimensionOutcomeV1 outcome) =>
         new(outcome, null, null, null, null, null, null, null, null, null);

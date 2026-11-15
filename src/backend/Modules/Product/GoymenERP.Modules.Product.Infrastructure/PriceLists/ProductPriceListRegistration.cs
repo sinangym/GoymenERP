@@ -60,6 +60,11 @@ public static class ProductPriceListRegistration
             serviceProvider.GetRequiredService<ProductDimensionService>());
         services.AddScoped<IProductDimensionReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductDimensionService>());
+        // URN-D13…D16 (STK-S37R): the company's imported kg/m table (same context). The file goes to the document vault through
+        // the Product-owned port; a host adapter registered before this call wins, otherwise the fail-closed default answers
+        // "vault unavailable" and nothing is imported.
+        services.TryAddScoped<IProductProfileWeightFileVaultV1, UnavailableProductProfileWeightFileVault>();
+        services.AddScoped<IProductProfileWeightTableServiceV1>(CreateProfileWeightTableService);
         return services;
     }
 
@@ -111,6 +116,15 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<ICurrentUser>(),
         serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
         serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
+
+    private static ProductProfileWeightTableService CreateProfileWeightTableService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<IProductProfileWeightFileVaultV1>(),
         serviceProvider.GetRequiredService<TimeProvider>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(

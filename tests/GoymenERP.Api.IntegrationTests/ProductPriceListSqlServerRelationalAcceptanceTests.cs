@@ -677,6 +677,9 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
 
         public ICompanyContext CompanyContext => companyContext;
 
+        /// <summary>The request's services, for a slice service built in a test over the same scope (e.g. its audit collector).</summary>
+        public IServiceProvider Services => scope.ServiceProvider;
+
         public ValueTask DisposeAsync() => scope.DisposeAsync();
     }
 

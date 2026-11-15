@@ -108,6 +108,14 @@ public static class ErpPermissions
     public const string ProductDimensionManage = "product.dimension.manage";
 
     /// <summary>
+    /// URN-D15 (STK-S37R): the Product owner's ONE name for reading and importing the company-wide kg/m table of profiles and
+    /// round tubes (URN-D13/D16; the file is linked to the import record, every import source-labelled per URN-D14 and audited;
+    /// <c>ProductProfileWeightPermissionsV1.Import</c>). Registered, not granted: no role, seed or user receives it here; who
+    /// receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductProfileWeightsImport = "product.profile-weights.import";
+
+    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -1222,6 +1230,7 @@ public static class ErpPermissions
             ProductPriceListsPublish,
             ProductItemTypeManage,
             ProductDimensionManage,
+            ProductProfileWeightsImport,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1434,6 +1443,7 @@ public static class ErpPermissions
             ProductPriceListsPublish,
             ProductItemTypeManage,
             ProductDimensionManage,
+            ProductProfileWeightsImport,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,

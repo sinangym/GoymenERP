@@ -75,10 +75,11 @@ public sealed class ProductDimensionTests
     }
 
     [Fact]
-    public void The_dimension_migration_is_the_last_one_the_snapshot_matches_and_its_Down_refuses_first_with_51290()
+    public void The_dimension_migration_precedes_the_kg_per_metre_table_and_its_Down_refuses_first_with_51290()
     {
         using var context = Context();
-        Assert.Equal("AddProductCardDimensions", context.Database.GetMigrations().Last().Split('_', 2)[1]);
+        Assert.Equal(["AddProductCardDimensions", "AddProductProfileWeightImports"],
+            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductCardDimensions();
@@ -90,8 +91,7 @@ public sealed class ProductDimensionTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         var table = Assert.Single(migration.UpOperations.OfType<CreateTableOperation>(),
             operation => operation.Name == "ProductCardDimensions");
-        Assert.Contains(table.CheckConstraints, check => check.Name == "CK_ProductCardDimensions_Shape"
-            && check.Sql == ProductPriceListDbContext.DimensionShapeCheck);
+        Assert.Contains(table.CheckConstraints, check => check.Name == "CK_ProductCardDimensions_Shape");
     }
 
     [Fact]
@@ -121,33 +121,32 @@ public sealed class ProductDimensionTests
     }
 
     [Theory]
-    [InlineData("Sheet", "2", "1250", "2500", null, null, null, null, true)]
-    [InlineData("Coil", "0.5", "1000", null, null, null, null, null, true)]
-    [InlineData("RoundTube", null, null, null, null, "48.3", "2.6", null, true)]
-    [InlineData("RoundTube", null, null, null, null, "48.3", "2.6", "2.93", true)]
-    [InlineData("RoundTube", null, null, null, null, "10", "5", null, true)]
-    [InlineData("Profile", null, "40", null, "20", null, "2", "1.72", true)]
+    [InlineData("Sheet", "2", "1250", "2500", null, null, null, true)]
+    [InlineData("Coil", "0.5", "1000", null, null, null, null, true)]
+    [InlineData("RoundTube", null, null, null, null, "48.3", "2.6", true)]
+    [InlineData("RoundTube", null, null, null, null, "10", "5", true)]
+    // URN-D16: a profile's kg/m is never on the request; its shape alone is accepted here and the table decides the weight.
+    [InlineData("Profile", null, "40", null, "20", null, "2", true)]
+    [InlineData("Profile", null, "40", null, "40", null, "20", true)]
     // Unknown kind, wrong case, missing / extra measures, zero, negative, over-scale, walls that do not fit.
-    [InlineData("sheet", "2", "1250", "2500", null, null, null, null, false)]
-    [InlineData("Plate", "2", "1250", "2500", null, null, null, null, false)]
-    [InlineData(null, "2", "1250", "2500", null, null, null, null, false)]
-    [InlineData("Sheet", "2", "1250", null, null, null, null, null, false)]
-    [InlineData("Sheet", "2", "1250", "2500", null, null, null, "1", false)]
-    [InlineData("Coil", "0.5", "1000", "2000", null, null, null, null, false)]
-    [InlineData("Coil", "0", "1000", null, null, null, null, null, false)]
-    [InlineData("Coil", "-1", "1000", null, null, null, null, null, false)]
-    [InlineData("Coil", "0.5005", "1000", null, null, null, null, null, false)]
-    [InlineData("RoundTube", null, null, null, null, "10", "5.001", null, false)]
-    [InlineData("RoundTube", null, null, null, null, "48.3", null, null, false)]
-    [InlineData("RoundTube", null, null, null, null, "48.3", "2.6", "0.0000001", false)]
-    [InlineData("Profile", null, "40", null, "20", null, "2", null, false)]
-    [InlineData("Profile", null, "40", null, "3", null, "2", "1.72", false)]
-    [InlineData("Profile", "2", "40", null, "20", null, "2", "1.72", false)]
+    [InlineData("sheet", "2", "1250", "2500", null, null, null, false)]
+    [InlineData("Plate", "2", "1250", "2500", null, null, null, false)]
+    [InlineData(null, "2", "1250", "2500", null, null, null, false)]
+    [InlineData("Sheet", "2", "1250", null, null, null, null, false)]
+    [InlineData("Coil", "0.5", "1000", "2000", null, null, null, false)]
+    [InlineData("Coil", "0", "1000", null, null, null, null, false)]
+    [InlineData("Coil", "-1", "1000", null, null, null, null, false)]
+    [InlineData("Coil", "0.5005", "1000", null, null, null, null, false)]
+    [InlineData("RoundTube", null, null, null, null, "10", "5.001", false)]
+    [InlineData("RoundTube", null, null, null, null, "48.3", null, false)]
+    [InlineData("Profile", null, "40", null, "3", null, "2", false)]
+    [InlineData("Profile", "2", "40", null, "20", null, "2", false)]
+    [InlineData("Profile", null, "40", null, null, null, "2", false)]
     public void The_shape_accepts_exactly_the_measures_of_the_section_kind_and_never_rounds(string? kind, string? thickness,
-        string? width, string? length, string? height, string? diameter, string? wall, string? kgPerMetre, bool accepted)
+        string? width, string? length, string? height, string? diameter, string? wall, bool accepted)
     {
         var request = new SetProductDimensionRequestV1("0", kind, D(thickness), D(width), D(length), D(height), D(diameter), D(wall),
-            D(kgPerMetre), "SENTETIK gerekçe");
+            "SENTETIK gerekçe");
 
         var refusal = ProductDimensionShape.Refusal(request, out var measures);
 
@@ -156,10 +155,18 @@ public sealed class ProductDimensionTests
     }
 
     [Fact]
+    public void Four_section_kinds_are_offered_and_the_request_carries_no_kg_per_metre()
+    {
+        Assert.Equal(["Sheet", "Coil", "RoundTube", "Profile"], ProductDimensionSectionKindsV1.All);
+        Assert.DoesNotContain(typeof(SetProductDimensionRequestV1).GetProperties(),
+            property => property.Name.Contains("Kg", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void The_canonical_measures_do_not_depend_on_trailing_zeros()
     {
         var typed = new SetProductDimensionRequestV1("0", ProductDimensionSectionKindsV1.Coil, 1.500m, 1000.000m, null, null, null,
-            null, null, "r");
+            null, "r");
         var plain = typed with { ThicknessMm = 1.5m, WidthMm = 1000m };
 
         Assert.Null(ProductDimensionShape.Refusal(typed, out var first));
@@ -217,7 +224,7 @@ public sealed class ProductDimensionTests
         text is null ? null : decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
 
     private static SetProductDimensionRequestV1 Coil(string version) =>
-        new(version, ProductDimensionSectionKindsV1.Coil, 0.5m, 1000m, null, null, null, null, null, "SENTETIK gerekçe");
+        new(version, ProductDimensionSectionKindsV1.Coil, 0.5m, 1000m, null, null, null, null, "SENTETIK gerekçe");
 
     private static ProductCardDimensionRow Row(Guid company) => new()
     {
