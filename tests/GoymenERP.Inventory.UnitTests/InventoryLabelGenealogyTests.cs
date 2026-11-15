@@ -114,6 +114,119 @@ public sealed class InventoryLabelGenealogyTests
             [Source("SRC", 10m, version: 0)], [Output("OUT-1", 4m), Output("OUT-2", 6m)]));
     }
 
+    [Fact]
+    public void Split_of_a_usable_remnant_gives_every_child_the_usable_remnant_production_status()
+    {
+        var source = Remnant(Source("SRC", 10m));
+
+        var transformation = Transform(InventoryLabelTransformationKind.Split, [source],
+            [Remnant(Output("OUT-1", 4m)), Remnant(Output("OUT-2", 6m))]);
+
+        Assert.Equal(LabelProductionStatus.UsableRemnant, transformation.OutputProductionStatus);
+        Assert.All(transformation.Outputs,
+            output => Assert.Equal(LabelProductionStatus.UsableRemnant, output.Label.ProductionStatus));
+    }
+
+    [Fact]
+    public void Split_of_a_usable_remnant_refuses_a_child_without_the_inherited_production_status()
+    {
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Split, [Remnant(Source("SRC", 10m))],
+            [Remnant(Output("OUT-1", 4m)), Output("OUT-2", 6m)]));
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Split, [Remnant(Source("SRC", 10m))],
+            [Output("OUT-1", 4m), Output("OUT-2", 6m)]));
+    }
+
+    [Fact]
+    public void Split_of_a_label_without_production_status_keeps_the_children_without_one()
+    {
+        var transformation = Transform(InventoryLabelTransformationKind.Split, [Source("SRC", 10m)],
+            [Output("OUT-1", 4m), Output("OUT-2", 6m)]);
+
+        Assert.Null(transformation.OutputProductionStatus);
+        Assert.All(transformation.Outputs, output => Assert.Null(output.Label.ProductionStatus));
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Split, [Source("SRC", 10m)],
+            [Remnant(Output("OUT-1", 4m)), Output("OUT-2", 6m)]));
+    }
+
+    [Fact]
+    public void Merge_result_is_a_usable_remnant_only_when_every_source_is_one()
+    {
+        var transformation = Transform(InventoryLabelTransformationKind.Merge,
+            [Remnant(Source("SRC-1", 4m)), Remnant(Source("SRC-2", 6m))], [Remnant(Output("OUT", 10m))]);
+
+        Assert.Equal(LabelProductionStatus.UsableRemnant, transformation.OutputProductionStatus);
+        Assert.Equal(LabelProductionStatus.UsableRemnant, Assert.Single(transformation.Outputs).Label.ProductionStatus);
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Merge,
+            [Remnant(Source("SRC-1", 4m)), Remnant(Source("SRC-2", 6m))], [Output("OUT", 10m)]));
+    }
+
+    [Fact]
+    public void Merge_of_mixed_sources_leaves_the_result_without_production_status()
+    {
+        var transformation = Transform(InventoryLabelTransformationKind.Merge,
+            [Remnant(Source("SRC-1", 4m)), Source("SRC-2", 6m)], [Output("OUT", 10m)]);
+
+        Assert.Null(transformation.OutputProductionStatus);
+        Assert.Null(Assert.Single(transformation.Outputs).Label.ProductionStatus);
+        AssertInvalid(() => Transform(InventoryLabelTransformationKind.Merge,
+            [Remnant(Source("SRC-1", 4m)), Source("SRC-2", 6m)], [Remnant(Output("OUT", 10m))]));
+    }
+
+    [Theory]
+    [InlineData(new[] { true }, true)]
+    [InlineData(new[] { false }, false)]
+    [InlineData(new[] { true, true }, true)]
+    [InlineData(new[] { true, true, true }, true)]
+    [InlineData(new[] { true, false }, false)]
+    [InlineData(new[] { false, true, true }, false)]
+    [InlineData(new[] { false, false }, false)]
+    public void Inherited_production_status_is_usable_remnant_only_when_every_source_is_one(
+        bool[] remnantSources,
+        bool expectedRemnant)
+    {
+        var labels = remnantSources.Select((remnant, index) =>
+        {
+            var label = Label(Guid.NewGuid(), $"SRC-{index}", LotId);
+            if (remnant)
+            {
+                label.MarkProductionStatus(LabelProductionStatus.UsableRemnant);
+            }
+
+            return label;
+        }).ToArray();
+
+        Assert.Equal(expectedRemnant ? (LabelProductionStatus?)LabelProductionStatus.UsableRemnant : null,
+            InventoryLabelTransformation.InheritedProductionStatus(labels));
+    }
+
+    [Fact]
+    public void Inherited_production_status_ignores_the_classification_and_needs_a_source()
+    {
+        var secondQuality = Label(Guid.NewGuid(), "SRC-SECOND", LotId);
+        secondQuality.Classify(LabelClassification.SecondQuality);
+        var remnant = Label(Guid.NewGuid(), "SRC-REMNANT", LotId);
+        remnant.Classify(LabelClassification.Standard);
+        remnant.MarkProductionStatus(LabelProductionStatus.UsableRemnant);
+
+        Assert.Null(InventoryLabelTransformation.InheritedProductionStatus([secondQuality]));
+        Assert.Equal(LabelProductionStatus.UsableRemnant,
+            InventoryLabelTransformation.InheritedProductionStatus([remnant]));
+        Assert.Equal(LabelClassification.Standard, remnant.Classification);
+        AssertInvalid(() => InventoryLabelTransformation.InheritedProductionStatus([]));
+    }
+
+    private static InventoryLabelTransformationSource Remnant(InventoryLabelTransformationSource source)
+    {
+        source.Label.MarkProductionStatus(LabelProductionStatus.UsableRemnant);
+        return source;
+    }
+
+    private static InventoryLabelTransformationOutput Remnant(InventoryLabelTransformationOutput output)
+    {
+        output.Label.MarkProductionStatus(LabelProductionStatus.UsableRemnant);
+        return output;
+    }
+
     private static InventoryLabelTransformation Transform(
         InventoryLabelTransformationKind kind,
         IReadOnlyList<InventoryLabelTransformationSource> sources,
