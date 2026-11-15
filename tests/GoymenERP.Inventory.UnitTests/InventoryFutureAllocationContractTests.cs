@@ -104,7 +104,7 @@ public sealed class InventoryFutureAllocationContractTests
         var same = await converter.ConvertAsync(ProductId, "1", 12.5m, UnitId, UnitId);
         var other = await converter.ConvertAsync(ProductId, "1", 12.5m, UnitId, OtherUnitId);
         var empty = await converter.ConvertAsync(ProductId, "1", 12.5m, Guid.Empty, Guid.Empty);
-        var kilograms = await converter.ConvertFromKilogramsAsync(ProductId, "1", 12.5m, UnitId);
+        var kilograms = await converter.ConvertToKilogramsAsync(ProductId, "1", 12.5m, UnitId);
 
         Assert.Equal((InventoryFutureUnitConversionOutcomeV1.Converted, 12.5m), (same.Outcome, same.Quantity!.Value));
         Assert.Equal(
