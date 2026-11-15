@@ -54,6 +54,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceInvoiceCancellationItemRow> InvoiceCancellationItems => Set<FinanceInvoiceCancellationItemRow>();
 
+    internal DbSet<FinanceCustomerReturnCreditRow> CustomerReturnCredits => Set<FinanceCustomerReturnCreditRow>();
+
+    internal DbSet<FinanceCustomerReturnCreditItemRow> CustomerReturnCreditItems => Set<FinanceCustomerReturnCreditItemRow>();
+
+    internal DbSet<FinanceCustomerReturnInvoiceStateRow> CustomerReturnInvoiceStates => Set<FinanceCustomerReturnInvoiceStateRow>();
+
     internal DbSet<FinanceOfficialInvoiceImportBatchRow> OfficialInvoiceImportBatches => Set<FinanceOfficialInvoiceImportBatchRow>();
 
     internal DbSet<FinanceOfficialInvoiceImportApprovalRow> OfficialInvoiceImportApprovals => Set<FinanceOfficialInvoiceImportApprovalRow>();
@@ -110,6 +116,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureOfficialInvoiceImports(modelBuilder);
         ConfigureOpenItems(modelBuilder);
         ConfigureInvoiceCancellations(modelBuilder);
+        ConfigureCustomerReturnCredits(modelBuilder);
         ConfigureSourceAllocationStates(modelBuilder);
         ConfigureAllocations(modelBuilder);
         ConfigureReversalProposals(modelBuilder);
@@ -594,6 +601,91 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         item.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// F-019 / API-11 v2 (SAT-D291, SAT-D294): the reversing credit of an accepted customer return invoice and the original
+    /// open items it reduced. Append-only; one credit per return document; the advance is the credit's unapplied part.
+    /// </summary>
+    private void ConfigureCustomerReturnCredits(ModelBuilder modelBuilder)
+    {
+        var header = modelBuilder.Entity<FinanceCustomerReturnCreditRow>();
+        header.ToTable("CustomerReturnCredits", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturnCredits_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[DocumentId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[PartyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CustomerReturnCredits_Text",
+                "LEN([SourceKind]) > 0 AND LEN([DocumentVersion]) > 0 AND LEN([OriginalInvoiceVersion]) > 0 AND "
+                + "LEN([AmountText]) > 0 AND LEN([AppliedAmountText]) > 0 AND LEN([AdvanceAmountText]) > 0 AND "
+                + "LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND "
+                + "LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+            // IS NOT NULL is explicit: a CHECK passes on UNKNOWN (the F2a exchange rule).
+            table.HasCheckConstraint("CK_CustomerReturnCredits_Functional",
+                "[FunctionalAmountText] IS NULL OR LEN([FunctionalAmountText]) > 0");
+        });
+        header.HasKey(x => x.Id);
+        header.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        header.Property(x => x.Id).ValueGeneratedNever();
+        header.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.DocumentVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.OriginalInvoiceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        header.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        header.Property(x => x.AppliedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        header.Property(x => x.AdvanceAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        header.Property(x => x.FunctionalAmountText).HasColumnType("varchar(max)").IsUnicode(false);
+        header.Property(x => x.BusinessDate).HasColumnType("date");
+        header.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        header.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        header.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.ResultJson).IsRequired();
+        header.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        header.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        header.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).IsUnique();
+        header.HasIndex(x => new { x.CompanyId, x.SourceKind, x.DocumentId }).IsUnique();
+        header.HasIndex(x => new { x.CompanyId, x.OriginalInvoiceId });
+        header.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var item = modelBuilder.Entity<FinanceCustomerReturnCreditItemRow>();
+        item.ToTable("CustomerReturnCreditItems", Schema, table =>
+            table.HasCheckConstraint("CK_CustomerReturnCreditItems_Amount", "LEN([ReducedAmountText]) > 0"));
+        item.HasKey(x => new { x.CompanyId, x.CreditId, x.OpenItemId });
+        item.Property(x => x.ReducedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        item.HasIndex(x => new { x.CompanyId, x.OpenItemId });
+        item.HasOne<FinanceCustomerReturnCreditRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CreditId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        item.HasOne<FinanceOpenItemRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpenItemId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        item.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var state = modelBuilder.Entity<FinanceCustomerReturnInvoiceStateRow>();
+        state.ToTable("CustomerReturnInvoiceStates", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CustomerReturnInvoiceStates_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OriginalInvoiceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CustomerReturnInvoiceStates_Text",
+                "LEN([ReturnedAmountText]) > 0 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_CustomerReturnInvoiceStates_Version", "[Version] >= 1");
+        });
+        state.HasKey(x => new { x.CompanyId, x.OriginalInvoiceId });
+        state.Property(x => x.ReturnedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        state.Property(x => x.Version).IsConcurrencyToken();
+        state.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        state.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        state.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureAllocations(ModelBuilder modelBuilder)
@@ -1708,6 +1800,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(FinanceSourceAllocationStateRow.UnallocatedAmountText),
                         nameof(FinanceSourceAllocationStateRow.UpdatedBy),
                         nameof(FinanceSourceAllocationStateRow.UpdatedAtUtc),
+                    ],
+                    // F-019: only the running total of an invoice's accepted returns and its update stamp; the credit
+                    // and its reductions are append-only (no entry here).
+                    FinanceCustomerReturnInvoiceStateRow =>
+                    [
+                        nameof(FinanceCustomerReturnInvoiceStateRow.ReturnedAmountText),
+                        nameof(FinanceCustomerReturnInvoiceStateRow.UpdatedBy),
+                        nameof(FinanceCustomerReturnInvoiceStateRow.UpdatedAtUtc),
                     ],
                     // DEC-FIN-016: the facts never change; only the status step and its bank / collection trace. The
                     // state-aware guard above admits only an allowed step. A movement is append-only (no entry here).
