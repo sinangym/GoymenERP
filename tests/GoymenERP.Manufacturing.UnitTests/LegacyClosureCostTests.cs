@@ -29,7 +29,8 @@ public sealed class LegacyClosureCostTests
 
     private static ProductionReceiptCostInput Input(bool closed = true, bool outputAboveInput = false) =>
         new(closed,
-            [new IssueCostInput(IssueA, Kg(1_000m), IssueCostReadStatus.Value, 40m)],
+            [new IssueCostInput(IssueA, Kg(1_000m), IssueCostReadStatus.Value, 40m,
+                IssueCostCurrencyInput.FunctionalCurrency)],
             [],
             Kg(900m),
             Kg(50m),
