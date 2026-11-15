@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Identity.Domain.Credentials;
 using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 

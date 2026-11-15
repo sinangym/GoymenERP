@@ -73,9 +73,9 @@ public sealed class LocalAccountPasswordChangeFenceTests
     }
 
     [Theory]
-    [InlineData(new[] { "identity" })]
-    [InlineData(new[] { "identity", "bootstrap" })]
-    [InlineData(new[] { "identity", "bootstrap-founder", "fazla" })]
+    [InlineData(new object[] { new[] { "identity" } })]
+    [InlineData(new object[] { new[] { "identity", "bootstrap" } })]
+    [InlineData(new object[] { new[] { "identity", "bootstrap-founder", "fazla" } })]
     public async Task The_command_refuses_any_other_argument_list_with_the_usage_exit_code(string[] args)
     {
         var services = new ServiceCollection().BuildServiceProvider();
