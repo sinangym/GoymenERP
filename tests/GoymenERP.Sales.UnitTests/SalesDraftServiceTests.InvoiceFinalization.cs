@@ -257,7 +257,8 @@ public sealed partial class SalesDraftServiceTests
         var root = payload.RootElement;
         Assert.Equal(
             ["invoiceId", "documentNo", "version", "admissionId", "partyId", "companyAccountId", "currencyId", "rate", "payable",
-                "functionalPayable", "match", "instalments"],
+                "functionalPayable", "match", "instalments", "companyId", "businessDate", "rateDay", "functionalCurrencyId", "net", "vat",
+                "withholding", "functionalNet", "functionalVat", "functionalWithholding", "lines"],
             root.EnumerateObject().Select(member => member.Name).ToArray());
         Assert.Equal(["officialNo", "ettn", "officialFunctionalAmount", "difference"],
             root.GetProperty("match").EnumerateObject().Select(member => member.Name).ToArray());
@@ -292,5 +293,67 @@ public sealed partial class SalesDraftServiceTests
             Assert.Equal(expected.FunctionalAmount is null ? System.Text.Json.JsonValueKind.Null : System.Text.Json.JsonValueKind.Number,
                 item.GetProperty("functionalAmount").ValueKind);
         }
+    }
+
+    [Fact]
+    public async Task The_finalized_outbox_payload_carries_the_accounting_lines_and_totals_from_the_frozen_invoice()
+    {
+        var (invoicing, id) = await MatchedInvoiceAsync(finance: null);
+        await invoicing.Service().FinalizeInvoiceAsync(id, Command("3"), Metadata("k-inv-final"));
+        var stored = invoicing.Invoices.Stored[id];
+
+        using var payload = System.Text.Json.JsonDocument.Parse(
+            GoymenERP.Modules.Sales.Infrastructure.Persistence.SalesStore.FinalizedPayload(stored, stored.Finalization!));
+
+        var root = payload.RootElement;
+        Assert.Equal(stored.CompanyId, root.GetProperty("companyId").GetGuid());
+        Assert.Equal(stored.Header.BusinessDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            root.GetProperty("businessDate").GetString());
+        Assert.Equal(stored.Totals.Net.Amount, root.GetProperty("net").GetDecimal());
+        Assert.Equal(stored.Totals.Vat.Amount, root.GetProperty("vat").GetDecimal());
+        Assert.Equal(stored.Totals.Withholding.Amount, root.GetProperty("withholding").GetDecimal());
+        var functional = stored.FunctionalTotals;
+        foreach (var name in new[] { "rateDay", "functionalCurrencyId", "functionalNet", "functionalVat", "functionalWithholding" })
+        {
+            Assert.Equal(functional is null, root.GetProperty(name).ValueKind == System.Text.Json.JsonValueKind.Null);
+        }
+
+        if (functional is not null)
+        {
+            Assert.Equal(functional.Net.Amount, root.GetProperty("functionalNet").GetDecimal());
+            Assert.Equal(functional.Vat.Amount, root.GetProperty("functionalVat").GetDecimal());
+            Assert.Equal(functional.Withholding.Amount, root.GetProperty("functionalWithholding").GetDecimal());
+            Assert.Equal(stored.Header.Rate!.FunctionalCurrencyId, root.GetProperty("functionalCurrencyId").GetGuid());
+        }
+
+        var lines = root.GetProperty("lines");
+        var expectedLines = stored.Lines.OrderBy(line => line.LineNo).ToArray();
+        Assert.NotEmpty(expectedLines);
+        Assert.Equal(expectedLines.Length, lines.GetArrayLength());
+        Assert.Equal(
+            ["lineId", "lineNo", "productId", "unitId", "quantity", "itemType", "buyerSituation", "vatPercent", "withholdingShare",
+                "exemptionCode", "withholdingCode", "net", "vat", "withholding", "payable", "functionalNet", "functionalVat",
+                "functionalWithholding", "functionalPayable"],
+            lines[0].EnumerateObject().Select(member => member.Name).ToArray());
+        foreach (var (item, expected) in lines.EnumerateArray().Zip(expectedLines))
+        {
+            Assert.Equal(expected.Id, item.GetProperty("lineId").GetGuid());
+            Assert.Equal(expected.LineNo, item.GetProperty("lineNo").GetInt32());
+            Assert.Equal(expected.Share.ProductId, item.GetProperty("productId").GetGuid());
+            Assert.Equal(expected.Share.UnitId, item.GetProperty("unitId").GetGuid());
+            Assert.Equal(expected.Share.Quantity, item.GetProperty("quantity").GetDecimal());
+            Assert.Equal(expected.VatPercent, item.GetProperty("vatPercent").GetDecimal());
+            Assert.Equal(expected.Amounts.Net.Amount, item.GetProperty("net").GetDecimal());
+            Assert.Equal(expected.Amounts.Vat.Amount, item.GetProperty("vat").GetDecimal());
+            Assert.Equal(expected.Amounts.Withholding.Amount, item.GetProperty("withholding").GetDecimal());
+            Assert.Equal(expected.Amounts.Payable.Amount, item.GetProperty("payable").GetDecimal());
+            Assert.Equal(expected.Functional is null, item.GetProperty("functionalPayable").ValueKind == System.Text.Json.JsonValueKind.Null);
+        }
+
+        // The lines add up to the totals the header carries (one calculator, never re-rounded); payable = net + VAT - withholding.
+        Assert.Equal(stored.Totals.Net.Amount, lines.EnumerateArray().Sum(item => item.GetProperty("net").GetDecimal()));
+        Assert.Equal(stored.Totals.Payable.Amount, lines.EnumerateArray().Sum(item => item.GetProperty("payable").GetDecimal()));
+        Assert.Equal(root.GetProperty("payable").GetDecimal(),
+            root.GetProperty("net").GetDecimal() + root.GetProperty("vat").GetDecimal() - root.GetProperty("withholding").GetDecimal());
     }
 }

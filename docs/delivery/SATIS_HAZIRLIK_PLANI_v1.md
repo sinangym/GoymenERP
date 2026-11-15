@@ -267,8 +267,8 @@ Kısaltma: ✅ merge edildi · ◐ kod merge edildi ama başka modül veya karar
 | API-32 fatura taslağı ve hesaplayıcı | #975 · `bab70cb4` | ✅ |
 | API-33 fatura onay/red/iptal | #980 · `5b5baa23` | ✅ |
 | API-34 Excel dışa aktarım | #1047 · `b6099323`, #1052 · `fb2b635c` | ✅ |
-| API-35 resmî belge eşleştirme | #981 · `7664278b`; dövizli tolerans #1021 · `e3643fc9`; KDV/tevkifat ayrı #1046 · `78adcd68` | ◐ resmî fatura okuma portunu uygulayan modül yok → 503; resmî belge verisinin sahibi Sinan kararı (F-005) |
-| API-36 kesinleştirme → Finans açık kalem (+ MOD-04) | #986 · `cef78270`; Finans kabul portu #929 · `1e694aa3` | ◐ eşleşme olmadan kesinleşme yok; F-005'e bağlı |
+| API-35 resmî belge eşleştirme | #981 · `7664278b`; dövizli tolerans #1021 · `e3643fc9`; KDV/tevkifat ayrı #1046 · `78adcd68` | ◐ Finans okuma portu (FIN-S6) `AddFinanceServices` ile bağlı; yalnız onaylı resmî kayıt bulunur, bekleyen/bilinmeyen → 409, Finans yoksa → 503 (SAT-S1). CSV v2 importunun porta katılması açık (NEEDS-SINAN) |
+| API-36 kesinleştirme → Finans açık kalem (+ MOD-04) | #986 · `cef78270`; Finans kabul portu #929 · `1e694aa3` | ◐ eşleşme Finans portuyla açıldı; `sales.invoice.finalized.v1` muhasebe için satır/toplam alanlarıyla genişletildi (SAT-S1). Resmî fatura tarihi olayda yok (NEEDS-SINAN) |
 | API-37 Kontrol Merkezi | #983 · `40aae54a`; takip #992 · `45f654bf`, #1042 · `efe38033` | ✅ |
 | API-40 müşteri iade faturası | #1059 · `36885556`; ret/iptal #1063 · `5e6ab310` | ◐ kayıt, gönderme, onay, ret, iptal çalışır; kesinleştirme 503 (`sales_customer_return_finance_port_unavailable`) — Finans API-11 ters kayıt portu yok |
 | API-41/42 raporlar | #865 · `d7e19e4a` | ✅ |
