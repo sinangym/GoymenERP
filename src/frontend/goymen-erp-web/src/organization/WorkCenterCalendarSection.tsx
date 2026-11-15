@@ -27,7 +27,9 @@ import {
   CALENDAR_SOURCE,
   isCalendarDay,
   isDateToken,
+  endsNextDay,
   isTimeToken,
+  shiftsOverlap,
   sortShifts,
   type CalendarDay,
   type CalendarShift,
@@ -119,6 +121,11 @@ export function WorkCenterCalendarSection({
   )
 }
 
+/** KIM-D33: an overnight window is shown with its next-day marker, so 22:00–06:00 is never read as same-day. */
+function shiftWindowLabel(shift: CalendarShift): string {
+  return WORK_CENTER_CALENDAR_TEXT.shiftWindow(shift.start, shift.end, endsNextDay(shift))
+}
+
 function CalendarView({ calendar }: { readonly calendar: WorkCenterCalendar }) {
   const byDay = new Map<CalendarDay, CalendarShift[]>()
   for (const shift of sortShifts(calendar.shifts)) {
@@ -151,7 +158,7 @@ function CalendarView({ calendar }: { readonly calendar: WorkCenterCalendar }) {
                   {shifts.length === 0 ? (
                     <span className={styles.closed}>{WORK_CENTER_CALENDAR_TEXT.closed}</span>
                   ) : (
-                    shifts.map((shift) => `${shift.start}–${shift.end}`).join(', ')
+                    shifts.map(shiftWindowLabel).join(', ')
                   )}
                 </td>
               </tr>
@@ -261,22 +268,16 @@ export function validateCalendar(
     errors.shifts = WORK_CENTER_CALENDAR_TEXT.tooManyShifts
   } else if (
     shifts.some((shift) => !isCalendarDay(shift.day) || !isTimeToken(shift.start) || !isTimeToken(shift.end))
-    || shifts.some((shift) => shift.end <= shift.start)
+    || shifts.some((shift) => shift.end === shift.start)
   ) {
     errors.shifts = WORK_CENTER_CALENDAR_TEXT.shiftInvalid
   } else {
-    const ordered = sortShifts(shifts as readonly CalendarShift[])
+    const valid = shifts as readonly CalendarShift[]
     const perDay = new Map<string, number>()
-    for (let index = 0; index < ordered.length; index += 1) {
-      const current = ordered[index]
-      perDay.set(current.day, (perDay.get(current.day) ?? 0) + 1)
-      const previous = index > 0 ? ordered[index - 1] : undefined
-      if (previous !== undefined && previous.day === current.day && current.start < previous.end) {
-        errors.shifts = WORK_CENTER_CALENDAR_TEXT.shiftsOverlap
-        break
-      }
-    }
-    if (errors.shifts === undefined && [...perDay.values()].some((count) => count > CALENDAR_LIMITS.shiftsPerDay)) {
+    for (const shift of valid) perDay.set(shift.day, (perDay.get(shift.day) ?? 0) + 1)
+    if (shiftsOverlap(valid)) {
+      errors.shifts = WORK_CENTER_CALENDAR_TEXT.shiftsOverlap
+    } else if ([...perDay.values()].some((count) => count > CALENDAR_LIMITS.shiftsPerDay)) {
       errors.shifts = WORK_CENTER_CALENDAR_TEXT.tooManyShifts
     }
   }
@@ -495,6 +496,11 @@ function CalendarForm({
                     onChange={(event) => updateShift(row.rowId, { end: event.target.value })}
                   />
                 </label>
+                {isTimeToken(row.start) && isTimeToken(row.end) && row.end < row.start ? (
+                  <span className={styles.cellLabel} data-next-day="true">
+                    {WORK_CENTER_CALENDAR_TEXT.nextDay}
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   className={formStyles.secondary}

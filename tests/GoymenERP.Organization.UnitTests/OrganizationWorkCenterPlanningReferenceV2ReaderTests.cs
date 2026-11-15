@@ -164,7 +164,7 @@ public sealed class OrganizationWorkCenterPlanningReferenceV2ReaderTests
         var shiftChecks = Checks(shift);
         Assert.Equal("[Revision] >= 1", shiftChecks["CK_WorkCenterCalendarShifts_Revision"]);
         Assert.Equal("[Day] BETWEEN 0 AND 6", shiftChecks["CK_WorkCenterCalendarShifts_Day"]);
-        Assert.Equal("[StartTime] < [EndTime]", shiftChecks["CK_WorkCenterCalendarShifts_Window"]);
+        Assert.Equal("[StartTime] <> [EndTime]", shiftChecks["CK_WorkCenterCalendarShifts_Window"]);
         Assert.Equal("time(0)", shift.FindProperty(nameof(WorkCenterCalendarShiftRecord.StartTime))!.GetColumnType());
         Assert.Equal("time(0)", shift.FindProperty(nameof(WorkCenterCalendarShiftRecord.EndTime))!.GetColumnType());
         Assert.NotEmpty(shift.GetDeclaredQueryFilters());

@@ -570,8 +570,9 @@ public static partial class OrganizationEndpoints
             $"Bir güne en fazla {WorkCenterCalendarDefinition.MaximumShiftsPerDay} vardiya tanımlanabilir.",
         WorkCenterCalendarDefinitionError.ShiftNotOnWholeMinute => "Vardiya saatleri tam dakika olmalıdır.",
         WorkCenterCalendarDefinitionError.ShiftNotPositive =>
-            "Vardiya bitişi aynı gün içinde başlangıçtan sonra olmalıdır.",
-        WorkCenterCalendarDefinitionError.ShiftsOverlap => "Aynı gündeki vardiyalar çakışmamalıdır.",
+            "Vardiya başlangıcı ile bitişi aynı olamaz; bitiş başlangıçtan önceyse vardiya ertesi güne taşar.",
+        WorkCenterCalendarDefinitionError.ShiftsOverlap =>
+            "Vardiyalar çakışmamalıdır; ertesi güne taşan vardiya o günün vardiyalarıyla da çakışmamalıdır.",
         WorkCenterCalendarDefinitionError.TooManyClosedDates =>
             $"En fazla {WorkCenterCalendarDefinition.MaximumClosedDateCount} kapalı gün tanımlanabilir.",
         WorkCenterCalendarDefinitionError.DuplicateClosedDate => "Aynı kapalı gün iki kez girilemez.",

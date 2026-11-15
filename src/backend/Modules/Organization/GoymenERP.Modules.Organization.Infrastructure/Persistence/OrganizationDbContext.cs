@@ -40,7 +40,8 @@ public sealed class OrganizationDbContext(
     internal const string WorkCenterCalendarVersionCheck = "[Version] >= 1";
     internal const string WorkCenterCalendarShiftRevisionCheck = "[Revision] >= 1";
     internal const string WorkCenterCalendarShiftDayCheck = "[Day] BETWEEN 0 AND 6";
-    internal const string WorkCenterCalendarShiftWindowCheck = "[StartTime] < [EndTime]";
+    /// <summary>KIM-D33: an earlier end spills into the next day, so only an empty window (start = end) is refused.</summary>
+    internal const string WorkCenterCalendarShiftWindowCheck = "[StartTime] <> [EndTime]";
     internal const string WorkCenterCalendarClosedDateRevisionCheck = "[Revision] >= 1";
 
     // KIM-S23 (KIM-D28, DEC-ORG-005): a non-placeholder company always carries a VKN and no two companies share one.

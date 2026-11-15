@@ -1,6 +1,12 @@
 namespace GoymenERP.Modules.Organization.Application.Contracts;
 
-/// <summary>One weekly working window of a work centre, in <see cref="OrganizationWorkCenterPlanningReferenceV2.TimeZoneId"/>.</summary>
+/// <summary>
+/// One weekly working window of a work centre, in <see cref="OrganizationWorkCenterPlanningReferenceV2.TimeZoneId"/>,
+/// starting on <paramref name="Day"/>. KIM-D33: when <paramref name="End"/> is earlier than <paramref name="Start"/> the
+/// window spills into the next day (22:00–06:00 ends at 06:00 on the following day; 16:00–00:00 ends at midnight), and
+/// a consumer that computes capacity splits it across both days. <paramref name="Start"/> never equals
+/// <paramref name="End"/>.
+/// </summary>
 public sealed record OrganizationWorkCenterShiftV2(DayOfWeek Day, TimeOnly Start, TimeOnly End);
 
 /// <summary>
