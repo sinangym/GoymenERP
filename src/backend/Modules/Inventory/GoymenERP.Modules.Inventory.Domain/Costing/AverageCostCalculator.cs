@@ -3,6 +3,9 @@ namespace GoymenERP.Modules.Inventory.Domain.Costing;
 /// <summary>The two positions a transfer leaves behind.</summary>
 public sealed record AverageCostTransferResult(AverageCostPosition Source, AverageCostPosition Target);
 
+/// <summary>The two positions a transfer dispatch cancellation leaves behind (KLN-D64).</summary>
+public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition DispatchedTo, AverageCostPosition Source);
+
 /// <summary>
 /// The deterministic moving-average purchase cost core (SAT-D256…SAT-D258, SAT-D262, SAT-D265). One calculator, no screen
 /// or caller re-implements it. Pure: no clock, no storage, no company or role. The key of a position (company, location,
@@ -11,6 +14,8 @@ public sealed record AverageCostTransferResult(AverageCostPosition Source, Avera
 /// <item>A purchase receipt with a positive cost recalculates: <c>round4((q·a + Δ·c) / (q + Δ))</c>, rounded once, AwayFromZero.</item>
 /// <item>An issue keeps the average and lowers the quantity; below zero is unreadable, never negative.</item>
 /// <item>A transfer enters the target at the SOURCE average (the target's own average then blends as a receipt).</item>
+/// <item>A cancelled transfer dispatch returns to the source at the unit cost used at dispatch, never at the source's
+/// average at cancel time (KLN-D64 (1)).</item>
 /// <item>A production receipt never enters the average: the position becomes unreadable (mixed source is OPEN).</item>
 /// <item>Additional (landed) cost never enters the average in v1 (SAT-D302 (1)). The receipt entering at its own purchase
 /// price, with <see cref="AverageCostMovement.AdditionalCostPerStockKg"/> kept outside the figure, is the implementation
@@ -105,6 +110,47 @@ public static class AverageCostCalculator
         var targetAfter = Apply(target, new AverageCostMovement(
             AverageCostMovementKind.PurchaseReceipt, quantityKg, targetStockOnHandBeforeKg, source.AverageCostPerKg));
         return new(sourceAfter, targetAfter);
+    }
+
+    /// <summary>
+    /// KLN-D64 (1): the reverse movement of a cancelled transfer dispatch. <paramref name="quantityKg"/> leaves the position
+    /// the dispatch moved it to (an issue at that position's average) and re-enters the source at
+    /// <paramref name="dispatchUnitCostPerKg"/>, the unit cost the dispatch used. The source's own average at cancel time
+    /// is never used for the returning quantity; it only blends with it as a receipt. A dispatch whose unit cost is unknown
+    /// (<c>null</c>) leaves the source unreadable (<see cref="AverageCostUnreadableReason.TransferSourceUnreadable"/>):
+    /// the returning quantity cannot be costed from nothing, and the current average is not a stand-in. A zero dispatch
+    /// cost is "cost unknown" like any receipt (<see cref="AverageCostUnreadableReason.ZeroCostReceipt"/>).
+    /// KLN-D64 (2): while transfers do not post to the cost ledger, the cancellation does not either; this rule is ready
+    /// for when transfer cost posting starts and no movement path calls it before then.
+    /// </summary>
+    public static AverageCostTransferDispatchCancelResult ApplyTransferDispatchCancel(
+        AverageCostPosition? dispatchedTo,
+        decimal dispatchedToStockOnHandBeforeKg,
+        AverageCostPosition? source,
+        decimal sourceStockOnHandBeforeKg,
+        decimal quantityKg,
+        decimal? dispatchUnitCostPerKg)
+    {
+        if (dispatchUnitCostPerKg is < 0m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(dispatchUnitCostPerKg), "A dispatch unit cost, when known, is not negative.");
+        }
+
+        var dispatchedToAfter = Apply(dispatchedTo, new AverageCostMovement(
+            AverageCostMovementKind.Issue, quantityKg, dispatchedToStockOnHandBeforeKg));
+        if (dispatchUnitCostPerKg is not { } dispatchUnitCost)
+        {
+            // The source is not re-costed from its own average: without the dispatch cost it has no figure to take back.
+            var sourceUnreadable = source is { Status: AverageCostStatus.Unreadable }
+                ? source
+                : AverageCostPosition.Unreadable(AverageCostUnreadableReason.TransferSourceUnreadable);
+            return new(dispatchedToAfter, sourceUnreadable);
+        }
+
+        var sourceAfter = Apply(source, new AverageCostMovement(
+            AverageCostMovementKind.PurchaseReceipt, quantityKg, sourceStockOnHandBeforeKg, dispatchUnitCost));
+        return new(dispatchedToAfter, sourceAfter);
     }
 
     private static AverageCostPosition ApplyReceipt(AverageCostPosition? current, AverageCostMovement movement)

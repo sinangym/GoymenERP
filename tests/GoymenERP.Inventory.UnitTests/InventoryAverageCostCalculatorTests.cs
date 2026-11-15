@@ -126,6 +126,80 @@ public sealed class InventoryAverageCostCalculatorTests
     }
 
     [Fact]
+    public void A_cancelled_dispatch_returns_to_an_empty_source_at_the_dispatch_unit_cost()
+    {
+        // KLN-D64 (1): the reverse movement re-enters the source at the unit cost the dispatch used.
+        var result = AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 9.5m), 4m, null, 0m, 4m, 9.5m);
+
+        AssertKnown(result.DispatchedTo, 0m, 9.5m);
+        AssertKnown(result.Source, 4m, 9.5m);
+    }
+
+    [Fact]
+    public void A_cancelled_dispatch_never_uses_the_source_average_at_cancel_time()
+    {
+        // The source average moved from 9.5 to 12 after the dispatch. KLN-D64 (1): the 4 kg come back at 9.5, the
+        // dispatch cost, and blend with the 6 kg held: (6 * 12 + 4 * 9.5) / 10 = 11.0. Using 12 would leave 12.
+        var result = AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 9.5m), 4m, AverageCostPosition.Known(6m, 12m), 6m, 4m, 9.5m);
+
+        AssertKnown(result.DispatchedTo, 0m, 9.5m);
+        AssertKnown(result.Source, 10m, 11.0000m);
+    }
+
+    [Fact]
+    public void A_cancelled_dispatch_blends_at_the_internal_scale_and_rounds_once()
+    {
+        // (3 * 12 + 4 * 10.5714) / 7 = 11.183657... -> 11.1837
+        var result = AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 10.5714m), 4m, AverageCostPosition.Known(3m, 12m), 3m, 4m, 10.5714m);
+
+        AssertKnown(result.Source, 7m, 11.1837m);
+    }
+
+    [Fact]
+    public void A_cancelled_dispatch_leaves_the_dispatched_to_average_and_returns_the_dispatch_cost_not_that_average()
+    {
+        // The dispatch entered a position that blended to 11.4286 (the transfer golden above). Cancelling 2 kg issues
+        // them there at that average and returns them to the source at 10.5714, the dispatch cost: the source comes back
+        // to its pre-dispatch figure.
+        var dispatch = AverageCostCalculator.ApplyTransfer(
+            AverageCostPosition.Known(7m, 10.5714m), 7m, AverageCostPosition.Known(3m, 12m), 3m, 2m);
+
+        var result = AverageCostCalculator.ApplyTransferDispatchCancel(
+            dispatch.Target, 5m, dispatch.Source, 5m, 2m, 10.5714m);
+
+        AssertKnown(result.DispatchedTo, 3m, 11.4286m);
+        AssertKnown(result.Source, 7m, 10.5714m);
+    }
+
+    [Fact]
+    public void A_cancelled_dispatch_without_a_known_dispatch_cost_leaves_the_source_unreadable_not_at_its_own_average()
+    {
+        var known = AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 9.5m), 4m, AverageCostPosition.Known(6m, 12m), 6m, 4m, null);
+        AssertKnown(known.DispatchedTo, 0m, 9.5m);
+        Assert.Equal((AverageCostStatus.Unreadable, TransferSourceUnreadable), (known.Source.Status, known.Source.UnreadableReason));
+
+        // A source that is already unreadable keeps its own reason.
+        var unreadable = AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 9.5m), 4m, AverageCostPosition.Unreadable(ForeignCurrency), 6m, 4m, null);
+        Assert.Equal(ForeignCurrency, unreadable.Source.UnreadableReason);
+    }
+
+    [Fact]
+    public void A_cancelled_dispatch_refuses_a_negative_dispatch_cost_and_treats_zero_as_cost_unknown()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 9.5m), 4m, null, 0m, 4m, -0.0001m));
+
+        var zero = AverageCostCalculator.ApplyTransferDispatchCancel(
+            AverageCostPosition.Known(4m, 9.5m), 4m, AverageCostPosition.Known(6m, 12m), 6m, 4m, 0m);
+        Assert.Equal((AverageCostStatus.Unreadable, ZeroCostReceipt), (zero.Source.Status, zero.Source.UnreadableReason));
+    }
+
+    [Fact]
     public void An_issue_beyond_the_held_quantity_is_negative_stock_and_unreadable_not_clamped()
     {
         // SAT-D318 (1): stock never goes below zero. Staying fail-closed on a breach is the decision file's author
