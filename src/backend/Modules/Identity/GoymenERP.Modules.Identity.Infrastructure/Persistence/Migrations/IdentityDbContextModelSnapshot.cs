@@ -22,11 +22,252 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("GoymenERP.Modules.Audit.Domain.Events.AuditEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("AfterJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiContextJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiInvolvement")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ApprovalContextJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AuthorityRevision")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("BeforeJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ClientIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<long?>("EntityVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("EntityVersionBefore")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("IntegrityHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("OriginCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PermissionCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("RoleCodesJson")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceChannel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SubjectKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Company")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CorrelationId");
+
+                    b.HasIndex("CompanyId", "OccurredAtUtc", "Id")
+                        .IsDescending(false, true, true);
+
+                    b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
+
+                    b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
+
+                    b.ToTable("AuditEvents", "audit", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Idempotency.Domain.Executions.CommandExecution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("HttpStatusCode")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("OriginalCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CommandName", "IdempotencyKeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "CompletedAtUtc", "Id");
+
+                    b.ToTable("CommandExecutions", "idempotency", t =>
+                        {
+                            t.ExcludeFromMigrations();
+
+                            t.HasCheckConstraint("CK_CommandExecutions_CompanyId_NotEmpty", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_Hash_Lengths", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_HttpStatusCode_Valid", "[HttpStatusCode] BETWEEN 100 AND 599");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_ResponseJson_Valid", "ISJSON([ResponseJson]) = 1");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_SchemaVersion_Positive", "[SchemaVersion] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Approvals.AccessGrantRequest", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalMode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
@@ -37,6 +278,15 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("DecidedByUserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("DecisionReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTimeOffset>("RequestedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -45,6 +295,9 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("RequiresSecondApproval")
                         .HasColumnType("bit");
+
+                    b.Property<Guid?>("ResultingRoleAssignmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("RoleId")
                         .HasColumnType("uniqueidentifier");
@@ -57,6 +310,12 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TargetUserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("ValidFromUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ValidUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<long>("Version")
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
@@ -67,17 +326,37 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("RequestedByUserId");
 
+                    b.HasIndex("ResultingRoleAssignmentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_AccessGrantRequests_ResultingRoleAssignment")
+                        .HasFilter("[ResultingRoleAssignmentId] IS NOT NULL");
+
                     b.HasIndex("RoleId");
 
                     b.HasIndex("TargetUserId");
 
+                    b.HasIndex("CompanyId", "ResultingRoleAssignmentId");
+
                     b.HasIndex("CompanyId", "Status", "RequestedAtUtc");
+
+                    b.HasIndex("CompanyId", "TargetUserId", "RoleId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_AccessGrantRequests_Pending")
+                        .HasFilter("[Status] = N'Pending'");
 
                     b.ToTable("AccessGrantRequests", "identity", t =>
                         {
-                            t.HasCheckConstraint("CK_AccessGrantRequests_DecisionState", "([Status] = N'Pending' AND [DecidedByUserId] IS NULL AND [DecidedAtUtc] IS NULL) OR ([Status] IN (N'Approved', N'Rejected') AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
 
-                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_DecisionReason", "[DecisionReasonCode] IS NULL OR [Status] = N'Rejected'");
+
+                            t.HasCheckConstraint("CK_AccessGrantRequests_DecisionState", "([Status] = N'Pending' AND [DecidedByUserId] IS NULL AND [DecidedAtUtc] IS NULL) OR ([Status] IN (N'Approved', N'Rejected', N'Withdrawn') AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_AccessGrantRequests_ResultingAssignment", "[ResultingRoleAssignmentId] IS NULL OR [Status] = N'Approved'");
+
+                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] = N'FounderDirect' AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
+
+                            t.HasCheckConstraint("CK_AccessGrantRequests_Validity", "[ValidUntilUtc] IS NULL OR ([ValidFromUtc] IS NOT NULL AND [ValidUntilUtc] > [ValidFromUtc])");
                         });
                 });
 
@@ -182,6 +461,12 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("RoleId")
                         .HasColumnType("uniqueidentifier");
 
@@ -207,6 +492,8 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ApprovedByUserId");
 
+                    b.HasIndex("RevokedByUserId");
+
                     b.HasIndex("RoleId", "CompanyId");
 
                     b.HasIndex("UserId", "CompanyId", "Status");
@@ -214,6 +501,8 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("RoleAssignments", "identity", t =>
                         {
                             t.HasCheckConstraint("CK_RoleAssignments_CompanyId_NotEmpty", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_RoleAssignments_Revocation", "([RevokedByUserId] IS NULL AND [RevokedAtUtc] IS NULL) OR ([Status] = N'Revoked' AND [RevokedByUserId] IS NOT NULL AND [RevokedAtUtc] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_RoleAssignments_Validity", "[ValidUntilUtc] IS NULL OR [ValidUntilUtc] > [ValidFromUtc]");
                         });
@@ -623,6 +912,12 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TargetUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Assignments.RoleAssignment", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ResultingRoleAssignmentId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Assignments.ProductMasterAssignment", b =>
@@ -657,6 +952,11 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
                         .WithMany()
                         .HasForeignKey("ApprovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("RevokedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Roles.RoleDefinition", null)

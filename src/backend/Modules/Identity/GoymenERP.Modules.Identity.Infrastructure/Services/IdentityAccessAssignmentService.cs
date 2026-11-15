@@ -168,7 +168,7 @@ internal sealed partial class IdentityAccessAssignmentService(
                         "Kritik olmayan rol tek adımda atandı.", approvalContextJson: null),
                 ],
                 PermissionChangedEvent(command, now),
-                Answers.DuplicateActiveAssignment());
+                Answers.DuplicateActiveAssignment()));
         }
 
         if (!await IsActiveFounderAsync(command.ActorUserId, cancellationToken))
@@ -210,7 +210,7 @@ internal sealed partial class IdentityAccessAssignmentService(
                     "Kurucu doğrudan kritik rol ataması (tek kişi, FounderDirect).", context),
             ],
             PermissionChangedEvent(command, now),
-            Answers.DuplicateActiveAssignment());
+            Answers.DuplicateActiveAssignment()));
     }
 
     /// <summary>A pending request for a Critical role; nothing is assigned and nothing is granted here.</summary>
@@ -269,7 +269,7 @@ internal sealed partial class IdentityAccessAssignmentService(
                     "Kritik rol için ikinci onay talebi açıldı.", approvalContextJson: null),
             ],
             SecurityEvent: null,
-            Answers.DuplicatePendingRequest());
+            Answers.DuplicatePendingRequest()));
     }
 
     /// <summary>One-step revocation (KIM-D15), refused for the company's last effective Admin (KIM-D17).</summary>
@@ -324,6 +324,6 @@ internal sealed partial class IdentityAccessAssignmentService(
                     "Rol ataması tek adımda geri alındı.", approvalContextJson: null),
             ],
             PermissionChangedEvent(command, now),
-            Answers.VersionConflict());
+            Answers.VersionConflict()));
     }
 }
