@@ -49,6 +49,54 @@ export const ROLE_TEXT = {
   codeLabel: 'Kod',
 } as const
 
+/**
+ * ID-1F sign-in and sign-out (pre-authentication screen and the toolbar control). The refusal text is ONE message for
+ * a wrong password, an unknown user, a passive and a locked account (KIM-D2/D4): it must never hint which it was, and
+ * the lock note is general — it names no duration, because the lock values are Settings values (KIM-D5).
+ */
+export const LOGIN_TEXT = {
+  heading: 'Giriş yap',
+  lead: 'Göymen ERP hesabınızla giriş yapın.',
+  userNameLabel: 'Kullanıcı adı',
+  passwordLabel: 'Parola',
+  showPassword: 'Parolayı göster',
+  hidePassword: 'Parolayı gizle',
+  submit: 'Giriş yap',
+  submitting: 'Giriş yapılıyor…',
+  missingFields: 'Kullanıcı adını ve parolayı girin.',
+  refused: 'Kullanıcı adı veya parola hatalı',
+  lockNote:
+    'Art arda hatalı denemelerden sonra giriş bir süre kapalı kalabilir. Bu durumda bir süre sonra yeniden deneyin ' +
+    'veya yöneticinize başvurun.',
+  rateLimitedTitle: 'Çok fazla giriş denemesi',
+  rateLimited: 'Kısa süre içinde çok fazla giriş denemesi yapıldı. Lütfen biraz sonra yeniden deneyin.',
+  notEnabledTitle: 'Yerel giriş kullanılamıyor',
+  notEnabled: 'Bu ortamda kullanıcı adı ve parolayla giriş etkin değil. Sistem yöneticinize başvurun.',
+  requestRejectedTitle: 'İstek doğrulanamadı',
+  requestRejected: 'Giriş isteği sunucu tarafından reddedildi. Sayfayı yenileyip yeniden deneyin.',
+  serviceUnavailableTitle: 'Servis geçici olarak kullanılamıyor',
+  serviceUnavailable: 'Giriş şu anda yapılamıyor. Kısa süre sonra yeniden deneyin.',
+  offlineTitle: 'Bağlantı yok',
+  offline: 'İnternet bağlantısı geldiğinde yeniden deneyin.',
+  networkErrorTitle: 'Sunucuya ulaşılamadı',
+  networkError: 'İstek tamamlanamadı ve yanıt alınamadı. Yeniden deneyin.',
+  unexpectedTitle: 'Beklenmeyen yanıt',
+  unexpected: 'Sunucu yanıtı beklenen biçimde değil. Giriş güvenli biçimde durduruldu.',
+  expiredTitle: 'Oturumunuz sona erdi',
+  expired: 'Oturumunuz kapandı veya süresi doldu. Devam etmek için yeniden giriş yapın.',
+  signedOutTitle: 'Çıkış yapıldı',
+  signedOut: 'Oturumunuz kapatıldı. Bu hesaptaki diğer açık oturumlar da sona erdi.',
+} as const
+
+export const LOGOUT_TEXT = {
+  action: 'Çıkış yap',
+  pending: 'Çıkış yapılıyor…',
+  notEnabled: 'Bu ortamda çıkış yapılamıyor; yerel giriş etkin değil.',
+  failed: 'Çıkış tamamlanamadı; oturumunuz hâlâ açık olabilir. Yeniden deneyin.',
+  offline: 'Bağlantı yok; çıkış yapılamadı. Oturumunuz hâlâ açık olabilir.',
+  unexpected: 'Sunucu yanıtı beklenen biçimde değil; çıkışın tamamlandığı doğrulanamadı. Yeniden deneyin.',
+} as const
+
 export function assignmentCountLabel(effective: number, total: number): string {
   return `${effective} geçerli / ${total} atama`
 }

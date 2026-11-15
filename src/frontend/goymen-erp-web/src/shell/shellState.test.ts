@@ -399,3 +399,41 @@ describe('contextKey (INV-NS) — Codex #133 P1-2', () => {
     expect(contextKey(afterFailedSwitch)).toEqual(contextKey(ready))
   })
 })
+
+describe('SESSION_REESTABLISHED — ID-1F sign-in after a 401', () => {
+  const invalidated = run(ready, { type: 'SESSION_INVALIDATED' })
+
+  it('is the one event that lifts the terminal flag', () => {
+    expect(invalidated.sessionInvalid).toBe(true)
+    // A reset alone never resurrects a rejected session (ChatGPT #169 P1-1) …
+    expect(run(invalidated, { type: 'SESSION_RESET' }).sessionInvalid).toBe(true)
+    // … only a sign-in the server accepted does.
+    expect(run(invalidated, { type: 'SESSION_REESTABLISHED' }).sessionInvalid).toBe(false)
+  })
+
+  it('commits nothing: the new session must bootstrap under a new epoch', () => {
+    const after = run(invalidated, { type: 'SESSION_REESTABLISHED' })
+    expect(after.phase).toBe('no-active-company')
+    expect(after.activeContext).toBeNull()
+    expect(after.verifiedFormerContext).toBeNull()
+    expect(after.sessionBinding).toBeNull()
+    expect(after.pendingFormerSessionFailure).toBeNull()
+    expect(after.sessionEpoch).toBe(invalidated.sessionEpoch + 1)
+    expect(after.requestFenceGeneration).toBe(invalidated.requestFenceGeneration + 1)
+    expect(after.committedContextRevision).toBe(invalidated.committedContextRevision)
+    expect(after.lastSecurityEffect).toBe(invalidated.lastSecurityEffect)
+    expect(needsBootstrap(after)).toBe(true)
+  })
+
+  it('fences off a SESSION_READY that was started under the rejected session', () => {
+    const after = run(invalidated, { type: 'SESSION_REESTABLISHED' })
+    const stale = run(after, {
+      type: 'SESSION_READY',
+      forSessionEpoch: invalidated.sessionEpoch,
+      context: fixtureContext('fixture-company-a'),
+    })
+    expect(stale.activeContext).toBeNull()
+    const fresh = sessionReady(after, fixtureContext('fixture-company-a'))
+    expect(fresh.activeContext?.companyId).toBe('fixture-company-a')
+  })
+})

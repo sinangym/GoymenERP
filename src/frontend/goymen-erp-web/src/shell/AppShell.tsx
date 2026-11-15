@@ -19,6 +19,9 @@ import { capabilityFailClosed, hasCapability, type ShellState } from './shellSta
 import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
+import { isLocalAccountMode } from './authMode'
+import { LoginPage } from '../identity/LoginPage'
+import { LogoutControl } from '../identity/LogoutControl'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
 import { AI_PANEL_ID, AiPanel } from '../ai/AiPanel'
@@ -143,12 +146,24 @@ export function AppShell() {
     sessionInvalid,
     sessionMismatch,
     retry,
+    loginNotice,
+    completeLogin,
+    completeLogout,
   } = useShellOrchestrator()
+  const localAccount = isLocalAccountMode()
   // The states in which no shell is drawn, in order. Computed before the hooks below so the drawer
   // can never stay "open" (focus, inert page, scroll lock) behind one of them.
   const gate = (() => {
-    // 401 anywhere — session is dead. Terminal (no login flow yet).
+    // 401 anywhere — session is dead. Terminal until a real sign-in: in local-account mode (ID-1F) the sign-in screen
+    // is the way out; in any other mode there is no sign-in flow in this client and the state stays terminal.
     if (sessionInvalid || identityState.kind === 'unauthenticated') {
+      if (localAccount) {
+        return (
+          <main id="main-content" tabIndex={-1}>
+            <LoginPage notice={loginNotice} onSignedIn={completeLogin} />
+          </main>
+        )
+      }
       return <StateBlock state={{ kind: 'unauthenticated' }} subject="oturum" />
     }
 
@@ -503,6 +518,7 @@ export function AppShell() {
           </button>
 
           <div className={styles.user}>{identity ? identity.displayName : '…'}</div>
+          {localAccount ? <LogoutControl onSignedOut={completeLogout} /> : null}
         </header>
 
         {switchFailure ? (
