@@ -317,8 +317,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-08: +1 IdentityUserDirectorySqlServerRelationalAcceptanceTests fact (9a5ea313… -> b2ba31aa…).
             // SAT-D27 (1): +1 sales-owner picker holder-filter SQL fact, ordinal-sorted (b2ba31aa… -> 12e280b9…).
             // ID-1: +5 IdentityLocalCredentialSqlServerRelationalAcceptanceTests facts, ordinal-sorted (12e280b9… -> aa5edfd7…).
+            // Re-fingerprinted for tren-1 wave 2 (trial integration): +6 facts, ordinal-sorted (aa5edfd7… -> cb7cf51d…).
             ["tools/relational_inventory/identity.txt"] =
-                "aa5edfd7eaf2c3b635b9b980ca3147417fc6357f4f05b7f754416028bbb96a72",
+                "cb7cf51d53637b16cf46196336c7b8a5cd10f653cb865cde7838ea64926762ed",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -411,9 +412,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Location display reader: +1 real-SQL tenant/display identity fact.
             // ORG-LOCATION-OPERATOR-CRUD-01A: +1 real-SQL persistence/concurrency/destination-read fact.
             // ORG-LOCATION-OPERATOR-API-01B: +1 real-SQL host-adapter/API/read/replay fact.
+            // Re-fingerprinted for tren-1 wave 2 (trial integration): +2 facts, ordinal-sorted (c6fb2c8a… -> bbb2421d…).
             ["tools/relational_inventory/organization.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +4 facts, ordinal-sorted (c2609fdb… -> c6fb2c8a…).
-                "c6fb2c8a74281376fe9f6fb08f18415598004a3873441b5a6a3aaf1bd854a7a3",
+                "bbb2421dd2420069cef30af2a4b07553a66ac4438610ff943022baf4a9f6b4e7",
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
@@ -663,20 +665,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
              + "CommandExecutionDbContext.cs"] =
                 "3622036369dbfa41ea6f9fb8dbf1c68d63574f36cdb69a53a11e987990220118",
+            // Re-fingerprinted for tren-1 wave 2 (trial integration): the team slices combined; token counts checked by the guard (4cf3e94b… -> d2c26ac3…).
             ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
              + "Persistence/IdentityDbContext.cs"] =
                 // Re-fingerprinted for ID-1: the identity.LocalCredentials mapping (one row per user, a restricted FK
                 // to Users, a unique binary-collated normalized user name, fail-closed counter/format checks). Like Users
                 // it is group-wide and carries no CompanyId (spec "Kullanıcı rolleri ve CompanyId kapsamı"); the
                 // existing company query filters and tenant write guard are unchanged (31367b8f… -> 4cf3e94b…).
-                "4cf3e94b50bd5eee6fc9044b8f8ceb7a7a40bb59520643f4f8a89a111a9f7b04",
+                "d2c26ac3d9bc134781e429a806b61463fa4ac40ccd1fc54f7647b12dbdbe42bb",
+            // Re-fingerprinted for tren-1 wave 2 (trial integration): the team slices combined; token counts checked by the guard (208f9114… -> 6881862d…).
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
                 // Re-fingerprinted for ORG-LOCATION-OPERATOR-CRUD-01A: one nullable OperatorPartyId and two
                 // fail-closed check constraints; the CompanyId query filters and tenant write guard are unchanged.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "208f9114a180e479882903d390fccd541ea04a57762c44c8249a2d86a41cd791",
+                "6881862da0dee794ec39dc6fd6444e1a28744f714af943dbc0423771de40409f",
             ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
              + "Persistence/SettingsDbContext.cs"] =
                 // Re-fingerprinted for SAT-D61…D70: the company-filtered discount limit group, limit record and binding
@@ -1222,6 +1226,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
                         }),
+                // Re-fingerprinted for tren-1 wave 2 (trial integration): the team slices combined; token counts checked by the guard (935e8a44… -> 7b8efa68…).
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
                     // Re-fingerprinted for the D2 active-role reader registration: the same scoped
@@ -1238,7 +1243,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // store, login service and session validator registrations (355ade3a… -> 935e8a44…); the database
                     // startup surface and its counts are unchanged.
                     new(
-                        "935e8a44ea542249826559d28780acb93495949735c304032d5c8befb7d63c01",
+                        "7b8efa688b79139760fefc338678b2c79e9b9a76fe51198aceedc564d12795f4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1278,12 +1283,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // read registration; the Migrate/EnsureCreated branch and its token counts are unchanged.
                 // Re-fingerprinted for ORG-LOCATION-OPERATOR-CRUD-01A: one fail-closed eligibility port and one
                 // company-scoped destination source registration; initialization behavior is unchanged.
+                // Re-fingerprinted for tren-1 wave 2 (trial integration): the team slices combined; token counts checked by the guard (7bea1ef2… -> 9b3cc6d8…).
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "7bea1ef26ed99338c7ae3e13bfbb32a767a882b94e3f227b3ca11351e8b753b5",
+                        "9b3cc6d8dc6ad270bb693e6786cd0d44d11559d4f34fc3652c5266c9246f0db3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2277,6 +2283,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for SAT-D61…D70: the Sales policy port is replaced by the catalog + limit-group store
                 // provider, and the binding reader and limit administration are registered (DI-only); the provider branch
                 // and its database token counts are unchanged.
+                // Re-fingerprinted for tren-1 wave 2 (trial integration): the team slices combined; token counts checked by the guard (60366fd0… -> a9ccced8…).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "SettingsModuleExtensions.cs"] =
                     new(
@@ -2286,7 +2293,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for DEC-FIN-010 / SAT-D169: the exchange-rate administration, the rate-day port and the two
                         // official sources (disabled unless configuration names an https TCMB address; DI-only); counts unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "60366fd009ac7851d7f31a166413d203252773dfb1f8f551d4a79061b7efad24",
+                        "a9ccced837bec7d12158d54011f19ca33ab086fd82b9ee499b5724928f97f07a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2400,6 +2407,78 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // tren-1 wave 2 — KIM founder bootstrap state: Down refuses (51399) while bootstrap state, outbox or credential command rows exist (forward fix). One guard Sql; K3 review.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
+                 + "Persistence/Migrations/20261115144305_AddIdentityBootstrapState.cs"] =
+                    new(
+                        "cf15714336cf41c73aa4a2b01a9c6ac3cef2a547319ff29bf8b72b5c689e77fd",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 2 — KIM access grant workflow: Up backfills ApprovalMode = SecondApproval on already approved requests; Down refuses (51484) while revocations or new workflow data exist (forward fix). Two Sql; K3 review.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
+                 + "Persistence/Migrations/20261115170730_AddAccessGrantRequestWorkflow.cs"] =
+                    new(
+                        "c6f6cef8dff4f274292c603a653343d8a5da0db9bc694e47a32ca405d9a978d4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
+                // tren-1 wave 2 — KIM company VKN change requests: Up refuses while a non-placeholder company has no VKN (51445) or two companies share a VKN (51442); Down refuses (51443) while change requests exist (forward fix). Three Sql; K3 review.
+                ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/"
+                 + "Persistence/Migrations/20261115145301_AddCompanyTaxIdChangeRequests.cs"] =
+                    new(
+                        "acb067d615fba90b4c9a7703dbe1b528bc4e6efbda736e686d12fa634afd1142",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 3
+                        }),
+                // tren-1 wave 2 — KIM overnight work-centre shifts: Down refuses (51444) while an overnight shift exists (forward fix). One guard Sql; K3 review.
+                ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/"
+                 + "Persistence/Migrations/20261115153652_AllowWorkCenterOvernightShifts.cs"] =
+                    new(
+                        "2726378290f935b6a5ef8e28559545727ede31583dbe7a2ad4c648e4b7368673",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 2 — KIM sales quote and e-invoice scenario policies: Down refuses (51312) while any policy row exists (forward fix). One guard Sql; K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261115132145_AddSalesQuoteAndEInvoiceScenarioPolicies.cs"] =
+                    new(
+                        "e121127855d7d7ebb9204ca6ba820cc4912edd03faaf22d30acb264b60f17f14",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 2 — KIM tax rate lists: Down refuses (51377) while tax rate list rows exist (forward fix). One guard Sql; K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261115150359_AddTaxRateLists.cs"] =
+                    new(
+                        "d876ef50d6137d92de9bf24e69d00954289dc04eccd46dbacc676c09917268a2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 2 — KIM unit conversion policy versions: Down refuses (51330) while versions exist (forward fix). One guard Sql; K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261115163747_AddUnitConversionPolicyVersions.cs"] =
+                    new(
+                        "185cc51e7a9b635edbd160198308bd1d9f7a012aa89091d054ac916b47d6a809",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 wave 2 — KIM bank CSV mapping versions: Down refuses (51527) while versions exist (forward fix). One guard Sql; K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261115182354_AddBankCsvMappingVersions.cs"] =
+                    new(
+                        "91f66cdd18d55be82539844148dd043eeebeb1384656e1334068cb80db2299e9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // tren-1 wave 2 — PLT primary document link: Up backfills one primary (earliest) link per document; Down refuses (51447) while a marker disagrees with the earliest link (forward fix). Two Sql; K3 review.
                 ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/"
                  + "Persistence/Migrations/20261115132357_AddDocumentLinkPrimaryMarker.cs"] =
