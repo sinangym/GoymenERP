@@ -5,6 +5,8 @@
  * across mounts: `gcTime` 0), so a delivery recorded in Logistics shows on the next open. Quantities stay decimal text —
  * nothing is computed here. No completion, tolerance or warning is derived (OPEN-004 is open). A body that does not
  * describe exactly this detail (version, lines, units, quantities) is not shown as numbers.
+ * SAT-S11 (B-33): "Sevk eden" — the shippers Logistics names for the line, shown as received; "Bilinmiyor" when a
+ * shipment names nobody (never a partial list), "—" when nothing is shipped yet.
  * AT-055: under it, the Logistics dispatch-note drafts of this order's shipments, linked to their instruction (SalesDraftDispatchNotes).
  */
 import { useId } from 'react'
@@ -60,6 +62,7 @@ export function SalesDraftDeliveryProgress({ detail }: { readonly detail: DraftD
             <thead><tr>
               <th scope="col">{T.lineNo}</th><th scope="col">{T.ordered}</th><th scope="col">{T.shipped}</th>
               <th scope="col">{T.delivered}</th><th scope="col">{T.remaining}</th><th scope="col">{T.excess}</th>
+              <th scope="col">{T.shippedBy}</th>
             </tr></thead>
             <tbody>{outcome.data.lines.map((line) => (
               <tr key={line.lineId} data-testid={`sales-delivery-progress-line-${line.lineNo}`}>
@@ -69,6 +72,7 @@ export function SalesDraftDeliveryProgress({ detail }: { readonly detail: DraftD
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-delivered`}>{line.delivered}</td>
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-remaining`}>{line.remaining}</td>
                 <td data-testid={`sales-delivery-progress-line-${line.lineNo}-excess`}>{line.excess}</td>
+                <td data-testid={`sales-delivery-progress-line-${line.lineNo}-shipped-by`}>{shippedByText(line.shippedBy)}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -83,4 +87,10 @@ export function SalesDraftDeliveryProgress({ detail }: { readonly detail: DraftD
       <SalesDraftDispatchNotes detail={detail} />
     </section>
   )
+}
+
+/** SAT-S11: the shippers as received, joined; unknown when not every shipment names one, a dash when nothing is shipped. */
+function shippedByText(shippedBy: readonly string[] | null): string {
+  if (shippedBy === null) return T.shippedByUnknown
+  return shippedBy.length === 0 ? T.shippedByNone : shippedBy.join(', ')
 }

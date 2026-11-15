@@ -71,7 +71,28 @@ public sealed partial class SalesDraftService
     {
         var recorded = RecordedDeliveries(scope, draft, answer);
         return new SalesOrderDraftDeliveryProgressResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
-            [.. draft.Lines.OrderBy(line => line.LineNo).Select(line => LineProgress(line, recorded.GetValueOrDefault(line.Id)))]);
+            [.. draft.Lines.OrderBy(line => line.LineNo).Select(line =>
+            {
+                var totals = recorded.GetValueOrDefault(line.Id);
+                return LineProgress(line, totals, ShippedByOf(answer!, line.Id, totals.Shipped));
+            })]);
+    }
+
+    /// <summary>
+    /// F-006 (B-33; SAT-D216/SAT-D222): the shippers of the line's counted definite shipments, read with the over-delivery
+    /// approval's own rule (<see cref="Shippers"/>) so the screen and the approval never disagree on who shipped — ordinal and
+    /// distinct; empty when nothing is shipped; <c>null</c> when the owner does not name every shipper (shown as unknown, never
+    /// as a partial list, and never a malformed answer: a share recorded before the owner kept its actor is a valid order).
+    /// </summary>
+    private static IReadOnlyList<string>? ShippedByOf(SalesOrderDeliveryReadAnswerV1 answer, Guid lineId, decimal shipped)
+    {
+        if (shipped == 0m)
+        {
+            return [];
+        }
+
+        var named = Shippers(answer, lineId);
+        return named is null ? null : [.. named.Order(StringComparer.Ordinal)];
     }
 
     /// <summary>
@@ -127,7 +148,8 @@ public sealed partial class SalesDraftService
         return recorded;
     }
 
-    private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded)
+    private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded,
+        IReadOnlyList<string>? shippedBy)
     {
         var unit = line.Quantity.Unit;
         Quantity shipped;
@@ -147,7 +169,7 @@ public sealed partial class SalesDraftService
         var remaining = over ? Quantity.Zero(unit) : line.Quantity.Subtract(delivered);
         var excess = over ? delivered.Subtract(line.Quantity) : Quantity.Zero(unit);
         return new SalesDraftLineDeliveryProgressV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-            QuantityText(shipped), QuantityText(delivered), QuantityText(remaining), QuantityText(excess));
+            QuantityText(shipped), QuantityText(delivered), QuantityText(remaining), QuantityText(excess), shippedBy);
     }
 
     /// <summary>

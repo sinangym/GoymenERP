@@ -810,13 +810,19 @@ export const ORDER_DETAIL_TEXT = {
       'Sevk ve teslim miktarları Lojistik modülünde kaydedilen kesin sevk ve teslimlerden okunur; sipariş her açıldığında yeniden okunur. ' +
       'Kalan = sipariş − teslim edilen. Eksik/fazla teslim toleransı henüz karara bağlanmadığı için satır kapanışı ya da uyarı gösterilmez.',
     subject: 'teslimat durumu',
-    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar',
+    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar ile sevk eden',
     lineNo: 'Satır',
     ordered: 'Sipariş',
     shipped: 'Sevk edilen',
     delivered: 'Teslim edilen',
     remaining: 'Kalan',
     excess: 'Fazla teslim',
+    /** SAT-S11 (B-33): who recorded the line's shipments, as Logistics names them. */
+    shippedBy: 'Sevk eden',
+    /** Something is shipped but not every shipment names its shipper. */
+    shippedByUnknown: 'Bilinmiyor',
+    /** Nothing is shipped on the line yet. */
+    shippedByNone: '—',
   },
   /** AT-055: the dispatch-note drafts of this order's shipments (Logistics owns them; linked, never copied). */
   dispatchNotes: {

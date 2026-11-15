@@ -1261,7 +1261,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var service = new StubDraftService
         {
             Progress = id => Task.FromResult(new SalesOrderDraftDeliveryProgressResponse("5",
-                [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "2.5", "3.5", "0")])),
+                [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "2.5", "3.5", "0", ["SENTETIK-shipper-A", "SENTETIK-shipper-a"])])),
         };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
@@ -1276,15 +1276,28 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(["draftVersion", "lines"], body.EnumerateObject().Select(member => member.Name));
             Assert.Equal("5", body.GetProperty("draftVersion").GetString());
             var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
-            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "remaining", "excess"],
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "remaining", "excess", "shippedBy"],
                 line.EnumerateObject().Select(member => member.Name));
             Assert.Equal((lineId.ToString("D"), 1, "6", "4", "2.5", "3.5", "0"),
                 (line.GetProperty("lineId").GetString(), line.GetProperty("lineNo").GetInt32(), line.GetProperty("ordered").GetString(),
                     line.GetProperty("shipped").GetString(), line.GetProperty("delivered").GetString(), line.GetProperty("remaining").GetString(),
                     line.GetProperty("excess").GetString()));
+            // SAT-S11: the named shippers pass through as the service ordered them (a string array, never re-sorted by the host).
+            Assert.Equal(["SENTETIK-shipper-A", "SENTETIK-shipper-a"],
+                line.GetProperty("shippedBy").EnumerateArray().Select(actor => actor.GetString()));
         }
 
-        Assert.Equal([draftId], service.ProgressReads);
+        // A shipped line whose shippers the owner does not name: shippedBy is written as an explicit null (the key is never dropped).
+        service.Progress = _ => Task.FromResult(new SalesOrderDraftDeliveryProgressResponse("5",
+            [new SalesDraftLineDeliveryProgressV1(lineId, 1, unitId, "6", "4", "0", "6", "0", null)]));
+        using (var unnamed = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, unnamed.StatusCode);
+            var line = Assert.Single((await unnamed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("lines").EnumerateArray());
+            Assert.Equal(JsonValueKind.Null, line.GetProperty("shippedBy").ValueKind);
+        }
+
+        Assert.Equal([draftId, draftId], service.ProgressReads);
 
         service.Progress = _ => throw new SalesDraftServiceException(404, "not_found");
         using (var missing = await client.GetAsync(path))
