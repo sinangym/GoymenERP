@@ -544,12 +544,51 @@ stored company, transfer, requested version and ordered lines and stores `Docume
 
 Migration `AddInventoryTransferDispatchDocumentVersion` adds nullable `TransferDispatches.DocumentVersion` with
 `CK_TransferDispatches_DocumentVersion`; its `Down` refuses (THROW 51272) while a proved dispatch row exists (forward
-fix). Not decided here and left fail-closed: cancelling or reversing a dispatched transfer, planned/actual difference
-or tolerance resolution, and subcontract-order binding.
+fix). Not decided here and left fail-closed: reversing an accepted transfer, planned/actual difference or tolerance
+resolution, and subcontract-order binding. Dispatch cancellation is B-22b below.
+
+### B-22b — dispatch cancellation, "kantardan geçer" setting and departure moment (STK-S5)
+
+Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
+
+- **Command.** `POST /api/v1/inventory/transfers/{transferId}/cancel-dispatch` with `expectedTransferVersion`
+  (canonical positive integer text), `cancelledAtUtc` (UTC, not before the dispatch) and `reason` (trimmed, 1-500,
+  no control characters). Fenced by the service on the new `inventory.stock-transfer.cancel` (registered centrally,
+  company-wide only; no grant, role or Critical is added). Same idempotency/replay/audit boundary as dispatch.
+- **Effect.** Only a fully in-transit transfer (no accepted line) is cancelled. One kind 11
+  `TransferDispatchCancellation` movement brings every dispatched bucket back to its exact source bucket (In), the
+  labels return to the source position with a version bump, the transfer and every line become `DispatchCancelled`,
+  and one `TransferDispatchCancellations` row stores the movement, the reason and the owner confirmation versions.
+  The dispatch row and its kind 8 movement are never changed (append-only, KLN-D20: one reverse record, no copy).
+- **Source warehouse setting (LOJ-D11).** Dispatch reads the Settings-owned value through
+  `IInventoryTransferSourceScaleSettingPortV1` and stores it on `TransferDispatches.SourceScaleSettingAtDispatch`
+  (1 Off, 2 On, 3 Unreadable). An absent port, failing read or undefined answer is stored as Unreadable, never as a
+  chosen value. Dispatches recorded before this migration get Off (the column default; KLN-D27 (7)). Inventory does
+  not own or choose the setting; the port is unregistered until the Settings owner ships it.
+- **Window (pure rule `InventoryTransferCancelWindow`).** Stored and current settings plus a fresh owner reading of
+  the e-İrsaliye link, GİB send, exit weighing and vehicle exit (`IInventoryTransferDispatchCancelGatePortV1.ReadAsync`)
+  give Open, Closed (basis and moment) or Unreadable. Not linked and the more-closed setting Off: closed at dispatch.
+  Not linked and On: open until exit weighing or vehicle exit, needs a Logistics "no exit and none later"
+  confirmation. Linked: open until the GİB send, needs an e-İrsaliye cancel confirmation; if either setting is On or
+  unreadable, the earliest of the three departure facts closes it and both confirmations are needed (KLN-D27).
+- **Answers.** A closed window persists `TransferDispatchCancelClosures` once (first closure is final, never
+  reopened, KLN-D25 (7)(g)/KLN-D27 (5)) and records the terminal 409 `inventory_transfer_cancel_window_closed` under
+  the key. An unreadable reading is 409 `inventory_transfer_cancel_window_unreadable` and a missing required owner
+  confirmation 409 `inventory_transfer_cancel_confirmation_missing`; both are not recorded (the key may retry). An
+  open window asks `ConfirmAsync` only for the parts it needs and re-evaluates the confirmation-time facts before
+  writing. No gate port, a failing read or a malformed answer is a code-less 503.
+- **Migration.** `AddInventoryTransferDispatchCancellation` adds the column (default Off) with
+  `CK_TransferDispatches_SourceScaleSetting`, both tables, widens `CK_Transfers_State` to status 5 and
+  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51471) while a kind 11 movement, a cancellation or closure row,
+  a non-Off stored setting or a cancelled transfer exists (forward fix).
+- **Not decided here (NEEDS-SINAN, fail-closed):** the cost golden of the reverse movement (transfers post no cost
+  today), whether an unreadable reading should ever be persisted, whether dispatch should refuse an unreadable
+  setting, and the disposition snapshot bucket of a cancellation (counted as other inbound kg today). The real
+  Settings and Logistics/e-İrsaliye producers are those owners' integration work.
 
 ## Movement kinds and rollback signal (reference)
 
-`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 10`):
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 11`):
 
 | Kind | Value | Written by | Lines |
 |---|---|---|---|
@@ -563,6 +602,7 @@ or tolerance resolution, and subcontract-order binding.
 | `TransferDispatch` | 8 | one INV-R20 transfer dispatch; every source bucket leaves stock atomically | Out |
 | `TransferAccept` | 9 | one accepted INV-R20 line; the captured buckets enter the validated target | In |
 | `ManufacturingOutputReversal` | 10 | the reversal of a manufacturing output receipt (F-009 D1, `AddInventoryManufacturingOutputReversal`); free unallocated kg at the output position only, no cost | one Out |
+| `TransferDispatchCancellation` | 11 | the cancellation of one in-transit INV-R20 dispatch (B-22b, `AddInventoryTransferDispatchCancellation`); every dispatched bucket back to its exact source bucket | In |
 
 A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
 exists. An allocation change, a split/merge and a label version bump write NO movement.

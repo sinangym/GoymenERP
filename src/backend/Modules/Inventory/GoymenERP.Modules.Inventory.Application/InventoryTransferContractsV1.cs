@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using GoymenERP.Modules.Inventory.Domain.Transfers;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
@@ -8,6 +9,7 @@ public static class InventoryTransferApiV1
     public const string Path = "/api/v1/inventory/transfers";
     public const string DispatchPathTemplate = "/api/v1/inventory/transfers/{transferId}/dispatch";
     public const string AcceptPathTemplate = "/api/v1/inventory/transfers/{transferId}/accept-lines/{lineId}";
+    public const string CancelDispatchPathTemplate = "/api/v1/inventory/transfers/{transferId}/cancel-dispatch";
     public const int MaximumLines = 100;
 
     /// <summary>
@@ -127,11 +129,13 @@ public interface IInventoryTransferWriterV1
     /// <summary>
     /// Dispatches only against the exact current effective outgoing-document binding the proof port returned; the store
     /// re-checks it against the stored company, transfer, requested document version and the stored ordered line set.
+    /// The source warehouse "kantardan geçer" value read at dispatch is stored on the dispatch (KLN-D25 (7)(f)).
     /// </summary>
     Task<InventoryTransferResultV1> DispatchAsync(
         Guid transferId,
         DispatchInventoryTransferV1 request,
         InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
+        InventoryTransferSourceScaleSetting sourceScaleSettingAtDispatch,
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
@@ -164,6 +168,51 @@ public interface IInventoryTransferWriterV1
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The stored answer for this dispatch-cancel key — the cancelled transfer, or a recorded terminal refusal re-thrown
+    /// as a replayed <see cref="InventoryTransferException"/> — or null when the key is new.
+    /// </summary>
+    Task<InventoryTransferResultV1?> ReplayCancelDispatchAsync(
+        Guid transferId,
+        CancelInventoryTransferDispatchV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The stored facts the cancellation window needs; null when the transfer is not visible.</summary>
+    Task<InventoryTransferDispatchCancelContextV1?> ReadDispatchCancelContextAsync(
+        Guid transferId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// KLN-D27 (5): persists the window closure (moment and basis) once — an existing closure is kept unchanged — and
+    /// records the terminal <see cref="InventoryTransferCodesV1.CancelWindowClosed"/> refusal under the cancel key with
+    /// its audit entry. No stock, movement or transfer row changes. Returns null when recorded, or the answer the key
+    /// already holds (a recorded refusal re-throws itself).
+    /// </summary>
+    Task<InventoryTransferResultV1?> RecordDispatchCancelClosureAsync(
+        Guid transferId,
+        CancelInventoryTransferDispatchV1 request,
+        InventoryTransferCancelClosureBasis basis,
+        DateTimeOffset closedAtUtc,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// KLN-D20: writes the reverse movement for the whole dispatch, the cancellation row and the transfer state in one
+    /// save. Called only after the window was open and every confirmation the window required was received; the
+    /// confirmation versions are stored with the cancellation (null when that confirmation was not required).
+    /// </summary>
+    Task<InventoryTransferResultV1> CancelDispatchAsync(
+        Guid transferId,
+        CancelInventoryTransferDispatchV1 request,
+        long? logisticsNoExitConfirmationVersion,
+        long? eDispatchCancelConfirmationVersion,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IInventoryTransferReaderV1
@@ -188,6 +237,12 @@ public interface IInventoryTransferCommandV1
         Guid transferId,
         Guid lineId,
         AcceptInventoryTransferLineV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default);
+
+    Task<InventoryTransferResultV1> CancelDispatchAsync(
+        Guid transferId,
+        CancelInventoryTransferDispatchV1 request,
         InventoryCommandMetadata transport,
         CancellationToken cancellationToken = default);
 }
@@ -248,6 +303,12 @@ public static class InventoryTransferCodesV1
     public const string OutgoingDocumentCancelled = "inventory_transfer_outgoing_document_cancelled";
     public const string OutgoingDocumentReversed = "inventory_transfer_outgoing_document_reversed";
     public const string OutgoingDocumentVersionConflict = "inventory_transfer_outgoing_document_version_conflict";
+
+    // B-22b dispatch cancellation (KLN-D20/D25/D27). Closed is terminal and recorded under the key (a closed window
+    // never reopens); unreadable and a missing confirmation are not recorded, so the same key may retry.
+    public const string CancelWindowClosed = "inventory_transfer_cancel_window_closed";
+    public const string CancelWindowUnreadable = "inventory_transfer_cancel_window_unreadable";
+    public const string CancelConfirmationMissing = "inventory_transfer_cancel_confirmation_missing";
 }
 
 /// <summary>The fixed owner kind stored on a B-22a dispatch row; it is never read from the request.</summary>

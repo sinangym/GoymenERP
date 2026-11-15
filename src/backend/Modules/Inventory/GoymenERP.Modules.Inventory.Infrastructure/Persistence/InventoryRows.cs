@@ -504,6 +504,47 @@ internal sealed class InventoryTransferDispatchRow : IInventoryTenantRow
     /// </summary>
     public int? DocumentVersion { get; set; }
     public DateTimeOffset DispatchedAtUtc { get; set; }
+
+    /// <summary>
+    /// KLN-D25 (7)(f): the source warehouse "kantardan geçer" value read at dispatch
+    /// (<see cref="Domain.Transfers.InventoryTransferSourceScaleSetting"/>). Dispatches recorded before the setting
+    /// existed carry Off (KLN-D27 (7)).
+    /// </summary>
+    public int SourceScaleSettingAtDispatch { get; set; } = (int)Domain.Transfers.InventoryTransferSourceScaleSetting.Off;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D27 (5): the moment and basis at which the dispatch-cancel window of one dispatch closed. Insert-only and final:
+/// a later owner reading (for example a late e-İrsaliye link) never reopens or moves it.
+/// </summary>
+internal sealed class InventoryTransferDispatchCancelClosureRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public int Basis { get; set; }
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D20: the one immutable cancellation of a whole dispatch, linked to its reverse movement, with the owner
+/// confirmation versions the window required (null when that confirmation was not required).
+/// </summary>
+internal sealed class InventoryTransferDispatchCancellationRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid MovementId { get; set; }
+    public DateTimeOffset CancelledAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long? LogisticsConfirmationVersion { get; set; }
+    public long? EDispatchConfirmationVersion { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;

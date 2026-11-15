@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Inventory.UnitTests;
 
-public sealed class InventoryTransferTests
+public sealed partial class InventoryTransferTests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Owner = Guid.Parse("20000000-0000-0000-0000-000000000001");
@@ -496,7 +496,12 @@ public sealed class InventoryTransferTests
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IInventoryTransferDestinationPortV1));
         Assert.DoesNotContain(services,
             descriptor => descriptor.ServiceType == typeof(IInventoryTransferOutgoingDocumentProofPortV1));
+        Assert.DoesNotContain(services,
+            descriptor => descriptor.ServiceType == typeof(IInventoryTransferSourceScaleSettingPortV1));
+        Assert.DoesNotContain(services,
+            descriptor => descriptor.ServiceType == typeof(IInventoryTransferDispatchCancelGatePortV1));
         Assert.Equal("inventory.stock-transfer.write", InventoryPermissionManifestV1.StockTransferWrite);
+        Assert.Equal("inventory.stock-transfer.cancel", InventoryPermissionManifestV1.StockTransferCancel);
     }
 
     [Fact]
@@ -706,7 +711,7 @@ public sealed class InventoryTransferTests
             .Select(property => property.Name));
 
         var movement = model.FindEntityType(typeof(MovementRow))!;
-        Assert.Equal("[Kind] BETWEEN 1 AND 10",
+        Assert.Equal("[Kind] BETWEEN 1 AND 11",
             movement.GetCheckConstraints().Single(check => check.Name == "CK_Movements_Kind").Sql);
         Assert.Equal((8, 9), ((int)StockMovementKind.TransferDispatch, (int)StockMovementKind.TransferAccept));
     }
@@ -786,15 +791,28 @@ public sealed class InventoryTransferTests
         public TestWriter Writer { get; } = new();
         public TestReader Reader { get; } = new();
         public TestProof Proof { get; } = new();
+        public TestScaleSetting ScaleSetting { get; } = new();
+        public TestCancelGate CancelGate { get; } = new();
         public bool Known { get; init; } = true;
+        public Func<string, bool>? IsKnown { get; init; }
         public bool WithProofPort { get; init; } = true;
+        public bool WithScaleSettingPort { get; init; } = true;
+        public bool WithCancelGate { get; init; } = true;
 
         public InventoryTransferCommandService Service() =>
-            new(Context, User, Authority, Destination, Reader, Writer, _ => Known, WithProofPort ? Proof : null);
+            new(Context, User, Authority, Destination, Reader, Writer, IsKnown ?? (_ => Known),
+                WithProofPort ? Proof : null, WithScaleSettingPort ? ScaleSetting : null,
+                WithCancelGate ? CancelGate : null);
 
         public CommandWorld Dispatchable(params Guid[] lineIds)
         {
             Reader.Result = DispatchableTransfer(lineIds.Length == 0 ? [Guid.NewGuid(), Guid.NewGuid()] : lineIds);
+            return this;
+        }
+
+        public CommandWorld Cancellable(InventoryTransferSourceScaleSetting storedAtDispatch)
+        {
+            Writer.CancelContext = InTransitContext(storedAtDispatch);
             return this;
         }
 
@@ -880,12 +898,16 @@ public sealed class InventoryTransferTests
             Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
             Replay("dispatch", freshAuthorityFence, cancellationToken);
 
+        public List<InventoryTransferSourceScaleSetting> DispatchSettings { get; } = [];
+
         public Task<InventoryTransferResultV1> DispatchAsync(Guid transferId, DispatchInventoryTransferV1 request,
             InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
+            InventoryTransferSourceScaleSetting sourceScaleSettingAtDispatch,
             InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,
             CancellationToken cancellationToken = default)
         {
             DispatchBindings.Add(effectiveOutgoingDocument);
+            DispatchSettings.Add(sourceScaleSettingAtDispatch);
             return Answer("dispatch", metadata, freshAuthorityFence, cancellationToken);
         }
 
@@ -909,6 +931,46 @@ public sealed class InventoryTransferTests
             AcceptInventoryTransferLineV1 request, InventoryCommandMetadata metadata,
             Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
             Answer("accept", metadata, freshAuthorityFence, cancellationToken);
+
+        public InventoryTransferDispatchCancelContextV1? CancelContext { get; set; }
+        public int CancelContextReads { get; private set; }
+        public List<(InventoryTransferCancelClosureBasis Basis, DateTimeOffset ClosedAtUtc)> RecordedClosures { get; } = [];
+        public InventoryTransferResultV1? ClosureWinner { get; set; }
+        public List<(long? Logistics, long? EDispatch)> CancelConfirmations { get; } = [];
+
+        public Task<InventoryTransferResultV1?> ReplayCancelDispatchAsync(Guid transferId,
+            CancelInventoryTransferDispatchV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Replay("cancel", freshAuthorityFence, cancellationToken);
+
+        public Task<InventoryTransferDispatchCancelContextV1?> ReadDispatchCancelContextAsync(Guid transferId,
+            CancellationToken cancellationToken = default)
+        {
+            CancelContextReads++;
+            return Task.FromResult(CancelContext);
+        }
+
+        public async Task<InventoryTransferResultV1?> RecordDispatchCancelClosureAsync(Guid transferId,
+            CancelInventoryTransferDispatchV1 request, InventoryTransferCancelClosureBasis basis,
+            DateTimeOffset closedAtUtc, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default)
+        {
+            BeforeFence?.Invoke();
+            await freshAuthorityFence(cancellationToken);
+            RecordedClosures.Add((basis, closedAtUtc));
+            Calls.Add(("cancel-closure", metadata));
+            return ClosureWinner;
+        }
+
+        public async Task<InventoryTransferResultV1> CancelDispatchAsync(Guid transferId,
+            CancelInventoryTransferDispatchV1 request, long? logisticsNoExitConfirmationVersion,
+            long? eDispatchCancelConfirmationVersion, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default)
+        {
+            var answer = await Answer("cancel", metadata, freshAuthorityFence, cancellationToken);
+            CancelConfirmations.Add((logisticsNoExitConfirmationVersion, eDispatchCancelConfirmationVersion));
+            return answer;
+        }
 
         private async Task<InventoryTransferResultV1> Answer(string operation, InventoryCommandMetadata metadata,
             Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken)

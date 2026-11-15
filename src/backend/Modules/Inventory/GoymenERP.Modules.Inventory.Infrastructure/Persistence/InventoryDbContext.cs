@@ -44,6 +44,9 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     /// <summary>B-22a: a proved dispatch stores a positive Logistics document version; legacy rows stay null.</summary>
     internal const string TransferDispatchDocumentVersionCheck = "[DocumentVersion] IS NULL OR [DocumentVersion] >= 1";
 
+    /// <summary>KLN-D25 (7)(f): Off, On or Unreadable (<see cref="Domain.Transfers.InventoryTransferSourceScaleSetting"/>).</summary>
+    internal const string TransferDispatchSourceScaleSettingCheck = "[SourceScaleSettingAtDispatch] IN (1, 2, 3)";
+
     /// <summary>
     /// SAT-D262: a known row holds both numbers (kg >= 0, average >= 0) and no reason; an unreadable row holds a reason
     /// (1..9, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
@@ -158,6 +161,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<InventoryTransferBucketRow> TransferBuckets => Set<InventoryTransferBucketRow>();
 
     internal DbSet<InventoryTransferAcceptanceRow> TransferAcceptances => Set<InventoryTransferAcceptanceRow>();
+
+    internal DbSet<InventoryTransferDispatchCancelClosureRow> TransferDispatchCancelClosures =>
+        Set<InventoryTransferDispatchCancelClosureRow>();
+
+    internal DbSet<InventoryTransferDispatchCancellationRow> TransferDispatchCancellations =>
+        Set<InventoryTransferDispatchCancellationRow>();
 
     internal DbSet<FutureSupplyAllocationRow> FutureSupplyAllocations => Set<FutureSupplyAllocationRow>();
 
@@ -392,7 +401,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 10");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 11");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -912,7 +921,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [SourceCustodianId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DestinationCustodianId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_Transfers_State",
-                "[Version] >= 1 AND [Status] BETWEEN 1 AND 4 AND [SourceCustodianKind] IN (1, 2) "
+                "[Version] >= 1 AND [Status] BETWEEN 1 AND 5 AND [SourceCustodianKind] IN (1, 2) "
                 + "AND [DestinationCustodianKind] IN (1, 2) AND NOT ([SourceLocationId] = [DestinationLocationId] "
                 + "AND [SourceCustodianKind] = [DestinationCustodianKind] AND [SourceCustodianId] = [DestinationCustodianId])");
             table.HasCheckConstraint("CK_Transfers_Text",
@@ -960,16 +969,56 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             table.HasCheckConstraint("CK_TransferDispatches_Text",
                 "LEN([DocumentKind]) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_TransferDispatches_DocumentVersion", TransferDispatchDocumentVersionCheck);
+            table.HasCheckConstraint("CK_TransferDispatches_SourceScaleSetting", TransferDispatchSourceScaleSettingCheck);
         });
         dispatch.HasKey(x => new { x.CompanyId, x.TransferId });
         dispatch.Property(x => x.DocumentKind).HasMaxLength(64).IsRequired();
         dispatch.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         dispatch.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         dispatch.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        dispatch.Property(x => x.SourceScaleSettingAtDispatch)
+            .HasDefaultValue((int)Domain.Transfers.InventoryTransferSourceScaleSetting.Off);
         dispatch.HasIndex(x => new { x.CompanyId, x.MovementId }).IsUnique();
         TransferOf(dispatch);
         MovementOf(dispatch);
         dispatch.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // KLN-D27 (5): one final closure per dispatch (moment and basis), insert-only.
+        var closure = modelBuilder.Entity<InventoryTransferDispatchCancelClosureRow>();
+        closure.ToTable("TransferDispatchCancelClosures", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferDispatchCancelClosures_Basis", "[Basis] IN (1, 2, 3, 4)");
+            table.HasCheckConstraint("CK_TransferDispatchCancelClosures_Text",
+                "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        closure.HasKey(x => new { x.CompanyId, x.TransferId });
+        closure.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        TransferDispatchOf(closure);
+        closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // KLN-D20: one immutable cancellation per dispatch, linked to its one reverse movement.
+        var cancellation = modelBuilder.Entity<InventoryTransferDispatchCancellationRow>();
+        cancellation.ToTable("TransferDispatchCancellations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferDispatchCancellations_Identity",
+                "[MovementId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_TransferDispatchCancellations_Confirmations",
+                "([LogisticsConfirmationVersion] IS NULL OR [LogisticsConfirmationVersion] >= 1) "
+                + "AND ([EDispatchConfirmationVersion] IS NULL OR [EDispatchConfirmationVersion] >= 1)");
+            table.HasCheckConstraint("CK_TransferDispatchCancellations_Text",
+                "LEN([Reason]) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        cancellation.HasKey(x => new { x.CompanyId, x.TransferId });
+        cancellation.Property(x => x.Reason).HasMaxLength(Application.CancelInventoryTransferDispatchV1.MaximumReasonLength)
+            .IsRequired();
+        cancellation.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        cancellation.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        cancellation.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        cancellation.HasIndex(x => new { x.CompanyId, x.MovementId }).IsUnique();
+        TransferDispatchOf(cancellation);
+        MovementOf(cancellation);
+        cancellation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
         var dispatchedLine = modelBuilder.Entity<InventoryTransferDispatchLineRow>();
         dispatchedLine.ToTable("TransferDispatchLines", Schema, table =>
@@ -1024,6 +1073,15 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasOne<InventoryTransferRow>().WithMany()
             .HasForeignKey("CompanyId", "TransferId")
             .HasPrincipalKey(nameof(InventoryTransferRow.CompanyId), nameof(InventoryTransferRow.Id))
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void TransferDispatchOf<TEntity>(EntityTypeBuilder<TEntity> entity)
+        where TEntity : class, IInventoryTenantRow
+    {
+        entity.HasOne<InventoryTransferDispatchRow>().WithMany()
+            .HasForeignKey("CompanyId", "TransferId")
+            .HasPrincipalKey(nameof(InventoryTransferDispatchRow.CompanyId), nameof(InventoryTransferDispatchRow.TransferId))
             .OnDelete(DeleteBehavior.Restrict);
     }
 
