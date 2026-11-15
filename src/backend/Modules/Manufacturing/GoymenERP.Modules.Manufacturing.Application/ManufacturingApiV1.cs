@@ -111,12 +111,18 @@ public sealed record ReturnInventoryInputRequestV1(
     Guid ReturnId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
     Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
 
+/// <summary>
+/// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the stock label classification the operator chose
+/// for a <c>UsableRemnant</c> output, <c>Standard</c> or <c>SecondQuality</c>; omitted or null means SecondQuality. It
+/// is refused with any other output class, whose label classification follows the fixed mapping.
+/// </summary>
 public sealed record DeclareInventoryOutputRequestV1(
     Guid OutputId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
     string? OutputClass, Guid ProductId, string? ExpectedProductVersion, Guid LotId, Guid LabelId,
     string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
     string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
-    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
+    string? RemnantClassification = null);
 
 /// <summary><see cref="OutputClass"/> is one of the five <c>OutputClass</c> names.</summary>
 public sealed record DeclareOutputRequestV1(
@@ -1548,6 +1554,15 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
         }
 
+        // URT-S16 (BS-14, URT-D43): only a usable remnant takes an operator-chosen label classification, and only
+        // Standard or SecondQuality. Refused before any read or write; the fixed mapping covers every other class.
+        if (!ManufacturingOutputClassMappingV1.TryParseRemnantClassification(request.RemnantClassification,
+                out var remnantClassification)
+            || !ManufacturingOutputClassMappingV1.TryMap(outputClass, remnantClassification, out _))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("remnantClassification"));
+        }
+
         if (string.IsNullOrWhiteSpace(request.LabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
@@ -1612,9 +1627,14 @@ public sealed partial class ManufacturingCommandService(
             kg = Text(kg),
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+        // URT-S16: the remnant classification joins the request hash only when it was sent, so an output declared
+        // without it keeps the request hash it had before the field existed.
+        object canonicalRequest = remnantClassification is { } chosenRemnantClassification
+            ? new { declaration = canonical, remnantClassification = chosenRemnantClassification.ToString() }
+            : canonical;
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
+            canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -1640,7 +1660,7 @@ public sealed partial class ManufacturingCommandService(
                         request.LotId, request.LabelId, request.LabelCode.Trim(), request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
-                        request.MovementId, mass.Value, occurredAt),
+                        request.MovementId, mass.Value, occurredAt, remnantClassification),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);

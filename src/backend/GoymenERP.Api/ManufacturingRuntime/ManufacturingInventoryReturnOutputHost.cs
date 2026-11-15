@@ -98,6 +98,15 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "initialBlock");
         }
 
+        // URT-S16 (URT-D43, BS-14): a class with no stock label, or a remnant classification the fixed mapping does not
+        // allow, is refused before any read or write.
+        if (!ManufacturingOutputClassMappingV1.TryMap(command.OutputClass, command.RemnantClassification, out _))
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid,
+                command.RemnantClassification is null ? "outputClass" : "remnantClassification");
+        }
+
         try
         {
             var result = await DeclareOutputAsync(new ManufacturingInventoryOutputCommand(
@@ -123,9 +132,22 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 initialBlock,
                 command.MovementId,
                 command.Quantity,
-                command.OccurredAtUtc), metadata, cancellationToken);
+                command.OccurredAtUtc,
+                command.RemnantClassification), metadata, cancellationToken);
             return new ManufacturingInventoryOutputPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.LabelVersion, result.IsReplay);
+        }
+        catch (InventoryManufacturingRealizationException exception)
+            when (exception.Code is InventoryManufacturingRealizationCodesV2.OutputClassNotStockable
+                or InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid)
+        {
+            // URT-S16: the Manufacturing mapping refuses these first; should Inventory still refuse the class, the
+            // command keeps the declared Manufacturing 400 contract and names the field.
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid,
+                exception.Code == InventoryManufacturingRealizationCodesV2.OutputClassNotStockable
+                    ? "outputClass"
+                    : "remnantClassification");
         }
         catch (InventoryManufacturingRealizationException exception)
         {
@@ -232,7 +254,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(metadata);
         var companyId = RequireCompany();
-        RequireOutput(command, metadata);
+        var expectedLabel = RequireOutput(command, metadata);
         await RequireAuthorityAsync(companyId, cancellationToken);
         await outputAdmission.ValidateAsync(companyId, command, cancellationToken);
 
@@ -248,14 +270,17 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
             var realizationOrderVersion = checked(command.ExpectedOrderVersion + 1);
             RequireRecordedVersion(manufacturingOutcome, stored.Version, realizationOrderVersion);
 
-            var request = new InventoryManufacturingOutputRequestV1(
+            // URT-S16 (URT-D43, BS-5, BS-14): the V2 output declaration opens the label with the classification of the
+            // fixed Manufacturing mapping and, for a usable remnant, the operator's classification (sent explicitly,
+            // the default resolved here) and the UsableRemnant production status.
+            var request = new InventoryManufacturingOutputRequestV2(
                 companyId,
                 command.OrderId,
                 command.OutputId,
                 realizationOrderVersion.ToString(CultureInfo.InvariantCulture),
                 command.ParentLabelId,
                 command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
-                command.OutputClass.ToString(),
+                expectedLabel.InventoryOutputClass,
                 command.ProductId,
                 command.ExpectedProductVersion,
                 command.LotId,
@@ -272,7 +297,10 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.InitialBlock,
                 command.MovementId,
                 Quantity(command.Quantity),
-                command.OccurredAtUtc);
+                command.OccurredAtUtc,
+                expectedLabel.ProductionStatus is null
+                    ? null
+                    : (InventoryLabelClassificationV1?)expectedLabel.Classification);
             // Inventory command identities are capped at 128 characters. The explicit company/order/output
             // grain already makes this participant key unique; keep the operation token short enough that the
             // complete deterministic identity remains inside that owner contract.
@@ -293,6 +321,8 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 || inventoryResult.ManufacturingOrderVersion != request.ManufacturingOrderVersionAfter
                 || inventoryResult.ParentLabelId != command.ParentLabelId
                 || inventoryResult.OutputClass != request.OutputClass
+                || inventoryResult.Classification != expectedLabel.Classification
+                || inventoryResult.ProductionStatus != expectedLabel.ProductionStatus
                 || inventoryResult.ProductId != command.ProductId
                 || inventoryResult.ProductVersion != command.ExpectedProductVersion
                 || inventoryResult.LotId != command.LotId
@@ -442,7 +472,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         }
     }
 
-    private static void RequireOutput(
+    private static ManufacturingOutputLabelV1 RequireOutput(
         ManufacturingInventoryOutputCommand command, ManufacturingCommandMetadata metadata)
     {
         if (command.OrderId == Guid.Empty || command.OutputId == Guid.Empty || command.ParentLabelId == Guid.Empty
@@ -458,6 +488,16 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         {
             throw new ArgumentException("The Manufacturing output command is incomplete.", nameof(command));
         }
+
+        // URT-S16 (URT-D43): fail-closed when the class has no stock label or the remnant classification is not one
+        // the fixed mapping allows.
+        if (!ManufacturingOutputClassMappingV1.TryMap(command.OutputClass, command.RemnantClassification,
+                out var label))
+        {
+            throw new ArgumentException("The Manufacturing output class has no stock label.", nameof(command));
+        }
+
+        return label;
     }
 
     private async Task RollbackOrThrowAsync(
@@ -536,7 +576,8 @@ internal sealed record ManufacturingInventoryOutputCommand(
     BlockState InitialBlock,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    InventoryLabelClassificationV1? RemnantClassification = null);
 
 internal sealed record ManufacturingInventoryInputReturnResult(
     Guid OrderId,

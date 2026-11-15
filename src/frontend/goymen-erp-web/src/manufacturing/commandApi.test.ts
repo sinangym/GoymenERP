@@ -54,6 +54,7 @@ describe('recordFact', () => {
       kind: 'outputs',
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      remnantClassification: null,
       productId: 'f0000000-0000-4000-8000-000000000010',
       expectedProductVersion: '12',
       lotId: 'f0000000-0000-4000-8000-000000000011',

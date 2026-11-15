@@ -10,7 +10,7 @@
  */
 
 import type { FactFailure, FactUnknown } from './commandApi'
-import type { FactKind, OrderStatus, OutputClass, StockShortfallView } from './contract'
+import type { FactKind, OrderStatus, OutputClass, RemnantClassification, StockShortfallView } from './contract'
 
 export const OUTPUT_CLASS_LABEL: Record<OutputClass, string> = {
   GoodProduct: 'İyi ürün',
@@ -18,6 +18,12 @@ export const OUTPUT_CLASS_LABEL: Record<OutputClass, string> = {
   UsableRemnant: 'Geri kazanılabilir artık',
   Scrap: 'Hurda',
   ProcessLoss: 'Proses kaybı',
+}
+
+/** URT-S16 (BS-14): the label classifications a usable remnant may take. */
+export const REMNANT_CLASSIFICATION_LABEL: Record<RemnantClassification, string> = {
+  Standard: 'Standart',
+  SecondQuality: 'İkinci kalite',
 }
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
@@ -114,6 +120,10 @@ export const OUTPUT_INVENTORY_TEXT = {
   partyCounterparty: 'Cari',
   heading: 'Üretim çıktısı etiketi',
   outputClass: 'Çıktı sınıfı',
+  remnantClassification: 'Artık etiket sınıfı',
+  remnantClassificationHelp:
+    'Geri kazanılabilir artık, seçilen sınıfla etiketlenir ve ayrıca "geri kazanılabilir artık" üretim durumunu taşır. ' +
+    'Varsayılan ikinci kalitedir.',
   productSearch: 'Ürün ara',
   product: 'Ürün',
   effectiveOnRequired: 'Önce geçerli çıktı zamanını girin.',
