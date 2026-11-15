@@ -299,6 +299,7 @@ public sealed class AiExternalProviderTests
         Enabled = true,
         Provider = AiProviderKindsV1.External,
         PolicyRef = "TEST-AI-POLICY",
+        PolicyVersion = 1,
         MaxQuestionLength = 200,
         MaxArgumentBytes = 256,
         MaxToolCallsPerRequest = 1,
