@@ -6,23 +6,24 @@ using GoymenERP.Modules.Manufacturing.Domain.Orders;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// Production cost port, version 2 (URT-D54, URT-D55, URT-D58): the port reads the given company's order and that
-/// company's rounding direction once each, calls the single rounding calculator and fails closed on anything it cannot
-/// trust. The direction is not decided (URT-D54 (3)), so a source that answers "not decided" leaves the cost pending.
+/// Production cost port, version 2 (URT-D54, URT-D55, URT-D58, URT-D78…URT-D80): the port reads the given company's
+/// order once, calls the single rounding calculator and fails closed on anything it cannot trust. A half is rounded away
+/// from zero, the one fixed rule (URT-D78): there is no rounding setting to read, and a remainder with no good product
+/// line leaves the cost pending (URT-D80).
 /// </summary>
 public sealed class ManufacturingProductionCostPortV2Tests
 {
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-00000000000a");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-00000000000b");
     private static readonly Guid OrderA = Guid.Parse("20000000-0000-0000-0000-00000000000a");
+    private static readonly Guid OrderB = Guid.Parse("20000000-0000-0000-0000-00000000000b");
     private static readonly Guid IssueA = Guid.Parse("c0000000-0000-0000-0000-00000000000a");
     private static readonly Guid GoodA = Guid.Parse("a0000000-0000-0000-0000-00000000000a");
     private static readonly Guid SecondA = Guid.Parse("b0000000-0000-0000-0000-00000000000a");
+    private static readonly Guid SecondB = Guid.Parse("b0000000-0000-0000-0000-00000000000b");
+    private static readonly Guid SecondC = Guid.Parse("b0000000-0000-0000-0000-00000000000c");
     private static readonly Guid ScrapA = Guid.Parse("e0000000-0000-0000-0000-00000000000a");
     private static readonly Guid CurrencyUsd = Guid.Parse("70000000-0000-0000-0000-00000000000a");
-
-    private static readonly ProductionCostRoundingPolicyInputV1 AwayFromZero =
-        new(ProductionCostRoundingPolicyStatusV1.Value, ProductionCostRoundingDirectionV1.HalfAwayFromZero);
 
     private static ProductionScrapCostDistributionInput Input(
         decimal issueCost = 40m, IssueCostCurrencyInput? currency = null, bool closed = true) =>
@@ -38,14 +39,30 @@ public sealed class ManufacturingProductionCostPortV2Tests
                 Kilograms.Zero,
                 ScrapCostSettingStatus.Off,
                 NonKgInputUse.PaintLitres),
-            [new ProductionScrapCostLabelInput(GoodA, OutputClass.GoodProduct, new Kilograms(900m)),
-                new ProductionScrapCostLabelInput(SecondA, OutputClass.SecondQuality, new Kilograms(50m))]);
+            [new ProductionScrapCostLabelInput(GoodA, "ETK-1", OutputClass.GoodProduct, new Kilograms(900m)),
+                new ProductionScrapCostLabelInput(SecondA, "ETK-2", OutputClass.SecondQuality, new Kilograms(50m))]);
 
     private static ManufacturingScrapCostDistributionSourceReadV1 Found(ProductionScrapCostDistributionInput? input) =>
         new(ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyA, OrderA, input);
 
-    private static ManufacturingCostRoundingPolicyReadV1 Policy(ProductionCostRoundingPolicyInputV1? policy) =>
-        new(ManufacturingCostRoundingPolicySourceStatusV1.Found, CompanyA, policy);
+    // 1000 kg x 40 TL, scrap in cost, 900 kg second quality in three 300 kg labels of 13333.333... TL: 0.01 TL is left
+    // and there is no good product line to carry it.
+    private static ProductionScrapCostDistributionInput SecondQualityThirdsInput() =>
+        new(new ProductionReceiptCostInput(
+                true,
+                [new IssueCostInput(IssueA, new Kilograms(1000m), IssueCostReadStatus.Value, 40m,
+                    IssueCostCurrencyInput.FunctionalCurrency)],
+                [],
+                Kilograms.Zero,
+                new Kilograms(900m),
+                Kilograms.Zero,
+                [new ScrapWeighingInput(ScrapA, new Kilograms(100m), new ScrapPriceInput(ScrapPriceReadStatus.Value, 10m))],
+                Kilograms.Zero,
+                ScrapCostSettingStatus.On,
+                NonKgInputUse.None),
+            [new ProductionScrapCostLabelInput(SecondA, "ETK-1", OutputClass.SecondQuality, new Kilograms(300m)),
+                new ProductionScrapCostLabelInput(SecondB, "ETK-2", OutputClass.SecondQuality, new Kilograms(300m)),
+                new ProductionScrapCostLabelInput(SecondC, "ETK-3", OutputClass.SecondQuality, new Kilograms(300m))]);
 
     [Fact]
     public async Task A_found_order_answers_the_recorded_figures_with_the_tl_in_equal_to_the_tl_distributed()
@@ -53,8 +70,7 @@ public sealed class ManufacturingProductionCostPortV2Tests
         // SAT-D326 (1) golden: 41.5789 TL per kg; 900 kg 37421.05 TL, 50 kg 2078.95 TL, scrap expense 500.00 TL.
         var currency = new IssueCostCurrencyInput(IssueCostCurrencyStatus.Converted, CurrencyUsd, 2.5m, 16m);
         var source = new FakeSource(Found(Input(currency: currency)));
-        var policySource = new FakePolicySource(Policy(AwayFromZero));
-        var port = new ManufacturingProductionCostPort(source, policySource);
+        var port = new ManufacturingProductionCostPort(source);
 
         var result = await port.ReadAsync(CompanyA, OrderA, CancellationToken.None);
 
@@ -63,7 +79,6 @@ public sealed class ManufacturingProductionCostPortV2Tests
         Assert.Equal(CompanyA, result.CompanyId);
         Assert.Equal(OrderA, result.OrderId);
         Assert.Null(result.ReasonCode);
-        Assert.Equal(ProductionCostRoundingDirectionV1.HalfAwayFromZero, result.RoundingDirection);
         Assert.Equal(ProductionReceiptCostCodesV1.BasisWithoutScrap, result.CostBasis);
         Assert.Equal(41.5789m, result.RecordedCostPerKgTl);
         Assert.Equal(40m, result.RecordedRawMaterialCostPerKgTl);
@@ -97,44 +112,39 @@ public sealed class ManufacturingProductionCostPortV2Tests
             [new ManufacturingProductionCostCurrencyLineV2(IssueA, CurrencyUsd, 2.5m, 16m, 40m, 1000m, 2500m)],
             result.CurrencyLines);
         Assert.Equal(new[] { (CompanyA, OrderA) }, source.Calls);
-        Assert.Equal([CompanyA], policySource.Calls);
     }
 
     [Fact]
-    public async Task A_direction_not_decided_is_pending_with_no_figure()
+    public async Task A_remainder_with_no_good_product_line_is_pending_with_no_figure()
     {
-        var port = new ManufacturingProductionCostPort(new FakeSource(Found(Input())),
-            new FakePolicySource(Policy(ProductionCostRoundingPolicyInputV1.NotDecided)));
+        // URT-D80: "Emirde iyi urun etiketi yoksa maliyet 'bekliyor' kalir".
+        var port = new ManufacturingProductionCostPort(new FakeSource(Found(SecondQualityThirdsInput())));
 
         var result = await port.ReadAsync(CompanyA, OrderA, CancellationToken.None);
 
         AssertEmpty(result, ManufacturingScrapCostDistributionStatusV1.Pending,
-            ProductionCostRoundingCodesV1.PolicyNotDecided);
+            ProductionCostRoundingCodesV1.RemainderLineMissing);
     }
 
     [Fact]
-    public async Task A_direction_source_that_fails_answers_null_or_another_company_is_unavailable()
+    public async Task An_order_source_that_fails_answers_null_or_another_order_is_unavailable()
     {
-        (FakePolicySource Source, string Code)[] cases =
+        (FakeSource Source, string Code)[] cases =
         [
-            (new FakePolicySource(null, new InvalidOperationException("SENTETIK")),
-                ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable),
-            (new FakePolicySource(null), ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable),
-            (new FakePolicySource(new ManufacturingCostRoundingPolicyReadV1(
-                    ManufacturingCostRoundingPolicySourceStatusV1.Found, CompanyB, AwayFromZero)),
-                ManufacturingProductionCostCodesV2.RoundingPolicyScopeMismatch),
-            (new FakePolicySource(new ManufacturingCostRoundingPolicyReadV1(
-                    ManufacturingCostRoundingPolicySourceStatusV1.Unavailable, CompanyA, null)),
-                ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable),
-            (new FakePolicySource(Policy(null)), ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable),
-            (new FakePolicySource(new ManufacturingCostRoundingPolicyReadV1(
-                    (ManufacturingCostRoundingPolicySourceStatusV1)99, CompanyA, AwayFromZero)),
-                ManufacturingProductionCostCodesV2.RoundingPolicyUnavailable),
+            (new FakeSource(null, new InvalidOperationException("SENTETIK")),
+                ManufacturingScrapCostDistributionCodesV1.SourceUnavailable),
+            (new FakeSource(null), ManufacturingScrapCostDistributionCodesV1.SourceUnavailable),
+            (new FakeSource(new ManufacturingScrapCostDistributionSourceReadV1(
+                    ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyA, OrderB, Input())),
+                ManufacturingScrapCostDistributionCodesV1.SourceScopeMismatch),
+            (new FakeSource(new ManufacturingScrapCostDistributionSourceReadV1(
+                    ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyA, OrderA, null)),
+                ManufacturingScrapCostDistributionCodesV1.SourceUnavailable),
         ];
 
-        foreach (var (policySource, code) in cases)
+        foreach (var (source, code) in cases)
         {
-            var port = new ManufacturingProductionCostPort(new FakeSource(Found(Input())), policySource);
+            var port = new ManufacturingProductionCostPort(source);
 
             AssertEmpty(await port.ReadAsync(CompanyA, OrderA, CancellationToken.None),
                 ManufacturingScrapCostDistributionStatusV1.Unavailable, code);
@@ -142,40 +152,33 @@ public sealed class ManufacturingProductionCostPortV2Tests
     }
 
     [Fact]
-    public async Task An_order_that_does_not_exist_is_not_found_before_the_direction_is_read()
+    public async Task An_order_that_does_not_exist_is_not_found()
     {
-        var policySource = new FakePolicySource(null, new InvalidOperationException("SENTETIK"));
         var port = new ManufacturingProductionCostPort(new FakeSource(
-                new ManufacturingScrapCostDistributionSourceReadV1(
-                    ManufacturingScrapCostDistributionSourceStatusV1.NotFound, CompanyA, OrderA, null)),
-            policySource);
+            new ManufacturingScrapCostDistributionSourceReadV1(
+                ManufacturingScrapCostDistributionSourceStatusV1.NotFound, CompanyA, OrderA, null)));
 
         AssertEmpty(await port.ReadAsync(CompanyA, OrderA, CancellationToken.None),
             ManufacturingScrapCostDistributionStatusV1.NotFound, ManufacturingScrapCostDistributionCodesV1.OrderNotFound);
-        Assert.Empty(policySource.Calls);
     }
 
     [Fact]
-    public async Task An_order_source_answering_another_company_is_unavailable_and_the_direction_is_not_read()
+    public async Task An_order_source_answering_another_company_is_unavailable()
     {
-        var policySource = new FakePolicySource(Policy(AwayFromZero));
         var port = new ManufacturingProductionCostPort(new FakeSource(
-                new ManufacturingScrapCostDistributionSourceReadV1(
-                    ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyB, OrderA, Input())),
-            policySource);
+            new ManufacturingScrapCostDistributionSourceReadV1(
+                ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyB, OrderA, Input())));
 
         AssertEmpty(await port.ReadAsync(CompanyA, OrderA, CancellationToken.None),
             ManufacturingScrapCostDistributionStatusV1.Unavailable,
             ManufacturingScrapCostDistributionCodesV1.SourceScopeMismatch);
-        Assert.Empty(policySource.Calls);
     }
 
     [Fact]
     public async Task An_empty_company_or_order_reads_nothing()
     {
         var source = new FakeSource(Found(Input()));
-        var policySource = new FakePolicySource(Policy(AwayFromZero));
-        var port = new ManufacturingProductionCostPort(source, policySource);
+        var port = new ManufacturingProductionCostPort(source);
 
         AssertEmpty(await port.ReadAsync(Guid.Empty, OrderA, CancellationToken.None),
             ManufacturingScrapCostDistributionStatusV1.Unavailable,
@@ -183,15 +186,13 @@ public sealed class ManufacturingProductionCostPortV2Tests
         AssertEmpty(await port.ReadAsync(CompanyA, Guid.Empty, CancellationToken.None),
             ManufacturingScrapCostDistributionStatusV1.NotFound, ManufacturingScrapCostDistributionCodesV1.OrderRequired);
         Assert.Empty(source.Calls);
-        Assert.Empty(policySource.Calls);
     }
 
     [Fact]
     public async Task A_zero_issue_cost_is_unreadable_and_names_the_issue()
     {
         // URT-D58 (1): the screen names the input whose cost is zero.
-        var port = new ManufacturingProductionCostPort(new FakeSource(Found(Input(issueCost: 0m))),
-            new FakePolicySource(Policy(AwayFromZero)));
+        var port = new ManufacturingProductionCostPort(new FakeSource(Found(Input(issueCost: 0m))));
 
         var result = await port.ReadAsync(CompanyA, OrderA, CancellationToken.None);
 
@@ -207,8 +208,7 @@ public sealed class ManufacturingProductionCostPortV2Tests
     [Fact]
     public async Task An_open_order_is_pending()
     {
-        var port = new ManufacturingProductionCostPort(new FakeSource(Found(Input(closed: false))),
-            new FakePolicySource(Policy(AwayFromZero)));
+        var port = new ManufacturingProductionCostPort(new FakeSource(Found(Input(closed: false))));
 
         AssertEmpty(await port.ReadAsync(CompanyA, OrderA, CancellationToken.None),
             ManufacturingScrapCostDistributionStatusV1.Pending, ProductionReceiptCostCodesV1.OrderNotClosed);
@@ -220,8 +220,7 @@ public sealed class ManufacturingProductionCostPortV2Tests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
         var port = new ManufacturingProductionCostPort(
-            new FakeSource(null, new OperationCanceledException(cancellation.Token)),
-            new FakePolicySource(Policy(AwayFromZero)));
+            new FakeSource(null, new OperationCanceledException(cancellation.Token)));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => port.ReadAsync(CompanyA, OrderA, cancellation.Token));
@@ -234,7 +233,6 @@ public sealed class ManufacturingProductionCostPortV2Tests
         Assert.Equal(status, result.Status);
         Assert.Equal(code, result.ReasonCode);
         Assert.Null(result.CostBasis);
-        Assert.Null(result.RoundingDirection);
         Assert.Null(result.RecordedCostPerKgTl);
         Assert.Null(result.RecordedRawMaterialCostPerKgTl);
         Assert.Null(result.InputTotalTl);
@@ -257,23 +255,6 @@ public sealed class ManufacturingProductionCostPortV2Tests
             Guid companyId, Guid orderId, CancellationToken cancellationToken)
         {
             Calls.Add((companyId, orderId));
-            if (failure is not null)
-            {
-                throw failure;
-            }
-
-            return Task.FromResult(read!);
-        }
-    }
-
-    private sealed class FakePolicySource(ManufacturingCostRoundingPolicyReadV1? read, Exception? failure = null)
-        : IManufacturingCostRoundingPolicySourceV1
-    {
-        public List<Guid> Calls { get; } = [];
-
-        public Task<ManufacturingCostRoundingPolicyReadV1> ReadAsync(Guid companyId, CancellationToken cancellationToken)
-        {
-            Calls.Add(companyId);
             if (failure is not null)
             {
                 throw failure;

@@ -8,8 +8,15 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Costing;
 /// quality or usable remnant label (the output id is the label's identity in Inventory, <see cref="OutputDeclaration"/>).
 /// Scrap labels are not listed here: they are the order's scrap weighings
 /// (<see cref="ScrapWeighingInput.ScrapOutputId"/>). Process loss has no label (plan v2 §7.3).
+/// <see cref="LabelNumber"/> is the label's number as printed (etiket no): unique within the order, trimmed, without
+/// control characters. It decides which of two good product labels of equal kg carries the rounding remainder (URT-D80:
+/// the smallest label number, <see cref="ProductionCostRoundingCalculatorV1.CompareLabelNumbers"/>).
 /// </summary>
-public sealed record ProductionScrapCostLabelInput(Guid OutputLabelId, OutputClass OutputClass, Kilograms Mass);
+public sealed record ProductionScrapCostLabelInput(
+    Guid OutputLabelId,
+    string LabelNumber,
+    OutputClass OutputClass,
+    Kilograms Mass);
 
 /// <summary>
 /// The distribution input: the order's production receipt cost input (<see cref="ProductionReceiptCostInput"/>) and its
@@ -24,10 +31,13 @@ public sealed record ProductionScrapCostDistributionInput(
 /// </summary>
 public static class ProductionScrapCostDistributionCodesV1
 {
-    /// <summary>A label is missing, names an undefined class, or names scrap or process loss.</summary>
+    /// <summary>
+    /// A label is missing, names an undefined class, names scrap or process loss, or has a missing, blank, untrimmed or
+    /// control-character label number.
+    /// </summary>
     public const string LabelInvalid = "cost_label_invalid";
 
-    /// <summary>A label id is used twice, also as a scrap output id.</summary>
+    /// <summary>A label id is used twice, also as a scrap output id, or a label number is used twice.</summary>
     public const string LabelDuplicate = "cost_label_duplicate";
 
     /// <summary>The labels of a class do not add up to that class's kg in the cost input.</summary>
@@ -105,10 +115,12 @@ public sealed record ProductionScrapCostDistributionResult(
 /// </list>
 /// The amounts are TL, as the cost calculator's are, and nothing is rounded here: the calculation runs at full precision
 /// and <see cref="ProductionCostRoundingCalculatorV1"/> rounds the recorded figures once and puts the remainder on the
-/// good product line (URT-D54 (1)-(2), SINAN_KARARLARI_2026-11-14_URETIM_EK4). Pending and unreadable answers of the cost calculator are carried through with
-/// their codes. An open order is pending before the labels are checked (its labels are not final); otherwise a missing
-/// label list or label, a label of class scrap, process loss or an undefined class (<c>cost_label_invalid</c>), a label
-/// id used twice or also used as a scrap output id (<c>cost_label_duplicate</c>), or labels whose kg do not add up to
+/// good product line with the most kg (URT-D54 (1)-(2), SINAN_KARARLARI_2026-11-14_URETIM_EK4; URT-D78…URT-D80,
+/// SINAN_KARARLARI_2026-11-15_DALGA2_EK10). Pending and unreadable answers of the cost calculator are carried through
+/// with their codes. An open order is pending before the labels are checked (its labels are not final); otherwise a
+/// missing label list or label, a label of class scrap, process loss or an undefined class, or a label number that is
+/// missing, blank, untrimmed or has a control character (<c>cost_label_invalid</c>), a label id used twice or also used
+/// as a scrap output id, or a label number used twice (<c>cost_label_duplicate</c>), or labels whose kg do not add up to
 /// their class's kg (<c>cost_label_mass_mismatch</c>) is unreadable, and that wins over a missing scrap price. An
 /// arithmetic overflow is <c>cost_arithmetic_overflow</c>. Lines are ordered by class, then label id, so the result does
 /// not depend on the order the labels and weighings are given in. The calculator does not throw for its input's
@@ -179,6 +191,7 @@ public static class ProductionScrapCostDistributionCalculatorV1
             }
         }
 
+        var numbers = new HashSet<string>(StringComparer.Ordinal);
         var good = 0m;
         var second = 0m;
         var remnant = 0m;
@@ -186,12 +199,13 @@ public static class ProductionScrapCostDistributionCalculatorV1
         {
             if (label is null
                 || label.OutputClass is not (OutputClass.GoodProduct or OutputClass.SecondQuality
-                    or OutputClass.UsableRemnant))
+                    or OutputClass.UsableRemnant)
+                || !IsCanonicalLabelNumber(label.LabelNumber))
             {
                 return ProductionScrapCostDistributionCodesV1.LabelInvalid;
             }
 
-            if (!ids.Add(label.OutputLabelId))
+            if (!ids.Add(label.OutputLabelId) || !numbers.Add(label.LabelNumber))
             {
                 return ProductionScrapCostDistributionCodesV1.LabelDuplicate;
             }
@@ -214,6 +228,24 @@ public static class ProductionScrapCostDistributionCalculatorV1
             && remnant == cost.UsableRemnant.Value
                 ? null
                 : ProductionScrapCostDistributionCodesV1.LabelMassMismatch;
+    }
+
+    private static bool IsCanonicalLabelNumber(string? number)
+    {
+        if (string.IsNullOrWhiteSpace(number) || number.Trim().Length != number.Length)
+        {
+            return false;
+        }
+
+        foreach (var character in number)
+        {
+            if (char.IsControl(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static ProductionScrapCostDistributionResult Lines(

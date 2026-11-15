@@ -9,7 +9,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// person's approval. The wrong weighing is not deleted: the approval records the reversal of its full net mass and the
 /// correct weighing as a new declaration on the same roll, class and plan output line, and the correction keeps the
 /// trace. The proposer can neither approve nor reject; only a downward correction of a weighed output on an open order
-/// is accepted (a closed order waits for URT-D52 (3)); a refused approval changes nothing.
+/// is accepted; a closed order refuses the correction until the reopen flow reopens it (URT-D81,
+/// SINAN_KARARLARI_2026-11-15_DALGA2_EK10); a refused approval changes nothing.
 /// </summary>
 public sealed class WeighingCorrectionTests
 {
@@ -134,8 +135,13 @@ public sealed class WeighingCorrectionTests
         Assert.Equal(ManufacturingRuleCodes.OutputLineMissing, error.Code);
     }
 
+    /// <summary>
+    /// URT-D81: a weighing correction on a closed order is refused with <c>manufacturing_order_closed</c>, at the proposal
+    /// and at the approval of a proposal made while the order was open; the order is reopened first by its own flow
+    /// (URT-D32, URT-D77), never by the correction.
+    /// </summary>
     [Fact]
-    public void A_closed_order_is_not_reopened_or_changed_by_a_correction()
+    public void A_closed_order_refuses_a_correction_and_is_not_reopened_by_it()
     {
         var (order, output) = OrderWithOutput(mass: 1_000m);
         var correction = Propose(order, output.OutputId, 990m);
@@ -147,6 +153,7 @@ public sealed class WeighingCorrectionTests
             correction.Approve(order, order.Version, Approver, Guid.NewGuid(), Guid.NewGuid(), DecidedAt));
 
         Assert.Equal(ManufacturingRuleCodes.OrderClosed, proposal.Code);
+        Assert.Equal("manufacturing_order_closed", proposal.Code);
         Assert.Equal(ManufacturingRuleCodes.OrderClosed, approval.Code);
         Assert.Equal((OrderStatus.Closed, version), (order.Status, order.Version));
         Assert.Empty(order.OutputReversals);

@@ -25,7 +25,10 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     private static readonly Guid ScrapB = Guid.Parse("e0000000-0000-0000-0000-00000000000b");
 
     private static ProductionScrapCostLabelInput Label(Guid id, OutputClass outputClass, decimal kg) =>
-        new(id, outputClass, new Kilograms(kg));
+        Label(id, "ETK-" + id.ToString("N"), outputClass, kg);
+
+    private static ProductionScrapCostLabelInput Label(Guid id, string labelNumber, OutputClass outputClass, decimal kg) =>
+        new(id, labelNumber, outputClass, new Kilograms(kg));
 
     private static ScrapPriceInput Price(decimal tlPerKg) => new(ScrapPriceReadStatus.Value, tlPerKg);
 
@@ -240,6 +243,42 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
             Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
             Assert.Equal(ProductionScrapCostDistributionCodesV1.LabelDuplicate, result.UnreadableCode);
         }
+    }
+
+    [Fact]
+    public void A_label_number_used_twice_is_unreadable_as_a_duplicate()
+    {
+        IReadOnlyList<ProductionScrapCostLabelInput> labels =
+            [Label(GoodA, "ETK-7", OutputClass.GoodProduct, 600m), Label(GoodB, "ETK-7", OutputClass.GoodProduct, 300m),
+                Label(SecondA, "ETK-8", OutputClass.SecondQuality, 50m)];
+
+        var result = Distribute(Cost(), labels);
+
+        Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
+        Assert.Equal(ProductionScrapCostDistributionCodesV1.LabelDuplicate, result.UnreadableCode);
+        Assert.Empty(result.Lines);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(" ETK-7")]
+    [InlineData("ETK-7 ")]
+    [InlineData("ETK-<TAB>7")]
+    public void A_missing_blank_untrimmed_or_control_character_label_number_is_unreadable(string? labelNumber)
+    {
+        // The tab case is written as a marker so the test identity stays printable ASCII.
+        var number = labelNumber?.Replace("<TAB>", "\t", StringComparison.Ordinal);
+        IReadOnlyList<ProductionScrapCostLabelInput> labels =
+            [Label(GoodA, number!, OutputClass.GoodProduct, 600m), Label(GoodB, OutputClass.GoodProduct, 300m),
+                Label(SecondA, OutputClass.SecondQuality, 50m)];
+
+        var result = Distribute(Cost(), labels);
+
+        Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
+        Assert.Equal(ProductionScrapCostDistributionCodesV1.LabelInvalid, result.UnreadableCode);
+        Assert.Empty(result.Lines);
     }
 
     [Theory]
