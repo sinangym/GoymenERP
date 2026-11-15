@@ -468,6 +468,27 @@ public sealed class ProductionOrder
     }
 
     /// <summary>
+    /// URT-D49: true when this order's process consumes a main parent roll, so "output above input" is measured roll by
+    /// roll (URT-D42 (1)); false for a process without one (Paint), whose order total is compared instead
+    /// (<see cref="TotalBalance"/>).
+    /// </summary>
+    public bool MeasuresOutputAboveInputPerRoll => ManufacturingProcessMainInputV1.HasMainRollInput(Process);
+
+    /// <summary>URT-D49 (1): every planned input's <see cref="BalanceOf"/> added into one BAL-003 account.</summary>
+    public OrderMassTotalV1 TotalBalance() =>
+        OrderMassTotalV1.Of(_plannedInputs.Select(input => BalanceOf(input.ParentRollId)).ToArray());
+
+    /// <summary>
+    /// The close's "output above input" rule on this order's facts (URT-D41 (1), URT-D42 (1), URT-D49): on any planned
+    /// parent roll for a roll-based process, on the order total for a process without a main roll input. The close
+    /// (<see cref="OrderClosureAssessmentCalculatorV1"/>) and the read-only report of earlier closes read it the same way.
+    /// </summary>
+    public bool HasOutputAboveInput() =>
+        MeasuresOutputAboveInputPerRoll
+            ? _plannedInputs.Any(input => BalanceOf(input.ParentRollId).OutputExceedsInput)
+            : TotalBalance().OutputExceedsInput;
+
+    /// <summary>
     /// Read-only OPEN-005 / Ö7 preparation. The supplied snapshot and BAL-004 inputs come from their future owners;
     /// this method chooses no percentage, numerator, denominator, approval or output fact and changes no order state.
     /// </summary>
@@ -497,7 +518,8 @@ public sealed class ProductionOrder
     /// out-of-tolerance shortfall only with immutable evidence created after the application freshly proved the
     /// dedicated approval permission. The evidence is checked again here against this company, order, actor,
     /// pre-close order version and policy version; it never supplies authority by itself. Output above input on a
-    /// planned parent roll is refused whatever the tolerance or approval
+    /// planned parent roll — on the order total for a process without a main roll input (URT-D49) — is refused
+    /// whatever the tolerance or approval
     /// (<see cref="ClosureAssessmentCodesV1.OutputExceedsInput"/>, URT-D41 (1)-(2), URT-D42 (1)-(2)).
     /// </summary>
     public void CloseWithPolicy(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,

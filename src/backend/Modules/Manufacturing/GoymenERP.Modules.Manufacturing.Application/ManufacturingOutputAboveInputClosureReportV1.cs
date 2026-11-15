@@ -43,7 +43,8 @@ public sealed record OutputAboveInputRollViewV1(Guid ParentRollId, MassDifferenc
 
 /// <summary>
 /// One closed order with output above input on at least one parent roll (URT-D41 (1), URT-D42 (1): per roll; rolls never
-/// offset each other). Only those rolls are listed. <see cref="ClosedWithExceptionApproval"/> tells how the earlier rule
+/// offset each other) or, for a process without a main roll input, on its order total (URT-D49 (1)). Only the rolls or
+/// inputs above input on their own are listed. <see cref="ClosedWithExceptionApproval"/> tells how the earlier rule
 /// let it close: true with the reasoned out-of-tolerance approval, false inside the stored tolerance. The order itself is
 /// not changed by being listed.
 /// </summary>
@@ -71,7 +72,8 @@ public sealed partial class ManufacturingCommandService
     /// a 400 on <c>cursor</c>, never a silent first page. Without the closed-order port the answer is a retryable 503,
     /// never an empty page. A stored order that does not rebuild fails the whole request as the order read and the order
     /// list do (the redacted internal error), so it is never skipped and no partial page is answered. The rule is
-    /// <see cref="MassBalance.OutputExceedsInput"/>, the close's own definition.
+    /// <see cref="MassBalance.OutputExceedsInput"/>, the close's own definition, measured where the close measures it
+    /// (per roll, or on the order total for a process without a main roll input, URT-D49).
     /// </summary>
     public async Task<ManufacturingApiResult<OutputAboveInputClosureReportViewV1>> ListOutputAboveInputClosuresAsync(
         int? pageSize, string? cursor, CancellationToken cancellationToken)
@@ -132,7 +134,9 @@ public sealed partial class ManufacturingCommandService
 
     /// <summary>
     /// The report page from the examined closed orders: an order is listed when at least one planned parent roll has
-    /// output above input, and only those rolls are. The balance is <see cref="ProductionOrder.BalanceOf"/>, so the
+    /// output above input, and only those rolls are. For a process without a main roll input the order is listed only
+    /// when its total is above input (<see cref="ProductionOrder.HasOutputAboveInput"/>, URT-D49 (1)), with the inputs
+    /// that are above input on their own as its rows. The balance is <see cref="ProductionOrder.BalanceOf"/>, so the
     /// numbers are the mass-balance read's. Null when the page holds anything but this company's closed orders (another
     /// company's order, an open one, a close without its closer and moment): such a page is never reported, in part or
     /// whole.
@@ -146,6 +150,13 @@ public sealed partial class ManufacturingCommandService
                 || order.ClosedByUserId is not { } closedBy || order.ClosedAtUtc is not { } closedAt)
             {
                 return null;
+            }
+
+            // URT-D49 (1): a process without a main roll input is listed only when its order total is above input — the
+            // close's own scope; its inputs that are above input on their own are then the rows.
+            if (!order.MeasuresOutputAboveInputPerRoll && !order.TotalBalance().OutputExceedsInput)
+            {
+                continue;
             }
 
             List<OutputAboveInputRollViewV1> rolls = [];
