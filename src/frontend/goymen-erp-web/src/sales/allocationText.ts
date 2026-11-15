@@ -98,4 +98,5 @@ export const ALLOCATION_TEXT = {
   substituteSelected: (product: string) =>
     `Muadil: seçilen etiket farklı bir ürüne ait (${product}). Kaydederseniz tahsis muadil olarak işaretlenir; Stok benzerliği kayıt anında yeniden doğrular.`,
   substituteNotSimilar: 'Seçilen muadil etiketin ürünü bu satırın ürününe Ayarlar’daki ölçü toleransı içinde benzemiyor ya da tolerans tanımlı değil. Tahsis kaydedilmedi.',
+  unitConversionUnavailable: 'Sipariş birimi ile kilogram arasında tanımlı bir çevrim yok; tahsis sipariş miktarıyla karşılaştırılamadı. Tahsis kaydedilmedi.',
 } as const

@@ -62,6 +62,8 @@ function httpRefusalText(status: number, code: string | null): string {
   if (status === 422 && code === CREATE_ALLOCATION_422_CODES.ownerNotCompany) return T.ownerNotCompany
   // KLN-D39/D70: the server did not accept the "muadil" label as similar (or no Settings tolerance exists).
   if (status === 422 && code === CREATE_ALLOCATION_422_CODES.substituteNotSimilar) return T.substituteNotSimilar
+  // KLN-D66 (3): no central kilogram conversion for the order unit yet; the server refused instead of guessing a factor.
+  if (status === 422 && code === CREATE_ALLOCATION_422_CODES.unitConversionUnavailable) return T.unitConversionUnavailable
   return T.failed
 }
 

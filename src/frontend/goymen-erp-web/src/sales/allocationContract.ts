@@ -12,6 +12,8 @@ export const CREATE_ALLOCATION_422_CODES = {
   ownerNotCompany: 'inventory_allocation_owner_not_company',
   /** KLN-D39/D70: the confirmed "muadil" label's product is not similar within the Settings tolerance (or none is set). */
   substituteNotSimilar: 'inventory_allocation_substitute_not_similar',
+  /** KLN-D66 (3): the kilogram comparison with the Sales order unit has no conversion source; refused, never guessed. */
+  unitConversionUnavailable: 'inventory_allocation_unit_conversion_unavailable',
 } as const
 
 export interface PhysicalAllocation {

@@ -313,6 +313,22 @@ describe('Sales physical allocation consumer', () => {
     expect(report).toHaveBeenCalledWith(422, { token: 1 })
   })
 
+  it('shows the missing kilogram conversion (KLN-D66 (3)) as a definite refusal with no retry', async () => {
+    const fetch = refuseCreateWith(422, { title: 'Unprocessable Entity', status: 422,
+      code: CREATE_ALLOCATION_422_CODES.unitConversionUnavailable })
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await submitCreate(card)
+
+    const notice = await within(card).findByTestId('sales-allocation-notice')
+    expect(notice.textContent).toBe(
+      'Sipariş birimi ile kilogram arasında tanımlı bir çevrim yok; tahsis sipariş miktarıyla karşılaştırılamadı. Tahsis kaydedilmedi.')
+    expect(notice.getAttribute('data-tone')).toBe('error')
+    expect(within(card).queryByRole('button', { name: 'Aynı tahsis denemesini tekrar gönder' })).toBeNull()
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
   it.each([
     ['another declared 422 code', { status: 422, code: CREATE_ALLOCATION_422_CODES.invalidReference }],
     ['an undeclared 422 code', { status: 422, code: 'inventory_something_else' }],
