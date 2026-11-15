@@ -88,6 +88,11 @@ public sealed class LocalAccountOptions
             errors.Add($"{SectionName}:RateLimit:Login:PartitionBy tanımlanmalıdır (KIM-D29).");
         }
 
+        if (login.SettingsRefreshInterval is { } refresh && refresh <= TimeSpan.Zero)
+        {
+            errors.Add($"{SectionName}:RateLimit:Login:SettingsRefreshInterval verildiyse pozitif bir süre olmalıdır (KIM-D34).");
+        }
+
         ValidatePasswordPolicy(errors);
         return errors;
     }
@@ -215,7 +220,9 @@ public sealed class LocalAccountRateLimitSettings
 
 /// <summary>
 /// Login rate limit (KIM-D29: starting value 10 attempts per minute per IP address and normalized user name). It is
-/// separate from the KIM-D4/KIM-D13 lockout counter and the value stays configurable.
+/// separate from the KIM-D4/KIM-D13 lockout counter and the value stays configurable. KIM-D34: the value in force is the
+/// group-wide Settings record (Ayarlar → giriş deneme sınırı); these settings are the starting value used until the first
+/// version is recorded, and the fallback the host keeps while the record cannot be read.
 /// </summary>
 public sealed class LocalAccountLoginRateLimitSettings
 {
@@ -226,6 +233,13 @@ public sealed class LocalAccountLoginRateLimitSettings
     public TimeSpan? Window { get; set; }
 
     public LocalAccountLoginRateLimitPartition? PartitionBy { get; set; }
+
+    /// <summary>
+    /// KIM-D34 (optional, a technical cache interval, not a policy value): how long the limiter keeps the Settings record it
+    /// last read before it reads again. Not set: every attempt reads it (at most one read runs at a time; the others use the
+    /// limit in force). A recorded version reaches the login path within this interval.
+    /// </summary>
+    public TimeSpan? SettingsRefreshInterval { get; set; }
 }
 
 public enum LocalAccountLoginRateLimitPartition

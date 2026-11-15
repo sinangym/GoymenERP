@@ -67,6 +67,10 @@ public static class SettingsModuleExtensions
         // port approving modules consume. No row answers the decided default: the preparer may not approve.
         services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();
         services.AddScoped<ISettingsSegregationOfDutiesPolicyProviderV1, SettingsSegregationOfDutiesPolicyProviderV1>();
+        // KIM-D34: the group-wide login attempt limit record, its administration and the read port the host's login rate
+        // limiter refreshes from. Nothing is seeded: until the first version the host keeps its configured starting value.
+        services.AddScoped<ISettingsLoginRateLimitAdministrationV1, SettingsLoginRateLimitAdministration>();
+        services.AddScoped<ISettingsLoginRateLimitProviderV1, SettingsLoginRateLimitProviderV1>();
         services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
         services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both

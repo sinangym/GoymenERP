@@ -53,6 +53,8 @@ public static class OrganizationModuleExtensions
         services.AddScoped<IOrganizationLocationStatusReaderV1, OrganizationLocationStatusReader>();
         services.AddScoped<IOrganizationLocationCandidatesV1, OrganizationLocationCandidateReader>();
         services.AddScoped<IOrganizationLocationDisplayReaderV1, OrganizationLocationDisplayReader>();
+        // KIM-D35: the company's "VKN girilmemiş" mark for modules that issue a VKN-bearing official document.
+        services.AddScoped<IOrganizationCompanyTaxIdStatusReaderV1, OrganizationCompanyTaxIdStatusReader>();
         services.AddOrganizationWorkCenterPlanningReferences();
         services.AddScoped<OrganizationDataSeeder>();
         services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();

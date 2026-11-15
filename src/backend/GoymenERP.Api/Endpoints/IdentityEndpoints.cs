@@ -106,7 +106,11 @@ public static partial class IdentityEndpoints
                 }
 
                 var services = httpContext.RequestServices;
-                if (!services.GetRequiredService<LocalAccountLoginRateLimiter>().TryAcquire(httpContext, request.UserName))
+                if (!await services.GetRequiredService<LocalAccountLoginRateLimiter>().TryAcquireAsync(
+                        httpContext,
+                        request.UserName,
+                        services.GetRequiredService<GoymenERP.Modules.Settings.Application.Contracts.V1.ISettingsLoginRateLimitProviderV1>(),
+                        cancellationToken))
                 {
                     return LoginRateLimited(services.GetRequiredService<ICorrelationContext>());
                 }

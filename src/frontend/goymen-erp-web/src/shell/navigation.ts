@@ -159,6 +159,10 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.sales-delivery-tolerances.manage',
   /** F-029 S4b (SAT-D6): the Settings approval amount threshold screen, drawn only where the server granted its one name. */
   'settings.sales-approval-thresholds.manage',
+  /** KIM-D34: the Settings login attempt limit screen, drawn only where the server granted its one name. */
+  'settings.login-rate-limit.manage',
+  /** F-004, KIM-D37: the Settings unit conversion policy screen, drawn only where the server granted its one name. */
+  'settings.unit-conversion-policies.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -257,6 +261,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.exchange-rates.read': 'Kurlar',
   'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
   'settings.sales-approval-thresholds.manage': 'Onay tutar eşikleri',
+  'settings.login-rate-limit.manage': 'Giriş deneme sınırı',
+  'settings.unit-conversion-policies.manage': 'Birim çevrim politikası',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -393,6 +399,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'organization.sites.list',
       'organization.work-centers.list',
       'organization.company.tax-id',
+      // F-004, KIM-D37: the unit conversion policy sits before the rates (KLN-D2 order: organization, units, rates).
+      'settings.unit-conversion-policies.manage',
       // F-025 / B-11: rates follow the organization entries inside Ana Veriler (KLN-D2 order: organization, units, rates).
       'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
@@ -403,6 +411,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'identity.assignments.list',
       // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
       'identity.audit.list',
+      // KIM-D34: the group-wide login attempt limit is a sign-in security setting inside Sistem Yönetimi.
+      'settings.login-rate-limit.manage',
       'inventory.opening-stock.record',
     ],
     subheadings: {

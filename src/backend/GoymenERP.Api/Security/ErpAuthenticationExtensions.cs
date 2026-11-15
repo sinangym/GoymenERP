@@ -27,7 +27,11 @@ public static class ErpAuthenticationExtensions
         // only when a login or session request reaches them, and those requests exist only while the LocalAccount scheme
         // is enabled.
         services.AddSingleton<ILocalPasswordHasher, LocalAccountPasswordHasher>();
-        services.AddSingleton<LocalAccountLoginRateLimiter>();
+        // KIM-D34: the limiter reads the group-wide Settings record through the scoped provider handed to TryAcquireAsync.
+        services.AddSingleton(provider => new LocalAccountLoginRateLimiter(
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAccountOptions>>(),
+            provider.GetService<TimeProvider>() ?? TimeProvider.System,
+            provider.GetRequiredService<ILogger<LocalAccountLoginRateLimiter>>()));
 
         // A scalar value (for example an environment variable holding "LocalAccount,OidcJwtBearer") would bind to an
         // empty list and silently fall back to Mode, so it is refused before binding.
