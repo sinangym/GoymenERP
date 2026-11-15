@@ -786,6 +786,30 @@ public static class ErpPermissions
     public const string SalesReturnsFinalize = "sales.returns.finalize";
 
     /// <summary>
+    /// S-11 (SAT-D28, NS-13): read recorded sales contracts — payment plan, discount rules and clauses (Sales owner name
+    /// SalesPermissionManifestV1.ContractsRead, same string). Its own name: no order or invoice name confers it. Registered, not
+    /// granted: no seeded role and no real user receives it; the grant is a human gate. Company-wide only. Not Critical: a read
+    /// moves nothing.
+    /// </summary>
+    public const string SalesContractsRead = "sales.contracts.read";
+
+    /// <summary>
+    /// S-11 (SAT-D28, NS-13): record a sales contract with its installment payment plan and discount rules (Sales owner name
+    /// SalesPermissionManifestV1.ContractsWrite, same string). A discount above the configured limit (or any discount while no
+    /// limit is configured, SAT-D346) waits for an authorized approval. Registered, not granted (human gate). Company-wide only.
+    /// Not Critical: no Critical source names it; a user decision may change that.
+    /// </summary>
+    public const string SalesContractsWrite = "sales.contracts.write";
+
+    /// <summary>
+    /// S-11 (NS-13, SAT-D346): approve or reject a contract's discount that needs approval; the contract's creator is refused by
+    /// the Sales service (a service rule, not a catalogue rule). Sales owner name SalesPermissionManifestV1.ContractsDiscountApprove,
+    /// same string. Registered, not granted (human gate). Company-wide only. Not Critical: no Critical source names it; a user
+    /// decision may change that.
+    /// </summary>
+    public const string SalesContractsDiscountApprove = "sales.contracts.discount.approve";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -1224,6 +1248,9 @@ public static class ErpPermissions
             SalesReturnsWrite,
             SalesReturnsApprove,
             SalesReturnsFinalize,
+            SalesContractsRead,
+            SalesContractsWrite,
+            SalesContractsDiscountApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -1432,6 +1459,9 @@ public static class ErpPermissions
             SalesReturnsWrite,
             SalesReturnsApprove,
             SalesReturnsFinalize,
+            SalesContractsRead,
+            SalesContractsWrite,
+            SalesContractsDiscountApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

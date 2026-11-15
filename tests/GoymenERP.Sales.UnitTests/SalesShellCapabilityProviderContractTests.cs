@@ -471,7 +471,11 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.returns.write", SalesPermissionManifestV1.ReturnsWrite);
         Assert.Equal("sales.returns.approve", SalesPermissionManifestV1.ReturnsApprove);
         Assert.Equal("sales.returns.finalize", SalesPermissionManifestV1.ReturnsFinalize);
-        Assert.Equal((30, 37), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // S-11 / SAT-D28 / NS-13 (K3): the contract's own three names; no order, quote or return name confers them and none confers another.
+        Assert.Equal("sales.contracts.read", SalesPermissionManifestV1.ContractsRead);
+        Assert.Equal("sales.contracts.write", SalesPermissionManifestV1.ContractsWrite);
+        Assert.Equal("sales.contracts.discount.approve", SalesPermissionManifestV1.ContractsDiscountApprove);
+        Assert.Equal((31, 40), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -511,6 +515,9 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.ReturnsWrite,
                 SalesPermissionManifestV1.ReturnsApprove,
                 SalesPermissionManifestV1.ReturnsFinalize,
+                SalesPermissionManifestV1.ContractsRead,
+                SalesPermissionManifestV1.ContractsWrite,
+                SalesPermissionManifestV1.ContractsDiscountApprove,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));

@@ -257,6 +257,8 @@ public static partial class SalesEndpoints
         MapInvoiceEndpoints(endpoints);
         // API-40 (SAT-D288…D294): the recorded customer return invoice — create, list, read, submission, approval, finalisation.
         MapCustomerReturnEndpoints(endpoints);
+        // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract — create, list, read, discount approval and rejection.
+        MapContractEndpoints(endpoints);
         // API-37 (plan §3.3, Kontrol Merkezi): the read-only sales follow-up list.
         MapControlCenterEndpoints(endpoints);
         // API-41 / API-42 (plan §3.4, UI-80): the read-only Sales reports.
