@@ -576,6 +576,12 @@ public sealed partial class DocumentService(
                 continue;
             }
 
+            if (!Accepts(target.Kind, candidate.Kind))
+            {
+                // FNS-D52: the link command would refuse a kind the target does not accept, so it is not offered either.
+                continue;
+            }
+
             // KLN-D49 (3): the candidate is named under its first record (primary first) the actor may read now; a document
             // none of whose records is readable is withheld entirely. An owner that cannot answer is not readable here: the
             // probe offers, it never refuses because of a third record (the link command decides with 409/503).
