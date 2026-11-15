@@ -7,10 +7,12 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// <summary>
 /// SAT-D307 scrap cost distribution over the order's output labels: good product and second quality labels carry the
 /// same cost per kg (SAT-D307 (1)-(2)); a usable remnant label returns at the net raw-material kg cost (URT-D46); a scrap
-/// label carries no amount because its stock cost is not decided (URT-D8), and with scrap out of cost it shows its share
-/// of the separate scrap expense (SAT-D316 (1), URT-D47). The golden tests use the literal numbers of SAT-D326 (1) and
-/// URT-D46 (#66 6857496471 (1), #66 6864631364 (14)); nothing is rounded (URT-S14), so the expected values are the same
-/// unrounded decimal arithmetic, and the rounded checks only anchor the magnitude of the golden examples.
+/// label carries no amount because its stock entry stays fail-closed (URT-D8), and with scrap out of cost it shows its
+/// share of the separate scrap expense (SAT-D316 (1), URT-D47). In both settings the weighed scrap value at its month's
+/// price is taken off the product cost first (URT-D75 (1), SAT-D316 (1)). The golden tests use the literal numbers of
+/// SAT-D326 (1) and URT-D46 (#66 6857496471 (1), #66 6864631364 (14)); nothing is rounded here (the recorded figures are
+/// rounded by ProductionCostRoundingCalculatorV1, URT-D54), so the expected values are the same unrounded decimal
+/// arithmetic, and the rounded checks only anchor the magnitude of the golden examples.
 /// </summary>
 public sealed class ProductionScrapCostDistributionCalculatorTests
 {
@@ -23,7 +25,10 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     private static readonly Guid ScrapB = Guid.Parse("e0000000-0000-0000-0000-00000000000b");
 
     private static ProductionScrapCostLabelInput Label(Guid id, OutputClass outputClass, decimal kg) =>
-        new(id, outputClass, new Kilograms(kg));
+        Label(id, "ETK-" + id.ToString("N"), outputClass, kg);
+
+    private static ProductionScrapCostLabelInput Label(Guid id, string labelNumber, OutputClass outputClass, decimal kg) =>
+        new(id, labelNumber, outputClass, new Kilograms(kg));
 
     private static ScrapPriceInput Price(decimal tlPerKg) => new(ScrapPriceReadStatus.Value, tlPerKg);
 
@@ -40,7 +45,10 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
         decimal issueCost = 40m,
         NonKgInputUse nonKg = NonKgInputUse.None) =>
         new(closed,
-            [new IssueCostInput(IssueA, new Kilograms(1000m), IssueCostReadStatus.Value, issueCost)],
+            [
+                new IssueCostInput(IssueA, new Kilograms(1000m), IssueCostReadStatus.Value, issueCost,
+                    IssueCostCurrencyInput.FunctionalCurrency),
+            ],
             [],
             new Kilograms(good),
             new Kilograms(second),
@@ -84,18 +92,33 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     }
 
     [Fact]
-    public void Golden_scrap_in_cost_loads_the_whole_net_cost_on_good_and_second_quality_labels()
+    public void Golden_scrap_in_cost_takes_the_scrap_value_off_and_loads_the_rest_on_good_and_second_quality_labels()
     {
-        // SAT-D307 (1)-(3): 40000 / 950 per kg; the scrap weighing carries neither an amount nor an expense.
+        // URT-D75 (1): with scrap in cost the 50 kg weighed scrap x 10 TL = 500 TL is taken off too; (40000 - 500) / 950
+        // per kg. The scrap line carries neither an amount (URT-D8 stays fail-closed) nor a separate expense.
         var result = Distribute(Cost(scrap: ScrapCostSettingStatus.On), GoldenLabels());
 
-        var costPerKg = 40000m / 950m;
+        var costPerKg = 39500m / 950m;
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
         Assert.Equal(costPerKg, result.Lines[0].UnitCostPerKg);
         Assert.Equal(600m * costPerKg, result.Lines[0].AllocatedCost);
         Assert.Equal(50m * costPerKg, result.Lines[2].AllocatedCost);
         AssertScrap(result.Lines[3], ScrapA, 50m, null);
-        Assert.Equal(40000m, decimal.Round(result.AllocatedTotal!.Value, 10));
+        Assert.Equal(0m, result.Cost!.WeighedScrapExpense);
+        Assert.Equal(39500m, decimal.Round(result.AllocatedTotal!.Value, 10));
+    }
+
+    [Fact]
+    public void Scrap_in_cost_with_weighed_scrap_and_no_price_for_its_month_leaves_the_distribution_pending()
+    {
+        // URT-D65, URT-D75 (1): the scrap value needs its month's price in both settings.
+        var result = Distribute(
+            Cost(scrap: ScrapCostSettingStatus.On, weighings: [Weighing(ScrapA, 50m, ScrapPriceInput.Missing)]),
+            GoldenLabels());
+
+        Assert.Equal(ProductionReceiptCostStatus.Pending, result.Status);
+        Assert.Equal(ProductionReceiptCostCodesV1.ScrapPriceMissing, result.PendingCode);
+        Assert.Empty(result.Lines);
     }
 
     [Fact]
@@ -121,15 +144,17 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     }
 
     [Fact]
-    public void Usable_remnant_with_scrap_in_cost_returns_the_same_way_and_the_product_bears_the_scrap()
+    public void Golden_usable_remnant_with_scrap_in_cost_returns_the_same_way_and_the_scrap_value_is_taken_off()
     {
-        // #66 6874860782 (SINAN-CEVAP (10)): the same order with scrap in cost, (40000 - 2000) / 900 = 42.22 TL per kg.
+        // URT-D75 (4) golden (replaces the 42.22 TL example of URT-D59 (3)): 1000 kg x 40 TL, 900 kg good, 50 kg
+        // remnant, 50 kg scrap x 10 TL: remnant 2000 TL, scrap 500 TL, product 37500 / 900 = 41.67 TL per kg.
         var result = Distribute(
             Cost(second: 0m, remnant: 50m, scrap: ScrapCostSettingStatus.On),
             [Label(GoodA, OutputClass.GoodProduct, 900m), Label(RemnantA, OutputClass.UsableRemnant, 50m)]);
 
-        var costPerKg = 38000m / 900m;
-        Assert.Equal(42.22m, decimal.Round(costPerKg, 2));
+        var costPerKg = 37500m / 900m;
+        Assert.Equal(41.67m, decimal.Round(costPerKg, 2));
+        Assert.Equal(costPerKg, result.Lines[0].UnitCostPerKg);
         Assert.Equal(900m * costPerKg, result.Lines[0].AllocatedCost);
         Assert.Equal(2000m, result.Lines[1].AllocatedCost);
         AssertScrap(result.Lines[2], ScrapA, 50m, null);
@@ -220,6 +245,42 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
         }
     }
 
+    [Fact]
+    public void A_label_number_used_twice_is_unreadable_as_a_duplicate()
+    {
+        IReadOnlyList<ProductionScrapCostLabelInput> labels =
+            [Label(GoodA, "ETK-7", OutputClass.GoodProduct, 600m), Label(GoodB, "ETK-7", OutputClass.GoodProduct, 300m),
+                Label(SecondA, "ETK-8", OutputClass.SecondQuality, 50m)];
+
+        var result = Distribute(Cost(), labels);
+
+        Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
+        Assert.Equal(ProductionScrapCostDistributionCodesV1.LabelDuplicate, result.UnreadableCode);
+        Assert.Empty(result.Lines);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(" ETK-7")]
+    [InlineData("ETK-7 ")]
+    [InlineData("ETK-<TAB>7")]
+    public void A_missing_blank_untrimmed_or_control_character_label_number_is_unreadable(string? labelNumber)
+    {
+        // The tab case is written as a marker so the test identity stays printable ASCII.
+        var number = labelNumber?.Replace("<TAB>", "\t", StringComparison.Ordinal);
+        IReadOnlyList<ProductionScrapCostLabelInput> labels =
+            [Label(GoodA, number!, OutputClass.GoodProduct, 600m), Label(GoodB, OutputClass.GoodProduct, 300m),
+                Label(SecondA, OutputClass.SecondQuality, 50m)];
+
+        var result = Distribute(Cost(), labels);
+
+        Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
+        Assert.Equal(ProductionScrapCostDistributionCodesV1.LabelInvalid, result.UnreadableCode);
+        Assert.Empty(result.Lines);
+    }
+
     [Theory]
     [InlineData(OutputClass.Scrap)]
     [InlineData(OutputClass.ProcessLoss)]
@@ -251,12 +312,28 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     [Fact]
     public void An_unreadable_cost_is_carried_through_with_its_code_and_no_line()
     {
-        var result = Distribute(Cost(issueCost: 0m), GoldenLabels());
+        var result = Distribute(Cost(issueCost: -1m), GoldenLabels());
 
         Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
         Assert.Equal(ProductionReceiptCostCodesV1.InputCostUnreadable, result.UnreadableCode);
         Assert.Empty(result.Lines);
         Assert.Null(result.AllocatedTotal);
+        Assert.Empty(result.IssueReasons);
+    }
+
+    [Fact]
+    public void A_zero_issue_cost_is_carried_through_with_the_issue_named_and_no_line()
+    {
+        // URT-D58 (1): the screen names the input whose cost is zero.
+        var result = Distribute(Cost(issueCost: 0m), GoldenLabels());
+
+        Assert.Equal(ProductionReceiptCostStatus.Unreadable, result.Status);
+        Assert.Equal(ProductionReceiptCostCodesV1.InputCostZero, result.UnreadableCode);
+        Assert.Equal([new ProductionReceiptCostIssueReasonV1(IssueA, ProductionReceiptCostCodesV1.InputCostZero)],
+            result.IssueReasons);
+        Assert.Empty(result.Lines);
+        Assert.Null(result.AllocatedTotal);
+        Assert.Null(result.Cost);
     }
 
     [Fact]

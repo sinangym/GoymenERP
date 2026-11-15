@@ -551,6 +551,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {!editing ? (
               <DueDateEditor
                 key={`${plan.version}:${plan.dueDateRevision}`}
+                namespace={namespace}
+                routeEntryGeneration={shell.routeEntryGeneration}
+                companyId={companyId}
                 plan={plan}
                 canChange={canEdit}
                 busy={busy}

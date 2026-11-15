@@ -214,6 +214,13 @@ export function lifecycleFailureText(kind: LifecycleKind, status: number, code: 
   if (status === 422 && code === 'manufacturing_plan_due_date_required') {
     return 'Termini girilmemiş plan onaylanmaz; önce planın terminini girin.'
   }
+  // URT-D70: the termin is before today's business day (Europe/Istanbul); the plan is not approved and no order opens.
+  if (status === 422 && code === 'manufacturing_due_date_in_past' && kind === 'approve') {
+    return 'Planın termini bugünden önce; plan onaylanmadı. Önce terminini bugün veya sonrasına taşıyın.'
+  }
+  if (status === 422 && code === 'manufacturing_due_date_in_past' && kind === 'create-order') {
+    return 'Planın termini bugünden önce; üretim emri açılmadı. Önce planın terminini bugün veya sonrasına taşıyın.'
+  }
   if (status === 422 && code === 'manufacturing_plan_has_order') {
     return 'Bu plandan üretim emri açıldığı için plan iptal edilemez.'
   }

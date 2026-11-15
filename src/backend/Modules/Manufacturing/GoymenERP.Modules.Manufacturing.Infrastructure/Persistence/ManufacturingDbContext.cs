@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Costing;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
@@ -128,6 +129,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>URT-S13: the company's monthly scrap prices, one per calendar month (append-only).</summary>
     internal DbSet<MonthlyScrapPriceRow> MonthlyScrapPrices => Set<MonthlyScrapPriceRow>();
 
+    /// <summary>URT-S20 (URT-D63): the input-label edges of declared outputs with their consumed kg (append-only).</summary>
+    internal DbSet<OutputLineageEdgeRow> OutputLineageEdges => Set<OutputLineageEdgeRow>();
+
     internal DbSet<CommandRow> Commands => Set<CommandRow>();
 
     /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
@@ -146,8 +150,11 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') "
         + "OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))";
 
-    /// <summary>URT-S13: the unique index that holds one scrap price per company and month.</summary>
-    internal const string MonthlyScrapPriceMonthIndex = "IX_MonthlyScrapPrices_CompanyId_Year_Month";
+    /// <summary>
+    /// URT-S13, URT-D72: the unique index that holds one row per company, month and version (version 1 is the month's
+    /// first entry, each correction one more).
+    /// </summary>
+    internal const string MonthlyScrapPriceVersionIndex = "IX_MonthlyScrapPrices_CompanyId_Year_Month_Version";
 
     /// <summary>F-009 D2: every id of an output reversal is set.</summary>
     internal const string OutputReversalIdentityCheck =
@@ -168,14 +175,46 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'";
 
     /// <summary>
-    /// URT-S13: a calendar month (year within the calendar the domain accepts, month 1-12) and a price above zero. A zero
-    /// price is not admitted (whether one may be entered is not decided); the domain refuses it first.
+    /// URT-S13: a calendar month (year within the calendar the domain accepts, month 1-12) and a price above zero
+    /// (URT-D74 (1)); the domain refuses a zero or negative price first.
     /// </summary>
     internal const string MonthlyScrapPricePeriodCheck =
         "[Year] >= 1 AND [Year] <= 9999 AND [Month] >= 1 AND [Month] <= 12 AND [TlPerKg] > 0";
 
     /// <summary>URT-S13: the recorder and the correlation are never blank.</summary>
     internal const string MonthlyScrapPriceTextCheck = "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
+    /// URT-D72: version 1 is the month's first entry and carries no reason; a correction (version 2 or more) always
+    /// carries a reason that is not blank.
+    /// </summary>
+    internal const string MonthlyScrapPriceVersionCheck =
+        "([Version] = 1 AND [Reason] IS NULL) OR ([Version] > 1 AND [Reason] IS NOT NULL AND LEN([Reason]) > 0)";
+
+    /// <summary>URT-S20: every id of a lineage edge is set, and an output label is never its own input.</summary>
+    internal const string OutputLineageEdgeIdentityCheck =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [InputLabelId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [OutputLabelId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [GenealogyTransformationId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [InputLabelId] <> [OutputLabelId]";
+
+    /// <summary>
+    /// URT-S20: an edge names an output declaration (fact kind 3), carries a positive consumed kg (without consumption
+    /// there is no edge) and the share calculator version it was checked with.
+    /// </summary>
+    internal const string OutputLineageEdgeMassCheck =
+        "[OutputKind] = 3 AND [ConsumedKg] > 0 AND [CalculatorVersion] >= 1";
+
+    /// <summary>URT-S20: the recorder and the correlation are never blank.</summary>
+    internal const string OutputLineageEdgeTextCheck = "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>URT-S20: the forward-trace index (which outputs an input label went into).</summary>
+    internal const string OutputLineageEdgeInputIndex = "IX_OutputLineageEdges_CompanyId_InputLabelId";
+
+    /// <summary>URT-S20: the backward-trace index (which input labels an output label came from).</summary>
+    internal const string OutputLineageEdgeOutputLabelIndex = "IX_OutputLineageEdges_CompanyId_OutputLabelId";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -196,6 +235,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigureFacts(modelBuilder);
         ConfigureOutputReversals(modelBuilder);
         ConfigureMonthlyScrapPrices(modelBuilder);
+        ConfigureOutputLineageEdges(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -768,9 +808,11 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     }
 
     /// <summary>
-    /// URT-S13 (URT-D47, URT-D65): one scrap price per (company, year, month), keyed by (company, id). The unique index on
-    /// (company, year, month) holds "one price per month" also against a concurrent writer; the row is append-only (the
-    /// default write guard refuses any change or delete).
+    /// URT-S13 (URT-D47, URT-D65), URT-D72: the versions of a company's scrap price per (company, year, month), keyed by
+    /// (company, id). The unique index on (company, year, month, version) holds one row per version also against a
+    /// concurrent writer, so two first entries or two corrections of the same version never both land; the latest
+    /// version is the month's effective price. The row is append-only (the default write guard refuses any change or
+    /// delete): a correction adds a version, the old one stays.
     /// </summary>
     private void ConfigureMonthlyScrapPrices(ModelBuilder modelBuilder)
     {
@@ -780,17 +822,48 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_MonthlyScrapPrices_Identity", MonthlyScrapPriceIdentityCheck);
             table.HasCheckConstraint("CK_MonthlyScrapPrices_Period", MonthlyScrapPricePeriodCheck);
             table.HasCheckConstraint("CK_MonthlyScrapPrices_Text", MonthlyScrapPriceTextCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Version", MonthlyScrapPriceVersionCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.TlPerKg).HasPrecision(18, ScrapPriceTlPerKg.Scale);
         entity.Property(x => x.RecordedBy).HasMaxLength(MonthlyScrapPrice.RecordedByMaximumLength)
             .UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
-        entity.HasIndex(x => new { x.CompanyId, x.Year, x.Month })
+        entity.Property(x => x.Reason).HasMaxLength(MonthlyScrapPrice.ReasonMaximumLength);
+        entity.HasIndex(x => new { x.CompanyId, x.Year, x.Month, x.Version })
             .IsUnique()
-            .HasDatabaseName(MonthlyScrapPriceMonthIndex);
+            .HasDatabaseName(MonthlyScrapPriceVersionIndex);
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// URT-S20 (URT-D62, URT-D63): one lineage edge per (company, output, input label). It is bound by (company, order) to
+    /// its order and by (company, kind 3, output id) to the output declaration it belongs to, so it can never name another
+    /// company's order or a fact that is not an output. The two trace indexes serve the backward (output label) and the
+    /// forward (input label) read. The row is append-only (the default write guard refuses any change or delete).
+    /// </summary>
+    private void ConfigureOutputLineageEdges(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutputLineageEdgeRow>();
+        entity.ToTable("OutputLineageEdges", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutputLineageEdges_Identity", OutputLineageEdgeIdentityCheck);
+            table.HasCheckConstraint("CK_OutputLineageEdges_Mass", OutputLineageEdgeMassCheck);
+            table.HasCheckConstraint("CK_OutputLineageEdges_Text", OutputLineageEdgeTextCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OutputId, x.InputLabelId });
+        entity.Property(x => x.ConsumedKg).HasPrecision(18, Kilograms.Scale);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.InputLabelId }).HasDatabaseName(OutputLineageEdgeInputIndex);
+        entity.HasIndex(x => new { x.CompanyId, x.OutputLabelId }).HasDatabaseName(OutputLineageEdgeOutputLabelIndex);
+        entity.HasOne<FactRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OutputKind, x.OutputId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        OrderOf(entity);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 

@@ -239,8 +239,14 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             + "AND EventType = N'inventory.movement.recorded.v1' "
             + "AND EntityType = N'Inventory.StockMovement'",
             ("@correlation", returnMetadata.CorrelationId)));
-        Assert.Equal(5, await run.ScalarAsync<int>(
+        // URT-S20: the output's lineage edges add their own audit event in the same transaction.
+        Assert.Equal(6, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.output.lineage.recorded.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
             ("@correlation", outputMetadata.CorrelationId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
@@ -523,6 +529,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
     {
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.OutputId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.OutputLineageEdges WHERE OutputId = @id OR OutputLabelId = @label",
+            ("@id", command.OutputId), ("@label", command.LabelId)));
         Assert.Equal(seed.OrderVersion, await run.ScalarAsync<long>(
             "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", seed.OrderId)));
         Assert.Equal(0, await run.ScalarAsync<int>(

@@ -81,6 +81,9 @@ public static class ManufacturingStoreCodes
     /// <summary>This company has no such order (another company's order is not found either).</summary>
     public const string OrderNotFound = "manufacturing_order_not_found";
 
+    /// <summary>URT-D72: this company has no scrap price for the month to correct (another company's is not found either).</summary>
+    public const string ScrapPriceNotFound = "manufacturing_scrap_price_not_found";
+
     /// <summary>
     /// The plan names a work center that is not one of this company's (Organization's composite key
     /// refused it). Nothing was stored.
@@ -116,6 +119,12 @@ public static class ManufacturingStoreCodes
     /// listed: a cursor is never guessed and never silently restarted at the first page.
     /// </summary>
     public const string ListCursorInvalid = "manufacturing_list_cursor_invalid";
+
+    /// <summary>
+    /// URT-S20 (URT-D63): an output's lineage edges cannot be recorded as given — the output is not a declaration of this
+    /// order, an id is empty, or the share calculator cannot read the inputs. Nothing of this write is stored.
+    /// </summary>
+    public const string LineageInvalid = "manufacturing_lineage_invalid";
 }
 
 /// <summary>

@@ -9,7 +9,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// changed on the order alone. A change moves the order's termin revision and never its version nor the plan's termin;
 /// the order shows when its termin differs from the plan's. A stale termin revision, a closed order, no change and a day
 /// earlier than the company's Europe/Istanbul business day are refused with nothing changed. The stored termin is restored
-/// and checked.
+/// and checked. URT-D70: opening refuses a plan whose termin is before the business day; the plan records no order.
 /// </summary>
 public sealed class OrderDueDateTests
 {
@@ -25,12 +25,18 @@ public sealed class OrderDueDateTests
 
     private static Kilograms Kg(decimal value) => new(value);
 
-    private static (ProductionPlan Plan, ProductionOrder Order) Opened()
+    private static ProductionPlan ApprovedPlan()
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, Kg(10_000m))]);
         plan.ChangeDueDate(plan.Version, plan.DueDateRevision, PlanDay, orderClosed: false, Today);
         plan.Approve(plan.Version, Planner, At);
+        return plan;
+    }
+
+    private static (ProductionPlan Plan, ProductionOrder Order) Opened()
+    {
+        var plan = ApprovedPlan();
         return (plan, ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan));
     }
 
@@ -41,6 +47,35 @@ public sealed class OrderDueDateTests
 
         Assert.Equal((PlanDay, 0L, PlanDay, false),
             (order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan));
+    }
+
+    [Fact]
+    public void Opening_refuses_a_plan_whose_termin_is_before_the_business_day_and_the_plan_records_no_order()
+    {
+        // URT-D70: the plan was approved in time; its termin passed before the order was opened.
+        var plan = ApprovedPlan();
+
+        var refusal = Assert.Throws<ManufacturingRuleException>(
+            () => ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan, PlanDay.AddDays(1)));
+
+        Assert.Equal(ManufacturingRuleCodes.DueDateInPast, refusal.Code);
+        Assert.Null(plan.OrderId);
+
+        // On the termin day itself the order opens with the plan's termin.
+        var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan, PlanDay);
+        Assert.Equal((order.Id, PlanDay), (plan.OrderId, order.DueDate));
+    }
+
+    [Fact]
+    public void Opening_a_second_order_keeps_the_one_order_per_plan_answer_before_the_termin_rule()
+    {
+        var plan = ApprovedPlan();
+        ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan, Today);
+
+        var refusal = Assert.Throws<ManufacturingRuleException>(
+            () => ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan, PlanDay.AddDays(1)));
+
+        Assert.Equal(ManufacturingRuleCodes.PlanOrderExists, refusal.Code);
     }
 
     [Fact]

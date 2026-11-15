@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { calendarDate, type ProductionPlanView } from './contract'
 import { DUE_DATE_TEXT } from './dueDateText'
+import { DueDateSuggestionPanel } from './DueDateSuggestionPanel'
 import styles from './PlanPage.module.css'
 import { Button } from '../ui/Button'
 
 /**
  * F-010a (URT-D29): the plan's hand-entered termin. It is shown to every reader of the plan; the change control is drawn
  * only where `canChange` (the plan save's grant, `manufacturing.plans.edit`) holds and the plan is not cancelled. The
- * server decides again either way (a closed order is its 422). Nothing here computes a day: the user types it.
+ * server decides again either way (a closed order is its 422). Nothing here computes a day: the user types it, or
+ * (URT-S10, F-010b) takes the server's calendar-based suggestion into the field and saves it like a typed day.
  *
  * The control only produces the request — the day typed (or null to remove the termin). The command itself (key, pending
  * slot, unknown/resend, conflict re-read) is the plan detail screen's, like the approval; the screen draws this control
@@ -32,12 +34,18 @@ export function DueDateFacts({ plan }: { readonly plan: ProductionPlanView }) {
 }
 
 export function DueDateEditor({
+  namespace,
+  routeEntryGeneration,
+  companyId,
   plan,
   canChange,
   busy,
   sending,
   onSubmit,
 }: {
+  readonly namespace: string
+  readonly routeEntryGeneration: number
+  readonly companyId: string
   readonly plan: ProductionPlanView
   readonly canChange: boolean
   readonly busy: boolean
@@ -79,6 +87,14 @@ export function DueDateEditor({
     <div>
       <p className={styles.note}>{DUE_DATE_TEXT.manualNote}</p>
       {keepsTermin ? <p className={styles.note}>{DUE_DATE_TEXT.approvedKeepsTermin}</p> : null}
+      <DueDateSuggestionPanel
+        namespace={namespace}
+        routeEntryGeneration={routeEntryGeneration}
+        companyId={companyId}
+        plan={plan}
+        busy={busy}
+        onUse={(suggestedDueDate) => setValue(suggestedDueDate)}
+      />
       <label htmlFor="manufacturing-plan-due-date">{DUE_DATE_TEXT.inputLabel}</label>
       <input
         id="manufacturing-plan-due-date"

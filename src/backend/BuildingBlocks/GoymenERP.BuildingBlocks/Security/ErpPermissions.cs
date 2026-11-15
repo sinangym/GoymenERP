@@ -387,7 +387,9 @@ public static class ErpPermissions
     /// under "the order edit permission" rather than a termin permission of its own. No order edit name existed before, so
     /// this registers it. Its own name because editing an order is neither creating one, recording a fact nor closing it.
     /// Registered, not granted: no role and no user receives it here; who edits an order is a human gate. Company-wide
-    /// only (K-1: the route filters by no work center). Not Critical.
+    /// only (K-1: the route filters by no work center). Not Critical. URT-D71 declares its holders: the same personas
+    /// that edit the plan (<see cref="ManufacturingPlansWrite"/>), company-wide. That is a declaration for the grant-time
+    /// human gate, not a grant: this file still gives the name to no role and no user.
     /// </summary>
     public const string ManufacturingOrdersWrite = "manufacturing.orders.write";
 
@@ -411,10 +413,20 @@ public static class ErpPermissions
     /// URT-S13 (URT-D47, URT-D65): recording the company's scrap price of one month by hand. Its own name because entering
     /// a price is not recording a production fact. Registered, not granted: who enters the price and under which approval
     /// is not decided (URT-D57 (3) is an author reading), so no role and no user receives it here; the grant is a human
-    /// gate. Company-wide only (one price per company and month). Not Critical: whether it joins the grant-time
-    /// dual-control set is the same human gate.
+    /// gate. Company-wide only (one effective price per company and month). Not Critical: whether it joins the grant-time
+    /// dual-control set is the same human gate. URT-D72: correcting a month's price with a new version and a reason is
+    /// under this same name.
     /// </summary>
     public const string ManufacturingScrapPricesWrite = "manufacturing.scrap-prices.write";
+
+    /// <summary>
+    /// URT-S19 (B-27, DEC-PRDCT-009, API-42): reading an order's cost trace — its lots, line, fire, subcontract owner,
+    /// sales-order link and fact moments, and the production cost port's answer. Its own name because the trace carries
+    /// cost data the order read does not (URETIM_HAZIRLIK_PLANI API-42 names it). Registered, not granted: no role and no
+    /// user receives it here; who reads production cost data is a human gate. Company-wide only (the route filters by no
+    /// work center or site, so a narrow grant would fail open). Not Critical.
+    /// </summary>
+    public const string ManufacturingReportsRead = "manufacturing.reports.read";
 
     /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
@@ -1435,6 +1447,7 @@ public static class ErpPermissions
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
             ManufacturingScrapPricesWrite,
+            ManufacturingReportsRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -1668,6 +1681,7 @@ public static class ErpPermissions
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
             ManufacturingScrapPricesWrite,
+            ManufacturingReportsRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,

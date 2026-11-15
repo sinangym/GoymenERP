@@ -26,7 +26,7 @@ public sealed class ManufacturingPersistenceModelTests
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
             typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
-            typeof(MonthlyScrapPriceRow), typeof(CommandRow)];
+            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -137,6 +137,10 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingMonthlyScrapPrices", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOrderDueDate", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingMonthlyScrapPriceVersions", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOutputLineageEdges", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -199,9 +203,10 @@ public sealed class ManufacturingPersistenceModelTests
         var prices = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MonthlyScrapPriceRow))!;
         Assert.Equal(("manufacturing", "MonthlyScrapPrices"), (prices.GetSchema(), prices.GetTableName()));
         Assert.Equal(["CompanyId", "Id"], prices.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        // URT-D72: the month is unique per version since the versions migration (see the test below).
         var month = Assert.Single(prices.GetIndexes(), index => index.IsUnique);
-        Assert.Equal(["CompanyId", "Year", "Month"], month.Properties.Select(property => property.Name));
-        Assert.Equal(ManufacturingDbContext.MonthlyScrapPriceMonthIndex, month.GetDatabaseName());
+        Assert.Equal(["CompanyId", "Year", "Month", "Version"], month.Properties.Select(property => property.Name));
+        Assert.Equal(ManufacturingDbContext.MonthlyScrapPriceVersionIndex, month.GetDatabaseName());
         var price = prices.FindProperty(nameof(MonthlyScrapPriceRow.TlPerKg))!;
         Assert.Equal(((int?)18, (int?)GoymenERP.Modules.Manufacturing.Domain.Costing.ScrapPriceTlPerKg.Scale),
             (price.GetPrecision(), price.GetScale()));
@@ -219,13 +224,91 @@ public sealed class ManufacturingPersistenceModelTests
         var migration = new AddManufacturingMonthlyScrapPrices();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.UpOperations, operation => operation is CreateIndexOperation
-            { Name: ManufacturingDbContext.MonthlyScrapPriceMonthIndex, IsUnique: true });
+            { Name: "IX_MonthlyScrapPrices_CompanyId_Year_Month", IsUnique: true });
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51387", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("FROM [manufacturing].[MonthlyScrapPrices]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
             { Name: "MonthlyScrapPrices" });
+    }
+
+    [Fact]
+    public void A_scrap_price_correction_is_a_new_version_with_a_reason_and_its_rollback_refuses_while_one_exists()
+    {
+        // URT-D72: the month keeps every version; version 1 is the first entry without a reason, each correction is one
+        // more with a reason (a check, not only the domain). Up keeps the existing rows as version 1 and is pure DDL; Down
+        // refuses (THROW 51627) while any correction is stored, since dropping the version would lose it (forward fix).
+        using var context = Context();
+        var prices = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MonthlyScrapPriceRow))!;
+        var version = prices.FindProperty(nameof(MonthlyScrapPriceRow.Version))!;
+        Assert.False(version.IsNullable);
+        var reason = prices.FindProperty(nameof(MonthlyScrapPriceRow.Reason))!;
+        Assert.True(reason.IsNullable);
+        Assert.Equal(GoymenERP.Modules.Manufacturing.Domain.Costing.MonthlyScrapPrice.ReasonMaximumLength,
+            reason.GetMaxLength());
+        Assert.Equal(ManufacturingDbContext.MonthlyScrapPriceVersionCheck,
+            prices.GetCheckConstraints().Single(check => check.Name == "CK_MonthlyScrapPrices_Version").Sql);
+
+        var migration = new AddManufacturingMonthlyScrapPriceVersions();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        // The existing rows are the first entries: the new column starts at version 1, so they pass the check.
+        Assert.Contains(migration.UpOperations, operation => operation is AddColumnOperation
+            { Table: "MonthlyScrapPrices", Name: "Version", DefaultValue: 1 });
+        Assert.Contains(migration.UpOperations, operation => operation is DropIndexOperation
+            { Name: "IX_MonthlyScrapPrices_CompanyId_Year_Month" });
+        Assert.Contains(migration.UpOperations, operation => operation is CreateIndexOperation
+            { Name: ManufacturingDbContext.MonthlyScrapPriceVersionIndex, IsUnique: true });
+        Assert.Contains(migration.UpOperations, operation => operation is AddCheckConstraintOperation
+            { Name: "CK_MonthlyScrapPrices_Version" });
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51627", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[MonthlyScrapPrices]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Version] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "MonthlyScrapPrices", Name: "Version" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "MonthlyScrapPrices", Name: "Reason" });
+    }
+
+    [Fact]
+    public void An_output_lineage_edge_is_one_per_output_and_input_label_and_its_rollback_refuses_while_one_exists()
+    {
+        // URT-S20 (URT-D62, URT-D63): one append-only row per (company, output declaration, input label), bound by
+        // (company, kind 3, output id) to the output declaration; the consumed kg is decimal(18,3) and the share is never
+        // stored (the calculator derives it). Up is pure DDL; Down refuses (THROW 51543) while any edge is stored (forward
+        // fix).
+        using var context = Context();
+        var edges = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(OutputLineageEdgeRow))!;
+        Assert.Equal(("manufacturing", "OutputLineageEdges"), (edges.GetSchema(), edges.GetTableName()));
+        Assert.Equal(["CompanyId", "OutputId", "InputLabelId"],
+            edges.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var consumed = edges.FindProperty(nameof(OutputLineageEdgeRow.ConsumedKg))!;
+        Assert.Equal(((int?)18, (int?)GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms.Scale),
+            (consumed.GetPrecision(), consumed.GetScale()));
+        Assert.DoesNotContain(edges.GetProperties(), property => property.Name.Contains("Share", StringComparison.Ordinal));
+        var checks = edges.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(ManufacturingDbContext.OutputLineageEdgeIdentityCheck, checks["CK_OutputLineageEdges_Identity"]);
+        Assert.Equal(ManufacturingDbContext.OutputLineageEdgeMassCheck, checks["CK_OutputLineageEdges_Mass"]);
+        Assert.Equal(ManufacturingDbContext.OutputLineageEdgeTextCheck, checks["CK_OutputLineageEdges_Text"]);
+        Assert.Contains(edges.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLineageEdgeInputIndex
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "InputLabelId"]));
+        Assert.Contains(edges.GetIndexes(), index => index.GetDatabaseName() == ManufacturingDbContext.OutputLineageEdgeOutputLabelIndex
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OutputLabelId"]));
+        Assert.Contains(edges.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FactRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OutputKind", "OutputId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var migration = new AddManufacturingOutputLineageEdges();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.UpOperations, operation => operation is CreateTableOperation { Name: "OutputLineageEdges" });
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51543", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[OutputLineageEdges]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation
+            { Name: "OutputLineageEdges" });
     }
 
     [Fact]
@@ -694,7 +777,7 @@ public sealed class ManufacturingPersistenceModelTests
             case "edit-fact-output-line":
                 Attach(context, Fact()).OutputLineKind = 3;
                 break;
-            // URT-S13: a recorded month's scrap price is never changed or deleted (correcting it is not decided).
+            // URT-S13, URT-D72: a recorded scrap price version is never changed or deleted; a correction is a new version.
             case "edit-scrap-price":
                 Attach(context, ScrapPrice()).TlPerKg = 9.5m;
                 break;
@@ -898,7 +981,7 @@ public sealed class ManufacturingPersistenceModelTests
 
     private static MonthlyScrapPriceRow ScrapPrice() => new()
     {
-        CompanyId = CompanyA, Id = Guid.NewGuid(), Year = 2026, Month = 11, TlPerKg = 7.25m,
+        CompanyId = CompanyA, Id = Guid.NewGuid(), Year = 2026, Month = 11, TlPerKg = 7.25m, Version = 1,
         RecordedBy = "synthetic-actor", RecordedAtUtc = At, CorrelationId = "synthetic-correlation",
     };
 

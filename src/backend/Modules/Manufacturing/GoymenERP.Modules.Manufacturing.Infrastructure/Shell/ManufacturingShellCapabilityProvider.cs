@@ -38,6 +38,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <item><c>manufacturing.orders.due-date</c> (URT-S23, contract 1.8): a control on the order detail route adding
 /// <see cref="ErpPermissions.ManufacturingOrdersWrite"/> — the order's own termin (URT-D66 (3)). The name is registered
 /// and granted to no role: who edits an order is not decided.</item>
+/// <item><c>manufacturing.orders.cost-trace</c> (URT-S19, contract 1.9): a control on the order detail route adding
+/// <see cref="ErpPermissions.ManufacturingReportsRead"/> — the order's cost trace (B-27, DEC-PRDCT-009, API-42). The name
+/// is registered and granted to no role: who reads production cost data is not decided.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens
@@ -52,8 +55,9 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
-    // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control.
-    public const string OwnerContractVersion = "1.8";
+    // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
+    // (URT-S19): the order cost trace control.
+    public const string OwnerContractVersion = "1.9";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
@@ -61,6 +65,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string CloseCapabilityId = "manufacturing.orders.close";
     public const string CloseExceptionApproveCapabilityId = "manufacturing.orders.close-exception-approve";
     public const string DueDateCapabilityId = "manufacturing.orders.due-date";
+    public const string CostTraceCapabilityId = "manufacturing.orders.cost-trace";
     public const string DetailRouteId = "manufacturing.order-detail";
     public const string DetailRoutePath = "/uretim/emir/:orderId";
     public const string DetailScreenId = "MFG-01";
@@ -195,6 +200,13 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 CapabilityId = DueDateCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersWrite],
+            },
+            // URT-S19 (B-27, API-42): the order's cost trace is a control of the order screen, on its own report grant.
+            detail with
+            {
+                CapabilityId = CostTraceCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingReportsRead],
             },
             list,
             planCreate,

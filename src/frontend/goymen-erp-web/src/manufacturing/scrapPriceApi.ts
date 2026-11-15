@@ -1,6 +1,7 @@
 /**
- * Monthly scrap price transport (URT-S13): `GET /api/v1/manufacturing/scrap-prices?year=` and
- * `POST /api/v1/manufacturing/scrap-prices`.
+ * Monthly scrap price transport (URT-S13, URT-D72): `GET /api/v1/manufacturing/scrap-prices?year=`,
+ * `POST /api/v1/manufacturing/scrap-prices` (a month's first price) and
+ * `POST /api/v1/manufacturing/scrap-prices/{year}/{month}/corrections` (the next version with a reason).
  *
  * The read answers a `ViewOutcome` like the other lists. The record command is the house command shape: one frozen
  * attempt and one idempotency key, never retried or re-keyed by this port; a missing or unreadable answer is `unknown`,
@@ -11,6 +12,7 @@
 
 import { MANUFACTURING_BASE, devHeaders } from './api'
 import {
+  SCRAP_PRICE_FIRST_VERSION,
   canonicalScrapPrice,
   decodeScrapPrice,
   decodeScrapPriceList,
@@ -147,12 +149,22 @@ export async function recordScrapPrice(
       price === null ||
       price.year !== attempt.year ||
       price.month !== attempt.month ||
-      price.tlPerKg !== canonicalScrapPrice(attempt.tlPerKg)
+      price.tlPerKg !== canonicalScrapPrice(attempt.tlPerKg) ||
+      price.version !== SCRAP_PRICE_FIRST_VERSION
     ) {
       return { type: 'unknown', reason: 'undecodable' }
     }
     return { type: 'applied', price, ...metadata }
   }
+  return refusal(response, body, metadata)
+}
+
+/** A non-success answer of either command: a refusal the server decided, or unknown when it cannot be read. */
+function refusal(
+  response: Response,
+  body: unknown,
+  metadata: { readonly replayed: boolean; readonly originalCorrelationId: string | null } | null,
+): ScrapPriceRecordOutcome {
   if (response.status >= 200 && response.status < 300) return { type: 'unknown', reason: 'unexpected-status' }
   if (metadata === null) return { type: 'unknown', reason: 'undecodable' }
   const code = text(body, 'code')
@@ -163,8 +175,85 @@ export async function recordScrapPrice(
   return { type: 'failed', status: response.status, code, field: text(body, 'field'), replayed: metadata.replayed }
 }
 
+/** One frozen correction (URT-D72): what is sent, exactly, every time this attempt is sent. */
+export interface ScrapPriceCorrectionAttempt {
+  readonly idempotencyKey: string
+  readonly year: number
+  readonly month: number
+  /** The month's effective version the user corrected; a stale one is the server's 409. */
+  readonly expectedVersion: number
+  /** The text the user entered and the shape check accepted; sent unchanged. */
+  readonly tlPerKg: string
+  /** The reason as entered; the server trims it. */
+  readonly reason: string
+}
+
+/**
+ * Corrects one month's effective scrap price with the next version (URT-D72). Applied only on a 200 whose body is the
+ * same month, the price that was sent, the version after the expected one and the trimmed reason, with agreeing replay
+ * headers. A month without a price is a 404 without a code; a stale version is 409 `manufacturing_version_conflict`.
+ */
+export async function correctScrapPrice(
+  companyId: string,
+  attempt: ScrapPriceCorrectionAttempt,
+  signal?: AbortSignal,
+): Promise<ScrapPriceRecordOutcome> {
+  let response: Response
+  try {
+    response = await fetch(
+      `${MANUFACTURING_BASE}/scrap-prices/${encodeURIComponent(String(attempt.year))}/${encodeURIComponent(String(attempt.month))}/corrections`,
+      {
+        method: 'POST',
+        headers: {
+          ...devHeaders(),
+          'Content-Type': 'application/json',
+          'X-Company-Id': companyId,
+          'Idempotency-Key': attempt.idempotencyKey,
+        },
+        body: JSON.stringify({
+          expectedVersion: attempt.expectedVersion,
+          tlPerKg: attempt.tlPerKg,
+          reason: attempt.reason,
+        }),
+        signal,
+      },
+    )
+  } catch {
+    if (signal?.aborted) return { type: 'unknown', reason: 'aborted' }
+    return { type: 'unknown', reason: navigator.onLine ? 'network-error' : 'offline' }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    body = null
+  }
+
+  if (response.status >= 500) return { type: 'unknown', reason: 'service-unavailable' }
+  const metadata = replayMetadata(response.headers)
+  if (response.status === 200) {
+    const price = decodeScrapPrice(body)
+    if (
+      metadata === null ||
+      price === null ||
+      price.year !== attempt.year ||
+      price.month !== attempt.month ||
+      price.tlPerKg !== canonicalScrapPrice(attempt.tlPerKg) ||
+      price.version !== attempt.expectedVersion + 1 ||
+      price.reason !== attempt.reason.trim()
+    ) {
+      return { type: 'unknown', reason: 'undecodable' }
+    }
+    return { type: 'applied', price, ...metadata }
+  }
+  return refusal(response, body, metadata)
+}
+
 /** Unknown attempts of this document, by server session, actor and company; never stored beyond the document. */
 const pendingScrapPrices = new Map<string, ScrapPriceAttempt>()
+/** Unknown corrections, in a slot of their own: a held first entry never blocks a correction, nor the reverse. */
+const pendingScrapPriceCorrections = new Map<string, ScrapPriceCorrectionAttempt>()
 
 /**
  * The slot of a context, or null when there is no actor or company. The server session binding is part of the slot:
@@ -200,7 +289,27 @@ export function releasePendingScrapPrice(key: string | null, idempotencyKey: str
   if (pendingScrapPrices.get(key)?.idempotencyKey === idempotencyKey) pendingScrapPrices.delete(key)
 }
 
+export function readPendingScrapPriceCorrection(key: string | null): ScrapPriceCorrectionAttempt | null {
+  return key === null ? null : (pendingScrapPriceCorrections.get(key) ?? null)
+}
+
+/** As `reservePendingScrapPrice`, for a correction. */
+export function reservePendingScrapPriceCorrection(key: string | null, attempt: ScrapPriceCorrectionAttempt): boolean {
+  if (key === null) return false
+  const held = pendingScrapPriceCorrections.get(key)
+  if (held !== undefined && JSON.stringify(held) !== JSON.stringify(attempt)) return false
+  pendingScrapPriceCorrections.set(key, Object.freeze({ ...attempt }))
+  return true
+}
+
+/** As `releasePendingScrapPrice`, for a correction. */
+export function releasePendingScrapPriceCorrection(key: string | null, idempotencyKey: string): void {
+  if (key === null) return
+  if (pendingScrapPriceCorrections.get(key)?.idempotencyKey === idempotencyKey) pendingScrapPriceCorrections.delete(key)
+}
+
 /** Test isolation only. */
 export function clearPendingScrapPrices(): void {
   pendingScrapPrices.clear()
+  pendingScrapPriceCorrections.clear()
 }

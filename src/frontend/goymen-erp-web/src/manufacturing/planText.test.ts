@@ -23,6 +23,15 @@ describe('lifecycleFailureText', () => {
     )
   })
 
+  it('names the past termin refusal of the approval and of the order opening (URT-D70)', () => {
+    expect(lifecycleFailureText('approve', 422, 'manufacturing_due_date_in_past')).toBe(
+      'Planın termini bugünden önce; plan onaylanmadı. Önce terminini bugün veya sonrasına taşıyın.',
+    )
+    expect(lifecycleFailureText('create-order', 422, 'manufacturing_due_date_in_past')).toBe(
+      'Planın termini bugünden önce; üretim emri açılmadı. Önce planın terminini bugün veya sonrasına taşıyın.',
+    )
+  })
+
   it('keeps the generic texts for other refusals', () => {
     expect(lifecycleFailureText('approve', 409, 'manufacturing_version_conflict')).toBe(
       'Plan onayı uygulanmadı (manufacturing_version_conflict).',

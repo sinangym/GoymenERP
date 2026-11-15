@@ -111,12 +111,14 @@ public static class ManufacturingEndpoints
 
     // Üretim U2-d (URT-D2): the approval's and the rejection's 422 sets add "the preparer of the current version may not
     // decide". Declared on those two endpoints only, so the cancellation and every other endpoint keep their contract.
-    // URT-D66 (2): the approval also refuses a plan without a termin.
+    // URT-D66 (2): the approval also refuses a plan without a termin. URT-D70: and a plan whose termin is before the
+    // Istanbul business day.
     private static readonly string[] ApprovePlanUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.PlanSelfApproval,
         ManufacturingRuleCodes.PlanDueDateRequired,
+        ManufacturingRuleCodes.DueDateInPast,
     ];
 
     private static readonly string[] RejectPlanUnprocessableCodes =
@@ -183,7 +185,8 @@ public static class ManufacturingEndpoints
     ];
 
     // URT-S13 (URT-D47, URT-D65): the monthly scrap price entry's own 409 and 422 sets — a month that already has a price
-    // is a conflict (never replaced); a fifth decimal is a refusal. Declared on that endpoint only.
+    // is a conflict (a first entry never replaces it; URT-D72 corrects it); a fifth decimal and (URT-D73) a future month
+    // are refusals. Declared on that endpoint only.
     private static readonly string[] ScrapPriceConflictCodes =
     [
         .. ConflictCodes,
@@ -194,13 +197,26 @@ public static class ManufacturingEndpoints
     [
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.ScrapPricePrecisionExceeded,
+        ManufacturingRuleCodes.ScrapPriceFutureMonth,
+    ];
+
+    // URT-D72, URT-D73: the scrap price correction's 422 set — the same price again, a fifth decimal and a future month.
+    // Its 409 is the write set (a stale expected version, a lost race).
+    private static readonly string[] ScrapPriceCorrectionUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.ScrapPriceUnchanged,
+        ManufacturingRuleCodes.ScrapPricePrecisionExceeded,
+        ManufacturingRuleCodes.ScrapPriceFutureMonth,
     ];
 
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
+    // URT-D70: and "the plan's termin is before the Istanbul business day".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.PlanOrderExists,
+        ManufacturingRuleCodes.DueDateInPast,
     ];
 
     // MFG-PLAN-EDIT: the revision's own 422 set — the plan save's, plus the three revision rules. Declared on the
@@ -442,6 +458,29 @@ public static class ManufacturingEndpoints
             .Accepts<RevisePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithRevisePlanProblems();
+
+        // URT-S10 (F-010b, SINAN-CEVAP 14 NS-10): the plan's termin SUGGESTION from the work center calendar and the
+        // profile's hourly capacity. Read only, under the plan read grant: it sets no termin (the user takes the day
+        // through POST /plans/{planId}/due-date). A suggestion that cannot be given is a 200 "unavailable" with its
+        // reason; another company's plan is the code-less 404 of the plan read; a retryable failure is 503.
+        group.MapGet("/plans/{planId:guid}/due-date-suggestion", async (
+                Guid planId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanDueDateSuggestionAsync(planId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanDueDateSuggestionV1")
+            .Produces<PlanDueDateSuggestionViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
 
         // MFG-PLAN-EDIT: the plan's history under the plan read's grant — revision 0 as created, then every recorded
         // Draft edit with its reason, actor and time. Another company's plan is the same code-less 404 as an unknown id.
@@ -692,6 +731,27 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-S19 (B-27, DEC-PRDCT-009, API-42): the order's cost trace — lots, line, fire, subcontract owner, sales-order
+        // link and fact moments from the stored facts, and the production cost port's answer (never a second formula, never
+        // a zero). Its own grant, registered and granted to no role. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/cost-trace", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetCostTraceAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderCostTraceV1")
+            .Produces<CostTraceViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // URT-D42 (3): the company's already-closed orders whose output exceeded input on a parent roll, per roll — listed,
         // never reopened or changed. The order list's paging and the order read's grant; a read: nothing is stored.
         group.MapGet("/reports/output-above-input-closures", async (
@@ -713,9 +773,10 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
-        // URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): records the company's scrap price of one calendar month in TL per
-        // kg, under its own grant (registered, granted to no role: who enters it is not decided). A recorded month is never
-        // replaced (409). ADR-011 as the other commands; only the success is replayed.
+        // URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): records the company's first scrap price of one calendar month in TL
+        // per kg, under its own grant (registered, granted to no role: who enters it is not decided). A recorded month is
+        // never replaced by a first entry (409; URT-D72 corrects it); a future month is 422 (URT-D73). ADR-011 as the
+        // other commands; only the success is replayed.
         group.MapPost("/scrap-prices", async (
                 RecordMonthlyScrapPriceRequestV1 request,
                 ManufacturingCommandService service,
@@ -738,7 +799,36 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
-        // URT-S13: the company's recorded scrap prices of one year, the latest month first. A month that is not listed has
+        // URT-D72: corrects a month's scrap price with a new version and a reason under the same grant as the entry
+        // (URT-D57); the old version stays, the latest is effective and both are audited. A month without a price is 404,
+        // a stale expected version 409; the same price, a fifth decimal and a future month (URT-D73) are 422. ADR-011:
+        // the success, the not-found and the version conflict are this key's answer.
+        group.MapPost("/scrap-prices/{year:int}/{month:int}/corrections", async (
+                int year,
+                int month,
+                CorrectMonthlyScrapPriceRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CorrectMonthlyScrapPriceAsync(year, month, request, key,
+                ErpPermissions.ManufacturingScrapPricesWrite, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingScrapPricesWrite)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CorrectManufacturingMonthlyScrapPriceV1")
+            .Accepts<CorrectMonthlyScrapPriceRequestV1>("application/json")
+            .Produces<MonthlyScrapPriceViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity(ScrapPriceCorrectionUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
+        // URT-S13: the company's recorded scrap prices of one year, each as its effective (latest) version (URT-D72), the
+        // latest month first. A month that is not listed has
         // no price (its scrap weighings leave the cost pending). A read: nothing is stored.
         group.MapGet("/scrap-prices", async (
                 int? year,
