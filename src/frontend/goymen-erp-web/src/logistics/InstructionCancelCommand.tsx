@@ -12,7 +12,8 @@
  *    human gate, LOJ-D15(3)). One Idempotency-Key per attempt snapshot: a lost reply is retried with the same key and body.
  *  - The section stays mounted across the re-read that shows the instruction Cancelled, so the notice of the command that
  *    cancelled it survives; on a Cancelled instruction with no notice it renders nothing.
- *  - Not here: physically unloading the vehicle or re-weighing it (LOJ-D15(4), undecided) and any stock allocation change.
+ *  - Not here: the unload weighing after the cancel (LOJ-D17, UnloadWeighingCommand.tsx — recorded separately, otherwise the
+ *    instruction is marked "İndirme kaydı yok") and any stock allocation change (LOJ-D16: the allocation stays on the order).
  */
 
 import { useLayoutEffect, useRef, useState } from 'react'

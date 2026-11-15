@@ -741,8 +741,8 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   const POSITIONS = CAPABILITY.inventoryStockPositionsList
   const activeGroups = (scope: HTMLElement) =>
     within(scope).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) }).map((button) => button.textContent)
-  /** Stock pages under no sidebar entry: a label card, its sub-page, the company movement timeline. */
-  const STOCK_DETAIL_PAGES = ['/stok/etiket/LBL-1', '/stok/etiket/LBL-1/hareketler', '/stok/hareketler']
+  /** Stock pages under no sidebar entry: a label card, its sub-page, the company movement timeline, the shortage warning. */
+  const STOCK_DETAIL_PAGES = ['/stok/etiket/LBL-1', '/stok/etiket/LBL-1/hareketler', '/stok/hareketler', '/stok/eksik-uyarilari']
 
   it('gives every non-opening stock page to Stok & Lojistik through the authorised stock entry, for both-capability and positions-only actors', async () => {
     for (const granted of [[OPENING, POSITIONS], [POSITIONS], [OPENING, POSITIONS, CAPABILITY.organizationSitesList]]) {

@@ -215,6 +215,34 @@ public sealed partial class LogisticsInstructionService(
             prepare: null, cancellationToken);
     }
 
+    /// <summary>
+    /// LOJ-D17: the manual unload weighing (indirme tartısı) of a cancelled instruction's vehicle. The two weighings are read
+    /// exactly as the loading weighbridge record's (AT-053); the domain calculates the net and the signed difference against the
+    /// kilograms loaded on the instruction when it was cancelled. A difference is a warning written to the audit record, never a
+    /// refusal: no threshold is configured (a Settings threshold is a separate decision), so every non-zero difference warns. No
+    /// stock movement is booked and no Inventory port is called; the order line's allocation is untouched (LOJ-D16). Measured
+    /// under the weighbridge permission, <c>logistics.weighings.record</c>.
+    /// </summary>
+    public Task<LoadingInstructionResponse> RecordUnloadWeighingAsync(Guid instructionId, RecordUnloadWeighingRequest request,
+        LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var direction = request.Direction switch
+        {
+            "TareFirst" => WeighingDirection.TareFirst,
+            "GrossFirst" => WeighingDirection.GrossFirst,
+            _ => throw new LogisticsInstructionServiceException(400, "validation_failed", [new("direction", "validation_failed")]),
+        };
+        return MutateAsync(instructionId, request, request.ExpectedVersion, metadata, LogisticsCommands.RecordUnloadWeighingV1,
+            bindings.WeighingPermission,
+            (instruction, expected, now, _, actorId) => instruction.RecordUnloadWeighing(expected, request.WeighingId, direction,
+                Quantity.Positive(ReadWeighingKg(request.FirstWeighingKg, "firstWeighingKg"), QuantityUnit.Kilogram),
+                Quantity.Positive(ReadWeighingKg(request.SecondWeighingKg, "secondWeighingKg"), QuantityUnit.Kilogram), actorId, now),
+            new LogisticsMutationAudit("logistics.loading-instruction.unload-weighing-recorded.v1", "RecordUnloadWeighing",
+                "İndirme tartısı kaydedildi", WarningReason: "İndirme tartısında yüklenen kg ile fark var"),
+            prepare: null, cancellationToken);
+    }
+
     /// <summary>A weighing in kilograms as exact text: the lexical Ö2 check first (≤ 3 decimals, a non-zero digit), then the column width; never rounded.</summary>
     private static decimal ReadWeighingKg(string text, string field)
     {
@@ -463,7 +491,8 @@ public sealed partial class LogisticsInstructionService(
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), cancellationToken);
         }
-        catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.InstructionNotDraft or LogisticsRuleCodes.InstructionNotIssued or LogisticsRuleCodes.InstructionCancelled)
+        catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.InstructionNotDraft or LogisticsRuleCodes.InstructionNotIssued
+            or LogisticsRuleCodes.InstructionCancelled or LogisticsRuleCodes.InstructionNotCancelled or LogisticsRuleCodes.UnloadNothingLoaded)
         {
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.InstructionState, [new("status", exception.Code)]), cancellationToken);
@@ -494,6 +523,14 @@ public sealed partial class LogisticsInstructionService(
             // terminal refusal — never a replacement, since how a wrong entry is corrected is not decided.
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.WeighingAlreadyRecorded, [new("weighingId", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.UnloadWeighingAlreadyRecorded)
+        {
+            // LOJ-D17: one unload record per cancelled instruction; a second one is a recorded terminal refusal — the correction
+            // rule for a wrong entry is not decided, so nothing is replaced.
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.UnloadWeighingAlreadyRecorded, [new("weighingId", exception.Code)]),
+                cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.ShipmentAlreadyDispatched)
         {
@@ -970,7 +1007,7 @@ public sealed partial class LogisticsInstructionService(
         return new LoadingInstructionSummaryView(instruction.Id, instruction.CompanyId, instruction.Status.ToString(),
             instruction.Version.ToString(CultureInfo.InvariantCulture), instruction.CustomerPartyId, instruction.CompanyAccountId,
             stored.EffectiveOn, instruction.CreatedAtUtc, instruction.UpdatedAtUtc, instruction.Lines.Count,
-            instruction.CancelledBy, instruction.CancelledAtUtc, instruction.CancelReason);
+            instruction.CancelledBy, instruction.CancelledAtUtc, instruction.CancelReason, instruction.UnloadRecord.ToString());
     }
 
     private static LoadingInstructionDetailView Detail(StoredLoadingInstruction stored)
@@ -982,9 +1019,10 @@ public sealed partial class LogisticsInstructionService(
                 Text(line.ShippedQuantity), Text(line.DeliveredQuantity), Text(line.RemainingToLoad), Text(line.LoadedNotShipped),
                 Text(line.ShippedNotDelivered), line.IsBlocked))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
-                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc))],
+                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc, stored.ShareRecordedBy?.GetValueOrDefault(share.ShareId)))],
             instruction.Weighing is { } weighing ? WeighingView(weighing) : null,
-            [.. instruction.DispatchNotes.Select(note => DispatchNoteView(instruction, note))]);
+            [.. instruction.DispatchNotes.Select(note => DispatchNoteView(instruction, note))],
+            instruction.UnloadWeighing is { } unload ? UnloadWeighingView(unload) : null);
     }
 
     /// <summary>The weighbridge record exactly as the domain calculated it; the difference keeps its sign ("-" = lighter than loaded).</summary>
@@ -992,4 +1030,10 @@ public sealed partial class LogisticsInstructionService(
         new(weighing.WeighingId, weighing.Direction.ToString(), Text(weighing.FirstWeighing), Text(weighing.SecondWeighing), Text(weighing.Tare),
             Text(weighing.Gross), Text(weighing.Net), Text(weighing.LoadedAtWeighing), weighing.DifferenceKg.ToString(CultureInfo.InvariantCulture),
             weighing.RecordedBy, weighing.RecordedAtUtc);
+
+    /// <summary>LOJ-D17: the unload weighing exactly as the domain calculated it; the difference keeps its sign and the warning is the backend's.</summary>
+    private static LoadingInstructionUnloadWeighingView UnloadWeighingView(UnloadWeighing unload) =>
+        new(unload.WeighingId, unload.Direction.ToString(), Text(unload.FirstWeighing), Text(unload.SecondWeighing), Text(unload.Tare),
+            Text(unload.Gross), Text(unload.Net), Text(unload.LoadedAtCancel), unload.DifferenceKg.ToString(CultureInfo.InvariantCulture),
+            unload.DifferenceWarning, unload.RecordedBy, unload.RecordedAtUtc);
 }

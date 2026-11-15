@@ -77,6 +77,9 @@ public static class LogisticsModuleExtensions
         services.AddScoped<ISalesDispatchNoteReadPortV1>(provider => provider.GetRequiredService<LogisticsSalesDispatchReadPorts>());
         services.AddScoped<ISalesInvoiceableShipmentReadPortV1>(provider =>
             provider.GetRequiredService<LogisticsSalesDispatchReadPorts>());
+        // F1 (STK-S4, LOJ-D9): the delivery weighing's net kilograms by (instruction, weighing), over the store's company-filtered
+        // rebuild; read-only, no authority. The Sales consumer reaches it through its own declared port and a host adapter.
+        services.AddScoped<ILogisticsSubcontractDeliveryNetWeightReadPortV1, LogisticsSubcontractDeliveryNetWeightReadPort>();
         services.TryAddSingleton(new LogisticsCustomerReturnBindingsV1(
             LogisticsPermissionManifestV1.CustomerReturnsRequest,
             LogisticsPermissionManifestV1.CustomerReturnsDecision,

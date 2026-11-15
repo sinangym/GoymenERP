@@ -48,6 +48,13 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal const string TransferDispatchSourceScaleSettingCheck = "[SourceScaleSettingAtDispatch] IN (1, 2, 3)";
 
     /// <summary>
+    /// KLN-D39 (STK-S30): only a sales order line allocation may hold a substitute ("muadil") label. The explicit
+    /// IS NOT NULL keeps a null demand from passing the check as UNKNOWN.
+    /// </summary>
+    internal const string AllocationSubstituteCheck =
+        "[IsSubstitute] = 0 OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line')";
+
+    /// <summary>
     /// SAT-D262: a known row holds both numbers (kg >= 0, average >= 0) and no reason; an unreadable row holds a reason
     /// (1..9, the AverageCostUnreadableReason values) and neither number. Compared by the persistence-model test.
     /// </summary>
@@ -105,6 +112,24 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "AND [PurchaseOrderId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [PurchaseUnitId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>F-017 STOK §3.5 (F017-c): no empty identity on a receipt conversion link.</summary>
+    internal const string FutureSupplyConversionIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [AcceptanceId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [FutureAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>
+    /// F017-c: Converted (1) names its physical allocation and positive kilograms and no failure; LinkFailed (2) names a failure
+    /// and no physical allocation. The quantity is always positive.
+    /// </summary>
+    internal const string FutureSupplyConversionOutcomeCheck =
+        "[Quantity] > 0 AND (([Outcome] = 1 AND [PhysicalAllocationId] IS NOT NULL "
+        + "AND [PhysicalAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PhysicalQuantityKg] IS NOT NULL AND [PhysicalQuantityKg] > 0 AND [FailureReason] IS NULL) "
+        + "OR ([Outcome] = 2 AND [PhysicalAllocationId] IS NULL AND [PhysicalQuantityKg] IS NULL "
+        + "AND [FailureReason] IS NOT NULL AND LEN([FailureReason]) > 0))";
 
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
@@ -168,9 +193,20 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<InventoryTransferDispatchCancellationRow> TransferDispatchCancellations =>
         Set<InventoryTransferDispatchCancellationRow>();
 
+    internal DbSet<InventoryTransferReceiptRow> TransferReceipts => Set<InventoryTransferReceiptRow>();
+
+    internal DbSet<InventoryTransferOverageDecisionRow> TransferOverageDecisions =>
+        Set<InventoryTransferOverageDecisionRow>();
+
+    internal DbSet<InventoryTransferLossRequestRow> TransferLossRequests => Set<InventoryTransferLossRequestRow>();
+
+    internal DbSet<InventoryTransferLossDecisionRow> TransferLossDecisions => Set<InventoryTransferLossDecisionRow>();
+
     internal DbSet<FutureSupplyAllocationRow> FutureSupplyAllocations => Set<FutureSupplyAllocationRow>();
 
     internal DbSet<FutureSupplyLineRow> FutureSupplyLines => Set<FutureSupplyLineRow>();
+
+    internal DbSet<FutureSupplyConversionRow> FutureSupplyConversions => Set<FutureSupplyConversionRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -401,7 +437,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 11");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 15");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -546,6 +582,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
                 + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND [ReservedUntilUtc] IS NULL)");
+            table.HasCheckConstraint("CK_Allocations_Substitute", AllocationSubstituteCheck);
             table.HasCheckConstraint("CK_Allocations_ReleasedKg",
                 "[ReleasedKg] IS NULL OR ([Status] = 3 AND [ReleasedKg] > 0 AND [ReleasedKg] <= [AllocatedKg])");
             table.HasCheckConstraint("CK_Allocations_Release",
@@ -921,7 +958,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [SourceCustodianId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [DestinationCustodianId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_Transfers_State",
-                "[Version] >= 1 AND [Status] BETWEEN 1 AND 5 AND [SourceCustodianKind] IN (1, 2) "
+                "[Version] >= 1 AND [Status] BETWEEN 1 AND 6 AND [SourceCustodianKind] IN (1, 2) "
                 + "AND [DestinationCustodianKind] IN (1, 2) AND NOT ([SourceLocationId] = [DestinationLocationId] "
                 + "AND [SourceCustodianKind] = [DestinationCustodianKind] AND [SourceCustodianId] = [DestinationCustodianId])");
             table.HasCheckConstraint("CK_Transfers_Text",
@@ -1065,6 +1102,128 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         TransferLineOf(acceptance);
         MovementOf(acceptance);
         acceptance.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        ConfigureInventoryTransferReceipts(modelBuilder);
+    }
+
+    /// <summary>
+    /// B-22c receipt facts (KLN-D21/KLN-D23/KLN-D24). Every row is immutable and keyed by its transfer line; the
+    /// kilogram identity, the shortage movement and the excess reason are enforced by the table itself.
+    /// </summary>
+    private void ConfigureInventoryTransferReceipts(ModelBuilder modelBuilder)
+    {
+        var receipt = modelBuilder.Entity<InventoryTransferReceiptRow>();
+        receipt.ToTable("TransferReceipts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferReceipts_Quantities",
+                "[DispatchedKg] > 0 AND [ReceivedKg] > 0 AND [ShortageKg] >= 0 AND [OverageKg] >= 0 "
+                + "AND ([ShortageKg] = 0 OR [OverageKg] = 0) "
+                + "AND [ReceivedKg] + [ShortageKg] - [OverageKg] = [DispatchedKg]");
+            table.HasCheckConstraint("CK_TransferReceipts_Shortage",
+                "([ShortageKg] = 0 AND [ShortageMovementId] IS NULL) OR ([ShortageKg] > 0 "
+                + "AND [ShortageMovementId] IS NOT NULL AND [ShortageMovementId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_TransferReceipts_Overage",
+                "([OverageKg] = 0 AND [OverageReason] IS NULL) OR ([OverageKg] > 0 "
+                + "AND [OverageReason] IS NOT NULL AND LEN(LTRIM(RTRIM([OverageReason]))) > 0)");
+            table.HasCheckConstraint("CK_TransferReceipts_State", "[LabelVersionAfterReceipt] >= 3");
+            table.HasCheckConstraint("CK_TransferReceipts_Text",
+                "LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        receipt.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        receipt.Property(x => x.DispatchedKg).HasPrecision(18, 3);
+        receipt.Property(x => x.ReceivedKg).HasPrecision(18, 3);
+        receipt.Property(x => x.ShortageKg).HasPrecision(18, 3);
+        receipt.Property(x => x.OverageKg).HasPrecision(18, 3);
+        receipt.Property(x => x.OverageReason).HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength);
+        receipt.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        receipt.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        receipt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        receipt.HasIndex(x => new { x.CompanyId, x.ShortageMovementId })
+            .IsUnique()
+            .HasFilter("[ShortageMovementId] IS NOT NULL");
+        receipt.HasOne<InventoryTransferAcceptanceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        receipt.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ShortageMovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        receipt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var overage = modelBuilder.Entity<InventoryTransferOverageDecisionRow>();
+        overage.ToTable("TransferOverageDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferOverageDecisions_Decision",
+                "([Decision] = 1 AND [MovementId] IS NOT NULL "
+                + "AND [MovementId] <> '00000000-0000-0000-0000-000000000000') "
+                + "OR ([Decision] = 2 AND [MovementId] IS NULL)");
+            table.HasCheckConstraint("CK_TransferOverageDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        overage.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        overage.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength)
+            .IsRequired();
+        overage.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        overage.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        overage.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        overage.HasIndex(x => new { x.CompanyId, x.MovementId })
+            .IsUnique()
+            .HasFilter("[MovementId] IS NOT NULL");
+        overage.HasOne<InventoryTransferReceiptRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        overage.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        overage.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var lossRequest = modelBuilder.Entity<InventoryTransferLossRequestRow>();
+        lossRequest.ToTable("TransferLossRequests", Schema, table =>
+            table.HasCheckConstraint("CK_TransferLossRequests_Text",
+                "LEN(LTRIM(RTRIM([Explanation]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0"));
+        lossRequest.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        lossRequest.Property(x => x.Explanation)
+            .HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength).IsRequired();
+        lossRequest.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        lossRequest.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        lossRequest.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        TransferLineOf(lossRequest);
+        lossRequest.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var lossDecision = modelBuilder.Entity<InventoryTransferLossDecisionRow>();
+        lossDecision.ToTable("TransferLossDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferLossDecisions_Decision",
+                "([Decision] = 1 AND [MovementId] IS NOT NULL "
+                + "AND [MovementId] <> '00000000-0000-0000-0000-000000000000') "
+                + "OR ([Decision] = 2 AND [MovementId] IS NULL)");
+            table.HasCheckConstraint("CK_TransferLossDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        lossDecision.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        lossDecision.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength)
+            .IsRequired();
+        lossDecision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        lossDecision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        lossDecision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        lossDecision.HasIndex(x => new { x.CompanyId, x.MovementId })
+            .IsUnique()
+            .HasFilter("[MovementId] IS NOT NULL");
+        lossDecision.HasOne<InventoryTransferLossRequestRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        lossDecision.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        lossDecision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void TransferOf<TEntity>(EntityTypeBuilder<TEntity> entity)
@@ -1178,6 +1337,42 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // F-017 STOK §3.5 (F017-c): the receipt's link from a future allocation to the physical allocation it became (or to the
+        // failed business link). Insert-only; one row per acceptance and future allocation.
+        var conversion = modelBuilder.Entity<FutureSupplyConversionRow>();
+        conversion.ToTable("FutureSupplyConversions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_FutureSupplyConversions_Identity", FutureSupplyConversionIdentityCheck);
+            table.HasCheckConstraint("CK_FutureSupplyConversions_Outcome", FutureSupplyConversionOutcomeCheck);
+        });
+        conversion.HasKey(x => x.Id);
+        conversion.Property(x => x.Id).ValueGeneratedNever();
+        conversion.Property(x => x.Quantity).HasPrecision(18, 3);
+        conversion.Property(x => x.PhysicalQuantityKg).HasPrecision(18, 3);
+        conversion.Property(x => x.FailureReason).HasMaxLength(64).IsUnicode(false);
+        conversion.HasIndex(x => new { x.CompanyId, x.AcceptanceId, x.FutureAllocationId })
+            .IsUnique()
+            .HasDatabaseName("UX_FutureSupplyConversions_Acceptance");
+        conversion.HasIndex(x => new { x.CompanyId, x.FutureAllocationId })
+            .HasDatabaseName("IX_FutureSupplyConversions_FutureAllocation");
+        conversion.HasIndex(x => new { x.CompanyId, x.PhysicalAllocationId })
+            .IsUnique()
+            .HasFilter("[PhysicalAllocationId] IS NOT NULL")
+            .HasDatabaseName("UX_FutureSupplyConversions_PhysicalAllocation");
+        conversion.HasOne<FutureSupplyAllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.FutureAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        conversion.HasOne<AllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PhysicalAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(conversion);
+        conversion.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        conversion.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ApplyWriteGuards()

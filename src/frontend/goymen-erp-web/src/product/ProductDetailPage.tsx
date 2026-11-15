@@ -77,6 +77,7 @@ import { UnresolvedExitGuard } from './UnresolvedExitGuard'
 import { DuplicateCandidatesPanel } from './DuplicateCandidates'
 import { ProductItemTypePanel } from './ProductItemTypePanel'
 import { ProductDimensionPanel } from './ProductDimensionPanel'
+import { ProfileWeightTablePanel } from './ProfileWeightTablePanel'
 import {
   duplicateIds,
   duplicateQueryKey,
@@ -949,6 +950,11 @@ function ProductCardView({
       {/* BS-9: the "Ebat/kalınlık" row of the shared card, read like the item type in a single-company context. */}
       {itemTypeCompany !== null && itemTypeNamespace !== null ? (
         <ProductDimensionPanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
+      ) : null}
+
+      {/* URN-D13…D16: the selected company's kg/m table, the only source of a profile's or round tube's kg/m. */}
+      {itemTypeCompany !== null && itemTypeNamespace !== null ? (
+        <ProfileWeightTablePanel companyId={itemTypeCompany} queryNamespace={itemTypeNamespace} />
       ) : null}
 
       <section className={styles.section} aria-labelledby="product-roles-heading">

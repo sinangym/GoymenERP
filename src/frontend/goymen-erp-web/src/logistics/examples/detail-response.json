@@ -12,7 +12,8 @@
     "lineCount": 1,
     "cancelledBy": null,
     "cancelledAtUtc": null,
-    "cancelReason": null
+    "cancelReason": null,
+    "unloadRecord": "NotApplicable"
   },
   "lines": [
     {
@@ -35,5 +36,6 @@
   ],
   "shares": [],
   "weighing": null,
-  "dispatchNotes": []
+  "dispatchNotes": [],
+  "unloadWeighing": null
 }

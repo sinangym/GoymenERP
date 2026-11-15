@@ -71,8 +71,8 @@ public sealed partial class SalesDraftServiceTests
             preview.Sources.Select(source => (source.Source, source.Status)));
         Assert.Equal(new SalesDraftCancellationImpactLineV1(line.LineId, 1, KgUnit, "1.25", 0, "0", 0, "0", "0", "0", "0"), Assert.Single(preview.Lines));
         Assert.Matches("^[0-9a-f]{64}$", preview.ImpactToken);
-        // Read-only, under the cancel name only: before, after the draft, after each owner.
-        Assert.Equal([CancelPermission, CancelPermission, CancelPermission, CancelPermission], world.Authority.Measured);
+        // Read-only, under the cancel name only: before, after the draft, after each owner (and after the kind-aware allocation read).
+        Assert.Equal([CancelPermission, CancelPermission, CancelPermission, CancelPermission, CancelPermission], world.Authority.Measured);
         Assert.Equal([approved.Draft.Id], allocations.Asked);
         Assert.Equal([approved.Draft.Id], loadings.Asked);
         Assert.Equal(2, world.Store.Transitions.Count);

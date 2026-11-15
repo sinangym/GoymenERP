@@ -7,6 +7,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -356,13 +357,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ErpPermissions.InventoryPhysicalAllocationWrite);
         var line = new FixedSalesLine(new SalesOrderLineReferenceAnswerV1(
             SalesOrderLineReferenceOutcomeV1.Approved,
+            // KLN-D65: the line is in kilograms and its open quantity covers every reservation this test makes.
             new SalesOrderLineReferenceV1(CompanyA, orderId, lineId, 1, Guid.NewGuid(), Guid.NewGuid(),
-                source.ProductId, "7", Guid.NewGuid(), "10", 0, 4),
+                source.ProductId, "7", SettingsUnitIdentitiesV1.Kilogram, "100", 0, 4),
             null));
         await using var host = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ISalesOrderLineReferencePortV1>();
             services.AddSingleton<ISalesOrderLineReferencePortV1>(line);
+            services.RemoveAll<ISalesOrderDeliveryReadPortV1>();
+            services.AddSingleton<ISalesOrderDeliveryReadPortV1>(new NoRecordedSalesDeliveries(CompanyA));
         }));
 
         using var client = ClientFor(host, actor, CompanyA);

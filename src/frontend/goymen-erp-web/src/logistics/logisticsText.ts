@@ -47,6 +47,8 @@ export const INSTRUCTION_LIST_TEXT = {
   loadingMore: 'Yükleniyor…',
   end: 'Listenin sonu.',
   nextPageFailed: 'Sonraki sayfa alınamadı. Gösterilen satırlar geçerli.',
+  /** LOJ-D17 (3): a cancelled instruction whose loaded goods have no unload weighing. */
+  unloadMissing: 'İndirme kaydı yok',
 } as const
 
 export const INSTRUCTION_CREATE_TEXT = {
@@ -163,6 +165,8 @@ export const INSTRUCTION_DETAIL_TEXT = {
   shareQuantity: 'Miktar',
   shareMeasurement: 'Ölçüm',
   shareRecordedAt: 'Kayıt zamanı',
+  /** F-020: the user id that recorded the share; for a shipped share, the person who made the shipment (ShippedBy). */
+  shareRecordedBy: 'Kaydeden',
   issue: {
     heading: 'Yayımlama',
     note: 'Taslak talimat yayımlanınca yükleme payı kaydedilebilir. Yayımlama fiziksel etki yazmaz.',
@@ -205,7 +209,8 @@ export const INSTRUCTION_CANCEL_TEXT = {
     'sevk edilmemiş kısım dahil) serbest bırakır; bu miktar sipariş satırının talimat ve yükleme sınırlarında artık sayılmaz. ' +
     'Kayıtlar silinmez: paylar ve kantar tartımı iptal işaretiyle görünür kalır. Sunucu iptal yetkisini her gönderimde yeniden ölçer.',
   undecided:
-    'Yüklenmiş malın araçtan fiziksel olarak boşaltılması veya aracın yeniden tartılması bu işlemle kaydedilmez; bu kural henüz karara bağlanmadı.',
+    'Yüklenmiş malın araçtan indirilmesi bu işlemle kaydedilmez: iptalden sonra indirme tartısı ayrıca elle kaydedilir (stok ' +
+    'hareketi oluşmaz); kaydedilmezse talimat "İndirme kaydı yok" olarak işaretlenir.',
   shipped: 'Bu talimatta kesin sevk kaydı var; sevk kesinleştikten sonra talimat iptal edilemez.',
   cancel: 'Talimatı iptal et',
   reasonLabel: 'İptal gerekçesi (zorunlu)',
@@ -232,6 +237,8 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.duplicateShare]: 'Bu yükleme kaydı daha önce işlendi; ikinci kez kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.weighingAlreadyRecorded]:
     'Bu talimatın kantar tartımı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartım kaydedilmez.',
+  [LOGISTICS_PROBLEM_CODE.unloadWeighingAlreadyRecorded]:
+    'Bu talimatın indirme tartısı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartı kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.weighingDirectionInconsistent]:
     'Tartımlar seçilen yönle tutarsız: brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır.',
   [LOGISTICS_PROBLEM_CODE.shipmentAlreadyDispatched]:
@@ -305,6 +312,42 @@ export const WEIGHING_TEXT = {
   /** F-020 (LOJ-D7): the record of a cancelled instruction is kept, never deleted, and shown with this mark. */
   cancelledMark: 'İptal edildi',
   cancelledNote: 'Talimat iptal edildi; kantar tartımı silinmez, iptal işaretiyle saklanır.',
+} as const
+
+/**
+ * LOJ-D17 — the manual unload weighing (indirme tartısı) after a loading instruction is cancelled. No stock movement; a
+ * difference is a warning with an audit record, never a refusal. No threshold is configured, so every difference warns.
+ */
+export const UNLOAD_WEIGHING_TEXT = {
+  heading: 'İndirme tartısı',
+  note:
+    'Talimat iptal edildikten sonra yüklenmiş mal araçtan indirildiğinde aracın iki tartımını kantar fişindeki sırayla elle ' +
+    'girin. Net ve fark sunucuda hesaplanır. Stok hareketi oluşmaz; fark kaydı engellemez, uyarı olarak denetim kaydına yazılır. ' +
+    'Sipariş satırındaki tahsis iptal ile serbest kalmaz.',
+  missing: 'İndirme kaydı yok',
+  missingNote: 'Bu iptal edilen talimatta yüklenmiş mal vardı ve indirme tartısı kaydedilmedi. İptal geçerlidir.',
+  none: 'İndirme tartısı kaydedilmedi.',
+  direction: 'Tartım yönü',
+  directionOption: {
+    TareFirst: 'Önce dara (boş araç), sonra brüt (dolu araç)',
+    GrossFirst: 'Önce brüt (dolu araç), sonra dara (boş araç)',
+  },
+  directionShort: { TareFirst: 'Önce dara', GrossFirst: 'Önce brüt' },
+  first: '1. tartım (kg)',
+  second: '2. tartım (kg)',
+  tare: 'Dara (kg)',
+  gross: 'Brüt (kg)',
+  net: 'İndirilen net (kg)',
+  loadedAtCancel: 'İptal anında yüklenen (kg)',
+  difference: 'Fark: net − yüklenen (kg)',
+  differenceNote: 'Eksi değer indirilenin yüklenenden hafif, artı değer ağır olduğunu gösterir.',
+  warning: 'Uyarı: indirilen net yüklenen miktardan farklı. Fark denetim kaydına yazıldı; kayıt geçerlidir.',
+  noThreshold: 'Fark eşiği ayarlanmadığı için her fark uyarı verir.',
+  recordedBy: 'Kaydeden kullanıcı',
+  recordedAt: 'Kayıt zamanı',
+  record: 'İndirme tartısını kaydet',
+  onlyOnce: 'Bir talimata tek indirme tartısı kaydedilir; hatalı bir kaydın nasıl düzeltileceği henüz karara bağlanmadı.',
+  invalidDirection: 'Brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır; yönü ve tartımları kontrol edin.',
 } as const
 
 /** AT-055 — the dispatch-note (irsaliye) DRAFT from definite shipments (L-08 Satış İrsaliyesi Hazırlığı). */

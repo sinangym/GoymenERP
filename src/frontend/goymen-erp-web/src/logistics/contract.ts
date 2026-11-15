@@ -11,6 +11,11 @@
  *   (F-020, LOJ-D6…D8: an instruction may also be `Cancelled`. The summary then carries who cancelled it (a user id, as on
  *    the dispatch note — no name lookup), when (UTC) and why; all three are null on any other status. The cancel command
  *    is not sent from here.)
+ *   POST /api/v1/logistics/loading-instructions/{id}/unload-weighings → 200 LoadingInstructionResponse (LOJ-D17: the manual
+ *    unload weighing of a cancelled instruction with loaded goods; the summary carries `unloadRecord` — `Missing` is the
+ *    "indirme kaydı yok" mark — and the detail the `unloadWeighing` record or null)
+ *   (F-020: every share also carries `recordedBy` — the user id that recorded it, null for an older share; the detail
+ *    screen shows it as the "Kaydeden" column, for a shipped share the ShippedBy of the shipment.)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
  *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
  *   POST …/{id}/dispatch-notes/{noteId}/approve | cancel | e-dispatch-number → 200 LoadingInstructionResponse
@@ -37,6 +42,8 @@ export const cancelInstructionPath = (id: string) => `${instructionDetailPath(id
 export const loadsPath = (id: string, lineId: string) => `${instructionDetailPath(id)}/lines/${encodeURIComponent(lineId)}/loads`
 /** AT-053: the instruction's manual weighbridge record (one per instruction). */
 export const weighingsPath = (id: string) => `${instructionDetailPath(id)}/weighings`
+/** LOJ-D17: the cancelled instruction's manual unload weighing (indirme tartısı; one per instruction, no stock movement). */
+export const unloadWeighingsPath = (id: string) => `${instructionDetailPath(id)}/unload-weighings`
 /** AT-055: a dispatch-note (irsaliye) draft from the instruction's definite shipments. */
 export const dispatchNotesPath = (id: string) => `${instructionDetailPath(id)}/dispatch-notes`
 /** AT-055: one dispatch note of the instruction (approve / cancel / e-İrsaliye number live under it). */
@@ -70,6 +77,15 @@ const SHARE_KINDS: readonly string[] = Object.values(SHARE_KIND)
 export const WEIGHING_DIRECTION = { tareFirst: 'TareFirst', grossFirst: 'GrossFirst' } as const
 export type WeighingDirection = (typeof WEIGHING_DIRECTION)[keyof typeof WEIGHING_DIRECTION]
 const WEIGHING_DIRECTIONS: readonly string[] = Object.values(WEIGHING_DIRECTION)
+
+/**
+ * LOJ-D17 (3): whether a cancelled instruction's unload is recorded. `Missing` is the "indirme kaydı yok" mark (cancelled, goods
+ * were loaded, no unload weighing — the cancel stays valid); `NotApplicable` is every other instruction (not cancelled, or
+ * cancelled with nothing loaded). The backend decides it; this client only shows it.
+ */
+export const UNLOAD_RECORD = { notApplicable: 'NotApplicable', missing: 'Missing', recorded: 'Recorded' } as const
+export type UnloadRecord = (typeof UNLOAD_RECORD)[keyof typeof UNLOAD_RECORD]
+const UNLOAD_RECORDS: readonly string[] = Object.values(UNLOAD_RECORD)
 
 /** Technical bounds from `LogisticsJson` / the endpoints. Not owner scale or precision. */
 export const LIMITS = {
@@ -122,6 +138,18 @@ export interface RecordLoadRequest {
  * No net, difference, tolerance, operator or time: the backend calculates and stamps them.
  */
 export interface RecordWeighingRequest {
+  readonly expectedVersion: string
+  readonly weighingId: string
+  readonly direction: WeighingDirection
+  readonly firstWeighingKg: string
+  readonly secondWeighingKg: string
+}
+
+/**
+ * `RecordUnloadWeighingRequest` (LOJ-D17): the two weighings of the unloaded vehicle as exact kilogram text in the order taken
+ * and the direction. No net, difference, threshold, operator or time: the backend calculates and stamps them.
+ */
+export interface RecordUnloadWeighingRequest {
   readonly expectedVersion: string
   readonly weighingId: string
   readonly direction: WeighingDirection
@@ -188,6 +216,8 @@ export interface InstructionSummary {
   readonly cancelledBy: string | null
   readonly cancelledAtUtc: string | null
   readonly cancelReason: string | null
+  /** LOJ-D17 (3): `Missing` is "indirme kaydı yok"; only a Cancelled instruction is ever `Missing` or `Recorded`. */
+  readonly unloadRecord: UnloadRecord
 }
 
 /** The four §7.4 shares and the derived remainders, all exact text; the Sales binding (D4). */
@@ -217,6 +247,11 @@ export interface LoadingShare {
   readonly measurement: Measurement | null
   readonly sourceShipmentId: string | null
   readonly recordedAtUtc: string
+  /**
+   * F-020: the server-side user id that recorded the share (for a shipped share, the person who made the shipment; a
+   * user id, as on the dispatch note — no name lookup). Null for a share stored before the actor was kept.
+   */
+  readonly recordedBy: string | null
 }
 
 /**
@@ -235,6 +270,27 @@ export interface InstructionWeighing {
   readonly loadedKgAtWeighing: string
   /** Signed exact text: "-120" lighter than loaded, "120" heavier, "0" equal. */
   readonly differenceKg: string
+  readonly recordedBy: string
+  readonly recordedAtUtc: string
+}
+
+/**
+ * `LoadingInstructionUnloadWeighingView` (LOJ-D17): the cancelled instruction's unload weighing exactly as the backend calculated
+ * it — tare / gross / net, the kilograms loaded when it was cancelled and the SIGNED difference net − loaded. `differenceWarning`
+ * is the backend's warning (no threshold is configured, so every non-zero difference warns); this client never recomputes it.
+ */
+export interface InstructionUnloadWeighing {
+  readonly weighingId: string
+  readonly direction: WeighingDirection
+  readonly firstWeighingKg: string
+  readonly secondWeighingKg: string
+  readonly tareKg: string
+  readonly grossKg: string
+  readonly netKg: string
+  readonly loadedKgAtCancel: string
+  /** Signed exact text: "-120" lighter than loaded, "120" heavier, "0" equal. */
+  readonly differenceKg: string
+  readonly differenceWarning: boolean
   readonly recordedBy: string
   readonly recordedAtUtc: string
 }
@@ -283,6 +339,8 @@ export interface InstructionDetail {
   readonly weighing: InstructionWeighing | null
   /** AT-055: the dispatch-note drafts made from this instruction's shipments, oldest first (always present, empty when none). */
   readonly dispatchNotes: readonly DispatchNote[]
+  /** LOJ-D17: the unload weighing recorded after the cancel; null while none is recorded (always present on the wire). */
+  readonly unloadWeighing: InstructionUnloadWeighing | null
 }
 
 export interface InstructionMutation {
@@ -325,6 +383,8 @@ export const LOGISTICS_PROBLEM_CODE = {
   duplicateShare: 'logistics_duplicate_share_id',
   weighingAlreadyRecorded: 'logistics_weighing_already_recorded',
   weighingDirectionInconsistent: 'logistics_weighing_direction_inconsistent',
+  /** LOJ-D17: the cancelled instruction's unload weighing is already recorded (no second one; its correction is undecided). */
+  unloadWeighingAlreadyRecorded: 'logistics_unload_weighing_already_recorded',
   shipmentAlreadyDispatched: 'logistics_shipment_already_dispatched',
   duplicateDispatchNote: 'logistics_duplicate_dispatch_note_id',
   shipmentNotFound: 'logistics_shipment_not_found',
@@ -475,7 +535,7 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
 
 const SUMMARY_KEYS = [
   'id', 'companyId', 'status', 'version', 'customerPartyId', 'companyAccountId', 'effectiveOn',
-  'createdAtUtc', 'updatedAtUtc', 'lineCount', 'cancelledBy', 'cancelledAtUtc', 'cancelReason',
+  'createdAtUtc', 'updatedAtUtc', 'lineCount', 'cancelledBy', 'cancelledAtUtc', 'cancelReason', 'unloadRecord',
 ] as const
 
 /**
@@ -499,13 +559,17 @@ export function decodeInstructionSummary(value: unknown): InstructionSummary | n
     !isPositiveInt(o.lineCount, LIMITS.lines) ||
     !isNullable(o.cancelledBy, isActor) ||
     !isNullable(o.cancelledAtUtc, isInstant) ||
-    !isNullable(o.cancelReason, isReason)
+    !isNullable(o.cancelReason, isReason) ||
+    typeof o.unloadRecord !== 'string' ||
+    !UNLOAD_RECORDS.includes(o.unloadRecord)
   ) {
     return null
   }
   const cancelled = o.cancelledBy !== null && o.cancelledAtUtc !== null && o.cancelReason !== null
   const notCancelled = o.cancelledBy === null && o.cancelledAtUtc === null && o.cancelReason === null
   if (o.status === INSTRUCTION_STATUS.cancelled ? !cancelled : !notCancelled) return null
+  // LOJ-D17: only a cancelled instruction has an unload to record.
+  if (o.status !== INSTRUCTION_STATUS.cancelled && o.unloadRecord !== UNLOAD_RECORD.notApplicable) return null
   return {
     id: o.id,
     companyId: o.companyId,
@@ -520,6 +584,7 @@ export function decodeInstructionSummary(value: unknown): InstructionSummary | n
     cancelledBy: o.cancelledBy,
     cancelledAtUtc: o.cancelledAtUtc,
     cancelReason: o.cancelReason,
+    unloadRecord: o.unloadRecord as UnloadRecord,
   }
 }
 
@@ -569,7 +634,9 @@ function decodeLine(value: unknown): InstructionLine | null {
   }
 }
 
-const SHARE_KEYS = ['shareId', 'lineId', 'kind', 'quantity', 'measurement', 'sourceShipmentId', 'recordedAtUtc'] as const
+const SHARE_KEYS = [
+  'shareId', 'lineId', 'kind', 'quantity', 'measurement', 'sourceShipmentId', 'recordedAtUtc', 'recordedBy',
+] as const
 
 function decodeShare(value: unknown): LoadingShare | null {
   const o = exact(value, SHARE_KEYS)
@@ -582,7 +649,8 @@ function decodeShare(value: unknown): LoadingShare | null {
     !isPositiveQuantityText(o.quantity) ||
     !isNullable(o.measurement, (v): v is string => typeof v === 'string' && MEASUREMENTS.includes(v)) ||
     !isNullable(o.sourceShipmentId, isReferenceId) ||
-    !isInstant(o.recordedAtUtc)
+    !isInstant(o.recordedAtUtc) ||
+    !isNullable(o.recordedBy, isActor)
   ) {
     return null
   }
@@ -599,6 +667,7 @@ function decodeShare(value: unknown): LoadingShare | null {
     measurement: o.measurement as Measurement | null,
     sourceShipmentId: o.sourceShipmentId,
     recordedAtUtc: o.recordedAtUtc,
+    recordedBy: o.recordedBy,
   }
 }
 
@@ -648,6 +717,61 @@ export function decodeWeighing(value: unknown): InstructionWeighing | null {
     netKg: o.netKg,
     loadedKgAtWeighing: o.loadedKgAtWeighing,
     differenceKg: o.differenceKg,
+    recordedBy: o.recordedBy,
+    recordedAtUtc: o.recordedAtUtc,
+  }
+}
+
+const UNLOAD_WEIGHING_KEYS = [
+  'weighingId', 'direction', 'firstWeighingKg', 'secondWeighingKg', 'tareKg', 'grossKg', 'netKg', 'loadedKgAtCancel',
+  'differenceKg', 'differenceWarning', 'recordedBy', 'recordedAtUtc',
+] as const
+
+const ZERO_QUANTITY_RE = /^0+(?:\.0+)?$/
+
+/**
+ * The unload weighing (LOJ-D17), taken as the backend wrote it. Identity checks only — the tare and gross are the weighings the
+ * direction names, goods were loaded, and the warning is raised exactly when the backend's difference is not zero (no threshold
+ * is configured) — never a recalculation of net or difference.
+ */
+export function decodeUnloadWeighing(value: unknown): InstructionUnloadWeighing | null {
+  const o = exact(value, UNLOAD_WEIGHING_KEYS)
+  if (
+    o === null ||
+    !isReferenceId(o.weighingId) ||
+    typeof o.direction !== 'string' ||
+    !WEIGHING_DIRECTIONS.includes(o.direction) ||
+    !isPositiveQuantityText(o.firstWeighingKg) ||
+    !isPositiveQuantityText(o.secondWeighingKg) ||
+    !isPositiveQuantityText(o.tareKg) ||
+    !isPositiveQuantityText(o.grossKg) ||
+    !isPositiveQuantityText(o.netKg) ||
+    !isPositiveQuantityText(o.loadedKgAtCancel) ||
+    typeof o.differenceKg !== 'string' ||
+    o.differenceKg.length > LIMITS.decimalText ||
+    !SIGNED_QUANTITY_RE.test(o.differenceKg) ||
+    typeof o.differenceWarning !== 'boolean' ||
+    !isText(o.recordedBy, 128) ||
+    !isInstant(o.recordedAtUtc)
+  ) {
+    return null
+  }
+  const tareFirst = o.direction === WEIGHING_DIRECTION.tareFirst
+  if (o.tareKg !== (tareFirst ? o.firstWeighingKg : o.secondWeighingKg) || o.grossKg !== (tareFirst ? o.secondWeighingKg : o.firstWeighingKg)) {
+    return null
+  }
+  if (o.differenceWarning === ZERO_QUANTITY_RE.test(o.differenceKg.replace(/^-/, ''))) return null
+  return {
+    weighingId: o.weighingId,
+    direction: o.direction as WeighingDirection,
+    firstWeighingKg: o.firstWeighingKg,
+    secondWeighingKg: o.secondWeighingKg,
+    tareKg: o.tareKg,
+    grossKg: o.grossKg,
+    netKg: o.netKg,
+    loadedKgAtCancel: o.loadedKgAtCancel,
+    differenceKg: o.differenceKg,
+    differenceWarning: o.differenceWarning,
     recordedBy: o.recordedBy,
     recordedAtUtc: o.recordedAtUtc,
   }
@@ -808,7 +932,7 @@ export function dispatchNoteOf(detail: InstructionDetail, shipmentId: string): D
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeInstructionDetail(value: unknown, expectedId: string | null): InstructionDetail | null {
-  const o = exact(value, ['instruction', 'lines', 'shares', 'weighing', 'dispatchNotes'])
+  const o = exact(value, ['instruction', 'lines', 'shares', 'weighing', 'dispatchNotes', 'unloadWeighing'])
   if (o === null) return null
   const instruction = decodeInstructionSummary(o.instruction)
   if (instruction === null || (expectedId !== null && instruction.id !== expectedId)) return null
@@ -842,7 +966,17 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
   if (instruction.status === INSTRUCTION_STATUS.cancelled && shares.some((share) => share.kind !== SHARE_KIND.loaded)) return null
   const dispatchNotes = decodeDispatchNotes(o.dispatchNotes, lines, shares)
   if (dispatchNotes === null) return null
-  return { instruction, lines, shares, weighing, dispatchNotes }
+  // LOJ-D17: the record is there exactly when the summary says Recorded; Missing / Recorded need loaded goods on a cancelled
+  // instruction, and a cancelled instruction with loaded goods is never NotApplicable.
+  let unloadWeighing: InstructionUnloadWeighing | null = null
+  if (o.unloadWeighing !== null) {
+    unloadWeighing = decodeUnloadWeighing(o.unloadWeighing)
+    if (unloadWeighing === null) return null
+  }
+  if ((unloadWeighing !== null) !== (instruction.unloadRecord === UNLOAD_RECORD.recorded)) return null
+  const anyLoaded = lines.some((line) => !ZERO_QUANTITY_RE.test(line.loaded))
+  if (instruction.status === INSTRUCTION_STATUS.cancelled && anyLoaded !== (instruction.unloadRecord !== UNLOAD_RECORD.notApplicable)) return null
+  return { instruction, lines, shares, weighing, dispatchNotes, unloadWeighing }
 }
 
 export function decodeInstructionMutation(value: unknown): InstructionMutation | null {

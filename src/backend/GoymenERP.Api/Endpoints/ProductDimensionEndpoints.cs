@@ -13,7 +13,8 @@ namespace GoymenERP.Api.Endpoints;
 /// under <see cref="ProductDimensionPermissionsV1.Manage"/> in that company (company-wide, granted to no role here); each change
 /// is audited in that company.
 /// <c>GET /api/v1/product-dimensions/{productId}</c> answers it (version "0" and nulls while none is stored); <c>PUT</c> sets it
-/// (204) with Idempotency-Key, the expected version and a mandatory reason. Private, no-store.
+/// (204) with Idempotency-Key, the expected version and a mandatory reason. The kg/m is never sent: it is read from the acting
+/// company's imported table (URN-D16), and a profile whose measures that table does not hold answers 409. Private, no-store.
 /// </summary>
 public static class ProductDimensionEndpoints
 {
@@ -135,7 +136,8 @@ public static class ProductDimensionEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(
                 ProductDimensionProblemCodesV1.IdempotencyConflict,
-                ProductDimensionProblemCodesV1.VersionConflict)
+                ProductDimensionProblemCodesV1.VersionConflict,
+                ProductDimensionProblemCodesV1.WeightSourceMissing)
             .ProducesErpServiceUnavailable(ProductDimensionProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 

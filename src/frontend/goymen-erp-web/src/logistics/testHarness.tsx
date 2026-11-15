@@ -69,6 +69,7 @@ export function instructionSummary(overrides: Record<string, unknown> = {}): Rec
     cancelledBy: null,
     cancelledAtUtc: null,
     cancelReason: null,
+    unloadRecord: 'NotApplicable',
     ...overrides,
   }
 }
@@ -108,8 +109,19 @@ export function instructionDetail(
   shares: readonly Record<string, unknown>[] = [],
   weighing: Record<string, unknown> | null = null,
   dispatchNotes: readonly Record<string, unknown>[] = [],
+  unloadWeighing: Record<string, unknown> | null = null,
 ): Record<string, unknown> {
-  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares, weighing, dispatchNotes }
+  // LOJ-D17: the summary's unload mark as the backend derives it (an explicit `unloadRecord` in `summary` wins, to build refusals).
+  const anyLoaded = lines.some((line) => !/^0+(?:\.0+)?$/.test(String(line.loaded)))
+  const unloadRecord = unloadWeighing !== null ? 'Recorded' : summary.status === 'Cancelled' && anyLoaded ? 'Missing' : 'NotApplicable'
+  return {
+    instruction: instructionSummary({ lineCount: lines.length, unloadRecord, ...summary }),
+    lines,
+    shares,
+    weighing,
+    dispatchNotes,
+    unloadWeighing,
+  }
 }
 
 /** AT-053: a weighbridge record as the backend answers it (its calculation, never the client's). */
@@ -126,6 +138,25 @@ export function weighingRecord(overrides: Record<string, unknown> = {}): Record<
     differenceKg: '-0.2',
     recordedBy: 'SENTETIK-kantar',
     recordedAtUtc: '2026-09-19T09:20:00Z',
+    ...overrides,
+  }
+}
+
+/** LOJ-D17: an unload weighing record of a cancelled instruction as the backend answers it (its calculation and warning). */
+export function unloadWeighingRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    weighingId: 'efefefef-efef-4fef-8fef-efefefefefef',
+    direction: 'GrossFirst',
+    firstWeighingKg: '15004',
+    secondWeighingKg: '15000',
+    tareKg: '15000',
+    grossKg: '15004',
+    netKg: '4',
+    loadedKgAtCancel: '4.5',
+    differenceKg: '-0.5',
+    differenceWarning: true,
+    recordedBy: 'SENTETIK-indirme',
+    recordedAtUtc: '2026-09-19T12:00:00Z',
     ...overrides,
   }
 }
@@ -175,6 +206,8 @@ export interface HarnessConfig {
   readonly onShipment?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onDelivery?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onWeighing?: (call: RecordedCall) => Response | Promise<Response>
+  /** LOJ-D17: the cancelled instruction's unload weighing. */
+  readonly onUnloadWeighing?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-055: the dispatch-note draft command. */
   readonly onDispatchNote?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-055: approve / cancel / e-dispatch-number on one note. */
@@ -255,6 +288,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/dispatch-notes$/.test(url)) {
           if (config.onDispatchNote === undefined) throw new Error('unexpected dispatch note')
           return config.onDispatchNote(call)
+        }
+        if (call.method === 'POST' && /\/unload-weighings$/.test(url)) {
+          if (config.onUnloadWeighing === undefined) throw new Error('unexpected unload weighing')
+          return config.onUnloadWeighing(call)
         }
         if (call.method === 'POST' && /\/weighings$/.test(url)) {
           if (config.onWeighing === undefined) throw new Error('unexpected weighing')

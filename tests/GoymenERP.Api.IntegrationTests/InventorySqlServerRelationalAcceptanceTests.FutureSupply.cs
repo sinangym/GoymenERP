@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
@@ -109,6 +110,60 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(InventoryFutureAllocationReadOutcomeV1.Unreadable, sum.Outcome);
             Assert.Null(sum.QuantityText);
             Assert.Null(sum.UnitId);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task The_sales_allocation_read_v2_answers_active_future_supply_per_purchase_unit_apart_from_physical_kg_for_its_company_only()
+    {
+        await using var run = await Run.StartAsync();
+        // F-017 STOK §5.1 (STK-S16): one Sales order line holds future supply on two purchase lines in two different units, one
+        // consumed allocation, and another company holds future supply against the same identities.
+        var first = FutureSupplyIds.New();
+        var second = first with { PurchaseOrder = Guid.NewGuid(), PurchaseLine = Guid.NewGuid(), Unit = Guid.NewGuid() };
+        var other = first with { PurchaseOrder = Guid.NewGuid(), PurchaseLine = Guid.NewGuid() };
+        await run.ExecuteAsync(InsertFutureSupplyLine, first.Line(CompanyA, snapshot: 100m, active: 19.625m));
+        await run.ExecuteAsync(InsertFutureSupplyAllocation,
+            first.Allocation(CompanyA, Guid.NewGuid(), allocated: 12.5m, remaining: 12.5m, status: 1));
+        await run.ExecuteAsync(InsertFutureSupplyAllocation,
+            first.Allocation(CompanyA, Guid.NewGuid(), allocated: 7.125m, remaining: 7.125m, status: 1));
+        await run.ExecuteAsync(InsertFutureSupplyAllocation,
+            first.Allocation(CompanyA, Guid.NewGuid(), allocated: 3m, remaining: 0m, status: 2));
+        await run.ExecuteAsync(InsertFutureSupplyLine, second.Line(CompanyA, snapshot: 50m, active: 2m));
+        await run.ExecuteAsync(InsertFutureSupplyAllocation,
+            second.Allocation(CompanyA, Guid.NewGuid(), allocated: 2m, remaining: 2m, status: 1));
+        await run.ExecuteAsync(InsertFutureSupplyLine, other.Line(CompanyB, snapshot: 10m, active: 4m));
+        await run.ExecuteAsync(InsertFutureSupplyAllocation,
+            other.Allocation(CompanyB, Guid.NewGuid(), allocated: 4m, remaining: 4m, status: 1));
+
+        await using (var a = run.Context(CompanyA))
+        {
+            var answer = await new InventorySalesOrderAllocationReadPortV2(a, Company(CompanyA)).ReadOrderAllocationsAsync(first.DemandOrder);
+
+            Assert.Equal((CompanyA, first.DemandOrder), (answer.CompanyId, answer.OrderId));
+            // Each purchase unit apart, never converted, never summed across units; the consumed allocation is not active.
+            Assert.Equal(
+                new[]
+                {
+                    new SalesOrderLineAllocationV2(first.DemandLine, SalesOrderAllocationKindsV2.FutureSupply, 2, 19.625m, first.Unit),
+                    new SalesOrderLineAllocationV2(first.DemandLine, SalesOrderAllocationKindsV2.FutureSupply, 1, 2m, second.Unit),
+                }.OrderBy(line => line.UnitId),
+                answer.Lines);
+            // The physical figure (V1, and V2's Physical kind) holds none of it: no future quantity is ever physical kilograms.
+            Assert.DoesNotContain(answer.Lines, line => line.Kind == SalesOrderAllocationKindsV2.Physical);
+            Assert.Empty((await new InventorySalesOrderAllocationReadPort(a, Company(CompanyA))
+                .ReadOrderAllocationsAsync(first.DemandOrder)).Lines);
+            Assert.Empty((await new InventorySalesOrderAllocationReadPortV2(a, Company(CompanyA))
+                .ReadOrderAllocationsAsync(Guid.NewGuid())).Lines);
+        }
+
+        await using (var b = run.Context(CompanyB))
+        {
+            var answer = await new InventorySalesOrderAllocationReadPortV2(b, Company(CompanyB)).ReadOrderAllocationsAsync(first.DemandOrder);
+
+            Assert.Equal(
+                [new SalesOrderLineAllocationV2(first.DemandLine, SalesOrderAllocationKindsV2.FutureSupply, 1, 4m, first.Unit)],
+                answer.Lines);
         }
     }
 

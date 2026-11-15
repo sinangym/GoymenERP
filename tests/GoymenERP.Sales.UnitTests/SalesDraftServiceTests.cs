@@ -1648,6 +1648,13 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderDeliveryReadPortV1? Deliveries { get; set; }
         /// <summary>DEC-SAL-005: the allocation owner's read port (Inventory); null = not composed.</summary>
         public ISalesOrderAllocationReadPortV1? Allocations { get; set; }
+        /// <summary>
+        /// F-017 STOK §5.1: the allocation owner's kind-aware read (Inventory registers it beside V1). When unset and V1 is composed,
+        /// a SYNTHETIC owner answering "no allocation of either kind" stands in, as the Inventory module registers both together.
+        /// </summary>
+        public ISalesOrderAllocationReadPortV2? FutureAllocations { get; set; }
+        /// <summary>F-017 STOK §5.1: true = the kind-aware read is not composed even beside V1 (the preview is unreadable).</summary>
+        public bool NoFutureAllocations { get; set; }
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         /// <summary>AT-018 / MOD-02: the Product price tier chain; null = not composed.</summary>
@@ -1701,7 +1708,15 @@ public sealed partial class SalesDraftServiceTests
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
                 LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
-                InvoiceRecords, PostedShares);
+                InvoiceRecords, PostedShares,
+                NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()));
+        }
+
+        /// <summary>The default SYNTHETIC kind-aware allocation owner: nothing of either kind for any order of the company.</summary>
+        private sealed class NoFutureSupplyAllocations : ISalesOrderAllocationReadPortV2
+        {
+            public Task<SalesOrderAllocationReadAnswerV2> ReadOrderAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+                Task.FromResult(new SalesOrderAllocationReadAnswerV2(Company, orderId, []));
         }
 
         /// <summary>Plan S0 / SAT-D311: Sales' own invoice records for the risk check (null = not composed).</summary>

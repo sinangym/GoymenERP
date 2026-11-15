@@ -159,6 +159,14 @@ public static class ErpPermissions
     public const string ProductDimensionManage = "product.dimension.manage";
 
     /// <summary>
+    /// URN-D15 (STK-S37R): the Product owner's ONE name for reading and importing the company-wide kg/m table of profiles and
+    /// round tubes (URN-D13/D16; the file is linked to the import record, every import source-labelled per URN-D14 and audited;
+    /// <c>ProductProfileWeightPermissionsV1.Import</c>). Registered, not granted: no role, seed or user receives it here; who
+    /// receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductProfileWeightsImport = "product.profile-weights.import";
+
+    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -253,6 +261,32 @@ public static class ErpPermissions
     /// source adds grant-time dual control.
     /// </summary>
     public const string InventoryStockTransferCancel = "inventory.stock-transfer.cancel";
+
+    /// <summary>
+    /// B-22c receipt excess approval (KLN-D24: an overage needs a reason and a maker≠approver approval before it enters
+    /// stock). A separate name from <see cref="InventoryStockTransferWrite"/> so the receiver and the approver can be
+    /// different people; the service also refuses the receiver's own approval. Registration grants nothing: no seeded
+    /// role or real user receives this command. Company-wide only because the transfer has no narrower approved scope
+    /// dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
+
+    /// <summary>
+    /// B-22c pending-label loss request (KLN-D23 (c): a pending label may be closed as a loss only with an explanation
+    /// and a maker≠approver approval). Records the explanation; it moves no stock. Registration grants nothing: no
+    /// seeded role or real user receives this command. Company-wide only because the transfer has no narrower approved
+    /// scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferLossRecord = "inventory.stock-transfer.loss-record";
+
+    /// <summary>
+    /// B-22c pending-label loss decision (KLN-D23 (c)): approve (write the line off as a transit loss) or reject one
+    /// recorded loss request. A separate name from <see cref="InventoryStockTransferLossRecord"/>; the service also
+    /// refuses the requester's own decision. Registration grants nothing: no seeded role or real user receives this
+    /// command. Company-wide only because the transfer has no narrower approved scope dimension. Not Critical: no
+    /// approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryStockTransferLossApprove = "inventory.stock-transfer.loss-approve";
 
     /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
@@ -1421,6 +1455,7 @@ public static class ErpPermissions
             ProductPriceListsPublish,
             ProductItemTypeManage,
             ProductDimensionManage,
+            ProductProfileWeightsImport,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1486,6 +1521,9 @@ public static class ErpPermissions
             InventoryStockScrapApprove,
             InventoryStockTransferWrite,
             InventoryStockTransferCancel,
+            InventoryStockTransferOverageApprove,
+            InventoryStockTransferLossRecord,
+            InventoryStockTransferLossApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -1659,6 +1697,7 @@ public static class ErpPermissions
             ProductPriceListsPublish,
             ProductItemTypeManage,
             ProductDimensionManage,
+            ProductProfileWeightsImport,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1724,6 +1763,9 @@ public static class ErpPermissions
             InventoryStockScrapApprove,
             InventoryStockTransferWrite,
             InventoryStockTransferCancel,
+            InventoryStockTransferOverageApprove,
+            InventoryStockTransferLossRecord,
+            InventoryStockTransferLossApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

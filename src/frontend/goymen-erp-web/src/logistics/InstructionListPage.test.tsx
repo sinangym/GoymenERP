@@ -72,6 +72,36 @@ describe('L-02 Yükleme Talimatları', () => {
     await waitFor(() => expect(urls.at(-1)).toContain('status=Cancelled'))
   })
 
+  it('LOJ-D17: a cancelled row whose loaded goods have no unload weighing carries the "İndirme kaydı yok" mark; no other row does', async () => {
+    const missing = 'cccccccc-cccc-cccc-cccc-ccccccccccc2'
+    const recorded = 'cccccccc-cccc-cccc-cccc-ccccccccccc3'
+    const notLoaded = 'cccccccc-cccc-cccc-cccc-ccccccccccc4'
+    installFetch({
+      onList: () => json({
+        items: [
+          instructionSummary(),
+          instructionSummary({ id: missing, ...CANCELLED_INSTRUCTION, unloadRecord: 'Missing' }),
+          instructionSummary({ id: recorded, ...CANCELLED_INSTRUCTION, unloadRecord: 'Recorded' }),
+          instructionSummary({ id: notLoaded, ...CANCELLED_INSTRUCTION }),
+        ],
+        nextCursor: null,
+      }),
+    })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari')
+    await screen.findByTestId(`logistics-row-${missing}`)
+    expect(screen.getByTestId(`logistics-row-unload-missing-${missing}`).textContent).toBe(INSTRUCTION_LIST_TEXT.unloadMissing)
+    // The cancel stays valid: the row is still "İptal edildi".
+    expect(screen.getByTestId(`logistics-row-status-${missing}`).textContent).toBe('İptal edildi')
+    for (const id of [INSTRUCTION, recorded, notLoaded]) expect(screen.queryByTestId(`logistics-row-unload-missing-${id}`)).toBeNull()
+  })
+
+  it('LOJ-D17: a live row carrying an unload mark is not shown as a list: the answer is refused whole', async () => {
+    installFetch({ onList: () => json({ items: [instructionSummary({ status: 'Issued', unloadRecord: 'Missing' })], nextCursor: null }) })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari')
+    await screen.findByText(/Beklenmeyen yanıt/)
+    expect(screen.queryByTestId(`logistics-row-${INSTRUCTION}`)).toBeNull()
+  })
+
   it('F-020: a Cancelled row without its cancel facts is not shown as a list: the answer is refused whole', async () => {
     installFetch({ onList: () => json({ items: [instructionSummary(), instructionSummary({ id: 'cccccccc-cccc-cccc-cccc-ccccccccccc2', status: 'Cancelled' })], nextCursor: null }) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari')

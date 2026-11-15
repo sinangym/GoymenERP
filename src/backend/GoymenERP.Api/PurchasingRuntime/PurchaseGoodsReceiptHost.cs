@@ -1,3 +1,4 @@
+using System.Data.Common;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -35,7 +36,9 @@ internal sealed class PurchaseGoodsReceiptHost(
             await using var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(
                 purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
                 services.GetRequiredService<ISettingsPrerequisiteProvider>(), cancellationToken, clock);
-            var participants = new Participants(companyId, purchase, inventory, locationStatus);
+            var participants = new Participants(companyId, purchase, inventory, locationStatus,
+                services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
+                purchasing.Database.GetDbConnection(), transaction.GetDbTransaction());
             try
             {
                 var result = await operation(participants, cancellationToken);
@@ -100,10 +103,19 @@ internal sealed class PurchaseGoodsReceiptHost(
         catch { /* Preserve the original operation failure. */ }
     }
 
+    /// <summary>
+    /// The participants of one receipt transaction. F-017 STOK §3.5 (F017-c, ALS-D84 order): after the purchase acceptance and the
+    /// Inventory label are staged, the same transaction converts the received general line's future supply allocations; the
+    /// protected receipt contracts do not change and a technical conversion failure rolls the whole receipt back. The bulk
+    /// receipt host enlists the same participants once per label.
+    /// </summary>
     internal sealed class Participants(Guid companyId, IPurchaseAcceptanceParticipantV1 purchase,
-        IInventoryGoodsReceiptParticipantV1 inventory, IOrganizationLocationStatusReaderV1 locations)
+        IInventoryGoodsReceiptParticipantV1 inventory, IOrganizationLocationStatusReaderV1 locations,
+        IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply, DbConnection connection, DbTransaction transaction)
         : IPurchaseGoodsReceiptParticipantsV1
     {
+        private PurchaseAcceptanceStageResultV1? staged;
+
         public async Task<PurchaseReceiptStockRequestV1?> ReadOriginalAsync(Guid acceptanceId,
             PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
         {
@@ -129,9 +141,13 @@ internal sealed class PurchaseGoodsReceiptHost(
                 StockPartyKind.Company.ToString(), companyId, StockPartyKind.Company.ToString(), companyId);
         }
 
-        public Task<PurchaseAcceptanceStageResultV1> StagePurchaseAsync(PurchaseAcceptanceStageRequestV1 request,
-            PurchasingWriteEnvelope envelope, CancellationToken cancellationToken) =>
-            purchase.StageAsync(request, envelope, cancellationToken);
+        public async Task<PurchaseAcceptanceStageResultV1> StagePurchaseAsync(PurchaseAcceptanceStageRequestV1 request,
+            PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
+        {
+            var result = await purchase.StageAsync(request, envelope, cancellationToken);
+            staged = result;
+            return result;
+        }
 
         public async Task<PurchaseReceiptStockResultV1> StageInventoryAsync(PurchaseReceiptStockRequestV1 request,
             PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
@@ -147,10 +163,43 @@ internal sealed class PurchaseGoodsReceiptHost(
                 request.CoilNumber, request.RequiredDocuments, owner, request.OwnerId, custodian,
                 request.CustodianId, request.LocationId, block, request.MovementId, request.QuantityKg,
                 request.OccurredAtUtc), Metadata(envelope), cancellationToken);
+            await ConvertFutureSupplyAsync(result, envelope, cancellationToken);
             return new(result.CompanyId, result.AcceptanceId, result.PurchaseOrderId, result.PurchaseOrderLineId,
                 result.PurchaseOrderVersion, result.ProductId, result.ProductVersion, result.PurchaseUnitId,
                 result.LotId, result.LabelId, result.LabelVersion, result.MovementId, result.QuantityKg,
                 result.IsReplay, result.OriginalCorrelationId);
+        }
+
+        /// <summary>
+        /// F017-c: the accepted quantity (purchase unit) and the label's measured kilograms go to Inventory's conversion port on the
+        /// receipt's own connection and transaction. Its result stays in Inventory (link rows, audit, outbox); the receipt response
+        /// does not change. Inventory refusals map to the receipt's own stable codes.
+        /// </summary>
+        private async Task ConvertFutureSupplyAsync(InventoryGoodsReceiptResultV1 result, PurchasingWriteEnvelope envelope,
+            CancellationToken cancellationToken)
+        {
+            var acceptance = staged;
+            if (acceptance is null || acceptance.AcceptanceId != result.AcceptanceId
+                || acceptance.PurchaseOrderId != result.PurchaseOrderId || acceptance.CompanyId != result.CompanyId)
+                throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            try
+            {
+                await using var session = await futureSupply.EnlistAsync(connection, transaction, cancellationToken);
+                await session.ConvertAsync(new InventoryGoodsReceiptFutureSupplyRequestV1(result.CompanyId,
+                    result.AcceptanceId, result.PurchaseOrderId,
+                    acceptance.PurchaseOrderGeneralLineId ?? acceptance.PurchaseOrderLineId, result.PurchaseUnitId,
+                    result.ProductId, result.ProductVersion, result.LabelId, acceptance.AcceptedQuantity, result.QuantityKg,
+                    result.IsReplay), Metadata(envelope), cancellationToken);
+            }
+            catch (InventoryAllocationException exception)
+            {
+                throw exception.Status == 409
+                    ? InventoryGoodsReceiptException.Refused(409,
+                        exception.Code == InventoryFutureAllocationCodesV1.IdempotencyConflict
+                            ? InventoryGoodsReceiptCodesV1.IdempotencyConflict
+                            : InventoryGoodsReceiptCodesV1.ConcurrentChange)
+                    : InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            }
         }
 
         private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope) => new(

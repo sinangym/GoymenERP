@@ -665,3 +665,20 @@ The density is the company Settings value (not stored on the card); galvanizing 
 
 Not here: who besides `product.dimension.manage` holders reads the measures; whether the shared (not per-company) row and the
 per-kind required measures are final (NEEDS-SINAN); overlap with flat-family template fields.
+
+### Section kinds and the kg/m table (STK-S37R, URN-D11…D16)
+
+Source: `SINAN_KARARLARI` URN-D11 (four kinds: Sac, Rulo, Yuvarlak boru, Profil) and URN-D13…D16. This supersedes the "kg/m
+required / typed on the card" rows above: **kg/m is never typed on the card**. It comes from the company's kg/m table, imported
+from a source-labelled file. A profile card needs a table row for its measures (otherwise 409
+`product_dimension_weight_source_missing`); a round tube's table value is optional. The card's `kgPerMetre` field is gone from
+the request; the view answers the table's `kgPerMetre`, `kgPerMetreSourceLabel` and `kgPerMetreTableVersion`.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, company-scoped, in `ProductPriceListDbContext`: `product.ProductProfileWeightImports` (one insert-only version per import: source label, reason, file name, SHA-256, vault `DocumentId`, actor, time), `product.ProductProfileWeightLines` (`Profile` width/height/wall or `RoundTube` outer diameter/wall, kg/m; `UX_ProductProfileWeightLines_Measures` one row per measure pair of a version) and `product.ProductProfileWeightAttempts`. Insert-only (DbContext write guard). The newest version is current; no draft table is seeded (URN-D16). |
+| File | UTF-8 `.csv` (BOM allowed), header `sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre`, `;` separator, `.` decimal, at most 1 MiB and 5000 rows; values are never rounded. Matching is exact on the stored measures (NEEDS-SINAN: profile width/height orientation). |
+| Vault | URN-D13: the file goes to the Platform document vault under the user-upload rules through `IProductProfileWeightFileVaultV1`; only a stored, allowlisted, scan-clean file is imported. Until Platform offers an in-process user-upload port, the registered adapter answers Unavailable: the import is refused 503 `product_profile_weight_file_vault_unavailable` and nothing is stored (fail-closed; the same key can be retried). |
+| Authority | ONE name, `product.profile-weights.import` (`ErpPermissions.ProductProfileWeightsImport`): company-wide, not Critical, granted to NO role here (URN-D15; the grant is a human gate). |
+| Command | `GET /api/v1/product-profile-weight-tables/current` and `POST /api/v1/product-profile-weight-tables` `{expectedVersion, sourceLabel (mandatory, URN-D14), reason, fileName, contentBase64}`: Idempotency-Key, stale version 409, invalid file 400 with the row number; ONE audit event `product.profile-weights.imported.v1`. |
+| Rollback | Migration `AddProductProfileWeightImports` (`dotnet ef`): `Down` refuses with `THROW 51483` while any import or import answer exists, or while a profile card has no stored kg/m (the old shape check would not hold) — forward fix; an empty store rolls back freely. |

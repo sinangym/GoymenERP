@@ -743,6 +743,32 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 - **Open (NEEDS-SINAN):** the demand open quantity definition (ordered − shipped, cancelled → 0), unit conversion beyond
   the identity, and the release reason code list are the author's reading or format-only; no grant is added.
 
+## Future supply conversion at goods receipt (F-017 F017-c, STOK_F017 §3.5, ALS-D84/D89)
+
+- **Order (ALS-D84):** the goods receipt host stages the purchase acceptance, then the Inventory label
+  (`IInventoryGoodsReceiptParticipantV1`, unchanged), then enlists `IInventoryGoodsReceiptFutureSupplyPortV1` on the same
+  connection and transaction and converts. The purchase line lock is the receipt's own lock (re-entrant, same
+  transaction); `IPurchaseGoodsReceiptTransactionV1` and the participant contract do not change. No route, OpenAPI entry or
+  permission is added; only the receipt host calls the port after its own permission check.
+- **Consumption order:** the host's optional `AllocationOrder` (F17-3) first, then the manual sequence, the Sales line due
+  date, the creation time and the id (`InventoryFutureSupplyConsumptionOrderV1`). A repeated or unknown id refuses 422
+  (`inventory_future_allocation_order_invalid`) and the receipt rolls back.
+- **Converted share:** the allocation is consumed by the share (Active → Consumed when nothing remains), the ledger
+  returns the share, a physical `sales.order-line` allocation is created on the received label's Free position and
+  `inventory.FutureSupplyConversions` links the two (Outcome 1). Audit `Inventory.FutureSupplyAllocation` (Convert) and
+  `Inventory.StockAllocation` (Create); outbox `inventory.future-allocation.converted.v1`. A share that takes the whole
+  accepted quantity becomes the label's measured kilograms; a partial share needs the central kg conversion.
+- **Link failure (§3.5):** label not Free, owner not the company, unit conversion unavailable, Sales line not approved,
+  product mismatch or not enough unheld Free kg → the whole remainder is released with `acceptance-link-failed` (reason
+  text names the link), released event + audit, link row Outcome 2. The receipt and the label stay.
+- **Idempotency:** one `inventory.future-allocation.convert-on-receipt.v1` command row keyed by the receipt's key; a
+  replay receipt answers the stored result and writes nothing. A receipt line with no active allocation writes nothing.
+- **Migration:** `AddInventoryFutureSupplyConversions` creates the link table (`CK_FutureSupplyConversions_Identity`,
+  `_Outcome`; unique per acceptance + future allocation and per physical allocation). Its `Down` refuses (THROW 51711)
+  while any link row exists, then drops (forward fix).
+- **Open (NEEDS-SINAN):** releasing the whole remainder on a link failure, treating not enough unheld kg as a link failure,
+  and the partial non-kg share without a central conversion source (released) are the author's reading.
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.

@@ -154,6 +154,36 @@ describe('Inventory label detail contract', () => {
       .toBeNull()
   })
 
+  it('decodes the manufacturing output reversal as one free Out line and rejects every other shape', () => {
+    const entry = movementTimeline().entries[0]
+    const out = { ...entry.lines[0], direction: 'Out' }
+    const reversal = (lines: unknown[]) => ({
+      ...movementTimeline(),
+      entries: [{ ...entry, kind: 'ManufacturingOutputReversal', sourceKind: 'manufacturing.output-reversal', lines }],
+    })
+
+    expect(decodeInventoryLabelMovementTimeline(reversal([out]), LABEL)?.entries[0].kind)
+      .toBe('ManufacturingOutputReversal')
+    expect(decodeInventoryLabelMovementTimeline(reversal([entry.lines[0]]), LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline(reversal([{ ...out, block: 'Blocked' }]), LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline(reversal([out, { ...out, sequence: 2 }]), LABEL)).toBeNull()
+  })
+
+  it('decodes the transfer dispatch cancellation as In lines only', () => {
+    const entry = movementTimeline().entries[0]
+    const cancellation = (direction: 'In' | 'Out') => ({
+      ...movementTimeline(),
+      entries: [{
+        ...entry, kind: 'TransferDispatchCancellation', sourceGrain: 'Whole', sourceLineId: null,
+        lines: [entry.lines[0], { ...entry.lines[0], sequence: 2, block: 'Blocked', direction }],
+      }],
+    })
+
+    expect(decodeInventoryLabelMovementTimeline(cancellation('In'), LABEL)?.entries[0].kind)
+      .toBe('TransferDispatchCancellation')
+    expect(decodeInventoryLabelMovementTimeline(cancellation('Out'), LABEL)).toBeNull()
+  })
+
   it('fails closed for impossible or internally inconsistent transformation groups', () => {
     const [first, second] = genealogy().edges
     const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')

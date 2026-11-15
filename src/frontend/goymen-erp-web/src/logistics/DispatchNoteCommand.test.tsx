@@ -43,9 +43,9 @@ const SHIP_2 = '52525252-5252-4252-8252-525252525252'
 const NOTE = '6f6f6f6f-6f6f-4f6f-8f6f-6f6f6f6f6f6f'
 const shippedLine = instructionLine({ loaded: '4.5', shipped: '4.5', remainingToLoad: '0', loadedNotShipped: '0', shippedNotDelivered: '4.5' })
 const shares = [
-  { shareId: '50505050-5050-4050-8050-505050505050', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' },
-  { shareId: SHIP_1, lineId: LINE, kind: 'Shipped', quantity: '3', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:20:00Z' },
-  { shareId: SHIP_2, lineId: LINE, kind: 'Shipped', quantity: '1.5', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z' },
+  { shareId: '50505050-5050-4050-8050-505050505050', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator' },
+  { shareId: SHIP_1, lineId: LINE, kind: 'Shipped', quantity: '3', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:20:00Z', recordedBy: 'SENTETIK-operator' },
+  { shareId: SHIP_2, lineId: LINE, kind: 'Shipped', quantity: '1.5', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z', recordedBy: 'SENTETIK-operator' },
 ]
 
 const note = (id: string, shipmentIds: readonly string[], state: Record<string, unknown> = {}) => ({

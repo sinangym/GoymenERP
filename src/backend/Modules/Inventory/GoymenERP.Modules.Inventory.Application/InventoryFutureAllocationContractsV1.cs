@@ -37,6 +37,8 @@ public static class InventoryFutureAllocationOriginsV1
 /// <summary>
 /// F-017 STOK §3.3/§3.4 release reason codes named by the specs. The store keeps the code as given and validates only its format
 /// (<see cref="IsWellFormed"/>): the list is not closed here, so a later slice's code needs no Inventory change.
+/// ASSUMPTION-STK-REASON-1 (reversible): format-only validation, no fixed catalog; a catalog, if needed, comes from Settings in a
+/// separate slice. A malformed code is 400 and, being a request-shape refusal, is not a recorded terminal refusal.
 /// </summary>
 public static class InventoryFutureAllocationReleaseReasonsV1
 {
@@ -359,14 +361,18 @@ public enum InventoryFutureDemandSourceOutcomeV1
     Unavailable = 4,
 }
 
-/// <summary>The approved Sales line and its open quantity, in <see cref="UnitId"/> (the order unit).</summary>
+/// <summary>
+/// The approved Sales line and its open quantity, in <see cref="UnitId"/> (the order unit). <see cref="DueDate"/> is the line's
+/// requested delivery date when the Sales port answers it (F017-c tie rule); null sorts after every dated line.
+/// </summary>
 public sealed record InventoryFutureDemandLineV1(
     Guid OrderId,
     Guid LineId,
     Guid ProductId,
     string ProductVersion,
     Guid UnitId,
-    string OpenQuantityText);
+    string OpenQuantityText,
+    DateOnly? DueDate = null);
 
 public sealed record InventoryFutureDemandSourceAnswerV1(
     InventoryFutureDemandSourceOutcomeV1 Outcome,
@@ -390,9 +396,10 @@ public enum InventoryFutureUnitConversionOutcomeV1
 public sealed record InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1 Outcome, decimal? Quantity);
 
 /// <summary>
-/// The conversion seam (SAT-D298: the consumer converts its input to the line unit). The default answers only the identity (same
-/// unit) and <see cref="InventoryFutureUnitConversionOutcomeV1.NoSource"/> otherwise; a central conversion service replaces it
-/// without an Inventory change.
+/// The conversion seam (SAT-D298: the consumer converts its input to the line unit; KLN-D66: when the Sales and purchase units
+/// differ, both sides are compared in kilograms). The default answers only the identity (same unit) and
+/// <see cref="InventoryFutureUnitConversionOutcomeV1.NoSource"/> otherwise; a central conversion service replaces it without an
+/// Inventory change. A missing source is never a guess: the caller refuses 422 (KLN-D66 (3), fail-closed).
 /// </summary>
 public interface IInventoryFutureUnitConverterV1
 {
@@ -400,11 +407,12 @@ public interface IInventoryFutureUnitConverterV1
         Guid toUnitId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Physical allocations hold kilograms without a unit id (INV-AL-1); the demand cap (§3.2 step 5) needs them in the Sales order
-    /// unit. Only a central source knows which unit id is the kilogram for the product; without one the answer is NoSource.
+    /// KLN-D65 (4) / KLN-D66 (1): the kilogram basis of the demand cap. Physical allocations hold kilograms without a unit id
+    /// (INV-AL-1); the Sales open quantity and the future allocations are brought to kilograms here. Only a central source knows
+    /// whether a unit is the kilogram or how the product weighs; without one the answer is NoSource.
     /// </summary>
-    Task<InventoryFutureUnitConversionV1> ConvertFromKilogramsAsync(Guid productId, string productVersion, decimal kilograms,
-        Guid toUnitId, CancellationToken cancellationToken = default);
+    Task<InventoryFutureUnitConversionV1> ConvertToKilogramsAsync(Guid productId, string productVersion, decimal quantity,
+        Guid fromUnitId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Identity-only default of <see cref="IInventoryFutureUnitConverterV1"/>.</summary>
@@ -416,9 +424,9 @@ public sealed class InventoryIdentityFutureUnitConverterV1 : IInventoryFutureUni
             ? new InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1.Converted, quantity)
             : new InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1.NoSource, null));
 
-    /// <summary>The default does not know the kilogram unit id: NoSource (the caller refuses 422 only when kilograms are held).</summary>
-    public Task<InventoryFutureUnitConversionV1> ConvertFromKilogramsAsync(Guid productId, string productVersion,
-        decimal kilograms, Guid toUnitId, CancellationToken cancellationToken = default) =>
+    /// <summary>The default does not know which unit is the kilogram: NoSource (the caller refuses 422 when kilograms are needed).</summary>
+    public Task<InventoryFutureUnitConversionV1> ConvertToKilogramsAsync(Guid productId, string productVersion,
+        decimal quantity, Guid fromUnitId, CancellationToken cancellationToken = default) =>
         Task.FromResult(new InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1.NoSource, null));
 }
 

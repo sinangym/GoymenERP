@@ -22,7 +22,11 @@
  * reader; the form offers the definite shipments not on a live note (a shipment is linked to at most one non-cancelled note);
  * each note can be approved (the server numbers it), cancelled with a reason (releasing its shipments) and given its e-İrsaliye no.
  * F-020 (LOJ-D6…D8): a Draft or Issued instruction with no recorded shipment can be cancelled with a reason; a cancelled instruction
- * is read only — it shows who cancelled it, when and why, its weighing marked cancelled, and offers no command.
+ * is read only — it shows who cancelled it, when and why, its weighing marked cancelled, and offers no command but one:
+ * LOJ-D17 (UnloadWeighingCommand.tsx): a cancelled instruction whose goods were loaded is marked "İndirme kaydı yok" until its
+ * manual unload weighing is recorded; the form is offered on exactly that instruction, and the recorded weighing (net, the
+ * kilograms loaded at the cancel and the signed difference, with the backend's warning) is shown to every reader. No stock
+ * movement and no allocation change follow from it (LOJ-D16).
  */
 
 import { useRef, useState } from 'react'
@@ -70,6 +74,7 @@ import { WeighingFacts, WeighingForm } from './WeighingCommand'
 import { DispatchNoteFacts, DispatchNoteForm, DispatchNoteLifecycles } from './DispatchNoteCommand'
 import { CustomerReturnPanel } from './CustomerReturnPanel'
 import { InstructionCancelCommand } from './InstructionCancelCommand'
+import { UnloadWeighingFacts, UnloadWeighingForm } from './UnloadWeighingCommand'
 import {
   CUSTOMER_RETURN_CAPABILITY,
   abandonCustomerReturnAttempt,
@@ -133,7 +138,9 @@ export function InstructionDetailPage() {
       detail={detail}
       backLink={backLink}
       commands={
-        // F-020: no command applies to a cancelled instruction (the server refuses every one), so none is offered. The cancel
+        // F-020: no command but the LOJ-D17 unload weighing applies to a cancelled instruction (the server refuses every other
+        // one), so none other is offered; the unload form renders nothing unless the instruction is marked "İndirme kaydı yok" or
+        // it holds the notice of its own attempt. The cancel
         // section itself stays mounted at the same place (it renders nothing on a cancelled instruction unless it holds the notice
         // of the command that cancelled it), so that notice survives the re-read that shows the instruction Cancelled.
         companyId === null ? null : (
@@ -155,6 +162,8 @@ export function InstructionDetailPage() {
                   onRecorded={reread} />
               </>
             )}
+            <UnloadWeighingForm key={`unload-weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail}
+              companyId={companyId} onRecorded={reread} />
             <InstructionCancelCommand key={`cancel:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
               onRecorded={reread} />
           </>
@@ -513,6 +522,7 @@ export function InstructionView({
                   <th scope="col" className={styles.numeric}>{T.shareQuantity}</th>
                   <th scope="col">{T.shareMeasurement}</th>
                   <th scope="col">{T.shareRecordedAt}</th>
+                  <th scope="col">{T.shareRecordedBy}</th>
                 </tr>
               </thead>
               <tbody>
@@ -523,6 +533,10 @@ export function InstructionView({
                     <td className={styles.numeric}>{share.quantity}</td>
                     <td>{share.measurement === null ? T.unknown : MEASUREMENT_TEXT[share.measurement]}</td>
                     <td>{formatInstant(share.recordedAtUtc)}</td>
+                    {/* F-020: the stored user id (no name lookup); an older share without one says so instead of guessing. */}
+                    <td className={styles.identifier} data-testid={`logistics-share-recorded-by-${share.shareId}`}>
+                      {share.recordedBy ?? T.unknown}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -532,6 +546,8 @@ export function InstructionView({
       </section>
 
       <WeighingFacts weighing={detail.weighing} cancelled={cancelled} />
+
+      <UnloadWeighingFacts detail={detail} />
 
       <DispatchNoteFacts detail={detail} />
 

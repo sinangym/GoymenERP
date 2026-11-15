@@ -4,6 +4,8 @@
  * cases establish: a forbidden read shows nothing, an unset row says "kaynak yok", each failed read says what failed, the
  * command sends the company, one Idempotency-Key and the exact body with only the kind's measures, keeps the key for a retry
  * after an unknown outcome, never rounds a measure, and the route and body are pinned to the canonical OpenAPI document.
+ * URN-D16 (STK-S37R): the kg/m is no input; the panel shows the company table's value with its source and version, says when
+ * the table holds none, and reads the refusal of a profile the table does not hold.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -48,21 +50,28 @@ function install(respond: (method: string, attempt: number) => Response): Sent[]
 }
 
 const EMPTY_MEASURES = {
-  thicknessMm: null, widthMm: null, lengthMm: null, heightMm: null, outerDiameterMm: null, wallThicknessMm: null, kgPerMetre: null,
+  thicknessMm: null, widthMm: null, lengthMm: null, heightMm: null, outerDiameterMm: null, wallThicknessMm: null,
 }
+
+/** No table value: the three kg/m members are null together. */
+const NO_WEIGHT = { kgPerMetre: null, kgPerMetreSourceLabel: null, kgPerMetreTableVersion: null }
+
+const TABLE_WEIGHT = { kgPerMetre: 1.75, kgPerMetreSourceLabel: 'SENTETIK KATALOG', kgPerMetreTableVersion: '3' }
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
-    companyId: COMPANY, productId: PRODUCT, version: '2', sectionKind: 'Sheet', ...EMPTY_MEASURES,
+    companyId: COMPANY, productId: PRODUCT, version: '2', sectionKind: 'Sheet', ...EMPTY_MEASURES, ...NO_WEIGHT,
     thicknessMm: 2, widthMm: 1250, lengthMm: 2500, updatedAtUtc: '2026-11-12T08:00:00Z', updatedBy: 'u-1',
     updatedInCompanyId: COMPANY, ...overrides,
   }
 }
 
 const UNSET = {
-  companyId: COMPANY, productId: PRODUCT, version: '0', sectionKind: null, ...EMPTY_MEASURES,
+  companyId: COMPANY, productId: PRODUCT, version: '0', sectionKind: null, ...EMPTY_MEASURES, ...NO_WEIGHT,
   updatedAtUtc: null, updatedBy: null, updatedInCompanyId: null,
 }
+
+const PROFILE = { ...EMPTY_MEASURES, sectionKind: 'Profile', widthMm: 40, heightMm: 20, wallThicknessMm: 2 }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -119,6 +128,33 @@ describe('product dimension panel (BS-9)', () => {
     expect(screen.queryByText(MEASURE_LABEL.outerDiameterMm)).toBeNull()
     expect(screen.getByText(DIMENSION_TEXT.shared)).toBeTruthy()
     expect(screen.getByText(DIMENSION_TEXT.changedElsewhere)).toBeTruthy()
+    // A sheet takes no table kg/m: neither a value nor "kaynak yok" for it.
+    expect(screen.queryByText(DIMENSION_TEXT.kgPerMetreLabel)).toBeNull()
+  })
+
+  it('shows the table kg/m with its source label and version, and says when the table holds none', async () => {
+    install(() => json(payload({ ...PROFILE, ...TABLE_WEIGHT })))
+    renderPanel()
+    expect((await screen.findByTestId('product-dimension-kg-per-metre')).textContent).toBe('1.75')
+    expect(screen.getByText('SENTETIK KATALOG')).toBeTruthy()
+    expect(screen.getByText(DIMENSION_TEXT.kgPerMetreTableVersion)).toBeTruthy()
+    expect(screen.getByText(DIMENSION_TEXT.weightNote)).toBeTruthy()
+    cleanup()
+    vi.unstubAllGlobals()
+
+    install(() => json(payload(PROFILE)))
+    renderPanel()
+    expect((await screen.findByTestId('product-dimension-kg-per-metre-missing')).textContent).toBe(
+      DIMENSION_TEXT.kgPerMetreMissing,
+    )
+    cleanup()
+    vi.unstubAllGlobals()
+
+    install(() => json(payload({ ...EMPTY_MEASURES, sectionKind: 'RoundTube', outerDiameterMm: 48.3, wallThicknessMm: 2.6 })))
+    renderPanel()
+    expect((await screen.findByTestId('product-dimension-kg-per-metre-missing')).textContent).toBe(
+      DIMENSION_TEXT.kgPerMetreTubeMissing,
+    )
   })
 
   it('sets a round tube with the version, the reason and one key, kept for a retry after an unknown outcome', async () => {
@@ -151,10 +187,10 @@ describe('product dimension panel (BS-9)', () => {
     expect(writes[1].headers['Idempotency-Key']).toBe(writes[0].headers['Idempotency-Key'])
   })
 
-  it('refuses a missing, over-precise or too thick measure before sending, and reads the server refusal', async () => {
+  it('refuses a missing, over-precise or too thick measure before sending, and reads the missing table source', async () => {
     const user = userEvent.setup()
     const sent = install((method) =>
-      method === 'GET' ? json(UNSET) : json({ code: DIMENSION_PROBLEM.measureInvalid }, 400))
+      method === 'GET' ? json(UNSET) : json({ code: DIMENSION_PROBLEM.weightSourceMissing }, 409))
     renderPanel()
 
     await user.click(await screen.findByRole('button', { name: DIMENSION_TEXT.change }))
@@ -163,19 +199,19 @@ describe('product dimension panel (BS-9)', () => {
     expect((screen.getByRole('button', { name: DIMENSION_TEXT.save }) as HTMLButtonElement).disabled).toBe(true)
 
     await user.selectOptions(kind, 'Profile')
+    // The kg/m is no input: it comes from the company's table only.
+    expect(screen.queryByRole('textbox', { name: DIMENSION_TEXT.kgPerMetreLabel })).toBeNull()
+    expect(screen.getByText(DIMENSION_TEXT.profileWeightNote)).toBeTruthy()
     await user.type(screen.getByRole('textbox', { name: DIMENSION_TEXT.reasonLabel }), 'SENTETIK')
     await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.widthMm }), '40')
     await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.heightMm }), '20')
-    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }), '2')
     await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
     expect(await screen.findByText(DIMENSION_TEXT.measureMissing)).toBeTruthy()
 
-    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.kgPerMetre }), '1.1234567')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }), '2.1234')
     await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
     expect(await screen.findByText(DIMENSION_TEXT.measureFormat)).toBeTruthy()
 
-    await user.clear(screen.getByRole('textbox', { name: MEASURE_LABEL.kgPerMetre }))
-    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.kgPerMetre }), '1.75')
     await user.clear(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }))
     await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }), '10.5')
     await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
@@ -185,9 +221,9 @@ describe('product dimension panel (BS-9)', () => {
     await user.clear(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }))
     await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }), '2')
     await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
-    expect(await screen.findByText(DIMENSION_TEXT.measureInvalid)).toBeTruthy()
+    expect(await screen.findByText(DIMENSION_TEXT.weightSourceMissing)).toBeTruthy()
     expect(sent.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
-      { expectedVersion: '0', sectionKind: 'Profile', ...EMPTY_MEASURES, widthMm: 40, heightMm: 20, wallThicknessMm: 2, kgPerMetre: 1.75, reason: 'SENTETIK' },
+      { expectedVersion: '0', sectionKind: 'Profile', ...EMPTY_MEASURES, widthMm: 40, heightMm: 20, wallThicknessMm: 2, reason: 'SENTETIK' },
     ])
   })
 
@@ -222,6 +258,8 @@ describe('product dimension decoder and input', () => {
     expect(decodeDimension(payload({ densityKgM3: 7850 }), COMPANY, PRODUCT)).toBeNull()
     const { kgPerMetre: _dropped, ...missing } = payload()
     expect(decodeDimension(missing, COMPANY, PRODUCT)).toBeNull()
+    const { kgPerMetreSourceLabel: _label, ...missingLabel } = payload()
+    expect(decodeDimension(missingLabel, COMPANY, PRODUCT)).toBeNull()
     // The shape: a sheet needs its length and holds no diameter; a value is a positive number.
     expect(decodeDimension(payload({ lengthMm: null }), COMPANY, PRODUCT)).toBeNull()
     expect(decodeDimension(payload({ outerDiameterMm: 10 }), COMPANY, PRODUCT)).toBeNull()
@@ -232,13 +270,22 @@ describe('product dimension decoder and input', () => {
     expect(decodeDimension(payload({ updatedInCompanyId: null }), COMPANY, PRODUCT)).toBeNull()
     expect(decodeDimension({ ...UNSET, updatedInCompanyId: COMPANY }, COMPANY, PRODUCT)).toBeNull()
     expect(decodeDimension(payload({ updatedInCompanyId: OTHER_COMPANY }), COMPANY, PRODUCT)?.changedInAnotherCompany).toBe(true)
-    // A round tube's kg/m is optional, a profile's is required.
+    // The table kg/m: all three members null or all three set; only a tube or a profile reads one (a later import may drop the
+    // row, so a stored profile can read none).
     const tube = { ...EMPTY_MEASURES, sectionKind: 'RoundTube', outerDiameterMm: 48.3, wallThicknessMm: 2.6 }
-    expect(decodeDimension(payload(tube), COMPANY, PRODUCT)).not.toBeNull()
-    expect(decodeDimension(payload({ ...tube, kgPerMetre: 2.93 }), COMPANY, PRODUCT)).not.toBeNull()
-    const profile = { ...EMPTY_MEASURES, sectionKind: 'Profile', widthMm: 40, heightMm: 20, wallThicknessMm: 2 }
-    expect(decodeDimension(payload(profile), COMPANY, PRODUCT)).toBeNull()
-    expect(decodeDimension(payload({ ...profile, kgPerMetre: 1.75 }), COMPANY, PRODUCT)).not.toBeNull()
+    expect(decodeDimension(payload(tube), COMPANY, PRODUCT)?.tableWeight).toBeNull()
+    expect(decodeDimension(payload({ ...tube, ...TABLE_WEIGHT, kgPerMetre: 2.93 }), COMPANY, PRODUCT)?.tableWeight).toEqual({
+      kgPerMetre: 2.93, sourceLabel: 'SENTETIK KATALOG', tableVersion: '3',
+    })
+    expect(decodeDimension(payload(PROFILE), COMPANY, PRODUCT)?.tableWeight).toBeNull()
+    expect(decodeDimension(payload({ ...PROFILE, ...TABLE_WEIGHT }), COMPANY, PRODUCT)).not.toBeNull()
+    expect(decodeDimension(payload({ ...PROFILE, kgPerMetre: 1.75 }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...PROFILE, ...TABLE_WEIGHT, kgPerMetreSourceLabel: ' ' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...PROFILE, ...TABLE_WEIGHT, kgPerMetreTableVersion: '0' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...PROFILE, ...TABLE_WEIGHT, kgPerMetreTableVersion: 3 }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...PROFILE, ...TABLE_WEIGHT, kgPerMetre: 0 }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload(TABLE_WEIGHT), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension({ ...UNSET, ...TABLE_WEIGHT }, COMPANY, PRODUCT)).toBeNull()
   })
 
   it('reads a typed measure without rounding it', () => {
@@ -246,8 +293,6 @@ describe('product dimension decoder and input', () => {
     expect(parseMeasure('thicknessMm', ' 1,5 ')).toEqual({ ok: true, value: 1.5 })
     expect(parseMeasure('thicknessMm', '1.125')).toEqual({ ok: true, value: 1.125 })
     expect(parseMeasure('thicknessMm', '1.1255')).toEqual({ ok: false })
-    expect(parseMeasure('kgPerMetre', '1.123456')).toEqual({ ok: true, value: 1.123456 })
-    expect(parseMeasure('kgPerMetre', '1.1234567')).toEqual({ ok: false })
     expect(parseMeasure('widthMm', '0')).toEqual({ ok: false })
     expect(parseMeasure('widthMm', '-1')).toEqual({ ok: false })
     expect(parseMeasure('widthMm', '1e3')).toEqual({ ok: false })
@@ -288,8 +333,8 @@ describe('product dimension client ↔ canonical OpenAPI', () => {
     const reference = document.paths[route]?.put?.requestBody?.content?.['application/json']?.schema?.$ref ?? ''
     const schema = document.components.schemas[reference.replace('#/components/schemas/', '')]
     expect(Object.keys(schema?.properties ?? {}).sort()).toEqual([
-      'expectedVersion', 'heightMm', 'kgPerMetre', 'lengthMm', 'outerDiameterMm', 'reason', 'sectionKind', 'thicknessMm',
-      'wallThicknessMm', 'widthMm',
+      'expectedVersion', 'heightMm', 'lengthMm', 'outerDiameterMm', 'reason', 'sectionKind', 'thicknessMm', 'wallThicknessMm',
+      'widthMm',
     ])
   })
 
@@ -299,8 +344,9 @@ describe('product dimension client ↔ canonical OpenAPI', () => {
       '#/components/schemas/ProductDimensionViewV1',
     )
     expect(Object.keys(document.components.schemas.ProductDimensionViewV1?.properties ?? {}).sort()).toEqual([
-      'companyId', 'heightMm', 'kgPerMetre', 'lengthMm', 'outerDiameterMm', 'productId', 'sectionKind', 'thicknessMm',
-      'updatedAtUtc', 'updatedBy', 'updatedInCompanyId', 'version', 'wallThicknessMm', 'widthMm',
+      'companyId', 'heightMm', 'kgPerMetre', 'kgPerMetreSourceLabel', 'kgPerMetreTableVersion', 'lengthMm', 'outerDiameterMm',
+      'productId', 'sectionKind', 'thicknessMm', 'updatedAtUtc', 'updatedBy', 'updatedInCompanyId', 'version', 'wallThicknessMm',
+      'widthMm',
     ])
     const declared = new Set(
       Object.values(operations)

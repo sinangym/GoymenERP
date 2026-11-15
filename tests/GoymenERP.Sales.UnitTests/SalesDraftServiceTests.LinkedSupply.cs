@@ -51,7 +51,7 @@ public sealed partial class SalesDraftServiceTests
         // Each owner is asked for the order in the server company, all lines; the cancel name is measured after each owner too.
         Assert.Equal([new SalesOrderLinkedSupplyQueryV1(Company, approved.Draft.Id, null)], production.Asked);
         Assert.Equal([new SalesOrderLinkedSupplyQueryV1(Company, approved.Draft.Id, null)], purchasing.Asked);
-        Assert.Equal(6, world.Authority.Measured.Count);
+        Assert.Equal(7, world.Authority.Measured.Count);
         var cancelled = await world.Service().CancelDraftAsync(approved.Draft.Id,
             new SalesDraftCancelRequest("4", "SENTETIK", preview.ImpactToken), Metadata("k-linked-none"));
         Assert.Equal("Cancelled", cancelled.Detail.Draft.State);

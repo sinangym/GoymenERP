@@ -5,6 +5,8 @@
  * company only; the command carries one caller-owned `Idempotency-Key` (kept for a retry after an unknown outcome). Success is
  * exactly the contract's status; a 5xx or an off-contract answer is an UNKNOWN outcome; a refusal is read by its status and
  * `code`. The measures are never rounded here: the server refuses a value with more decimals than its column holds (URN-D8).
+ * URN-D16 (STK-S37R): the kg/m is never typed on the card; the read shows the acting company's current imported table value with
+ * its source label and table version, and a profile whose measures the table does not hold is refused (409).
  */
 
 export const PRODUCT_SECTION_KINDS = ['Sheet', 'Coil', 'RoundTube', 'Profile'] as const
@@ -17,38 +19,48 @@ export const DIMENSION_MEASURES = [
   'heightMm',
   'outerDiameterMm',
   'wallThicknessMm',
-  'kgPerMetre',
 ] as const
 export type DimensionMeasure = (typeof DIMENSION_MEASURES)[number]
 
 export type MeasurePresence = 'required' | 'optional' | 'forbidden'
 
 /**
- * Which measures a section kind holds — the same rule the server and the database check (`ProductDimensionShape`,
- * `CK_ProductCardDimensions_Shape`). A round tube's kg/m is the optional table value; a profile's kg/m is required.
+ * Which millimetre measures a section kind holds — the same rule the server and the database check (`ProductDimensionShape`,
+ * `CK_ProductCardDimensions_Shape`). The kg/m is not among them: it comes from the company's table (`SECTION_TABLE_WEIGHT`).
  */
 export const SECTION_MEASURES: Record<ProductSectionKind, Record<DimensionMeasure, MeasurePresence>> = {
   Sheet: {
     thicknessMm: 'required', widthMm: 'required', lengthMm: 'required', heightMm: 'forbidden',
-    outerDiameterMm: 'forbidden', wallThicknessMm: 'forbidden', kgPerMetre: 'forbidden',
+    outerDiameterMm: 'forbidden', wallThicknessMm: 'forbidden',
   },
   Coil: {
     thicknessMm: 'required', widthMm: 'required', lengthMm: 'forbidden', heightMm: 'forbidden',
-    outerDiameterMm: 'forbidden', wallThicknessMm: 'forbidden', kgPerMetre: 'forbidden',
+    outerDiameterMm: 'forbidden', wallThicknessMm: 'forbidden',
   },
   RoundTube: {
     thicknessMm: 'forbidden', widthMm: 'forbidden', lengthMm: 'forbidden', heightMm: 'forbidden',
-    outerDiameterMm: 'required', wallThicknessMm: 'required', kgPerMetre: 'optional',
+    outerDiameterMm: 'required', wallThicknessMm: 'required',
   },
   Profile: {
     thicknessMm: 'forbidden', widthMm: 'required', lengthMm: 'forbidden', heightMm: 'required',
-    outerDiameterMm: 'forbidden', wallThicknessMm: 'required', kgPerMetre: 'required',
+    outerDiameterMm: 'forbidden', wallThicknessMm: 'required',
   },
 }
 
-/** The decimals each measure may carry (`ProductDimensionInputLimitsV1`): millimetres three, kg/m six. */
+/**
+ * Whether a kind's kg/m comes from the company's imported table (URN-D16): a profile cannot be saved without a matching table
+ * row, a round tube's table value is optional, a sheet or a coil has none.
+ */
+export const SECTION_TABLE_WEIGHT: Record<ProductSectionKind, 'required' | 'optional' | 'none'> = {
+  Sheet: 'none',
+  Coil: 'none',
+  RoundTube: 'optional',
+  Profile: 'required',
+}
+
+/** The decimals each millimetre measure may carry (`ProductDimensionInputLimitsV1`). */
 export const MEASURE_DECIMALS: Record<DimensionMeasure, number> = {
-  thicknessMm: 3, widthMm: 3, lengthMm: 3, heightMm: 3, outerDiameterMm: 3, wallThicknessMm: 3, kgPerMetre: 6,
+  thicknessMm: 3, widthMm: 3, lengthMm: 3, heightMm: 3, outerDiameterMm: 3, wallThicknessMm: 3,
 }
 
 export const DIMENSION_PROBLEM = {
@@ -56,15 +68,26 @@ export const DIMENSION_PROBLEM = {
   reasonRequired: 'product_dimension_reason_required',
   measureInvalid: 'product_dimension_measure_invalid',
   idempotencyConflict: 'product_dimension_idempotency_conflict',
+  /** URN-D16: the company's current kg/m table does not hold this profile's width, height and wall. */
+  weightSourceMissing: 'product_dimension_weight_source_missing',
 } as const
 
 export type DimensionMeasures = Readonly<Record<DimensionMeasure, number | null>>
+
+/** The kg/m the acting company's current table holds for the stored measures, with its mandatory source (URN-D14). */
+export interface TableWeight {
+  readonly kgPerMetre: number
+  readonly sourceLabel: string
+  readonly tableVersion: string
+}
 
 export interface ProductDimensionView {
   readonly productId: string
   readonly version: string
   readonly sectionKind: ProductSectionKind | null
   readonly measures: DimensionMeasures
+  /** Null when the table holds no row for these measures (or the kind takes none). */
+  readonly tableWeight: TableWeight | null
   /** The value is shared: the last change was made in another company. */
   readonly changedInAnotherCompany: boolean
 }
@@ -112,7 +135,8 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 
 /** `ProductDimensionViewV1`'s members. */
 const DIMENSION_VIEW_KEYS = [
-  'companyId', 'productId', 'version', 'sectionKind', ...DIMENSION_MEASURES, 'updatedAtUtc', 'updatedBy', 'updatedInCompanyId',
+  'companyId', 'productId', 'version', 'sectionKind', ...DIMENSION_MEASURES, 'kgPerMetre', 'updatedAtUtc', 'updatedBy',
+  'updatedInCompanyId', 'kgPerMetreSourceLabel', 'kgPerMetreTableVersion',
 ] as const
 
 function isPositiveNumber(value: unknown): value is number {
@@ -145,13 +169,28 @@ export function decodeDimension(raw: unknown, companyId: string, productId: stri
   }
   const updatedIn = raw.updatedInCompanyId
   if (kind === null ? updatedIn !== null : typeof updatedIn !== 'string' || !UUID.test(updatedIn)) return null
+  const tableWeight = decodeTableWeight(raw.kgPerMetre, raw.kgPerMetreSourceLabel, raw.kgPerMetreTableVersion)
+  if (tableWeight === undefined) return null
+  // The table value exists only for the kinds it serves; a later import may drop a row, so a stored profile can read none.
+  if (tableWeight !== null && (kind === null || SECTION_TABLE_WEIGHT[kind as ProductSectionKind] === 'none')) return null
   return {
     productId,
     version: raw.version,
     sectionKind: kind as ProductSectionKind | null,
     measures: measures as DimensionMeasures,
+    tableWeight,
     changedInAnotherCompany: typeof updatedIn === 'string' && updatedIn.toLowerCase() !== companyId.toLowerCase(),
   }
+}
+
+/** All three null (no table value) or all three set; anything else is off-contract (undefined). */
+function decodeTableWeight(kgPerMetre: unknown, sourceLabel: unknown, tableVersion: unknown): TableWeight | null | undefined {
+  if (kgPerMetre === null && sourceLabel === null && tableVersion === null) return null
+  if (!isPositiveNumber(kgPerMetre) || typeof sourceLabel !== 'string' || sourceLabel.trim() === ''
+    || typeof tableVersion !== 'string' || !/^[1-9]\d*$/.test(tableVersion)) {
+    return undefined
+  }
+  return { kgPerMetre, sourceLabel, tableVersion }
 }
 
 export async function fetchDimension(companyId: string, productId: string, signal?: AbortSignal): Promise<DimensionRead> {

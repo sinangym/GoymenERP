@@ -224,6 +224,12 @@ internal sealed class AllocationRow : IInventoryTenantRow
 
     /// <summary>B-01: the kg a plan-input release returned to free stock, so consumed = allocated − remaining − released.</summary>
     public decimal? ReleasedKg { get; set; }
+
+    /// <summary>
+    /// KLN-D39: a sales allocation whose label is of another, similar product ("muadil") than the demand product. Only a
+    /// sales order line allocation can carry it; it is fixed at create and never changes.
+    /// </summary>
+    public bool IsSubstitute { get; set; }
 }
 
 /// <summary>
@@ -594,5 +600,75 @@ internal sealed class InventoryTransferAcceptanceRow : IInventoryTenantRow
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// B-22c receipt of one accepted line (KLN-D21/KLN-D24). Immutable: the receiver's weighed kilograms, the derived
+/// shortage (moved out at once as an automatic fire) or excess (pending a different person's decision) and the label
+/// version right after the receipt, which an excess approval must still find.
+/// </summary>
+internal sealed class InventoryTransferReceiptRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public decimal DispatchedKg { get; set; }
+    public decimal ReceivedKg { get; set; }
+    public decimal ShortageKg { get; set; }
+    public decimal OverageKg { get; set; }
+    public Guid? ShortageMovementId { get; set; }
+    public long LabelVersionAfterReceipt { get; set; }
+    public string? OverageReason { get; set; }
+    public DateTimeOffset ReceivedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>KLN-D24: the one immutable decision on a receipt excess (1 approve with movement, 2 reject).</summary>
+internal sealed class InventoryTransferOverageDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>KLN-D23 (c): the one immutable loss request of a pending line, with its explanation.</summary>
+internal sealed class InventoryTransferLossRequestRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public string Explanation { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>KLN-D23 (c): the one immutable decision on a loss request (1 approve with movement, 2 reject).</summary>
+internal sealed class InventoryTransferLossDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }

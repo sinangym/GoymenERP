@@ -35,7 +35,8 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
         {
             await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
             var enlisted = new BatchParticipants(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
-                services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus, clock);
+                services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus,
+                services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(), clock);
             try
             {
                 var result = await operation(enlisted, cancellationToken);
@@ -69,7 +70,8 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
     /// <summary>Enlists one fresh participant pair per label, in label order; each label index is enlisted at most once.</summary>
     private sealed class BatchParticipants(Guid companyId, System.Data.Common.DbConnection connection,
         System.Data.Common.DbTransaction transaction, ISettingsPrerequisiteProvider settings,
-        IOrganizationLocationStatusReaderV1 locations, TimeProvider clock) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
+        IOrganizationLocationStatusReaderV1 locations, IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply,
+        TimeProvider clock) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
     {
         private readonly List<IAsyncDisposable> owned = [];
         private readonly HashSet<int> labels = [];
@@ -84,7 +86,8 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                 cancellationToken, clock);
             owned.Add(inventory);
             return new LabelParticipants(labelIndex,
-                new PurchaseGoodsReceiptHost.Participants(companyId, purchase, inventory, locations));
+                new PurchaseGoodsReceiptHost.Participants(companyId, purchase, inventory, locations, futureSupply,
+                    connection, transaction));
         }
 
         public async ValueTask DisposeAsync()

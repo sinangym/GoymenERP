@@ -500,4 +500,26 @@ public sealed class StockLedgerTests
 
     private static StockMovement Sourced(StockMovementKind kind, StockSourceReference source, params StockMovementLine[] lines) =>
         new(Guid.NewGuid(), CompanyA, kind, At, source, lines);
+
+    [Fact]
+    public void A_supplier_return_exit_is_one_out_line_from_free_or_blocked_stock_and_never_below_zero()
+    {
+        var ledger = new StockLedger();
+        var blocked = Position(block: BlockState.Blocked);
+        ledger.Apply(Receipt(Position(), 100m));
+        ledger.Apply(Movement(StockMovementKind.Block, Out(Position(), 30m), In(blocked, 30m)));
+
+        ledger.Apply(Movement(StockMovementKind.SupplierReturnExit, Out(Position(), 20m)));
+        ledger.Apply(Movement(StockMovementKind.SupplierReturnExit, Out(blocked, 10m)));
+
+        Assert.Equal(50m, ledger.QuantityAt(Position()).Value);
+        Assert.Equal(20m, ledger.QuantityAt(blocked).Value);
+        Assert.Equal(InventoryRuleCodes.NegativePhysicalStock, Assert.Throws<InventoryRuleException>(() =>
+            ledger.Apply(Movement(StockMovementKind.SupplierReturnExit, Out(blocked, 20.001m)))).Code);
+        Assert.Equal(InventoryRuleCodes.InvalidMovement, Assert.Throws<InventoryRuleException>(() =>
+            Movement(StockMovementKind.SupplierReturnExit, In(Position(), 1m))).Code);
+        Assert.Equal(InventoryRuleCodes.InvalidMovement, Assert.Throws<InventoryRuleException>(() =>
+            Movement(StockMovementKind.SupplierReturnExit, Out(Position(), 1m), Out(blocked, 1m))).Code);
+        Assert.Equal(15, (int)StockMovementKind.SupplierReturnExit);
+    }
 }

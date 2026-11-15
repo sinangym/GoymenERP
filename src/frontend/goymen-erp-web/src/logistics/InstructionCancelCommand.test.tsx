@@ -12,6 +12,7 @@ import {
   INSTRUCTION_CANCEL_TEXT as T,
   INSTRUCTION_DETAIL_TEXT,
   PROBLEM_CODE_TEXT,
+  UNLOAD_WEIGHING_TEXT,
   WEIGHING_TEXT,
 } from './logisticsText'
 import { resetPendingInstructionAttempts } from './pendingInstructionAttempts'
@@ -41,9 +42,9 @@ const path = `/lojistik/yukleme-talimatlari/${INSTRUCTION}`
 const CANCEL_URL = `/api/v1/logistics/loading-instructions/${INSTRUCTION}/cancel`
 const REASON = 'Araç gelmedi'
 const loadedShare = { shareId: '00000000-0000-4000-8000-000000000071', lineId: LINE, kind: 'Loaded', quantity: '4.5',
-  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
+  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator' }
 const shippedShare = { shareId: '00000000-0000-4000-8000-000000000072', lineId: LINE, kind: 'Shipped', quantity: '2',
-  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z' }
+  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z', recordedBy: 'SENTETIK-operator' }
 const loadedLine = instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })
 const shippedLine = instructionLine({ loaded: '4.5', remainingToLoad: '0', shipped: '2', loadedNotShipped: '2.5', shippedNotDelivered: '2' })
 
@@ -100,12 +101,18 @@ describe('F-020 instruction cancellation on L-02-DETAIL', () => {
     expect(screen.getByTestId('logistics-weighing-net').textContent).toBe('4.3')
     expect(screen.getByTestId('logistics-weighing-cancelled').textContent).toContain(WEIGHING_TEXT.cancelledMark)
     expect(screen.getByTestId('logistics-weighing-cancelled').textContent).toContain(WEIGHING_TEXT.cancelledNote)
-    // The notice of the command that cancelled it survives the re-read; nothing more is offered.
+    // LOJ-D17: goods were loaded and no unload weighing is recorded yet, so the instruction is marked "İndirme kaydı yok"
+    // (the cancel stays valid) and the unload weighing form is the only command offered.
+    expect(screen.getByTestId('logistics-unload-missing').textContent).toContain(UNLOAD_WEIGHING_TEXT.missing)
+    // The notice of the command that cancelled it survives the re-read; nothing else is offered.
     expect(screen.getByTestId('logistics-instruction-cancel-notice').textContent).toBe(INSTRUCTION_DETAIL_TEXT.command.completed)
     expect(screen.queryByTestId('logistics-instruction-cancel-open')).toBeNull()
     expect(screen.queryByTestId('logistics-instruction-cancel-form')).toBeNull()
     const record = screen.getByRole('article', { name: INSTRUCTION_DETAIL_TEXT.heading })
-    expect(record.querySelectorAll('button, form, input, select, textarea')).toHaveLength(0)
+    const unloadForm = screen.getByTestId('logistics-unload-weighing-form')
+    const controls = Array.from(record.querySelectorAll('button, form, input, select, textarea'))
+    expect(controls.length).toBeGreaterThan(0)
+    expect(controls.every((control) => unloadForm.contains(control))).toBe(true)
     for (const word of FORBIDDEN_MONEY_WORDS) expect(document.body.textContent).not.toContain(word)
   })
 

@@ -257,6 +257,14 @@ public sealed partial class InventoryStore
             throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
 
+        if (await HasOpenOrApprovedLossRequestAsync(transferId, cancellationToken))
+        {
+            // KLN-D23 (c): a written-off line is terminal, and a loss request still waiting for its decision is not
+            // overtaken by a dispatch cancel (an implementation reading; a rejected request does not block).
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
+        }
+
         var labelIds = lines.Select(line => line.LabelId).ToArray();
         var labels = await dbContext.Labels.Where(candidate => labelIds.Contains(candidate.Id))
             .ToDictionaryAsync(candidate => candidate.Id, cancellationToken);
@@ -294,6 +302,9 @@ public sealed partial class InventoryStore
 
         var movement = effect.Movement(Guid.NewGuid(), row.CompanyId);
         await StageTransferMovementAsync(movement, metadata, freshAuthorityFence, cancellationToken);
+        // KLN-D64 (2): the dispatch posted nothing to the average-cost ledger, so the cancellation posts nothing either.
+        // Once transfer cost posting starts, this save stages AverageCostCalculator.ApplyTransferDispatchCancel at the
+        // dispatch unit cost (KLN-D64 (1)) through the ledger writer.
         var now = timeProvider.GetUtcNow();
         var cancellation = new InventoryTransferDispatchCancellationRow
         {

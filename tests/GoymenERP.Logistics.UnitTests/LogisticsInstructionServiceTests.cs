@@ -245,6 +245,31 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task Each_share_shows_the_server_side_actor_that_recorded_it_and_a_replay_returns_the_same_actor()
+    {
+        // F-020 ShippedBy column: the share view carries the stored actor of each share (never a client value).
+        var world = new World();
+        var created = await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create-actor"));
+        var id = created.Detail.Instruction.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        Assert.Empty(created.Detail.Shares);
+        await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-actor"));
+
+        var first = await world.Service().RecordLoadAsync(id, lineId, new RecordLoadRequest("3", Guid.NewGuid(), "1", "Measured"), Metadata("k-load-actor-1"));
+        Assert.Equal(Actor, Assert.Single(first.Detail.Shares).RecordedBy);
+
+        world.User.CurrentActor = "synthetic-other-actor";
+        var secondRequest = new RecordLoadRequest("4", Guid.NewGuid(), "1", "Measured");
+        var second = await world.Service().RecordLoadAsync(id, lineId, secondRequest, Metadata("k-load-actor-2"));
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, second.Detail.Shares.Select(share => share.RecordedBy).ToArray());
+
+        var replay = await world.Service().RecordLoadAsync(id, lineId, secondRequest, Metadata("k-load-actor-2", correlation: "retry"));
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, replay.Detail.Shares.Select(share => share.RecordedBy).ToArray());
+        var detail = await world.Service().GetInstructionDetailAsync(id);
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, detail.Shares.Select(share => share.RecordedBy).ToArray());
+    }
+
+    [Fact]
     public async Task A_load_on_a_draft_instruction_is_a_state_refusal_and_the_permissions_are_the_bound_names()
     {
         var world = new World();
@@ -758,6 +783,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public List<LogisticsOrderLineAggregateLoadLimit> LoadLimits { get; } = [];
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
+        public List<(string Command, LogisticsMutationAudit Audit)> Audits { get; } = [];
         public int Replays { get; private set; }
         private long _lastSequenceNo;
         public Exception? CreateFault { get; set; }
@@ -832,7 +858,19 @@ public sealed partial class LogisticsInstructionServiceTests
             // A store-level refusal (the real store's company-wide checks) raised before anything moves.
             if (MutateFault?.Invoke(commandName) is { } fault) throw fault;
             var before = stored.Instruction.Version;
+            var sharesBefore = stored.Instruction.Shares.Count;
             mutate(stored.Instruction, TimeProvider.System.GetUtcNow());
+            // F-020 parity with LogisticsStore: a share appended by this write keeps this write's actor beside the domain record.
+            if (stored.Instruction.Shares.Count == sharesBefore + 1)
+            {
+                var actors = new Dictionary<Guid, string>(stored.ShareRecordedBy ?? new Dictionary<Guid, string>())
+                {
+                    [stored.Instruction.Shares[^1].ShareId] = envelope.ActorId,
+                };
+                var index = _instructions.IndexOf(stored);
+                stored = stored with { ShareRecordedBy = actors };
+                _instructions[index] = stored;
+            }
             // AT-055: the store gives the note approved by this step the company's next number (gap-free, as the real series).
             foreach (var approved in stored.Instruction.DispatchNotes.Where(note => note is { Status: DispatchNoteStatus.Approved, Number: null }).ToArray())
             {
@@ -840,6 +878,7 @@ public sealed partial class LogisticsInstructionServiceTests
             }
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Transitions.Add((commandName, instructionId, before, stored.Instruction.Version));
+            Audits.Add((commandName, audit));
             return Task.FromResult<LogisticsStoreResult?>(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
