@@ -473,6 +473,40 @@ internal sealed class OutputReversalRow : IManufacturingTenantRow
 }
 
 /// <summary>
+/// URT-S20 (URT-D62, URT-D63): one lineage edge of a declared output — an input label the output's order consumed and
+/// the kg consumed of it, as Inventory staged them for the output's genealogy in the same transaction. One row per
+/// (company, output, input label); append-only: the edge is a snapshot taken when the output is declared and is never
+/// changed or deleted here. The share is not stored: it is <c>ProductionLineageShareCalculatorV1</c>'s answer over the
+/// output's rows, so every reader takes it from the one calculator.
+/// </summary>
+internal sealed class OutputLineageEdgeRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OrderId { get; set; }
+
+    /// <summary>Always <see cref="FactKind.OutputDeclaration"/>: with <see cref="OutputId"/> it names the output fact.</summary>
+    public int OutputKind { get; set; }
+
+    public Guid OutputId { get; set; }
+    public Guid InputLabelId { get; set; }
+
+    /// <summary>The output's own label in Inventory (URT-D62: an independent number; the edge is the link).</summary>
+    public Guid OutputLabelId { get; set; }
+
+    /// <summary>Inventory's manufacturing genealogy transformation the edge was read from.</summary>
+    public Guid GenealogyTransformationId { get; set; }
+
+    public decimal ConsumedKg { get; set; }
+
+    /// <summary>The share calculator version the edges were checked with when they were recorded.</summary>
+    public int CalculatorVersion { get; set; }
+
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// URT-S13 (URT-D47, URT-D65), URT-D72: one version of the company's scrap price of one calendar month, in TL per kg.
 /// One row per (company, year, month, version); append-only: a version is never changed or deleted, a correction adds
 /// the next version with its reason and the latest version is the month's effective price.
