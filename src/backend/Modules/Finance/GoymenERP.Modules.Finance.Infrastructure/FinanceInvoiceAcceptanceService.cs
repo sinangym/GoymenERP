@@ -18,8 +18,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// reduced, those items' new outstanding amounts, the invoice's returned-total aggregate and the audit event, all or
 /// nothing. The original items keep their identity, source facts and original amount; nothing is deleted. The credit
 /// reduces the outstanding first; the remainder is the customer's advance, recorded on the credit (SAT-D294 (1)-(3)).
-/// When two or more items still carry an outstanding amount and the return covers only part of them, the order of the
-/// reduction is not decided: the acceptance is refused and nothing is written.
+/// A partial return reduces exactly the installments the user selected (FNS-D44), validated to the last digit against the
+/// items' open amounts and the return amount; without a selection it reduces the nearest due open installment first
+/// (FNS-D54). Both splits and the screen's prefill (<see cref="IFinanceCustomerReturnInstallmentReadPortV2"/>) come from
+/// <see cref="FinanceCustomerReturnInstallmentCalculator"/>; the submitted selection is never replaced by the prefill.
 /// </summary>
 public sealed class FinanceInvoiceAcceptanceService(
     FinanceDbContext dbContext,
@@ -28,7 +30,7 @@ public sealed class FinanceInvoiceAcceptanceService(
     IFinanceInvoiceAcceptanceAuthorityV2 authority,
     IAuditEventCollector auditEvents,
     FinanceAuditEnvelope envelope,
-    TimeProvider timeProvider) : IFinanceInvoiceAcceptancePortV2
+    TimeProvider timeProvider) : IFinanceInvoiceAcceptancePortV2, IFinanceCustomerReturnInstallmentReadPortV2
 {
     internal const string CommandName = "finance.invoice-acceptances.accept.v2";
     internal const string KindUnsupportedCode = "finance_invoice_acceptance_kind_unsupported";
@@ -42,11 +44,17 @@ public sealed class FinanceInvoiceAcceptanceService(
     internal const string ExceedsInvoiceCode = "finance_customer_return_exceeds_invoice";
     internal const string AlreadyAcceptedCode = "finance_customer_return_already_accepted";
     internal const string AcceptanceIdentityConflictCode = "finance_customer_return_identity_conflict";
-    /// <summary>
-    /// The partial-return installment order is not decided: two or more items of the original invoice are still
-    /// outstanding and the return covers only part of them. Nothing is written until the order is decided.
-    /// </summary>
-    internal const string InstallmentOrderNotDecidedCode = "finance_customer_return_installment_order_not_decided";
+    /// <summary>A selection's shape is not readable: an empty list, a blank id, a repeated item or an amount that is not
+    /// positive exact text at the return amount's scale (FNS-D44).</summary>
+    internal const string AllocationInvalidCode = "finance_customer_return_allocation_invalid";
+    /// <summary>A selected item is not an outstanding item of the original invoice (FNS-D44).</summary>
+    internal const string AllocationItemUnknownCode = "finance_customer_return_allocation_item_unknown";
+    /// <summary>A selected part is above its installment's open amount (FNS-D44).</summary>
+    internal const string AllocationExceedsOpenAmountCode = "finance_customer_return_allocation_exceeds_open_amount";
+    /// <summary>The selection does not total the return amount exactly (FNS-D44).</summary>
+    internal const string AllocationTotalMismatchCode = "finance_customer_return_allocation_total_mismatch";
+    /// <summary>The return covers the whole outstanding amount: every outstanding item closes and no selection applies.</summary>
+    internal const string AllocationNotApplicableCode = "finance_customer_return_allocation_not_applicable";
     /// <summary>Stored amounts or item state the acceptance cannot read back safely: nothing is written.</summary>
     internal const string StoredStateNotUnderstoodCode = "finance_customer_return_state_not_understood";
     private const int TokenMaximumLength = 128;
@@ -99,32 +107,17 @@ public sealed class FinanceInvoiceAcceptanceService(
         }
 
         var invoiceId = acceptance.OriginalInvoiceId;
-        var items = await dbContext.OpenItems
-            .Where(row => row.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
-                && row.SourceId == invoiceId)
-            .OrderBy(row => row.DueOn).ThenBy(row => row.Id)
-            .ToListAsync(cancellationToken);
-        if (items.Count == 0)
+        var items = await InvoiceItemsAsync(invoiceId, tracked: true, cancellationToken);
+        if (Admission(items, acceptance.OriginalInvoiceVersion) is { } admission)
         {
-            return Refused(context, CommandOutcome.ValidationFailed,
-                new ValidationIssue("originalInvoiceId", NotAdmittedCode));
-        }
-        if (items.Any(row => row.Status == FinanceOpenItemStatuses.Cancelled))
-        {
-            return Refused(context, CommandOutcome.ValidationFailed,
-                new ValidationIssue("originalInvoiceId", InvoiceCancelledCode));
-        }
-        if (items.Any(row => row.SourceVersion != acceptance.OriginalInvoiceVersion))
-        {
-            return Refused(context, CommandOutcome.ValidationFailed,
-                new ValidationIssue("originalInvoiceVersion", VersionMismatchCode));
+            return Refused(context, CommandOutcome.ValidationFailed, admission);
         }
         if (Mismatch(items, acceptance) is { } mismatch)
         {
             return Refused(context, CommandOutcome.ValidationFailed, mismatch);
         }
 
-        var plan = Plan(items, acceptance.Amount);
+        var plan = Plan(items, acceptance.Amount, acceptance.Allocations);
         if (plan.Issue is { } planIssue)
         {
             return Refused(context, CommandOutcome.ValidationFailed, planIssue);
@@ -133,8 +126,7 @@ public sealed class FinanceInvoiceAcceptanceService(
         // The returned total of the invoice stays within its original total; the aggregate's version serialises returns.
         var state = await dbContext.CustomerReturnInvoiceStates
             .SingleOrDefaultAsync(row => row.OriginalInvoiceId == invoiceId, cancellationToken);
-        var returnedBefore = default(FinanceExactDecimalText);
-        if (state is not null && !FinanceExactDecimalText.TryParseNonNegative(state.ReturnedAmountText, out returnedBefore))
+        if (!TryReturnedBefore(state, out var returnedBefore))
         {
             return Refused(context, CommandOutcome.ValidationFailed,
                 new ValidationIssue("originalInvoiceId", StoredStateNotUnderstoodCode));
@@ -280,61 +272,154 @@ public sealed class FinanceInvoiceAcceptanceService(
         {
             issues.Add(new ValidationIssue("businessDate", "finance_customer_return_business_date_invalid"));
         }
+        if (acceptance.Allocations is { } allocations
+            && (allocations.Count == 0
+                || allocations.Any(row => row is null || row.OpenItemId == Guid.Empty
+                    || !FinanceExactDecimalText.TryParsePositive(row.Amount, out _))
+                || allocations.Select(row => row?.OpenItemId).Distinct().Count() != allocations.Count))
+        {
+            issues.Add(new ValidationIssue("allocations", AllocationInvalidCode));
+        }
         return issues;
     }
 
     /// <summary>
-    /// The split (SAT-D294): the return reduces the items' outstanding first, the rest is the advance. The return covers
-    /// every outstanding item in full, or exactly one item is still outstanding; any other partial return is refused
-    /// because the installment order is not decided. Stored amounts that do not read back are refused, not guessed.
+    /// FNS-D44 prefill read: the outstanding installments of the admitted original invoice, nearest due first, with the
+    /// calculator's part of <see cref="FinanceCustomerReturnInstallmentQueryV2.Amount"/> on each. Writes nothing; fenced like
+    /// the acceptance; the same refusal codes as the acceptance (not admitted, cancelled, another version, stored state not
+    /// understood, a total of returns above the invoice).
     /// </summary>
-    internal static FinanceCustomerReturnPlan Plan(IReadOnlyList<FinanceOpenItemRow> items, string amountText)
+    public async Task<FinanceCustomerReturnInstallmentPrefillV2> ReadAsync(
+        FinanceContext context,
+        FinanceCustomerReturnInstallmentQueryV2 query,
+        CancellationToken cancellationToken)
     {
-        if (!FinanceExactDecimalText.TryParsePositive(amountText, out var amount))
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!SameContext(context))
         {
-            return FinanceCustomerReturnPlan.Refused(new ValidationIssue("amount", "finance_customer_return_amount_invalid"));
+            return PrefillRefused(CommandOutcome.Denied);
         }
 
-        var total = default(FinanceExactDecimalText);
-        var outstandingTotal = default(FinanceExactDecimalText);
-        var outstanding = new List<(FinanceOpenItemRow Item, FinanceExactDecimalText Outstanding)>();
-        foreach (var item in items)
+        var issues = ValidateQuery(query);
+        if (issues.Count > 0)
         {
-            if (item.Direction != FinanceOpenItemDirectionCodes.Receivable
-                || item.Status is not (FinanceOpenItemStatuses.Open or FinanceOpenItemStatuses.Closed)
-                || !FinanceExactDecimalText.TryParsePositive(item.OriginalAmountText, out var original)
-                || !FinanceExactDecimalText.TryParseNonNegative(item.OutstandingAmountText, out var left)
-                || left.CompareTo(original) > 0
-                || (item.Status == FinanceOpenItemStatuses.Closed) != left.IsZero)
-            {
-                return FinanceCustomerReturnPlan.Refused(
-                    new ValidationIssue("originalInvoiceId", StoredStateNotUnderstoodCode));
-            }
-            total = total.Add(original);
-            outstandingTotal = outstandingTotal.Add(left);
-            if (!left.IsZero)
-            {
-                outstanding.Add((item, left));
-            }
+            return PrefillRefused(CommandOutcome.ValidationFailed, [.. issues]);
         }
 
-        if (amount.CompareTo(outstandingTotal) >= 0)
+        if (await FenceCoreAsync(context, query.Producer, query.Kind, query.DocumentId, cancellationToken) is { } fenced)
         {
-            var reductions = outstanding
-                .Select(row => (row.Item, After: default(FinanceExactDecimalText), Reduced: row.Outstanding))
-                .ToArray();
-            return new FinanceCustomerReturnPlan(null, amount, total, outstandingTotal,
-                amount.Subtract(outstandingTotal), reductions);
-        }
-        if (outstanding.Count == 1)
-        {
-            var (item, left) = outstanding[0];
-            return new FinanceCustomerReturnPlan(null, amount, total, amount, default,
-                [(item, left.Subtract(amount), amount)]);
+            return PrefillRefused(fenced.Outcome, [.. fenced.Issues]);
         }
 
-        return FinanceCustomerReturnPlan.Refused(new ValidationIssue("amount", InstallmentOrderNotDecidedCode));
+        var invoiceId = query.OriginalInvoiceId;
+        var items = await InvoiceItemsAsync(invoiceId, tracked: false, cancellationToken);
+        if (Admission(items, query.OriginalInvoiceVersion) is { } admission)
+        {
+            return PrefillRefused(CommandOutcome.ValidationFailed, admission);
+        }
+
+        var prefill = FinanceCustomerReturnInstallmentCalculator.Prefill(items, query.Amount);
+        if (prefill.Issue is { } prefillIssue)
+        {
+            return PrefillRefused(CommandOutcome.ValidationFailed, prefillIssue);
+        }
+
+        var state = await dbContext.CustomerReturnInvoiceStates.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.OriginalInvoiceId == invoiceId, cancellationToken);
+        if (!TryReturnedBefore(state, out var returnedBefore))
+        {
+            return PrefillRefused(CommandOutcome.ValidationFailed,
+                new ValidationIssue("originalInvoiceId", StoredStateNotUnderstoodCode));
+        }
+        if (returnedBefore.Add(prefill.Amount).CompareTo(prefill.InvoiceTotal) > 0)
+        {
+            return PrefillRefused(CommandOutcome.ValidationFailed, new ValidationIssue("amount", ExceedsInvoiceCode));
+        }
+
+        var installments = prefill.Lines
+            .Select(line => new FinanceCustomerReturnInstallmentV2(line.Item.Id, line.DueOn, line.Original.Text,
+                line.Outstanding.Text, line.Prefill.Text))
+            .ToArray();
+        return new FinanceCustomerReturnInstallmentPrefillV2(CommandOutcome.Succeeded, installments,
+            prefill.SelectionAllowed, prefill.Applied.Text, prefill.Advance.Text, []);
     }
+
+    /// <summary>The prefill question's shape: the same producer, kind, identity, version and amount rules as an acceptance.</summary>
+    internal static IReadOnlyList<ValidationIssue> ValidateQuery(FinanceCustomerReturnInstallmentQueryV2 query)
+    {
+        var issues = new List<ValidationIssue>();
+        if (query.Producer is not (FinanceInvoiceProducerV1.Sales or FinanceInvoiceProducerV1.Purchasing))
+        {
+            issues.Add(new ValidationIssue("producer", "finance_invoice_producer_invalid"));
+        }
+        else if (query.Producer != FinanceInvoiceProducerV1.Sales || query.Kind != FinanceInvoiceAcceptanceKindV2.CustomerReturn)
+        {
+            issues.Add(new ValidationIssue("kind", KindUnsupportedCode));
+        }
+        if (query.DocumentId == Guid.Empty || query.OriginalInvoiceId == Guid.Empty
+            || query.DocumentId == query.OriginalInvoiceId)
+        {
+            issues.Add(new ValidationIssue("acceptance", "identity_required"));
+        }
+        if (!IsToken(query.OriginalInvoiceVersion))
+        {
+            issues.Add(new ValidationIssue("originalInvoiceVersion", "finance_invoice_version_invalid"));
+        }
+        if (!FinanceExactDecimalText.TryParsePositive(query.Amount, out _))
+        {
+            issues.Add(new ValidationIssue("amount", "finance_customer_return_amount_invalid"));
+        }
+        return issues;
+    }
+
+    /// <summary>
+    /// The split (SAT-D294, FNS-D44, FNS-D54): the return reduces the items' outstanding first, the rest is the advance; a
+    /// partial return follows the user's selection exactly, or nearest due first without one. See
+    /// <see cref="FinanceCustomerReturnInstallmentCalculator"/>.
+    /// </summary>
+    internal static FinanceCustomerReturnPlan Plan(IReadOnlyList<FinanceOpenItemRow> items, string amountText,
+        IReadOnlyList<FinanceInvoiceAcceptanceAllocationV2>? allocations = null) =>
+        FinanceCustomerReturnInstallmentCalculator.Plan(items, amountText, allocations);
+
+    /// <summary>The original invoice must be admitted, not cancelled, and at the expected version.</summary>
+    internal static ValidationIssue? Admission(IReadOnlyList<FinanceOpenItemRow> items, string expectedVersion)
+    {
+        if (items.Count == 0)
+        {
+            return new ValidationIssue("originalInvoiceId", NotAdmittedCode);
+        }
+        if (items.Any(row => row.Status == FinanceOpenItemStatuses.Cancelled))
+        {
+            return new ValidationIssue("originalInvoiceId", InvoiceCancelledCode);
+        }
+        return items.Any(row => row.SourceVersion != expectedVersion)
+            ? new ValidationIssue("originalInvoiceVersion", VersionMismatchCode)
+            : null;
+    }
+
+    private async Task<List<FinanceOpenItemRow>> InvoiceItemsAsync(Guid invoiceId, bool tracked,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.OpenItems
+            .Where(row => row.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
+                && row.SourceId == invoiceId);
+        return await (tracked ? query : query.AsNoTracking())
+            .OrderBy(row => row.DueOn).ThenBy(row => row.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static bool TryReturnedBefore(FinanceCustomerReturnInvoiceStateRow? state,
+        out FinanceExactDecimalText returnedBefore)
+    {
+        returnedBefore = default;
+        return state is null || FinanceExactDecimalText.TryParseNonNegative(state.ReturnedAmountText, out returnedBefore);
+    }
+
+    private static FinanceCustomerReturnInstallmentPrefillV2 PrefillRefused(CommandOutcome outcome,
+        params ValidationIssue[] issues) =>
+        new(outcome, [], false, null, null, issues);
 
     /// <summary>The report must name the invoice's own party, account and currency, and its TL amount exactly when foreign.</summary>
     internal static ValidationIssue? Mismatch(IReadOnlyList<FinanceOpenItemRow> items, FinanceInvoiceAcceptanceV2 acceptance)
@@ -362,25 +447,34 @@ public sealed class FinanceInvoiceAcceptanceService(
     }
 
     private async Task<FinanceInvoiceAcceptanceResultV2?> FenceAsync(FinanceContext context,
-        FinanceInvoiceAcceptanceV2 acceptance, CancellationToken cancellationToken)
+        FinanceInvoiceAcceptanceV2 acceptance, CancellationToken cancellationToken) =>
+        await FenceCoreAsync(context, acceptance.Producer, acceptance.Kind, acceptance.DocumentId, cancellationToken)
+            is { } fenced
+            ? Refused(context, fenced.Outcome, [.. fenced.Issues])
+            : null;
+
+    /// <summary>The host-owned authority measured for one return document; null when allowed in the same context.</summary>
+    private async Task<FinanceFenceRefusal?> FenceCoreAsync(FinanceContext context, FinanceInvoiceProducerV1 producer,
+        FinanceInvoiceAcceptanceKindV2 kind, Guid documentId, CancellationToken cancellationToken)
     {
         if (!SameContext(context))
         {
-            return Refused(context, CommandOutcome.Denied);
+            return new FinanceFenceRefusal(CommandOutcome.Denied, []);
         }
 
-        var decision = await authority.CheckAsync(context, acceptance.Producer, acceptance.Kind, acceptance.DocumentId,
-            cancellationToken);
+        var decision = await authority.CheckAsync(context, producer, kind, documentId, cancellationToken);
         if (decision != PermissionDecision.Allowed)
         {
             return decision == PermissionDecision.Denied
-                ? Refused(context, CommandOutcome.Denied)
-                : Refused(context, CommandOutcome.Unavailable,
-                    new ValidationIssue("permission", "finance_invoice_acceptance_authority_unavailable"));
+                ? new FinanceFenceRefusal(CommandOutcome.Denied, [])
+                : new FinanceFenceRefusal(CommandOutcome.Unavailable,
+                    [new ValidationIssue("permission", "finance_invoice_acceptance_authority_unavailable")]);
         }
 
-        return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
+        return SameContext(context) ? null : new FinanceFenceRefusal(CommandOutcome.Denied, []);
     }
+
+    private sealed record FinanceFenceRefusal(CommandOutcome Outcome, IReadOnlyList<ValidationIssue> Issues);
 
     /// <summary>
     /// The stored answer of this acceptance, found by key (ADR-011: same key, payload and actor replay; otherwise a
@@ -436,6 +530,7 @@ public sealed class FinanceInvoiceAcceptanceService(
                 Amount = plan.Amount.Text,
                 AppliedAmount = plan.Applied.Text,
                 AdvanceAmount = plan.Advance.Text,
+                Basis = plan.Basis.ToString(),
                 acceptance.FunctionalAmount,
                 acceptance.BusinessDate,
                 Reductions = reductions,
@@ -472,20 +567,4 @@ public sealed class FinanceInvoiceAcceptanceService(
         && companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
         && companyContext.CompanyId == context.CompanyId
         && currentUser.CanAccessCompany(context.CompanyId);
-}
-
-/// <summary>
-/// The computed split of one return: <see cref="Applied"/> reduced the listed items, <see cref="Advance"/> is the rest;
-/// <see cref="InvoiceTotal"/> is the invoice's original total. When <see cref="Issue"/> is set nothing is written.
-/// </summary>
-internal sealed record FinanceCustomerReturnPlan(
-    ValidationIssue? Issue,
-    FinanceExactDecimalText Amount,
-    FinanceExactDecimalText InvoiceTotal,
-    FinanceExactDecimalText Applied,
-    FinanceExactDecimalText Advance,
-    IReadOnlyList<(FinanceOpenItemRow Item, FinanceExactDecimalText After, FinanceExactDecimalText Reduced)> Reductions)
-{
-    public static FinanceCustomerReturnPlan Refused(ValidationIssue issue) =>
-        new(issue, default, default, default, default, []);
 }

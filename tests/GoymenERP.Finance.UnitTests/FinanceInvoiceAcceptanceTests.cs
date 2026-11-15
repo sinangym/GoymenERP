@@ -12,9 +12,10 @@ namespace GoymenERP.Finance.UnitTests;
 /// <summary>
 /// F-019 / API-11 v2 (SAT-D288, SAT-D291, SAT-D294): the pure rules of the customer return acceptance — only a Sales
 /// customer return is accepted, identities, tokens and exact amounts are required — the split of the return into the
-/// reduction of the original invoice's open items and the customer's advance, the fail-closed refusal of a partial return
-/// over several outstanding installments, and the stored model (one credit per return document, append-only reductions,
-/// one concurrency row per original invoice, a forward-fix Down). SENTETIK values only.
+/// reduction of the original invoice's open items and the customer's advance, the partial return over several outstanding
+/// installments (FIN-S10: the user's selection applied exactly and never replaced by the prefill, FNS-D44; nearest due first
+/// without one, FNS-D54; the prefill from the same calculator), and the stored model (one credit per return document,
+/// append-only reductions, one concurrency row per original invoice, a forward-fix Down). SENTETIK values only.
 /// </summary>
 public sealed class FinanceInvoiceAcceptanceTests
 {
@@ -151,12 +152,292 @@ public sealed class FinanceInvoiceAcceptanceTests
     }
 
     [Fact]
-    public void A_partial_return_over_several_outstanding_installments_is_refused_because_the_order_is_not_decided()
+    public void A_partial_return_without_a_selection_reduces_the_nearest_due_installment_first_and_moves_the_rest_on()
     {
-        var plan = FinanceInvoiceAcceptanceService.Plan([Item("60.00", "60.00"), Item("40.00", "40.00")], "50.00");
+        // The stored order is not the due order: the calculator sorts by due date itself.
+        var later = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+        var nearest = Item("60.00", "30.00", dueOn: new DateOnly(2026, 12, 1));
+        var last = Item("50.00", "50.00", dueOn: new DateOnly(2027, 2, 1));
 
-        Assert.Equal(FinanceInvoiceAcceptanceService.InstallmentOrderNotDecidedCode, plan.Issue?.Code);
+        var plan = FinanceInvoiceAcceptanceService.Plan([later, nearest, last], "50.00");
+
+        Assert.Null(plan.Issue);
+        Assert.Equal(FinanceCustomerReturnPlanBasis.NearestDue, plan.Basis);
+        Assert.Equal(2, plan.Reductions.Count);
+        var first = plan.Reductions.Single(r => r.Item == nearest);
+        Assert.True(FinanceExactDecimalText.Equal("30.00", first.Reduced.Text));
+        Assert.True(first.After.IsZero);
+        var second = plan.Reductions.Single(r => r.Item == later);
+        Assert.True(FinanceExactDecimalText.Equal("20.00", second.Reduced.Text));
+        Assert.True(FinanceExactDecimalText.Equal("20.00", second.After.Text));
+        Assert.DoesNotContain(plan.Reductions, r => r.Item == last);
+        Assert.True(FinanceExactDecimalText.Equal("50.00", plan.Applied.Text));
+        Assert.True(plan.Advance.IsZero);
+    }
+
+    [Fact]
+    public void Installments_due_on_the_same_day_are_reduced_in_a_deterministic_order()
+    {
+        var day = new DateOnly(2026, 12, 1);
+        var a = Item("40.00", "40.00", dueOn: day);
+        var b = Item("40.00", "40.00", dueOn: day);
+        var expectedFirst = a.Id.CompareTo(b.Id) < 0 ? a : b;
+
+        var forward = FinanceInvoiceAcceptanceService.Plan([a, b], "10.00");
+        var backward = FinanceInvoiceAcceptanceService.Plan([b, a], "10.00");
+
+        Assert.Same(expectedFirst, Assert.Single(forward.Reductions).Item);
+        Assert.Same(expectedFirst, Assert.Single(backward.Reductions).Item);
+    }
+
+    [Fact]
+    public void A_partial_return_without_a_selection_over_an_outstanding_item_without_a_due_date_is_refused_not_guessed()
+    {
+        var plan = FinanceInvoiceAcceptanceService.Plan(
+            [Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1)), Item("40.00", "40.00")], "50.00");
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode, plan.Issue?.Code);
         Assert.Empty(plan.Reductions);
+    }
+
+    [Fact]
+    public void A_partial_return_with_the_users_selection_reduces_exactly_the_selected_parts_not_the_prefill()
+    {
+        var nearest = Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1));
+        var later = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        // Nearest due first would take the whole 50.00 from the first installment; the user chose otherwise.
+        var plan = FinanceInvoiceAcceptanceService.Plan([nearest, later], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(later.Id, "40.00"), new FinanceInvoiceAcceptanceAllocationV2(nearest.Id, "10")]);
+
+        Assert.Null(plan.Issue);
+        Assert.Equal(FinanceCustomerReturnPlanBasis.UserSelection, plan.Basis);
+        Assert.Equal([nearest, later], plan.Reductions.Select(r => r.Item).ToArray());
+        // A part written as "10" is stored at the return amount's scale.
+        Assert.Equal("10.00", plan.Reductions[0].Reduced.Text);
+        Assert.True(FinanceExactDecimalText.Equal("50.00", plan.Reductions[0].After.Text));
+        Assert.True(FinanceExactDecimalText.Equal("40.00", plan.Reductions[1].Reduced.Text));
+        Assert.True(plan.Reductions[1].After.IsZero);
+        Assert.True(FinanceExactDecimalText.Equal("50.00", plan.Applied.Text));
+        Assert.True(plan.Advance.IsZero);
+    }
+
+    [Fact]
+    public void A_selection_must_total_the_return_amount_to_the_kurus()
+    {
+        var first = Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var short_ = FinanceInvoiceAcceptanceService.Plan([first, second], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, "30.00"), new FinanceInvoiceAcceptanceAllocationV2(second.Id, "19.99")]);
+        var over = FinanceInvoiceAcceptanceService.Plan([first, second], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, "30.00"), new FinanceInvoiceAcceptanceAllocationV2(second.Id, "20.01")]);
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationTotalMismatchCode, short_.Issue?.Code);
+        Assert.Empty(short_.Reductions);
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationTotalMismatchCode, over.Issue?.Code);
+        Assert.Empty(over.Reductions);
+    }
+
+    [Fact]
+    public void A_selected_part_above_its_installments_open_amount_is_refused()
+    {
+        var first = Item("60.00", "20.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var plan = FinanceInvoiceAcceptanceService.Plan([first, second], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, "20.01"), new FinanceInvoiceAcceptanceAllocationV2(second.Id, "29.99")]);
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationExceedsOpenAmountCode, plan.Issue?.Code);
+        Assert.Empty(plan.Reductions);
+    }
+
+    [Fact]
+    public void A_selected_item_that_is_not_an_outstanding_item_of_the_invoice_is_refused()
+    {
+        var open = Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1));
+        var paid = Item("40.00", "0", FinanceOpenItemStatuses.Closed, new DateOnly(2027, 1, 1));
+        var other = Item("80.00", "80.00", dueOn: new DateOnly(2027, 2, 1));
+        var outstanding = Item("50.00", "50.00", dueOn: new DateOnly(2027, 3, 1));
+
+        var paidPlan = FinanceInvoiceAcceptanceService.Plan([open, paid, outstanding], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(open.Id, "40.00"), new FinanceInvoiceAcceptanceAllocationV2(paid.Id, "10.00")]);
+        var otherPlan = FinanceInvoiceAcceptanceService.Plan([open, paid, outstanding], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(open.Id, "40.00"), new FinanceInvoiceAcceptanceAllocationV2(other.Id, "10.00")]);
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationItemUnknownCode, paidPlan.Issue?.Code);
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationItemUnknownCode, otherPlan.Issue?.Code);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1.00")]
+    [InlineData("10.001")]
+    [InlineData("abc")]
+    public void A_selected_part_that_is_not_a_positive_amount_at_the_returns_scale_is_refused(string part)
+    {
+        var first = Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var plan = FinanceInvoiceAcceptanceService.Plan([first, second], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, part), new FinanceInvoiceAcceptanceAllocationV2(second.Id, "40.00")]);
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationInvalidCode, plan.Issue?.Code);
+        Assert.Empty(plan.Reductions);
+    }
+
+    [Fact]
+    public void A_selected_part_with_only_trailing_zeros_below_the_kurus_is_the_same_amount()
+    {
+        var first = Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var plan = FinanceInvoiceAcceptanceService.Plan([first, second], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, "10.000"), new FinanceInvoiceAcceptanceAllocationV2(second.Id, "40.00")]);
+
+        Assert.Null(plan.Issue);
+        Assert.Equal("10.00", plan.Reductions[0].Reduced.Text);
+    }
+
+    [Fact]
+    public void An_installment_selected_twice_is_refused()
+    {
+        var first = Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var plan = FinanceInvoiceAcceptanceService.Plan([first, second], "50.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, "25.00"), new FinanceInvoiceAcceptanceAllocationV2(first.Id, "25.00")]);
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationInvalidCode, plan.Issue?.Code);
+    }
+
+    [Fact]
+    public void A_return_covering_the_whole_outstanding_amount_takes_no_selection()
+    {
+        var first = Item("60.00", "20.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var plan = FinanceInvoiceAcceptanceService.Plan([first, second], "60.00",
+            [new FinanceInvoiceAcceptanceAllocationV2(first.Id, "20.00"), new FinanceInvoiceAcceptanceAllocationV2(second.Id, "40.00")]);
+
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationNotApplicableCode, plan.Issue?.Code);
+        Assert.Empty(plan.Reductions);
+    }
+
+    [Fact]
+    public void The_prefill_lists_every_outstanding_installment_nearest_due_first_with_the_same_parts_as_the_plan()
+    {
+        var later = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+        var nearest = Item("60.00", "30.00", dueOn: new DateOnly(2026, 12, 1));
+        var last = Item("50.00", "50.00", dueOn: new DateOnly(2027, 2, 1));
+        var paid = Item("10.00", "0", FinanceOpenItemStatuses.Closed, new DateOnly(2026, 11, 1));
+        FinanceOpenItemRow[] items = [later, nearest, last, paid];
+
+        var prefill = FinanceCustomerReturnInstallmentCalculator.Prefill(items, "50.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan(items, "50.00");
+
+        Assert.Null(prefill.Issue);
+        Assert.True(prefill.SelectionAllowed);
+        Assert.Equal([nearest, later, last], prefill.Lines.Select(line => line.Item).ToArray());
+        Assert.Equal([new DateOnly(2026, 12, 1), new DateOnly(2027, 1, 1), new DateOnly(2027, 2, 1)],
+            prefill.Lines.Select(line => line.DueOn).ToArray());
+        Assert.True(FinanceExactDecimalText.Equal("30.00", prefill.Lines[0].Prefill.Text));
+        Assert.True(FinanceExactDecimalText.Equal("20.00", prefill.Lines[1].Prefill.Text));
+        Assert.True(prefill.Lines[2].Prefill.IsZero);
+        Assert.True(FinanceExactDecimalText.Equal("30.00", prefill.Lines[0].Outstanding.Text));
+        Assert.True(FinanceExactDecimalText.Equal("60.00", prefill.Lines[0].Original.Text));
+        Assert.True(FinanceExactDecimalText.Equal("50.00", prefill.Applied.Text));
+        Assert.True(prefill.Advance.IsZero);
+        Assert.Equal(
+            prefill.Lines.Where(line => !line.Prefill.IsZero).Select(line => (line.Item, line.Prefill.Text)),
+            plan.Reductions.Select(r => (r.Item, r.Reduced.Text)));
+    }
+
+    [Fact]
+    public void The_prefill_of_a_whole_return_closes_every_installment_shows_the_advance_and_allows_no_selection()
+    {
+        var first = Item("60.00", "20.00", dueOn: new DateOnly(2026, 12, 1));
+        var second = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
+
+        var prefill = FinanceCustomerReturnInstallmentCalculator.Prefill([second, first], "75.00");
+
+        Assert.Null(prefill.Issue);
+        Assert.False(prefill.SelectionAllowed);
+        Assert.Equal([first, second], prefill.Lines.Select(line => line.Item).ToArray());
+        Assert.All(prefill.Lines, line => Assert.Equal(0, line.Prefill.CompareTo(line.Outstanding)));
+        Assert.True(FinanceExactDecimalText.Equal("60.00", prefill.Applied.Text));
+        Assert.True(FinanceExactDecimalText.Equal("15.00", prefill.Advance.Text));
+    }
+
+    [Fact]
+    public void The_prefill_refuses_an_invalid_amount_and_a_stored_state_it_does_not_understand()
+    {
+        Assert.Equal("finance_customer_return_amount_invalid",
+            FinanceCustomerReturnInstallmentCalculator.Prefill([Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1))], "0")
+                .Issue?.Code);
+        Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode,
+            FinanceCustomerReturnInstallmentCalculator.Prefill([Item("60.00", "60.00")], "10.00").Issue?.Code);
+        Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode,
+            FinanceCustomerReturnInstallmentCalculator.Prefill(
+                [Item("60.00", "70.00", dueOn: new DateOnly(2026, 12, 1))], "10.00").Issue?.Code);
+    }
+
+    [Fact]
+    public void The_selection_shape_is_checked_before_any_read()
+    {
+        var item = Guid.NewGuid();
+
+        Assert.Empty(FinanceInvoiceAcceptanceService.Validate(
+            Acceptance() with { Allocations = [new FinanceInvoiceAcceptanceAllocationV2(item, "40.00")] }));
+        Assert.Contains(FinanceInvoiceAcceptanceService.Validate(Acceptance() with { Allocations = [] }),
+            issue => issue.Field == "allocations" && issue.Code == FinanceInvoiceAcceptanceService.AllocationInvalidCode);
+        Assert.Contains(FinanceInvoiceAcceptanceService.Validate(
+                Acceptance() with { Allocations = [new FinanceInvoiceAcceptanceAllocationV2(Guid.Empty, "40.00")] }),
+            issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationInvalidCode);
+        Assert.Contains(FinanceInvoiceAcceptanceService.Validate(
+                Acceptance() with { Allocations = [new FinanceInvoiceAcceptanceAllocationV2(item, "0")] }),
+            issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationInvalidCode);
+        Assert.Contains(FinanceInvoiceAcceptanceService.Validate(
+                Acceptance() with
+                {
+                    Allocations =
+                    [
+                        new FinanceInvoiceAcceptanceAllocationV2(item, "20.00"),
+                        new FinanceInvoiceAcceptanceAllocationV2(item, "20.00"),
+                    ],
+                }),
+            issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationInvalidCode);
+        Assert.Contains(FinanceInvoiceAcceptanceService.Validate(Acceptance() with { Allocations = [null!] }),
+            issue => issue.Code == FinanceInvoiceAcceptanceService.AllocationInvalidCode);
+    }
+
+    [Fact]
+    public void An_acceptance_without_a_selection_serialises_as_before()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(Acceptance(), FinanceJson.CreateOptions());
+
+        Assert.DoesNotContain("llocations", json, StringComparison.Ordinal);
+        Assert.Contains("llocations", System.Text.Json.JsonSerializer.Serialize(
+            Acceptance() with { Allocations = [new FinanceInvoiceAcceptanceAllocationV2(Guid.NewGuid(), "40.00")] },
+            FinanceJson.CreateOptions()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_prefill_question_has_the_acceptances_shape_rules()
+    {
+        var query = new FinanceCustomerReturnInstallmentQueryV2(FinanceInvoiceProducerV1.Sales,
+            FinanceInvoiceAcceptanceKindV2.CustomerReturn, Guid.Parse("55555555-5555-4555-8555-555555555555"),
+            Guid.Parse("66666666-6666-4666-8666-666666666666"), "v2", "40.00");
+
+        Assert.Empty(FinanceInvoiceAcceptanceService.ValidateQuery(query));
+        Assert.Contains(FinanceInvoiceAcceptanceService.ValidateQuery(query with { Producer = FinanceInvoiceProducerV1.Purchasing }),
+            issue => issue.Code == FinanceInvoiceAcceptanceService.KindUnsupportedCode);
+        Assert.Contains(FinanceInvoiceAcceptanceService.ValidateQuery(query with { OriginalInvoiceId = query.DocumentId }),
+            issue => issue.Code == "identity_required");
+        Assert.Contains(FinanceInvoiceAcceptanceService.ValidateQuery(query with { OriginalInvoiceVersion = " v2" }),
+            issue => issue.Code == "finance_invoice_version_invalid");
+        Assert.Contains(FinanceInvoiceAcceptanceService.ValidateQuery(query with { Amount = "-1" }),
+            issue => issue.Code == "finance_customer_return_amount_invalid");
     }
 
     [Theory]
@@ -327,9 +608,10 @@ public sealed class FinanceInvoiceAcceptanceTests
         new DateOnly(2026, 11, 14));
 
     private static FinanceOpenItemRow Item(string original, string outstanding,
-        int status = FinanceOpenItemStatuses.Open) => new()
+        int status = FinanceOpenItemStatuses.Open, DateOnly? dueOn = null) => new()
     {
         Id = Guid.NewGuid(),
+        DueOn = dueOn,
         SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
         Direction = FinanceOpenItemDirectionCodes.Receivable,
         PartyId = Party,
