@@ -7,6 +7,7 @@ using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Product.UnitTests;

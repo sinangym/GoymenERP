@@ -34,7 +34,7 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
         Assert.Equal(new ProductManufacturingRecipeBindingV2(ProductId, StoredVersion, TemplateId, "7", "3"),
             snapshot.RecipeBinding);
         Assert.Equal(new ProductManufacturingDimensionV2(ProductManufacturingDimensionSourceV2.Stored, "3",
-                ProductDimensionSectionKindsV1.Profile, null, 40m, null, 20m, null, 2m, null),
+                ProductDimensionSectionKindsV1.Profile, null, 40m, null, 20m, null, 2m),
             snapshot.Dimension);
         Assert.Equal(new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, 1.75m),
             snapshot.UnitWeight);
@@ -55,7 +55,7 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
 
         var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(result.Snapshot);
         Assert.Equal(new ProductManufacturingDimensionV2(ProductManufacturingDimensionSourceV2.Stored, "1",
-                ProductDimensionSectionKindsV1.Sheet, 1.25m, 1250m, 2500.125m, null, null, null, null),
+                ProductDimensionSectionKindsV1.Sheet, 1.25m, 1250m, 2500.125m, null, null, null),
             snapshot.Dimension);
         Assert.Equal(new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.None, null),
             snapshot.UnitWeight);

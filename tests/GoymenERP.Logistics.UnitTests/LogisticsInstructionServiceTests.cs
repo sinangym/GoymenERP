@@ -261,12 +261,12 @@ public sealed partial class LogisticsInstructionServiceTests
         world.User.CurrentActor = "synthetic-other-actor";
         var secondRequest = new RecordLoadRequest("4", Guid.NewGuid(), "1", "Measured");
         var second = await world.Service().RecordLoadAsync(id, lineId, secondRequest, Metadata("k-load-actor-2"));
-        Assert.Equal([Actor, "synthetic-other-actor"], second.Detail.Shares.Select(share => share.RecordedBy).ToArray());
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, second.Detail.Shares.Select(share => share.RecordedBy).ToArray());
 
         var replay = await world.Service().RecordLoadAsync(id, lineId, secondRequest, Metadata("k-load-actor-2", correlation: "retry"));
-        Assert.Equal([Actor, "synthetic-other-actor"], replay.Detail.Shares.Select(share => share.RecordedBy).ToArray());
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, replay.Detail.Shares.Select(share => share.RecordedBy).ToArray());
         var detail = await world.Service().GetInstructionDetailAsync(id);
-        Assert.Equal([Actor, "synthetic-other-actor"], detail.Shares.Select(share => share.RecordedBy).ToArray());
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, detail.Shares.Select(share => share.RecordedBy).ToArray());
     }
 
     [Fact]
