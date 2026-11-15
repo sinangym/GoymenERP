@@ -184,6 +184,13 @@ public sealed class FinancePartyCreditLimitService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedRevision", "identity_required"));
         }
 
+        // An undefined kind has no canonical payload text (the enum serializer refuses it), so it is refused before the
+        // payload hash is taken; the switch below keeps the same refusal for completeness.
+        if (!Enum.IsDefined(request.Kind))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("kind", "credit_limit_kind_invalid"));
+        }
+
         var payloadHash = PayloadHash(ProposeCommand, request);
         if (await PriorAsync(context, metadata, action, ProposeCommand, payloadHash, cancellationToken) is { } prior)
         {
