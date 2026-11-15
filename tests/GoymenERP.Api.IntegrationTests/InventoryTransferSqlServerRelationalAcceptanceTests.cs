@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Transfers;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -57,7 +58,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var dispatched = await scope.Store.DispatchAsync(transferId, dispatch,
-                EffectiveOutgoing(transferId, dispatch, firstLine, secondLine), dispatchMetadata, Authorized);
+                EffectiveOutgoing(transferId, dispatch, firstLine, secondLine),
+                InventoryTransferSourceScaleSetting.Off, dispatchMetadata, Authorized);
             Assert.Equal(("2", "InTransit"), (dispatched.Transfer.Version, dispatched.Transfer.Status));
             Assert.Equal(("10", "-2"),
                 (dispatched.Transfer.Lines[0].ActualShippedKg, dispatched.Transfer.Lines[0].DifferenceKg));
@@ -233,7 +235,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.CreateAsync(AllocationRequest(own, "1"), Metadata(run));
             var allocatedDispatch = TransferDispatch();
             var allocated = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DispatchAsync(
-                transferId, allocatedDispatch, EffectiveOutgoing(plan, allocatedDispatch), Metadata(run), Authorized));
+                transferId, allocatedDispatch, EffectiveOutgoing(plan, allocatedDispatch),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized));
             Assert.Equal((409, InventoryTransferCodesV1.ActiveAllocationConflict), (allocated.Status, allocated.Code));
         }
 
@@ -251,7 +254,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.PlanAsync(stale, Metadata(run), Authorized);
             var staleDispatch = TransferDispatch();
             var refused = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DispatchAsync(
-                staleId, staleDispatch, EffectiveOutgoing(stale, staleDispatch), Metadata(run), Authorized));
+                staleId, staleDispatch, EffectiveOutgoing(stale, staleDispatch),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized));
             Assert.Equal((409, InventoryTransferCodesV1.LabelVersionConflict), (refused.Status, refused.Code));
         }
 
@@ -364,7 +368,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.PlanAsync(acceptInterleavePlan, Metadata(run), Authorized);
             var interleaveDispatch = TransferDispatch();
             await scope.Store.DispatchAsync(acceptInterleavePlan.TransferId, interleaveDispatch,
-                EffectiveOutgoing(acceptInterleavePlan, interleaveDispatch), Metadata(run), Authorized);
+                EffectiveOutgoing(acceptInterleavePlan, interleaveDispatch),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized);
         }
 
         var acceptInterleaveLineId = Assert.Single(acceptInterleavePlan.Lines).LineId;
@@ -436,7 +441,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var allocationRaceDispatch = TransferDispatch();
             var raced = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DispatchAsync(
                 allocationRacePlan.TransferId, allocationRaceDispatch,
-                EffectiveOutgoing(allocationRacePlan, allocationRaceDispatch), Metadata(run), AllocateAtDispatchFence));
+                EffectiveOutgoing(allocationRacePlan, allocationRaceDispatch),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run), AllocateAtDispatchFence));
             Assert.Equal((409, InventoryTransferCodesV1.ConcurrentChange), (raced.Status, raced.Code));
         }
         Assert.Equal(6m, await TransferLabelKgAsync(run, allocationRace.LabelId));
@@ -467,7 +473,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var fencedDispatch = TransferDispatch();
             var forbidden = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DispatchAsync(
-                fencedPlan.TransferId, fencedDispatch, EffectiveOutgoing(fencedPlan, fencedDispatch), Metadata(run),
+                fencedPlan.TransferId, fencedDispatch, EffectiveOutgoing(fencedPlan, fencedDispatch),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run),
                 RejectFinalFence));
             Assert.Equal((403, InventoryTransferCodesV1.Forbidden), (forbidden.Status, forbidden.Code));
         }
@@ -584,6 +591,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         try
         {
             return new(await scope.Store.DispatchAsync(plan.TransferId, request, EffectiveOutgoing(plan, request),
+                InventoryTransferSourceScaleSetting.Off,
                 metadata, Fence), fenceCalls);
         }
         catch (InventoryTransferException exception)

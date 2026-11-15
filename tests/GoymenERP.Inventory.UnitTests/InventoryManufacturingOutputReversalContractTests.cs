@@ -152,7 +152,7 @@ public sealed class InventoryManufacturingOutputReversalContractTests
         Assert.NotEqual(
             InventoryManufacturingPlanAllocationContractV1.ReleaseReasonCode(InventoryManufacturingPlanReleaseReasonV1.OrderClosed),
             InventoryManufacturingPlanAllocationContractV1.ReleaseReasonCode(InventoryManufacturingPlanReleaseReasonV1.OrderCancelled));
-        _ = InventoryManufacturingPlanAllocationContractV1.Validate(new InventoryManufacturingPlanReleaseRequestV1(
+        InventoryManufacturingPlanAllocationContractV1.Validate(new InventoryManufacturingPlanReleaseRequestV1(
             Company, Id(3), "4", InventoryManufacturingPlanReleaseReasonV1.OrderCancelled, OccurredAt), Metadata(), Company);
     }
 

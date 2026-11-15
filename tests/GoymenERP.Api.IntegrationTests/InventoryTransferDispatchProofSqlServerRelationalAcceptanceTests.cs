@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Transfers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -39,6 +40,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var reordered = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DispatchAsync(
                 plan.TransferId, request, EffectiveOutgoing(plan.TransferId, request, secondLine, firstLine),
+                InventoryTransferSourceScaleSetting.Off,
                 Metadata(run), Authorized));
             Assert.Equal((503, InventoryTransferCodesV1.Unavailable), (reordered.Status, reordered.Code));
         }
@@ -51,7 +53,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var dispatched = await scope.Store.DispatchAsync(plan.TransferId, request,
-                EffectiveOutgoing(plan, request), Metadata(run), Authorized);
+                EffectiveOutgoing(plan, request),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized);
             Assert.Equal(("2", "InTransit"), (dispatched.Transfer.Version, dispatched.Transfer.Status));
         }
 
@@ -106,7 +109,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
             // A later effective proof does not override the key's recorded answer.
             var stillRefused = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DispatchAsync(
-                plan.TransferId, request, EffectiveOutgoing(plan, request), retry, Authorized));
+                plan.TransferId, request, EffectiveOutgoing(plan, request),
+                InventoryTransferSourceScaleSetting.Off, retry, Authorized));
             Assert.Equal((409, InventoryTransferCodesV1.OutgoingDocumentNotFinal, true),
                 (stillRefused.Status, stillRefused.Code, stillRefused.IsReplay));
         }
@@ -140,6 +144,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var dispatched = await scope.Store.DispatchAsync(plan.TransferId, fresh, EffectiveOutgoing(plan, fresh),
+                InventoryTransferSourceScaleSetting.Off,
                 Metadata(run), Authorized);
             Assert.Equal(("2", "InTransit"), (dispatched.Transfer.Version, dispatched.Transfer.Status));
         }
@@ -171,7 +176,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Store.PlanAsync(plan, Metadata(run), Authorized);
-            await scope.Store.DispatchAsync(plan.TransferId, request, EffectiveOutgoing(plan, request), Metadata(run),
+            await scope.Store.DispatchAsync(plan.TransferId, request, EffectiveOutgoing(plan, request),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run),
                 Authorized);
         }
 
