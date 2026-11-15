@@ -90,10 +90,12 @@ public static class ErpObservabilityExtensions
         if (otlp.ExportTraces)
         {
             telemetry.WithTracing(tracing => tracing
-                .SetSampler(new TraceIdRatioBasedSampler(otlp.TraceSamplingRatio!.Value))
+                // KLN-D51: the configured share is sampled; the rest is recorded so a failed span can still be sent.
+                .SetSampler(new ErpFailureAwareSampler(otlp.TraceSamplingRatio!.Value))
                 .AddSource(AspNetCoreActivitySourceName, ErpTelemetry.ActivitySourceName)
-                // Order matters: the redaction processor must run before the exporter's processor.
+                // Order matters: redaction first, then the failed-trace marker, then the exporter's processor.
                 .AddProcessor(new ErpActivityRedactionProcessor())
+                .AddProcessor(new ErpFailedTraceProcessor())
                 .AddOtlpExporter(exporter => ConfigureExporter(exporter, otlp, OtlpTracesPath)));
         }
     }
