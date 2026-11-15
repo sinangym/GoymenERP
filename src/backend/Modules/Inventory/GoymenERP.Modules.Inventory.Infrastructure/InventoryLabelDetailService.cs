@@ -328,7 +328,10 @@ internal sealed class InventoryLabelDetailService(
                         && direction != StockDirection.In)
                     || kind == StockMovementKind.Issue && (direction != StockDirection.Out || block == BlockState.Blocked)
                     || kind == StockMovementKind.TransferDispatch && direction != StockDirection.Out
-                    || kind == StockMovementKind.Scrap && (direction != StockDirection.Out || movement.Lines.Count != 1))
+                    || kind == StockMovementKind.Scrap && (direction != StockDirection.Out || movement.Lines.Count != 1)
+                    || kind == StockMovementKind.ManufacturingOutputReversal
+                        && (direction != StockDirection.Out || block == BlockState.Blocked
+                            || movement.Lines.Count != 1))
                 {
                     return false;
                 }

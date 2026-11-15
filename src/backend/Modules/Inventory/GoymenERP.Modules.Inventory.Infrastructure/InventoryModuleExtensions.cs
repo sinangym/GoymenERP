@@ -60,6 +60,8 @@ public static class InventoryModuleExtensions
         // SAT-D262: Inventory owns the moving-average purchase cost and answers Sales only through this versioned read port.
         services.AddScoped<IInventoryAverageCostReadPortV1, InventoryAverageCostReadPort>();
         services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();
+        services.AddScoped<IInventoryLabelDispositionReadPortV1, InventoryLabelDispositionReadPort>();
+        services.AddScoped<IInventoryFreeQuantityReadPortV1, InventoryFreeQuantityReadPort>();
         services.TryAddScoped<IInventoryLabelGenealogyReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.

@@ -164,7 +164,9 @@ internal sealed class InventoryMovementTimelineService(
                     && direction != StockDirection.In
                 || kind == StockMovementKind.Issue && (direction != StockDirection.Out || block == BlockState.Blocked)
                 || kind == StockMovementKind.TransferDispatch && direction != StockDirection.Out
-                || kind == StockMovementKind.Scrap && direction != StockDirection.Out)
+                || kind == StockMovementKind.Scrap && direction != StockDirection.Out
+                || kind == StockMovementKind.ManufacturingOutputReversal
+                    && (direction != StockDirection.Out || block == BlockState.Blocked))
             {
                 return false;
             }
@@ -172,7 +174,8 @@ internal sealed class InventoryMovementTimelineService(
 
         if (!movement.Lines.Select(line => line.Sequence).SequenceEqual(
                 movement.Lines.Select(line => line.Sequence).Order())
-            || ((kind is StockMovementKind.Scrap or StockMovementKind.CountAdjustment)
+            || ((kind is StockMovementKind.Scrap or StockMovementKind.CountAdjustment
+                    or StockMovementKind.ManufacturingOutputReversal)
                 && movement.Lines.Count != 1))
         {
             return false;

@@ -86,6 +86,12 @@ public enum InventoryManufacturingPlanReleaseReasonV1
 {
     PlanCancelled = 1,
     OrderClosed = 2,
+
+    /// <summary>
+    /// F-009 D1 (URT-D31): the production order was cancelled. Cancelling releases the order's remaining active plan
+    /// allocations; it is a reason distinct from closing so the label history says why the reservation ended.
+    /// </summary>
+    OrderCancelled = 3,
 }
 
 public sealed record InventoryManufacturingPlanReleaseRequestV1(
@@ -148,6 +154,7 @@ public static class InventoryManufacturingPlanAllocationContractV1
     {
         InventoryManufacturingPlanReleaseReasonV1.PlanCancelled => "manufacturing.plan-cancelled",
         InventoryManufacturingPlanReleaseReasonV1.OrderClosed => "manufacturing.order-closed",
+        InventoryManufacturingPlanReleaseReasonV1.OrderCancelled => "manufacturing.order-cancelled",
         _ => throw new ArgumentOutOfRangeException(nameof(reason)),
     };
 
