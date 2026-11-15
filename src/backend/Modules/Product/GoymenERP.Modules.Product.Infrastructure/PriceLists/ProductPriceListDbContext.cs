@@ -17,7 +17,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// The Product card and Organization's company table are mapped read-only for foreign keys and checks. One exception to the
 /// company scope (SAT-D149, EK20): the item type of the SHARED product card (<c>ProductCardItemTypes</c>) is keyed by the product
 /// alone, written only from a resolved company (recorded as the acting company) under its own write guard. The "Ebat/kalınlık"
-/// row of the shared card (BS-9, <c>ProductCardDimensions</c>) follows the same rule.
+/// row of the shared card (BS-9, <c>ProductCardDimensions</c>) follows the same rule. The structural profile weight table (KLN-D54)
+/// is company-scoped and insert-only: an import writes the next version, nothing is edited or deleted.
 /// Migrations have their own history table so that this context never shares one with <c>ProductDbContext</c>.
 /// </summary>
 public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListDbContext> options, ICompanyContext companyContext)
@@ -29,25 +30,32 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
     public const string NameCollation = "Turkish_100_CI_AS";
     private const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
 
-    /// <summary>BS-9: each section kind holds exactly the measures its formula family needs (ProductDimensionSectionKindsV1).</summary>
-    internal const string DimensionShapeCheck =
-        "([SectionKind] = 'Sheet' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NOT NULL "
-        + "AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [KgPerMetre] IS NULL) "
-        + "OR ([SectionKind] = 'Coil' AND [ThicknessMm] IS NOT NULL AND [WidthMm] IS NOT NULL AND [LengthMm] IS NULL "
-        + "AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NULL AND [WallThicknessMm] IS NULL AND [KgPerMetre] IS NULL) "
-        + "OR ([SectionKind] = 'RoundTube' AND [ThicknessMm] IS NULL AND [WidthMm] IS NULL AND [LengthMm] IS NULL "
-        + "AND [HeightMm] IS NULL AND [OuterDiameterMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL "
-        + "AND 2 * [WallThicknessMm] <= [OuterDiameterMm]) "
-        + "OR ([SectionKind] = 'Profile' AND [ThicknessMm] IS NULL AND [LengthMm] IS NULL AND [OuterDiameterMm] IS NULL "
-        + "AND [WidthMm] IS NOT NULL AND [HeightMm] IS NOT NULL AND [WallThicknessMm] IS NOT NULL AND [KgPerMetre] IS NOT NULL "
-        + "AND 2 * [WallThicknessMm] <= [WidthMm] AND 2 * [WallThicknessMm] <= [HeightMm])";
+    /// <summary>
+    /// BS-9 / KLN-D48: each section kind holds exactly the fields its family needs — built from the one rule table of
+    /// <see cref="ProductDimensionShape"/> (ProductDimensionSectionKindsV1).
+    /// </summary>
+    internal static readonly string DimensionShapeCheck = ProductDimensionShape.SqlCheck();
 
     /// <summary>Every stored measure is positive; a missing one is NULL, never zero.</summary>
     internal const string DimensionMeasureCheck =
         "([ThicknessMm] IS NULL OR [ThicknessMm] > 0) AND ([WidthMm] IS NULL OR [WidthMm] > 0) "
         + "AND ([LengthMm] IS NULL OR [LengthMm] > 0) AND ([HeightMm] IS NULL OR [HeightMm] > 0) "
         + "AND ([OuterDiameterMm] IS NULL OR [OuterDiameterMm] > 0) AND ([WallThicknessMm] IS NULL OR [WallThicknessMm] > 0) "
-        + "AND ([KgPerMetre] IS NULL OR [KgPerMetre] > 0)";
+        + "AND ([KgPerMetre] IS NULL OR [KgPerMetre] > 0) AND ([MeshSpacingMm] IS NULL OR [MeshSpacingMm] > 0)";
+
+    /// <summary>
+    /// KLN-D48: a known structural series, a size designation of ASCII capitals / digits / dots (binary collation) and a surface
+    /// text that is not blank.
+    /// </summary>
+    internal const string DimensionTextCheck =
+        "([ProfileSeries] IS NULL OR [ProfileSeries] IN ('UPN', 'NPI', 'IPE', 'HEA', 'HEB', 'HEM')) "
+        + "AND ([ProfileSize] IS NULL OR (LEN([ProfileSize]) > 0 AND [ProfileSize] NOT LIKE '%[^A-Z0-9.]%')) "
+        + "AND ([SurfaceFinish] IS NULL OR LEN([SurfaceFinish]) > 0)";
+
+    /// <summary>KLN-D54: a weight table row names a known series, a size designation like the card's and a positive kg/m.</summary>
+    internal const string ProfileWeightRowCheck =
+        "[ProfileSeries] IN ('UPN', 'NPI', 'IPE', 'HEA', 'HEB', 'HEM') "
+        + "AND LEN([ProfileSize]) > 0 AND [ProfileSize] NOT LIKE '%[^A-Z0-9.]%' AND [KgPerMetre] > 0";
 
     internal DbSet<PriceListRow> PriceLists => Set<PriceListRow>();
 
@@ -66,6 +74,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
     internal DbSet<ProductCardDimensionRow> Dimensions => Set<ProductCardDimensionRow>();
 
     internal DbSet<ProductDimensionAttemptRow> DimensionAttempts => Set<ProductDimensionAttemptRow>();
+
+    internal DbSet<ProductProfileWeightTableRow> ProfileWeightTables => Set<ProductProfileWeightTableRow>();
+
+    internal DbSet<ProductProfileWeightRow> ProfileWeightRows => Set<ProductProfileWeightRow>();
+
+    internal DbSet<ProductProfileWeightAttemptRow> ProfileWeightAttempts => Set<ProductProfileWeightAttemptRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -88,6 +102,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureAttempts(modelBuilder);
         ConfigureItemTypes(modelBuilder);
         ConfigureDimensions(modelBuilder);
+        ConfigureProfileWeights(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -306,11 +321,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 $"[ProductId] <> {EmptyGuid} AND [UpdatedInCompanyId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_ProductCardDimensions_Shape", DimensionShapeCheck);
             table.HasCheckConstraint("CK_ProductCardDimensions_Measures", DimensionMeasureCheck);
+            table.HasCheckConstraint("CK_ProductCardDimensions_Text", DimensionTextCheck);
             table.HasCheckConstraint("CK_ProductCardDimensions_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
         });
         entity.HasKey(x => x.ProductId);
         entity.Property(x => x.ProductId).ValueGeneratedNever();
-        entity.Property(x => x.SectionKind).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.SectionKind).HasMaxLength(32).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ThicknessMm).HasPrecision(18, 3);
         entity.Property(x => x.WidthMm).HasPrecision(18, 3);
         entity.Property(x => x.LengthMm).HasPrecision(18, 3);
@@ -318,6 +334,11 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.Property(x => x.OuterDiameterMm).HasPrecision(18, 3);
         entity.Property(x => x.WallThicknessMm).HasPrecision(18, 3);
         entity.Property(x => x.KgPerMetre).HasPrecision(18, 6);
+        entity.Property(x => x.ProfileSeries).HasMaxLength(8).IsUnicode(false).UseCollation(IdentityCollation);
+        entity.Property(x => x.ProfileSize).HasMaxLength(ProductDimensionInputLimitsV1.ProfileSizeMaximumLength).IsUnicode(false)
+            .UseCollation(IdentityCollation);
+        entity.Property(x => x.MeshSpacingMm).HasPrecision(18, 3);
+        entity.Property(x => x.SurfaceFinish).HasMaxLength(ProductDimensionInputLimitsV1.SurfaceFinishMaximumLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
         entity.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
@@ -333,6 +354,62 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             table.HasCheckConstraint("CK_ProductDimensionAttempts_Hashes",
                 "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
             table.HasCheckConstraint("CK_ProductDimensionAttempts_Answer",
+                "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// KLN-D54: the company's structural profile weight table — an insert-only header per imported version, its rows (series,
+    /// size designation, kg/m with six decimals) and the import command answers. All company rows under the company filter.
+    /// </summary>
+    private void ConfigureProfileWeights(ModelBuilder modelBuilder)
+    {
+        var table = modelBuilder.Entity<ProductProfileWeightTableRow>();
+        table.ToTable("ProductProfileWeightTables", Schema, builder =>
+        {
+            builder.HasCheckConstraint("CK_ProductProfileWeightTables_Identity", $"[CompanyId] <> {EmptyGuid} AND [Version] >= 1");
+            builder.HasCheckConstraint("CK_ProductProfileWeightTables_Text",
+                "LEN([SourceLabel]) > 0 AND LEN([Reason]) > 0 AND LEN([ImportedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            builder.HasCheckConstraint("CK_ProductProfileWeightTables_RowCount", "[RowCount] >= 1");
+        });
+        table.HasKey(x => new { x.CompanyId, x.Version });
+        table.Property(x => x.Version).ValueGeneratedNever();
+        table.Property(x => x.SourceLabel).HasMaxLength(ProductProfileWeightInputLimitsV1.SourceLabelMaximumLength).IsRequired();
+        table.Property(x => x.Reason).HasMaxLength(ProductProfileWeightInputLimitsV1.ReasonMaximumLength).IsRequired();
+        table.Property(x => x.ImportedBy).HasMaxLength(128).IsRequired();
+        table.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        table.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        table.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var row = modelBuilder.Entity<ProductProfileWeightRow>();
+        row.ToTable("ProductProfileWeightRows", Schema, builder =>
+            builder.HasCheckConstraint("CK_ProductProfileWeightRows_Row", ProfileWeightRowCheck));
+        row.HasKey(x => new { x.CompanyId, x.TableVersion, x.ProfileSeries, x.ProfileSize });
+        row.Property(x => x.ProfileSeries).HasMaxLength(8).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        row.Property(x => x.ProfileSize).HasMaxLength(ProductDimensionInputLimitsV1.ProfileSizeMaximumLength).IsUnicode(false)
+            .UseCollation(IdentityCollation).IsRequired();
+        row.Property(x => x.KgPerMetre).HasPrecision(18, 6);
+        row.HasOne<ProductProfileWeightTableRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.TableVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        row.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<ProductProfileWeightAttemptRow>();
+        attempt.ToTable("ProductProfileWeightAttempts", Schema, builder =>
+        {
+            builder.HasCheckConstraint("CK_ProductProfileWeightAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            builder.HasCheckConstraint("CK_ProductProfileWeightAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            builder.HasCheckConstraint("CK_ProductProfileWeightAttempts_Answer",
                 "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
         });
         attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
@@ -420,6 +497,8 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 nameof(ProductCardDimensionRow.WidthMm), nameof(ProductCardDimensionRow.LengthMm),
                 nameof(ProductCardDimensionRow.HeightMm), nameof(ProductCardDimensionRow.OuterDiameterMm),
                 nameof(ProductCardDimensionRow.WallThicknessMm), nameof(ProductCardDimensionRow.KgPerMetre),
+                nameof(ProductCardDimensionRow.ProfileSeries), nameof(ProductCardDimensionRow.ProfileSize),
+                nameof(ProductCardDimensionRow.MeshSpacingMm), nameof(ProductCardDimensionRow.SurfaceFinish),
                 nameof(ProductCardDimensionRow.UpdatedAtUtc), nameof(ProductCardDimensionRow.UpdatedBy),
                 nameof(ProductCardDimensionRow.UpdatedInCompanyId),
             ];

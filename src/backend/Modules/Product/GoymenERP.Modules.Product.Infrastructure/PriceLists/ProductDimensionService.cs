@@ -23,6 +23,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// version as decimal text ("0" = none yet), correlation/causation and ONE audit event per real change.</item>
 /// <item><b>Read port</b> (<see cref="IProductDimensionReaderV1"/>): access only (authenticated member of the company), no
 /// permission: the consumer fences its own operation; a product without a row is <c>NoSource</c>.</item>
+/// <item><b>Structural profile kg/m</b> (KLN-D48 (2), KLN-D54): never on the card; the read resolves it from the CURRENT
+/// structural profile weight table of the server-resolved company (series + size designation). No table or no row: the kg/m is
+/// null and its source <see cref="ProductKgPerMetreSourcesV1.NoSource"/> — nothing is estimated here.</item>
 /// </list>
 /// </summary>
 internal sealed class ProductDimensionService(
@@ -54,13 +57,16 @@ internal sealed class ProductDimensionService(
 
         var row = await database.Dimensions.AsNoTracking()
             .SingleOrDefaultAsync(dimension => dimension.ProductId == productId, cancellationToken);
+        var weight = row is null ? null : await ResolveWeightAsync(row, cancellationToken);
         await MeasureAsync(cancellationToken);
         return row is null
             ? new ProductDimensionViewV1(scope.CompanyId, productId, "0", null, null, null, null, null, null, null, null, null, null,
                 null)
             : new ProductDimensionViewV1(scope.CompanyId, productId, row.Version.ToString(CultureInfo.InvariantCulture),
                 row.SectionKind, row.ThicknessMm, row.WidthMm, row.LengthMm, row.HeightMm, row.OuterDiameterMm,
-                row.WallThicknessMm, row.KgPerMetre, row.UpdatedAtUtc, row.UpdatedBy, row.UpdatedInCompanyId);
+                row.WallThicknessMm, row.KgPerMetre, row.UpdatedAtUtc, row.UpdatedBy, row.UpdatedInCompanyId, row.ProfileSeries,
+                row.ProfileSize, row.MeshSpacingMm, row.SurfaceFinish, weight?.StandardKgPerMetre, weight?.Source,
+                weight?.TableVersion?.ToString(CultureInfo.InvariantCulture), weight?.SourceLabel);
     }
 
     public async Task<ProductDimensionResultV1> SetAsync(Guid productId, SetProductDimensionRequestV1 request,
@@ -104,11 +110,20 @@ internal sealed class ProductDimensionService(
 
         var shape = measures!;
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            ProductId = productId, ExpectedVersion = expectedVersion, shape.SectionKind, shape.ThicknessMm, shape.WidthMm,
-            shape.LengthMm, shape.HeightMm, shape.OuterDiameterMm, shape.WallThicknessMm, shape.KgPerMetre, Reason = reason,
-        });
+        // KLN-D48 fields enter the hash only when present, so a key of the four first kinds keeps its stored request hash.
+        var requestHash = shape.ProfileSeries is null && shape.ProfileSize is null && shape.MeshSpacingMm is null
+            && shape.SurfaceFinish is null
+            ? IdempotencyHash.ComputePayload(new
+            {
+                ProductId = productId, ExpectedVersion = expectedVersion, shape.SectionKind, shape.ThicknessMm, shape.WidthMm,
+                shape.LengthMm, shape.HeightMm, shape.OuterDiameterMm, shape.WallThicknessMm, shape.KgPerMetre, Reason = reason,
+            })
+            : IdempotencyHash.ComputePayload(new
+            {
+                ProductId = productId, ExpectedVersion = expectedVersion, shape.SectionKind, shape.ThicknessMm, shape.WidthMm,
+                shape.LengthMm, shape.HeightMm, shape.OuterDiameterMm, shape.WallThicknessMm, shape.KgPerMetre, Reason = reason,
+                shape.ProfileSeries, shape.ProfileSize, shape.MeshSpacingMm, shape.SurfaceFinish,
+            });
         if (await FindAttemptAsync(keyHash, cancellationToken) is { } existing)
         {
             await MeasureAsync(cancellationToken);
@@ -201,10 +216,18 @@ internal sealed class ProductDimensionService(
 
             var row = await database.Dimensions.AsNoTracking()
                 .SingleOrDefaultAsync(dimension => dimension.ProductId == productId, cancellationToken);
-            return row is null
-                ? ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.NoSource)
-                : new ProductDimensionReadV1(ProductDimensionOutcomeV1.Found, row.SectionKind, row.ThicknessMm, row.WidthMm,
-                    row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, row.KgPerMetre, row.Version);
+            if (row is null)
+            {
+                return ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.NoSource);
+            }
+
+            var weight = await ResolveWeightAsync(row, cancellationToken);
+            var kgPerMetre = string.Equals(row.SectionKind, ProductDimensionSectionKindsV1.StructuralProfile, StringComparison.Ordinal)
+                ? weight.StandardKgPerMetre
+                : row.KgPerMetre;
+            return new ProductDimensionReadV1(ProductDimensionOutcomeV1.Found, row.SectionKind, row.ThicknessMm, row.WidthMm,
+                row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, kgPerMetre, row.Version, row.ProfileSeries,
+                row.ProfileSize, row.MeshSpacingMm, row.SurfaceFinish, weight.Source, weight.TableVersion, weight.SourceLabel);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -229,11 +252,44 @@ internal sealed class ProductDimensionService(
         return new Scope(companyContext.CompanyId, [.. measured.RoleCodes.Order(StringComparer.Ordinal)]);
     }
 
+    /// <summary>
+    /// Where the usable kg/m of a row comes from: the card's own value, or for a structural profile the current company table's
+    /// row of the same series and size (no table or no row: <see cref="ProductKgPerMetreSourcesV1.NoSource"/>, null kg/m).
+    /// </summary>
+    private async Task<Weight> ResolveWeightAsync(ProductCardDimensionRow row, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(row.SectionKind, ProductDimensionSectionKindsV1.StructuralProfile, StringComparison.Ordinal))
+        {
+            return new Weight(null, row.KgPerMetre is null ? null : ProductKgPerMetreSourcesV1.Card, null, null);
+        }
+
+        var table = await database.ProfileWeightTables.AsNoTracking()
+            .OrderByDescending(header => header.Version)
+            .Select(header => new { header.Version, header.SourceLabel })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (table is null || row.ProfileSeries is null || row.ProfileSize is null)
+        {
+            return new Weight(null, ProductKgPerMetreSourcesV1.NoSource, table?.Version, table?.SourceLabel);
+        }
+
+        var kgPerMetre = await database.ProfileWeightRows.AsNoTracking()
+            .Where(weight => weight.TableVersion == table.Version && weight.ProfileSeries == row.ProfileSeries
+                && weight.ProfileSize == row.ProfileSize)
+            .Select(weight => (decimal?)weight.KgPerMetre)
+            .SingleOrDefaultAsync(cancellationToken);
+        return new Weight(kgPerMetre, kgPerMetre is null ? ProductKgPerMetreSourcesV1.NoSource : ProductKgPerMetreSourcesV1.StandardTable,
+            table.Version, table.SourceLabel);
+    }
+
     private static bool Same(ProductCardDimensionRow row, ProductDimensionShape.Measures shape) =>
         string.Equals(row.SectionKind, shape.SectionKind, StringComparison.Ordinal)
         && row.ThicknessMm == shape.ThicknessMm && row.WidthMm == shape.WidthMm && row.LengthMm == shape.LengthMm
         && row.HeightMm == shape.HeightMm && row.OuterDiameterMm == shape.OuterDiameterMm
-        && row.WallThicknessMm == shape.WallThicknessMm && row.KgPerMetre == shape.KgPerMetre;
+        && row.WallThicknessMm == shape.WallThicknessMm && row.KgPerMetre == shape.KgPerMetre
+        && string.Equals(row.ProfileSeries, shape.ProfileSeries, StringComparison.Ordinal)
+        && string.Equals(row.ProfileSize, shape.ProfileSize, StringComparison.Ordinal)
+        && row.MeshSpacingMm == shape.MeshSpacingMm
+        && string.Equals(row.SurfaceFinish, shape.SurfaceFinish, StringComparison.Ordinal);
 
     private static void Apply(ProductCardDimensionRow row, ProductDimensionShape.Measures shape, DateTimeOffset now,
         string actorId, Guid companyId)
@@ -246,6 +302,10 @@ internal sealed class ProductDimensionService(
         row.OuterDiameterMm = shape.OuterDiameterMm;
         row.WallThicknessMm = shape.WallThicknessMm;
         row.KgPerMetre = shape.KgPerMetre;
+        row.ProfileSeries = shape.ProfileSeries;
+        row.ProfileSize = shape.ProfileSize;
+        row.MeshSpacingMm = shape.MeshSpacingMm;
+        row.SurfaceFinish = shape.SurfaceFinish;
         row.UpdatedAtUtc = now;
         row.UpdatedBy = actorId;
         row.UpdatedInCompanyId = companyId;
@@ -326,6 +386,10 @@ internal sealed class ProductDimensionService(
         row.OuterDiameterMm,
         row.WallThicknessMm,
         row.KgPerMetre,
+        row.ProfileSeries,
+        row.ProfileSize,
+        row.MeshSpacingMm,
+        row.SurfaceFinish,
         row.Version,
         row.UpdatedInCompanyId,
     };
@@ -352,4 +416,6 @@ internal sealed class ProductDimensionService(
         new(answer, false, metadata.CorrelationId);
 
     private sealed record Scope(Guid CompanyId, IReadOnlyCollection<string> RoleCodes);
+
+    private sealed record Weight(decimal? StandardKgPerMetre, string? Source, long? TableVersion, string? SourceLabel);
 }

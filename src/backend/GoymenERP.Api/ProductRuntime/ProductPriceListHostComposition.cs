@@ -41,6 +41,7 @@ public static class ProductPriceListHostComposition
         // BS-9: the "Ebat/kalınlık" row lives in the same context: the routes answer 503 and the read port "unavailable".
         services.TryAddScoped<IProductDimensionServiceV1, UnavailableProductDimensionService>();
         services.TryAddScoped<IProductDimensionReaderV1, UnavailableProductDimensionService>();
+        services.TryAddScoped<IProductProfileWeightTableServiceV1, UnavailableProductProfileWeightTableService>();
         return services;
     }
 }
@@ -122,5 +123,23 @@ internal sealed class UnavailableProductPriceListService : IProductPriceListServ
         return Task.FromException<T>(new ProductPriceListException(
             StatusCodes.Status503ServiceUnavailable,
             ProductPriceListCodesV1.Unavailable));
+    }
+}
+
+/// <summary>KLN-D54: the weight table when the Product runtime is off — every call is 503 provider-unavailable.</summary>
+internal sealed class UnavailableProductProfileWeightTableService : IProductProfileWeightTableServiceV1
+{
+    public Task<ProductProfileWeightTableViewV1> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductProfileWeightTableViewV1>(Unavailable(cancellationToken));
+
+    public Task<ProductDimensionResultV1> ImportAsync(ImportProductProfileWeightTableRequestV1 request,
+        ProductDimensionCommandMetadataV1 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductDimensionResultV1>(Unavailable(cancellationToken));
+
+    private static ProductDimensionException Unavailable(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return new ProductDimensionException(StatusCodes.Status503ServiceUnavailable,
+            ProductProfileWeightProblemCodesV1.ProviderUnavailable);
     }
 }
