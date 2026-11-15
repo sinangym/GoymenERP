@@ -21,7 +21,8 @@ public static class IdentityModuleExtensions
     public static IServiceCollection AddIdentityModule(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool enableAuthorizationSnapshotDatabaseReadiness = true)
+        bool enableAuthorizationSnapshotDatabaseReadiness = true,
+        Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null)
     {
         var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
         if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -50,10 +51,15 @@ public static class IdentityModuleExtensions
 
         services.Configure<IdentitySeedOptions>(
             configuration.GetSection(IdentitySeedOptions.SectionName));
-        services.AddDbContext<IdentityDbContext>(options =>
+        // ID-3: the host adds the audit interceptor here, so a role assignment, revocation or Critical request decision
+        // and its canonical audit events share one SaveChanges, as for every module.
+        services.AddDbContext<IdentityDbContext>((serviceProvider, options) =>
+        {
             options.UseSqlServer(
                 connectionString,
-                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity"));
+            configureDbContext?.Invoke(serviceProvider, options);
+        });
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
         // One instance per scope behind all three ports: a revalidation has to refresh the very
         // cache the cached path reads, while active-role reads deliberately bypass permission
@@ -70,8 +76,11 @@ public static class IdentityModuleExtensions
         services.TryAddSingleton<IPermissionScopeReadObserver,
             NullPermissionScopeReadObserver>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
-        // AT-004 read-only access view. A read port only: no grant or revocation service exists behind it.
+        // AT-004 read-only access view.
         services.AddScoped<IIdentityAccessReadService, IdentityAccessReadService>();
+        // ID-3 role assignment, revocation and the Critical role request (KIM-D1/D5/D15/D17). It grants nothing by
+        // itself: who holds identity.roles.manage and identity.access.approve stays a human gate.
+        services.AddScoped<IIdentityAccessAssignmentService, IdentityAccessAssignmentService>();
         // MOD-08 user directory: a company-fenced, read-only display-name port for another module's central adapter.
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).

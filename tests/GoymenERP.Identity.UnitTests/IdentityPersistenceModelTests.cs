@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Identity.Domain.Approvals;
+using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Bootstrap;
 using GoymenERP.Modules.Identity.Domain.Credentials;
 using GoymenERP.Modules.Identity.Domain.Outbox;
@@ -12,19 +14,19 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
-/// ID-1 and ID-2 persistent model without a database: the local credential table, the bootstrap marker, the outbox,
-/// the credential command journal, the read-only company reference, their keys and the forward-fix Down of their
-/// migrations. What SQL Server enforces is proven by the relational acceptance tests. SENTETIK / NOT_ENV.
+/// ID-1, ID-2 and ID-3 persistent model without a database: the local credential table, the bootstrap marker, the
+/// outbox, the credential command journal, the read-only company reference, the access grant workflow, their keys and
+/// the forward-fix Down of their migrations. What SQL Server enforces is proven by the relational acceptance tests. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class IdentityPersistenceModelTests
 {
     [Fact]
-    public void The_ID_2_migration_is_the_last_one_and_the_snapshot_matches_the_model()
+    public void The_ID_3_migration_is_the_last_one_and_the_snapshot_matches_the_model()
     {
         using var context = Context();
 
         Assert.Equal(
-            ["20260928120000_AllowProductLifecycleAssignments", "20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState"],
+            ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow"],
             context.Database.GetMigrations().TakeLast(3));
         Assert.False(context.Database.HasPendingModelChanges());
     }
@@ -177,6 +179,107 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(
             ["IdentityBootstrapState", "LocalCredentialCommands", "OutboxMessages"],
             migration.DownOperations.OfType<DropTableOperation>().Select(drop => drop.Name).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void The_access_grant_request_carries_the_ID_3_checks_one_pending_request_and_one_resulting_assignment()
+    {
+        using var context = Context();
+        var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AccessGrantRequest))!;
+
+        Assert.Equal(("identity", "AccessGrantRequests"), (entity.GetSchema(), entity.GetTableName()));
+        Assert.Equal(
+            [
+                ("CK_AccessGrantRequests_ApprovalMode", IdentityDbContext.AccessGrantApprovalModeCheck),
+                ("CK_AccessGrantRequests_DecisionReason", IdentityDbContext.AccessGrantDecisionReasonCheck),
+                ("CK_AccessGrantRequests_DecisionState", IdentityDbContext.AccessGrantDecisionStateCheck),
+                ("CK_AccessGrantRequests_ResultingAssignment", IdentityDbContext.AccessGrantResultingAssignmentCheck),
+                ("CK_AccessGrantRequests_SecondApproval", IdentityDbContext.AccessGrantSecondApprovalCheck),
+                ("CK_AccessGrantRequests_Validity", IdentityDbContext.AccessGrantValidityCheck),
+            ],
+            entity.GetCheckConstraints().Select(check => (check.Name!, check.Sql)).OrderBy(pair => pair.Item1, StringComparer.Ordinal).ToArray());
+
+        var pending = entity.GetIndexes().Single(index => index.GetDatabaseName() == "UX_AccessGrantRequests_Pending");
+        Assert.True(pending.IsUnique);
+        Assert.Equal(IdentityDbContext.AccessGrantPendingFilter, pending.GetFilter());
+        Assert.Equal(
+            [nameof(AccessGrantRequest.CompanyId), nameof(AccessGrantRequest.TargetUserId), nameof(AccessGrantRequest.RoleId)],
+            pending.Properties.Select(property => property.Name).ToArray());
+        var resulting = entity.GetIndexes().Single(index => index.GetDatabaseName() == "UX_AccessGrantRequests_ResultingRoleAssignment");
+        Assert.True(resulting.IsUnique);
+        Assert.Equal("[ResultingRoleAssignmentId] IS NOT NULL", resulting.GetFilter());
+
+        var toAssignment = Assert.Single(entity.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(RoleAssignment));
+        Assert.Equal(
+            [nameof(AccessGrantRequest.CompanyId), nameof(AccessGrantRequest.ResultingRoleAssignmentId)],
+            toAssignment.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(
+            [nameof(RoleAssignment.CompanyId), nameof(RoleAssignment.Id)],
+            toAssignment.PrincipalKey.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(DeleteBehavior.Restrict, toAssignment.DeleteBehavior);
+
+        Assert.True(entity.FindProperty(nameof(AccessGrantRequest.Version))!.IsConcurrencyToken);
+        Assert.Equal(AccessGrantRequest.ReasonMaxLength, entity.FindProperty(nameof(AccessGrantRequest.Reason))!.GetMaxLength());
+        var reasonCode = entity.FindProperty(nameof(AccessGrantRequest.DecisionReasonCode))!;
+        Assert.Equal((AccessGrantRequest.DecisionReasonCodeMaxLength, "Latin1_General_100_BIN2"),
+            (reasonCode.GetMaxLength(), reasonCode.GetCollation()));
+    }
+
+    [Fact]
+    public void The_role_assignment_revocation_names_who_and_when_and_points_at_a_user()
+    {
+        using var context = Context();
+        var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(RoleAssignment))!;
+
+        var check = Assert.Single(entity.GetCheckConstraints(), check => check.Name == "CK_RoleAssignments_Revocation");
+        Assert.Equal(IdentityDbContext.RoleAssignmentRevocationCheck, check.Sql);
+        var revokedBy = Assert.Single(entity.GetForeignKeys(),
+            key => key.Properties.Select(property => property.Name).SequenceEqual([nameof(RoleAssignment.RevokedByUserId)]));
+        Assert.Equal(typeof(UserAccount), revokedBy.PrincipalEntityType.ClrType);
+        Assert.Equal(DeleteBehavior.Restrict, revokedBy.DeleteBehavior);
+        Assert.True(entity.FindProperty(nameof(RoleAssignment.RevokedByUserId))!.IsNullable);
+        Assert.True(entity.FindProperty(nameof(RoleAssignment.RevokedAtUtc))!.IsNullable);
+        Assert.True(entity.FindProperty(nameof(RoleAssignment.Version))!.IsConcurrencyToken);
+    }
+
+    [Fact]
+    public void The_access_grant_workflow_migration_backfills_old_approvals_before_its_checks_and_refuses_its_Down_first()
+    {
+        var migration = new AddAccessGrantRequestWorkflow();
+
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is CreateTableOperation or DropTableOperation);
+        var backfill = Assert.Single(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Contains("SET [ApprovalMode] = N'SecondApproval'", backfill.Sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE [Status] = N'Approved' AND [ApprovalMode] IS NULL", backfill.Sql, StringComparison.Ordinal);
+        var up = migration.UpOperations.ToList();
+        var addApprovalMode = up.FindIndex(operation => operation is AddColumnOperation { Name: "ApprovalMode" });
+        var backfillAt = up.IndexOf(backfill);
+        var approvalModeCheck = up.FindIndex(
+            operation => operation is AddCheckConstraintOperation { Name: "CK_AccessGrantRequests_ApprovalMode" });
+        Assert.InRange(addApprovalMode, 0, backfillAt - 1);
+        Assert.True(backfillAt < approvalModeCheck);
+        Assert.All(migration.UpOperations.Concat(migration.DownOperations).OfType<ITableMigrationOperation>(),
+            operation => Assert.Equal("identity", operation.Schema));
+
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51484", guard.Sql, StringComparison.Ordinal);
+        foreach (var lost in new[]
+                 {
+                     "[RevokedByUserId] IS NOT NULL", "[RevokedAtUtc] IS NOT NULL", "[Status] = N'Withdrawn'",
+                     "[ApprovalMode] = N'FounderDirect'", "[DecisionReasonCode] IS NOT NULL", "[Reason] IS NOT NULL",
+                     "[ResultingRoleAssignmentId] IS NOT NULL", "[ValidFromUtc] IS NOT NULL", "[ValidUntilUtc] IS NOT NULL",
+                 })
+        {
+            Assert.Contains(lost, guard.Sql, StringComparison.Ordinal);
+        }
+
+        // A second-person approval is reconstructible by the Up backfill, so it never blocks Down.
+        Assert.DoesNotContain("N'SecondApproval'", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(
+            ["ApprovalMode", "DecisionReasonCode", "Reason", "ResultingRoleAssignmentId", "RevokedAtUtc", "RevokedByUserId",
+                "ValidFromUtc", "ValidUntilUtc"],
+            migration.DownOperations.OfType<DropColumnOperation>().Select(drop => drop.Name).Order(StringComparer.Ordinal).ToArray());
     }
 
     private static IdentityDbContext Context() =>

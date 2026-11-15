@@ -1,3 +1,6 @@
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Approvals;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Bootstrap;
@@ -29,6 +32,47 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ResultVersion] >= 1 "
         + "AND DATALENGTH([RequestFingerprint]) = 32 AND LEN([IdempotencyKey]) > 0";
 
+    /// <summary>
+    /// ID-3 (KIM-D1, KIM-D5): a Critical request is decided by a person who is neither the requester nor the target,
+    /// except the requester's own withdrawal and the active founder's direct assignment (path a).
+    /// </summary>
+    internal const string AccessGrantSecondApprovalCheck =
+        "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR "
+        + "([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR "
+        + "([Status] = N'Approved' AND [ApprovalMode] = N'FounderDirect' AND [DecidedByUserId] = [RequestedByUserId]) OR "
+        + "([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])";
+
+    /// <summary>ID-3: a pending request has no decision; every decided state (Withdrawn included) names who and when.</summary>
+    internal const string AccessGrantDecisionStateCheck =
+        "([Status] = N'Pending' AND [DecidedByUserId] IS NULL AND [DecidedAtUtc] IS NULL) OR "
+        + "([Status] IN (N'Approved', N'Rejected', N'Withdrawn') "
+        + "AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)";
+
+    /// <summary>ID-3: the approval mode is recorded exactly on an approved request.</summary>
+    internal const string AccessGrantApprovalModeCheck =
+        "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect')) OR "
+        + "([Status] <> N'Approved' AND [ApprovalMode] IS NULL)";
+
+    /// <summary>ID-3: a reject carries its reason code; no other state does.</summary>
+    internal const string AccessGrantDecisionReasonCheck =
+        "[DecisionReasonCode] IS NULL OR [Status] = N'Rejected'";
+
+    /// <summary>ID-3: only an approval names the assignment it created.</summary>
+    internal const string AccessGrantResultingAssignmentCheck =
+        "[ResultingRoleAssignmentId] IS NULL OR [Status] = N'Approved'";
+
+    /// <summary>ID-3: an end needs a start, and ends after it.</summary>
+    internal const string AccessGrantValidityCheck =
+        "[ValidUntilUtc] IS NULL OR ([ValidFromUtc] IS NOT NULL AND [ValidUntilUtc] > [ValidFromUtc])";
+
+    /// <summary>ID-3: at most one pending request per target user and role in a company.</summary>
+    internal const string AccessGrantPendingFilter = "[Status] = N'Pending'";
+
+    /// <summary>ID-3: a revocation names who and when; only a revoked assignment carries it.</summary>
+    internal const string RoleAssignmentRevocationCheck =
+        "([RevokedByUserId] IS NULL AND [RevokedAtUtc] IS NULL) OR "
+        + "([Status] = N'Revoked' AND [RevokedByUserId] IS NOT NULL AND [RevokedAtUtc] IS NOT NULL)";
+
     public DbSet<UserAccount> Users => Set<UserAccount>();
 
     public DbSet<ExternalIdentityLink> ExternalIdentities => Set<ExternalIdentityLink>();
@@ -53,6 +97,9 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     internal DbSet<IdentityCompanyReference> Companies => Set<IdentityCompanyReference>();
 
+    /// <summary>ID-3 commands' idempotency rows (platform table, mapped here, never migrated by this context).</summary>
+    internal DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -70,6 +117,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         ConfigureLocalCredentialCommand(modelBuilder);
         ConfigureCompanyReference(modelBuilder);
         modelBuilder.ConfigureProductMasterAssignment();
+        modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
+        modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
     }
 
     private static void ConfigureBootstrapState(ModelBuilder modelBuilder)
@@ -255,6 +304,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
                 table.HasCheckConstraint(
                     "CK_RoleAssignments_Validity",
                     "[ValidUntilUtc] IS NULL OR [ValidUntilUtc] > [ValidFromUtc]");
+                table.HasCheckConstraint("CK_RoleAssignments_Revocation", RoleAssignmentRevocationCheck);
             });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -269,6 +319,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         entity.HasOne<UserAccount>()
             .WithMany()
             .HasForeignKey(x => x.ApprovedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(x => x.RevokedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<RoleDefinition>()
             .WithMany()
@@ -304,22 +358,37 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             "identity",
             table =>
             {
+                table.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", AccessGrantSecondApprovalCheck);
+                table.HasCheckConstraint("CK_AccessGrantRequests_DecisionState", AccessGrantDecisionStateCheck);
+                table.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", AccessGrantApprovalModeCheck);
+                table.HasCheckConstraint("CK_AccessGrantRequests_DecisionReason", AccessGrantDecisionReasonCheck);
                 table.HasCheckConstraint(
-                    "CK_AccessGrantRequests_SecondApproval",
-                    "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR "
-                    + "([DecidedByUserId] <> [RequestedByUserId] AND "
-                    + "[DecidedByUserId] <> [TargetUserId])");
-                table.HasCheckConstraint(
-                    "CK_AccessGrantRequests_DecisionState",
-                    "([Status] = N'Pending' AND [DecidedByUserId] IS NULL "
-                    + "AND [DecidedAtUtc] IS NULL) OR "
-                    + "([Status] IN (N'Approved', N'Rejected') "
-                    + "AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)");
+                    "CK_AccessGrantRequests_ResultingAssignment",
+                    AccessGrantResultingAssignmentCheck);
+                table.HasCheckConstraint("CK_AccessGrantRequests_Validity", AccessGrantValidityCheck);
             });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
         entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.ApprovalMode).HasConversion<string>().HasMaxLength(32);
+        entity.Property(x => x.Reason).HasMaxLength(AccessGrantRequest.ReasonMaxLength);
+        entity.Property(x => x.DecisionReasonCode)
+            .HasMaxLength(AccessGrantRequest.DecisionReasonCodeMaxLength)
+            .UseCollation(BinaryCollation);
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.RequestedAtUtc });
+        entity.HasIndex(x => new { x.CompanyId, x.TargetUserId, x.RoleId })
+            .IsUnique()
+            .HasFilter(AccessGrantPendingFilter)
+            .HasDatabaseName("UX_AccessGrantRequests_Pending");
+        entity.HasIndex(x => x.ResultingRoleAssignmentId)
+            .IsUnique()
+            .HasFilter("[ResultingRoleAssignmentId] IS NOT NULL")
+            .HasDatabaseName("UX_AccessGrantRequests_ResultingRoleAssignment");
+        entity.HasOne<RoleAssignment>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ResultingRoleAssignmentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<UserAccount>()
             .WithMany()
             .HasForeignKey(x => x.RequestedByUserId)

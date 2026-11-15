@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Identity.Application.Contracts;
 /// </summary>
 public static class IdentityPermissionManifestV1
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>
     /// AT-004 read-only access view (SY-01 / SY-02 read subset): per user, the roles, permissions, scopes, validity
@@ -26,15 +26,35 @@ public static class IdentityPermissionManifestV1
     /// </summary>
     public const string AssignmentsRead = "identity.assignments.read";
 
+    /// <summary>
+    /// ID-3 (spec section ID-3, KIM-D15): assign a non-Critical role in one step, revoke any assignment in one step,
+    /// and open a Critical role request. Critical; company-wide is required by the command service.
+    /// </summary>
+    public const string RolesManage = "identity.roles.manage";
+
+    /// <summary>
+    /// ID-3 (KIM-D1, ADR-004 section 6): the second person's approve or reject of a pending Critical role request.
+    /// The requester and the target never decide their own request. Critical; company-wide is required by the
+    /// command service.
+    /// </summary>
+    public const string AccessApprove = "identity.access.approve";
+
+    /// <summary>
+    /// KIM-D9: local user account management. Registered only in this slice; no endpoint uses it yet and no role
+    /// holds it. Company-wide only. Not Critical.
+    /// </summary>
+    public const string UsersManage = "identity.users.manage";
+
     public static IReadOnlySet<string> Names { get; } = new HashSet<string>(
-        [AssignmentsRead],
+        [AssignmentsRead, RolesManage, AccessApprove, UsersManage],
         StringComparer.Ordinal);
 }
 
 /// <summary>
 /// AT-004 read-only access view. Every answer is fenced to the server-resolved company context and re-authorized
 /// on <see cref="IdentityPermissionManifestV1.AssignmentsRead"/> company-wide. Nothing here writes, grants or
-/// revokes: assignment and revocation are blocked (NEEDS-SINAN #66 5738113623, OPEN-013).
+/// revokes: assignment, revocation and the Critical role request flow live in
+/// <see cref="IIdentityAccessAssignmentService"/> (spec section ID-3).
 /// </summary>
 public interface IIdentityAccessReadService
 {
