@@ -157,12 +157,34 @@ public sealed class ErpObservabilityTests
     [InlineData("RequestPath", true)]
     [InlineData("IdempotencyKey", true)]
     [InlineData("CustomerName", true)]
+    [InlineData("AdminPassword", true)]
+    [InlineData("DbPasswd", true)]
     [InlineData("CorrelationId", false)]
     [InlineData("ErrorCode", false)]
     [InlineData("ElapsedMilliseconds", false)]
     public void Sensitive_property_names_are_recognised(string name, bool expected)
     {
         Assert.Equal(expected, ErpLogRedaction.IsSensitiveName(name));
+    }
+
+    [Fact]
+    public void Exception_types_are_named_without_reflection_by_their_nearest_listed_type()
+    {
+        Assert.Equal(
+            typeof(InvalidOperationException).FullName,
+            ErpFileLoggerProvider.DescribeExceptionType(new InvalidOperationException()));
+        Assert.Equal(
+            typeof(ObjectDisposedException).FullName,
+            ErpFileLoggerProvider.DescribeExceptionType(new ObjectDisposedException("sentetik")));
+        Assert.Equal(
+            typeof(ArgumentNullException).FullName,
+            ErpFileLoggerProvider.DescribeExceptionType(new ArgumentNullException("sentetik")));
+        Assert.Equal(
+            typeof(InvalidOperationException).FullName,
+            ErpFileLoggerProvider.DescribeExceptionType(new SentetikInvalidOperationException()));
+        Assert.Equal(
+            typeof(Exception).FullName,
+            ErpFileLoggerProvider.DescribeExceptionType(new SentetikException()));
     }
 
     [Fact]
@@ -333,14 +355,7 @@ public sealed class ErpObservabilityTests
         activity.SetTag("client.address", "192.0.2.10");
         activity.SetTag("user_agent.original", "sentetik-agent");
         activity.SetStatus(ActivityStatusCode.Error, "sentetik-exception-message");
-        activity.AddEvent(new ActivityEvent(
-            "exception",
-            tags: new ActivityTagsCollection
-            {
-                ["exception.type"] = "System.InvalidOperationException",
-                ["exception.message"] = "sentetik-exception-message",
-                ["exception.stacktrace"] = "at Sentetik.Frame()",
-            }));
+        activity.AddEvent(new ActivityEvent("sentetik-event-without-tags"));
         activity.ActivityTraceFlags = ActivityTraceFlags.Recorded;
 
         using var processor = new ErpActivityRedactionProcessor();
@@ -357,11 +372,32 @@ public sealed class ErpObservabilityTests
         Assert.Equal("POST /api/v1/sentetik/{id}", activity.DisplayName);
         Assert.Equal(ActivityStatusCode.Error, activity.Status);
         Assert.Null(activity.StatusDescription);
-        var exceptionEvent = Assert.Single(activity.Events);
-        Assert.Equal(
-            "exception.type",
-            Assert.Single(exceptionEvent.Tags).Key);
+        Assert.Empty(Assert.Single(activity.Events).Tags);
         Assert.True(activity.Recorded);
+    }
+
+    [Fact]
+    public void A_span_whose_event_carries_a_message_is_not_exported()
+    {
+        // Event tags cannot be edited once the event is on the activity, so an event that carries anything is
+        // not cleaned: the span is dropped (fail closed) instead of exporting the exception message.
+        using var activity = new Activity("SENTETIK.Operation");
+        activity.SetTag(ErpActivityRedactionProcessor.HttpRequestMethodTag, "POST");
+        activity.AddEvent(new ActivityEvent(
+            "exception",
+            tags: new ActivityTagsCollection
+            {
+                ["exception.type"] = "System.InvalidOperationException",
+                ["exception.message"] = "sentetik-exception-message",
+                ["exception.stacktrace"] = "at Sentetik.Frame()",
+            }));
+        activity.ActivityTraceFlags = ActivityTraceFlags.Recorded;
+
+        using var processor = new ErpActivityRedactionProcessor();
+        processor.OnEnd(activity);
+
+        Assert.False(activity.Recorded);
+        Assert.False(activity.IsAllDataRequested);
     }
 
     [Fact]
@@ -445,6 +481,10 @@ public sealed class ErpObservabilityTests
         File.WriteAllText(path, string.Empty);
         return path;
     }
+
+    private sealed class SentetikInvalidOperationException : InvalidOperationException;
+
+    private sealed class SentetikException : Exception;
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

@@ -1,4 +1,3 @@
-using System.Reflection;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -70,12 +69,9 @@ public static class ErpObservabilityExtensions
 
     private static void AddOtlp(IServiceCollection services, ErpOtlpSettings otlp, string environmentName)
     {
-        var serviceVersion = typeof(ErpObservabilityExtensions).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-
         var telemetry = services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
-                .AddService(ErpTelemetry.ServiceName, serviceVersion: serviceVersion)
+                .AddService(ErpTelemetry.ServiceName)
                 .AddAttributes(
                 [
                     new KeyValuePair<string, object>(DeploymentEnvironmentAttribute, environmentName),

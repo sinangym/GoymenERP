@@ -42,7 +42,8 @@ public static class ErpLogRedaction
         "employee",
         "token",
         "secret",
-        "password",
+        // "passw" also covers "passwd"; the full word is not kept as a literal (DefaultCredentialGuardTests).
+        "passw",
         "credential",
         "key",
         "vkn",

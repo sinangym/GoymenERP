@@ -192,10 +192,46 @@ public sealed class ErpFileLoggerProvider : ILoggerProvider, ISupportExternalSco
         }
     }
 
+    /// <summary>
+    /// Names the most specific well-known exception type the exception is. The type is matched without reflection
+    /// (the backend has a zero reflection allow-list), so an exception outside this list is written as its nearest
+    /// listed base type, or as <see cref="Exception"/>. Derived types are listed before their base types.
+    /// </summary>
+    public static string DescribeExceptionType(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        var name = exception switch
+        {
+            TaskCanceledException => typeof(TaskCanceledException).FullName,
+            OperationCanceledException => typeof(OperationCanceledException).FullName,
+            ObjectDisposedException => typeof(ObjectDisposedException).FullName,
+            InvalidOperationException => typeof(InvalidOperationException).FullName,
+            ArgumentNullException => typeof(ArgumentNullException).FullName,
+            ArgumentOutOfRangeException => typeof(ArgumentOutOfRangeException).FullName,
+            ArgumentException => typeof(ArgumentException).FullName,
+            TimeoutException => typeof(TimeoutException).FullName,
+            UnauthorizedAccessException => typeof(UnauthorizedAccessException).FullName,
+            System.IO.IOException => typeof(System.IO.IOException).FullName,
+            JsonException => typeof(JsonException).FullName,
+            FormatException => typeof(FormatException).FullName,
+            NotImplementedException => typeof(NotImplementedException).FullName,
+            NotSupportedException => typeof(NotSupportedException).FullName,
+            KeyNotFoundException => typeof(KeyNotFoundException).FullName,
+            NullReferenceException => typeof(NullReferenceException).FullName,
+            OverflowException => typeof(OverflowException).FullName,
+            ArithmeticException => typeof(ArithmeticException).FullName,
+            OutOfMemoryException => typeof(OutOfMemoryException).FullName,
+            AggregateException => typeof(AggregateException).FullName,
+            _ => typeof(Exception).FullName,
+        };
+
+        return name!;
+    }
+
     private void WriteException(Utf8JsonWriter json, Exception exception)
     {
         json.WriteStartObject("exception");
-        json.WriteString("type", exception.GetType().FullName);
+        json.WriteString("type", DescribeExceptionType(exception));
         json.WriteNumber("hResult", exception.HResult);
         var inner = exception.InnerException;
         if (inner is not null)
@@ -203,7 +239,7 @@ public sealed class ErpFileLoggerProvider : ILoggerProvider, ISupportExternalSco
             json.WriteStartArray("innerTypes");
             for (var depth = 0; inner is not null && depth < MaxExceptionDepth; depth++)
             {
-                json.WriteStringValue(inner.GetType().FullName);
+                json.WriteStringValue(DescribeExceptionType(inner));
                 inner = inner.InnerException;
             }
 
