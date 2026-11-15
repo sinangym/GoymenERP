@@ -30,6 +30,19 @@ public sealed class CounterpartyPermissionTests
     }
 
     [Fact]
+    public void SuccessionRecordPermission_IsSeparateFromTheAccountStatusPermissionAndRequiresCompanyWideScope()
+    {
+        // KLN-D38: a separate permission; the command also requires the account status permission, so no existing grant
+        // is silently widened to record a successor.
+        Assert.Equal(ErpPermissions.CounterpartyPartiesSuccessionRecord, CounterpartyPartySuccessionPermissionsV1.Record);
+        Assert.True(ErpPermissions.IsKnown(CounterpartyPartySuccessionPermissionsV1.Record));
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(CounterpartyPartySuccessionPermissionsV1.Record));
+        Assert.False(ErpPermissions.IsCritical(CounterpartyPartySuccessionPermissionsV1.Record));
+        Assert.NotEqual(ErpPermissions.CounterpartyAccountsStatusUpdate, CounterpartyPartySuccessionPermissionsV1.Record);
+        Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, CounterpartyPartySuccessionPermissionsV1.Record);
+    }
+
+    [Fact]
     public void PartyReadPermission_IsKnownAndRequiresCompanyWideScope()
     {
         Assert.True(ErpPermissions.IsKnown(ErpPermissions.CounterpartyPartiesRead));

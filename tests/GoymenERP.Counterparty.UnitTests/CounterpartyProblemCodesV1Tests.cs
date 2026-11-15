@@ -32,9 +32,14 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.EInvoiceScenarioNotListed,
             CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired,
             CounterpartyProblemCodesV1.EDocumentAccountInactive,
+            CounterpartyProblemCodesV1.SuccessionSameParty,
+            CounterpartyProblemCodesV1.SuccessionSameTaxIdentity,
+            CounterpartyProblemCodesV1.SuccessionSuccessorInactive,
+            CounterpartyProblemCodesV1.SuccessionCycle,
+            CounterpartyProblemCodesV1.SuccessionAlreadyRecorded,
         };
 
-        Assert.Equal(23, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(28, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -72,6 +77,17 @@ public sealed class CounterpartyProblemCodesV1Tests
         CounterpartyCommandResult.EDocumentTaxIdentityRequired,
         CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)]
     [InlineData(CounterpartyCommandResult.EDocumentAccountInactive, CounterpartyProblemCodesV1.EDocumentAccountInactive)]
+    [InlineData(CounterpartyCommandResult.SuccessionSameParty, CounterpartyProblemCodesV1.SuccessionSameParty)]
+    [InlineData(
+        CounterpartyCommandResult.SuccessionSameTaxIdentity,
+        CounterpartyProblemCodesV1.SuccessionSameTaxIdentity)]
+    [InlineData(
+        CounterpartyCommandResult.SuccessionSuccessorInactive,
+        CounterpartyProblemCodesV1.SuccessionSuccessorInactive)]
+    [InlineData(CounterpartyCommandResult.SuccessionCycle, CounterpartyProblemCodesV1.SuccessionCycle)]
+    [InlineData(
+        CounterpartyCommandResult.SuccessionAlreadyRecorded,
+        CounterpartyProblemCodesV1.SuccessionAlreadyRecorded)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)

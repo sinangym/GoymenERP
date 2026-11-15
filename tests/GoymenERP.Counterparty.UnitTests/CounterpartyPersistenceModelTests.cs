@@ -341,8 +341,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261031143822_AddCustomerEDocumentProfiles",
             dbContext.Database.GetMigrations());
+        Assert.Contains(
+            "20261115132003_AddCounterpartyOutbox",
+            dbContext.Database.GetMigrations());
         Assert.EndsWith(
-            "_AddCounterpartyOutbox",
+            "_AddCounterpartyIdentityHistoryAndSuccession",
             dbContext.Database.GetMigrations().Last(),
             StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
@@ -492,6 +495,150 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             migration.DownOperations,
             operation => operation is DropTableOperation { Name: "OutboxMessages", Schema: "counterparty" });
+    }
+
+    [Fact]
+    public void Identity_history_migration_Up_is_pure_DDL_and_its_Down_first_refuses_while_history_or_a_succession_exists()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddCounterpartyIdentityHistoryAndSuccession();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51530", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[PartyIdentityRevisions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[CustomerEDocumentStatusRevisions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[PartySuccessions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        foreach (var table in new[] { "PartyIdentityRevisions", "CustomerEDocumentStatusRevisions", "PartySuccessions" })
+        {
+            Assert.Contains(
+                migration.DownOperations,
+                operation => operation is DropTableOperation { Schema: "counterparty" } drop && drop.Name == table);
+        }
+    }
+
+    [Fact]
+    public void Identity_revisions_are_group_level_append_only_and_dated_by_kind()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var model = dbContext.GetService<IDesignTimeModel>().Model;
+        var revision = model.FindEntityType(typeof(PartyIdentityRevision))!;
+        Assert.Equal("counterparty", revision.GetSchema());
+        Assert.Equal("PartyIdentityRevisions", revision.GetTableName());
+
+        // KLN-D38: group-level like Party (DEC-CAR-001); the recording company is provenance only.
+        Assert.Null(revision.FindProperty("CompanyId"));
+        Assert.Empty(revision.GetDeclaredQueryFilters());
+        var unique = Assert.Single(revision.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(
+            [nameof(PartyIdentityRevision.PartyId), nameof(PartyIdentityRevision.Attribute), nameof(PartyIdentityRevision.Sequence)],
+            unique.Properties.Select(property => property.Name));
+        Assert.True(revision.FindProperty(nameof(PartyIdentityRevision.EffectiveFrom))!.IsNullable);
+        Assert.Equal(PartyIdentityRevision.ValueMaximumLength,
+            revision.FindProperty(nameof(PartyIdentityRevision.Value))!.GetMaxLength());
+
+        var dated = Assert.Single(revision.GetCheckConstraints(), check => check.Name == "CK_PartyIdentityRevisions_EffectiveFrom");
+        Assert.Contains("[Kind] IN (1, 2) AND [EffectiveFrom] IS NULL", dated.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] IN (3, 4) AND [EffectiveFrom] IS NOT NULL", dated.Sql, StringComparison.Ordinal);
+        var correction = Assert.Single(revision.GetCheckConstraints(), check => check.Name == "CK_PartyIdentityRevisions_Correction");
+        Assert.Contains("[Kind] = 3 AND [Attribute] = 1 AND [SourceChangeRequestId] IS NOT NULL", correction.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Kind] <> 3 AND [SourceChangeRequestId] IS NULL", correction.Sql, StringComparison.Ordinal);
+        var value = Assert.Single(revision.GetCheckConstraints(), check => check.Name == "CK_PartyIdentityRevisions_Value");
+        Assert.Contains("NOT LIKE '%[^0-9]%'", value.Sql, StringComparison.Ordinal);
+        Assert.All(revision.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
+        Assert.Contains(revision.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(PartyTaxIdentityChangeRequest));
+
+        var status = model.FindEntityType(typeof(CustomerEDocumentStatusRevision))!;
+        Assert.Equal("CustomerEDocumentStatusRevisions", status.GetTableName());
+        Assert.Null(status.FindProperty("CompanyId"));
+        Assert.Empty(status.GetDeclaredQueryFilters());
+        Assert.False(status.FindProperty(nameof(CustomerEDocumentStatusRevision.EffectiveFrom))!.IsNullable);
+        var statusUnique = Assert.Single(status.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(
+            [nameof(CustomerEDocumentStatusRevision.ProfileId), nameof(CustomerEDocumentStatusRevision.Sequence)],
+            statusUnique.Properties.Select(property => property.Name));
+    }
+
+    [Fact]
+    public void Party_succession_is_company_scoped_with_one_successor_per_predecessor_and_no_balance_column()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var model = dbContext.GetService<IDesignTimeModel>().Model;
+        var succession = model.FindEntityType(typeof(PartySuccession))!;
+        Assert.Equal("counterparty", succession.GetSchema());
+        Assert.Equal("PartySuccessions", succession.GetTableName());
+        Assert.NotNull(succession.FindProperty(nameof(PartySuccession.CompanyId)));
+        Assert.Single(succession.GetDeclaredQueryFilters());
+
+        var unique = Assert.Single(succession.GetIndexes(), index => index.IsUnique);
+        Assert.Equal("UX_PartySuccessions_Predecessor", unique.GetDatabaseName());
+        Assert.Equal(
+            [nameof(PartySuccession.CompanyId), nameof(PartySuccession.PredecessorPartyId)],
+            unique.Properties.Select(property => property.Name));
+        var parties = Assert.Single(succession.GetCheckConstraints(), check => check.Name == "CK_PartySuccessions_Parties");
+        Assert.Equal("[PredecessorPartyId] <> [SuccessorPartyId]", parties.Sql);
+        Assert.Equal(PartySuccession.LegalBasisMaximumLength,
+            succession.FindProperty(nameof(PartySuccession.LegalBasis))!.GetMaxLength());
+        Assert.False(succession.FindProperty(nameof(PartySuccession.LegalBasis))!.IsNullable);
+
+        // KLN-D38 (2): the link never carries a balance; the balance moves only through a Finance transfer voucher.
+        var propertyNames = succession.GetProperties().Select(property => property.Name).ToArray();
+        Assert.DoesNotContain(propertyNames, name => name.Contains("Amount", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Balance", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Currency", StringComparison.OrdinalIgnoreCase));
+        Assert.All(succession.GetForeignKeys(), foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
+        Assert.Equal(2, succession.GetForeignKeys().Count(foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Party)));
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_identity_revision_edit_or_delete_before_the_database_call()
+    {
+        var active = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(active));
+        var revision = PartyIdentityRevision.Baseline(
+            Guid.NewGuid(), Guid.NewGuid(), PartyIdentityAttribute.LegalName, 1, "Örnek Ticaret", DateTimeOffset.UnixEpoch);
+        dbContext.PartyIdentityRevisions.Attach(revision);
+        dbContext.PartyIdentityRevisions.Remove(revision);
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("değiştirilemez veya silinemez", refused.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        var status = new CustomerEDocumentStatusRevision(
+            Guid.NewGuid(), Guid.NewGuid(), 1, EDocumentStatus.EArchive, new DateOnly(2026, 11, 1),
+            CustomerEDocumentStatusRevisionKind.Recorded, "checker", active, DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentStatusRevisions.Attach(status);
+        dbContext.Entry(status).State = EntityState.Modified;
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("değiştirilemez veya silinemez", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_a_history_recorded_for_another_company_or_a_succession_of_another_company()
+    {
+        var active = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(active));
+
+        dbContext.PartyIdentityRevisions.Add(new PartyIdentityRevision(
+            Guid.NewGuid(), Guid.NewGuid(), PartyIdentityAttribute.LegalName, 2, "Yeni Unvan", new DateOnly(2026, 11, 1),
+            PartyIdentityRevisionKind.DatedChange, null, null, "maker", other, DateTimeOffset.UnixEpoch));
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("yalnız aktif şirket", refused.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.PartySuccessions.Add(new PartySuccession(
+            Guid.NewGuid(), other, Guid.NewGuid(), Guid.NewGuid(), PartySuccessionKind.Merger, "Ticaret sicili ilanı",
+            new DateOnly(2026, 11, 1), "maker", DateTimeOffset.UnixEpoch));
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("aktif şirket bağlamıyla", refused.Message, StringComparison.Ordinal);
+
+        // A succession of the active company passes the guard (the absent database is what fails next).
+        dbContext.ChangeTracker.Clear();
+        dbContext.PartySuccessions.Add(new PartySuccession(
+            Guid.NewGuid(), active, Guid.NewGuid(), Guid.NewGuid(), PartySuccessionKind.Merger, "Ticaret sicili ilanı",
+            new DateOnly(2026, 11, 1), "maker", DateTimeOffset.UnixEpoch));
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("aktif şirket bağlamıyla", passed.Message, StringComparison.Ordinal);
     }
 
     private static CounterpartyOutboxRow OutboxRow(Guid companyId)

@@ -94,7 +94,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyLegalNam
 
         var beforeVersion = party.Version;
         var beforeLegalName = party.LegalName;
-        if (!party.ChangeLegalName(legalName, DateTimeOffset.UtcNow))
+        var changedAt = DateTimeOffset.UtcNow;
+        if (!party.ChangeLegalName(legalName, changedAt))
         {
             // Guard the no-op with the same Version + rowversion predicate without advancing the logical business
             // version or writing an audit event.
@@ -105,6 +106,13 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyLegalNam
             LogLegalNameCommand(metadata, partyId, changed: false, unchanged);
             return unchanged;
         }
+
+        // KLN-D38 (3): the same legal person (same VKN) keeps the same cari; the official name is kept dated from the
+        // business day it was recorded, with the name before it as the baseline.
+        await AppendIdentityRevisionAsync(
+            party, PartyIdentityAttribute.LegalName, beforeLegalName, beforeVersion,
+            PartyIdentityRevisionKind.DatedChange, reason: null, sourceChangeRequestId: null, metadata, changedAt,
+            cancellationToken);
 
         auditEventCollector.Enqueue(new AuditEventDraft(
             metadata.CompanyId,

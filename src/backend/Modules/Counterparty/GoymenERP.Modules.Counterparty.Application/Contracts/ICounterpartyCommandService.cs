@@ -111,6 +111,24 @@ public enum CounterpartyCommandResult
     /// e-belge profile (422).
     /// </summary>
     EDocumentAccountInactive = 21,
+
+    /// <summary>KLN-D38: a cari cannot succeed itself (422).</summary>
+    SuccessionSameParty = 22,
+
+    /// <summary>
+    /// KLN-D38 rule 3: the successor carries the predecessor's VKN/TCKN, so it is the same legal person; a type change
+    /// with the same VKN keeps the same cari and records the dated legal name instead (422).
+    /// </summary>
+    SuccessionSameTaxIdentity = 23,
+
+    /// <summary>KLN-D38: the successor's account in the active company is passive; a passive cari takes over nothing (409).</summary>
+    SuccessionSuccessorInactive = 24,
+
+    /// <summary>KLN-D38: the successor already (transitively) succeeds-from the predecessor's chain; a cycle is refused (409).</summary>
+    SuccessionCycle = 25,
+
+    /// <summary>KLN-D38: a successor of this cari is already recorded in the active company (409).</summary>
+    SuccessionAlreadyRecorded = 26,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -166,6 +184,17 @@ public static class CounterpartyProblemCodesV1
     /// <summary>ASSUMPTION-CARI-EDOC-4: a passive account does not change the shared e-belge profile.</summary>
     public const string EDocumentAccountInactive = "e_document_account_inactive";
 
+    /// <summary>KLN-D38 party succession (predecessor → successor in one company).</summary>
+    public const string SuccessionSameParty = "succession_same_party";
+
+    public const string SuccessionSameTaxIdentity = "succession_same_tax_identity";
+
+    public const string SuccessionSuccessorInactive = "succession_successor_inactive";
+
+    public const string SuccessionCycle = "succession_cycle";
+
+    public const string SuccessionAlreadyRecorded = "succession_already_recorded";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -189,6 +218,11 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.EInvoiceScenarioNotListed => EInvoiceScenarioNotListed,
             CounterpartyCommandResult.EDocumentTaxIdentityRequired => EDocumentTaxIdentityRequired,
             CounterpartyCommandResult.EDocumentAccountInactive => EDocumentAccountInactive,
+            CounterpartyCommandResult.SuccessionSameParty => SuccessionSameParty,
+            CounterpartyCommandResult.SuccessionSameTaxIdentity => SuccessionSameTaxIdentity,
+            CounterpartyCommandResult.SuccessionSuccessorInactive => SuccessionSuccessorInactive,
+            CounterpartyCommandResult.SuccessionCycle => SuccessionCycle,
+            CounterpartyCommandResult.SuccessionAlreadyRecorded => SuccessionAlreadyRecorded,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

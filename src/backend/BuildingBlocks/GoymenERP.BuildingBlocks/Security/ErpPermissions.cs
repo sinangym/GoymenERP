@@ -81,6 +81,15 @@ public static class ErpPermissions
     public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
 
     /// <summary>
+    /// KLN-D38 (Sinan, 2026-11-14) rule 2: record that a new legal person succeeds a cari in the active company (the old
+    /// company account becomes passive and is linked predecessor → successor). The Counterparty owner's name
+    /// (CounterpartyPartySuccessionPermissionsV1). Registered, not granted: no role, seed or user receives it here; who
+    /// holds it is a human gate. Company-wide only, as every Counterparty name. Not Critical (no decision makes it so).
+    /// It moves no balance: the devir fişi is a separate approved Finance voucher.
+    /// </summary>
+    public const string CounterpartyPartiesSuccessionRecord = "counterparty.parties.succession.record";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -1202,6 +1211,7 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesSuccessionRecord,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1412,6 +1422,7 @@ public static class ErpPermissions
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
             CounterpartyPartiesLegalNameUpdate,
+            CounterpartyPartiesSuccessionRecord,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

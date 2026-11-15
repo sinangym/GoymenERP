@@ -360,6 +360,7 @@ public static partial class CounterpartyEndpoints
         MapLegalNameEndpoints(group);
         MapCustomerGroupEndpoints(group);
         MapEDocumentProfileEndpoints(group);
+        MapIdentityHistoryEndpoints(group);
         return endpoints;
     }
 

@@ -317,6 +317,10 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
                 var created = new CustomerEDocumentProfile(Guid.NewGuid(), taxIdentityNumber, now);
                 apply(created, now);
                 dbContext.CustomerEDocumentProfiles.Add(created);
+                if (created.EDocumentStatusCheckedAtUtc is not null)
+                {
+                    AppendEDocumentStatusRevision(created, metadata, now);
+                }
                 await beforeSave(cancellationToken);
                 EnqueueEDocumentAudit(
                     metadata, scope, created, eventType, operation, versionBefore: null, beforeJson: "{}", reason);
@@ -333,7 +337,10 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         var concurrency = new EDocumentProfileConcurrencyContext(profile.Id, expectedVersion);
         var beforeJson = SerializeEDocumentSnapshot(profile, metadata.CompanyId);
         var versionBefore = profile.Version;
-        if (!apply(profile, timeProvider.GetUtcNow()))
+        var statusBefore = profile.EDocumentStatus;
+        var checkedAtBefore = profile.EDocumentStatusCheckedAtUtc;
+        var appliedAt = timeProvider.GetUtcNow();
+        if (!apply(profile, appliedAt))
         {
             // A fenced no-op (Unknown→Unknown, or an unchanged override): no version move, no audit, but the same
             // Version + rowversion predicate still guards it. (A re-recorded known status is a real change — a new
@@ -341,6 +348,14 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             dbContext.Entry(profile).Property(value => value.Version).IsModified = true;
             return await CompleteCommandAsync(commandName, Responses.Succeeded(),
                 keyHash, requestHash, metadata, concurrency, cancellationToken, beforeSave);
+        }
+
+        if (profile.EDocumentStatus != statusBefore || profile.EDocumentStatusCheckedAtUtc != checkedAtBefore)
+        {
+            // KLN-D38: a check (or reset) is kept dated; the earlier known check becomes the baseline on first use.
+            await AppendEDocumentStatusBaselineAsync(
+                profile, statusBefore, checkedAtBefore, versionBefore, appliedAt, cancellationToken);
+            AppendEDocumentStatusRevision(profile, metadata, appliedAt);
         }
 
         await beforeSave(cancellationToken);
