@@ -339,6 +339,13 @@ internal sealed class OrderRow : IManufacturingTenantRow
     public Guid? ClosedByUserId { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
     public long Version { get; set; }
+
+    /// <summary>URT-D66 (3): the order's termin — the plan's, copied when the order opens; null on an older order.</summary>
+    public DateOnly? DueDate { get; set; }
+
+    /// <summary>URT-D66 (3): how many times the order's termin was changed on the order (0 = as copied).</summary>
+    public long DueDateRevision { get; set; }
+
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }

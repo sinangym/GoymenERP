@@ -9,8 +9,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// Üretim F-010a (URT-D29) at the store on a REAL SQL Server: the hand-entered termin is stored as a calendar day with its
 /// termin revision and one audit event while the plan version stays; a stale termin revision and a closed order are refused
-/// with nothing written; and the termin migration's Down passes while no plan holds or held a termin and refuses (51281)
-/// once one did.
+/// with nothing written; a day before the Istanbul business day is refused (URT-D66 (1)); and the termin migration's Down
+/// passes while no plan holds or held a termin and refuses (51281) once one did.
 /// </summary>
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
@@ -25,7 +25,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var store = run.Store(CompanyA))
         {
             await store.Plans.SavePlanAsync(plan, Metadata(run));
-            var entered = await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, EnteredDueDate, Metadata(run));
+            var entered = await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, EnteredDueDate, TerminToday, Metadata(run));
             Assert.Equal((EnteredDueDate, 1L, 1L), (entered.RequestedDueDate, entered.DueDateRevision, entered.Version));
         }
 
@@ -36,7 +36,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             // A stale termin revision: refused, nothing written.
             Assert.Equal(ManufacturingRuleCodes.PlanDueDateChanged, (await Assert.ThrowsAsync<ManufacturingRuleException>(
-                () => store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, OtherDueDate, Metadata(run)))).Code);
+                () => store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, OtherDueDate, TerminToday, Metadata(run)))).Code);
         }
 
         Assert.Equal("2026-12-31", await run.ScalarAsync<string>(
@@ -75,20 +75,48 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await a.Orders.CloseOrderAsync(orderId, 7, run.Actor, At.AddHours(4), Metadata(run));
         }
 
+        // URT-D66 (2): the approved plan holds the termin it was approved with (revision 1); a change under the closed
+        // order is refused and nothing moves.
         await using (var a = run.Store(CompanyA))
         {
             var version = (await a.Plans.FindPlanAsync(plan.Id))!.Version;
             Assert.Equal(ManufacturingRuleCodes.PlanDueDateOrderClosed,
                 (await Assert.ThrowsAsync<ManufacturingRuleException>(
-                    () => a.DueDates.ChangeDueDateAsync(plan.Id, version, 0, EnteredDueDate, Metadata(run)))).Code);
+                    () => a.DueDates.ChangeDueDateAsync(plan.Id, version, 1, OtherDueDate, TerminToday, Metadata(run)))).Code);
+        }
+
+        Assert.Equal(1L, await run.ScalarAsync<long>(
+            "SELECT [DueDateRevision] FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.Id)));
+        Assert.Equal("2026-12-31", await run.ScalarAsync<string>(
+            "SELECT CONVERT(nvarchar(10), [RequestedDueDate], 23) FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.due-date-changed.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task A_plan_termin_before_the_business_day_is_refused_at_the_store_and_nothing_is_written()
+    {
+        await using var run = await Run.StartAsync();
+        var plan = NewPlan(CompanyA, await run.WorkCenterOfAsync(CompanyA));
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.SavePlanAsync(plan, Metadata(run));
+            Assert.Equal(ManufacturingRuleCodes.DueDateInPast, (await Assert.ThrowsAsync<ManufacturingRuleException>(
+                () => store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, TerminToday.AddDays(-1), TerminToday,
+                    Metadata(run)))).Code);
         }
 
         Assert.Equal(0L, await run.ScalarAsync<long>(
             "SELECT [DueDateRevision] FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.Plans WHERE Id = @p AND [RequestedDueDate] IS NOT NULL", ("@p", plan.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.due-date-changed.v1'"));
+
+        // The business day itself is taken.
+        await using (var store = run.Store(CompanyA))
+        {
+            var entered = await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, TerminToday, TerminToday, Metadata(run));
+            Assert.Equal((TerminToday, 1L), (entered.RequestedDueDate, entered.DueDateRevision));
+        }
     }
 
     [SqlServerFact]
@@ -107,8 +135,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         // Entering then removing still leaves a moved termin revision: the earlier schema cannot say a termin was entered.
         await using (var store = run.Store(CompanyA))
         {
-            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, EnteredDueDate, Metadata(run));
-            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 1, null, Metadata(run));
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 0, EnteredDueDate, TerminToday, Metadata(run));
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 1, 1, null, TerminToday, Metadata(run));
         }
 
         var refused = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));

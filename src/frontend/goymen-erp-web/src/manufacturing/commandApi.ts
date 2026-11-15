@@ -31,8 +31,10 @@ import {
   closeBody,
   decodeStockShortfall,
   factBody,
+  orderDueDateBody,
   type CloseSnapshot,
   type FactSnapshot,
+  type OrderDueDateSnapshot,
   type StockShortfallExpectation,
   type StockShortfallView,
 } from './contract'
@@ -116,6 +118,7 @@ function versionField(body: unknown, name: string): number | null {
 }
 
 const PHYSICAL_STOCK_INSUFFICIENT = 'inventory_manufacturing_physical_stock_insufficient'
+export const ORDER_DUE_DATE_CHANGED = 'manufacturing_order_due_date_changed'
 
 /**
  * SAT-D318: the physical-stock refusal of an input issue may name its shortfall. The member is
@@ -174,6 +177,8 @@ function classifyFailure(
       return { kind: 'label-version-conflict' }
     }
     if (/^manufacturing_[a-z_]+_id_conflict$/.test(code)) return { kind: 'id-conflict', code }
+    // URT-D66 (3): the order's termin moved since this screen read it; the screen reads the order again.
+    if (code === ORDER_DUE_DATE_CHANGED) return { kind: 'rule', code }
     if (code === PHYSICAL_STOCK_INSUFFICIENT) return physicalStockRefusal(body, replayed, shortfallFor)
     if (/^inventory_manufacturing_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     return null
@@ -224,6 +229,27 @@ export function closeOrder(
     `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/close`,
     snapshot.idempotencyKey,
     closeBody(snapshot),
+    signal,
+  )
+}
+
+/**
+ * URT-D66 (3): changes the order's own termin — `POST …/orders/{orderId}/due-date` with the termin revision the screen
+ * read. The plan's termin does not move. The same command discipline as the close: 200 is the order with its new termin
+ * (a replay is the first change's stored answer), 409 `manufacturing_order_due_date_changed` means the termin moved since
+ * the read, a 422 names the rule (a past day, a closed order, no change), and a 5xx is UNKNOWN.
+ */
+export function changeOrderDueDate(
+  companyId: string,
+  orderId: string,
+  snapshot: OrderDueDateSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/due-date`,
+    snapshot.idempotencyKey,
+    orderDueDateBody(snapshot),
     signal,
   )
 }

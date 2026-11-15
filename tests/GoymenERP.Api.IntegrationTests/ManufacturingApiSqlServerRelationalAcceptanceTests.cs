@@ -154,6 +154,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal((created.PlanId, workCenter, kind),
                 (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
 
+            await run.EnterTerminAsync(created.PlanId);
             var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
                 new ApprovePlanRequestV1(created.Version));
             Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
@@ -202,6 +203,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(correlation, replay.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
 
         // U2-d (URT-D2): another user than the preparer approves, under its own correlation.
+        await run.EnterTerminAsync(plan.PlanId);
         var approver = await run.ApproverAsync(CompanyA);
         var approverCorrelation = approver.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
         var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1));
@@ -392,6 +394,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(("Draft", 1L, "1000.12"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
 
             // The read answers from STORAGE: approving through another command changes what it returns.
+            await run.EnterTerminAsync(created.PlanId);
             Assert.Equal(HttpStatusCode.OK,
                 (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(1)))
                     .StatusCode);
@@ -687,6 +690,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         // The approval replays from the log: a lost answer retried is 200, not a version conflict. U2-d: another user
         // than the preparer approves.
+        await run.EnterTerminAsync(plan.PlanId);
         var approver = await run.ApproverAsync(CompanyA);
         var approverCorrelation = approver.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
         var approved = await approver.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
@@ -1129,6 +1133,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(commandsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands"));
 
             // The status filter follows the stored status: the approved plan leaves the draft list.
+            await run.EnterTerminAsync(first.PlanId);
             Assert.Equal(HttpStatusCode.OK, (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var drafts = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?status=Draft"))!;
@@ -1535,6 +1540,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfKindAsync(CompanyA, process.ToString()),
                 [new PlannedInputRequestV1(roll.Id, "1000", roll.Version)], null);
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
+            await EnterTerminAsync(plan.PlanId);
             Assert.Equal(HttpStatusCode.OK, (await (await ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var orderId = Guid.NewGuid();
@@ -1703,6 +1709,17 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
             return await command.ExecuteNonQueryAsync();
         }
+
+        /// <summary>
+        /// URT-D66 (2): a plan without a termin is not approved. A fixture shortcut for the facts here, which are about
+        /// what follows the approval: the draft plan's row takes a termin (revision 1) as the termin command would leave it,
+        /// without that command's audit event or command record, so those facts' counts stay theirs. The plan version does
+        /// not move (the termin never moves it). The termin command itself is proven at the store and in its own facts.
+        /// </summary>
+        public async Task EnterTerminAsync(Guid planId) => Assert.Equal(1, await ExecuteAsync(
+            "UPDATE manufacturing.Plans SET RequestedDueDate = CONVERT(date, @day, 23), DueDateRevision = 1 "
+            + "WHERE Id = @plan AND DueDateRevision = 0",
+            ("@day", "2026-12-31"), ("@plan", planId)));
 
         public Task<int> InsertToleranceAsync(
             Guid companyId,

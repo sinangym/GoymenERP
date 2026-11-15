@@ -291,6 +291,17 @@ export interface ProductionOrderView {
   readonly costStatus: 'NotCalculated'
   readonly closedByUserId: string | null
   readonly closedAtUtc: string | null
+  /**
+   * URT-D66 (3): the order's own termin, a calendar day (`yyyy-MM-dd`). Copied from the plan when the order opened and
+   * changed on the order alone afterwards. Null for an order opened before the copy existed, or legacy JSON.
+   */
+  readonly dueDate: string | null
+  /** URT-D66 (3): how many times the order's termin was changed; the next termin request sends it back. 0 for legacy JSON. */
+  readonly dueDateRevision: number
+  /** URT-D66 (4): the plan's termin as read with the order. Null when the plan has none, or legacy JSON. */
+  readonly planDueDate: string | null
+  /** URT-D66 (4): the server's "emir termini plandan farklı" flag; never computed here. False for legacy JSON. */
+  readonly dueDateDiffersFromPlan: boolean
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -1023,6 +1034,19 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
       : typeof body.closedAtUtc === 'string' && !Number.isNaN(Date.parse(body.closedAtUtc))
         ? body.closedAtUtc
         : undefined
+  // URT-D66: additive members; absent on legacy JSON.
+  const dueDate = optionalCalendarDate(body.dueDate)
+  const planDueDate = optionalCalendarDate(body.planDueDate)
+  const dueDateRevision = body.dueDateRevision === undefined
+    ? 0
+    : typeof body.dueDateRevision === 'number' && Number.isSafeInteger(body.dueDateRevision) && body.dueDateRevision >= 0
+      ? body.dueDateRevision
+      : undefined
+  const dueDateDiffersFromPlan = body.dueDateDiffersFromPlan === undefined
+    ? false
+    : typeof body.dueDateDiffersFromPlan === 'boolean'
+      ? body.dueDateDiffersFromPlan
+      : undefined
   if (
     orderId === null ||
     companyId === null ||
@@ -1033,6 +1057,10 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     remainingTarget === null ||
     closedByUserId === undefined ||
     closedAtUtc === undefined ||
+    dueDate === undefined ||
+    planDueDate === undefined ||
+    dueDateRevision === undefined ||
+    dueDateDiffersFromPlan === undefined ||
     typeof body.process !== 'string' ||
     (body.status !== 'Open' && body.status !== 'Closed') ||
     body.costStatus !== 'NotCalculated' ||
@@ -1040,6 +1068,10 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
   ) {
     return null
   }
+  // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
+  if (dueDateRevision > 0 && dueDate === null) return null
+  // The flag is the server's, but it never contradicts the two days it was computed from.
+  if (dueDateDiffersFromPlan !== (dueDate !== null && dueDate !== planDueDate)) return null
   const rolls: RollBalance[] = []
   for (const raw of body.rolls) {
     const roll = decodeRoll(raw)
@@ -1060,7 +1092,17 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     costStatus: 'NotCalculated',
     closedByUserId,
     closedAtUtc,
+    dueDate,
+    dueDateRevision,
+    planDueDate,
+    dueDateDiffersFromPlan,
   }
+}
+
+/** An absent or null member is null; anything but a calendar day is malformed (undefined). */
+function optionalCalendarDate(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null
+  return calendarDate(value) ? value : undefined
 }
 
 /**
@@ -1530,6 +1572,25 @@ export interface CloseSnapshot {
   readonly expectedVersion: number
   /** Present only after the server requires a dedicated, reasoned exception approval. */
   readonly exceptionReason?: string | null
+}
+
+/**
+ * URT-D66 (3): one order termin change, frozen once with its key. `expectedDueDateRevision` is the order's termin
+ * revision as this screen read it; the order's version is not sent (a termin is no fact of the order).
+ */
+export interface OrderDueDateSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedDueDateRevision: number
+  /** A calendar day, `yyyy-MM-dd`; a termin is changed on the order, never removed. */
+  readonly dueDate: string
+}
+
+/** The request body exactly as `ChangeOrderDueDateRequestV1` names it. */
+export function orderDueDateBody(snapshot: OrderDueDateSnapshot): Record<string, unknown> {
+  return {
+    expectedDueDateRevision: snapshot.expectedDueDateRevision,
+    dueDate: snapshot.dueDate,
+  }
 }
 
 /** The request body exactly as `CloseOrderRequestV1` names it. */

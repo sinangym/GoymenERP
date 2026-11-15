@@ -35,6 +35,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <item><c>manufacturing.scrap-prices.record</c> (URT-S13, contract 1.7): a control on that route adding
 /// <see cref="ErpPermissions.ManufacturingScrapPricesWrite"/> — the month's price entry. Both names are registered and
 /// granted to no role: who enters the scrap price is not decided.</item>
+/// <item><c>manufacturing.orders.due-date</c> (URT-S23, contract 1.8): a control on the order detail route adding
+/// <see cref="ErpPermissions.ManufacturingOrdersWrite"/> — the order's own termin (URT-D66 (3)). The name is registered
+/// and granted to no role: who edits an order is not decided.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens
@@ -49,14 +52,15 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
-    // monthly scrap price route and its record control.
-    public const string OwnerContractVersion = "1.7";
+    // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control.
+    public const string OwnerContractVersion = "1.8";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
     public const string ListCapabilityId = "manufacturing.orders.list";
     public const string CloseCapabilityId = "manufacturing.orders.close";
     public const string CloseExceptionApproveCapabilityId = "manufacturing.orders.close-exception-approve";
+    public const string DueDateCapabilityId = "manufacturing.orders.due-date";
     public const string DetailRouteId = "manufacturing.order-detail";
     public const string DetailRoutePath = "/uretim/emir/:orderId";
     public const string DetailScreenId = "MFG-01";
@@ -183,6 +187,14 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                     ErpPermissions.ManufacturingOrdersRead,
                     ErpPermissions.ManufacturingOrdersCloseExceptionApprove,
                 ],
+            },
+            // URT-S23 (URT-D66 (3)/(5)): the order's own termin is a control of the order screen, on the order edit
+            // permission.
+            detail with
+            {
+                CapabilityId = DueDateCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersWrite],
             },
             list,
             planCreate,

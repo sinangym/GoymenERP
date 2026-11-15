@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY FOURTEEN IDS. They map onto the permissions the server enforces separately
+ * WHY FIFTEEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -17,6 +17,7 @@
  *   manufacturing.orders.list   <- manufacturing.orders.read
  *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
  *   manufacturing.orders.close-exception-approve <- manufacturing.orders.close-exception.approve
+ *   manufacturing.orders.due-date <- manufacturing.orders.read + manufacturing.orders.write (URT-D66: the order termin)
  *   manufacturing.plans.create  <- manufacturing.plans.write
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
@@ -50,6 +51,12 @@ export const MANUFACTURING_CAPABILITY = {
   orderClose: 'manufacturing.orders.close',
   /** The reasoned out-of-tolerance close control. Never implied by ordinary close authority. */
   orderCloseExceptionApprove: 'manufacturing.orders.close-exception-approve',
+  /**
+   * URT-S23 (URT-D66 (3)/(5)): change the order's own termin INSIDE the order screen. Not a route — a control. Its
+   * permission (`manufacturing.orders.write`) is registered and granted to no role, so until a grant exists the
+   * registry publishes it to nobody and no termin form is drawn.
+   */
+  orderDueDate: 'manufacturing.orders.due-date',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */

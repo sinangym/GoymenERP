@@ -136,7 +136,7 @@ public sealed class PlanProcessSpecTests
         var profile = Snapshot(ManufacturingProcess.Paint, ("filmMicrons", "µm", 80m), ("profileLengthMm", "mm", 5_000m),
             ("perimeterMm", "millimetre", 90m));
 
-        plan.Approve(1, Approver, At, parameters: null, profile);
+        plan.WithDueDate().Approve(1, Approver, At, parameters: null, profile);
 
         var values = plan.ParameterSnapshot!.Values.ToDictionary(value => value.Key);
         Assert.Null(values["filmMicrons"].Source);

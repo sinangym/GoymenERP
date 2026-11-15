@@ -55,6 +55,8 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingPlanDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderBindingReadPortV1, ManufacturingSalesOrderBindingReadPort>();
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-D66 (3): the order's own termin, the same store and DbContext as the order.
+        services.AddScoped<IManufacturingOrderDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-D42 (3): the read-only list of closed orders for the output-above-input report, the same store and DbContext.
         services.AddScoped<IManufacturingClosedOrderListStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-S13 (URT-D47, URT-D65): the monthly scrap price entry and its read for a weighing, the same store and DbContext.

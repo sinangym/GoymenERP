@@ -322,6 +322,15 @@ public static class ErpPermissions
         "manufacturing.orders.close-exception.approve";
 
     /// <summary>
+    /// URT-D66 (5): editing an open production order — first the order's own termin (URT-D66 (3)), which the decision puts
+    /// under "the order edit permission" rather than a termin permission of its own. No order edit name existed before, so
+    /// this registers it. Its own name because editing an order is neither creating one, recording a fact nor closing it.
+    /// Registered, not granted: no role and no user receives it here; who edits an order is a human gate. Company-wide
+    /// only (K-1: the route filters by no work center). Not Critical.
+    /// </summary>
+    public const string ManufacturingOrdersWrite = "manufacturing.orders.write";
+
+    /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
     /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
     /// nor approving one. Registered, not granted: no role and no user receives it here; the grant is a human gate.
@@ -1248,6 +1257,7 @@ public static class ErpPermissions
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
+            ManufacturingOrdersWrite,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
@@ -1458,6 +1468,7 @@ public static class ErpPermissions
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
+            ManufacturingOrdersWrite,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
