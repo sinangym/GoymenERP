@@ -675,6 +675,59 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.LoginRateLimitVersionRow", b =>
+                {
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PartitionBy")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<int>("PermitLimit")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("RecordedInCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("WindowSeconds")
+                        .HasColumnType("int");
+
+                    b.HasKey("Version");
+
+                    b.HasIndex("ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("LoginRateLimitVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsLoginRateLimitVersions_Bounds", "[PermitLimit] BETWEEN 1 AND 1000000 AND [WindowSeconds] BETWEEN 1 AND 86400");
+
+                            t.HasCheckConstraint("CK_SettingsLoginRateLimitVersions_Identity", "[ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [RecordedInCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsLoginRateLimitVersions_Partition", "[PartitionBy] IN ('IpAddress','IpAddressAndUserName')");
+
+                            t.HasCheckConstraint("CK_SettingsLoginRateLimitVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileRow", b =>
                 {
                     b.Property<Guid>("CompanyId")

@@ -23,7 +23,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// own non-Critical, company-wide name; F-025 (Settings 1.2, B-11) adds the exchange rate screen on the read name with three
 /// command controls (correction, half-day mark, import — the import name also carries the re-verification); F-029 S4b
 /// (Settings 1.3, URN-D2/D3) adds the delivery tolerance and the approval amount threshold screens, each on its own
-/// non-Critical, company-wide name.
+/// non-Critical, company-wide name; KIM-D34/KIM-D37 (Settings 1.4) add the group-wide login attempt limit and the unit
+/// conversion policy screens, each on its own non-Critical, company-wide name.
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
@@ -73,8 +74,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(8, declarations.Count);
-        Assert.Equal("1.3", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(10, declarations.Count);
+        Assert.Equal("1.4", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -132,6 +133,10 @@ public sealed class SettingsShellAuthorityTests
                 SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage),
             ("settings.sales-approval-thresholds.manage", "/ayarlar/onay-esikleri", "AY-ONY-01",
                 SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage),
+            ("settings.login-rate-limit.manage", "/ayarlar/giris-deneme-siniri", "AY-GDS-01",
+                SettingsLoginRateLimitPermissionManifestV1.Manage),
+            ("settings.unit-conversion-policies.manage", "/ayarlar/birim-cevrim-politikasi", "AY-BCP-01",
+                SettingsUnitConversionPolicyPermissionManifestV1.Manage),
         ];
 
         foreach (var expected in screens)

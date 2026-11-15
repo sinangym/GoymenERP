@@ -18,12 +18,16 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 /// <see cref="SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage"/> and the approval amount threshold screen
 /// (<c>/ayarlar/onay-esikleri</c>) on <see cref="SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage"/>, each
 /// company-wide, in one company, on its one name. Neither name is granted to a role here (a human gate).
+/// 1.4 (KIM-D34, KIM-D37): the group-wide login attempt limit screen (<c>/ayarlar/giris-deneme-siniri</c>) on
+/// <see cref="SettingsLoginRateLimitPermissionManifestV1.Manage"/> and the unit conversion policy screen
+/// (<c>/ayarlar/birim-cevrim-politikasi</c>) on <see cref="SettingsUnitConversionPolicyPermissionManifestV1.Manage"/>, each
+/// company-wide, in one company, on its one name. Neither name is granted to a role here, and neither is Critical.
 /// </para>
 /// </summary>
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.3";
+    public const string OwnerContractVersion = "1.4";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -61,6 +65,20 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string SalesApprovalThresholdsRouteId = SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage;
     public const string SalesApprovalThresholdsRoutePath = "/ayarlar/onay-esikleri";
     public const string SalesApprovalThresholdsScreenId = "AY-ONY-01";
+
+    // KIM-D34 (provider 1.4): the group-wide login attempt limit (versions, a new version) on
+    // settings.login-rate-limit.manage alone, company-wide, in one company; granted to no role here.
+    public const string LoginRateLimitCapabilityId = SettingsLoginRateLimitPermissionManifestV1.Manage;
+    public const string LoginRateLimitRouteId = SettingsLoginRateLimitPermissionManifestV1.Manage;
+    public const string LoginRateLimitRoutePath = "/ayarlar/giris-deneme-siniri";
+    public const string LoginRateLimitScreenId = "AY-GDS-01";
+
+    // F-004, KIM-D37 (provider 1.4): the company's unit conversion policy (no seed; versions, a new version) on
+    // settings.unit-conversion-policies.manage alone, company-wide, in one company; granted to no role here.
+    public const string UnitConversionPolicyCapabilityId = SettingsUnitConversionPolicyPermissionManifestV1.Manage;
+    public const string UnitConversionPolicyRouteId = SettingsUnitConversionPolicyPermissionManifestV1.Manage;
+    public const string UnitConversionPolicyRoutePath = "/ayarlar/birim-cevrim-politikasi";
+    public const string UnitConversionPolicyScreenId = "AY-BCP-01";
 
     public string Owner => OwnerId;
 
@@ -144,6 +162,26 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsSalesPolicyPermissionManifestV1.ApprovalThresholdManage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                LoginRateLimitCapabilityId,
+                LoginRateLimitRouteId,
+                LoginRateLimitRoutePath,
+                LoginRateLimitScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsLoginRateLimitPermissionManifestV1.Manage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                UnitConversionPolicyCapabilityId,
+                UnitConversionPolicyRouteId,
+                UnitConversionPolicyRoutePath,
+                UnitConversionPolicyScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsUnitConversionPolicyPermissionManifestV1.Manage],
                 ImplementationAvailable: true),
         ];
     }

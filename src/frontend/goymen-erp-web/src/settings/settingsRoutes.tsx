@@ -8,10 +8,12 @@ import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { SETTINGS_CAPABILITY, SETTINGS_ROUTE } from './capabilities'
 import { ExchangeRatesPage } from './ExchangeRatesPage'
+import { LoginRateLimitPage } from './LoginRateLimitPage'
 import { SalesDiscountLimitsPage } from './SalesDiscountLimitsPage'
 import { SalesPolicyApprovalThresholdsPage } from './SalesPolicyApprovalThresholdsPage'
 import { SalesPolicyDeliveryTolerancePage } from './SalesPolicyDeliveryTolerancePage'
 import { TaxMasterPage } from './TaxMasterPage'
+import { UnitConversionPolicyPage } from './UnitConversionPolicyPage'
 
 export const settingsRoutes: RouteObject[] = [
   {
@@ -51,6 +53,22 @@ export const settingsRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={SETTINGS_CAPABILITY.salesApprovalThresholds}>
         <SalesPolicyApprovalThresholdsPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.loginRateLimit].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.loginRateLimit}>
+        <LoginRateLimitPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.unitConversionPolicy].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.unitConversionPolicy}>
+        <UnitConversionPolicyPage />
       </CapabilityRoute>
     ),
   },

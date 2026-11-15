@@ -6,7 +6,10 @@ namespace GoymenERP.Modules.Organization.Application.Contracts;
 
 /// <summary>
 /// KIM-S23 (KIM-D28): the two permission names of the company VKN change flow. They are registered names only; who
-/// holds them (grant/role) is a human gate and neither is Critical.
+/// holds them (grant/role) is a human gate and neither is Critical. KIM-D36: <see cref="Approve"/> is deliberately not
+/// Critical; its intended holder is the administrator persona, but no grant is made here, and the maker-checker rule
+/// (the requester never decides their own request) stays in force. KIM-D35: the first real VKN of the placeholder
+/// company ("VKN girilmemiş") goes through this same flow.
 /// </summary>
 public static class OrganizationCompanyTaxIdPermissionsV1
 {

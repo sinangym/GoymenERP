@@ -10,8 +10,8 @@ namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
 /// KIM-S23 (KIM-D28, DEC-ORG-005): the two company VKN names are REGISTERED, not granted; who holds them is a human
-/// gate. Company-wide only; neither is Critical (whether the approve grant needs grant-time dual control is not
-/// decided); no shipped seed role carries either.
+/// gate. Company-wide only; neither is Critical (KIM-D36: the approve name is not Critical; the administrator persona
+/// is its intended holder, no grant is made, maker-checker stays); no shipped seed role carries either.
 /// </summary>
 public sealed class OrganizationCompanyTaxIdPermissionRegistrationTests
 {
@@ -43,6 +43,15 @@ public sealed class OrganizationCompanyTaxIdPermissionRegistrationTests
     {
         Assert.True(ErpPermissions.RequiresCompanyWideScope(permission));
         Assert.False(ErpPermissions.IsCritical(permission));
+    }
+
+    [Fact]
+    public void The_approve_name_stays_outside_the_critical_set_and_no_seed_grants_it()
+    {
+        // KIM-D36: not Critical, no grant; the persona (administrator) is a human assignment decision.
+        Assert.False(ErpPermissions.IsCritical(ErpPermissions.OrganizationCompanyTaxIdApprove));
+        var text = File.ReadAllText(Path.Combine(FindRepositoryRoot(), SeedPath));
+        Assert.DoesNotContain(ErpPermissions.OrganizationCompanyTaxIdApprove, text);
     }
 
     [Theory]

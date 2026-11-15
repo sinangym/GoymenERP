@@ -1105,6 +1105,13 @@ public static class ErpPermissions
     public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
 
     /// <summary>
+    /// KIM-D34: read the group-wide login attempt limit timeline (attempts per window, window length, what a window counts per)
+    /// and record new versions (<c>SettingsLoginRateLimitPermissionManifestV1.Manage</c>). Registered, not granted: no role,
+    /// seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsLoginRateLimitManage = "settings.login-rate-limit.manage";
+
+    /// <summary>
     /// FNS-D52: read the company's per-bank CSV column mappings of the bank statement import (XLSX and MT940 need none) and
     /// record new versions (<c>SettingsBankCsvMappingPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed
     /// or user receives it here (a human grant gate). Company-wide only. Not Critical.
@@ -1391,6 +1398,7 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsLoginRateLimitManage,
             SettingsBankCsvMappingsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
@@ -1606,6 +1614,7 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsLoginRateLimitManage,
             SettingsBankCsvMappingsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
