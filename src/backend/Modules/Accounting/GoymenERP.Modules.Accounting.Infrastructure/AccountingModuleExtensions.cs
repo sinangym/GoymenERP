@@ -80,6 +80,9 @@ public static class AccountingModuleExtensions
             serviceProvider.GetRequiredService<AccountingJournalReversalServiceV1>());
         services.AddScoped<AccountingJournalReversalPublicServiceV1>();
         services.AddScoped<ApprovedAccountingSourceCatalogServiceV1>();
+        // FIN-S16 (M-05): the read-only active account plan; no bypass, no permission granted here.
+        services.AddScoped<IActiveAccountPlanReaderV1, ApprovedActiveAccountPlanReaderV1>();
+        services.AddScoped<AccountPlanReadServiceV1>();
         // B-04a: the posting account mapping catalog and its read port for the invoice voucher draft.
         services.AddScoped<AccountingPostingAccountMappingStoreV1>();
         services.AddScoped<IAccountingPostingAccountMappingStoreV1>(serviceProvider =>

@@ -375,3 +375,21 @@ DRAFT voucher in Accounting's own tables. The port is `IAccountingSourceDocument
 - `tests/GoymenERP.Api.IntegrationTests/AccountingApiSqlServerRelationalAcceptanceTests.cs` (ACC-V0) is the
   real host over HTTP: Ö4/Ö5, every ADR-011 answer, isolation, the narrow reads, and the Ö2 check against
   Settings' REAL approved GDC/TRY profile. It is API and SQL evidence, not browser evidence.
+
+## FIN-S16: M-05 Hesap Planı (read-only)
+
+`KALAN_MODULLER_HAZIRLIK_PLANI_v1.md` M-05 / finding F-027: the company's ACTIVE approved account plan, shown in the
+shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-plan`).
+
+- **Read**: `GET /api/v1/accounting/account-plan` (`AccountPlanReadServiceV1`) returns the active approved source
+  catalog package's provenance (package id, catalog version, account plan source version, accounts SHA-256,
+  activation time, account count) and every account exactly as the approved mirror names it (id, code, name),
+  ordered by code (ordinal). No active catalog is a 200 with `source: null` and no accounts. The activator is not
+  released, and no classification, hierarchy or fallback is derived.
+- **Permission**: its own narrow read name `accounting.account-plan.read` (persona rule #66 5738113623 §4) —
+  registered, company-wide, not Critical, **granted to no role** (which persona reads it is a human grant decision).
+  Fresh authority is measured before and after the store read, as for the other Accounting reads.
+- **Shell**: Accounting provider 1.4 declares the route **staged** (`ImplementationAvailable = false`) until a
+  browser walk accepts it (the staged-then-flip order).
+- **Not in this slice**: the M-05 "Boyutlar" (cost centre / project dimensions) have no backend or decision, and the
+  plan is not edited here (the approved source catalog is the only way a plan becomes active).
