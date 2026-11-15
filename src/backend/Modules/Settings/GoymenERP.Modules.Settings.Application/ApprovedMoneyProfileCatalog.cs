@@ -39,6 +39,15 @@ public sealed record ApprovedMoneyProfileEntry(
 /// literals to the owners' constants.
 /// </para>
 /// <para>
+/// <b>Expense payment (FNS-D48, SINAN_KARARLARI_2026-11-15_DALGA1_EK.md; KIM-S26).</b> The Finance expense payment has
+/// its own key, <c>finance.expense-payment.v1</c>, whose limits and rules are managed apart from
+/// <c>finance.manual-bank-payment.v1</c>. Its profile values (scale, companies, window) are not chosen here, so no
+/// approved entry lists it: every read for it answers <c>settings_provider_unavailable</c> (fail-closed) and is never
+/// served from the manual bank payment's profile. It is enabled only by a reviewed approved version that names it,
+/// with its own profile identity, as any other approval. Being listed on no entry, it does not narrow what an
+/// unrestricted profile is for the operation-less candidate read.
+/// </para>
+/// <para>
 /// A malformed catalog is refused as a whole with <c>settings_profile_invalid</c>: an empty
 /// identity, a blank currency code or source, no operation or a blank one, a negative scale, a
 /// non-positive version, a window that ends before it starts, a unit-price scale for an operation the

@@ -358,6 +358,27 @@ public sealed class SettingsHostWiringTests
         }
     }
 
+    [Theory]
+    [InlineData("gdc")]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task The_expense_payment_money_key_stays_unavailable_through_the_host_until_a_profile_is_approved(string company)
+    {
+        // KIM-S26 (FNS-D48): the expense payment has its own key, managed apart from the manual bank payment's. No
+        // approved profile names it yet, so the host answers fail-closed instead of the manual bank payment's profile.
+        // The literal is the decision's key; Finance publishes its constant when it switches its binding (FIN-S18).
+        const string expensePayment = "finance.expense-payment.v1";
+        var companyId = company switch { "gdc" => Gdc, "gsp" => Gsp, _ => Gin };
+        using var factory = Host(companyId);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, expensePayment, ExtraApproval))).Code);
+        Assert.DoesNotContain(ApprovedMoneyProfileCatalog.Approved.Entries,
+            entry => entry.Operations.Contains(expensePayment));
+    }
+
     [Fact]
     public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_and_Purchasing_owners_published_keys()
     {
