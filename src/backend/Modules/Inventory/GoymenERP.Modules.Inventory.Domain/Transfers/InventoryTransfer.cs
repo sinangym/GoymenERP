@@ -11,6 +11,9 @@ public enum InventoryTransferStatus
     InTransit = 2,
     PartiallyAccepted = 3,
     Accepted = 4,
+
+    /// <summary>KLN-D20: the dispatch was reversed by a separate movement before any acceptance; terminal.</summary>
+    DispatchCancelled = 5,
 }
 
 public enum InventoryTransferLineStatus
@@ -18,6 +21,7 @@ public enum InventoryTransferLineStatus
     Planned = 1,
     InTransit = 2,
     Accepted = 3,
+    DispatchCancelled = 4,
 }
 
 /// <summary>An outgoing or incoming delivery-document identity. Its kind is an owner token, not a closed policy list.</summary>
@@ -105,6 +109,27 @@ public sealed record InventoryTransferAcceptanceEffect(
 }
 
 /// <summary>
+/// KLN-D20: the reverse of a whole dispatch. The dispatch row and its movement stay; this separate inbound movement
+/// puts every dispatched bucket back at its exact source position (same block, owner, custodian and location). Cost is
+/// not touched here: transfers do not post to the cost ledger yet (KLN-D25 (2) golden is an open follow-up).
+/// </summary>
+public sealed record InventoryTransferDispatchCancellationEffect(
+    Guid TransferId,
+    long TransferVersion,
+    DateTimeOffset CancelledAtUtc,
+    IReadOnlyList<InventoryTransferLineEffect> Lines)
+{
+    public StockMovement Movement(Guid movementId, Guid companyId) => new(
+        movementId,
+        companyId,
+        StockMovementKind.TransferDispatchCancellation,
+        CancelledAtUtc,
+        new StockSourceReference(InventoryTransfer.SourceKind, TransferId),
+        Lines.SelectMany(line => line.Buckets)
+            .Select(bucket => new StockMovementLine(bucket.Position, StockDirection.In, bucket.Quantity)));
+}
+
+/// <summary>
 /// DEC-STK-008 / INV-R20: a same-company two-leg transfer. Planning changes no stock. Dispatch derives the actual
 /// shipped quantity from every stored bucket of every named label and moves those whole labels into transit. Acceptance
 /// moves one whole dispatched label to the target context; accepting a subset of lines is the supported partial-accept
@@ -157,6 +182,7 @@ public sealed class InventoryTransfer
     public StockCustodian DestinationCustodian { get; }
     public DateTimeOffset PlannedAtUtc { get; }
     public DateTimeOffset? DispatchedAtUtc { get; private set; }
+    public DateTimeOffset? DispatchCancelledAtUtc { get; private set; }
     public InventoryTransferDocumentReference? OutgoingDocument { get; private set; }
     public long Version { get; private set; } = 1;
     public InventoryTransferStatus Status { get; private set; } = InventoryTransferStatus.Planned;
@@ -177,7 +203,8 @@ public sealed class InventoryTransfer
         DateTimeOffset? dispatchedAtUtc,
         InventoryTransferDocumentReference? outgoingDocument,
         IEnumerable<InventoryTransferDispatchLine>? dispatchedLines,
-        IEnumerable<InventoryTransferAcceptedLineState>? acceptedLines)
+        IEnumerable<InventoryTransferAcceptedLineState>? acceptedLines,
+        DateTimeOffset? dispatchCancelledAtUtc = null)
     {
         var transfer = new InventoryTransfer(id, companyId, sourceLocationId, sourceCustodian,
             destinationLocationId, destinationCustodian, plannedAtUtc, plannedLines);
@@ -199,6 +226,16 @@ public sealed class InventoryTransfer
         }
 
         transfer.Dispatch(1, dispatchedAtUtc.Value, outgoingDocument, dispatchedLines);
+        if (dispatchCancelledAtUtc is { } cancelledAtUtc)
+        {
+            if (accepted.Length != 0)
+            {
+                throw Invalid("İptal edilmiş transfer çıkışında kabul kaydı olamaz.");
+            }
+
+            transfer.CancelDispatch(transfer.Version, cancelledAtUtc);
+        }
+
         foreach (var acceptance in accepted)
         {
             transfer.AcceptLine(transfer.Version, acceptance.LineId, acceptance.AcceptedAtUtc,
@@ -296,6 +333,38 @@ public sealed class InventoryTransfer
             : InventoryTransferStatus.PartiallyAccepted;
         var effect = line.Effect with { Buckets = targetBuckets };
         return new(Id, Version, incomingDocument, acceptedAtUtc, effect);
+    }
+
+    /// <summary>
+    /// KLN-D20: reverses the whole dispatch. Only an in-transit transfer whose every line is still in transit can be
+    /// cancelled; an accepted or partially accepted transfer never can. The cancellation window (KLN-D25/D27) is decided
+    /// by <see cref="InventoryTransferCancelWindow"/> before this is called; this method only guards the stock state.
+    /// </summary>
+    public InventoryTransferDispatchCancellationEffect CancelDispatch(long expectedVersion, DateTimeOffset cancelledAtUtc)
+    {
+        RequireVersion(expectedVersion);
+        RequireUtc(cancelledAtUtc, "İptal zamanı");
+        if (Status != InventoryTransferStatus.InTransit
+            || lines.Any(line => line.Status != InventoryTransferLineStatus.InTransit || line.Effect is null))
+        {
+            throw Invalid("Yalnız hiçbir satırı kabul edilmemiş yoldaki transferin çıkışı iptal edilebilir.");
+        }
+
+        if (DispatchedAtUtc is null || cancelledAtUtc < DispatchedAtUtc)
+        {
+            throw Invalid("İptal zamanı transfer çıkışından önce olamaz.");
+        }
+
+        var effects = lines.Select(line => line.Effect!).ToArray();
+        foreach (var line in lines)
+        {
+            line.CancelDispatch();
+        }
+
+        Version = checked(Version + 1);
+        Status = InventoryTransferStatus.DispatchCancelled;
+        DispatchCancelledAtUtc = cancelledAtUtc;
+        return new(Id, Version, cancelledAtUtc, effects);
     }
 
     private InventoryTransferLineEffect ValidateDispatch(Line line, InventoryTransferDispatchLine actual)
@@ -397,6 +466,8 @@ public sealed class InventoryTransfer
             IncomingDocument = incomingDocument;
             Status = InventoryTransferLineStatus.Accepted;
         }
+
+        public void CancelDispatch() => Status = InventoryTransferLineStatus.DispatchCancelled;
 
         public InventoryTransferLineSnapshot Snapshot() => new(LineId, LabelId, ExpectedLabelVersion,
             PlannedQuantity, Effect?.ActualQuantity, Effect?.DifferenceKg, Status, AcceptedAtUtc, IncomingDocument);

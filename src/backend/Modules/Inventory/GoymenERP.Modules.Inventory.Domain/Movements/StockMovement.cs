@@ -66,6 +66,12 @@ public enum StockMovementKind
     /// cannot be reversed while blocked: the block is lifted by Inventory's own command first.
     /// </summary>
     ManufacturingOutputReversal = 10,
+
+    /// <summary>
+    /// KLN-D20 (B-22b): the reverse of a whole <see cref="TransferDispatch"/> before any acceptance. Every line is an
+    /// In line that restores one dispatched bucket at its exact source position; the dispatch movement stays as history.
+    /// </summary>
+    TransferDispatchCancellation = 11,
 }
 
 public enum StockDirection
@@ -262,6 +268,9 @@ public sealed class StockMovement
                 break;
             case StockMovementKind.TransferAccept:
                 RequireAll(StockDirection.In, "Transfer kabulünün bütün satırları giriş olmalıdır.");
+                break;
+            case StockMovementKind.TransferDispatchCancellation:
+                RequireAll(StockDirection.In, "Transfer çıkış iptalinin bütün satırları giriş olmalıdır.");
                 break;
             case StockMovementKind.ManufacturingOutputReversal:
                 if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
