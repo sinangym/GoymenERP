@@ -31,7 +31,8 @@ public sealed record InventoryLabelTransformationOutput(
 /// One same-company physical repack event (DEC-LBL-002/003, AT-038). A split consumes one whole
 /// source label into at least two new labels; a merge consumes at least two whole source labels
 /// into one new label. Cross-company transfer, cross-lot mixing and product conversion are separate
-/// workflows and are deliberately refused here.
+/// workflows and are deliberately refused here. Every output carries the production status its sources
+/// pass on (KLN-D46, <see cref="InheritedProductionStatus"/>).
 /// </summary>
 public sealed class InventoryLabelTransformation
 {
@@ -75,6 +76,35 @@ public sealed class InventoryLabelTransformation
     public string Reason { get; }
     public IReadOnlyList<InventoryLabelTransformationSource> Sources => Array.AsReadOnly(sources);
     public IReadOnlyList<InventoryLabelTransformationOutput> Outputs => Array.AsReadOnly(outputs);
+
+    /// <summary>
+    /// KLN-D46 (owner decision of 2026-11-15): the production status (BS-5) every output label of this repack
+    /// carries. See <see cref="InheritedProductionStatus(IEnumerable{MaterialLabel})"/>.
+    /// </summary>
+    public LabelProductionStatus? OutputProductionStatus => InheritedProductionStatus(sources.Select(source => source.Label));
+
+    /// <summary>
+    /// KLN-D46 (owner decision of 2026-11-15): the production status a split or merge output inherits from its
+    /// sources. A split has one source, so every child inherits that source's
+    /// <see cref="LabelProductionStatus.UsableRemnant"/>; a merge result is
+    /// <see cref="LabelProductionStatus.UsableRemnant"/> only when EVERY source is; any source without it (mixed
+    /// sources) leaves the output's production status null. The classification (Standard/SecondQuality, BS-14,
+    /// URT-D43) is not touched by this rule. Only <see cref="LabelProductionStatus.UsableRemnant"/> is named by the
+    /// decision, so no other production status is inherited by assumption.
+    /// </summary>
+    public static LabelProductionStatus? InheritedProductionStatus(IEnumerable<MaterialLabel> sourceLabels)
+    {
+        ArgumentNullException.ThrowIfNull(sourceLabels);
+        var labels = sourceLabels.ToArray();
+        if (labels.Length == 0 || labels.Any(label => label is null))
+        {
+            throw Invalid("Etiket dönüşümünde üretim durumu mirası için kaynak etiket zorunludur.");
+        }
+
+        return labels.All(label => label.ProductionStatus == LabelProductionStatus.UsableRemnant)
+            ? LabelProductionStatus.UsableRemnant
+            : null;
+    }
 
     private void Validate()
     {
@@ -170,6 +200,11 @@ public sealed class InventoryLabelTransformation
         if (output.Label.Prints.Count != 0 || output.Label.DocumentAttachments.Count != 0)
         {
             throw Invalid("Yeni çıktı etiketi eski baskı veya belge geçmişini kopyalayamaz.");
+        }
+
+        if (output.Label.ProductionStatus != OutputProductionStatus)
+        {
+            throw Invalid("Çıktı etiketinin üretim durumu kaynaklardan miras alınan durumla aynı olmalıdır.");
         }
     }
 
