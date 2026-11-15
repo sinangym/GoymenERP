@@ -8,7 +8,15 @@
  *
  * `clientIpAddress` and `userAgent` are decoded only to keep the key check exact; they are dropped from the decoded
  * item and never reach the screen (Decision No 135 privacy, docs/decisions/SINAN_KARARLARI_2026-10-21.md).
+ *
+ * `outcome` is the closed list `Succeeded | Refused` (F-023). A `Refused` row must carry the refused-attempt payload
+ * the Audit module writes (./auditQueryOutcome.ts `decodeRefusal`); it is decoded into `refusal` so the screen shows
+ * the refusal class, problem code and field errors without reading raw JSON. A `Succeeded` row has `refusal: null`.
+ * When the read asked for one outcome, a row of the other outcome is not a record of this view — the page is
+ * malformed rather than silently mixed.
  */
+
+import { decodeRefusal, isAuditOutcome, type AuditOutcome, type AuditRefusal } from './auditQueryOutcome'
 
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const EMPTY_UUID = '00000000-0000-0000-0000-000000000000'
@@ -70,7 +78,9 @@ export interface AuditEvent {
   readonly sourceChannel: string
   readonly correlationId: string
   readonly causationId: string | null
-  readonly outcome: string
+  readonly outcome: AuditOutcome
+  /** The decoded refused-attempt payload of a `Refused` row; `null` for a `Succeeded` row. */
+  readonly refusal: AuditRefusal | null
   readonly schemaVersion: number
   readonly integrityHash: string
 }
@@ -115,7 +125,7 @@ function isInt32(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= -2147483648 && value <= 2147483647
 }
 
-function decodeItem(value: unknown, companyId: string): AuditEvent | null {
+function decodeItem(value: unknown, companyId: string, expectedOutcome: AuditOutcome | null): AuditEvent | null {
   if (!isRecord(value) || !hasExactKeys(value, AUDIT_ITEM_FIELDS)) return null
   const v = value
   if (!isGuid(v.id) || !isGuid(v.companyId) || v.companyId.toLowerCase() !== companyId.toLowerCase()) return null
@@ -151,6 +161,13 @@ function decodeItem(value: unknown, companyId: string): AuditEvent | null {
     return null
   }
   if (!isInt32(v.schemaVersion)) return null
+  if (!isAuditOutcome(v.outcome)) return null
+  if (expectedOutcome !== null && v.outcome !== expectedOutcome) return null
+  let refusal: AuditRefusal | null = null
+  if (v.outcome === 'Refused') {
+    refusal = decodeRefusal(v.afterJson)
+    if (refusal === null) return null
+  }
   return {
     id: v.id,
     companyId: v.companyId,
@@ -175,6 +192,7 @@ function decodeItem(value: unknown, companyId: string): AuditEvent | null {
     correlationId: v.correlationId,
     causationId: v.causationId,
     outcome: v.outcome,
+    refusal,
     schemaVersion: v.schemaVersion,
     integrityHash: v.integrityHash,
   }
@@ -183,9 +201,14 @@ function decodeItem(value: unknown, companyId: string): AuditEvent | null {
 /**
  * Decodes one page for the active company. `null` for any deviation: a missing or extra key, a wrong type, a page
  * size outside the server's 1…100, more items than the page size, a duplicate id inside the page, an empty cursor
- * string, or an item of another company.
+ * string, an item of another company, an unknown outcome, a `Refused` row without a valid refusal payload, or — when
+ * `expectedOutcome` is given — a row of the other outcome.
  */
-export function decodeAuditEventPage(value: unknown, companyId: string): AuditEventPage | null {
+export function decodeAuditEventPage(
+  value: unknown,
+  companyId: string,
+  expectedOutcome: AuditOutcome | null = null,
+): AuditEventPage | null {
   if (!isRecord(value) || !hasExactKeys(value, AUDIT_PAGE_FIELDS)) return null
   if (!isInt32(value.pageSize) || value.pageSize < 1 || value.pageSize > 100) return null
   if (!(value.nextCursor === null || (typeof value.nextCursor === 'string' && value.nextCursor.length > 0))) return null
@@ -193,7 +216,7 @@ export function decodeAuditEventPage(value: unknown, companyId: string): AuditEv
   const items: AuditEvent[] = []
   const seen = new Set<string>()
   for (const raw of value.items) {
-    const item = decodeItem(raw, companyId)
+    const item = decodeItem(raw, companyId, expectedOutcome)
     if (item === null) return null
     const id = item.id.toLowerCase()
     if (seen.has(id)) return null

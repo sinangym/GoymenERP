@@ -1,3 +1,5 @@
+import { OUTCOME_PARAM, outcomeFromParam, outcomeToParam, type AuditOutcomeFilter } from './auditQueryOutcome'
+
 /**
  * Capability id of "Denetim kaydı" (UI-K02, KLN-D2) — a STATEMENT OF INTENT, not a grant.
  *
@@ -39,16 +41,24 @@ export const AUDIT_FILTERS = [
 
 export type AuditFilterKey = (typeof AUDIT_FILTERS)[number]['key']
 
-/** Trimmed filter values; an empty value is absent and never sent. */
-export type AuditFilters = Readonly<Record<AuditFilterKey, string>>
+/**
+ * Trimmed filter values; an empty value is absent and never sent. `outcome` is the closed "Sonuç" filter of F023-5b
+ * (`?outcome=Succeeded|Refused`, F023-5a); `''` is "Tümü" and `'invalid'` an unknown URL value that is never sent.
+ */
+export type AuditFilters = Readonly<Record<AuditFilterKey, string>> & { readonly outcome: AuditOutcomeFilter }
 
-export const EMPTY_FILTERS: AuditFilters = { correlationId: '', entityType: '', entityId: '' }
+export const EMPTY_FILTERS: AuditFilters = { correlationId: '', entityType: '', entityId: '', outcome: '' }
 
 /** Reads the filters from the URL, trimmed. Nothing is defaulted or guessed. */
 export function filtersFromSearch(search: URLSearchParams): AuditFilters {
-  const filters: Record<AuditFilterKey, string> = { ...EMPTY_FILTERS }
-  for (const filter of AUDIT_FILTERS) filters[filter.key] = (search.get(filter.param) ?? '').trim()
-  return filters
+  const text: Record<AuditFilterKey, string> = { correlationId: '', entityType: '', entityId: '' }
+  for (const filter of AUDIT_FILTERS) text[filter.key] = (search.get(filter.param) ?? '').trim()
+  return { ...text, outcome: outcomeFromParam(search.get(OUTCOME_PARAM)) }
+}
+
+/** True when the URL carries an outcome value this screen does not know; such a filter is never sent. */
+export function hasInvalidOutcome(filters: AuditFilters): boolean {
+  return filters.outcome === 'invalid'
 }
 
 /** The filters that are too long for the server; such a filter is never sent. */
@@ -57,7 +67,7 @@ export function overLongFilters(filters: AuditFilters): readonly AuditFilterKey[
 }
 
 export function hasActiveFilter(filters: AuditFilters): boolean {
-  return AUDIT_FILTERS.some((filter) => filters[filter.key] !== '')
+  return filters.outcome !== '' || AUDIT_FILTERS.some((filter) => filters[filter.key] !== '')
 }
 
 /** The list path carrying only the non-empty filters, so back, reload and a shared link show the same view. */
@@ -67,11 +77,13 @@ export function auditListPath(filters: AuditFilters = EMPTY_FILTERS): string {
     const value = filters[filter.key].trim()
     if (value !== '') search.set(filter.param, value)
   }
+  const outcome = outcomeToParam(filters.outcome)
+  if (outcome !== null) search.set(OUTCOME_PARAM, outcome)
   const query = search.toString()
   return query === '' ? AUDIT_ROUTE[AUDIT_CAPABILITY.list] : `${AUDIT_ROUTE[AUDIT_CAPABILITY.list]}?${query}`
 }
 
 /** A stable string of the filters; part of the view key, so a filter change restarts the list. */
 export function filterKey(filters: AuditFilters): string {
-  return JSON.stringify([filters.correlationId, filters.entityType, filters.entityId])
+  return JSON.stringify([filters.correlationId, filters.entityType, filters.entityId, filters.outcome])
 }
