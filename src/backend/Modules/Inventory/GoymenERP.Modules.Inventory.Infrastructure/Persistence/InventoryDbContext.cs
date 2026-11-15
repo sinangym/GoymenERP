@@ -120,6 +120,19 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "AND [FutureAllocationId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000'";
 
+    /// <summary>KLN-D22: a reverse transfer names a real original transfer that is not itself.</summary>
+    internal const string TransferReversalIdentityCheck =
+        "[OriginalTransferId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalTransferId] <> [TransferId]";
+
+    /// <summary>KLN-D22 (3): the reason of a reverse transfer is mandatory; the recorded envelope is complete.</summary>
+    internal const string TransferReversalTextCheck =
+        "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+        + "AND LEN([CorrelationId]) > 0";
+
+    /// <summary>KLN-D22: a reverse transfer line names a real original line of another transfer.</summary>
+    internal const string TransferReversalLineIdentityCheck =
+        "[OriginalLineId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalTransferId] <> [TransferId]";
+
     /// <summary>
     /// F017-c: Converted (1) names its physical allocation and positive kilograms and no failure; LinkFailed (2) names a failure
     /// and no physical allocation. The quantity is always positive.
@@ -201,6 +214,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<InventoryTransferLossRequestRow> TransferLossRequests => Set<InventoryTransferLossRequestRow>();
 
     internal DbSet<InventoryTransferLossDecisionRow> TransferLossDecisions => Set<InventoryTransferLossDecisionRow>();
+
+    internal DbSet<InventoryTransferReversalRow> TransferReversals => Set<InventoryTransferReversalRow>();
+
+    internal DbSet<InventoryTransferReversalLineRow> TransferReversalLines => Set<InventoryTransferReversalLineRow>();
 
     internal DbSet<FutureSupplyAllocationRow> FutureSupplyAllocations => Set<FutureSupplyAllocationRow>();
 
@@ -1104,6 +1121,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         acceptance.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
         ConfigureInventoryTransferReceipts(modelBuilder);
+        ConfigureInventoryTransferReversals(modelBuilder);
     }
 
     /// <summary>
@@ -1224,6 +1242,52 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         lossDecision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// KLN-D22 reverse transfer links. The reverse transfer is an ordinary transfer row; this link adds the mandatory
+    /// reason and the original transfer. Each reverse line points at an ACCEPTED original line (the foreign key targets
+    /// the acceptance), so the database refuses a link to a line that was never accepted. Every row is immutable.
+    /// </summary>
+    private void ConfigureInventoryTransferReversals(ModelBuilder modelBuilder)
+    {
+        var reversal = modelBuilder.Entity<InventoryTransferReversalRow>();
+        reversal.ToTable("TransferReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferReversals_Identity", TransferReversalIdentityCheck);
+            table.HasCheckConstraint("CK_TransferReversals_Text", TransferReversalTextCheck);
+        });
+        reversal.HasKey(x => new { x.CompanyId, x.TransferId });
+        reversal.HasAlternateKey(x => new { x.CompanyId, x.TransferId, x.OriginalTransferId });
+        reversal.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReverseApiV1.MaximumReasonLength)
+            .IsRequired();
+        reversal.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        reversal.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        reversal.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        reversal.HasIndex(x => new { x.CompanyId, x.OriginalTransferId });
+        TransferOf(reversal);
+        reversal.HasOne<InventoryTransferRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalTransferId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        reversal.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<InventoryTransferReversalLineRow>();
+        line.ToTable("TransferReversalLines", Schema, table =>
+            table.HasCheckConstraint("CK_TransferReversalLines_Identity", TransferReversalLineIdentityCheck));
+        line.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        line.HasIndex(x => new { x.CompanyId, x.TransferId, x.OriginalLineId }).IsUnique();
+        line.HasIndex(x => new { x.CompanyId, x.OriginalTransferId, x.OriginalLineId });
+        TransferLineOf(line);
+        line.HasOne<InventoryTransferReversalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.OriginalTransferId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.OriginalTransferId })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasOne<InventoryTransferAcceptanceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalTransferId, x.OriginalLineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void TransferOf<TEntity>(EntityTypeBuilder<TEntity> entity)
