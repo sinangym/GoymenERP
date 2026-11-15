@@ -7,10 +7,14 @@ using GoymenERP.Modules.Finance.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
 
-/// <summary>FI04 reads Finance-owned admitted open items; no write, allocation or money command.</summary>
+/// <summary>
+/// FI04 reads Finance-owned admitted open items, and B-05 / M-03 reads the party accounts over them; no write,
+/// allocation or money command.
+/// </summary>
 public static class FinanceOpenItemReadEndpoints
 {
     public const string Path = "/api/v1/finance/open-items";
+    public const string PartyAccountsPath = "/api/v1/finance/party-accounts";
     private const int MaximumCursorLength = 8192;
 
     public static IEndpointRouteBuilder MapFinanceOpenItemReadEndpoints(this IEndpointRouteBuilder endpoints)
@@ -57,8 +61,87 @@ public static class FinanceOpenItemReadEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+        MapPartyAccountEndpoints(endpoints);
         return endpoints;
     }
+
+    /// <summary>
+    /// B-05 / M-03 (FNS-D14, KLN-D3): the party-account reads over the same open-item sub-ledger — the Cari Hesaplar
+    /// list (each party account's open receivable / payable per currency) and one account's API-04 summary with its
+    /// open items. Authenticated and company-bound here; the party ledger's two authorities are measured by the
+    /// service. Nothing is written.
+    /// </summary>
+    private static void MapPartyAccountEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup(PartyAccountsPath)
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext();
+
+        group.MapGet("", async (HttpContext http, IPartyLedgerReadServiceV1 service, ICompanyContext company,
+            ICurrentUser actor, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            PrivateNoStore(http);
+            if (http.Request.Query.Count != 0)
+                return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+            var result = await service.ListAuthorizedAsync(Context(company, actor, correlation), cancellationToken);
+            return result.Outcome switch
+            {
+                PartyAccountListOutcome.Found when result.List is not null =>
+                    Results.Json(result.List, FinanceJson.CreateOptions()),
+                PartyAccountListOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                PartyAccountListOutcome.Unavailable =>
+                    Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                PartyAccountListOutcome.TooManyOpenItems => Unprocessable(PartyAccountReadRules.TooManyOpenItemsCode),
+                _ => throw new InvalidOperationException(
+                    "Party account list returned an invalid outcome/resource combination."),
+            };
+        })
+            .WithName("ListFinancePartyAccountsV1")
+            .Produces<PartyAccountListV1>()
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnprocessableEntity(PartyAccountReadRules.TooManyOpenItemsCode)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/{partyId:guid}/{companyAccountId:guid}", async (Guid partyId, Guid companyAccountId,
+            HttpContext http, IPartyLedgerReadServiceV1 service, ICompanyContext company, ICurrentUser actor,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            PrivateNoStore(http);
+            if (http.Request.Query.Count != 0)
+                return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+            var result = await service.GetAuthorizedAsync(Context(company, actor, correlation),
+                new PartyAccountRequestV1(partyId, companyAccountId), cancellationToken);
+            return result.Outcome switch
+            {
+                PartyAccountReadOutcome.Found when result.Account is not null =>
+                    Results.Json(result.Account, FinanceJson.CreateOptions()),
+                PartyAccountReadOutcome.Invalid => Results.Problem(statusCode: StatusCodes.Status400BadRequest),
+                PartyAccountReadOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                PartyAccountReadOutcome.Unavailable =>
+                    Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                PartyAccountReadOutcome.TooManyFacts => Unprocessable(PartyBalanceRules.TooManyFactsCode),
+                PartyAccountReadOutcome.TooManyOpenItems =>
+                    Unprocessable(PartyAccountReadRules.TooManyAccountOpenItemsCode),
+                _ => throw new InvalidOperationException(
+                    "Party account read returned an invalid outcome/resource combination."),
+            };
+        })
+            .WithName("GetFinancePartyAccountV1")
+            .Produces<PartyAccountViewV1>()
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnprocessableEntity(PartyBalanceRules.TooManyFactsCode,
+                PartyAccountReadRules.TooManyAccountOpenItemsCode)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static IResult Unprocessable(string code) => Results.Problem(
+        statusCode: StatusCodes.Status422UnprocessableEntity,
+        extensions: new Dictionary<string, object?> { ["code"] = code });
 
     private static FinanceContext Context(ICompanyContext company, ICurrentUser actor, ICorrelationContext correlation) =>
         new(company.CompanyId, actor.UserId ?? string.Empty, correlation.CorrelationId, correlation.CausationId);
