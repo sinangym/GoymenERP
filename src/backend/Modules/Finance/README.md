@@ -621,8 +621,8 @@ actor to be the recorder.
 | Migration `20261111233047_AddOfficialSalesInvoices` | Pure DDL up (three tables: reservations, invoices, commands). `Down` refuses with `THROW 51051` while any reservation, official sales invoice or command is stored (forward fix): a reservation alone may already own an uploaded PDF |
 | Migration `20261114073527_AddOfficialSalesInvoiceRejectionAndWithdrawal` | Pure DDL up: five nullable trail columns, the three unique indexes filtered to live records and the approval check widened to the rejected and withdrawn states. `Down` refuses with `THROW 51273` while any rejected or withdrawn record is stored (forward fix): the unfiltered indexes could not hold reused numbers; with only pending and approved records it rolls back |
 
-Not in this slice: the single "Kaydet" screen (reserve → upload → record, resumable with the same keys), the Sales
-read port (D3), correcting or cancelling an approved record (FNS-D20), reservation expiry and PDF retention.
+Not in this slice: the single "Kaydet" screen (reserve → upload → record, resumable with the same keys), correcting or
+cancelling an approved record (FNS-D20), reservation expiry and PDF retention. The Sales read port (D3) is FIN-S6 below.
 
 ## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a/D46/D56/D57(3), F018 §L1
 
@@ -694,3 +694,19 @@ Not decided, so not built (NEEDS-SINAN): the tax base + VAT − withholding = pa
 Sınırlar); whether a zero or missing tax amount is allowed; whether an approved D1 manual record blocks a file import
 of the same number/ETTN; an upload-time duplicate warning. The Sales finalization side of D5 waits for #1103
 (FNS-D28 (3)).
+
+## FIN-S6 / F-005 D3: official sales invoice read port (Satış eşleşmesi) — FNS-D17, FNS-D21, FNS-D39, SAT-D89
+
+FNS-D35…FNS-D39 (PDF owner, same PDF, currency candidates, reserve → upload → record, reject / withdraw) are delivered by
+the F-005 D1 section above. This slice adds the read Sales' API-35 match uses. No endpoint, no table, no migration.
+
+| Part | What |
+|---|---|
+| Finance port | `IFinanceOfficialSalesInvoiceReadPortV1.LookupAsync(companyId, officialNo, ettn)` (Contracts), answered by `FinanceOfficialSalesInvoiceReadPortV1` over `finance.OfficialSalesInvoices`, untracked. The key is the official number and the ETTN together, exact (ordinal, also after a case-insensitive collation); the ETTN is compared in its stored lowercase "D" form. Finance records hold no Sales invoice id, so the key is not a `SalesInvoiceId` |
+| Outcomes | `Approved` with the stored facts (invoice id, company, number, ETTN, customer, currency, the five exact decimal texts, the PDF document / version / SHA-256, version, approval time); `PendingApproval` without facts; `NotFound` for none, a rejected or withdrawn record (FNS-D39: only live records, the unique-index filter), or a number / ETTN Finance could never have stored (blank, padded, longer than 64, not a "D" GUID); `Unavailable` for another company named under the resolved one, no resolved company, two live rows on one key, a stored approved row Finance cannot read back exactly (an amount that is not its normalised exact text with the record's sign rule, a missing approval time, an empty identity), or a store fault |
+| Sales adapter | `FinanceSalesOfficialInvoiceReadPortV1` answers the Sales-declared `ISalesOfficialInvoiceReadPortV1` (API-35) from the Finance port. Only an approved record is the official fact (F-005 D1): `Approved` → `Found`; `PendingApproval` / `NotFound` → `NotFound` (the match answers `official_document_not_found`); anything else, a fault, a foreign-company answer or an amount `System.Decimal` cannot hold exactly → `Unavailable` (the match fails closed with 503), never a rounded amount. The tax base is not passed (FNS-D21) |
+| Registration | Both ports are scoped in `AddFinanceServices` beside the MOD-01 risk port. Neither carries authority (the Sales match measures its own) and neither writes (no attempt, audit or version effect) |
+
+Not decided, so not built (NEEDS-SINAN): whether a document claimed by an approved CSV v2 file import (FIN-S5,
+`finance.OfficialInvoiceIdentityClaims`) also answers the Sales read port, and which source wins when a D1 record and a
+file import name the same number / ETTN. The port answers approved D1 records only.

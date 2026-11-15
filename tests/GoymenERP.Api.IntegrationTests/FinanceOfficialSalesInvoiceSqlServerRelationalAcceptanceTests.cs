@@ -7,6 +7,8 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.Invoices;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -575,6 +577,63 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
         }
     }
 
+    /// <summary>
+    /// FIN-S6 (F-005 D3): the Finance read port and the Sales API-35 adapter over it, on real SQL Server. A pending record is
+    /// not yet the official fact (Sales: NotFound); the approved one answers its stored exact amounts; the key is exact even
+    /// where the column collation is not; another company is never answered; the read writes nothing.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_sales_read_port_answers_only_the_approved_live_record_by_its_exact_number_and_ettn()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = await RecordAsync(run);
+        var commandsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands");
+
+        var (pending, pendingForSales) = await run.ReadAsync(Company, Company, OfficialNo, Ettn);
+        Assert.Equal((FinanceOfficialSalesInvoiceReadOutcomeV1.PendingApproval, (FinanceOfficialSalesInvoiceFactsV1?)null),
+            (pending.Outcome, pending.Invoice));
+        Assert.Equal(SalesOfficialInvoiceOutcomeV1.NotFound, pendingForSales.Outcome);
+        Assert.Equal(commandsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands"));
+
+        await using (var checker = run.Service("SENTETIK-checker"))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await checker.Service.ApproveAsync(checker.Context,
+                new CommandMetadata("approve-for-read"), new FinanceOfficialSalesInvoiceApproveRequestV1(invoice, "1"),
+                default)).Outcome);
+        }
+        commandsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands");
+
+        var (approved, forSales) = await run.ReadAsync(Company, Company, OfficialNo, Ettn);
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, approved.Outcome);
+        var facts = approved.Invoice!;
+        Assert.Equal((invoice, Company, OfficialNo, Ettn, Customer, Currency, Pdf, 1, new string('d', 64), "2"),
+            (facts.InvoiceId, facts.CompanyId, facts.OfficialNo, facts.Ettn, facts.CustomerPartyId, facts.CurrencyId,
+                facts.PdfDocumentId, facts.PdfDocumentVersionNo, facts.PdfSha256, facts.Version));
+        Assert.Equal(("1250.50", "1250.50", "1042.08", "208.42", "0"),
+            (facts.PayableAmount, facts.PayableFunctionalAmount, facts.TaxBaseFunctionalAmount,
+                facts.VatFunctionalAmount, facts.WithholdingFunctionalAmount));
+        Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, forSales.Outcome);
+        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m),
+            forSales.Invoice);
+
+        // The number is compared exactly: a case variant is not the record, whatever the column collation says.
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.NotFound,
+            (await run.ReadAsync(Company, Company, OfficialNo.ToLowerInvariant(), Ettn)).Finance.Outcome);
+        // The number and the ETTN together: the right number with another ETTN is not the record.
+        Assert.Equal(SalesOfficialInvoiceOutcomeV1.NotFound,
+            (await run.ReadAsync(Company, Company, OfficialNo, "96000000-0000-4000-8000-000000000006")).Sales.Outcome);
+        // Another company is never answered: named under company A it is Unavailable, under its own context NotFound.
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.Unavailable,
+            (await run.ReadAsync(Company, TestCompanyIds.CompanyB, OfficialNo, Ettn)).Finance.Outcome);
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.NotFound,
+            (await run.ReadAsync(TestCompanyIds.CompanyB, TestCompanyIds.CompanyB, OfficialNo, Ettn)).Finance.Outcome);
+
+        Assert.Equal(commandsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoiceCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OfficialSalesInvoices WHERE Id = @id AND Status = 2 AND Version = 2",
+            ("@id", invoice)));
+    }
+
     private static async Task<Guid> ReserveAsync(Run run, string actor, Guid? company = null, string? key = null)
     {
         await using var scope = run.Service(actor, company);
@@ -679,6 +738,20 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
                 new AllowAuthority());
             return await read.CheckReadableAsync(
                 new FinanceContext(company, actor, $"fin-owner-read-{Guid.NewGuid():N}", null), invoiceId, default);
+        }
+
+        /// <summary>FIN-S6: the Finance read port and the Sales adapter over it, resolved in <paramref name="context"/>.</summary>
+        public async Task<(FinanceOfficialSalesInvoiceReadAnswerV1 Finance, SalesOfficialInvoiceAnswerV1 Sales)> ReadAsync(
+            Guid context, Guid requested, string officialNo, string ettn)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(context);
+            await using var db = new FinanceDbContext(Options(Factory), companyContext);
+            var port = new FinanceOfficialSalesInvoiceReadPortV1(db, companyContext);
+            var finance = await port.LookupAsync(requested, officialNo, ettn, default);
+            var sales = await new FinanceSalesOfficialInvoiceReadPortV1(port).LookupAsync(requested, officialNo, ettn, default);
+            Assert.False(db.ChangeTracker.HasChanges());
+            return (finance, sales);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
