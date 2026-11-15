@@ -77,7 +77,7 @@ internal static class SecurityEventFixtures
         ReasonCode = SecurityEventReasonCodesV1.PolicyRefused,
         Severity = SecurityEventSeveritiesV1.Warning,
         PolicyId = "auth.login.rate-limit",
-        PolicyVersion = "1",
+        PolicyVersion = 1,
         CorrelationId = "corr-4",
         SourceChannel = SourceChannels.Web,
         RateLimitSummary = new SecurityEventRateLimitSummaryV1(
