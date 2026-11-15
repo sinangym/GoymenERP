@@ -752,6 +752,29 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-S17 (SAT-D317): the order's production cost as the production cost port version 2 records it — the kg cost,
+        // the TL per line, the rounding remainder, the currency lines and the inputs that keep the cost from being computed.
+        // An order that is not closed is pending (order_not_closed); no port source answers unavailable, never a zero. The
+        // reports grant, registered and granted to no role. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/production-cost", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetProductionCostAsync(orderId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderProductionCostV1")
+            .Produces<ProductionCostViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // URT-D42 (3): the company's already-closed orders whose output exceeded input on a parent roll, per roll — listed,
         // never reopened or changed. The order list's paging and the order read's grant; a read: nothing is stored.
         group.MapGet("/reports/output-above-input-closures", async (
