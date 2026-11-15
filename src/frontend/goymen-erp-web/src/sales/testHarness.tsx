@@ -522,7 +522,7 @@ function nothingDelivered(detail: unknown): Response {
     draftVersion: body.draft.version,
     lines: body.lines.map((line) => ({
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
-      shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
+      shipped: '0', delivered: '0', remaining: line.quantity, excess: '0', shippedBy: [],
     })),
   })
 }

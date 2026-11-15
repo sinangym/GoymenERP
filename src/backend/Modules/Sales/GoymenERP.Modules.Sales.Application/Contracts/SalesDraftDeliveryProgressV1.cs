@@ -7,6 +7,14 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// below zero; <c>excess</c> = delivered − ordered when more was delivered than ordered, else zero. These are facts only:
 /// whether a shortfall closes the line or an excess is acceptable is the over/under-delivery tolerance policy (OPEN-004,
 /// not decided), so no tolerance, warning or completion state is derived here.
+/// <para>
+/// <c>shippedBy</c> (F-006, B-33; SAT-D216/SAT-D222): who recorded the definite shipments counted in <c>shipped</c>, as the
+/// delivery owner names them through <see cref="SalesOrderLineDeliveryV1.ShippedBy"/> — every named actor once, trimmed, in
+/// ordinal order, in the Sales actor id format. An empty list when nothing definite is shipped (<c>shipped</c> is zero);
+/// <c>null</c> when something is shipped but the owner does not name every shipper of it (a shipment recorded before the
+/// owner kept its actor, or a blank or over-long name) — the same "unverified" reading the over-delivery approval and the
+/// line closure refuse on (fail-closed), never only the known part. A display fact: it grants and judges nothing.
+/// </para>
 /// </summary>
 public sealed record SalesDraftLineDeliveryProgressV1(
     Guid LineId,
@@ -16,7 +24,8 @@ public sealed record SalesDraftLineDeliveryProgressV1(
     string Shipped,
     string Delivered,
     string Remaining,
-    string Excess);
+    string Excess,
+    IReadOnlyList<string>? ShippedBy);
 
 /// <summary>
 /// AT-024: GET …/{id}/delivery-progress — every line of the draft once, in line order, under the draft read. The answer

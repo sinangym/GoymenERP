@@ -241,6 +241,9 @@ export interface DeliverySchedules {
  * AT-024: one line's quantities as exact decimal text in the line's order unit — `ordered` (the line), `shipped` and
  * `delivered` (the delivery owner's recorded totals), `remaining` (ordered − delivered, never below zero) and `excess`
  * (delivered above the order). Facts only: no completion or tolerance state exists (OPEN-004 is open).
+ * SAT-S11 (B-33): `shippedBy` — who recorded this line's shipments, as the delivery owner names them: distinct, trimmed
+ * and in ordinal order; `[]` exactly when nothing is shipped; `null` when something is shipped but not every shipment
+ * names its shipper (shown as unknown, never as a partial list).
  */
 export interface DeliveryProgressLine {
   readonly lineId: string
@@ -251,6 +254,7 @@ export interface DeliveryProgressLine {
   readonly delivered: string
   readonly remaining: string
   readonly excess: string
+  readonly shippedBy: readonly string[] | null
 }
 
 export interface DeliveryProgress {
@@ -1446,8 +1450,9 @@ export function decodeDeliverySchedules(value: unknown): DeliverySchedules | nul
 /**
  * AT-024: `SalesOrderDraftDeliveryProgressResponse`, read exactly — and only as the progress OF `detail`: the same
  * version, every line of the detail once in its order with its own order unit and quantity text. Decimal text stays
- * text (never parsed into a JS number); `ordered` is positive, the others may be zero. A body that does not fit is not
- * shown as quantities.
+ * text (never parsed into a JS number); `ordered` is positive, the others may be zero. `shippedBy` is `[]` exactly when
+ * `shipped` is zero and may be `null` only when it is not; a named list is non-blank, trimmed, distinct and ordinally
+ * sorted. A body that does not fit is not shown as quantities.
  */
 export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): DeliveryProgress | null {
   const response = exact(value, ['draftVersion', 'lines'])
@@ -1457,21 +1462,33 @@ export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): Del
   ) return null
   const lines: DeliveryProgressLine[] = []
   for (const [index, entry] of response.lines.entries()) {
-    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess'])
+    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess', 'shippedBy'])
     const line = detail.lines[index]
     if (
       o === null || !isRevisionId(o.lineId) || o.lineId.toLowerCase() !== line.lineId.toLowerCase() ||
       o.lineNo !== line.lineNo || !isRevisionId(o.orderUnitId) ||
       o.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || o.ordered !== line.quantity ||
       !isRevisionDecimal(o.ordered, true) || !isRevisionDecimal(o.shipped, false) ||
-      !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false)
+      !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false) ||
+      !isShippedByOf(o.shippedBy, compareDecimalText(o.shipped, '0') === 0)
     ) return null
     lines.push({
       lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
-      shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess,
+      shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess, shippedBy: o.shippedBy,
     })
   }
   return { draftVersion: response.draftVersion, lines }
+}
+
+/**
+ * SAT-S11: a line's shippers — `[]` exactly when nothing is shipped, `null` only when something is; otherwise every name
+ * a trimmed, non-blank actor, distinct and strictly ordinal (UTF-16 code unit order, as the server's ordinal sort).
+ */
+function isShippedByOf(v: unknown, nothingShipped: boolean): v is readonly string[] | null {
+  if (v === null) return !nothingShipped
+  if (!Array.isArray(v) || (v.length === 0) !== nothingShipped) return false
+  return v.every((name, index) => isRevisionActor(name) && name.trim() === name &&
+    (index === 0 || (v[index - 1] as string) < name))
 }
 
 /** Exact decimal text compared as text — never through a JS number. Both sides are already `isRevisionDecimal`. */
