@@ -14,10 +14,12 @@ using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -35,6 +37,7 @@ public sealed class OrganizationWorkCenterCalendarSqlServerRelationalAcceptanceT
     private const string WorkCentersRoute = "/api/v1/organization/work-centers";
     private const string MigrationBeforeCalendar = "20261013155012_AddLocationOperatorParty";
     private const int ForwardFixRefusal = 51361;
+    private const int OvernightForwardFixRefusal = 51444;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private static readonly string[] CalendarEditorPermissions =
@@ -265,6 +268,138 @@ public sealed class OrganizationWorkCenterCalendarSqlServerRelationalAcceptanceT
                 (await dbContext.Database.GetAppliedMigrationsAsync()),
                 migration => migration.EndsWith("_AddWorkCenterCalendar", StringComparison.Ordinal));
         });
+    }
+
+    /// <summary>
+    /// KIM-S25 (KIM-D33): an end earlier than the start spills into the next day. The overnight windows (including a
+    /// Sunday one that runs into Monday and one that ends exactly at midnight) are stored as written, read back by the
+    /// screen and published unchanged by the V2 planning reference; an empty window and a next-day part that overlaps
+    /// the next day's shift are refused before anything is stored.
+    /// </summary>
+    [SqlServerFact]
+    public async Task An_overnight_shift_is_stored_as_written_and_an_empty_or_overlapping_one_is_refused()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await GrantAsync(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA, CalendarEditorPermissions);
+            using var editor = CreateClient(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            var workCenterId = await FirstWorkCenterAsync(factory, TestCompanyIds.CompanyA);
+            var path = $"{WorkCentersRoute}/{workCenterId}/calendar";
+            var baseline = await ReadEffectsAsync(factory, TestCompanyIds.CompanyA);
+
+            // Start = end is no window; Monday 22:00-06:00 runs into Tuesday 05:00-13:00.
+            var refused = new[]
+            {
+                new SetWorkCenterCalendar([new("Monday", "08:00", "08:00")], [], 0, "Boş vardiya"),
+                new SetWorkCenterCalendar(
+                    [new("Monday", "22:00", "06:00"), new("Tuesday", "05:00", "13:00")], [], 0, "Çakışan gece vardiyası"),
+                new SetWorkCenterCalendar(
+                    [new("Sunday", "22:00", "06:00"), new("Monday", "05:30", "13:00")], [], 0, "Haftayı aşan çakışma"),
+            };
+            foreach (var body in refused)
+            {
+                using var response = await SendAsync(editor, path, body, Key());
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            }
+
+            var afterRefusals = await ReadEffectsAsync(factory, TestCompanyIds.CompanyA);
+            Assert.Equal(
+                (baseline.Calendars, baseline.Shifts, baseline.Audits),
+                (afterRefusals.Calendars, afterRefusals.Shifts, afterRefusals.Audits));
+
+            // Touching is allowed: Sunday's night shift ends at Monday 06:00, when Monday's day shift starts.
+            WorkCenterCalendarShiftV1[] nightWeek =
+            [
+                new("Sunday", "22:00", "06:00"),
+                new("Monday", "06:00", "14:00"),
+                new("Monday", "16:00", "00:00"),
+                new("Friday", "22:00", "06:00"),
+            ];
+            using (var response = await SendAsync(editor, path,
+                new SetWorkCenterCalendar(nightWeek, [], 0, "Gece vardiyası açıldı"), Key()))
+            {
+                await AssertNoContentAsync(response, replay: false);
+            }
+
+            var screen = await ReadCalendarAsync(editor, path);
+            Assert.Equal(("WorkCenter", 1L), (screen.Source, screen.Version));
+            Assert.Equal(
+                new WorkCenterCalendarShiftV1[]
+                {
+                    new("Monday", "06:00", "14:00"),
+                    new("Monday", "16:00", "00:00"),
+                    new("Friday", "22:00", "06:00"),
+                    new("Sunday", "22:00", "06:00"),
+                },
+                screen.Shifts);
+
+            var reference = await ReadReferenceAsync(factory, workCenterId);
+            Assert.Equal(screen.Version, reference.Version);
+            Assert.Equal(
+                screen.Shifts,
+                reference.Shifts.Select(shift => new WorkCenterCalendarShiftV1(
+                    shift.Day.ToString(),
+                    shift.Start.ToString("HH:mm", CultureInfo.InvariantCulture),
+                    shift.End.ToString("HH:mm", CultureInfo.InvariantCulture))));
+            Assert.Equal(3, reference.Shifts.Count(shift => shift.End < shift.Start));
+        });
+    }
+
+    /// <summary>
+    /// KIM-S25 (KIM-D33): rolling AllowWorkCenterOvernightShifts back restores the same-day check, which cannot hold an
+    /// overnight row. Its guard passes while every stored shift is same-day and refuses (forward fix) once any revision
+    /// holds an overnight shift, leaving the rows as they were.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_overnight_shift_migrations_Down_passes_with_same_day_shifts_and_refuses_while_an_overnight_shift_exists()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await GrantAsync(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA, CalendarEditorPermissions);
+            using var editor = CreateClient(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            var workCenterId = await FirstWorkCenterAsync(factory, TestCompanyIds.CompanyA);
+            var path = $"{WorkCentersRoute}/{workCenterId}/calendar";
+            var guard = Assert.IsType<SqlOperation>(new AllowWorkCenterOvernightShifts().DownOperations[0]).Sql;
+
+            using (var response = await SendAsync(editor, path,
+                new SetWorkCenterCalendar(TwoShiftWeek, [], 0, "Gündüz vardiyaları"), Key()))
+            {
+                await AssertNoContentAsync(response, replay: false);
+            }
+
+            await ExecuteOrganizationSqlAsync(factory, guard);
+
+            using (var response = await SendAsync(editor, path,
+                new SetWorkCenterCalendar([new("Monday", "22:00", "06:00")], [], 1, "Gece vardiyası"), Key()))
+            {
+                await AssertNoContentAsync(response, replay: false);
+            }
+
+            // Revision 2 holds the overnight row; the guard refuses even though revision 1 is same-day.
+            var exception = await Assert.ThrowsAsync<SqlException>(() => ExecuteOrganizationSqlAsync(factory, guard));
+            Assert.Equal(OvernightForwardFixRefusal, exception.Number);
+
+            var reference = await ReadReferenceAsync(factory, workCenterId);
+            Assert.Equal(2L, reference.Version);
+            var overnight = Assert.Single(reference.Shifts);
+            Assert.Equal((DayOfWeek.Monday, new TimeOnly(22, 0), new TimeOnly(6, 0)), (overnight.Day, overnight.Start, overnight.End));
+        });
+    }
+
+    private static async Task ExecuteOrganizationSqlAsync(SqlServerRelationalApiFactory factory, string sql)
+    {
+        string connectionString;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            connectionString = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>()
+                .Database.GetConnectionString()!;
+        }
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<WorkCenterCalendarDetail> ReadCalendarAsync(HttpClient client, string path)

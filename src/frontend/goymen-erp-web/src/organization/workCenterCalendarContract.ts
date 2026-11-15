@@ -11,7 +11,10 @@
  *    save. After a save it is `WorkCenter` and `version` is the saved revision (>= 1). So unlike every other
  *    Organization version, 0 is a legal value here, and the decoders below accept it only in that pairing.
  *  - `shifts` are weekly windows `{day, start, end}`: `day` is the English weekday token (`Monday` … `Sunday`),
- *    `start`/`end` are `HH:mm` in `timeZoneId`, on the same day (no overnight window in v1).
+ *    `start`/`end` are `HH:mm` in `timeZoneId`. KIM-D33: an `end` earlier than `start` spills into the next day
+ *    (`22:00`–`06:00` runs from 22:00 on `day` to 06:00 on the following day; `16:00`–`00:00` ends at midnight), and
+ *    a Sunday window spills into Monday. `start` equal to `end` is no window. The shift belongs to the day it starts
+ *    on; splitting its hours across both days is a capacity calculation, which this screen does not do.
  *  - `closedDates` are `yyyy-MM-dd` business dates, ascending.
  *  - URT-D29: no capacity or termin is computed from this; the screen shows and edits the master, nothing more.
  *
@@ -23,6 +26,9 @@ import type { VersionConflict } from './contract'
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
 const DATE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/
+const MINUTES_PER_HOUR = 60
+const HOURS_PER_DAY = 24
+const MINUTES_PER_DAY = MINUTES_PER_HOUR * HOURS_PER_DAY
 
 /** The weekday tokens, in the order the screen lists them (the business week starts on Monday). */
 export const CALENDAR_DAYS = [
@@ -107,8 +113,8 @@ function decodeShift(raw: unknown): CalendarShift | null {
   if (!isRecord(raw) || !hasExactKeys(raw, ['day', 'start', 'end'])) return null
   const { day, start, end } = raw
   if (!isCalendarDay(day) || !isTimeToken(start) || !isTimeToken(end)) return null
-  // Same-day windows only; an end that is not after its start is not a window the server could have stored.
-  if (end <= start) return null
+  // KIM-D33: an earlier end spills into the next day; an equal pair is not a window the server could have stored.
+  if (end === start) return null
   return { day, start, end }
 }
 
@@ -173,4 +179,39 @@ export function sortShifts(shifts: readonly CalendarShift[]): CalendarShift[] {
     if (byDay !== 0) return byDay
     return left.start < right.start ? -1 : left.start > right.start ? 1 : 0
   })
+}
+
+/** KIM-D33: the window ends on the next day (its end is earlier than its start; `00:00` is midnight). */
+export function endsNextDay(shift: CalendarShift): boolean {
+  return shift.end < shift.start
+}
+
+function minuteOfDay(time: string): number {
+  const [hours, minutes] = time.split(':')
+  return Number(hours) * MINUTES_PER_HOUR + Number(minutes)
+}
+
+/** Where the window starts on the weekly clock (Monday 00:00 is 0) and how many minutes it lasts. */
+function weekWindow(shift: CalendarShift): { readonly start: number; readonly length: number } {
+  const start = CALENDAR_DAYS.indexOf(shift.day) * MINUTES_PER_DAY + minuteOfDay(shift.start)
+  const length = endsNextDay(shift)
+    ? MINUTES_PER_DAY - minuteOfDay(shift.start) + minuteOfDay(shift.end)
+    : minuteOfDay(shift.end) - minuteOfDay(shift.start)
+  return { start, length }
+}
+
+/**
+ * The server's overlap rule (`WorkCenterCalendarDefinition`), so the form can say so before it sends: two windows
+ * may not share a minute on the weekly clock, which includes the next-day part of an overnight window and a Sunday
+ * window spilling into Monday. Windows may touch. Expects valid, non-empty windows.
+ */
+export function shiftsOverlap(shifts: readonly CalendarShift[]): boolean {
+  const ordered = sortShifts(shifts).map(weekWindow)
+  if (ordered.length === 0) return false
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1]
+    if (previous.start + previous.length > ordered[index].start) return true
+  }
+  const last = ordered[ordered.length - 1]
+  return last.start + last.length - MINUTES_PER_DAY * CALENDAR_DAYS.length > ordered[0].start
 }

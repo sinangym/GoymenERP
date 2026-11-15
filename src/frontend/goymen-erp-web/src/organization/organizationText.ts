@@ -438,13 +438,17 @@ export const WORK_CENTER_CALENDAR_TEXT = {
   closedDateRow: (index: number) => `Kapalı gün ${index}`,
   help:
     'Kaydetme takvimin tamamını yeni bir sürüm olarak yazar; önceki sürüm silinmez. Değişiklik gerekçesiyle ' +
-    'birlikte audit kaydına yazılır. Gece yarısını geçen vardiya bu sürümde tanımlanamaz.',
+    'birlikte audit kaydına yazılır. Bitiş saati başlangıçtan önceyse vardiya ertesi güne taşar (ör. 22:00–06:00); ' +
+    'pazar günü başlayan gece vardiyası pazartesiye taşar.',
   noShift: 'En az bir vardiya girilmelidir.',
   tooManyShifts:
     `Bir gün için en fazla ${CALENDAR_LIMITS.shiftsPerDay}, toplamda en fazla ${CALENDAR_LIMITS.shifts} ` +
     'vardiya girilebilir.',
-  shiftInvalid: 'Başlangıç ve bitiş saati SS:dd biçiminde olmalı ve bitiş başlangıçtan sonra gelmelidir.',
-  shiftsOverlap: 'Aynı gündeki vardiyalar çakışamaz.',
+  shiftInvalid: 'Başlangıç ve bitiş saati SS:dd biçiminde olmalı; başlangıç ile bitiş aynı olamaz.',
+  shiftsOverlap: 'Vardiyalar çakışamaz; ertesi güne taşan vardiya o günün vardiyalarıyla da çakışmamalıdır.',
+  nextDay: 'ertesi gün',
+  shiftWindow: (start: string, end: string, nextDay: boolean) =>
+    nextDay ? `${start}–${end} (ertesi gün)` : `${start}–${end}`,
   dateInvalid: 'Kapalı gün geçerli bir tarih olmalıdır.',
   tooManyClosedDates: `En fazla ${CALENDAR_LIMITS.closedDates} kapalı gün girilebilir.`,
   duplicateClosedDate: 'Aynı kapalı gün birden fazla girilemez.',

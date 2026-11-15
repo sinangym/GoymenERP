@@ -687,7 +687,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Revision", "[Revision] >= 1");
 
-                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Window", "[StartTime] < [EndTime]");
+                            t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Window", "[StartTime] <> [EndTime]");
                         });
                 });
 

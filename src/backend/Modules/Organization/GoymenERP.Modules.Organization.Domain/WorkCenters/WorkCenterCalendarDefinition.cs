@@ -8,7 +8,10 @@ public enum WorkCenterCalendarDefinitionError
     TooManyShifts = 2,
     InvalidDay = 3,
     ShiftNotOnWholeMinute = 4,
+    /// <summary>The window has no length: its start equals its end (KIM-D33). An earlier end spills into the next day.</summary>
     ShiftNotPositive = 5,
+
+    /// <summary>Two windows share a minute, including the next-day part of a window that spills past midnight.</summary>
     ShiftsOverlap = 6,
     TooManyClosedDates = 7,
     DuplicateClosedDate = 8,
@@ -110,7 +113,8 @@ public sealed class WorkCenterCalendarDefinition : IEquatable<WorkCenterCalendar
                 return WorkCenterCalendarDefinitionError.ShiftNotOnWholeMinute;
             }
 
-            if (shift.Start >= shift.End)
+            // KIM-D33: an end earlier than the start spills into the next day; only an equal pair is no window.
+            if (shift.Start == shift.End)
             {
                 return WorkCenterCalendarDefinitionError.ShiftNotPositive;
             }
@@ -121,14 +125,9 @@ public sealed class WorkCenterCalendarDefinition : IEquatable<WorkCenterCalendar
             .ThenBy(shift => shift.Start)
             .ThenBy(shift => shift.End)
             .ToArray();
-        for (var index = 1; index < ordered.Length; index++)
+        if (AnyOverlap(ordered))
         {
-            var previous = ordered[index - 1];
-            var current = ordered[index];
-            if (previous.Day == current.Day && current.Start < previous.End)
-            {
-                return WorkCenterCalendarDefinitionError.ShiftsOverlap;
-            }
+            return WorkCenterCalendarDefinitionError.ShiftsOverlap;
         }
 
         if (ordered.GroupBy(shift => shift.Day).Any(day => day.Count() > MaximumShiftsPerDay))
@@ -191,6 +190,26 @@ public sealed class WorkCenterCalendarDefinition : IEquatable<WorkCenterCalendar
         }
 
         return hash.ToHashCode();
+    }
+
+    /// <summary>
+    /// True when two windows share a minute on the weekly clock. <paramref name="ordered"/> is sorted by week start, so
+    /// each window only needs comparing with the next one, and the last window with the first across the week's end
+    /// (a Sunday window that spills into Monday). Windows may touch (one ends at the minute the next starts).
+    /// </summary>
+    private static bool AnyOverlap(IReadOnlyList<WorkCenterShift> ordered)
+    {
+        for (var index = 1; index < ordered.Count; index++)
+        {
+            var previous = ordered[index - 1];
+            if (previous.WeekStartMinute + previous.LengthMinutes > ordered[index].WeekStartMinute)
+            {
+                return true;
+            }
+        }
+
+        var last = ordered[ordered.Count - 1];
+        return last.WeekStartMinute + last.LengthMinutes - WorkCenterShift.MinutesPerWeek > ordered[0].WeekStartMinute;
     }
 
     private static bool IsWholeMinute(TimeOnly value)
