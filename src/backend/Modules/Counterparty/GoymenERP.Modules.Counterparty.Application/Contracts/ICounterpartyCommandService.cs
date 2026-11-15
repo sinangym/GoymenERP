@@ -120,6 +120,24 @@ public enum CounterpartyCommandResult
 
     /// <summary>EK-18 #76: both parties carry a VKN/TCKN and the numbers differ, so they are not duplicates (409).</summary>
     PartyMergeTaxIdentityMismatch = 24,
+
+    /// <summary>KLN-D38: a cari cannot succeed itself (422).</summary>
+    SuccessionSameParty = 25,
+
+    /// <summary>
+    /// KLN-D38 rule 3: the successor carries the predecessor's VKN/TCKN, so it is the same legal person; a type change
+    /// with the same VKN keeps the same cari and records the dated legal name instead (422).
+    /// </summary>
+    SuccessionSameTaxIdentity = 26,
+
+    /// <summary>KLN-D38: the successor's account in the active company is passive; a passive cari takes over nothing (409).</summary>
+    SuccessionSuccessorInactive = 27,
+
+    /// <summary>KLN-D38: the successor already (transitively) succeeds-from the predecessor's chain; a cycle is refused (409).</summary>
+    SuccessionCycle = 28,
+
+    /// <summary>KLN-D38: a successor of this cari is already recorded in the active company (409).</summary>
+    SuccessionAlreadyRecorded = 29,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -182,6 +200,17 @@ public static class CounterpartyProblemCodesV1
 
     public const string PartyMergeTaxIdentityMismatch = "party_merge_tax_identity_mismatch";
 
+    /// <summary>KLN-D38 party succession (predecessor → successor in one company).</summary>
+    public const string SuccessionSameParty = "succession_same_party";
+
+    public const string SuccessionSameTaxIdentity = "succession_same_tax_identity";
+
+    public const string SuccessionSuccessorInactive = "succession_successor_inactive";
+
+    public const string SuccessionCycle = "succession_cycle";
+
+    public const string SuccessionAlreadyRecorded = "succession_already_recorded";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -208,6 +237,11 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.PartyAlreadyMerged => PartyAlreadyMerged,
             CounterpartyCommandResult.PartyMergeTargetMerged => PartyMergeTargetMerged,
             CounterpartyCommandResult.PartyMergeTaxIdentityMismatch => PartyMergeTaxIdentityMismatch,
+            CounterpartyCommandResult.SuccessionSameParty => SuccessionSameParty,
+            CounterpartyCommandResult.SuccessionSameTaxIdentity => SuccessionSameTaxIdentity,
+            CounterpartyCommandResult.SuccessionSuccessorInactive => SuccessionSuccessorInactive,
+            CounterpartyCommandResult.SuccessionCycle => SuccessionCycle,
+            CounterpartyCommandResult.SuccessionAlreadyRecorded => SuccessionAlreadyRecorded,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

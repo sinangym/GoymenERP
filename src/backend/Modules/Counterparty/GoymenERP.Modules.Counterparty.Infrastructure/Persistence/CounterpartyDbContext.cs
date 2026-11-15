@@ -43,6 +43,16 @@ public sealed class CounterpartyDbContext(
     /// <summary>SAT-D119: the group-level, VKN-keyed customer e-belge profiles (shared across all companies).</summary>
     public DbSet<CustomerEDocumentProfile> CustomerEDocumentProfiles => Set<CustomerEDocumentProfile>();
 
+    /// <summary>KLN-D38: the group-level, append-only dated history of a party's VKN/TCKN and legal name.</summary>
+    public DbSet<PartyIdentityRevision> PartyIdentityRevisions => Set<PartyIdentityRevision>();
+
+    /// <summary>KLN-D38: the group-level, append-only dated history of a VKN's e-belge status.</summary>
+    public DbSet<CustomerEDocumentStatusRevision> CustomerEDocumentStatusRevisions =>
+        Set<CustomerEDocumentStatusRevision>();
+
+    /// <summary>KLN-D38 (2): each company's predecessor → successor links between cari accounts (append-only).</summary>
+    public DbSet<PartySuccession> PartySuccessions => Set<PartySuccession>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     /// <summary>EK-18 #76-#77: the group-level, append-only record of each approved party merge (no unmerge).</summary>
@@ -64,6 +74,9 @@ public sealed class CounterpartyDbContext(
         ConfigureCustomerGroup(modelBuilder);
         ConfigureCustomerEDocumentProfile(modelBuilder);
         ConfigurePartyMerge(modelBuilder);
+        ConfigurePartyIdentityRevision(modelBuilder);
+        ConfigureCustomerEDocumentStatusRevision(modelBuilder);
+        ConfigurePartySuccession(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -385,6 +398,143 @@ public sealed class CounterpartyDbContext(
             .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
     }
 
+    private static void ConfigurePartyIdentityRevision(ModelBuilder modelBuilder)
+    {
+        // KLN-D38: GROUP-LEVEL like Party (DEC-CAR-001) — no CompanyId, no query filter; the recording company is
+        // provenance only. Append-only: the write guard refuses every update and delete.
+        var entity = modelBuilder.Entity<PartyIdentityRevision>();
+        entity.ToTable("PartyIdentityRevisions", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartyIdentityRevisions_Attribute", "[Attribute] IN (1, 2)");
+            table.HasCheckConstraint("CK_PartyIdentityRevisions_Kind", "[Kind] IN (1, 2, 3, 4)");
+            table.HasCheckConstraint("CK_PartyIdentityRevisions_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_Value",
+                "LEN([Value]) > 0 AND ([Attribute] <> 1 OR ("
+                + TaxIdentityNumberFormatSql("Value", nullable: false) + "))");
+            // A baseline or a first entry stands for "since always"; a correction or a dated change carries its date.
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_EffectiveFrom",
+                "([Kind] IN (1, 2) AND [EffectiveFrom] IS NULL) OR ([Kind] IN (3, 4) AND [EffectiveFrom] IS NOT NULL)");
+            // KLN-D38 (1): a correction is a reasoned, approved VKN/TCKN change request; nothing else names a request.
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_Correction",
+                "([Kind] = 3 AND [Attribute] = 1 AND [SourceChangeRequestId] IS NOT NULL AND [Reason] IS NOT NULL"
+                + " AND LEN([Reason]) > 0) OR ([Kind] <> 3 AND [SourceChangeRequestId] IS NULL)");
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_Recorded",
+                "[Kind] = 1 OR ([RecordedByUserId] IS NOT NULL AND LEN([RecordedByUserId]) > 0"
+                + " AND [RecordedInCompanyId] IS NOT NULL)");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Attribute).HasConversion<int>().IsRequired();
+        entity.Property(x => x.Kind).HasConversion<int>().IsRequired();
+        entity.Property(x => x.Value).HasMaxLength(PartyIdentityRevision.ValueMaximumLength).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(PartyIdentityRevision.ReasonMaximumLength);
+        entity.Property(x => x.RecordedByUserId).HasMaxLength(PartyIdentityRevision.ActorMaximumLength);
+        // One revision per party version and attribute; a concurrent second writer of the same version loses here.
+        entity.HasIndex(x => new { x.PartyId, x.Attribute, x.Sequence })
+            .IsUnique()
+            .HasDatabaseName("UX_PartyIdentityRevisions_PartySequence");
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<PartyTaxIdentityChangeRequest>()
+            .WithMany()
+            .HasForeignKey(x => x.SourceChangeRequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.RecordedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_PartyIdentityRevisions_Companies_RecordedInCompanyId");
+    }
+
+    private static void ConfigureCustomerEDocumentStatusRevision(ModelBuilder modelBuilder)
+    {
+        // KLN-D38: GROUP-LEVEL like its profile (SAT-D119) — no CompanyId, no query filter. Append-only.
+        var entity = modelBuilder.Entity<CustomerEDocumentStatusRevision>();
+        entity.ToTable("CustomerEDocumentStatusRevisions", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Status", "[Status] IN (0, 1, 2)");
+            table.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Kind", "[Kind] IN (1, 2)");
+            table.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint(
+                "CK_CustomerEDocumentStatusRevisions_Recorded",
+                "[Kind] = 1 OR ([RecordedByUserId] IS NOT NULL AND LEN([RecordedByUserId]) > 0"
+                + " AND [RecordedInCompanyId] IS NOT NULL)");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Status).HasConversion<int>().IsRequired();
+        entity.Property(x => x.Kind).HasConversion<int>().IsRequired();
+        entity.Property(x => x.RecordedByUserId).HasMaxLength(CustomerEDocumentStatusRevision.ActorMaximumLength);
+        entity.HasIndex(x => new { x.ProfileId, x.Sequence })
+            .IsUnique()
+            .HasDatabaseName("UX_CustomerEDocumentStatusRevisions_ProfileSequence");
+
+        entity.HasOne<CustomerEDocumentProfile>()
+            .WithMany()
+            .HasForeignKey(x => x.ProfileId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.RecordedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_CustomerEDocumentStatusRevisions_Companies_RecordedInCompanyId");
+    }
+
+    private void ConfigurePartySuccession(ModelBuilder modelBuilder)
+    {
+        // KLN-D38 (2): company-scoped, append-only predecessor → successor link. It never carries a balance.
+        var entity = modelBuilder.Entity<PartySuccession>();
+        entity.ToTable("PartySuccessions", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartySuccessions_Kind", "[Kind] IN (1, 2, 3)");
+            table.HasCheckConstraint(
+                "CK_PartySuccessions_Parties",
+                "[PredecessorPartyId] <> [SuccessorPartyId]");
+            table.HasCheckConstraint(
+                "CK_PartySuccessions_Text",
+                "LEN([LegalBasis]) > 0 AND LEN([RecordedByUserId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Kind).HasConversion<int>().IsRequired();
+        entity.Property(x => x.LegalBasis).HasMaxLength(PartySuccession.LegalBasisMaximumLength).IsRequired();
+        entity.Property(x => x.RecordedByUserId).HasMaxLength(PartySuccession.ActorMaximumLength).IsRequired();
+        // One successor per predecessor per company; a concurrent second link loses on this index.
+        entity.HasIndex(x => new { x.CompanyId, x.PredecessorPartyId })
+            .IsUnique()
+            .HasDatabaseName("UX_PartySuccessions_Predecessor");
+        entity.HasIndex(x => new { x.CompanyId, x.SuccessorPartyId });
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PredecessorPartyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_PartySuccessions_Parties_PredecessorPartyId");
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.SuccessorPartyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_PartySuccessions_Parties_SuccessorPartyId");
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     internal const string OutboxIdentityCheck =
         "[Id] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
@@ -547,6 +697,71 @@ public sealed class CounterpartyDbContext(
             {
                 throw new InvalidOperationException(
                     "e-belge kontrolü yalnız aktif şirkette kaydedilebilir.");
+            }
+        }
+
+        // KLN-D38: dated identity history is append-only. A group-level revision names its recording company only as
+        // provenance, and that company is always the active one.
+        foreach (var entry in ChangeTracker.Entries<PartyIdentityRevision>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari kimlik tarihçesi değiştirilemez veya silinemez; düzeltme yeni bir kayıttır.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.RecordedInCompanyId is { } recordedIn && recordedIn != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Cari kimlik tarihçesi yalnız aktif şirket bağlamında yazılır.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CustomerEDocumentStatusRevision>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "e-belge durum tarihçesi değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.RecordedInCompanyId is { } recordedIn && recordedIn != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "e-belge durum tarihçesi yalnız aktif şirket bağlamında yazılır.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<PartySuccession>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Öncül/halef bağı değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Öncül/halef bağı aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
 

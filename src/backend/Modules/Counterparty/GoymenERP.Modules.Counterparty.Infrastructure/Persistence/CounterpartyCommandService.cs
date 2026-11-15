@@ -308,7 +308,9 @@ internal sealed partial class CounterpartyCommandService(
                 false,
                 metadata.CorrelationId);
         }
-        catch (DbUpdateConcurrencyException) when (concurrencyContext is not null)
+        catch (DbUpdateException exception) when (
+            concurrencyContext is not null
+            && (exception is DbUpdateConcurrencyException || IsDatedHistoryRace(exception)))
         {
             dbContext.ChangeTracker.Clear();
             var winner = await FindCommandExecutionAsync(
@@ -387,6 +389,16 @@ internal sealed partial class CounterpartyCommandService(
                 .SingleOrDefaultAsync(cancellationToken),
         };
     }
+
+    /// <summary>
+    /// KLN-D38: two writers of the same fenced record race on the append-only history's unique sequence (or on the one
+    /// succession per predecessor) before the rowversion predicate is reached; that is the same lost race as a version
+    /// conflict, so it is answered as one instead of a 500. The idempotency winner is still looked up first, so a lost
+    /// Idempotency-Key race in the same batch replays exactly as before.
+    /// </summary>
+    private static bool IsDatedHistoryRace(DbUpdateException exception) =>
+        exception.Entries.Any(entry => entry.Entity
+            is PartyIdentityRevision or CustomerEDocumentStatusRevision or PartySuccession);
 
     private Task<CommandExecution?> FindCommandExecutionAsync(
         string commandName,

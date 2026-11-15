@@ -361,6 +361,7 @@ public static partial class CounterpartyEndpoints
         MapPartyMergeEndpoints(group);
         MapCustomerGroupEndpoints(group);
         MapEDocumentProfileEndpoints(group);
+        MapIdentityHistoryEndpoints(group);
         return endpoints;
     }
 

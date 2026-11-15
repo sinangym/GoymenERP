@@ -34,6 +34,7 @@ import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
 import { CariTradeNamePanel } from './CariTradeNamePanel'
 import { CariLegalNamePanel } from './CariLegalNamePanel'
 import { CariMergePanel } from './CariMergePanel'
+import { CariIdentityHistoryPanel, IDENTITY_HISTORY_QUERY_KIND } from './CariIdentityHistoryPanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
 import {
@@ -68,7 +69,12 @@ const KIND_LABEL: Record<number, string> = {
 }
 
 /** The side reads that show the party's names (the legal name panel and the trade name panel). */
-const NAMES_QUERY_KINDS = new Set<string>(['counterparty-legal-name', 'counterparty-trade-name'])
+// The identity history shows the dated legal name too, so a names change refreshes it as well (KLN-D38).
+const NAMES_QUERY_KINDS = new Set<string>([
+  'counterparty-legal-name',
+  'counterparty-trade-name',
+  IDENTITY_HISTORY_QUERY_KIND,
+])
 
 /**
  * Remounted on every context change, exactly like the list (#147 P1-2). A detail
@@ -232,6 +238,13 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         q.queryKey[0] === namespace && typeof q.queryKey[1] === 'string' && NAMES_QUERY_KINDS.has(q.queryKey[1]),
     })
   }, [detailQueryKey, namespace, queryClient])
+  // A recorded succession makes THIS cari's account passive in the selected company (KLN-D38), so every cached read of
+  // this context (the detail, its account facts and the list rows) is dropped and read again.
+  const onSucceeded = useCallback(() => {
+    if (namespace !== null) {
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
+    }
+  }, [namespace, queryClient])
   const readOutcomeType = query.data?.type ?? null
   const fetchStatus = query.fetchStatus
   useEffect(() => {
@@ -434,6 +447,17 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             namespace={namespace}
             contractContext={contractContext}
             onChanged={onNamesChanged}
+          />
+        ) : null}
+        {/* F-027 / KLN-D38: the dated VKN/TCKN, legal name and e-belge status, and the succession of a NEW legal person
+            (the old cari becomes passive; no balance moves here). Its own read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariIdentityHistoryPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onSucceeded={onSucceeded}
           />
         ) : null}
       </section>
