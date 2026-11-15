@@ -1,9 +1,10 @@
 /**
- * Wire contract of the plan's termin SUGGESTION (URT-S10, F-010b, B-15):
+ * Wire contract of the plan's termin SUGGESTION (URT-S10, F-010b, B-15; URT-SC33 contract version 2):
  * `GET /api/v1/manufacturing/plans/{planId}/due-date-suggestion` (`PlanDueDateSuggestionViewV1`).
  *
- * The server computes the day from the work center's shift calendar (Organization) and the hourly capacity (the plan's
- * Settings parameter profile); the screen computes nothing. It is only a proposal: the user takes or changes it through
+ * The server computes the day from the work center's shift calendar (Organization), the input capacity in kg/h and the
+ * safety margin (the plan's Settings parameter profile, URT-D87/URT-D89), counting the planned work already queued on the
+ * work center first (URT-D86); the screen computes nothing. It is only a proposal: the user takes or changes it through
  * the existing hand-entered termin command, which keeps every server check.
  *
  * Decoding fails CLOSED and is strict: exactly the contract's keys, every kilogram and kg/h figure is the server's
@@ -14,7 +15,7 @@
 
 import { calendarDate } from './contract'
 
-export const DUE_DATE_SUGGESTION_CONTRACT_VERSION = 1
+export const DUE_DATE_SUGGESTION_CONTRACT_VERSION = 2
 
 export const DUE_DATE_SUGGESTION_STATUSES = ['suggested', 'unavailable'] as const
 export type DueDateSuggestionStatus = (typeof DUE_DATE_SUGGESTION_STATUSES)[number]
@@ -33,6 +34,15 @@ export interface DueDateSuggestionView {
   readonly completesAtLocal: string | null
   readonly requiredKg: string
   readonly requiredWorkingMinutes: number | null
+  /** URT-D86: the planned work queued ahead of this plan on its work center (count and input kg). */
+  readonly queuedPlanCount: number | null
+  readonly queuedKg: string | null
+  readonly queueWorkingMinutes: number | null
+  /** URT-D89: the safety margin from the profile, working hours after the work and working days after it; 0 when unset. */
+  readonly safetyMarginHours: string | null
+  readonly safetyMarginDays: number | null
+  /** Queue + plan + margin hours, in working minutes. */
+  readonly totalWorkingMinutes: number | null
   readonly capacityKgPerHour: string | null
   readonly capacityProfileVersion: string | null
   readonly capacitySource: string | null
@@ -56,6 +66,12 @@ const VIEW_KEYS = [
   'completesAtLocal',
   'requiredKg',
   'requiredWorkingMinutes',
+  'queuedPlanCount',
+  'queuedKg',
+  'queueWorkingMinutes',
+  'safetyMarginHours',
+  'safetyMarginDays',
+  'totalWorkingMinutes',
   'capacityKgPerHour',
   'capacityProfileVersion',
   'capacitySource',
@@ -146,7 +162,7 @@ function isStatus(value: unknown): value is DueDateSuggestionStatus {
   return typeof value === 'string' && (DUE_DATE_SUGGESTION_STATUSES as readonly string[]).includes(value)
 }
 
-/** The suggestion for `requestedPlanId`, version 1, or `null` when any part of it is not this contract. */
+/** The suggestion for `requestedPlanId`, version 2, or `null` when any part of it is not this contract. */
 export function decodeDueDateSuggestion(value: unknown, requestedPlanId: string): DueDateSuggestionView | null {
   if (!isObject(value) || !hasExactKeys(value, VIEW_KEYS)) return null
   if (value.contractVersion !== DUE_DATE_SUGGESTION_CONTRACT_VERSION || !isStatus(value.status)) return null
@@ -160,6 +176,12 @@ export function decodeDueDateSuggestion(value: unknown, requestedPlanId: string)
   const completesAtLocal = optional(value.completesAtLocal, localMoment)
   const requiredKg = amount(value.requiredKg)
   const requiredWorkingMinutes = optional(value.requiredWorkingMinutes, count)
+  const queuedPlanCount = optional(value.queuedPlanCount, count)
+  const queuedKg = optional(value.queuedKg, amount)
+  const queueWorkingMinutes = optional(value.queueWorkingMinutes, count)
+  const safetyMarginHours = optional(value.safetyMarginHours, amount)
+  const safetyMarginDays = optional(value.safetyMarginDays, count)
+  const totalWorkingMinutes = optional(value.totalWorkingMinutes, count)
   const capacityKgPerHour = optional(value.capacityKgPerHour, amount)
   const capacityProfileVersion = optional(value.capacityProfileVersion, (raw) =>
     token(raw, PROFILE_VERSION, PROFILE_VERSION_MAXIMUM_LENGTH))
@@ -182,6 +204,12 @@ export function decodeDueDateSuggestion(value: unknown, requestedPlanId: string)
     completesAtLocal === undefined ||
     requiredKg === null ||
     requiredWorkingMinutes === undefined ||
+    queuedPlanCount === undefined ||
+    queuedKg === undefined ||
+    queueWorkingMinutes === undefined ||
+    safetyMarginHours === undefined ||
+    safetyMarginDays === undefined ||
+    totalWorkingMinutes === undefined ||
     capacityKgPerHour === undefined ||
     capacityProfileVersion === undefined ||
     capacitySource === undefined ||
@@ -198,6 +226,13 @@ export function decodeDueDateSuggestion(value: unknown, requestedPlanId: string)
   if (capacityKgPerHour === '0') return null
   if (capacityKgPerHour !== null && (capacityProfileVersion === null || capacitySource === null)) return null
   if ((capacityProfileVersion === null) !== (capacitySource === null)) return null
+  // The queue is named whole or not at all, and no queued plan means no queued kilogram.
+  if ((queuedPlanCount === null) !== (queuedKg === null)) return null
+  if (queuedPlanCount === 0 && queuedKg !== '0') return null
+  // The margin is named whole or not at all; the minutes are worked out together.
+  if ((safetyMarginHours === null) !== (safetyMarginDays === null)) return null
+  if ((requiredWorkingMinutes === null) !== (queueWorkingMinutes === null)) return null
+  if ((requiredWorkingMinutes === null) !== (totalWorkingMinutes === null)) return null
   // The calendar is named whole or not at all.
   if ((calendarVersion === null) !== (calendarSource === null) || (calendarVersion === null) !== (timeZoneId === null)) {
     return null
@@ -207,6 +242,8 @@ export function decodeDueDateSuggestion(value: unknown, requestedPlanId: string)
       suggestedDueDate === null ||
       completesAtLocal === null ||
       requiredWorkingMinutes === null ||
+      queuedPlanCount === null ||
+      safetyMarginHours === null ||
       capacityKgPerHour === null ||
       calendarVersion === null ||
       reasonCode !== null ||
@@ -230,6 +267,12 @@ export function decodeDueDateSuggestion(value: unknown, requestedPlanId: string)
     completesAtLocal,
     requiredKg,
     requiredWorkingMinutes,
+    queuedPlanCount,
+    queuedKg,
+    queueWorkingMinutes,
+    safetyMarginHours,
+    safetyMarginDays,
+    totalWorkingMinutes,
     capacityKgPerHour,
     capacityProfileVersion,
     capacitySource,

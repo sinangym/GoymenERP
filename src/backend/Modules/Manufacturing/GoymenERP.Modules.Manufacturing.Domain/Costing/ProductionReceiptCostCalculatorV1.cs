@@ -58,6 +58,10 @@ public enum IssueCostCurrencyStatus
 /// issue at its TL unit cost only; the foreign cost and the rate are shown, not recomputed or compared, because the TL
 /// cost an issue carries is the stamped moving average (SAT-D317 (3)) and no tolerance between the two is decided. Which
 /// receipt's rate a moving-average issue shows is the issue-cost source's contract, not this calculator's.
+/// FNS-D73 (SINAN_KARARLARI_2026-11-15_DALGA2_EK12): the FX to TL conversion of a purchased input uses the purchase
+/// order's rate (an invoice rate keeps SAT-D295/BS-1); the issue-cost source stamps that rate, Manufacturing never picks
+/// a rate type or reads a rate table itself. A foreign-currency input with no order to take a rate from comes as
+/// <see cref="IssueCostCurrencyStatus.RateMissing"/> and the cost stays "hesaplanamadi" (that case is NEEDS-SINAN).
 /// </summary>
 public sealed record IssueCostCurrencyInput(IssueCostCurrencyStatus Status, Guid? CurrencyId,
     decimal? ForeignUnitCostPerKg, decimal? ExchangeRate)
