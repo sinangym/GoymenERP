@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Security;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -98,6 +99,10 @@ public sealed partial class OpenApiContractGenerationTests
         var parameters = actual.Value.GetProperty("parameters").EnumerateArray().ToArray();
         var names = new List<string> { "X-Correlation-Id", "X-Causation-Id", "X-Company-Id" };
         if (mutation) names.Add("Idempotency-Key");
+        // KIM-D31: every Product write (the import preview too) documents the optional antiforgery header. Its 400
+        // codes stay the Product runtime set: the generator adds antiforgery_token_invalid only to the company V1 shape.
+        var write = LocalAccountAntiforgery.IsWrite(expected.Method);
+        if (write) names.Add(LocalAccountAntiforgery.HeaderName);
         Assert.Equal(names.Order(StringComparer.Ordinal), parameters.Where(parameter => parameter.GetProperty("in").GetString() == "header")
             .Select(parameter => parameter.GetProperty("name").GetString()).Order(StringComparer.Ordinal));
         foreach (var name in new[] { "X-Correlation-Id", "X-Causation-Id" })
@@ -106,6 +111,7 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Contains("origin", parameters.Single(parameter => parameter.GetProperty("name").GetString() == "X-Company-Id")
             .GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
         if (mutation) AssertHeaderSchema(parameters, "Idempotency-Key", true, "string", 1, 128, "^[!-+\\--~]{1,128}$");
+        if (write) AssertHeaderSchema(parameters, LocalAccountAntiforgery.HeaderName, false, "string", 1);
         foreach (var response in actual.Value.GetProperty("responses").EnumerateObject())
         {
             var status = int.Parse(response.Name, CultureInfo.InvariantCulture);
