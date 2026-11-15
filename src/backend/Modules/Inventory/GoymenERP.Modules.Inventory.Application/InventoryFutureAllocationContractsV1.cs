@@ -359,14 +359,18 @@ public enum InventoryFutureDemandSourceOutcomeV1
     Unavailable = 4,
 }
 
-/// <summary>The approved Sales line and its open quantity, in <see cref="UnitId"/> (the order unit).</summary>
+/// <summary>
+/// The approved Sales line and its open quantity, in <see cref="UnitId"/> (the order unit). <see cref="DueDate"/> is the line's
+/// requested delivery date when the Sales port answers it (F017-c tie rule); null sorts after every dated line.
+/// </summary>
 public sealed record InventoryFutureDemandLineV1(
     Guid OrderId,
     Guid LineId,
     Guid ProductId,
     string ProductVersion,
     Guid UnitId,
-    string OpenQuantityText);
+    string OpenQuantityText,
+    DateOnly? DueDate = null);
 
 public sealed record InventoryFutureDemandSourceAnswerV1(
     InventoryFutureDemandSourceOutcomeV1 Outcome,
@@ -405,6 +409,15 @@ public interface IInventoryFutureUnitConverterV1
     /// </summary>
     Task<InventoryFutureUnitConversionV1> ConvertFromKilogramsAsync(Guid productId, string productVersion, decimal kilograms,
         Guid toUnitId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// F017-c: the accepted purchase quantity becomes a physical allocation, which holds kilograms (INV-AL-1). Only a central source
+    /// knows the kilogram unit of the product; the default answers NoSource, so the conversion releases the future allocation with
+    /// acceptance-link-failed instead of guessing a factor.
+    /// </summary>
+    Task<InventoryFutureUnitConversionV1> ConvertToKilogramsAsync(Guid productId, string productVersion, decimal quantity,
+        Guid fromUnitId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1.NoSource, null));
 }
 
 /// <summary>Identity-only default of <see cref="IInventoryFutureUnitConverterV1"/>.</summary>

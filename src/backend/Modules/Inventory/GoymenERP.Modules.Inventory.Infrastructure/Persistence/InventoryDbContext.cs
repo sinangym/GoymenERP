@@ -106,6 +106,24 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "AND [PurchaseOrderLineId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [PurchaseUnitId] <> '00000000-0000-0000-0000-000000000000'";
 
+    /// <summary>F-017 STOK §3.5 (F017-c): no empty identity on a receipt conversion link.</summary>
+    internal const string FutureSupplyConversionIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [AcceptanceId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [FutureAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000'";
+
+    /// <summary>
+    /// F017-c: Converted (1) names its physical allocation and positive kilograms and no failure; LinkFailed (2) names a failure
+    /// and no physical allocation. The quantity is always positive.
+    /// </summary>
+    internal const string FutureSupplyConversionOutcomeCheck =
+        "[Quantity] > 0 AND (([Outcome] = 1 AND [PhysicalAllocationId] IS NOT NULL "
+        + "AND [PhysicalAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [PhysicalQuantityKg] IS NOT NULL AND [PhysicalQuantityKg] > 0 AND [FailureReason] IS NULL) "
+        + "OR ([Outcome] = 2 AND [PhysicalAllocationId] IS NULL AND [PhysicalQuantityKg] IS NULL "
+        + "AND [FailureReason] IS NOT NULL AND LEN([FailureReason]) > 0))";
+
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
     internal DbSet<LabelRow> Labels => Set<LabelRow>();
@@ -171,6 +189,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<FutureSupplyAllocationRow> FutureSupplyAllocations => Set<FutureSupplyAllocationRow>();
 
     internal DbSet<FutureSupplyLineRow> FutureSupplyLines => Set<FutureSupplyLineRow>();
+
+    internal DbSet<FutureSupplyConversionRow> FutureSupplyConversions => Set<FutureSupplyConversionRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1178,6 +1198,42 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // F-017 STOK §3.5 (F017-c): the receipt's link from a future allocation to the physical allocation it became (or to the
+        // failed business link). Insert-only; one row per acceptance and future allocation.
+        var conversion = modelBuilder.Entity<FutureSupplyConversionRow>();
+        conversion.ToTable("FutureSupplyConversions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_FutureSupplyConversions_Identity", FutureSupplyConversionIdentityCheck);
+            table.HasCheckConstraint("CK_FutureSupplyConversions_Outcome", FutureSupplyConversionOutcomeCheck);
+        });
+        conversion.HasKey(x => x.Id);
+        conversion.Property(x => x.Id).ValueGeneratedNever();
+        conversion.Property(x => x.Quantity).HasPrecision(18, 3);
+        conversion.Property(x => x.PhysicalQuantityKg).HasPrecision(18, 3);
+        conversion.Property(x => x.FailureReason).HasMaxLength(64).IsUnicode(false);
+        conversion.HasIndex(x => new { x.CompanyId, x.AcceptanceId, x.FutureAllocationId })
+            .IsUnique()
+            .HasDatabaseName("UX_FutureSupplyConversions_Acceptance");
+        conversion.HasIndex(x => new { x.CompanyId, x.FutureAllocationId })
+            .HasDatabaseName("IX_FutureSupplyConversions_FutureAllocation");
+        conversion.HasIndex(x => new { x.CompanyId, x.PhysicalAllocationId })
+            .IsUnique()
+            .HasFilter("[PhysicalAllocationId] IS NOT NULL")
+            .HasDatabaseName("UX_FutureSupplyConversions_PhysicalAllocation");
+        conversion.HasOne<FutureSupplyAllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.FutureAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        conversion.HasOne<AllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PhysicalAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(conversion);
+        conversion.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        conversion.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ApplyWriteGuards()

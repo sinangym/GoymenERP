@@ -61,3 +61,28 @@ internal sealed class FutureSupplyLineRow : IInventoryTenantRow
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }
+
+/// <summary>
+/// F-017 STOK §3.5 (F017-c): what one goods receipt did to one future supply allocation — the link between the future allocation
+/// and the physical allocation it became on the received label, or the business link that failed and released it. Insert-only:
+/// one row per (acceptance, future allocation), written in the receipt's own transaction, never modified or deleted.
+/// <see cref="Quantity"/> is in the future allocation's purchase unit; <see cref="PhysicalQuantityKg"/> is the physical allocation's
+/// kilograms.
+/// </summary>
+internal sealed class FutureSupplyConversionRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid AcceptanceId { get; set; }
+    public Guid FutureAllocationId { get; set; }
+    public Guid LabelId { get; set; }
+
+    /// <summary><c>InventoryFutureSupplyConversionOutcomeV1</c>: 1 = Converted, 2 = LinkFailed.</summary>
+    public int Outcome { get; set; }
+
+    public decimal Quantity { get; set; }
+    public Guid? PhysicalAllocationId { get; set; }
+    public decimal? PhysicalQuantityKg { get; set; }
+    public string? FailureReason { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+}

@@ -598,8 +598,6 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("CompanyId", "Id");
-
                     b.HasIndex("CompanyId", "PurchaseOrderId", "PurchaseOrderLineId");
 
                     b.HasIndex("CompanyId", "PurchaseOrderLineId", "Status")
@@ -617,6 +615,69 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_FutureSupplyAllocations_Quantity", "[AllocatedQuantity] > 0 AND [RemainingQuantity] >= 0 AND [ReleasedQuantity] >= 0 AND [RemainingQuantity] + [ReleasedQuantity] <= [AllocatedQuantity] AND (([Status] = 1 AND [RemainingQuantity] > 0) OR ([Status] = 2 AND [RemainingQuantity] = 0 AND [ReleasedQuantity] < [AllocatedQuantity]) OR ([Status] = 3 AND [RemainingQuantity] = 0 AND [ReleasedQuantity] = [AllocatedQuantity]))");
 
                             t.HasCheckConstraint("CK_FutureSupplyAllocations_Release", "([ReleasedQuantity] = 0 AND [ReleaseReasonCode] IS NULL AND [ReleaseOrigin] IS NULL AND [ReleaseReason] IS NULL AND [ReleasedAtUtc] IS NULL) OR ([ReleasedQuantity] > 0 AND [ReleaseReasonCode] IS NOT NULL AND LEN([ReleaseReasonCode]) > 0 AND [ReleaseOrigin] IS NOT NULL AND [ReleaseOrigin] IN ('inventory', 'purchasing', 'sales') AND [ReleaseReason] IS NOT NULL AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0 AND [ReleasedAtUtc] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyConversionRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AcceptanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("FutureAllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("PhysicalAllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("PhysicalQuantityKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "FutureAllocationId")
+                        .HasDatabaseName("IX_FutureSupplyConversions_FutureAllocation");
+
+                    b.HasIndex("CompanyId", "LabelId");
+
+                    b.HasIndex("CompanyId", "PhysicalAllocationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_FutureSupplyConversions_PhysicalAllocation")
+                        .HasFilter("[PhysicalAllocationId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "AcceptanceId", "FutureAllocationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_FutureSupplyConversions_Acceptance");
+
+                    b.ToTable("FutureSupplyConversions", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_FutureSupplyConversions_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [FutureAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [LabelId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_FutureSupplyConversions_Outcome", "[Quantity] > 0 AND (([Outcome] = 1 AND [PhysicalAllocationId] IS NOT NULL AND [PhysicalAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [PhysicalQuantityKg] IS NOT NULL AND [PhysicalQuantityKg] > 0 AND [FailureReason] IS NULL) OR ([Outcome] = 2 AND [PhysicalAllocationId] IS NULL AND [PhysicalQuantityKg] IS NULL AND [FailureReason] IS NOT NULL AND LEN([FailureReason]) > 0))");
                         });
                 });
 
@@ -2231,6 +2292,35 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "PurchaseOrderId", "PurchaseOrderLineId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyConversionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyAllocationRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "FutureAllocationId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LabelId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PhysicalAllocationId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.FutureSupplyLineRow", b =>

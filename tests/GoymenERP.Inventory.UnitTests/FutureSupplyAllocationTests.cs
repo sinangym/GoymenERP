@@ -210,6 +210,67 @@ public sealed class FutureSupplyAllocationTests
             FutureSupplyLedger.Restore(Company, PurchaseLineId, FutureSupplyQuantity.Of(10m), FutureSupplyQuantity.Of(1m), 0));
     }
 
+    [Fact]
+    public void A_partial_consumption_keeps_the_allocation_active_leaves_the_released_total_and_steps_the_version_by_one()
+    {
+        var allocation = Restore(allocated: 100m, remaining: 100m, released: 0m, FutureSupplyAllocationStatus.Active, version: 4);
+
+        var consumed = allocation.Consume(4, FutureSupplyQuantity.Positive(30.25m));
+
+        Assert.Equal((30.25m, 69.75m, 0m, 30.25m, FutureSupplyAllocationStatus.Active, 5L),
+            (consumed.Value, allocation.Remaining.Value, allocation.Released.Value, allocation.Consumed.Value, allocation.Status,
+                allocation.Version));
+    }
+
+    [Fact]
+    public void Consuming_all_that_remains_ends_Consumed_even_after_an_earlier_partial_release()
+    {
+        var allocation = Restore(allocated: 100m, remaining: 60m, released: 40m, FutureSupplyAllocationStatus.Active, version: 2);
+
+        allocation.Consume(2, FutureSupplyQuantity.Positive(60m));
+
+        Assert.Equal((0m, 40m, 60m, FutureSupplyAllocationStatus.Consumed, 3L),
+            (allocation.Remaining.Value, allocation.Released.Value, allocation.Consumed.Value, allocation.Status, allocation.Version));
+    }
+
+    [Fact]
+    public void Releasing_the_rest_after_a_partial_consumption_ends_Consumed()
+    {
+        var allocation = Restore(allocated: 100m, remaining: 100m, released: 0m, FutureSupplyAllocationStatus.Active, version: 1);
+
+        allocation.Consume(1, FutureSupplyQuantity.Positive(25m));
+        allocation.Release(2, null);
+
+        Assert.Equal((25m, 75m, FutureSupplyAllocationStatus.Consumed, 3L),
+            (allocation.Consumed.Value, allocation.Released.Value, allocation.Status, allocation.Version));
+    }
+
+    [Fact]
+    public void A_consumption_above_the_remaining_quantity_or_of_zero_is_refused_never_clipped_and_nothing_changes()
+    {
+        var allocation = Restore(allocated: 100m, remaining: 10m, released: 90m, FutureSupplyAllocationStatus.Active, version: 3);
+
+        Assert.Equal(FutureSupplyRuleFailure.ReleaseExceedsRemaining,
+            Assert.Throws<FutureSupplyRuleException>(() => allocation.Consume(3, FutureSupplyQuantity.Positive(10.001m))).Failure);
+        Assert.Equal(FutureSupplyRuleFailure.QuantityNotPositive,
+            Assert.Throws<FutureSupplyRuleException>(() => allocation.Consume(3, FutureSupplyQuantity.Zero)).Failure);
+        Assert.Equal((10m, 90m, 0m, 3L),
+            (allocation.Remaining.Value, allocation.Released.Value, allocation.Consumed.Value, allocation.Version));
+    }
+
+    [Fact]
+    public void A_stale_version_cannot_consume_and_a_closed_allocation_cannot_consume()
+    {
+        var active = Restore(allocated: 10m, remaining: 10m, released: 0m, FutureSupplyAllocationStatus.Active, version: 2);
+        var released = Restore(allocated: 10m, remaining: 0m, released: 10m, FutureSupplyAllocationStatus.Released, version: 3);
+
+        Assert.Equal(FutureSupplyRuleFailure.VersionConflict,
+            Assert.Throws<FutureSupplyRuleException>(() => active.Consume(1, FutureSupplyQuantity.Positive(1m))).Failure);
+        Assert.Equal(FutureSupplyRuleFailure.StateConflict,
+            Assert.Throws<FutureSupplyRuleException>(() => released.Consume(3, FutureSupplyQuantity.Positive(1m))).Failure);
+        Assert.Equal((2L, 10m), (active.Version, active.Remaining.Value));
+    }
+
     private static FutureSupplyAllocation Restore(decimal allocated, decimal remaining, decimal released,
         FutureSupplyAllocationStatus status, long version) =>
         FutureSupplyAllocation.Restore(AllocationId, Company, FutureSupplyQuantity.Of(allocated), FutureSupplyQuantity.Of(remaining),

@@ -80,6 +80,8 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryFutureAllocationReadPortV1, InventoryFutureAllocationReadPort>();
         services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
         services.AddScoped<IInventoryFutureDemandSourceV1, InventoryFutureDemandSource>();
+        // F-017 STOK F017-c: the goods receipt host enlists this port in its own transaction (ALS-D84 order).
+        services.AddScoped<IInventoryGoodsReceiptFutureSupplyPortV1, InventoryGoodsReceiptFutureSupplyPort>();
         services.TryAddScoped<IInventoryFutureUnitConverterV1, InventoryIdentityFutureUnitConverterV1>();
         services.TryAddScoped<IInventoryFutureSupplySourceV1, InventoryUnavailableFutureSupplySourceV1>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();

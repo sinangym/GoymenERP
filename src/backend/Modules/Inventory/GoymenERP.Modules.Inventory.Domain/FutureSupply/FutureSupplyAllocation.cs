@@ -100,8 +100,8 @@ public sealed class FutureSupplyRuleException(FutureSupplyRuleFailure failure, s
 /// <summary>
 /// F-017 F017-b (STOK_F017 §3.2-§3.4, §4.1; KLN-D26): one reservation of quantity on an approved, open purchase GENERAL line for
 /// an approved sales order line. It is NOT a physical movement and never mixes with free stock (DEC-STK-003). Quantities are in
-/// the purchase line's unit. <c>consumed = allocated − remaining − released</c>; this slice never consumes (goods receipt
-/// conversion is F017-c), so here a full release always ends Released, while a row restored with a consumed part ends Consumed.
+/// the purchase line's unit. <c>consumed = allocated − remaining − released</c>; only goods receipt consumes (F017-c,
+/// <see cref="Consume"/>), so a full release of a never-consumed row ends Released, while one with a consumed part ends Consumed.
 /// A release keeps the id, the creation time and the manual sequence and steps the version by exactly one (§3.4: a reduction is a
 /// partial release, never release + re-create). Nothing releases by itself or by time (DEC-STK-005).
 /// </summary>
@@ -212,6 +212,42 @@ public sealed class FutureSupplyAllocation
             : Consumed.Value > 0m ? FutureSupplyAllocationStatus.Consumed : FutureSupplyAllocationStatus.Released;
         Version = checked(Version + 1);
         return amount;
+    }
+
+    /// <summary>
+    /// F-017 F017-c (STOK_F017 §3.5): goods receipt turns <paramref name="quantity"/> of what remains into a physical allocation.
+    /// The same guards as <see cref="Release"/> apply (Active only, the expected version, a positive amount that does not exceed
+    /// what remains — refused, never clipped); the released total is untouched, so the consumed part grows by exactly the amount.
+    /// The status follows §4.1: remaining &gt; 0 → Active (a short delivery keeps the rest reserved), else Consumed.
+    /// </summary>
+    public FutureSupplyQuantity Consume(long expectedVersion, FutureSupplyQuantity quantity)
+    {
+        if (Status != FutureSupplyAllocationStatus.Active)
+        {
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.StateConflict, "Yalnız aktif gelecek tedarik ayırması tüketilir.");
+        }
+
+        if (expectedVersion != Version)
+        {
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.VersionConflict, "Gelecek tedarik ayırması başka bir işlemle değişti.");
+        }
+
+        if (quantity.Value <= 0m)
+        {
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.QuantityNotPositive, "Tüketilen miktar sıfırdan büyük olmalıdır.");
+        }
+
+        if (quantity > Remaining)
+        {
+            throw new FutureSupplyRuleException(FutureSupplyRuleFailure.ReleaseExceedsRemaining, "Tüketilen miktar kalan ayırmayı aşamaz.");
+        }
+
+        Remaining -= quantity;
+        Status = Remaining.Value > 0m
+            ? FutureSupplyAllocationStatus.Active
+            : Consumed.Value > 0m ? FutureSupplyAllocationStatus.Consumed : FutureSupplyAllocationStatus.Released;
+        Version = checked(Version + 1);
+        return quantity;
     }
 
     /// <summary>A reason text: required, trimmed-meaningful, at most <see cref="MaximumReasonLength"/> characters, never cut.</summary>
