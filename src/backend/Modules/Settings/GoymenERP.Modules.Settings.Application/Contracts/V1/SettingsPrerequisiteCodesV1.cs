@@ -62,4 +62,11 @@ public static class SettingsPrerequisiteCodesV1
     /// never fall back to TEMEL, TİCARİ or any other value.
     /// </summary>
     public const string EInvoiceScenarioDefaultNotFound = "settings_einvoice_scenario_default_not_found";
+
+    /// <summary>
+    /// F-004 (BS-9/BS-13/BS-16/BS-17): no unit conversion policy is in force for the company on the date — none was recorded
+    /// yet, or the date is before the first version's start. There is no compiled default (the density and the rounding and
+    /// tolerance values are Settings values), so a consumer refuses to convert ("kaynak yok"), never guesses a value.
+    /// </summary>
+    public const string UnitConversionPolicyNotFound = "settings_unit_conversion_policy_not_found";
 }
