@@ -146,8 +146,11 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') "
         + "OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))";
 
-    /// <summary>URT-S13: the unique index that holds one scrap price per company and month.</summary>
-    internal const string MonthlyScrapPriceMonthIndex = "IX_MonthlyScrapPrices_CompanyId_Year_Month";
+    /// <summary>
+    /// URT-S13, URT-D72: the unique index that holds one row per company, month and version (version 1 is the month's
+    /// first entry, each correction one more).
+    /// </summary>
+    internal const string MonthlyScrapPriceVersionIndex = "IX_MonthlyScrapPrices_CompanyId_Year_Month_Version";
 
     /// <summary>F-009 D2: every id of an output reversal is set.</summary>
     internal const string OutputReversalIdentityCheck =
@@ -168,14 +171,21 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'";
 
     /// <summary>
-    /// URT-S13: a calendar month (year within the calendar the domain accepts, month 1-12) and a price above zero. A zero
-    /// price is not admitted (whether one may be entered is not decided); the domain refuses it first.
+    /// URT-S13: a calendar month (year within the calendar the domain accepts, month 1-12) and a price above zero
+    /// (URT-D74 (1)); the domain refuses a zero or negative price first.
     /// </summary>
     internal const string MonthlyScrapPricePeriodCheck =
         "[Year] >= 1 AND [Year] <= 9999 AND [Month] >= 1 AND [Month] <= 12 AND [TlPerKg] > 0";
 
     /// <summary>URT-S13: the recorder and the correlation are never blank.</summary>
     internal const string MonthlyScrapPriceTextCheck = "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>
+    /// URT-D72: version 1 is the month's first entry and carries no reason; a correction (version 2 or more) always
+    /// carries a reason that is not blank.
+    /// </summary>
+    internal const string MonthlyScrapPriceVersionCheck =
+        "([Version] = 1 AND [Reason] IS NULL) OR ([Version] > 1 AND [Reason] IS NOT NULL AND LEN([Reason]) > 0)";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -768,9 +778,11 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     }
 
     /// <summary>
-    /// URT-S13 (URT-D47, URT-D65): one scrap price per (company, year, month), keyed by (company, id). The unique index on
-    /// (company, year, month) holds "one price per month" also against a concurrent writer; the row is append-only (the
-    /// default write guard refuses any change or delete).
+    /// URT-S13 (URT-D47, URT-D65), URT-D72: the versions of a company's scrap price per (company, year, month), keyed by
+    /// (company, id). The unique index on (company, year, month, version) holds one row per version also against a
+    /// concurrent writer, so two first entries or two corrections of the same version never both land; the latest
+    /// version is the month's effective price. The row is append-only (the default write guard refuses any change or
+    /// delete): a correction adds a version, the old one stays.
     /// </summary>
     private void ConfigureMonthlyScrapPrices(ModelBuilder modelBuilder)
     {
@@ -780,15 +792,17 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_MonthlyScrapPrices_Identity", MonthlyScrapPriceIdentityCheck);
             table.HasCheckConstraint("CK_MonthlyScrapPrices_Period", MonthlyScrapPricePeriodCheck);
             table.HasCheckConstraint("CK_MonthlyScrapPrices_Text", MonthlyScrapPriceTextCheck);
+            table.HasCheckConstraint("CK_MonthlyScrapPrices_Version", MonthlyScrapPriceVersionCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.TlPerKg).HasPrecision(18, ScrapPriceTlPerKg.Scale);
         entity.Property(x => x.RecordedBy).HasMaxLength(MonthlyScrapPrice.RecordedByMaximumLength)
             .UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
-        entity.HasIndex(x => new { x.CompanyId, x.Year, x.Month })
+        entity.Property(x => x.Reason).HasMaxLength(MonthlyScrapPrice.ReasonMaximumLength);
+        entity.HasIndex(x => new { x.CompanyId, x.Year, x.Month, x.Version })
             .IsUnique()
-            .HasDatabaseName(MonthlyScrapPriceMonthIndex);
+            .HasDatabaseName(MonthlyScrapPriceVersionIndex);
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

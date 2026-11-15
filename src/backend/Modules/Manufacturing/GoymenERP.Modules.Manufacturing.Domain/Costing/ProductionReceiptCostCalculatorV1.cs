@@ -93,15 +93,16 @@ public enum ScrapPriceReadStatus
 }
 
 /// <summary>
-/// The scrap price in TL per kg that values one scrap weighing when scrap is out of cost (SAT-D316 (1)). It is the
+/// The scrap price in TL per kg that values one scrap weighing (SAT-D316 (1) with scrap out of cost; URT-D75 (1) with
+/// scrap in cost, where that value is taken off the product cost too and the scrap enters stock at it). It is the
 /// monthly scrap price entered by hand (SAT-D316 (3)-(4)) of the month the scrap was weighed in: each weighing takes
 /// its own month's price, so an order that spans two months values each weighing at its own month's price
 /// (URT-D47 / #66 6864631364 (15)). The caller reads that month's price for each weighing; the calculator takes it as
 /// an explicit input and never picks a month or a value. A weighing with scrap kg whose month has no price entered
 /// (<see cref="Missing"/>) leaves the cost pending until the price is entered (URT-D47 / #66 6864631364 (15), the
 /// chosen option: "fiyat girilene kadar bekler"); a price that cannot be read, or a malformed one, gives no amount
-/// (SAT-D316 (6)). A weighing of zero kg with no price entered is computed with no expense (SAT-D326 (4) /
-/// #66 6857496471 (4)). A price above the order's net raw-material kg cost stops the calculation (SAT-D326 (3) /
+/// (SAT-D316 (6)), and so is a price of zero or below (URT-D74 (2)). A weighing of zero kg with no price entered is
+/// computed with no value for it (SAT-D326 (4) / #66 6857496471 (4)), in both settings. A price above the order's net raw-material kg cost stops the calculation (SAT-D326 (3) /
 /// #66 6857496471 (3), URT-D44 / #66 6864631364 (1), see <see cref="ProductionReceiptCostCalculatorV1"/>). Who enters
 /// the price is not decided (SINAN_KARARLARI_2026-11-13 "Sinirlar"). <see cref="TlPerKg"/> is set only for
 /// <see cref="ScrapPriceReadStatus.Value"/>.
@@ -233,7 +234,8 @@ public sealed record ProductionReceiptCostNoteV1(string Code, string Text);
 /// #66 6864631364 (14)); <see cref="UsableRemnantValue"/>: the TL the usable remnant takes out of the cost (remnant kg
 /// x net raw-material kg cost, zero when there is no remnant); <see cref="WeighedScrapExpense"/>: the TL of the weighed
 /// scrap line of the separate scrap / period expense (the sum of each weighing's kg x its month's price; zero when
-/// scrap is in the product cost or when there is no weighed scrap); and <see cref="ProcessLossKg"/>: the declared
+/// scrap is in the product cost, where the same value is taken off the product cost but enters the scrap stock
+/// instead of an expense (URT-D75 (1), (3)), or when there is no weighed scrap); and <see cref="ProcessLossKg"/>: the declared
 /// process loss in kg, with <see cref="ProcessLossRatio"/> = declared process loss kg / consumed kg (consumed =
 /// issued - returned), a fraction (0.02 = 2 %), not a percent. The process loss carries no amount: its value is zero
 /// and its cost stays on the product (SAT-D316 (2)). The kg and the ratio are display facts only and no money depends
@@ -365,11 +367,18 @@ public sealed record ProductionReceiptCostIssueReasonV1(Guid IssueMovementId, st
 /// (URT-D46 / #66 6864631364 (14), the chosen option "Iade gibi stoga donsun"; golden: 1000 kg x 40 TL, 900 kg good,
 /// 50 kg remnant, 50 kg weighed scrap x 10 TL, (40000 - 2000 - 500) / 900 = 41.67 TL per kg). With scrap in cost the
 /// remnant returns the same way and the scrap share is borne by the product only (#66 6874860782, SINAN-CEVAP (10),
-/// answering the remnant share of URT-D46 (6); example: the same order, remnant 2000 TL, (40000 - 2000) / 900 =
-/// 42.22 TL per kg);</item>
-/// <item>scrap in cost (default, SAT-D305 (2)): cost per kg = (net - usable remnant value) / (good product kg + second
-/// quality kg), the same for both classes (SAT-D307 (1)-(2)), so scrap, process loss and any unexplained kg raise the
-/// cost of what was produced;</item>
+/// URT-D59 (1)-(2));</item>
+/// <item>scrap in cost (default, SAT-D305 (2)): cost per kg = (net - usable remnant value - weighed scrap value) /
+/// (good product kg + second quality kg), the same for both classes (SAT-D307 (1)-(2)); the weighed scrap value is
+/// the sum of each weighing's kg x the scrap price of the month it was weighed in, and the scrap enters stock at that
+/// value (URT-D75 (1), (3), URT-D65). Golden (URT-D75 (4)): 1000 kg x 40 TL = 40000 TL; 900 kg good, 50 kg remnant,
+/// 50 kg scrap at 10 TL/kg: remnant 2000 TL, scrap 500 TL, 37500 / 900 = 41.666... TL per kg; this replaces the
+/// 42.22 TL example of URT-D59 (3), which did not take the scrap value off (URT-D75 (5)). The process loss and any
+/// unexplained kg have no value and raise the cost of what was produced. The decision text names the good product kg
+/// as the divisor; its golden has no second quality, and the divisor keeps SAT-D307's good + second quality kg
+/// (author reading; whether second quality leaves this divisor is NEEDS-SINAN). The missing, unreadable and too high
+/// price rules below apply here as they do with scrap out of cost: a weighing with scrap kg whose month has no price
+/// leaves the cost pending (URT-D65);</item>
 /// <item>scrap out of cost (SAT-D316, which sets the amount of SAT-D308 (1)-(2) and partly replaces them): each scrap
 /// weighing is valued at the scrap price of the month it was weighed in (URT-D47 / #66 6864631364 (15)), that amount is
 /// taken off the cost and reported apart, and the rest is loaded on the product (SAT-D316 (1)): weighed scrap expense =
@@ -384,8 +393,9 @@ public sealed record ProductionReceiptCostIssueReasonV1(Guid IssueMovementId, st
 /// #66 6857496471 (4)). The expense is only computed here; no expense record is enabled (SAT-D308 (5));</item>
 /// <item>a scrap price above the net raw-material kg cost stops the calculation so the price is checked
 /// (SAT-D326 (3) / #66 6857496471 (3), "Hesap dursun, fiyat kontrol edilsin"; URT-D44 / #66 6864631364 (1)); a price
-/// equal to it computes. The check runs on each weighing's price where prices are used (scrap out of cost), also on a
-/// weighing of zero kg (author reading). Because no weighing's price is above the net raw-material kg cost, the remnant
+/// equal to it computes. The check runs on each weighing's price in both settings, also on a weighing of zero kg
+/// (author reading). A price of zero or below is unreadable in both settings (URT-D74 (2)): the month's price must be
+/// entered above zero (URT-D74 (1)) and the calculator never finalises a cost on a zero price. Because no weighing's price is above the net raw-material kg cost, the remnant
 /// and scrap values together never exceed the net input cost;</item>
 /// <item>a cost per kg of zero or below is unreadable, never a value (SAT-D326 (2) / #66 6857496471 (2); "zero or
 /// below" is the text of the option chosen in 6857438754 "2-a", and the note under (2), not Sinan's words, aligns it
@@ -626,13 +636,11 @@ public static class ProductionReceiptCostCalculatorV1
         var processLossRatio = processLoss / consumed;
         var amounts = new Amounts(netCost, rawMaterialCostPerKg, remnantValue, processLoss, processLossRatio, unexplained,
             currencyLines.ToArray());
-        if (input.ScrapSetting == ScrapCostSettingStatus.On)
-        {
-            return Value(input, (netCost - remnantValue) / produced, 0m, amounts,
-                ProductionReceiptCostCodesV1.BasisWithScrap);
-        }
 
-        var scrapExpense = 0m;
+        // URT-D75 (1) with scrap in cost and SAT-D316 (1) with scrap out of cost: each weighing is valued at its own
+        // month's price and that value is taken off the product cost in both settings; only where it goes differs (the
+        // scrap stock with scrap in cost, URT-D75 (3) / URT-D65; the separate expense with scrap out of cost).
+        var scrapValue = 0m;
         var priceUnreadable = false;
         var priceAboveRawMaterialCost = false;
         var priceMissing = false;
@@ -644,15 +652,16 @@ public static class ProductionReceiptCostCalculatorV1
                 // SAT-D326 (4) / #66 6857496471 (4): no scrap kg and no price entered adds nothing.
                 case { Status: ScrapPriceReadStatus.Missing, TlPerKg: null } when mass == 0m:
                     break;
-                // URT-D47 / #66 6864631364 (15): the weighing's month has no price yet; the cost waits for it.
+                // URT-D47 / #66 6864631364 (15), URT-D65: the weighing's month has no price yet; the cost waits for it.
                 case { Status: ScrapPriceReadStatus.Missing, TlPerKg: null }:
                     priceMissing = true;
                     break;
+                // URT-D74 (2): only a price above zero values a weighing; zero or below is unreadable, never a value.
                 // SAT-D326 (3) / #66 6857496471 (3), URT-D44 / #66 6864631364 (1): above the net raw-material kg cost
                 // stops the calculation.
-                case { Status: ScrapPriceReadStatus.Value, TlPerKg: { } price } when price >= 0m:
+                case { Status: ScrapPriceReadStatus.Value, TlPerKg: { } price } when price > 0m:
                     priceAboveRawMaterialCost |= price > rawMaterialCostPerKg;
-                    scrapExpense += mass * price;
+                    scrapValue += mass * price;
                     break;
                 default:
                     priceUnreadable = true;
@@ -675,8 +684,14 @@ public static class ProductionReceiptCostCalculatorV1
             return ProductionReceiptCostResult.Pending(ProductionReceiptCostCodesV1.ScrapPriceMissing);
         }
 
-        return Value(input, (netCost - remnantValue - scrapExpense) / produced, scrapExpense, amounts,
-            ProductionReceiptCostCodesV1.BasisWithoutScrap);
+        // URT-D75 (1), (4): (net - usable remnant value - weighed scrap value) / produced kg; golden 1000 kg x 40 TL,
+        // 900 kg good, 50 kg remnant, 50 kg scrap x 10 TL: (40000 - 2000 - 500) / 900 = 41.666... TL per kg. The scrap
+        // value is no separate expense with scrap in cost, so the expense line stays zero there.
+        return input.ScrapSetting == ScrapCostSettingStatus.On
+            ? Value(input, (netCost - remnantValue - scrapValue) / produced, 0m, amounts,
+                ProductionReceiptCostCodesV1.BasisWithScrap)
+            : Value(input, (netCost - remnantValue - scrapValue) / produced, scrapValue, amounts,
+                ProductionReceiptCostCodesV1.BasisWithoutScrap);
     }
 
     // SAT-D326 (2) / #66 6857496471 (2): a cost per kg of zero or below (also one that underflows to zero in decimal)

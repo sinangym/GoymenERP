@@ -6,6 +6,7 @@ import {
   decodeScrapPrice,
   decodeScrapPriceList,
   isScrapPriceEntryText,
+  isScrapPriceReasonText,
   monthsWithoutPrice,
 } from './scrapPriceContract'
 
@@ -17,6 +18,8 @@ function view(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     year: YEAR,
     month: 3,
     tlPerKg: '7.25',
+    version: 1,
+    reason: null,
     recordedBy: 'sentetik-giren',
     recordedAtUtc: '2026-03-01T08:00:00+00:00',
     ...overrides,
@@ -26,6 +29,11 @@ function view(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 describe('decodeScrapPrice', () => {
   it('accepts the contract exactly', () => {
     expect(decodeScrapPrice(view())).toEqual(view())
+  })
+
+  it('accepts a correction with its reason (URT-D72)', () => {
+    const corrected = view({ version: 2, reason: 'sentetik gerekçe' })
+    expect(decodeScrapPrice(corrected)).toEqual(corrected)
   })
 
   it.each([
@@ -41,6 +49,15 @@ describe('decodeScrapPrice', () => {
     ['an instant without offset', view({ recordedAtUtc: '2026-03-01T08:00:00' })],
     ['a padded actor', view({ recordedBy: ' sentetik ' })],
     ['an actor over the bound', view({ recordedBy: 'a'.repeat(129) })],
+    ['version 0', view({ version: 0 })],
+    ['a fractional version', view({ version: 1.5 })],
+    ['a textual version', view({ version: '1' })],
+    ['a first entry with a reason', view({ reason: 'sentetik' })],
+    ['a correction without a reason', view({ version: 2, reason: null })],
+    ['a correction with a blank reason', view({ version: 2, reason: '  ' })],
+    ['a correction with a padded reason', view({ version: 2, reason: ' sentetik ' })],
+    ['a correction reason over the bound', view({ version: 2, reason: 'a'.repeat(257) })],
+    ['a missing version', (({ version: _omit, ...rest }) => rest)(view())],
     ['null', null],
   ])('rejects %s', (_name, value) => {
     expect(decodeScrapPrice(value)).toBeNull()
@@ -82,6 +99,16 @@ describe('entry text', () => {
     ['0.5', '0.5'],
   ])('canonicalises %s to %s', (value, expected) => {
     expect(canonicalScrapPrice(value)).toBe(expected)
+  })
+})
+
+describe('reason text', () => {
+  it.each(['sentetik', ' sentetik ', 'a'.repeat(256)])('accepts %s', (value) => {
+    expect(isScrapPriceReasonText(value)).toBe(true)
+  })
+
+  it.each(['', '   ', 'a'.repeat(257)])('rejects %s', (value) => {
+    expect(isScrapPriceReasonText(value)).toBe(false)
   })
 })
 

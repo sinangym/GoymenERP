@@ -1,6 +1,7 @@
 /**
- * URT-S13 — the company's monthly scrap prices, pinned to `GET /api/v1/manufacturing/scrap-prices?year=` and
- * `POST /api/v1/manufacturing/scrap-prices` (SAT-D316 (3)-(4), URT-D47, URT-D65).
+ * URT-S13 — the company's monthly scrap prices, pinned to `GET /api/v1/manufacturing/scrap-prices?year=`,
+ * `POST /api/v1/manufacturing/scrap-prices` and `POST /api/v1/manufacturing/scrap-prices/{year}/{month}/corrections`
+ * (SAT-D316 (3)-(4), URT-D47, URT-D65, URT-D72, URT-D73, URT-D74).
  *
  * THE RULES THAT SHAPE THIS FILE
  *
@@ -9,9 +10,11 @@
  *    price is suggested, defaulted or carried over from another month here.
  *  - The price is the server's canonical text, shown as received; the screen never parses it to a number or computes
  *    a cost from it (the cost is the backend calculator's).
- *  - A recorded month is never changed: the screen offers no edit; the server answers a second entry for the month with
- *    409 and the list is read again. Who may enter, with which approval, and whether a past or future month may be
- *    entered are not decided, so the form is drawn only under the record capability and applies no date rule.
+ *  - A recorded month is not edited in place: the server answers a second first entry for the month with 409 and the
+ *    list is read again. URT-D72: a wrong price is corrected by a new version with a reason, against the version the
+ *    list showed (a stale one is the server's 409 and the list is read again); the old version stays. The correction is
+ *    drawn under the same record capability (the same permission, URT-D57). Whether a month is in the future (URT-D73)
+ *    is the server's decision on its Europe/Istanbul business day; the screen applies no date rule of its own.
  *  - The entry is one frozen attempt with one idempotency key. An unknown outcome keeps that attempt (same key, same
  *    body) for "Yeniden gönder"; a new key is minted only after the attempt settled as applied or refused.
  *  - Remounted per company context: one company's prices are never shown under another context.
@@ -20,16 +23,36 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
-import { fetchScrapPrices, pendingScrapPriceKey, readPendingScrapPrice, recordScrapPrice, releasePendingScrapPrice, reservePendingScrapPrice, type ScrapPriceAttempt } from './scrapPriceApi'
+import {
+  correctScrapPrice,
+  fetchScrapPrices,
+  pendingScrapPriceKey,
+  readPendingScrapPrice,
+  readPendingScrapPriceCorrection,
+  recordScrapPrice,
+  releasePendingScrapPrice,
+  releasePendingScrapPriceCorrection,
+  reservePendingScrapPrice,
+  reservePendingScrapPriceCorrection,
+  type ScrapPriceAttempt,
+  type ScrapPriceCorrectionAttempt,
+} from './scrapPriceApi'
 import {
   SCRAP_PRICE_FIRST_MONTH,
   SCRAP_PRICE_LAST_MONTH,
   isScrapPriceEntryText,
+  isScrapPriceReasonText,
   isScrapPriceYear,
   monthsWithoutPrice,
   type ScrapPriceList,
+  type ScrapPriceView,
 } from './scrapPriceContract'
-import { SCRAP_PRICE_TEXT, scrapPriceFailureText, scrapPriceMonthLabel } from './scrapPriceText'
+import {
+  SCRAP_PRICE_TEXT,
+  scrapPriceCorrectionFailureText,
+  scrapPriceFailureText,
+  scrapPriceMonthLabel,
+} from './scrapPriceText'
 import { MANUFACTURING_CAPABILITY, orderListPath } from './capabilities'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -290,6 +313,14 @@ function ScrapPrices({ namespace }: { readonly namespace: string | null }) {
         <p className={styles.help}>{SCRAP_PRICE_TEXT.costNote}</p>
         <StateBlock state={state} subject={SCRAP_PRICE_TEXT.subject} onRetry={() => void list.refetch()} />
         {form}
+        {canRecord ? (
+          <CorrectionForm
+            items={null}
+            companyId={companyId}
+            pendingKey={pendingKey}
+            onSettled={() => void list.refetch()}
+          />
+        ) : null}
       </section>
     )
   }
@@ -312,6 +343,10 @@ function ScrapPrices({ namespace }: { readonly namespace: string | null }) {
                 <th scope="col" className={styles.numeric}>
                   {SCRAP_PRICE_TEXT.price}
                 </th>
+                <th scope="col" className={styles.numeric}>
+                  {SCRAP_PRICE_TEXT.version}
+                </th>
+                <th scope="col">{SCRAP_PRICE_TEXT.reason}</th>
                 <th scope="col">{SCRAP_PRICE_TEXT.recordedAt}</th>
                 <th scope="col">{SCRAP_PRICE_TEXT.recordedBy}</th>
               </tr>
@@ -325,6 +360,10 @@ function ScrapPrices({ namespace }: { readonly namespace: string | null }) {
                   <td className={styles.numeric} data-testid="scrap-price-tl-per-kg">
                     {item.tlPerKg}
                   </td>
+                  <td className={styles.numeric} data-testid="scrap-price-version">
+                    {item.version}
+                  </td>
+                  <td data-testid="scrap-price-reason">{item.reason ?? SCRAP_PRICE_TEXT.noReason}</td>
                   <td>{formatInstant(item.recordedAtUtc)}</td>
                   <td className={styles.mono}>{item.recordedBy}</td>
                 </tr>
@@ -339,6 +378,202 @@ function ScrapPrices({ namespace }: { readonly namespace: string | null }) {
           : `${SCRAP_PRICE_TEXT.missingMonths}: ${missing.map(scrapPriceMonthLabel).join(', ')}`}
       </p>
       {form}
+      {canRecord ? (
+        <CorrectionForm
+          items={shown.items}
+          companyId={companyId}
+          pendingKey={pendingKey}
+          onSettled={() => void list.refetch()}
+        />
+      ) : null}
     </section>
+  )
+}
+
+/**
+ * URT-D72: one recorded month's correction, against the effective version the list showed. `items` is null while the
+ * list is not shown: only a held correction (same key, same body) may then be sent again; no new one is started.
+ */
+function CorrectionForm({
+  items,
+  companyId,
+  pendingKey,
+  onSettled,
+}: {
+  readonly items: readonly ScrapPriceView[] | null
+  readonly companyId: string | null
+  readonly pendingKey: string | null
+  readonly onSettled: () => void
+}) {
+  const boundary = useAuthBoundary()
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null)
+  const [priceText, setPriceText] = useState('')
+  const [priceError, setPriceError] = useState(false)
+  const [reasonText, setReasonText] = useState('')
+  const [reasonError, setReasonError] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [pending, setPending] = useState<ScrapPriceCorrectionAttempt | null>(() =>
+    readPendingScrapPriceCorrection(pendingKey),
+  )
+
+  // The month to correct: the user's choice while the list still names it, else the latest recorded month.
+  const target = items?.find((item) => item.month === selectedMonth) ?? items?.[0] ?? null
+
+  async function send(attempt: ScrapPriceCorrectionAttempt) {
+    if (sending || companyId === null) return
+    if (!reservePendingScrapPriceCorrection(pendingKey, attempt)) {
+      setPending(readPendingScrapPriceCorrection(pendingKey))
+      return
+    }
+    setSending(true)
+    setNotice(null)
+    const snapshot = boundary.capture()
+    const outcome = await correctScrapPrice(companyId, attempt)
+    setSending(false)
+    if (outcome.type === 'unknown') {
+      setPending(attempt)
+      return
+    }
+    releasePendingScrapPriceCorrection(pendingKey, attempt.idempotencyKey)
+    setPending(null)
+    if (outcome.type === 'applied') {
+      setPriceText('')
+      setReasonText('')
+      setNotice({ kind: 'applied', replayed: outcome.replayed })
+      onSettled()
+      return
+    }
+    if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, snapshot)
+    setNotice({ kind: 'failed', text: scrapPriceCorrectionFailureText(outcome.status, outcome.code, outcome.field) })
+    if (outcome.status === 404 || outcome.status === 409) onSettled()
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (pending !== null || target === null) return
+    const entered = priceText.trim()
+    const priceOk = isScrapPriceEntryText(entered)
+    const reasonOk = isScrapPriceReasonText(reasonText)
+    setPriceError(!priceOk)
+    setReasonError(!reasonOk)
+    if (!priceOk || !reasonOk) return
+    void send(
+      Object.freeze({
+        idempotencyKey: newIdempotencyKey(),
+        year: target.year,
+        month: target.month,
+        expectedVersion: target.version,
+        tlPerKg: entered,
+        reason: reasonText,
+      }),
+    )
+  }
+
+  if (pending === null && items === null) return null
+
+  return (
+    <form
+      className={styles.form}
+      onSubmit={submit}
+      aria-labelledby="mfg-scrap-price-correction-heading"
+      noValidate
+      data-testid="scrap-price-correction"
+    >
+      <h2 id="mfg-scrap-price-correction-heading" className={styles.formHeading}>
+        {SCRAP_PRICE_TEXT.correctionHeading}
+      </h2>
+      <p className={styles.help}>{SCRAP_PRICE_TEXT.correctionHelp}</p>
+      {pending !== null ? (
+        <div className={styles.warning} role="status" data-testid="scrap-price-correction-pending">
+          <p>
+            {SCRAP_PRICE_TEXT.correctionPendingHeld}: {pending.year} {scrapPriceMonthLabel(pending.month)} —{' '}
+            {pending.tlPerKg} TL/kg
+          </p>
+          <p>{SCRAP_PRICE_TEXT.unknown}</p>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void send(pending)}
+            disabled={sending}
+            aria-busy={sending}
+          >
+            {sending ? SCRAP_PRICE_TEXT.submitting : SCRAP_PRICE_TEXT.resend}
+          </Button>
+        </div>
+      ) : target === null ? (
+        <p className={styles.muted}>{SCRAP_PRICE_TEXT.correctionNothing}</p>
+      ) : (
+        <>
+          <div className={styles.formRow}>
+            <Field label={SCRAP_PRICE_TEXT.correctionMonth}>
+              {(control) => (
+                <select
+                  {...control}
+                  className={styles.select}
+                  value={target.month}
+                  onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                >
+                  {(items ?? []).map((item) => (
+                    <option key={item.scrapPriceId} value={item.month}>
+                      {item.year} {scrapPriceMonthLabel(item.month)} — {item.tlPerKg} TL/kg (
+                      {SCRAP_PRICE_TEXT.currentVersion(item.version)})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field
+              label={SCRAP_PRICE_TEXT.correctionPrice}
+              error={priceError ? SCRAP_PRICE_TEXT.priceInvalid : undefined}
+            >
+              {(control) => (
+                <input
+                  {...control}
+                  className={styles.input}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={priceText}
+                  onChange={(event) => {
+                    setPriceText(event.target.value)
+                    setPriceError(false)
+                  }}
+                />
+              )}
+            </Field>
+            <Field
+              label={SCRAP_PRICE_TEXT.correctionReason}
+              error={reasonError ? SCRAP_PRICE_TEXT.correctionReasonInvalid : undefined}
+            >
+              {(control) => (
+                <input
+                  {...control}
+                  className={styles.input}
+                  autoComplete="off"
+                  value={reasonText}
+                  onChange={(event) => {
+                    setReasonText(event.target.value)
+                    setReasonError(false)
+                  }}
+                />
+              )}
+            </Field>
+          </div>
+          <Button type="submit" variant="primary" disabled={sending} aria-busy={sending}>
+            {sending ? SCRAP_PRICE_TEXT.submitting : SCRAP_PRICE_TEXT.correctionSubmit}
+          </Button>
+        </>
+      )}
+      {notice?.kind === 'applied' ? (
+        <p className={styles.notice} role="status">
+          {notice.replayed ? SCRAP_PRICE_TEXT.appliedReplay : SCRAP_PRICE_TEXT.correctionApplied}
+        </p>
+      ) : null}
+      {notice?.kind === 'failed' ? (
+        <p className={styles.error} role="alert">
+          {notice.text}
+        </p>
+      ) : null}
+    </form>
   )
 }

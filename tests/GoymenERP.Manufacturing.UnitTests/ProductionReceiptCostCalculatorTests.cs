@@ -4,9 +4,10 @@ using GoymenERP.Modules.Manufacturing.Domain.Costing;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// SAT-D305 (4) production receipt cost: net input cost less the usable remnant over the produced kilograms (scrap
-/// in, SAT-D307 (1)-(2)), or less the remnant and the weighed scrap at its month's scrap price (scrap out,
-/// SAT-D316 (1)); returns at the linked issue's stamped cost (SAT-D317 (2)), closed orders only (SAT-D317 (1)). The
+/// SAT-D305 (4) production receipt cost: net input cost less the usable remnant and the weighed scrap at its month's
+/// scrap price over the produced kilograms, with scrap in cost (SAT-D307 (1)-(2), URT-D75) and with scrap out of
+/// cost (SAT-D316 (1)); with scrap in cost the scrap value goes to the scrap stock, not to an expense (URT-D75,
+/// URT-D65), and a scrap price must be above zero in both settings (URT-D74); returns at the linked issue's stamped cost (SAT-D317 (2)), closed orders only (SAT-D317 (1)). The
 /// declared process loss has value zero (SAT-D316 (2)); consumed kg nothing accounts for is a separate unexplained
 /// kg, never process loss (URT-D5). More out than in gives no amount, also inside the closing tolerance (URT-D40,
 /// URT-D41 (1)). Sinan's answers of #66 6857496471: the scrap-out divisor is good + second quality kg and its
@@ -90,10 +91,12 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void Scrap_in_cost_reports_no_separate_scrap_expense_and_the_process_loss_in_kilograms()
     {
-        // 1000 kg consumed, 950 kg produced, 30 kg weighed scrap, 20 kg declared process loss: all in the product cost.
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(weighedScrap: 30m, processLoss: 20m));
+        // URT-D75: 1000 kg consumed, 950 kg produced, 30 kg weighed scrap x 10 TL/kg = 300 TL taken off to the scrap
+        // stock (no expense), 20 kg declared process loss at value zero: (40000 - 300) / 950.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 30m, processLoss: 20m, scrapPrice: Price(10m)));
 
-        Assert.Equal(40000m / 950m, result.CostPerKg);
+        Assert.Equal(39700m / 950m, result.CostPerKg);
         Assert.Equal(0m, result.WeighedScrapExpense);
         Assert.Equal(20m, result.ProcessLossKg);
         Assert.Equal(20m / 1000m, result.ProcessLossRatio);
@@ -101,21 +104,38 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
-    public void Scrap_in_cost_needs_no_scrap_price()
+    public void Scrap_in_cost_reads_the_scrap_price_of_the_weighing_month()
     {
-        // With scrap in cost the scrap price is not read: one not entered for the weighing's month, an unreadable one,
-        // or one above the 40 TL raw-material kg cost changes nothing.
-        ScrapPriceInput[] prices = [ScrapPriceInput.Missing, new(ScrapPriceReadStatus.Unreadable, null), Price(1000m)];
+        // URT-D75 replaces the earlier "scrap in cost needs no scrap price": the weighed scrap is taken off at its
+        // month's price, so a price not entered leaves the cost pending (URT-D74), an unreadable one or one above the
+        // 40 TL raw-material kg cost gives no amount, and 10 TL/kg gives (40000 - 500) / 950.
+        AssertPending(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrapPrice: ScrapPriceInput.Missing)),
+            ProductionReceiptCostCodesV1.ScrapPriceMissing);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrapPrice: new(ScrapPriceReadStatus.Unreadable, null))),
+            ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrapPrice: Price(1000m))),
+            ProductionReceiptCostCodesV1.ScrapPriceAboveRawMaterialCost);
 
-        foreach (var price in prices)
-        {
-            var result = ProductionReceiptCostCalculatorV1.Calculate(Input(weighedScrap: 50m, scrapPrice: price));
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(weighedScrap: 50m, scrapPrice: Price(10m)));
 
-            Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-            Assert.Equal(40000m / 950m, result.CostPerKg);
-            Assert.Equal(0m, result.WeighedScrapExpense);
-            Assert.Equal(ProductionReceiptCostCodesV1.BasisWithScrap, result.CostBasis);
-        }
+        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+        Assert.Equal(39500m / 950m, result.CostPerKg);
+        Assert.Equal(0m, result.WeighedScrapExpense);
+        Assert.Equal(ProductionReceiptCostCodesV1.BasisWithScrap, result.CostBasis);
+    }
+
+    [Fact]
+    public void Scrap_in_cost_with_no_weighed_scrap_and_no_scrap_price_entered_is_computed()
+    {
+        // SAT-D326 (4) is unchanged by URT-D74: no scrap kg and no price entered for the month adds nothing.
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(scrapPrice: ScrapPriceInput.Missing));
+
+        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
+        Assert.Equal(40000m / 950m, result.CostPerKg);
+        Assert.Equal(0m, result.WeighedScrapExpense);
     }
 
     [Theory]
@@ -143,12 +163,13 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void A_partly_declared_process_loss_leaves_only_the_rest_unexplained()
     {
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(weighedScrap: 30m, processLoss: 12.5m));
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 30m, processLoss: 12.5m, scrapPrice: Price(10m)));
 
         Assert.Equal(12.5m, result.ProcessLossKg);
         Assert.Equal(12.5m / 1000m, result.ProcessLossRatio);
         Assert.Equal(7.5m, result.UnexplainedKg);
-        Assert.Equal(40000m / 950m, result.CostPerKg);
+        Assert.Equal(39700m / 950m, result.CostPerKg);
     }
 
     [Fact]
@@ -228,6 +249,7 @@ public sealed class ProductionReceiptCostCalculatorTests
             new(ScrapPriceReadStatus.Unreadable, null),
             new(ScrapPriceReadStatus.Value, null),
             Price(-0.01m),
+            Price(0m),
             new(ScrapPriceReadStatus.Missing, 10m),
         ];
 
@@ -279,6 +301,7 @@ public sealed class ProductionReceiptCostCalculatorTests
             new(ScrapPriceReadStatus.Value, null),
             new(ScrapPriceReadStatus.Missing, 10m),
             Price(-0.01m),
+            Price(0m),
         ];
 
         foreach (var price in prices)
@@ -415,15 +438,20 @@ public sealed class ProductionReceiptCostCalculatorTests
             ProductionReceiptCostCodesV1.ProductCostNotPositive);
     }
 
-    [Fact]
-    public void Scrap_out_of_cost_with_a_zero_scrap_price_loads_the_whole_net_cost_on_the_product()
+    [Theory]
+    [InlineData(ScrapCostSettingStatus.On, "0")]
+    [InlineData(ScrapCostSettingStatus.Off, "0")]
+    [InlineData(ScrapCostSettingStatus.On, "-0.0001")]
+    [InlineData(ScrapCostSettingStatus.Off, "-0.0001")]
+    public void A_scrap_price_of_zero_or_below_is_unreadable_in_both_settings(ScrapCostSettingStatus scrap, string tlPerKg)
     {
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
-            weighedScrap: 50m, scrap: ScrapCostSettingStatus.Off, scrapPrice: Price(0m)));
+        // URT-D74 replaces the earlier "a zero scrap price loads the whole net cost on the product": the calculator
+        // takes a scrap price only above zero, with weighed scrap in either setting.
+        var price = decimal.Parse(tlPerKg, System.Globalization.CultureInfo.InvariantCulture);
 
-        Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(40000m / 950m, result.CostPerKg);
-        Assert.Equal(0m, result.WeighedScrapExpense);
+        AssertUnreadable(ProductionReceiptCostCalculatorV1.Calculate(Input(
+            weighedScrap: 50m, scrap: scrap, scrapPrice: Price(price))),
+            ProductionReceiptCostCodesV1.ScrapPriceUnreadable);
     }
 
     [Theory]
@@ -499,10 +527,11 @@ public sealed class ProductionReceiptCostCalculatorTests
     [Fact]
     public void Second_quality_output_alone_carries_the_whole_cost()
     {
-        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(good: 0m, second: 950m, weighedScrap: 50m));
+        var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
+            good: 0m, second: 950m, weighedScrap: 50m, scrapPrice: Price(10m)));
 
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(40000m / 950m, result.CostPerKg);
+        Assert.Equal(39500m / 950m, result.CostPerKg);
         Assert.Equal(0m, result.UnexplainedKg);
     }
 
@@ -835,16 +864,18 @@ public sealed class ProductionReceiptCostCalculatorTests
     }
 
     [Fact]
-    public void A_usable_remnant_also_returns_at_the_net_raw_material_kg_cost_with_scrap_in_cost()
+    public void Golden_a_usable_remnant_also_returns_at_the_net_raw_material_kg_cost_with_scrap_in_cost()
     {
-        // Sinan's decision #66 6874860782 (SINAN-CEVAP (10), answering the remnant share of URT-D46 (6)): with scrap
-        // in cost the remnant returns at the net raw-material kg cost like URT-D46 / #66 6864631364 (14), and the scrap
-        // share is borne by the product only. The same order: remnant 2000 TL, (40000 - 2000) / 900 = 42.22 TL per kg.
+        // Golden URT-D75 (replacing the 42.22 example of URT-D59 (3)): with scrap in cost the remnant returns at the
+        // net raw-material kg cost (URT-D59 (1)) and the weighed scrap is taken off at its month's price to the scrap
+        // stock. 1000 x 40 = 40000; 900 good, 50 remnant, 50 scrap x 10: (40000 - 2000 - 500) / 900 = 41.666...
         var result = ProductionReceiptCostCalculatorV1.Calculate(Input(
-            good: 900m, second: 0m, remnant: 50m, weighedScrap: 50m, scrap: ScrapCostSettingStatus.On));
+            good: 900m, second: 0m, remnant: 50m, weighedScrap: 50m, scrap: ScrapCostSettingStatus.On,
+            scrapPrice: Price(10m)));
 
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(38000m / 900m, result.CostPerKg);
+        Assert.Equal(37500m / 900m, result.CostPerKg);
+        Assert.Equal(41.67m, decimal.Round(result.CostPerKg!.Value, 2, MidpointRounding.AwayFromZero));
         Assert.Equal(2000m, result.UsableRemnantValue);
         Assert.Equal(0m, result.WeighedScrapExpense);
         Assert.Equal(ProductionReceiptCostCodesV1.BasisWithScrap, result.CostBasis);

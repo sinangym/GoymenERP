@@ -429,6 +429,9 @@ public static class ManufacturingCommandNames
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
     public const string RecordScrapPrice = "manufacturing.scrap-price.record.v1";
+
+    /// <summary>URT-D72: corrects a month's scrap price with a new version and a reason.</summary>
+    public const string CorrectScrapPrice = "manufacturing.scrap-price.correct.v1";
 }
 
 /// <summary>
@@ -1249,6 +1252,13 @@ public sealed partial class ManufacturingCommandService(
                 PlanParameterSnapshotV1? snapshot = null;
                 IReadOnlyDictionary<Guid, bool>? labelUsable = null;
                 IReadOnlyDictionary<Guid, long> labelVersions = new Dictionary<Guid, long>();
+                // URT-D70: the approval compares the plan's termin with the server's Istanbul business day; a host that
+                // cannot resolve the zone answers 503 and nothing is guessed (the domain reads the same day at the save).
+                if (BusinessToday() is not { } businessToday)
+                {
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+                }
+
                 var current = await plans.FindPlanAsync(planId, cancellationToken);
                 if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion)
                 {
@@ -1258,6 +1268,14 @@ public sealed partial class ManufacturingCommandService(
                     {
                         return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
                             ManufacturingRuleCodes.PlanSelfApproval);
+                    }
+
+                    // URT-D70: a termin before today is refused before Settings or Inventory is read (nothing is
+                    // allocated for a plan that cannot be approved); the store's domain decision refuses it again.
+                    if (current.RequestedDueDate is { } dueDate && dueDate < businessToday)
+                    {
+                        return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                            ManufacturingRuleCodes.DueDateInPast);
                     }
 
                     var parameters = await ReadParameterProfileAsync(current.Process, current.WorkCenterId,
@@ -1344,6 +1362,13 @@ public sealed partial class ManufacturingCommandService(
             new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created,
             async (metadata, _, _) =>
             {
+                // URT-D70: the order opens only while the plan's termin is not before the server's Istanbul business day,
+                // which the store reads; a host that cannot resolve the zone answers 503 and nothing is guessed.
+                if (BusinessToday() is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+                }
+
                 var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
                 return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
                     outcome == ManufacturingWriteOutcome.Replayed, cancellationToken);
@@ -2332,7 +2357,8 @@ public sealed partial class ManufacturingCommandService(
         {
             result = new ManufacturingApiResult<T>(exception.Code switch
             {
-                ManufacturingStoreCodes.PlanNotFound or ManufacturingStoreCodes.OrderNotFound => ManufacturingApiStatus.NotFound,
+                ManufacturingStoreCodes.PlanNotFound or ManufacturingStoreCodes.OrderNotFound
+                    or ManufacturingStoreCodes.ScrapPriceNotFound => ManufacturingApiStatus.NotFound,
                 ManufacturingStoreCodes.CompanyContextMismatch => ManufacturingApiStatus.Denied,
                 ManufacturingStoreCodes.PlanIdConflict or ManufacturingStoreCodes.OrderIdConflict
                     or ManufacturingStoreCodes.FactIdConflict => ManufacturingApiStatus.Conflict,

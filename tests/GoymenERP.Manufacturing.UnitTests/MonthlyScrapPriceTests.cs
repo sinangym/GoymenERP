@@ -7,7 +7,9 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// URT-S13 (URT-D47, URT-D65): the monthly scrap price as a value. A month is a calendar year and month; the price is a
 /// positive TL per kg figure with at most four decimals (a fifth is refused, never rounded); a stored price that the rules
 /// cannot have produced is refused on rebuild, never repaired; a month's price answers the cost calculator's input as a
-/// value. Every figure here is synthetic; no price policy is chosen.
+/// value. URT-D72: a wrong price is corrected by a new version with a reason and the old version stays as it is; URT-D73:
+/// only the current and past months (the Europe/Istanbul business day of the entry) take a price. Every figure here is
+/// synthetic; no price policy is chosen.
 /// </summary>
 public sealed class MonthlyScrapPriceTests
 {
@@ -122,7 +124,7 @@ public sealed class MonthlyScrapPriceTests
         var value = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
 
         var refused = Assert.Throws<ManufacturingRuleException>(() => MonthlyScrapPrice.Restore(Guid.NewGuid(), Company,
-            year, month, value, "synthetic-actor", At));
+            year, month, value, MonthlyScrapPrice.FirstVersion, null, "synthetic-actor", At));
 
         Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid, refused.Code);
     }
@@ -132,8 +134,143 @@ public sealed class MonthlyScrapPriceTests
     {
         var id = Guid.NewGuid();
 
-        var price = MonthlyScrapPrice.Restore(id, Company, 2026, 11, 7.2500m, "synthetic-actor", At);
+        var price = MonthlyScrapPrice.Restore(id, Company, 2026, 11, 7.2500m, MonthlyScrapPrice.FirstVersion, null,
+            "synthetic-actor", At);
 
-        Assert.Equal((id, new ScrapPricePeriod(2026, 11), 7.25m), (price.Id, price.Period, price.Price.Value));
+        Assert.Equal((id, new ScrapPricePeriod(2026, 11), 7.25m, 1, (string?)null),
+            (price.Id, price.Period, price.Price.Value, price.Version, price.Reason));
     }
+
+    [Fact]
+    public void A_first_entry_is_version_one_without_a_reason()
+    {
+        var price = Recorded(7.25m);
+
+        Assert.Equal((MonthlyScrapPrice.FirstVersion, (string?)null), (price.Version, price.Reason));
+    }
+
+    [Fact]
+    public void A_correction_is_the_next_version_of_the_same_month_with_its_reason_and_the_old_version_stays()
+    {
+        var first = Recorded(7.25m);
+        var id = Guid.NewGuid();
+        var later = At.AddDays(1);
+
+        var corrected = first.Correct(id, MonthlyScrapPrice.FirstVersion, new ScrapPriceTlPerKg(6.5m),
+            "  SENTETIK yanlis girildi  ", " synthetic-checker ", later);
+
+        Assert.Equal((id, Company, first.Period, 6.5m, 2, "SENTETIK yanlis girildi", "synthetic-checker", later),
+            (corrected.Id, corrected.CompanyId, corrected.Period, corrected.Price.Value, corrected.Version,
+                corrected.Reason, corrected.RecordedBy, corrected.RecordedAtUtc));
+        Assert.Equal((1, 7.25m, (string?)null), (first.Version, first.Price.Value, first.Reason));
+        Assert.Equal(new ScrapPriceInput(ScrapPriceReadStatus.Value, 6.5m), corrected.ToInput());
+
+        var again = corrected.Correct(Guid.NewGuid(), 2, new ScrapPriceTlPerKg(6.75m), "SENTETIK ikinci duzeltme",
+            "synthetic-checker", later);
+        Assert.Equal(3, again.Version);
+    }
+
+    [Fact]
+    public void A_correction_from_a_stale_version_is_a_version_conflict_before_any_other_rule()
+    {
+        var corrected = Recorded(7.25m).Correct(Guid.NewGuid(), 1, new ScrapPriceTlPerKg(6.5m), "SENTETIK ilk",
+            "synthetic-actor", At);
+
+        var conflict = Assert.Throws<ManufacturingVersionConflictException>(() => corrected.Correct(Guid.NewGuid(), 1,
+            new ScrapPriceTlPerKg(6.5m), " ", "synthetic-actor", At));
+
+        Assert.Equal((1L, 2L), (conflict.ExpectedVersion, conflict.CurrentVersion));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("too-long")]
+    public void A_correction_without_a_reason_or_with_a_reason_longer_than_the_column_is_refused(string reason)
+    {
+        var text = reason == "too-long" ? new string('a', MonthlyScrapPrice.ReasonMaximumLength + 1) : reason;
+
+        var refused = Assert.Throws<ArgumentException>(() => Recorded(7.25m).Correct(Guid.NewGuid(), 1,
+            new ScrapPriceTlPerKg(6.5m), text, "synthetic-actor", At));
+
+        Assert.Equal("reason", refused.ParamName);
+    }
+
+    [Fact]
+    public void A_correction_with_the_effective_price_again_is_refused_as_unchanged_also_with_trailing_zeros()
+    {
+        var refused = Assert.Throws<ManufacturingRuleException>(() => Recorded(7.25m).Correct(Guid.NewGuid(), 1,
+            new ScrapPriceTlPerKg(7.2500m), "SENTETIK ayni fiyat", "synthetic-actor", At));
+
+        Assert.Equal(ManufacturingRuleCodes.ScrapPriceUnchanged, refused.Code);
+    }
+
+    [Fact]
+    public void A_future_month_is_refused_on_entry_and_the_current_and_a_past_month_are_taken()
+    {
+        var refused = Assert.Throws<ManufacturingRuleException>(() => MonthlyScrapPrice.Record(Guid.NewGuid(), Company,
+            new ScrapPricePeriod(2026, 12), new ScrapPriceTlPerKg(7.25m), "synthetic-actor", At));
+
+        Assert.Equal(ManufacturingRuleCodes.ScrapPriceFutureMonth, refused.Code);
+        Assert.Equal(11, MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new ScrapPricePeriod(2026, 11),
+            new ScrapPriceTlPerKg(7.25m), "synthetic-actor", At).Period.Month);
+        Assert.Equal(2025, MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new ScrapPricePeriod(2025, 12),
+            new ScrapPriceTlPerKg(7.25m), "synthetic-actor", At).Period.Year);
+    }
+
+    [Fact]
+    public void The_Istanbul_business_day_decides_the_current_month_not_the_utc_date()
+    {
+        // 2026-11-30 21:00Z is already 1 December in Istanbul (UTC+3); 20:59Z is still 30 November.
+        var stillNovember = new DateTimeOffset(2026, 11, 30, 20, 59, 0, TimeSpan.Zero);
+        var alreadyDecember = new DateTimeOffset(2026, 11, 30, 21, 0, 0, TimeSpan.Zero);
+        var december = new ScrapPricePeriod(2026, 12);
+
+        var refused = Assert.Throws<ManufacturingRuleException>(() => MonthlyScrapPrice.Record(Guid.NewGuid(), Company,
+            december, new ScrapPriceTlPerKg(7.25m), "synthetic-actor", stillNovember));
+
+        Assert.Equal(ManufacturingRuleCodes.ScrapPriceFutureMonth, refused.Code);
+        Assert.Equal(december, MonthlyScrapPrice.Record(Guid.NewGuid(), Company, december, new ScrapPriceTlPerKg(7.25m),
+            "synthetic-actor", alreadyDecember).Period);
+    }
+
+    [Fact]
+    public void A_correction_of_a_stored_future_month_is_refused_by_the_entry_rule_and_its_rebuild_is_not()
+    {
+        // A version stored under a later clock rebuilds (the month rule is an entry rule), but a correction entered before
+        // that month began is refused.
+        var stored = MonthlyScrapPrice.Restore(Guid.NewGuid(), Company, 2027, 1, 7.25m, MonthlyScrapPrice.FirstVersion,
+            null, "synthetic-actor", At);
+
+        var refused = Assert.Throws<ManufacturingRuleException>(() => stored.Correct(Guid.NewGuid(), 1,
+            new ScrapPriceTlPerKg(6.5m), "SENTETIK", "synthetic-actor", At));
+
+        Assert.Equal(ManufacturingRuleCodes.ScrapPriceFutureMonth, refused.Code);
+    }
+
+    [Theory]
+    [InlineData(0, null)]
+    [InlineData(1, "SENTETIK")]
+    [InlineData(2, null)]
+    [InlineData(2, " ")]
+    public void A_stored_version_whose_reason_does_not_fit_its_version_is_refused_on_rebuild(int version, string? reason)
+    {
+        var refused = Assert.Throws<ManufacturingRuleException>(() => MonthlyScrapPrice.Restore(Guid.NewGuid(), Company,
+            2026, 11, 7.25m, version, reason, "synthetic-actor", At));
+
+        Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid, refused.Code);
+    }
+
+    [Fact]
+    public void A_stored_correction_rebuilds_with_its_version_and_reason()
+    {
+        var price = MonthlyScrapPrice.Restore(Guid.NewGuid(), Company, 2026, 11, 6.5m, 3, "SENTETIK", "synthetic-actor",
+            At);
+
+        Assert.Equal((3, "SENTETIK"), (price.Version, price.Reason));
+    }
+
+    private static MonthlyScrapPrice Recorded(decimal tlPerKg) =>
+        MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new ScrapPricePeriod(2026, 11), new ScrapPriceTlPerKg(tlPerKg),
+            "synthetic-actor", At);
 }

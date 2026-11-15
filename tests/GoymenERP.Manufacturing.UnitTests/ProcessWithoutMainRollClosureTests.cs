@@ -10,7 +10,10 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// remnant, the latest WIP reading and corrections included); a process without a main roll input (paint) compares the
 /// order's total net issued kg with its total accounted kg, while the roll-based processes keep the per-roll rule of
 /// URT-D42 (1); outputs enter as their weighed kilograms whatever their counting unit. The refusal itself is unchanged
-/// (URT-D41/D42): no tolerance, no approval path, a stored close replays under the rule it was written with.
+/// (URT-D41/D42): no tolerance, no approval path, a stored close replays under the rule it was written with. URT-D68:
+/// a paint order measures its shortfall tolerance and fire percent on the order total, with the approval path of
+/// URT-D42 (2) kept outside it; a paint close stored under the earlier per-input rule still restores. URT-D69: only paint
+/// runs without a coil.
 /// </summary>
 public sealed class ProcessWithoutMainRollClosureTests
 {
@@ -18,6 +21,7 @@ public sealed class ProcessWithoutMainRollClosureTests
     private static readonly Guid WorkCenter = Guid.Parse("20000000-0000-0000-0000-00000000d049");
     private static readonly Guid InputA = Guid.Parse("30000000-0000-0000-0000-00000000d001");
     private static readonly Guid InputB = Guid.Parse("30000000-0000-0000-0000-00000000d002");
+    private static readonly Guid InputC = Guid.Parse("30000000-0000-0000-0000-00000000d003");
     private static readonly Guid Planner = Guid.Parse("40000000-0000-0000-0000-00000000d001");
     private static readonly Guid Closer = Guid.Parse("40000000-0000-0000-0000-00000000d002");
     private static readonly Guid Profile = Guid.Parse("50000000-0000-0000-0000-00000000d001");
@@ -27,15 +31,16 @@ public sealed class ProcessWithoutMainRollClosureTests
     private static Kilograms Kg(decimal value) => new(value);
 
     /// <summary>The reviewed version-0 catalog of <paramref name="process"/>: fire maximum 5 %, mass balance ± 2 %.</summary>
-    private static ClosureTolerancePolicySnapshotV1 Catalog(ManufacturingProcess process, decimal? massBalance = 2m) =>
-        new(Company, Profile, 0, process, 5m, true, new DateOnly(2026, 11, 1), null, Today, massBalance,
+    private static ClosureTolerancePolicySnapshotV1 Catalog(ManufacturingProcess process, decimal? massBalance = 2m,
+        decimal maximumFire = 5m) =>
+        new(Company, Profile, 0, process, maximumFire, true, new DateOnly(2026, 11, 1), null, Today, massBalance,
             ClosureTolerancePolicySnapshotV1.CatalogSource);
 
     private static ProductionOrder Order(ManufacturingProcess process, params Guid[] inputs)
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, process,
             inputs.Select(input => new PlannedInput(input, Kg(10_000m))));
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -260,5 +265,137 @@ public sealed class ProcessWithoutMainRollClosureTests
     {
         Assert.Throws<ArgumentNullException>(() => OrderMassTotalV1.Of(null!));
         Assert.Throws<ArgumentException>(() => OrderMassTotalV1.Of([null!]));
+    }
+
+    /// <summary>
+    /// URT-D68 golden: three packages of 1000 kg each; the 60 kg of scrap are weighed on package A only and everything
+    /// else is good product. Package A alone would be a 6 % fire; on the order total it is 60 / 3000 = 2 %.
+    /// </summary>
+    private static ProductionOrder GoldenThreePackages(ManufacturingProcess process)
+    {
+        var order = Order(process, InputA, InputB, InputC);
+        Realize(order, InputA, 1_000m, 60m, 940m);
+        foreach (var input in new[] { InputB, InputC })
+        {
+            order.Issue(input, Kg(1_000m));
+            order.Declare(input, OutputClass.GoodProduct, Kg(1_000m));
+        }
+
+        return order;
+    }
+
+    [Fact]
+    public void Golden_a_paint_order_measures_the_fire_percent_on_the_order_total_and_closes_without_approval()
+    {
+        // URT-D68: 3 x 1000 kg in, 60 kg scrap -> 2 % on the order total; with a 2 % fire maximum the close needs no
+        // approval. Each input row carries only its own difference; the order total row carries the decision.
+        var order = GoldenThreePackages(ManufacturingProcess.Paint);
+        var catalog = Catalog(ManufacturingProcess.Paint, maximumFire: 2m);
+
+        var assessment = order.AssessClosure(catalog);
+
+        Assert.Equal((ClosureDispositionV1.Balanced, (string?)null), (assessment.Disposition, assessment.Code));
+        Assert.NotNull(assessment.OrderTotal);
+        Assert.Equal((Guid.Empty, ClosureDispositionV1.Balanced, 0m, (decimal?)2m, (string?)null),
+            (assessment.OrderTotal!.ParentRollId, assessment.OrderTotal.Disposition, assessment.OrderTotal.DifferenceKg,
+                assessment.OrderTotal.FirePercent, assessment.OrderTotal.Code));
+        Assert.Equal(
+            new (Guid, ClosureDispositionV1, decimal, decimal?)[]
+            {
+                (InputA, ClosureDispositionV1.Balanced, 0m, null),
+                (InputB, ClosureDispositionV1.Balanced, 0m, null),
+                (InputC, ClosureDispositionV1.Balanced, 0m, null),
+            },
+            assessment.Rolls.Select(roll => (roll.ParentRollId, roll.Disposition, roll.DifferenceKg, roll.FirePercent)));
+
+        order.CloseWithPolicy(order.Version, Closer, CloseAt, catalog, null);
+        Assert.Equal((OrderStatus.Closed, catalog, (ClosureExceptionApprovalV1?)null),
+            (order.Status, order.ClosurePolicy, order.ClosureExceptionApproval));
+    }
+
+    [Theory]
+    [InlineData(ManufacturingProcess.Slitting)]
+    [InlineData(ManufacturingProcess.ColdRolling)]
+    [InlineData(ManufacturingProcess.TubeProfile)]
+    [InlineData(ManufacturingProcess.CutToLength)]
+    public void The_same_three_packages_on_a_coil_process_are_measured_per_coil_and_need_approval(
+        ManufacturingProcess process)
+    {
+        // URT-D69 with URT-D42 (1): every process but paint runs per coil; coil A is a 6 % fire over the 2 % maximum.
+        var order = GoldenThreePackages(process);
+        var catalog = Catalog(process, maximumFire: 2m);
+
+        var assessment = order.AssessClosure(catalog);
+
+        Assert.Null(assessment.OrderTotal);
+        Assert.Equal((ClosureDispositionV1.ApprovalRequired, ClosureAssessmentCodesV1.FireAboveMaximum),
+            (assessment.Disposition, assessment.Code));
+        Assert.Equal((InputA, (decimal?)6m), (assessment.Rolls[0].ParentRollId, assessment.Rolls[0].FirePercent));
+        Assert.Equal(ClosureAssessmentCodesV1.ApprovalRequired, Assert.Throws<ManufacturingRuleException>(
+            () => order.CloseWithPolicy(order.Version, Closer, CloseAt, catalog, null)).Code);
+        AssertStillOpen(order);
+    }
+
+    [Fact]
+    public void A_paint_order_whose_total_fire_is_above_the_maximum_keeps_the_approval_path()
+    {
+        // URT-D68 with URT-D42 (2): 60 kg over 3000 kg is 2 %; under a 1.5 % maximum the order total needs the exception
+        // approval, and closes with it.
+        var order = GoldenThreePackages(ManufacturingProcess.Paint);
+        var catalog = Catalog(ManufacturingProcess.Paint, maximumFire: 1.5m);
+
+        var assessment = order.AssessClosure(catalog);
+
+        Assert.Equal((ClosureDispositionV1.ApprovalRequired, ClosureAssessmentCodesV1.FireAboveMaximum),
+            (assessment.Disposition, assessment.Code));
+        Assert.Equal(ClosureAssessmentCodesV1.ApprovalRequired, Assert.Throws<ManufacturingRuleException>(
+            () => order.CloseWithPolicy(order.Version, Closer, CloseAt, catalog, null)).Code);
+        AssertStillOpen(order);
+
+        var approval = Approval(order, catalog);
+        order.CloseWithPolicy(order.Version, Closer, CloseAt, catalog, approval);
+        Assert.Equal((OrderStatus.Closed, approval), (order.Status, order.ClosureExceptionApproval));
+    }
+
+    [Fact]
+    public void A_paint_order_whose_total_shortfall_is_outside_the_tolerance_needs_approval()
+    {
+        // URT-D68: 1000 kg in on A and B; A is 10 kg short and B 40 kg short. Per input B (4 %) alone would be outside
+        // the 2 % tolerance and A inside; the order total, 50 kg over 2000 kg = 2.5 %, decides: outside, approval.
+        var order = Order(ManufacturingProcess.Paint, InputA, InputB);
+        Realize(order, InputA, 1_000m, 20m, 970m);
+        Realize(order, InputB, 1_000m, 20m, 940m);
+        var catalog = Catalog(ManufacturingProcess.Paint);
+
+        var assessment = order.AssessClosure(catalog);
+
+        Assert.Equal((ClosureDispositionV1.ApprovalRequired, ClosureAssessmentCodesV1.MassDifferenceOutsideTolerance),
+            (assessment.Disposition, assessment.Code));
+        Assert.Equal((50m, ClosureDispositionV1.ApprovalRequired),
+            (assessment.OrderTotal!.DifferenceKg, assessment.OrderTotal.Disposition));
+        Assert.All(assessment.Rolls, roll => Assert.Equal(ClosureDispositionV1.Balanced, roll.Disposition));
+    }
+
+    [Fact]
+    public void A_paint_close_stored_with_a_per_input_approval_the_order_total_no_longer_needs_restores_unchanged()
+    {
+        // URT-D68 with URT-D42 (3): before URT-D68 package A's 6 % fire needed an approval under the 5 % maximum and the
+        // close was stored with it. The order total (2 %) needs none, so a new close with that approval is refused; the
+        // stored close still restores under the per-input rule it was written with.
+        var order = GoldenThreePackages(ManufacturingProcess.Paint);
+        var catalog = Catalog(ManufacturingProcess.Paint);
+        var approval = Approval(order, catalog);
+
+        var restored = ProductionOrder.Restore(order.Id, order.PlanId, Company, WorkCenter, ManufacturingProcess.Paint,
+            order.Target, order.PlannedInputs, order.Issues, order.Returns, order.Outputs, order.WipMeasurements,
+            Closer, CloseAt, order.Version + 1, catalog, approval);
+
+        Assert.Equal((OrderStatus.Closed, catalog, approval),
+            (restored.Status, restored.ClosurePolicy, restored.ClosureExceptionApproval));
+        Assert.Equal(ClosureAssessmentCodesV1.ApprovalUnexpected, Assert.Throws<ManufacturingRuleException>(
+            () => order.CloseWithPolicy(order.Version, Closer, CloseAt, catalog, approval)).Code);
+        AssertStillOpen(order);
+        order.CloseWithPolicy(order.Version, Closer, CloseAt, catalog, null);
+        Assert.Equal(OrderStatus.Closed, order.Status);
     }
 }

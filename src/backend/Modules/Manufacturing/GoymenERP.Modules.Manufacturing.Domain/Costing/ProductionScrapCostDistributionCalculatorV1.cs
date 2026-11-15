@@ -90,15 +90,17 @@ public sealed record ProductionScrapCostDistributionResult(
 /// receipt cost of <see cref="ProductionReceiptCostCalculatorV1"/>; it computes no cost per kg of its own.
 /// <list type="bullet">
 /// <item>Good product and second quality labels carry the same cost per kg (SAT-D307 (1)-(2), SAT-D326 (1)): allocated =
-/// label kg x <see cref="ProductionReceiptCostResult.CostPerKg"/>. With scrap in cost the scrap cost is borne by these
-/// two classes only (SAT-D307 (3)); with scrap out of cost the weighed scrap at its month's price is taken off first
-/// and reported apart (SAT-D316 (1)). Process loss has value zero and stays on the product (SAT-D316 (2)).</item>
+/// label kg x <see cref="ProductionReceiptCostResult.CostPerKg"/>. In both settings the weighed scrap at its month's
+/// price is taken off first (URT-D75 (1) with scrap in cost, SAT-D316 (1) with scrap out of cost); the rest of the
+/// scrap cost is borne by these two classes only (SAT-D307 (3)), and with scrap out of cost the scrap value is
+/// reported apart as an expense. Process loss has value zero and stays on the product (SAT-D316 (2)).</item>
 /// <item>A usable remnant label returns at the net raw-material kg cost (URT-D44, URT-D46 / #66 6864631364 (14), with
 /// scrap in cost #66 6874860782): allocated = label kg x
 /// <see cref="ProductionReceiptCostResult.RawMaterialCostPerKg"/>; the remnant lines add up to
 /// <see cref="ProductionReceiptCostResult.UsableRemnantValue"/>.</item>
-/// <item>A scrap weighing gives a line with no allocated amount (<c>scrap_label_cost_not_decided</c>, URT-D8): the stock
-/// cost of a scrap label is not decided. With scrap out of cost the line shows its share of the separate scrap
+/// <item>A scrap weighing gives a line with no allocated amount (<c>scrap_label_cost_not_decided</c>, URT-D8): the scrap
+/// label's stock entry stays fail-closed in this slice (URT-D75 (3) names its value; the label's stock entry is a
+/// separate follow-up). With scrap out of cost the line shows its share of the separate scrap
 /// expense.</item>
 /// </list>
 /// The amounts are TL, as the cost calculator's are, and nothing is rounded here: the calculation runs at full precision

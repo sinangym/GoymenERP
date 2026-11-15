@@ -121,7 +121,22 @@ public sealed class ProductionOrder
     /// a plan that already opened one is refused (<see cref="ManufacturingRuleCodes.PlanOrderExists"/>), and the plan
     /// records the order it opened. A cancelled or Draft plan is not approved (<see cref="ManufacturingRuleCodes.PlanNotApproved"/>).
     /// </summary>
-    public static ProductionOrder FromApprovedPlan(Guid id, ProductionPlan plan)
+    /// <remarks>
+    /// URT-D70: this overload checks no calendar; it is the domain's shorthand for a plan whose termin was already checked.
+    /// Opening an order for real goes through <see cref="FromApprovedPlan(Guid, ProductionPlan, DateOnly)"/>.
+    /// </remarks>
+    public static ProductionOrder FromApprovedPlan(Guid id, ProductionPlan plan) => Open(id, plan, businessToday: null);
+
+    /// <summary>
+    /// URT-D70: opens the order of an approved plan as <see cref="FromApprovedPlan(Guid, ProductionPlan)"/> does, and
+    /// refuses a plan whose termin is before <paramref name="businessToday"/> (the server's Europe/Istanbul business day)
+    /// with <see cref="ManufacturingRuleCodes.DueDateInPast"/>. The user moves the plan's termin forward and opens again.
+    /// The termin rule runs after the status and "one order per plan" rules, so each keeps its answer.
+    /// </summary>
+    public static ProductionOrder FromApprovedPlan(Guid id, ProductionPlan plan, DateOnly businessToday) =>
+        Open(id, plan, businessToday);
+
+    private static ProductionOrder Open(Guid id, ProductionPlan plan, DateOnly? businessToday)
     {
         ArgumentNullException.ThrowIfNull(plan);
         if (plan.Status != PlanStatus.Approved)
@@ -135,6 +150,11 @@ public sealed class ProductionOrder
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanOrderExists,
                 "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
+        }
+
+        if (businessToday is { } today)
+        {
+            plan.RequireDueDateNotPast(today);
         }
 
         var order = new ProductionOrder(id, plan);
@@ -624,6 +644,18 @@ public sealed class ProductionOrder
 
         var assessment = OrderClosureAssessmentCalculatorV1.Assess(this, policy, DerivedScrapPercentInputs(),
             replayingStoredClose);
+
+        // URT-D68 with URT-D42 (3): a paint close is measured on the order total from now on. A paint close stored under
+        // the earlier per-input rule (an approval the total no longer needs, or a per-input decision the total reads
+        // otherwise) stays readable: when the total does not accept the stored decision, the replay reads it under the
+        // per-input rule it was written with. A new close never takes this path.
+        if (replayingStoredClose && !MeasuresOutputAboveInputPerRoll
+            && !AcceptsStoredDecision(assessment, exceptionApproval, closedByUserId, policy))
+        {
+            assessment = OrderClosureAssessmentCalculatorV1.Assess(this, policy, DerivedScrapPercentInputs(),
+                replayingStoredClose, PaintClosureScope.PerInput);
+        }
+
         switch (assessment.Disposition)
         {
             case ClosureDispositionV1.Balanced when exceptionApproval is not null:
@@ -653,6 +685,20 @@ public sealed class ProductionOrder
         ClosureExceptionApproval = exceptionApproval;
         CompleteClose(closedByUserId, closeAtUtc);
     }
+
+    /// <summary>
+    /// The decision the close switch below accepts: a balanced close without an approval, or an out-of-tolerance close
+    /// with the approval that matches this company, order, actor, version and policy.
+    /// </summary>
+    private bool AcceptsStoredDecision(OrderClosureAssessmentV1 assessment, ClosureExceptionApprovalV1? exceptionApproval,
+        Guid closedByUserId, ClosureTolerancePolicySnapshotV1 policy) =>
+        assessment.Disposition switch
+        {
+            ClosureDispositionV1.Balanced => exceptionApproval is null,
+            ClosureDispositionV1.ApprovalRequired => exceptionApproval is not null
+                && exceptionApproval.Matches(CompanyId, Id, closedByUserId, Version, policy),
+            _ => false,
+        };
 
     /// <summary>
     /// Closes the order when EVERY parent roll reconciles on its own (Business #66 5728619644 on
