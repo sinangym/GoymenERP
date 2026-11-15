@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import styles from './Finance.module.css'
+import { OFFICIAL_INVOICE_IMPORT_TEXT, officialInvoiceIssueLine } from './officialInvoiceImportText'
 
 export interface OfficialInvoiceImportSourceSelection {
   readonly batchId: string
@@ -333,6 +334,7 @@ function OfficialInvoiceImportPanelState({
         Yalnız seçilen onaylı kaynak önizlenir. Önizleme kayıt değildir; açık kalemler yetkili uygulama
         tamamlandıktan sonra Finans'tan yeniden okunur.
       </p>
+      <p className={styles.notice}>{OFFICIAL_INVOICE_IMPORT_TEXT.identityHint}</p>
       <dl>
         <dt>Onaylı kaynak</dt>
         <dd>{source.displayName}</dd>
@@ -377,7 +379,7 @@ function OfficialInvoiceImportPanelState({
           <p>Dosya uygulanmadı.</p>
           {current.issues.map((issue, index) => (
             <p key={`${issue.rowNumber}-${issue.field}-${issue.code}-${index}`}>
-              Satır {issue.rowNumber}, {issue.field}: {issue.code}
+              Satır {issue.rowNumber}, {officialInvoiceIssueLine(issue.field, issue.code)}
             </p>
           ))}
         </div>

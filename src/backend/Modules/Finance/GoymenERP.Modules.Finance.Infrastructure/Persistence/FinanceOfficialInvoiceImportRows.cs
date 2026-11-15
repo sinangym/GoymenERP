@@ -65,3 +65,31 @@ internal sealed class FinanceOfficialInvoiceImportWorkDeliveryRow : IFinanceTena
     public string? CausationId { get; set; }
     public DateTimeOffset OccurredAtUtc { get; set; }
 }
+
+/// <summary>
+/// FIN-S5 / FNS-D19 (D5): an append-only claim of one official identity (official number or ETTN) by the source
+/// document of an admitted v2 file. The live holder is the claim with the highest generation; a later acceptance may
+/// add the next generation only after every open item of the holder document is cancelled. A unique generation per
+/// identity makes two concurrent acceptances of the same identity collide in SQL Server.
+/// </summary>
+internal sealed class FinanceOfficialInvoiceIdentityClaimRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public string IdentityKind { get; set; } = string.Empty;
+    public string IdentityValue { get; set; } = string.Empty;
+    public int Generation { get; set; }
+    public Guid HolderBatchId { get; set; }
+    public Guid HolderSourceDocumentId { get; set; }
+    public string ClaimedBy { get; set; } = string.Empty;
+    public DateTimeOffset ClaimedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+}
+
+/// <summary>The two official identity kinds a claim can carry.</summary>
+internal static class FinanceOfficialInvoiceIdentityKinds
+{
+    public const string OfficialNo = "official-no";
+    public const string Ettn = "ettn";
+}

@@ -8,6 +8,7 @@ import {
 } from './officialInvoiceImportUploadClient'
 import type { OfficialInvoiceImportPreview } from './OfficialInvoiceImportPanel'
 import styles from './Finance.module.css'
+import { OFFICIAL_INVOICE_IMPORT_TEXT, officialInvoiceIssueLine } from './officialInvoiceImportText'
 
 interface FrozenUpload {
   readonly file: File
@@ -138,6 +139,7 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
     <section aria-labelledby="official-invoice-upload-title">
       <h1 id="official-invoice-upload-title">Onaylı fatura taksit kaynağı yükle</h1>
       <p className={styles.notice}>Dosya önce bekleyen kaynak olarak kaydedilir; başka bir yetkili onaylamadan Finans açık kalemi oluşmaz.</p>
+      <p className={styles.notice}>{OFFICIAL_INVOICE_IMPORT_TEXT.templateHint}</p>
       <div className={styles.form}>
         <label htmlFor="official-invoice-upload-version">Kaynak sürümü</label>
         <input id="official-invoice-upload-version" value={batchVersion} disabled={editingLocked}
@@ -156,7 +158,7 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
       {phase === 'sending' ? <p role="status">Fatura kaynağı bekleyen onaya kaydediliyor…</p> : null}
       {phase === 'unknown' ? <p role="status">Sonuç bilinmiyor; yeni işlem üretmeden aynı istek yeniden gönderilebilir.</p> : null}
       {phase === 'conflicted' ? <p role="alert">Aynı işlem anahtarı farklı içerikle çakıştı; yeni kayıt yapılmadı.</p> : null}
-      {issues.map((issue, index) => <p role="alert" key={`${issue.field}-${issue.code}-${index}`}>{issue.field}: {issue.code}</p>)}
+      {issues.map((issue, index) => <p role="alert" key={`${issue.field}-${issue.code}-${index}`}>{officialInvoiceIssueLine(issue.field, issue.code)}</p>)}
       {batch === null ? null : (
         <article aria-label="Bekleyen fatura kaynağı">
           <h2>Onay bekliyor</h2>

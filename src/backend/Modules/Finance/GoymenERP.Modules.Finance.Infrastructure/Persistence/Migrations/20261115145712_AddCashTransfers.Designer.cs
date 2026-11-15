@@ -1452,6 +1452,74 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceIdentityClaimRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ClaimedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ClaimedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("HolderBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("HolderSourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("IdentityKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("IdentityValue")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "HolderBatchId", "HolderSourceDocumentId")
+                        .HasDatabaseName("IX_OfficialInvoiceIdentityClaims_Holder");
+
+                    b.HasIndex("CompanyId", "IdentityKind", "IdentityValue", "Generation")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OfficialInvoiceIdentityClaims_Generation");
+
+                    b.ToTable("OfficialInvoiceIdentityClaims", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Content", "[Generation] >= 1 AND LEN([ClaimedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [HolderBatchId] <> '00000000-0000-0000-0000-000000000000' AND [HolderSourceDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceIdentityClaims_Value", "([IdentityKind] = 'official-no' AND LEN([IdentityValue]) > 0 AND DATALENGTH([IdentityValue]) = DATALENGTH(LTRIM(RTRIM([IdentityValue])))) OR ([IdentityKind] = 'ettn' AND LEN([IdentityValue]) = 36 AND DATALENGTH([IdentityValue]) = 72 AND [IdentityValue] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%')");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportApprovalRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3365,6 +3433,22 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceIdentityClaimRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "HolderBatchId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

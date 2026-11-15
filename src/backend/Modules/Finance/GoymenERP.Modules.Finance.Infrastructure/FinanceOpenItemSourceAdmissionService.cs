@@ -136,6 +136,11 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         var now = timeProvider.GetUtcNow();
         if (!reused)
         {
+            if (await ClaimOfficialIdentitiesAsync(context, batch, now, cancellationToken) is { } claimRefusal)
+            {
+                dbContext.ChangeTracker.Clear();
+                return claimRefusal;
+            }
             foreach (var row in batch.Rows)
             {
                 dbContext.OpenItems.Add(new FinanceOpenItemRow
@@ -190,6 +195,89 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         dbContext.OpenItemSourceBatches.Add(batchRow);
         Audit(context, metadata, batchRow, batch.Rows.Count, reused);
         return await SaveAsync(context, metadata, source, payloadHash, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// FIN-S5 / FNS-D19 (D5): a v2 file's documents claim their official number and ETTN. The claim is refused while
+    /// the current holder (another acceptance) still has a not-cancelled open item, whatever its remaining balance
+    /// (D5's safe reading of "open"; the narrower reading is a Sinan decision). Installments of the same document
+    /// share one claim. A v1 file or a non-file source carries no official identity and claims nothing. Comparison
+    /// with Sales finalization identities waits for the Sales contract fields (FNS-D28 (3), #1103).
+    /// </summary>
+    private async Task<FinanceOpenItemAdmissionResult?> ClaimOfficialIdentitiesAsync(
+        FinanceContext context,
+        ApprovedFinanceOpenItemSourceBatch batch,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var upload = await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == batch.BatchId, cancellationToken);
+        if (await FenceAsync(context, batch.BatchId, cancellationToken) is { } uploadFence)
+        {
+            return uploadFence;
+        }
+        if (upload is null || !string.Equals(upload.TemplateVersion,
+                FinanceOfficialSalesInvoiceImportTemplateV2.Version, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var documents = FinanceOfficialInvoiceIdentityClaimPolicy.ReadDocuments(context, upload, batch);
+        if (documents is null)
+        {
+            return Refused(context, CommandOutcome.Unavailable,
+                new ValidationIssue("source", FinanceOfficialSalesInvoiceImportCodesV2.DocumentsUnavailable));
+        }
+
+        var officialNos = documents.Select(document => document.OfficialNo).ToArray();
+        var ettns = documents.Select(document => document.Ettn).ToArray();
+        var claims = await dbContext.OfficialInvoiceIdentityClaims.AsNoTracking()
+            .Where(claim => (claim.IdentityKind == FinanceOfficialInvoiceIdentityKinds.OfficialNo
+                    && officialNos.Contains(claim.IdentityValue))
+                || (claim.IdentityKind == FinanceOfficialInvoiceIdentityKinds.Ettn
+                    && ettns.Contains(claim.IdentityValue)))
+            .ToListAsync(cancellationToken);
+        var holders = FinanceOfficialInvoiceIdentityClaimPolicy.CurrentHolders(claims);
+        var holderBatchIds = holders.Values.Select(holder => holder.HolderBatchId).Distinct().ToArray();
+        HashSet<(Guid BatchId, Guid DocumentId)> liveHolders = holderBatchIds.Length == 0
+            ? new()
+            : (await dbContext.OpenItems.AsNoTracking()
+                .Where(item => item.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
+                    && holderBatchIds.Contains(item.SourceBatchId)
+                    && item.Status != FinanceOpenItemStatuses.Cancelled)
+                .Select(item => new { BatchId = item.SourceBatchId, DocumentId = item.SourceId })
+                .Distinct()
+                .ToListAsync(cancellationToken))
+                .Select(item => (item.BatchId, item.DocumentId))
+                .ToHashSet();
+        if (await FenceAsync(context, batch.BatchId, cancellationToken) is { } claimFence)
+        {
+            return claimFence;
+        }
+
+        var decision = FinanceOfficialInvoiceIdentityClaimPolicy.Decide(batch, documents, holders, liveHolders);
+        if (decision.Issues.Count > 0)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, [.. decision.Issues]);
+        }
+        foreach (var claim in decision.Claims)
+        {
+            dbContext.OfficialInvoiceIdentityClaims.Add(new FinanceOfficialInvoiceIdentityClaimRow
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = context.CompanyId,
+                IdentityKind = claim.Kind,
+                IdentityValue = claim.Value,
+                Generation = claim.Generation,
+                HolderBatchId = batch.BatchId,
+                HolderSourceDocumentId = claim.SourceDocumentId,
+                ClaimedBy = context.ActorId,
+                ClaimedAtUtc = now,
+                CorrelationId = context.CorrelationId,
+                CausationId = context.CausationId,
+            });
+        }
+        return null;
     }
 
     private async Task<FinanceOpenItemAdmissionResult?> PriorAsync(
