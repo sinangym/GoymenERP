@@ -746,6 +746,28 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-S22 (API-28, URT-D63, KLN-D44): the order's lineage — every output label with all its input labels and
+        // their kg shares from the one share calculator (backward), every input label with the outputs it went into
+        // (forward), and one step into other orders. The order read's context, permission and answers; no new
+        // permission. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/lineage", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetOrderLineageAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderLineageV1")
+            .Produces<OrderLineageViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // URT-S19 (B-27, DEC-PRDCT-009, API-42): the order's cost trace — lots, line, fire, subcontract owner, sales-order
         // link and fact moments from the stored facts, and the production cost port's answer (never a second formula, never
         // a zero). Its own grant, registered and granted to no role. A read: nothing is stored.

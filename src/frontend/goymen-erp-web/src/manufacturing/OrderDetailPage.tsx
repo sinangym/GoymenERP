@@ -76,6 +76,7 @@ import {
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OrderCostTracePanel } from './OrderCostTracePanel'
 import { OrderCostPanel } from './OrderCostPanel'
+import { OrderLineagePanel } from './OrderLineagePanel'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -254,6 +255,13 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           orderVersion={order.version}
         />
       ) : null}
+      <OrderLineagePanel
+        namespace={namespace ?? 'no-context'}
+        routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''}
+        orderId={order.orderId}
+        orderVersion={order.version}
+      />
       {canRecord ? (
         <FactSection
           order={order}

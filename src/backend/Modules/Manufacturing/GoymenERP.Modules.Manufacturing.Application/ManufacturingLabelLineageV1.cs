@@ -27,6 +27,23 @@ public sealed record ManufacturingLabelLineageV1(
     IReadOnlyList<ManufacturingLabelLineageInputV1> Inputs);
 
 /// <summary>
+/// URT-S22 (API-28, URT-D63, KLN-D44): one order's lineage. <see cref="Outputs"/> are the lineages of the order's own
+/// outputs, each with all its input labels and shares (backward inside the order; read the other way round it is the
+/// forward trace of each input label). One step beyond the order: <see cref="Upstream"/> are the lineages of the other
+/// orders' outputs whose labels this order consumed, and <see cref="Downstream"/> the lineages of the other orders'
+/// outputs this order's output labels went into. Every list is ordered by order then output id and bounded by
+/// <see cref="IManufacturingLabelLineageReadPortV1.MaximumForwardOutputs"/>; <see cref="Truncated"/> says a bound was met
+/// and the answer is not the whole lineage.
+/// </summary>
+public sealed record ManufacturingOrderLineageV1(
+    Guid CompanyId,
+    Guid OrderId,
+    bool Truncated,
+    IReadOnlyList<ManufacturingLabelLineageV1> Outputs,
+    IReadOnlyList<ManufacturingLabelLineageV1> Upstream,
+    IReadOnlyList<ManufacturingLabelLineageV1> Downstream);
+
+/// <summary>
 /// URT-S20 (URT-D62, URT-D63): Manufacturing's own read of its output lineage edges. Backward: the lineage of an output
 /// label (which input labels it came from). Forward: the lineage of every output an input label went into, each with all
 /// of that output's inputs. Reads only under the caller's resolved company (another company throws), creates nothing and
@@ -47,5 +64,12 @@ public interface IManufacturingLabelLineageReadPortV1
     /// <see cref="MaximumForwardOutputs"/>.
     /// </summary>
     Task<IReadOnlyList<ManufacturingLabelLineageV1>> ReadForwardAsync(Guid companyId, Guid inputLabelId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// URT-S22 (API-28): the order's lineage with one step upstream and downstream; empty lists when Manufacturing
+    /// recorded no edge for the order. It does not say whether the order exists: the caller reads the order first.
+    /// </summary>
+    Task<ManufacturingOrderLineageV1> ReadOrderAsync(Guid companyId, Guid orderId,
         CancellationToken cancellationToken = default);
 }
