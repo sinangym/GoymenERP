@@ -259,6 +259,136 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.BankCsvMappingVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BankKey")
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("AmountColumn")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AmountLayout")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<int?>("BalanceColumn")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BankDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("CurrencyColumn")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DateFormat")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("DecimalSeparator")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("Delimiter")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int>("DescriptionColumn")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("HasHeaderRow")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("InflowColumn")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("OutflowColumn")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int?>("ReferenceColumn")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SignedAmountPositiveMeans")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int>("SkipLeadingRows")
+                        .HasColumnType("int");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("ThousandsSeparator")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int>("TransactionDateColumn")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ValueDateColumn")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "BankKey", "Version");
+
+                    b.HasIndex("CompanyId", "ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("BankCsvMappingVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsBankCsvMappingVersions_Codes", "[State] IN ('Active','Inactive') AND [Delimiter] IN ('Semicolon','Comma','Tab') AND [DecimalSeparator] IN ('Comma','Period') AND [ThousandsSeparator] IN ('None','Period','Comma','Space') AND [ThousandsSeparator] <> [DecimalSeparator] AND [SkipLeadingRows] BETWEEN 0 AND 50");
+
+                            t.HasCheckConstraint("CK_SettingsBankCsvMappingVersions_Columns", "[TransactionDateColumn] BETWEEN 1 AND 256 AND [DescriptionColumn] BETWEEN 1 AND 256 AND ([ValueDateColumn] IS NULL OR [ValueDateColumn] BETWEEN 1 AND 256) AND ([AmountColumn] IS NULL OR [AmountColumn] BETWEEN 1 AND 256) AND ([InflowColumn] IS NULL OR [InflowColumn] BETWEEN 1 AND 256) AND ([OutflowColumn] IS NULL OR [OutflowColumn] BETWEEN 1 AND 256) AND ([BalanceColumn] IS NULL OR [BalanceColumn] BETWEEN 1 AND 256) AND ([ReferenceColumn] IS NULL OR [ReferenceColumn] BETWEEN 1 AND 256) AND ([CurrencyColumn] IS NULL OR [CurrencyColumn] BETWEEN 1 AND 256)");
+
+                            t.HasCheckConstraint("CK_SettingsBankCsvMappingVersions_DateFormat", "[DateFormat] IN ('dd.MM.yyyy','dd/MM/yyyy','dd-MM-yyyy','yyyy-MM-dd','yyyyMMdd','MM/dd/yyyy','dd.MM.yyyy HH:mm','dd.MM.yyyy HH:mm:ss','yyyy-MM-dd HH:mm:ss')");
+
+                            t.HasCheckConstraint("CK_SettingsBankCsvMappingVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND LEN([BankKey]) BETWEEN 1 AND 32 AND [BankKey] LIKE '[A-Z0-9]%' AND [BankKey] NOT LIKE '%[^A-Z0-9_-]%' AND LEN(LTRIM(RTRIM([BankDisplayName]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsBankCsvMappingVersions_Layout", "([AmountLayout] = 'SignedAmount' AND [AmountColumn] IS NOT NULL AND [InflowColumn] IS NULL AND [OutflowColumn] IS NULL AND [SignedAmountPositiveMeans] IN ('Inflow','Outflow')) OR ([AmountLayout] = 'InflowOutflowColumns' AND [AmountColumn] IS NULL AND [InflowColumn] IS NOT NULL AND [OutflowColumn] IS NOT NULL AND [SignedAmountPositiveMeans] IS NULL)");
+
+                            t.HasCheckConstraint("CK_SettingsBankCsvMappingVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.EInvoiceScenarioCodeListVersionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
