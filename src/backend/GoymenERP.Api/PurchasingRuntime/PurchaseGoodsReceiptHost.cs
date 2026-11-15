@@ -100,7 +100,7 @@ internal sealed class PurchaseGoodsReceiptHost(
         catch { /* Preserve the original operation failure. */ }
     }
 
-    private sealed class Participants(Guid companyId, IPurchaseAcceptanceParticipantV1 purchase,
+    internal sealed class Participants(Guid companyId, IPurchaseAcceptanceParticipantV1 purchase,
         IInventoryGoodsReceiptParticipantV1 inventory, IOrganizationLocationStatusReaderV1 locations)
         : IPurchaseGoodsReceiptParticipantsV1
     {

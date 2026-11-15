@@ -186,6 +186,12 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
     /// <summary>API-11 (ADR-009): Purchasing's transactional outbox (append only).</summary>
     internal DbSet<PurchasingOutboxRow> OutboxMessages => Set<PurchasingOutboxRow>();
 
+    internal DbSet<PurchaseGoodsReceiptBatchRow> GoodsReceiptBatches => Set<PurchaseGoodsReceiptBatchRow>();
+
+    internal DbSet<PurchaseGoodsReceiptBatchLabelRow> GoodsReceiptBatchLabels => Set<PurchaseGoodsReceiptBatchLabelRow>();
+
+    internal DbSet<PurchaseGoodsReceiptBatchAttemptRow> GoodsReceiptBatchAttempts => Set<PurchaseGoodsReceiptBatchAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -203,6 +209,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureLineClosureEvents(modelBuilder);
         ConfigureOutbox(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureGoodsReceiptBatches(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -559,6 +566,137 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// ALC-S16 (KLN-D45): PendingApproval (1) has no decision fact; Posted (2) has none (posted at submission, inside the tolerance) or
+    /// a decider and time but no reason; Rejected (3) has a decider, the time and a non-blank reason. A decider is never the preparer
+    /// (binary comparison, the domain's ordinal rule). A CHECK passes on UNKNOWN, so every fact is tested with IS [NOT] NULL.
+    /// </summary>
+    internal const string GoodsReceiptBatchDecisionCheck =
+        "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) "
+        + "OR ([Status] = 2 AND [DecisionReason] IS NULL AND (([DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL) "
+        + "OR ([DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecidedBy] COLLATE " + IdentityCollation + " <> [PreparedBy] COLLATE " + IdentityCollation + "))) "
+        + "OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 "
+        + "AND [DecidedBy] COLLATE " + IdentityCollation + " <> [PreparedBy] COLLATE " + IdentityCollation + ")";
+
+    /// <summary>
+    /// ALC-S16 (KLN-D45): a batch posted without an approver was exact (1) or inside the tolerance (2) and acknowledged; outside (3) or
+    /// with no tolerance set (4) it never posts without a decider. The tolerance snapshot is 0..100 when present and absent for (4).
+    /// </summary>
+    internal const string GoodsReceiptBatchVarianceCheck =
+        "[VarianceOutcome] IN (1, 2, 3, 4) AND [ExpectedQuantityKg] > 0 AND [ReceivedQuantityKg] > 0 "
+        + "AND ([TolerancePercent] IS NULL OR ([TolerancePercent] >= 0 AND [TolerancePercent] <= 100)) "
+        + "AND (([VarianceOutcome] = 4 AND [TolerancePercent] IS NULL) OR ([VarianceOutcome] IN (2, 3) AND [TolerancePercent] IS NOT NULL) OR [VarianceOutcome] = 1) "
+        + "AND ([VarianceOutcome] <> 2 OR [VarianceAcknowledged] = 1) "
+        + "AND ([Status] <> 2 OR [VarianceOutcome] IN (1, 2) OR [DecidedBy] IS NOT NULL)";
+
+    /// <summary>The unreleased-label filter of the company-wide label code uniqueness (KLN-D41).</summary>
+    internal const string GoodsReceiptBatchLabelHeldFilter = "[Released] = 0";
+
+    private void ConfigureGoodsReceiptBatches(ModelBuilder modelBuilder)
+    {
+        var batch = modelBuilder.Entity<PurchaseGoodsReceiptBatchRow>();
+        batch.ToTable("PurchaseGoodsReceiptBatches", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Identity",
+                $"[BatchId] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} AND [LineId] <> {EmptyGuid} "
+                + $"AND [ProductId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid} AND [LocationId] <> {EmptyGuid} AND LEN([ProductVersion]) > 0");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Status", "[Status] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Text", "LEN([PreparedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Decision", GoodsReceiptBatchDecisionCheck);
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Variance", GoodsReceiptBatchVarianceCheck);
+        });
+        batch.HasKey(x => x.BatchId);
+        batch.HasAlternateKey(x => new { x.CompanyId, x.BatchId });
+        batch.Property(x => x.BatchId).ValueGeneratedNever();
+        batch.Property(x => x.Version).IsConcurrencyToken();
+        batch.Property(x => x.RowVersion).IsRowVersion();
+        batch.Property(x => x.ProductVersion).HasMaxLength(64).IsRequired();
+        batch.Property(x => x.ExpectedQuantityKg).HasPrecision(18, 3);
+        batch.Property(x => x.ReceivedQuantityKg).HasPrecision(18, 3);
+        batch.Property(x => x.TolerancePercent).HasPrecision(9, 6);
+        batch.Property(x => x.PreparedBy).HasMaxLength(128).IsRequired();
+        batch.Property(x => x.DecidedBy).HasMaxLength(128);
+        batch.Property(x => x.DecisionReason).HasMaxLength(PurchaseGoodsReceiptBatchMaximumReasonLength);
+        batch.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        batch.HasIndex(x => new { x.CompanyId, x.OrderId, x.PreparedAtUtc, x.BatchId }).HasDatabaseName("IX_PurchaseGoodsReceiptBatches_Order");
+        batch.HasIndex(x => new { x.CompanyId, x.Status, x.PreparedAtUtc, x.BatchId }).HasDatabaseName("IX_PurchaseGoodsReceiptBatches_Status");
+        batch.HasOne<PurchaseOrderRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        batch.HasOne<PurchaseOrderLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        batch.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var label = modelBuilder.Entity<PurchaseGoodsReceiptBatchLabelRow>();
+        label.ToTable("PurchaseGoodsReceiptBatchLabels", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [BatchId] <> {EmptyGuid} AND [AcceptanceId] <> {EmptyGuid} AND [LotId] <> {EmptyGuid} "
+                + $"AND [LabelId] <> {EmptyGuid} AND [MovementId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_LineNo", "[LineNo] >= 1");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Quantity", "[MeasuredQuantityKg] > 0");
+            // KLN-D41: an entered (2) or supplier (1) code, or a generated (3) one with its number; a supplier code equals the supplier number.
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Code",
+                "LEN([LabelCode]) > 0 AND (([CodeSource] = 3 AND [GeneratedNumber] IS NOT NULL AND [GeneratedNumber] >= 1) "
+                + "OR ([CodeSource] = 2 AND [GeneratedNumber] IS NULL) "
+                + "OR ([CodeSource] = 1 AND [GeneratedNumber] IS NULL AND [SupplierLabelNumber] IS NOT NULL "
+                + "AND [SupplierLabelNumber] COLLATE " + IdentityCollation + " = [LabelCode] COLLATE " + IdentityCollation + "))");
+        });
+        label.HasKey(x => new { x.CompanyId, x.BatchId, x.LineNo });
+        label.Property(x => x.LabelCode).HasMaxLength(64).IsRequired();
+        label.Property(x => x.SupplierLabelNumber).HasMaxLength(64);
+        label.Property(x => x.HeatNumber).HasMaxLength(64);
+        label.Property(x => x.CoilNumber).HasMaxLength(64);
+        label.Property(x => x.MeasuredQuantityKg).HasPrecision(18, 3);
+        // KLN-D41: our code is unique in the company among the labels a batch still holds (case-insensitive, the default collation).
+        label.HasIndex(x => new { x.CompanyId, x.LabelCode }).IsUnique().HasFilter(GoodsReceiptBatchLabelHeldFilter)
+            .HasDatabaseName("UX_PurchaseGoodsReceiptBatchLabels_LabelCode");
+        label.HasIndex(x => new { x.CompanyId, x.SupplierLabelNumber }).HasFilter("[SupplierLabelNumber] IS NOT NULL")
+            .HasDatabaseName("IX_PurchaseGoodsReceiptBatchLabels_SupplierLabelNumber");
+        label.HasIndex(x => new { x.CompanyId, x.GeneratedNumber }).HasFilter("[GeneratedNumber] IS NOT NULL")
+            .HasDatabaseName("IX_PurchaseGoodsReceiptBatchLabels_GeneratedNumber");
+        label.HasIndex(x => new { x.CompanyId, x.AcceptanceId }).IsUnique().HasDatabaseName("UX_PurchaseGoodsReceiptBatchLabels_AcceptanceId");
+        label.HasIndex(x => new { x.CompanyId, x.LabelId }).IsUnique().HasDatabaseName("UX_PurchaseGoodsReceiptBatchLabels_LabelId");
+        label.HasOne<PurchaseGoodsReceiptBatchRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.BatchId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.BatchId })
+            .OnDelete(DeleteBehavior.Restrict);
+        label.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<PurchaseGoodsReceiptBatchAttemptRow>();
+        attempt.ToTable("PurchaseGoodsReceiptBatchAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchAttempts_Outcome",
+                $"([Outcome] = 1 AND [RefusalJson] IS NULL AND [BatchId] IS NOT NULL AND [BatchId] <> {EmptyGuid}) "
+                + "OR ([Outcome] = 2 AND [BatchId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasIndex(x => new { x.CompanyId, x.BatchId }).HasDatabaseName("IX_PurchaseGoodsReceiptBatchAttempts_BatchId");
+        attempt.HasOne<PurchaseGoodsReceiptBatchRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.BatchId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.BatchId })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private const int PurchaseGoodsReceiptBatchMaximumReasonLength = Domain.GoodsReceipts.PurchaseGoodsReceiptBatch.MaximumReasonLength;
+
     private void ApplyWriteGuards()
     {
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
@@ -606,6 +744,13 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                         nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled),
                         nameof(PurchaseOrderLineRow.Closed),
                     ],
+                    // ALC-S16: a bulk receipt moves once (its status and decision facts); a label is only released by a rejection.
+                    PurchaseGoodsReceiptBatchRow =>
+                    [
+                        nameof(PurchaseGoodsReceiptBatchRow.Status), nameof(PurchaseGoodsReceiptBatchRow.DecidedBy),
+                        nameof(PurchaseGoodsReceiptBatchRow.DecidedAtUtc), nameof(PurchaseGoodsReceiptBatchRow.DecisionReason),
+                    ],
+                    PurchaseGoodsReceiptBatchLabelRow => [nameof(PurchaseGoodsReceiptBatchLabelRow.Released)],
                     _ => [],
                 };
                 var changed = entry.Properties

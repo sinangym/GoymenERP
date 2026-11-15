@@ -341,6 +341,265 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("BatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RefusalJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "BatchId")
+                        .HasDatabaseName("IX_PurchaseGoodsReceiptBatchAttempts_BatchId");
+
+                    b.ToTable("PurchaseGoodsReceiptBatchAttempts", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchAttempts_Outcome", "([Outcome] = 1 AND [RefusalJson] IS NULL AND [BatchId] IS NOT NULL AND [BatchId] <> '00000000-0000-0000-0000-000000000000') OR ([Outcome] = 2 AND [BatchId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchLabelRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("AcceptanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CodeSource")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CoilNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("GeneratedNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("HeatNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("LabelCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("MeasuredQuantityKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Released")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SupplierLabelNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("CompanyId", "BatchId", "LineNo");
+
+                    b.HasIndex("CompanyId", "AcceptanceId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PurchaseGoodsReceiptBatchLabels_AcceptanceId");
+
+                    b.HasIndex("CompanyId", "GeneratedNumber")
+                        .HasDatabaseName("IX_PurchaseGoodsReceiptBatchLabels_GeneratedNumber")
+                        .HasFilter("[GeneratedNumber] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "LabelCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PurchaseGoodsReceiptBatchLabels_LabelCode")
+                        .HasFilter("[Released] = 0");
+
+                    b.HasIndex("CompanyId", "LabelId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PurchaseGoodsReceiptBatchLabels_LabelId");
+
+                    b.HasIndex("CompanyId", "SupplierLabelNumber")
+                        .HasDatabaseName("IX_PurchaseGoodsReceiptBatchLabels_SupplierLabelNumber")
+                        .HasFilter("[SupplierLabelNumber] IS NOT NULL");
+
+                    b.ToTable("PurchaseGoodsReceiptBatchLabels", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Code", "LEN([LabelCode]) > 0 AND (([CodeSource] = 3 AND [GeneratedNumber] IS NOT NULL AND [GeneratedNumber] >= 1) OR ([CodeSource] = 2 AND [GeneratedNumber] IS NULL) OR ([CodeSource] = 1 AND [GeneratedNumber] IS NULL AND [SupplierLabelNumber] IS NOT NULL AND [SupplierLabelNumber] COLLATE Latin1_General_100_BIN2 = [LabelCode] COLLATE Latin1_General_100_BIN2))");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000' AND [AcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [LotId] <> '00000000-0000-0000-0000-000000000000' AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_LineNo", "[LineNo] >= 1");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatchLabels_Quantity", "[MeasuredQuantityKg] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchRow", b =>
+                {
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("ExpectedQuantityKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProductVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<decimal>("ReceivedQuantityKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("TolerancePercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("VarianceAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("VarianceOutcome")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("BatchId");
+
+                    b.HasIndex("CompanyId", "OrderId", "LineId");
+
+                    b.HasIndex("CompanyId", "OrderId", "PreparedAtUtc", "BatchId")
+                        .HasDatabaseName("IX_PurchaseGoodsReceiptBatches_Order");
+
+                    b.HasIndex("CompanyId", "Status", "PreparedAtUtc", "BatchId")
+                        .HasDatabaseName("IX_PurchaseGoodsReceiptBatches_Status");
+
+                    b.ToTable("PurchaseGoodsReceiptBatches", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) OR ([Status] = 2 AND [DecisionReason] IS NULL AND (([DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL) OR ([DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [PreparedBy] COLLATE Latin1_General_100_BIN2))) OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [PreparedBy] COLLATE Latin1_General_100_BIN2)");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Identity", "[BatchId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProductVersion]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Status", "[Status] IN (1, 2, 3)");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Text", "LEN([PreparedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Variance", "[VarianceOutcome] IN (1, 2, 3, 4) AND [ExpectedQuantityKg] > 0 AND [ReceivedQuantityKg] > 0 AND ([TolerancePercent] IS NULL OR ([TolerancePercent] >= 0 AND [TolerancePercent] <= 100)) AND (([VarianceOutcome] = 4 AND [TolerancePercent] IS NULL) OR ([VarianceOutcome] IN (2, 3) AND [TolerancePercent] IS NOT NULL) OR [VarianceOutcome] = 1) AND ([VarianceOutcome] <> 2 OR [VarianceAcknowledged] = 1) AND ([Status] <> 2 OR [VarianceOutcome] IN (1, 2) OR [DecidedBy] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PurchaseGoodsReceiptBatches_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineClosureEventRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -960,6 +1219,42 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "RequestId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BatchId")
+                        .HasPrincipalKey("CompanyId", "BatchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchLabelRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BatchId")
+                        .HasPrincipalKey("CompanyId", "BatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseGoodsReceiptBatchRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId", "LineId")
+                        .HasPrincipalKey("CompanyId", "OrderId", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderLineClosureEventRow", b =>

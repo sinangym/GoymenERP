@@ -982,6 +982,14 @@ public static class ErpPermissions
     public const string PurchasingOrdersClose = "purchasing.orders.close";
 
     /// <summary>
+    /// ALC-S16 (F-027, KLN-D45): approve or reject a bulk goods receipt whose total kg differs from the order line outside the Ayarlar
+    /// tolerance (or with no tolerance set). The Purchasing owner's name (PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance),
+    /// apart from recording a receipt; neither confers the other, and the batch's preparer never decides it (hazırlayan ≠ onaylayan).
+    /// Registered, not granted: no role, seed or user receives it here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1290,6 +1298,7 @@ public static class ErpPermissions
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
+            PurchasingGoodsReceiptsApproveVariance,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1500,6 +1509,7 @@ public static class ErpPermissions
             PurchasingOrdersPriceRead,
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
+            PurchasingGoodsReceiptsApproveVariance,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
