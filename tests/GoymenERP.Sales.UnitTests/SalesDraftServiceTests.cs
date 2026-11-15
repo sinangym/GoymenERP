@@ -1655,6 +1655,8 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderAllocationReadPortV2? FutureAllocations { get; set; }
         /// <summary>F-017 STOK §5.1: true = the kind-aware read is not composed even beside V1 (the preview is unreadable).</summary>
         public bool NoFutureAllocations { get; set; }
+        /// <summary>X1 / KLN-D28 (9): the host's future allocation release participant; null = not composed (future ones block).</summary>
+        public ISalesOrderFutureAllocationReleaseParticipantV1? FutureAllocationRelease { get; set; }
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         /// <summary>AT-018 / MOD-02: the Product price tier chain; null = not composed.</summary>
@@ -1709,7 +1711,8 @@ public sealed partial class SalesDraftServiceTests
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
                 LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
                 InvoiceRecords, PostedShares,
-                NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()));
+                NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()),
+                FutureAllocationRelease);
         }
 
         /// <summary>The default SYNTHETIC kind-aware allocation owner: nothing of either kind for any order of the company.</summary>
@@ -2235,7 +2238,9 @@ public sealed partial class SalesDraftServiceTests
 
         public async Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
-            Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default)
+            Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite,
+            Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+            CancellationToken cancellationToken = default)
         {
             if (commandName != SalesDraftCommands.CancelV1) throw new ArgumentException("wrong command", nameof(commandName));
             CancellationImpactSnapshot? impact = null;
@@ -2243,10 +2248,21 @@ public sealed partial class SalesDraftServiceTests
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
                 (target, now) => recorded = mutate(target, impact!, now), audit,
-                async token => impact = await beforeWrite(draft!, token), cancellationToken);
+                async token =>
+                {
+                    impact = await beforeWrite(draft!, token);
+                    if (withinTransaction is not null)
+                    {
+                        // X1: the owners' work runs in the store's transaction before the mutation; a refusal leaves nothing.
+                        CancellationTransactions++;
+                        await withinTransaction(draft!, FakeTransaction.Instance, token);
+                    }
+                }, cancellationToken);
             if (recorded is not null) Cancellations.Add(recorded);
             return result;
         }
+
+        public int CancellationTransactions { get; private set; }
 
         public List<ForceClosureFacts> ForceClosures { get; } = [];
 

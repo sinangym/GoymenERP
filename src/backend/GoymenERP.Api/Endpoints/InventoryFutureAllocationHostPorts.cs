@@ -1,9 +1,11 @@
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -171,4 +173,181 @@ public sealed class InventoryFutureSupplyHostSource(IPurchaseFutureSupplyReadPor
             return Unavailable;
         }
     }
+}
+
+/// <summary>
+/// X1 (KLN-D28 (9), SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1 §X1): the host's answer to
+/// <see cref="ISalesOrderFutureAllocationReleaseParticipantV1"/>. Inside the Sales cancellation's own transaction (the same
+/// connection) it takes every sales line lock of the order (ascending), lists each line's ACTIVE future supply allocations
+/// through Inventory's release session, takes every distinct purchase line lock (ascending; F-017 §3.2 order), then releases
+/// each allocation whole with the version it just read, reason <see cref="InventoryFutureAllocationReleaseReasonsV1.SalesLineCancelled"/>
+/// and origin <see cref="InventoryFutureAllocationOriginsV1.Sales"/>, under the Sales command's own envelope (actor, permission,
+/// correlation, causation, Idempotency-Key — Inventory's audit and outbox carry them). Inventory writes only its own tables;
+/// Sales writes only its own. Nothing is committed here: the Sales store commits or rolls back both.
+/// <para>
+/// Refusals: the owner's version conflict, state conflict and release-selection refusal are TERMINAL (the Sales key records
+/// them); evaluation goes on in the fixed order and the FIRST terminal refusal is answered. A busy sales or purchase line, the
+/// owner's concurrent change or any other owner failure is NOT terminal and stops at once (the retry asks again). The owner's
+/// code is carried unchanged. It grants nothing and chooses no policy: it releases exactly what is active at that moment.
+/// </para>
+/// </summary>
+public sealed class SalesFutureAllocationReleaseHostParticipant(
+    ISalesOrderLineSerializationLockBinderV1 salesLineLocks,
+    IPurchaseLineSerializationLockBinderV1 purchaseLineLocks,
+    IInventoryFutureAllocationReleasePortV1 releases) : ISalesOrderFutureAllocationReleaseParticipantV1
+{
+    private const int ConflictStatus = 409;
+    private const int UnavailableStatus = 503;
+
+    public async Task ReleaseForCancelledOrderAsync(IDbTransaction transaction, SalesOrderFutureAllocationReleaseRequestV1 request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (transaction is not DbTransaction { Connection: { } connection } dbTransaction
+            || request.LineIds is null || request.LineIds.Count == 0 || request.LineIds.Any(lineId => lineId == Guid.Empty)
+            || string.IsNullOrWhiteSpace(request.ReasonText) || request.Envelope is null)
+        {
+            throw Unavailable();
+        }
+
+        var lineIds = request.LineIds.Distinct().Order().ToArray();
+
+        // F-017 §3.2: every sales line of the order first (ascending) — the lock a future allocation's own create takes.
+        try
+        {
+            var salesLocks = salesLineLocks.Bind(connection, dbTransaction);
+            foreach (var lineId in lineIds)
+            {
+                await salesLocks.AcquireAsync(lineId, cancellationToken);
+            }
+        }
+        catch (SalesOrderLineBusyException exception)
+        {
+            throw new SalesFutureAllocationReleaseException(ConflictStatus, exception.Code, terminal: false, exception);
+        }
+        catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+        {
+            throw Unavailable(exception);
+        }
+
+        IInventoryFutureAllocationReleaseSessionV1 session;
+        try
+        {
+            session = await releases.EnlistAsync(connection, dbTransaction, cancellationToken);
+        }
+        catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+        {
+            throw NonTerminal(exception);
+        }
+
+        await using (session)
+        {
+            var active = new List<InventoryFutureAllocationViewV1>();
+            try
+            {
+                foreach (var lineId in lineIds)
+                {
+                    foreach (var view in await session.ListActiveByDemandLineAsync(lineId, cancellationToken))
+                    {
+                        if (view is null || view.SalesOrderLineId != lineId || view.SalesOrderId != request.OrderId
+                            || view.PurchaseOrderLineId == Guid.Empty || view.AllocationId == Guid.Empty)
+                        {
+                            // Another order's or a malformed answer: never released on its word.
+                            throw Unavailable();
+                        }
+
+                        active.Add(view);
+                    }
+                }
+            }
+            catch (SalesFutureAllocationReleaseException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+            {
+                throw NonTerminal(exception);
+            }
+
+            if (active.Count == 0)
+            {
+                return;
+            }
+
+            // Then every distinct purchase line (ascending), before the first release.
+            try
+            {
+                var purchaseLocks = purchaseLineLocks.Bind(connection, dbTransaction);
+                foreach (var purchaseLineId in active.Select(view => view.PurchaseOrderLineId).Distinct().Order())
+                {
+                    await purchaseLocks.AcquireAsync(purchaseLineId, cancellationToken);
+                }
+            }
+            catch (PurchaseLineBusyException exception)
+            {
+                throw new SalesFutureAllocationReleaseException(ConflictStatus, exception.Code, terminal: false, exception);
+            }
+            catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+            {
+                throw Unavailable(exception);
+            }
+
+            var envelope = request.Envelope;
+            var metadata = new InventoryCommandMetadata(envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes,
+                envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey, envelope.SourceChannel,
+                envelope.ClientIpAddress, envelope.UserAgent);
+            SalesFutureAllocationReleaseException? firstTerminal = null;
+            foreach (var view in active.OrderBy(view => view.SalesOrderLineId).ThenBy(view => view.PurchaseOrderLineId)
+                         .ThenBy(view => view.AllocationId))
+            {
+                if (!long.TryParse(view.Version, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
+                    || expectedVersion < 1)
+                {
+                    throw Unavailable();
+                }
+
+                try
+                {
+                    await session.ReleaseAsync(new InventoryFutureAllocationReleaseRequestV1(view.AllocationId, expectedVersion,
+                            QuantityText: null, InventoryFutureAllocationReleaseReasonsV1.SalesLineCancelled, request.ReasonText,
+                            InventoryFutureAllocationOriginsV1.Sales),
+                        metadata, cancellationToken);
+                }
+                catch (InventoryAllocationException exception) when (IsTerminal(exception.Code))
+                {
+                    firstTerminal ??= new SalesFutureAllocationReleaseException(exception.Status, exception.Code, terminal: true,
+                        exception);
+                }
+                catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+                {
+                    throw NonTerminal(exception);
+                }
+            }
+
+            if (firstTerminal is not null)
+            {
+                throw firstTerminal;
+            }
+        }
+    }
+
+    /// <summary>The owner's refusals that are the Sales key's recorded answer (X1); every other refusal is retried.</summary>
+    private static bool IsTerminal(string code) =>
+        code is InventoryFutureAllocationCodesV1.VersionConflict
+            or InventoryFutureAllocationCodesV1.StateConflict
+            or InventoryFutureAllocationCodesV1.ReleaseSelectionInvalid;
+
+    private static bool IsCallerCancellation(Exception exception, CancellationToken cancellationToken) =>
+        exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
+
+    /// <summary>The owner's own non-terminal refusal keeps its status and code; any other failure is 503.</summary>
+    private static SalesFutureAllocationReleaseException NonTerminal(Exception exception) =>
+        exception is InventoryAllocationException owner
+            ? new SalesFutureAllocationReleaseException(owner.Status, owner.Code, terminal: false, owner)
+            : Unavailable(exception);
+
+    private static SalesFutureAllocationReleaseException Unavailable(Exception? inner = null) =>
+        new(UnavailableStatus, InventoryFutureAllocationCodesV1.ServiceUnavailable, terminal: false, inner);
 }

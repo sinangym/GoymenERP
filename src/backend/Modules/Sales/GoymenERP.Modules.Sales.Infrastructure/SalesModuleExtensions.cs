@@ -287,7 +287,11 @@ public static class SalesModuleExtensions
         // purchase unit). Only the cancellation impact read asks it (the preview, the cancel, and the header revision's customer or
         // currency check); until it is registered that category is unreadable and the command is refused, never decided on an
         // assumed "no future allocation". Every other caller keeps V1 (physical).
-        serviceProvider.GetService<ISalesOrderAllocationReadPortV2>());
+        serviceProvider.GetService<ISalesOrderAllocationReadPortV2>(),
+        // X1 (KLN-D28): the host participant that releases a cancelled order's future supply allocations through Inventory's
+        // release port in the cancellation's own transaction. Until it is registered a future allocation keeps blocking the
+        // cancellation (fail-closed); it is never released outside the Sales transaction.
+        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

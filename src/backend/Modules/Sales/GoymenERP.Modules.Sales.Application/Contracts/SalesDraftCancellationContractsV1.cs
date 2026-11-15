@@ -143,7 +143,9 @@ public sealed record SalesDraftCancellationImpactSourceV1(string Source, string 
 /// One order line in the preview. The allocation members come from Inventory (<c>activeAllocations</c>, <c>allocatedKg</c>:
 /// the kilograms the active allocations still hold), the loading members from Logistics (the number of instruction lines and
 /// their instructed / loaded / shipped / delivered totals in the line's order unit). A member is NULL when its owner could
-/// not be read — never zero in its place.
+/// not be read — never zero in its place. X1 / KLN-D28 (9): <c>futureSupplyAllocations</c> is the number of the line's ACTIVE
+/// future supply allocations (Inventory, F-017; never added to the physical kilograms) — the ones the approved cancellation
+/// releases in its own transaction when the release participant is composed (otherwise they block, fail-closed).
 /// </summary>
 public sealed record SalesDraftCancellationImpactLineV1(
     Guid LineId,
@@ -156,7 +158,8 @@ public sealed record SalesDraftCancellationImpactLineV1(
     string? Instructed,
     string? Loaded,
     string? Shipped,
-    string? Delivered);
+    string? Delivered,
+    int? FutureSupplyAllocations);
 
 /// <summary>
 /// DEC-SAL-005: GET …/{id}/cancellation-impact — the impact preview under the cancel permission, read afresh from the owners on
