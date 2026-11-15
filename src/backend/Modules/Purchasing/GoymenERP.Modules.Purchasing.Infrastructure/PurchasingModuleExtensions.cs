@@ -67,6 +67,8 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // BS-1 (F-011): the invoiced exchange rate of one goods receipt line, read by Inventory's average cost (Unavailable until invoiced).
         services.AddScoped<IPurchaseInvoiceCostRateReadPortV1, PurchaseInvoiceCostRateReadPort>();
+        // SAT-D295 (BS-1): the recorded price of one purchase order line, read by Inventory's average cost (the rate is the invoice's).
+        services.AddScoped<IPurchaseOrderLineCostReadPortV1, PurchaseOrderLineCostReadPort>();
         return services;
     }
 
