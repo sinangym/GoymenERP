@@ -151,8 +151,8 @@ public sealed class SettingsSegregationOfDutiesPolicySqlServerRelationalAcceptan
             + "AND [EntityVersionAfter] = 2", ("@e", RecordedEvent), ("@c", CompanyA)));
         var restored = await run.JsonAsync(editor, Root);
         Assert.False(restored.GetProperty("preparerMayApprove").GetBoolean());
-        Assert.Equal(["2", "1"], restored.GetProperty("versions").EnumerateArray()
-            .Select(version => version.GetProperty("version").GetString()).ToArray());
+        Assert.Equal(new[] { "2", "1" }, restored.GetProperty("versions").EnumerateArray()
+            .Select(version => version.GetProperty("version").GetString() ?? string.Empty).ToArray());
         await run.AssertPortAnswersAsync(CompanyA, preparerMayApprove: false, version: 2);
 
         // Another company sees nothing of A's, and a port asked for a foreign company refuses.
