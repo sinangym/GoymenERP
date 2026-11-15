@@ -35,7 +35,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// <item><b>Audit:</b> ADR-009 envelope from <see cref="ManufacturingCommandMetadata"/>, in the same save.</item>
 /// </list>
 /// </summary>
-public sealed class ManufacturingStore(
+public sealed partial class ManufacturingStore(
     ManufacturingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
@@ -2349,6 +2349,14 @@ public sealed class ManufacturingStore(
             {
                 throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanOrderExists,
                     "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
+            }
+
+            // URT-S13: the unique (company, year, month) scrap price index lost to another writer is the month's own rule.
+            if (sql.Number is 2601 or 2627
+                && sql.Message.Contains(ManufacturingDbContext.MonthlyScrapPriceMonthIndex, StringComparison.Ordinal))
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.ScrapPriceAlreadyRecorded,
+                    "Bu ayın hurda fiyatı zaten girildi; girilmiş ay değiştirilmez.");
             }
 
             var code = sql.Number switch

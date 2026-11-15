@@ -213,6 +213,7 @@ export const ORDER_LIST_TEXT = {
   end: 'Liste sonu.',
   labelNote: 'Rulo ve emir etiketleri ürün/etiket okumasıyla gelecek; burada teknik kimlik gösterilir.',
   plans: 'Üretim planları',
+  scrapPrices: 'Aylık hurda fiyatları',
   newPlan: 'Yeni üretim planı',
   subject: 'üretim emirleri',
   contextSubject: 'üretim emirleri için tek şirket bağlamı',

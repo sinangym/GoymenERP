@@ -208,6 +208,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'manufacturing.plans.detail': '',
   // MFG-PLAN-LIST: reached from the order list and plan detail, so the sidebar keeps ONE Manufacturing entry.
   'manufacturing.plans.list': '',
+  // URT-S13: the monthly scrap prices are reached from the order list, so the sidebar keeps ONE Manufacturing entry.
+  'manufacturing.scrap-prices.list': '',
   'finance.receipts.list': 'Tahsilat Taslakları',
   'finance.customer-instruments.list': 'Müşteri Çekleri ve Senetleri',
   'finance.official-invoice-import.upload': 'Onaylı fatura taksit kaynağı yükle',

@@ -25,6 +25,7 @@ import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { manufacturingRoutes } from './manufacturingRoutes'
 import { clearPendingFacts } from './pendingFactStore'
 import { clearPendingPlanLifecycles } from './planCommandApi'
+import { clearPendingScrapPrices } from './scrapPriceApi'
 
 export const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -442,6 +443,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   // Module state that deliberately outlives unmounts: never inherited across cases.
   clearPendingFacts()
   clearPendingPlanLifecycles()
+  clearPendingScrapPrices()
   // The tab's sessionStorage (pending create/revise slots) starts empty in every case.
   sessionStorage.clear()
   const capabilities = options.capabilities ?? RECORDER_CAPABILITIES

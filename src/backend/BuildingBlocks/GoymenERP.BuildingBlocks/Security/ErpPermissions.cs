@@ -330,6 +330,23 @@ public static class ErpPermissions
     public const string ManufacturingPlansCancel = "manufacturing.plans.cancel";
 
     /// <summary>
+    /// URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): reading the company's monthly scrap prices (TL per kg). Its own name
+    /// because a price list is neither a plan nor an order. Registered, not granted: no role and no user receives it here;
+    /// who sees the price (URT-D57 (1) "like Sales") is a human gate. Company-wide only for the reason above (the route
+    /// filters by no work center or site, so a narrow grant would fail open). Not Critical.
+    /// </summary>
+    public const string ManufacturingScrapPricesRead = "manufacturing.scrap-prices.read";
+
+    /// <summary>
+    /// URT-S13 (URT-D47, URT-D65): recording the company's scrap price of one month by hand. Its own name because entering
+    /// a price is not recording a production fact. Registered, not granted: who enters the price and under which approval
+    /// is not decided (URT-D57 (3) is an author reading), so no role and no user receives it here; the grant is a human
+    /// gate. Company-wide only (one price per company and month). Not Critical: whether it joins the grant-time
+    /// dual-control set is the same human gate.
+    /// </summary>
+    public const string ManufacturingScrapPricesWrite = "manufacturing.scrap-prices.write";
+
+    /// <summary>
     /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
     /// reading one, and because until now a plan could be created and approved but **never read
     /// again** — there was no plan read at any layer above the store. Registered, not granted.
@@ -1233,6 +1250,8 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingScrapPricesRead,
+            ManufacturingScrapPricesWrite,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -1441,6 +1460,8 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingScrapPricesRead,
+            ManufacturingScrapPricesWrite,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,

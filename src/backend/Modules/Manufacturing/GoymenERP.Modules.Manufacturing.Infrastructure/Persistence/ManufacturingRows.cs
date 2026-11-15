@@ -465,6 +465,22 @@ internal sealed class OutputReversalRow : IManufacturingTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// URT-S13 (URT-D47, URT-D65): the company's scrap price of one calendar month, in TL per kg. One row per (company,
+/// year, month); append-only: a recorded month is never changed or deleted (correcting it is not decided).
+/// </summary>
+internal sealed class MonthlyScrapPriceRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public decimal TlPerKg { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
 /// <summary>Organization's company table, referenced for the foreign key only; not migrated here.</summary>
 /// <summary>
 /// One completed command attempt (ADR-011): (company, command, key hash) is its key; the key itself

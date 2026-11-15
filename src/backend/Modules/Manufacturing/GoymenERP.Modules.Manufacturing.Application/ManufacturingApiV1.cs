@@ -420,6 +420,7 @@ public static class ManufacturingCommandNames
     public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
+    public const string RecordScrapPrice = "manufacturing.scrap-price.record.v1";
 }
 
 /// <summary>
@@ -477,7 +478,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingSalesOrderLineReferencePortV1? salesOrderLines = null,
     IManufacturingSubcontractServiceOrderPortV1? subcontractServiceOrders = null,
     IManufacturingClosedOrderListStore? closedOrders = null,
-    IManufacturingPlanDueDateStore? planDueDates = null)
+    IManufacturingPlanDueDateStore? planDueDates = null,
+    IManufacturingMonthlyScrapPriceStore? scrapPrices = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -2272,10 +2274,11 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingRuleException exception)
         {
             // U2-b / API-16: a moved sales order link is a conflict (read again), not a rule of the request; F-010a
-            // (URT-D29): a moved termin likewise.
+            // (URT-D29): a moved termin likewise; URT-S13: a month whose scrap price is already recorded likewise.
             result = new ManufacturingApiResult<T>(
                 exception.Code is ManufacturingRuleCodes.PlanSalesOrderLinkChanged
                     or ManufacturingRuleCodes.PlanDueDateChanged
+                    or ManufacturingRuleCodes.ScrapPriceAlreadyRecorded
                     ? ManufacturingApiStatus.Conflict
                     : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
