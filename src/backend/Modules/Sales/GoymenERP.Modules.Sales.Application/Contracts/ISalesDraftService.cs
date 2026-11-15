@@ -115,6 +115,10 @@ public interface ISalesDraftService
     // orders) against the credit limit; any part whose owner cannot answer makes the result "Unavailable" (fail-closed).
     Task<SalesOrderDraftRiskCheckResponse> GetDraftRiskCheckAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    // F-018 / plan S1 (FNS-D27(3)) — the limit warnings recorded on the order at submit / approve, under the draft read
+    // (ASSUMPTION-SAT-RISK-3); outcome and category only, never an amount. Read-only.
+    Task<SalesOrderDraftRiskWarningsResponse> GetDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default);
+
     // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
     // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the
     // recorded cancellation (`sales.drafts.read`).

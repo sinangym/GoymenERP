@@ -588,6 +588,18 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return RiskCheck(draftId);
         }
 
+        /// <summary>F-018 / plan S1: what the stub answers the recorded limit warnings read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftRiskWarningsResponse>> RiskWarnings { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> RiskWarningReads { get; } = [];
+
+        public Task<SalesOrderDraftRiskWarningsResponse> GetDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            RiskWarningReads.Add(draftId);
+            return RiskWarnings(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -1582,6 +1594,74 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
             Assert.True(forbidden.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+    }
+
+    [Fact]
+    public async Task Risk_warnings_are_a_private_read_of_the_recorded_warnings_with_every_member_and_no_amount()
+    {
+        var draftId = Guid.NewGuid();
+        var recordedAt = new DateTimeOffset(2026, 11, 14, 9, 30, 0, TimeSpan.Zero);
+        var service = new StubDraftService
+        {
+            RiskWarnings = _ => Task.FromResult(new SalesOrderDraftRiskWarningsResponse(
+                [
+                    new SalesOrderDraftRiskWarningV1(0, "6", SalesDraftCommands.ApproveV1, SalesDraftRiskWarningOutcomesV1.Unavailable,
+                        SalesDraftRiskWarningCategoriesV1.CreditLimitNotSet, "approver-actor", recordedAt, new DateOnly(2026, 11, 14),
+                        "sales.party-risk-read.v1"),
+                    new SalesOrderDraftRiskWarningV1(0, "5", SalesDraftCommands.SubmitV1, SalesDraftRiskWarningOutcomesV1.Over,
+                        SalesDraftRiskWarningCategoriesV1.OverLimit, "preparer-actor", recordedAt.AddMinutes(-5), new DateOnly(2026, 11, 14),
+                        "sales.party-risk-read.v1"),
+                ],
+                false)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/risk-warnings";
+        Assert.Equal(SalesDraftApiV1.RiskWarningsPath.Replace("{id}", draftId.ToString("D"), StringComparison.Ordinal), path);
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["warnings", "truncated"], body.EnumerateObject().Select(member => member.Name));
+            Assert.False(body.GetProperty("truncated").GetBoolean());
+            var warnings = body.GetProperty("warnings").EnumerateArray().ToArray();
+            Assert.Equal(2, warnings.Length);
+            Assert.All(warnings, warning => Assert.Equal(
+                ["revision", "draftVersion", "command", "outcome", "category", "recordedBy", "recordedAtUtc", "checkBusinessDay", "riskSourceContract"],
+                warning.EnumerateObject().Select(member => member.Name)));
+            Assert.Equal((0, "6", SalesDraftCommands.ApproveV1, "Unavailable", "CreditLimitNotSet", "approver-actor", "2026-11-14", "sales.party-risk-read.v1"),
+                (warnings[0].GetProperty("revision").GetInt32(), warnings[0].GetProperty("draftVersion").GetString(),
+                    warnings[0].GetProperty("command").GetString(), warnings[0].GetProperty("outcome").GetString(),
+                    warnings[0].GetProperty("category").GetString(), warnings[0].GetProperty("recordedBy").GetString(),
+                    warnings[0].GetProperty("checkBusinessDay").GetString(), warnings[0].GetProperty("riskSourceContract").GetString()));
+            Assert.Equal(recordedAt, warnings[0].GetProperty("recordedAtUtc").GetDateTimeOffset());
+            Assert.Equal(("Over", "OverLimit"), (warnings[1].GetProperty("outcome").GetString(), warnings[1].GetProperty("category").GetString()));
+        }
+
+        Assert.Equal([draftId], service.RiskWarningReads);
+
+        service.RiskWarnings = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        service.RiskWarnings = _ => throw new SalesDraftServiceException(503, "service_unavailable");
+        using (var unavailable = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        }
+
+        service.RiskWarnings = _ => throw new SalesDraftServiceException(403, "forbidden");
+        using (var forbidden = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         }
     }
 

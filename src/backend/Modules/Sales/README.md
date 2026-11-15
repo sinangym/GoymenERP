@@ -946,3 +946,18 @@ slice adds the two terminal exits before approval. No new permission or shell ca
 | Database | Migration `20261111090320_AddCustomerReturnRejectionAndCancellation`: the six columns, CHECK constraints (state ↔ fields, rejecter ≠ preparer) and the step trigger (51255) widened to 1→2, 2→3, 3→4, 2→5, 1→6, 2→6. Down is a forward-fix guard: it refuses with THROW 51259 while a Rejected/Cancelled return or such an attempt exists, otherwise restores the previous trigger. |
 | Effects | Neither exit creates stock, Finance or invoice effects; the Finance hand-off stays on finalization only. |
 | Evidence | Unit: `SalesCustomerReturnTests`, `SalesCustomerReturnServiceTests`, `SalesPersistenceModelTests`. Real SQL + real host: two inventoried `SalesCustomerReturnSqlServerRelationalAcceptanceTests` cases (reject/cancel flow, raw 51255/547 guards, the 51259 Down refusal through the migrator). |
+
+## Order credit limit warning (F-018; plan S1, FNS-D27(3), FNS-D45)
+
+FNS-D27(3): a limit overrun is a warning only. The order is saved, the warning goes into the order's audit trail and no
+separate approval is asked for. The Finance party-risk port shape is unchanged (FNS-D45). No new permission or shell
+capability: grants stay a human gate.
+
+| Concern | Rule |
+|---|---|
+| When | Submit (`Preparing`/`Rejected` → `PendingApproval`) and approve (`PendingApproval` → `Approved`) evaluate the draft's party risk with the one calculator, after the version check and before the save (ASSUMPTION-SAT-RISK-2, reversible). A replay answers before any evaluation; a stale version or a refused transition asks no owner. |
+| Outcome | `Within` leaves nothing. `Over` → `OverLimit`; `Unavailable` → `CreditLimitNotSet` (Finance answered "no limit") or `SourceUnavailable` (an owner did not answer, no owner is composed, or the evaluation failed) — never read as "within" (ASSUMPTION-SAT-RISK-4, reversible). The transition always goes ahead. |
+| Record | One append-only `sales.DraftRiskWarnings` row per draft version (`CompanyId`, draft, version, revision, command, outcome, category, recorder, time, business day, risk contract, correlation) and its audit event `sales.order.risk-warning.recorded.v1`, in the same save as the transition's header, attempt and audit. No amount is stored or disclosed; retention follows the general audit retention (ASSUMPTION-SAT-RISK-1, reversible). An authority lost during the evaluation is 403 and writes nothing. |
+| Read | `GET /api/v1/sales/drafts/{id}/risk-warnings` (`sales.drafts.read`, ASSUMPTION-SAT-RISK-3, reversible): newest first, bounded, under the company filter; 404 for an unknown or another company's draft. |
+| Migration | `20261115123637_AddOrderRiskLimitWarnings` (dotnet ef): the table, `CK_DraftRiskWarnings_Facts` and a restrict FK to the draft. Down refuses with **51418** while any warning is recorded (forward fix); an empty table rolls back freely. 51418 was searched in main and the other local lanes' worktrees; open PRs were not checked. |
+| Evidence | Unit: `SalesOrderRiskWarningTests`, `SalesDraftServiceTests` (risk warning facts), `SalesPersistenceModelTests`, `SalesDraftHttpAcceptanceTests`. Real SQL: the inventoried `SalesDraftApprovalSqlServerRelationalAcceptanceTests.F018_…` case (one save, replay, refused command, company filter, the 51418 Down refusal). |

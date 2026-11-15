@@ -411,6 +411,29 @@ internal sealed class DraftCustomerRejectionRow : ISalesTenantRow
 }
 
 /// <summary>
+/// F-018 / plan S1 (FNS-D27(3), ASSUMPTION-SAT-RISK-1): one recorded credit limit warning of an order (append-only; at most one
+/// per draft version): the order's revision, the draft version the warned submit / approve produced, the command, the outcome
+/// (1 Over, 2 Unavailable), the category (1 OverLimit, 2 CreditLimitNotSet, 3 SourceUnavailable), who and when (UTC and the
+/// Europe/Istanbul business day of the check), the risk read contract and the correlation. No amount. Never modified, never
+/// deleted; retention follows the general audit policy.
+/// </summary>
+internal sealed class DraftRiskWarningRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public long DraftVersion { get; set; }
+    public int Revision { get; set; }
+    public string Command { get; set; } = string.Empty;
+    public int Outcome { get; set; }
+    public int Category { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public DateOnly CheckBusinessDay { get; set; }
+    public string RiskSourceContract { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// SAT-D30 / SAT-D213 (EK37): one recorded over-delivery approval of one order line (append-only; numbered per line): the line
 /// (identity and position), its approval number, the realization basis revision and its measured quantity text, the shipped total
 /// the approval covers (exact text of the line's order unit), who approved it, when, the draft version it produced and the
