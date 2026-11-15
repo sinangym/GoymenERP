@@ -745,3 +745,23 @@ authorized person through the route below; until then the port refuses.
 
 Not in this slice: the frontend screen and its shell capability, product-level overrides (URN-D8: none), the consumers'
 switch from their own settings record to this port.
+
+## Bank CSV column mapping (F-014; FNS-D52)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA1_EK.md` FNS-D52 (bank statement import: XLSX, MT940, CSV; the CSV
+column mapping is kept per bank in Settings; B-26 file safety). XLSX and MT940 need no mapping. This slice adds the
+persistent, versioned per-bank mapping and its read port; **no mapping row is seeded for any real bank** and no value is
+defaulted. Until an authorized person records a bank's mapping, the port refuses for that bank.
+
+| Part | What |
+|---|---|
+| Table | `BankCsvMappingVersions`: bank key (`varchar(32)`, exact binary collation, `A-Z 0-9 _ -`), display name, state (`Active`/`Inactive`), delimiter, skipped leading rows (0…50), header row flag, decimal and thousands separators (never equal), date format (closed list), amount layout (`SignedAmount` with the positive direction, or `InflowOutflowColumns`) and 1-based column numbers (1…256; transaction date and description required, value date, balance, reference and currency optional). Every row carries `CompanyId` under the company query filter; PK `(CompanyId, BankKey, Version)` is the concurrency fence; insert-only, the bank's latest version is in force; deactivation is an `Inactive` version. CHECKs hold the code lists, the layout's required columns and the bounds; "no column used twice" is the shared rule, re-checked on every read. |
+| Migration | `AddBankCsvMappingVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51527` while any version exists (forward fix); an empty store rolls back freely. |
+| Port | `ISettingsBankCsvMappingProviderV1.GetBankCsvMappingAsync(bankKey)` → `SettingsBankCsvMappingV1` (typed delimiter/separator characters, layout and direction enums, `SettingsBankCsvColumnsV1`, the stored `ProfileVersionV1`); `ListActiveBankCsvMappingsAsync()` → the active banks. No mapping → `settings_bank_csv_mapping_not_found`; latest version inactive → `settings_bank_csv_mapping_inactive`; malformed stored row → `settings_profile_invalid`; unreadable store → `settings_provider_unavailable`. No fallback. Consumer: Finance bank statement import (FIN-S21; its wiring is its own slice). |
+| Name | `settings.bank-csv-mappings.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/bank-csv-mappings` (every bank with its versions; an empty list when none), `POST /api/v1/settings/bank-csv-mappings/versions` (204). |
+| Commands | Idempotency-Key, per-bank expected version ("0" for the first), reason (≤ 4000), exact codes (never trimmed or folded), one save with the execution row and one audit event (`settings.bank-csv-mapping.recorded.v1`, subject `company/bankKey`). Terminal refusals are stored and replay; an unchanged in-force mapping is a stored no-op without audit. |
+| Evidence | Unit: `BankCsvMappingRulesV1Tests`. Model: `SettingsBankCsvMappingPersistenceModelTests`. Names: `SettingsBankCsvMappingPermissionRegistrationTests`. Real SQL: `SettingsBankCsvMappingSqlServerRelationalAcceptanceTests`. |
+
+Not in this slice: the frontend screen and its shell capability, the FIN-S21 importer and its wiring, linking a bank
+account to a bank key, XLSX/MT940 parsing, CSV formula-injection neutralization and B-26 file checks (importer side).

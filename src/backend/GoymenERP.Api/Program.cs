@@ -521,6 +521,7 @@ app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
 app.MapSettingsSalesPolicyEndpoints();
 app.MapSettingsUnitConversionPolicyEndpoints();
+app.MapSettingsBankCsvMappingEndpoints();
 app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();
 app.MapSettingsManufacturingProfileEndpoints();

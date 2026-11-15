@@ -63,6 +63,8 @@ public static class SettingsModuleExtensions
         // Product / stock-logistics consume. No compiled value: the port refuses until a person records the first version.
         services.AddScoped<ISettingsUnitConversionPolicyAdministrationV1, SettingsUnitConversionPolicyAdministration>();
         services.AddScoped<ISettingsUnitConversionPolicyProviderV1, SettingsUnitConversionPolicyProviderV1>();
+        services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
+        services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both
         // official sources stay disabled unless configuration enables them explicitly (an https base address is required);
         // enabling the outbound connection in an environment is a human gate.
