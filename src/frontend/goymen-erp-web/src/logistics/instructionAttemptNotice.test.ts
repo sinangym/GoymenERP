@@ -19,6 +19,7 @@ describe('command notices on the detail', () => {
   it.each([
     LOGISTICS_PROBLEM_CODE.versionConflict,
     LOGISTICS_PROBLEM_CODE.instructionState,
+    LOGISTICS_PROBLEM_CODE.instructionShipped,
     LOGISTICS_PROBLEM_CODE.loadExceedsInstructed,
     LOGISTICS_PROBLEM_CODE.lineBlocked,
     LOGISTICS_PROBLEM_CODE.duplicateShare,
@@ -59,6 +60,7 @@ describe('command notices on the detail', () => {
     for (const code of [
       LOGISTICS_PROBLEM_CODE.versionConflict,
       LOGISTICS_PROBLEM_CODE.instructionState,
+      LOGISTICS_PROBLEM_CODE.instructionShipped,
       LOGISTICS_PROBLEM_CODE.loadExceedsInstructed,
       LOGISTICS_PROBLEM_CODE.lineBlocked,
       LOGISTICS_PROBLEM_CODE.duplicateShare,

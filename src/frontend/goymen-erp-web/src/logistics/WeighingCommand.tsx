@@ -5,7 +5,8 @@
  *  - `WeighingFacts` shows the record to every reader of the detail exactly as the backend calculated it: the two
  *    weighings, tare / gross / net (WGT-001), the kilograms loaded when it was weighed and the SIGNED difference
  *    net − loaded (WGT-002). A fact, never a verdict: the tolerance thresholds are OPEN-004, so no colour, badge or
- *    word here says "accepted" or "out of tolerance", and nothing is recomputed on the screen.
+ *    word here says "accepted" or "out of tolerance", and nothing is recomputed on the screen. On a cancelled instruction
+ *    the record is kept, never deleted (F-020, LOJ-D7), and carries the "İptal edildi" mark.
  *  - `WeighingForm` is offered on an Issued instruction without a record. Like the record-load form (ASSUMPTION-LOG4B-2)
  *    it is shown to every holder of the detail: no shell control exists for it, and the server measures
  *    `logistics.weighings.record` afresh, answering a code-less 403 to anyone else. One weighing id is minted per
@@ -45,10 +46,22 @@ import { INSTRUCTION_DETAIL_TEXT, WEIGHING_TEXT as T } from './logisticsText'
 import type { ShellState } from '../shell/shellState'
 import styles from './LogisticsPages.module.css'
 
-export function WeighingFacts({ weighing }: { readonly weighing: InstructionWeighing | null }) {
+export function WeighingFacts({
+  weighing,
+  cancelled = false,
+}: {
+  readonly weighing: InstructionWeighing | null
+  /** F-020: the instruction is cancelled; a kept record shows the cancel mark (LOJ-D7). */
+  readonly cancelled?: boolean
+}) {
   return (
     <section className={styles.section} aria-labelledby="logistics-weighing-heading" data-testid="logistics-weighing">
       <h2 id="logistics-weighing-heading">{T.heading}</h2>
+      {cancelled && weighing !== null ? (
+        <p className={styles.muted} data-testid="logistics-weighing-cancelled">
+          <span className={`${styles.badge} ${styles.blocked}`}>{T.cancelledMark}</span> {T.cancelledNote}
+        </p>
+      ) : null}
       {weighing === null ? (
         <p className={styles.muted} data-testid="logistics-weighing-none">
           {T.none}
