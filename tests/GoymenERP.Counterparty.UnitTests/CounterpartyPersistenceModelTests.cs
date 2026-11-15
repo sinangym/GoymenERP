@@ -6,6 +6,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using System.Linq.Expressions;
 
 namespace GoymenERP.Counterparty.UnitTests;
@@ -337,9 +338,13 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261027202534_AddCounterpartyCustomerGroups",
             dbContext.Database.GetMigrations());
-        Assert.Equal(
+        Assert.Contains(
             "20261031143822_AddCustomerEDocumentProfiles",
-            dbContext.Database.GetMigrations().Last());
+            dbContext.Database.GetMigrations());
+        Assert.EndsWith(
+            "_AddCounterpartyOutbox",
+            dbContext.Database.GetMigrations().Last(),
+            StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }
 
@@ -410,6 +415,104 @@ public sealed class CounterpartyPersistenceModelTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
         Assert.Contains("fiziksel", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Outbox_is_company_scoped_append_only_and_keyed_by_aggregate_sequence()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var outbox = dbContext.Model.FindEntityType(typeof(CounterpartyOutboxRow))!;
+        Assert.Equal("counterparty", outbox.GetSchema());
+        Assert.Equal("OutboxMessages", outbox.GetTableName());
+        Assert.NotNull(outbox.GetDeclaredQueryFilters().SingleOrDefault());
+        Assert.Equal(
+            ["CK_OutboxMessages_Envelope", "CK_OutboxMessages_Identity"],
+            outbox.GetCheckConstraints().Select(check => check.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            CounterpartyDbContext.OutboxIdentityCheck,
+            outbox.GetCheckConstraints().Single(check => check.Name == "CK_OutboxMessages_Identity").Sql);
+        Assert.Equal(
+            CounterpartyDbContext.OutboxEnvelopeCheck,
+            outbox.GetCheckConstraints().Single(check => check.Name == "CK_OutboxMessages_Envelope").Sql);
+
+        var unique = Assert.Single(outbox.GetIndexes(), index => index.IsUnique);
+        Assert.Equal("UX_OutboxMessages_AggregateSequence", unique.GetDatabaseName());
+        Assert.Equal(
+            ["CompanyId", "EventType", "AggregateId", "Sequence"],
+            unique.Properties.Select(property => property.Name));
+        Assert.Equal(ValueGenerated.Never, outbox.FindPrimaryKey()!.Properties.Single().ValueGenerated);
+        Assert.False(outbox.FindProperty(nameof(CounterpartyOutboxRow.CorrelationId))!.IsNullable);
+        Assert.True(outbox.FindProperty(nameof(CounterpartyOutboxRow.CausationId))!.IsNullable);
+
+        var company = Assert.Single(outbox.GetForeignKeys());
+        Assert.Equal(["CompanyId"], company.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, company.DeleteBehavior);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_outbox_update_delete_and_another_company_row_before_the_database_call()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var own = OutboxRow(companyId);
+        dbContext.OutboxMessages.Attach(own);
+        own.PayloadJson = "{}";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("olay kutusu", refused.Message, StringComparison.Ordinal);
+
+        dbContext.ChangeTracker.Clear();
+        var deleted = OutboxRow(companyId);
+        dbContext.OutboxMessages.Attach(deleted);
+        dbContext.OutboxMessages.Remove(deleted);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.OutboxMessages.Add(OutboxRow(Guid.NewGuid()));
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("şirket", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_outbox_row_without_a_resolved_company_before_the_database_call()
+    {
+        using var dbContext = CreateContext();
+        dbContext.OutboxMessages.Add(OutboxRow(Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void Outbox_migration_Up_is_pure_DDL_and_its_Down_first_refuses_while_events_exist()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddCounterpartyOutbox();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51441", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[OutboxMessages]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains(
+            migration.DownOperations,
+            operation => operation is DropTableOperation { Name: "OutboxMessages", Schema: "counterparty" });
+    }
+
+    private static CounterpartyOutboxRow OutboxRow(Guid companyId)
+    {
+        var occurredAt = new DateTimeOffset(2026, 11, 15, 9, 0, 0, TimeSpan.Zero);
+        return new CounterpartyOutboxRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = companyId,
+            EventType = "counterparty.party.deactivated.v1",
+            SchemaVersion = 1,
+            SourceOperation = "counterparty.company-account.set-active-state.v1",
+            AggregateType = "Counterparty.CompanyPartyAccount",
+            AggregateId = Guid.NewGuid(),
+            AggregateVersion = 2,
+            Sequence = 2,
+            PayloadJson = "{\"reason\":\"Çalışma sona erdi\"}",
+            OccurredAtUtc = occurredAt,
+            CorrelationId = "unit-correlation",
+            RecordedAtUtc = occurredAt,
+        };
     }
 
     private static CounterpartyDbContext CreateContext(ICompanyContext? companyContext = null)
