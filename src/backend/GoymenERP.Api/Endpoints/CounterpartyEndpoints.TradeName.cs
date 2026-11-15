@@ -17,7 +17,7 @@ namespace GoymenERP.Api.Endpoints;
 /// <item><c>PUT …/{partyId}/trade-name</c> — change or clear the trade name (204). One Idempotency-Key; the stored
 /// terminal answers (204, 404, 409) replay for the same key and body.</item>
 /// </list>
-/// The legal name never travels here: CARI-DEC-004 makes its change approval-bound.
+/// The legal name never travels here: it has its own route and permission (<c>…/legal-name</c>, ALS-D95).
 /// </summary>
 public static partial class CounterpartyEndpoints
 {

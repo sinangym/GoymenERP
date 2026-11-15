@@ -2,8 +2,8 @@
  * F-027 / C-02 — the Cari card's names, edited in place.
  *
  * What the user can do here, and nothing more:
- *  - READ the hukuki unvan (legal name), read-only: CARI-DEC-004 makes its change approval-bound and that flow is not
- *    open yet, so the panel says so instead of offering a field.
+ *  - READ the hukuki unvan (legal name), read-only: it is changed on its own panel under a separate permission
+ *    (ALS-D95, ./CariLegalNamePanel.tsx), so this panel points there instead of offering a field.
  *  - CHANGE or CLEAR the ticari unvan (trade name), fenced on the party version the form opened on. A save of the stored
  *    value is the server's no-op; the client does not send an unchanged value at all.
  *

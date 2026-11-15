@@ -200,7 +200,8 @@ public sealed class CounterpartyPersistenceModelTests
         dbContext.ChangeTracker.Clear();
         var other = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000002"), PartyKind.LegalEntity, "Başka Cari");
         dbContext.Parties.Attach(other);
-        dbContext.Entry(other).Property(value => value.LegalName).CurrentValue = "Yeni Unvan";
+        // A legal-name-only change has its own command now (ALS-D95); any other Party column is still refused.
+        dbContext.Entry(other).Property(value => value.IsActive).CurrentValue = false;
         var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
         Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
 
@@ -226,7 +227,7 @@ public sealed class CounterpartyPersistenceModelTests
         var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
         Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
 
-        // CARI-DEC-004: the legal name is approval-bound, so it may not ride along with a trade name change.
+        // The legal name has its own command and permission (ALS-D95), so it may not ride along with a trade name change.
         dbContext.ChangeTracker.Clear();
         var mixed = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000012"), PartyKind.LegalEntity, "Karışık Cari");
         dbContext.Parties.Attach(mixed);
@@ -241,6 +242,47 @@ public sealed class CounterpartyPersistenceModelTests
         dbContext.Parties.Attach(both);
         both.ChangeTradeName("İkili", DateTimeOffset.UtcNow);
         both.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("1234567890"), DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void SaveChanges_AllowsALegalNameOnlyPartyChangeAndRejectsAnythingRiddenAlong()
+    {
+        // ALS-D95 / 19.22: the legal name change is its own fenced, audited command; nothing else shares the save.
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000021"), PartyKind.LegalEntity, "Eski Unvan A.Ş.");
+        dbContext.Parties.Attach(party);
+        Assert.True(party.ChangeLegalName("Yeni Unvan A.Ş.", DateTimeOffset.UtcNow));
+        dbContext.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, dbContext.Entry(party).State);
+        // The guard lets this through; the (absent) database is what fails next, not the guard.
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("doğrudan değiştirilemez", passed.Message, StringComparison.Ordinal);
+
+        // A trade name change may not ride along: each name is changed under its own permission.
+        dbContext.ChangeTracker.Clear();
+        var mixed = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000022"), PartyKind.LegalEntity, "Karışık Unvan");
+        dbContext.Parties.Attach(mixed);
+        mixed.ChangeLegalName("Karışık Yeni Unvan", DateTimeOffset.UtcNow);
+        dbContext.Entry(mixed).Property(value => value.TradeName).CurrentValue = "Gizli Ticari Ad";
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("doğrudan değiştirilemez", refused.Message, StringComparison.Ordinal);
+
+        // Nor may a tax identity change (maker-checker) share the save.
+        dbContext.ChangeTracker.Clear();
+        var both = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000023"), PartyKind.LegalEntity, "İkili Unvan");
+        dbContext.Parties.Attach(both);
+        both.ChangeLegalName("İkili Yeni Unvan", DateTimeOffset.UtcNow);
+        both.EnterTaxIdentityNumber(TaxIdentityNumber.Parse("1234567890"), DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        // Nor any other Party column.
+        dbContext.ChangeTracker.Clear();
+        var other = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000024"), PartyKind.LegalEntity, "Pasif Unvan");
+        dbContext.Parties.Attach(other);
+        other.ChangeLegalName("Pasif Yeni Unvan", DateTimeOffset.UtcNow);
+        dbContext.Entry(other).Property(value => value.IsActive).CurrentValue = false;
         Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
     }
 

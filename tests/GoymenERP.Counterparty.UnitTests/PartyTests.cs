@@ -101,6 +101,64 @@ public sealed class PartyTests
     }
 
     [Fact]
+    public void Legal_name_change_trims_moves_the_version_once_and_leaves_the_trade_name()
+    {
+        // ALS-D95 / 19.22: one step, no approval; the version moves once.
+        var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(11), PartyKind.LegalEntity, "Eski Unvan A.Ş.", "Ticari");
+        var at = DateTimeOffset.UnixEpoch.AddDays(1);
+
+        Assert.True(party.ChangeLegalName("  Yeni Unvan A.Ş.  ", at));
+
+        Assert.Equal("Yeni Unvan A.Ş.", party.LegalName);
+        Assert.Equal("Ticari", party.TradeName);
+        Assert.Null(party.TaxIdentityNumber);
+        Assert.Equal(2, party.Version);
+        Assert.Equal(at, party.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void Legal_name_change_to_the_stored_value_is_a_no_op_without_a_new_version()
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(12), PartyKind.LegalEntity, "Örnek A.Ş.");
+
+        Assert.False(party.ChangeLegalName(" Örnek A.Ş. ", DateTimeOffset.UnixEpoch.AddDays(1)));
+
+        Assert.Equal("Örnek A.Ş.", party.LegalName);
+        Assert.Equal(1, party.Version);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Blank_legal_name_is_refused_and_nothing_changes(string blank)
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(13), PartyKind.LegalEntity, "Örnek A.Ş.");
+
+        var refused = Assert.ThrowsAny<ArgumentException>(() => party.ChangeLegalName(blank, DateTimeOffset.UnixEpoch));
+        Assert.IsNotType<ArgumentOutOfRangeException>(refused);
+        Assert.ThrowsAny<ArgumentException>(() => Party.NormalizeLegalName(null));
+
+        Assert.Equal("Örnek A.Ş.", party.LegalName);
+        Assert.Equal(1, party.Version);
+    }
+
+    [Fact]
+    public void Legal_name_past_the_limit_is_refused_and_nothing_changes()
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(14), PartyKind.LegalEntity, "Örnek A.Ş.");
+        var tooLong = new string('x', Party.LegalNameMaximumLength + 1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => party.ChangeLegalName(tooLong, DateTimeOffset.UnixEpoch));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Party.NormalizeLegalName(tooLong));
+
+        Assert.Equal("Örnek A.Ş.", party.LegalName);
+        Assert.Equal(1, party.Version);
+        Assert.Equal(
+            new string('x', Party.LegalNameMaximumLength),
+            Party.NormalizeLegalName(new string('x', Party.LegalNameMaximumLength)));
+    }
+
+    [Fact]
     public void Default_party_code_cannot_create_a_party()
     {
         Assert.ThrowsAny<ArgumentException>(() => new Party(

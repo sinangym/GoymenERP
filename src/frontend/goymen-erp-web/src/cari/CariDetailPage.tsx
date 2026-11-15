@@ -32,6 +32,7 @@ import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStat
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
 import { CariTradeNamePanel } from './CariTradeNamePanel'
+import { CariLegalNamePanel } from './CariLegalNamePanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
 import {
@@ -64,6 +65,9 @@ const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
   [PARTY_KIND.NaturalPerson]: 'Gerçek kişi',
 }
+
+/** The side reads that show the party's names (the legal name panel and the trade name panel). */
+const NAMES_QUERY_KINDS = new Set<string>(['counterparty-legal-name', 'counterparty-trade-name'])
 
 /**
  * Remounted on every context change, exactly like the list (#147 P1-2). A detail
@@ -218,9 +222,15 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     [namespace, queryClient, readCount],
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
-  const onTradeNameChanged = useCallback(() => {
+  // Both names panels show the legal name and fence on the same PARTY version, so a change in either one refreshes the
+  // card's own read and the other panel's read (F-027, ALS-D95/ALS-D97).
+  const onNamesChanged = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: detailQueryKey })
-  }, [detailQueryKey, queryClient])
+    void queryClient.invalidateQueries({
+      predicate: (q) =>
+        q.queryKey[0] === namespace && typeof q.queryKey[1] === 'string' && NAMES_QUERY_KINDS.has(q.queryKey[1]),
+    })
+  }, [detailQueryKey, namespace, queryClient])
   const readOutcomeType = query.data?.type ?? null
   const fetchStatus = query.fetchStatus
   useEffect(() => {
@@ -384,15 +394,26 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         </dl>
         {/* AT-009: the party's VKN/TCKN (one per party, like the facts above), its duplicate warning in THIS
             company, and the maker-checker change. Its own read, bound to the selected company. */}
-        {/* F-027 / C-02: the names edited in place — the trade name directly, the legal name read-only (CARI-DEC-004
-            makes its change approval-bound). Its own read, bound to the selected company. */}
+        {/* F-027 / ALS-D95: the official legal name, changed in one step under its own separate permission. Its own
+            read, bound to the selected company. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariLegalNamePanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            onChanged={onNamesChanged}
+          />
+        ) : null}
+        {/* F-027 / C-02: the trade name edited in place (ALS-D97); the legal name is shown there read-only. Its own
+            read, bound to the selected company. */}
         {namespace !== null && activeCompanyId !== null ? (
           <CariTradeNamePanel
             partyId={detail.id}
             companyId={activeCompanyId}
             namespace={namespace}
             contractContext={contractContext}
-            onChanged={onTradeNameChanged}
+            onChanged={onNamesChanged}
           />
         ) : null}
         {namespace !== null && activeCompanyId !== null ? (

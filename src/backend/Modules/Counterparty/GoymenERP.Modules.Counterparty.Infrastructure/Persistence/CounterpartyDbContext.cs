@@ -338,7 +338,8 @@ public sealed class CounterpartyDbContext(
 
             if (entry.State == EntityState.Modified
                 && !IsTaxIdentityOnlyPartyChange(entry)
-                && !IsTradeNameOnlyPartyChange(entry))
+                && !IsTradeNameOnlyPartyChange(entry)
+                && !IsLegalNameOnlyPartyChange(entry))
             {
                 throw new InvalidOperationException(
                     "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
@@ -508,12 +509,24 @@ public sealed class CounterpartyDbContext(
     ];
 
     /// <summary>
-    /// F-027 / C-02: the trade name edit touches only these. The official legal name stays outside every direct edit
-    /// (CARI-DEC-004: its change is approval-bound), and a tax identity change never rides along.
+    /// F-027 / C-02: the trade name edit touches only these. The official legal name never rides along: it has its own
+    /// command and permission (ALS-D95), and a tax identity change never rides along either.
     /// </summary>
     private static readonly string[] MutableTradeNamePartyProperties =
     [
         nameof(Party.TradeName),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    /// <summary>
+    /// ALS-D95 (19.22): the legal name change touches only these. The trade name and the tax identity never ride along,
+    /// so each name change is fenced and audited under its own permission.
+    /// </summary>
+    private static readonly string[] MutableLegalNamePartyProperties =
+    [
+        nameof(Party.LegalName),
         nameof(Party.Version),
         nameof(Party.UpdatedAtUtc),
         nameof(Party.RowVersion),
@@ -554,6 +567,16 @@ public sealed class CounterpartyDbContext(
             .ToArray();
         return modified.Contains(nameof(Party.TradeName), StringComparer.Ordinal)
             && modified.All(name => MutableTradeNamePartyProperties.Contains(name, StringComparer.Ordinal));
+    }
+
+    private static bool IsLegalNameOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.LegalName), StringComparer.Ordinal)
+            && modified.All(name => MutableLegalNamePartyProperties.Contains(name, StringComparer.Ordinal));
     }
 
     private sealed class OrganizationCompanyReference

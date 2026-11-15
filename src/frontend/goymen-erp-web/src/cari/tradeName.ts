@@ -5,8 +5,8 @@
  * `GetCounterpartyTradeNameV1`, `UpdateCounterpartyTradeNameV1`).
  *
  *  - The TRADE name (ticari ad) is a basic card field: it is changed directly, fenced on the PARTY version.
- *  - The official LEGAL name (resmi unvan) is shown read-only: CARI-DEC-004 makes its change approval-bound and that
- *    flow is not open yet, so this screen never sends it.
+ *  - The official LEGAL name (resmi unvan) is shown read-only here and never sent from this screen: it is changed on its
+ *    own panel under a separate permission (ALS-D95, ./legalName.ts).
  *  - The party is shared by every company holding an account for it, so a trade name change is seen by all of them.
  *
  * The decoder is strict: an unknown shape is `null`, never a partly trusted object. Every user-facing word lives in
@@ -118,8 +118,7 @@ export const TRADE_NAME_TEXT = {
   notFound: 'Bu cari seçili şirkette kayıtlı değil.',
   readAgain: 'Yeniden dene',
   legalNameLabel: 'Hukuki unvan',
-  legalNameNote:
-    'Hukuki unvan değişikliği onaylı akışa bağlıdır (hazırlayan ve onaylayan ayrı kişiler); bu akış henüz açılmadı.',
+  legalNameNote: 'Hukuki unvan ayrı yetkiyle, "Resmi unvan" bölümünden değiştirilir.',
   tradeNameLabel: 'Ticari unvan',
   tradeNameNone: 'Ticari unvan girilmemiş',
   tradeNameHint: `İsteğe bağlı, en fazla ${TRADE_NAME_MAX} karakter. Boş bırakılırsa ticari unvan kaldırılır.`,
