@@ -105,6 +105,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<ExpensePaymentCommandRow> ExpensePaymentCommands => Set<ExpensePaymentCommandRow>();
 
+    /// <summary>
+    /// FNS-D24 (API-32/34): the transfer between two treasury accounts (one record for both legs, with the rate of a
+    /// currency exchange) and its command receipts. Both append-only.
+    /// </summary>
+    internal DbSet<CashTransferRow> CashTransfers => Set<CashTransferRow>();
+
+    internal DbSet<CashTransferCommandRow> CashTransferCommands => Set<CashTransferCommandRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -137,6 +145,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigurePartyCreditLimits(modelBuilder);
         ConfigureOfficialSalesInvoices(modelBuilder);
         ConfigureExpensePayments(modelBuilder);
+        ConfigureCashTransfers(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1098,6 +1107,91 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureCashTransfers(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CashTransferRow>();
+        entity.ToTable("CashTransfers", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashTransfers_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceCurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetCurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CashTransfers_Text",
+                "LEN([SourceAmountText]) > 0 AND LEN([TargetAmountText]) > 0 AND LEN([SourceProfileId]) > 0 "
+                + "AND LEN([SourceProfileVersion]) > 0 AND LEN([TargetProfileId]) > 0 AND LEN([TargetProfileVersion]) > 0 "
+                + "AND LEN([RecordedBy]) > 0 "
+                + "AND ([Reference] IS NULL OR LEN(LTRIM(RTRIM([Reference]))) > 0) "
+                + "AND ([Description] IS NULL OR LEN(LTRIM(RTRIM([Description]))) > 0)");
+            table.HasCheckConstraint("CK_CashTransfers_AccountKinds", "[SourceKind] IN (0, 1) AND [TargetKind] IN (0, 1)");
+            table.HasCheckConstraint("CK_CashTransfers_DistinctAccounts",
+                "NOT ([SourceKind] = [TargetKind] AND [SourceAccountId] = [TargetAccountId])");
+            // FNS-D24: a same-currency transfer moves the same amount text with no rate; an exchange names two
+            // different currencies and carries its transaction rate on the same record.
+            table.HasCheckConstraint("CK_CashTransfers_Kind",
+                "([Kind] = 0 AND [SourceCurrencyId] = [TargetCurrencyId] AND [SourceAmountText] = [TargetAmountText] "
+                + "AND [RateText] IS NULL) OR "
+                + "([Kind] = 1 AND [SourceCurrencyId] <> [TargetCurrencyId] AND [RateText] IS NOT NULL "
+                + "AND LEN([RateText]) > 0)");
+            table.HasCheckConstraint("CK_CashTransfers_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
+            table.HasCheckConstraint("CK_CashTransfers_Confirmed", "[TransferConfirmed] = 1");
+            table.HasCheckConstraint("CK_CashTransfers_Version", "[Version] = 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.SourceAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.TargetAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.TargetProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.TargetProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        // The rate's storage bound: at most 18 integer digits, a dot and 10 decimals (Settings' rate record bound).
+        entity.Property(x => x.RateText).HasMaxLength(29).IsUnicode(false);
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.ValueOn).HasColumnType("date");
+        entity.Property(x => x.Reference).HasMaxLength(128);
+        entity.Property(x => x.Description).HasMaxLength(1000);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.RecordedAtUtc, x.Id });
+        // The cash passivation reading asks whether a transfer names the account on either leg.
+        entity.HasIndex(x => new { x.CompanyId, x.SourceKind, x.SourceAccountId });
+        entity.HasIndex(x => new { x.CompanyId, x.TargetKind, x.TargetAccountId });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<CashTransferCommandRow>();
+        command.ToTable("CashTransferCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CashTransferCommands_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[TransferId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CashTransferCommands_Content",
+                "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([ActorId]) > 0 "
+                + "AND LEN([PayloadHash]) = 64 AND ISJSON([ResultJson]) = 1 AND LEN([CorrelationId]) > 0");
+        });
+        command.HasKey(x => x.Id);
+        command.Property(x => x.Id).ValueGeneratedNever();
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false).IsRequired();
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        command.Property(x => x.ResultJson).IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash }).IsUnique();
+        command.HasOne<CashTransferRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureManualBankPayments(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<ManualBankPaymentRow>();
@@ -1687,6 +1781,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
         {
             throw new InvalidOperationException("Masraf ödemesi komut kayıtları append-only'dir.");
+        }
+
+        // FNS-D24: a committed transfer is the money fact of both legs; it and its receipt never change.
+        if (ChangeTracker.Entries<CashTransferRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<CashTransferCommandRow>()
+                .Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Virman ve döviz bozdurma kayıtları ile komut kayıtları append-only'dir.");
         }
 
         foreach (var entry in ChangeTracker.Entries<IFinanceTenantRow>())

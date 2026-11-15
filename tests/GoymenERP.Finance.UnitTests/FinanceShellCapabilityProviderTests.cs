@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(32, declarations.Count);
+        Assert.Equal(34, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.10", provider.ContractVersion);
+        Assert.Equal("1.11", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -123,6 +123,13 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.credit-limits.approve", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
                 ShellCapabilityRoutePrecedence.Static,
                 [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove]),
+            // 1.11 (FNS-D24): one workspace; the commit is its control and also needs the Accounting period read.
+            ("finance.cash-transfers.workspace", "finance.cash-transfers.workspace", "/finans/virman",
+                "F-32-CASH-TRANSFERS", ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.CashTransferRead]),
+            ("finance.cash-transfers.commit", "finance.cash-transfers.workspace", "/finans/virman",
+                "F-32-CASH-TRANSFERS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.CashTransferRead, FinancePermissionNames.CashTransferCommit,
+                    ErpPermissions.AccountingPeriodsRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -212,7 +219,14 @@ public sealed class FinanceShellCapabilityProviderTests
             Assert.Superset(creditLimits.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
                 control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         }
-        Assert.Equal(13, declarations.Count(item => item.ParentCapabilityId is not null));
+        var cashTransfers = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.CashTransferWorkspaceCapabilityId);
+        var cashTransferCommit = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.CashTransferCommitCapabilityId);
+        Assert.Equal(cashTransfers.CapabilityId, cashTransferCommit.ParentCapabilityId);
+        Assert.Superset(cashTransfers.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+            cashTransferCommit.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        Assert.Equal(14, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -251,7 +265,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
-                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-CREDIT-LIMITS", "F-25-EXPENSE-PAYMENTS", "M-03"],
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-CREDIT-LIMITS", "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

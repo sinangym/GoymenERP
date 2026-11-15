@@ -560,6 +560,28 @@ written.
 Not decided, so not built (NEEDS-SINAN): the treasury balance source and opening balances for the record-time check;
 whether a cash account with a pending passivation may pay; a dedicated money operation key.
 
+## FIN-S8 / API-32/34: transfer and currency exchange in one record (virman / döviz bozdurma) — FNS-D24
+
+One committed record carries both legs (bank ↔ bank, bank ↔ cash, cash ↔ cash) of a money move; no second movement
+is produced for either leg.
+
+| Part | Behaviour |
+|---|---|
+| HTTP | `/api/v1/finance/cash-transfers`: `POST …/preview` (`PreviewFinanceCashTransferV1`, writes nothing), `POST` commit (`CommitFinanceCashTransferV1`), `GET` list (`GetFinanceCashTransfersV1`) and detail (`GetFinanceCashTransferV1`), `GET …/account-context` (`GetFinanceCashTransferAccountContextV1`). The commit takes the `Idempotency-Key` header (surrounding whitespace refused) and a strict JSON body; 401/403/404/503 code-less; replay headers on a replay |
+| Authority | `finance.cash-transfers.read`, `finance.cash-transfers.commit`: registered and company-wide, granted to no role or seed (a human gate). Fenced before the first read, on replay and right before the save |
+| Kinds | `SameCurrency`: one currency, the same amount text on both legs, no rate. `CurrencyExchange`: two currencies and the transaction rate (target units per one source unit; ≤ 18 integer and ≤ 10 decimal digits) on the same record. Both legs are checked against Settings' approved money profile of their currency |
+| Rate check | `IFinanceCurrencyExchangeRateRule` answers consistent / inconsistent / unavailable. Rounding, quote direction and rate source are not decided, so the only registration (`UnavailableCurrencyExchangeRateRule`) answers unavailable and an exchange returns 503 `finance_exchange_rate_rule_unavailable` (fail-closed); an inconsistent rate is 422 `finance_exchange_rate_inconsistent` |
+| Balance (FNS-D11/D22) | `IFinanceTreasuryBalanceGuard` on the source leg; insufficient is 422 `finance_treasury_balance_insufficient`, unavailable is 503. The default guard answers unavailable (no treasury balance source yet) |
+| Rules | Accounts must be approved (a bank account also money-movement eligible with an IBAN); the same account on both legs is refused (`cash_transfer_same_account`); the period of `occurredOn` must be open; `transferConfirmed` is required (`cash_transfer_not_confirmed`) |
+| Cash passivation | Once a cash account is named on either leg of a transfer, `TreasuryMovementAwareCashAccountBalanceReader` stops answering `Zero` for it |
+| Money operation | Temporarily the manual bank payment profile (`finance.manual-bank-payment.v1`); a dedicated key is asked of the Settings owner (NEEDS-SINAN) |
+| Persistence | `finance.CashTransfers` (company query filter; append-only; `CK_CashTransfers_Kind`, `_DistinctAccounts`, `_Confirmed`, `_Version`) and `finance.CashTransferCommands` keyed by (company, command, key hash). Only a successful commit is stored; a refusal writes nothing. Audit `finance.cash-transfer.recorded.v1` |
+| Migration `20261115145712_AddCashTransfers` | Pure DDL up (two tables). `Down` refuses with `THROW 51458` while any transfer or command is stored (forward fix) |
+
+Not decided, so not built (NEEDS-SINAN): the exchange rate consistency rule (rounding, rate source, quote direction),
+a second-person approval for transfers, the treasury balance source, a dedicated money operation key, and the
+exchange difference / accounting counterpart.
+
 ## F-005 D1: official sales invoice record — FNS-D17…FNS-D21, FNS-D26
 
 Finance owns the official sales invoice (e-Fatura / e-Arşiv) that was issued outside the ERP. One person records it

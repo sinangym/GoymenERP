@@ -68,6 +68,9 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadExpensePayments => FinancePermissionNames.ExpensePaymentDraftRead,
         FinanceAction.ApproveExpensePayment => FinancePermissionNames.ExpensePaymentApprove,
         FinanceAction.RecordExpensePayment => FinancePermissionNames.ExpensePaymentRecord,
+        // FNS-D24: the transfer's own names; Unavailable (503) until the central registry knows them.
+        FinanceAction.ReadCashTransfers => FinancePermissionNames.CashTransferRead,
+        FinanceAction.CommitCashTransfer => FinancePermissionNames.CashTransferCommit,
         // API-23: the payment reversal's own names; Unavailable (503) until the central registry knows them.
         FinanceAction.ProposePaymentReversal => FinancePermissionNames.PaymentReversePropose,
         FinanceAction.ApprovePaymentReversal => FinancePermissionNames.PaymentReverseApprove,

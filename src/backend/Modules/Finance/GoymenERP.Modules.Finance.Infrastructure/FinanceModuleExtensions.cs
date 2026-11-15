@@ -78,7 +78,9 @@ public static class FinanceModuleExtensions
         // API-30: the cash account (kasa) master; a definition only, audited with the roles of its own permission.
         services.AddScoped<IFinanceCashAccountMaster>(CreateCashAccountService);
         // The balance seam of passivation. FNS-D25 lets cash leave a cash account (a recorded cash expense
-        // payment), so the reader that sees those records is registered before the no-movement default.
+        // payment) and FNS-D24 moves cash into or out of one (a committed transfer), so the reader that sees both is
+        // registered first; the expense-only reader and the no-movement default stay behind it.
+        services.TryAddScoped<IFinanceCashAccountBalanceReader, TreasuryMovementAwareCashAccountBalanceReader>();
         services.TryAddScoped<IFinanceCashAccountBalanceReader, ExpensePaymentAwareCashAccountBalanceReader>();
         services.TryAddScoped<IFinanceCashAccountBalanceReader, NoCashMovementBalanceReader>();
         // API-85a (F018 §L1; FNS-D27/D27a): the party credit limit master. The Sales risk port below reads its
@@ -93,6 +95,11 @@ public static class FinanceModuleExtensions
         services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
         services.TryAddScoped<IFinanceTreasuryBalanceGuard, UnavailableTreasuryBalanceGuard>();
         services.AddScoped<IExpensePaymentService>(CreateExpensePaymentService);
+        // FNS-D24 (API-32/34): the transfer between two treasury accounts, one record for both legs. The currency
+        // exchange is fail-closed until its rate rule is decided (NEEDS-SINAN); every commit needs the treasury
+        // balance guard above to answer Sufficient (FNS-D11).
+        services.TryAddScoped<IFinanceCurrencyExchangeRateRule, UnavailableCurrencyExchangeRateRule>();
+        services.AddScoped<ICashTransferService>(CreateCashTransferService);
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
@@ -294,6 +301,28 @@ public static class FinanceModuleExtensions
                     FinanceAction.ApproveExpensePayment),
                 Envelope(provider, FinancePermissionNames.ExpensePaymentRecord, permissions,
                     FinanceAction.RecordExpensePayment)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static CashTransferService CreateCashTransferService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new CashTransferService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IFinanceCurrencyExchangeRateRule>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            // No dedicated Settings money operation exists for transfers yet; like the expense payment, the outgoing
+            // bank payment operation's approved profile governs each leg amount until one is catalogued (NEEDS-SINAN).
+            new CashTransferBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+            new CashTransferAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.CashTransferCommit, permissions,
+                    FinanceAction.CommitCashTransfer)),
             provider.GetRequiredService<TimeProvider>());
     }
 

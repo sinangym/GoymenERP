@@ -57,6 +57,7 @@ const ROUTED = [
     FINANCE_ROUTE.manualBankPaymentsDetail],
   [CAPABILITY.financeExpensePaymentsWorkspace, FINANCE_CAPABILITY.expensePaymentsWorkspace,
     FINANCE_ROUTE.expensePayments],
+  [CAPABILITY.financeCashTransfersWorkspace, FINANCE_CAPABILITY.cashTransfersWorkspace, FINANCE_ROUTE.cashTransfers],
   [CAPABILITY.financeCreditLimitsList, FINANCE_CAPABILITY.creditLimitsList, FINANCE_ROUTE.creditLimitsList],
 ] as const
 
@@ -82,6 +83,7 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.expensePaymentsDraft,
   FINANCE_CAPABILITY.expensePaymentsApprove,
   FINANCE_CAPABILITY.expensePaymentsRecord,
+  FINANCE_CAPABILITY.cashTransfersCommit,
   FINANCE_CAPABILITY.creditLimitsPropose,
   FINANCE_CAPABILITY.creditLimitsApprove,
   FINANCE_CAPABILITY.allocationsWrite,
@@ -183,6 +185,7 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.manual-bank-payments.create': '',
       'finance.manual-bank-payments.detail': '',
       'finance.expense-payments.workspace': 'Masraf Ödemeleri',
+      'finance.cash-transfers.workspace': 'Virman ve Döviz Bozdurma',
       'finance.credit-limits.list': 'Kredi Limitleri',
     })
   })

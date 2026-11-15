@@ -28,6 +28,9 @@ public static class FinanceEndpoints
     public const string ExpensePaymentsPath = "/api/v1/finance/expense-payments";
     public const string ExpenseItemsPath = "/api/v1/finance/expense-payments/expense-items";
     public const string ExpensePaymentDraftContextPath = "/api/v1/finance/expense-payments/draft-context";
+    public const string CashTransfersPath = "/api/v1/finance/cash-transfers";
+    public const string CashTransferPreviewPath = "/api/v1/finance/cash-transfers/preview";
+    public const string CashTransferAccountContextPath = "/api/v1/finance/cash-transfers/account-context";
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string PaymentAllocationsPath = "/api/v1/finance/payment-allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
@@ -95,6 +98,7 @@ public static class FinanceEndpoints
         MapManualReceiptEndpoints(endpoints);
         MapManualBankPaymentEndpoints(endpoints);
         MapExpensePaymentEndpoints(endpoints);
+        MapCashTransferEndpoints(endpoints);
         MapFinanceAllocationEndpoints(endpoints);
         MapFinancePaymentAllocationEndpoints(endpoints);
         MapCustomerInstrumentEndpoints(endpoints);
@@ -2991,6 +2995,141 @@ public static class FinanceEndpoints
     {
         httpContext.Response.Headers.CacheControl = "private, no-store";
         httpContext.Response.Headers.Pragma = "no-cache";
+    }
+
+    /// <summary>
+    /// FNS-D24 (API-32/34): one transfer between two treasury accounts, same currency or a currency exchange at one rate,
+    /// recorded as a single transaction. Preview runs the commit's checks and writes nothing; commit carries an
+    /// Idempotency-Key.
+    /// </summary>
+    private static void MapCashTransferEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(CashTransferPreviewPath, async (
+                HttpContext httpContext, ICashTransferService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (await ReadBodyAsync<CashTransferPreparation>(httpContext, cancellationToken) is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.PreviewAsync(Context(companyContext, currentUser, correlation), request,
+                    cancellationToken);
+                return result.Outcome switch
+                {
+                    CommandOutcome.Succeeded => Results.Json(result, ContractJson, statusCode: StatusCodes.Status200OK),
+                    CommandOutcome.ValidationFailed =>
+                        Results.Json(result, ContractJson, statusCode: StatusCodes.Status422UnprocessableEntity),
+                    CommandOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                    CommandOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                    _ => throw new InvalidOperationException("Finance cash transfer preview returned an undefined outcome."),
+                };
+            })
+            .WithName("PreviewFinanceCashTransferV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Accepts<CashTransferPreparation>("application/json")
+            .Produces<CashTransferPreviewResult>(StatusCodes.Status200OK)
+            .Produces<CashTransferPreviewResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CashTransfersPath, async (
+                HttpContext httpContext, ICashTransferService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<CommitCashTransferRequest>(httpContext, cancellationToken) is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.CommitAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("CommitFinanceCashTransferV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CommitCashTransferRequest>("application/json")
+            .Produces<CashTransferCommandResult>(StatusCodes.Status200OK)
+            .Produces<CashTransferCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<CashTransferCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CashTransfersPath, async (
+                [FromQuery] string? cursor, HttpContext httpContext, ICashTransferService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var result = await service.ListAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    cursor, cancellationToken);
+                return result.Outcome == ReadOutcome.NotFound
+                    ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                    : Read(result);
+            })
+            .WithName("GetFinanceCashTransfersV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<CashTransferPage>().ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        // A leg's currency and money profile for an eligible account; registered before the {transferId:guid} route.
+        endpoints.MapGet(CashTransferAccountContextPath, async (
+                [FromQuery] string? accountKind, [FromQuery] string? accountId, [FromQuery] string? occurredOn,
+                HttpContext httpContext, ICashTransferService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadCashTransferAccountKind(accountKind, out var kind)
+                    || !Guid.TryParseExact(accountId, "D", out var id) || id == Guid.Empty
+                    || !DateOnly.TryParseExact(occurredOn, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out var date))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                return Read(await service.AccountContextAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), kind, id, date, cancellationToken));
+            })
+            .WithName("GetFinanceCashTransferAccountContextV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<CashTransferAccountContextView>().ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody().ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CashTransfersPath + "/{transferId:guid}", async (
+                Guid transferId, HttpContext httpContext, ICashTransferService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.DetailAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), transferId, cancellationToken));
+            })
+            .WithName("GetFinanceCashTransferV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<CashTransferView>().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>Only the two exact account kind names; a number or another casing is a bad request.</summary>
+    private static bool TryReadCashTransferAccountKind(string? value, out CashTransferAccountKind kind)
+    {
+        kind = value switch
+        {
+            nameof(CashTransferAccountKind.Bank) => CashTransferAccountKind.Bank,
+            nameof(CashTransferAccountKind.Cash) => CashTransferAccountKind.Cash,
+            _ => (CashTransferAccountKind)(-1),
+        };
+        return Enum.IsDefined(kind);
     }
 
     /// <summary>Exactly one Idempotency-Key: non-blank, canonical (no surrounding whitespace), at most 128 characters.</summary>

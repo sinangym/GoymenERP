@@ -56,11 +56,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// one-step change. The approve name is Critical in the manifest (FNS-D46), which changes no route rule; no role or
 /// user receives any of these names here.
 /// </para>
+/// <para>
+/// <b>1.11 (FNS-D24, API-32/34):</b> a transfer between two treasury accounts (same currency, or a currency exchange
+/// at one rate recorded as a single transaction) opens at <c>/finans/virman</c> under
+/// <c>finance.cash-transfers.read</c>; the commit is a control of that workspace under
+/// <c>finance.cash-transfers.commit</c> and, like every Finance record, the Accounting period read. No role or user
+/// receives either name here.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.10";
+    public const string OwnerContractVersion = "1.11";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -155,6 +162,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string CreditLimitListRoutePath = "/finans/kredi-limitleri";
     public const string CreditLimitProposeCapabilityId = "finance.credit-limits.propose";
     public const string CreditLimitApproveCapabilityId = "finance.credit-limits.approve";
+    public const string CashTransferWorkspaceScreenId = "F-32-CASH-TRANSFERS";
+    public const string CashTransferWorkspaceCapabilityId = "finance.cash-transfers.workspace";
+    public const string CashTransferWorkspaceRouteId = "finance.cash-transfers.workspace";
+    public const string CashTransferWorkspaceRoutePath = "/finans/virman";
+    public const string CashTransferCommitCapabilityId = "finance.cash-transfers.commit";
 
     public string Owner => OwnerId;
 
@@ -173,6 +185,9 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
         var expensePayments = Declaration(ExpensePaymentWorkspaceCapabilityId, ExpensePaymentWorkspaceRouteId,
             ExpensePaymentWorkspaceRoutePath, ExpensePaymentWorkspaceScreenId, ShellCapabilityRoutePrecedence.Static,
             [FinancePermissionNames.ExpensePaymentDraftRead]);
+        var cashTransfers = Declaration(CashTransferWorkspaceCapabilityId, CashTransferWorkspaceRouteId,
+            CashTransferWorkspaceRoutePath, CashTransferWorkspaceScreenId, ShellCapabilityRoutePrecedence.Static,
+            [FinancePermissionNames.CashTransferRead]);
         var creditLimits = Declaration(CreditLimitListCapabilityId, CreditLimitListRouteId, CreditLimitListRoutePath,
             CreditLimitListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]);
         return
@@ -330,6 +345,19 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = CreditLimitApproveCapabilityId,
                 ParentCapabilityId = CreditLimitListCapabilityId,
                 RequiredPermissions = [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove],
+            },
+            // 1.11 (FNS-D24): one transaction per transfer; the commit also needs the Accounting period read.
+            cashTransfers,
+            cashTransfers with
+            {
+                CapabilityId = CashTransferCommitCapabilityId,
+                ParentCapabilityId = CashTransferWorkspaceCapabilityId,
+                RequiredPermissions =
+                [
+                    FinancePermissionNames.CashTransferRead,
+                    FinancePermissionNames.CashTransferCommit,
+                    ErpPermissions.AccountingPeriodsRead,
+                ],
             },
         ];
     }

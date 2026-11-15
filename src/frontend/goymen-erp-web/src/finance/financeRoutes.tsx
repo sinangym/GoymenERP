@@ -45,6 +45,8 @@ import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import { ExpensePaymentPage } from './ExpensePaymentPage'
 import { CreditLimitPage } from './CreditLimitPage'
 import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
+import { CashTransferPage } from './CashTransferPage'
+import { CASH_TRANSFER_TEXT } from './cashTransferText'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -89,6 +91,15 @@ function ExpensePaymentRoute() {
     canDraft={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsDraft)}
     canApprove={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsApprove)}
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsRecord)} />
+}
+
+/** F-32 (FNS-D24): transfers and currency exchanges; it needs a single active company. The commit has its own gate. */
+function CashTransferRoute() {
+  const context = usePaymentContext()
+  const shell = useShellState()
+  if (context === null) return <StateBlock state={{ kind: 'not-found' }} subject={CASH_TRANSFER_TEXT.subject} />
+  return <CashTransferPage companyId={context.companyId} actorId={context.userId}
+    canCommit={hasCapability(shell, FINANCE_CAPABILITY.cashTransfersCommit)} />
 }
 
 /**
@@ -235,6 +246,10 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.expensePayments.slice(1),
     element: gate(FINANCE_CAPABILITY.expensePaymentsWorkspace, <ExpensePaymentRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.cashTransfers.slice(1),
+    element: gate(FINANCE_CAPABILITY.cashTransfersWorkspace, <CashTransferRoute />),
   },
   {
     path: FINANCE_ROUTE.creditLimitsList.slice(1),
