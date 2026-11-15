@@ -114,7 +114,30 @@ public sealed record LocalAccountLoginResult
 /// <summary>Validates a local account session on every request against the stored security stamp.</summary>
 public interface ILocalAccountSessionValidator
 {
+    /// <summary><see langword="true"/> only for <see cref="LocalAccountSessionState.Current"/>.</summary>
     Task<bool> IsCurrentAsync(Guid userId, Guid securityStamp, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// ID-2: a session of an account with <c>MustChangePassword=true</c> stays open but fenced
+    /// (<see cref="LocalAccountSessionState.PasswordChangeRequired"/>); everything else that is not current ends.
+    /// </summary>
+    Task<LocalAccountSessionState> GetSessionStateAsync(Guid userId, Guid securityStamp, CancellationToken cancellationToken);
+}
+
+public enum LocalAccountSessionState
+{
+    /// <summary>Unknown user, other stamp, inactive account or an outstanding temporary password: the session ends.</summary>
+    NotCurrent = 0,
+
+    /// <summary>The session is valid and unrestricted.</summary>
+    Current = 1,
+
+    /// <summary>
+    /// The session is valid but the account must change its password first (spec ID-2): only the password change,
+    /// logout and the endpoints the client needs to reach them are allowed; everything else is refused with 403
+    /// <see cref="IdentitySessionProblemCodesV1.PasswordChangeRequired"/>.
+    /// </summary>
+    PasswordChangeRequired = 2,
 }
 
 /// <summary>
@@ -164,6 +187,27 @@ public static class IdentitySessionProblemCodesV1
     /// a write (POST/PUT/PATCH/DELETE) authenticated by the local account cookie. Bearer requests never get it.
     /// </summary>
     public const string AntiforgeryTokenInvalid = "antiforgery_token_invalid";
+
+    /// <summary>HTTP 403 (spec ID-2, KS-7): the account must change its password before any other request.</summary>
+    public const string PasswordChangeRequired = "identity.password_change_required";
+
+    /// <summary>HTTP 400: the new password breaks the configured policy; rule codes are under <c>violations</c>.</summary>
+    public const string PasswordPolicyViolation = "password_policy_violation";
+
+    /// <summary>HTTP 400: the current password does not verify. It does not count towards the lockout.</summary>
+    public const string CurrentPasswordInvalid = "current_password_invalid";
+
+    /// <summary>HTTP 400: the body is missing, malformed or has an unusable field (named in <c>field</c>).</summary>
+    public const string RequestInvalid = "request_invalid";
+
+    /// <summary>HTTP 400: the <c>Idempotency-Key</c> header is missing, repeated, empty or too long.</summary>
+    public const string IdempotencyKeyInvalid = "idempotency_key_invalid";
+
+    /// <summary>HTTP 409: the same <c>Idempotency-Key</c> was already used with another request.</summary>
+    public const string IdempotencyConflict = "idempotency_conflict";
+
+    /// <summary>HTTP 409: <c>expectedVersion</c> is not the stored credential version.</summary>
+    public const string VersionConflict = "version_conflict";
 }
 
 /// <summary>

@@ -1,6 +1,8 @@
 using GoymenERP.Modules.Identity.Domain.Approvals;
 using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Bootstrap;
 using GoymenERP.Modules.Identity.Domain.Credentials;
+using GoymenERP.Modules.Identity.Domain.Outbox;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +16,18 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     internal const string LocalCredentialCountersCheck = "[FailedAccessCount] >= 0 AND [HashFormatVersion] >= 1";
 
     internal const string BinaryCollation = "Latin1_General_100_BIN2";
+
+    /// <summary>ID-2: the bootstrap marker has exactly one row; a second bootstrap fails on the key (spec "Veri modeli").</summary>
+    internal const string BootstrapSingletonCheck = "[Id] = 1";
+
+    internal const string OutboxIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [AggregateId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND ([CompanyId] IS NULL OR [CompanyId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND [SchemaVersion] >= 1 AND [AggregateVersion] >= 1 AND LEN([EventType]) > 0 AND LEN([CorrelationId]) > 0";
+
+    internal const string CredentialCommandCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ResultVersion] >= 1 "
+        + "AND DATALENGTH([RequestFingerprint]) = 32 AND LEN([IdempotencyKey]) > 0";
 
     public DbSet<UserAccount> Users => Set<UserAccount>();
 
@@ -31,6 +45,14 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<AccessGrantRequest> AccessGrantRequests => Set<AccessGrantRequest>();
 
+    public DbSet<IdentityBootstrapState> BootstrapStates => Set<IdentityBootstrapState>();
+
+    public DbSet<IdentityOutboxMessage> OutboxMessages => Set<IdentityOutboxMessage>();
+
+    public DbSet<LocalCredentialCommand> LocalCredentialCommands => Set<LocalCredentialCommand>();
+
+    internal DbSet<IdentityCompanyReference> Companies => Set<IdentityCompanyReference>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -43,7 +65,97 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         ConfigureRoleAssignment(modelBuilder);
         ConfigureRoleAssignmentScope(modelBuilder);
         ConfigureAccessGrantRequest(modelBuilder);
+        ConfigureBootstrapState(modelBuilder);
+        ConfigureOutbox(modelBuilder);
+        ConfigureLocalCredentialCommand(modelBuilder);
+        ConfigureCompanyReference(modelBuilder);
         modelBuilder.ConfigureProductMasterAssignment();
+    }
+
+    private static void ConfigureBootstrapState(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<IdentityBootstrapState>();
+        entity.ToTable(
+            "IdentityBootstrapState",
+            "identity",
+            table => table.HasCheckConstraint("CK_IdentityBootstrapState_Singleton", BootstrapSingletonCheck));
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(x => x.FounderUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<IdentityOutboxMessage>();
+        entity.ToTable(
+            "OutboxMessages",
+            "identity",
+            table =>
+            {
+                table.HasCheckConstraint("CK_IdentityOutbox_Identity", OutboxIdentityCheck);
+                table.HasCheckConstraint("CK_IdentityOutbox_Payload", "ISJSON([PayloadJson]) = 1");
+            });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.EventType)
+            .HasMaxLength(IdentityOutboxMessage.EventTypeMaxLength)
+            .UseCollation(BinaryCollation)
+            .IsRequired();
+        entity.Property(x => x.SourceOperation)
+            .HasMaxLength(IdentityOutboxMessage.SourceOperationMaxLength)
+            .UseCollation(BinaryCollation)
+            .IsRequired();
+        entity.Property(x => x.AggregateType)
+            .HasMaxLength(IdentityOutboxMessage.AggregateTypeMaxLength)
+            .UseCollation(BinaryCollation)
+            .IsRequired();
+        entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(IdentityOutboxMessage.CorrelationMaxLength).IsRequired();
+        entity.Property(x => x.CausationId).HasMaxLength(IdentityOutboxMessage.CorrelationMaxLength);
+        entity.HasIndex(x => new { x.RecordedAtUtc, x.Id }).HasDatabaseName("IX_IdentityOutbox_Recorded");
+    }
+
+    private static void ConfigureLocalCredentialCommand(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<LocalCredentialCommand>();
+        entity.ToTable(
+            "LocalCredentialCommands",
+            "identity",
+            table => table.HasCheckConstraint("CK_LocalCredentialCommands_Shape", CredentialCommandCheck));
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Operation)
+            .HasMaxLength(LocalCredentialCommand.OperationMaxLength)
+            .UseCollation(BinaryCollation)
+            .IsRequired();
+        entity.Property(x => x.IdempotencyKey)
+            .HasMaxLength(LocalCredentialCommand.IdempotencyKeyMaxLength)
+            .UseCollation(BinaryCollation)
+            .IsRequired();
+        entity.Property(x => x.RequestFingerprint)
+            .HasColumnType("binary(32)")
+            .HasMaxLength(LocalCredentialCommand.FingerprintLength)
+            .IsFixedLength()
+            .IsRequired();
+        entity.HasIndex(x => new { x.UserId, x.Operation, x.IdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName("UX_LocalCredentialCommands_UserOperationKey");
+        entity.HasOne<LocalCredential>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureCompanyReference(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<IdentityCompanyReference>();
+        entity.ToTable("Companies", "organization", table => table.ExcludeFromMigrations());
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Code).HasMaxLength(64);
+        entity.Property(x => x.LegalName).HasMaxLength(250);
     }
 
     private static void ConfigureUser(ModelBuilder modelBuilder)
@@ -51,7 +163,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         var entity = modelBuilder.Entity<UserAccount>();
         entity.ToTable("Users", "identity");
         entity.HasKey(x => x.Id);
-        entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+        entity.Property(x => x.DisplayName).HasMaxLength(UserAccount.DisplayNameMaxLength).IsRequired();
         entity.Property(x => x.Email).HasMaxLength(320);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.HasIndex(x => x.Email)

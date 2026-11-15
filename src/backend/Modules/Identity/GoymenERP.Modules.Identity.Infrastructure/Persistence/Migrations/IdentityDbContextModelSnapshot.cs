@@ -246,6 +246,27 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Bootstrap.IdentityBootstrapState", b =>
+                {
+                    b.Property<byte>("Id")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("FounderUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FounderUserId");
+
+                    b.ToTable("IdentityBootstrapState", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_IdentityBootstrapState_Singleton", "[Id] = 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -310,6 +331,117 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("LocalCredentials", "identity", t =>
                         {
                             t.HasCheckConstraint("CK_LocalCredentials_Counters", "[FailedAccessCount] >= 0 AND [HashFormatVersion] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredentialCommand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<byte[]>("RequestFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
+                    b.Property<long>("ResultVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Operation", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LocalCredentialCommands_UserOperationKey");
+
+                    b.ToTable("LocalCredentialCommands", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalCredentialCommands_Shape", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ResultVersion] >= 1 AND DATALENGTH([RequestFingerprint]) = 32 AND LEN([IdempotencyKey]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Outbox.IdentityOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AggregateType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("AggregateVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceOperation")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordedAtUtc", "Id")
+                        .HasDatabaseName("IX_IdentityOutbox_Recorded");
+
+                    b.ToTable("OutboxMessages", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_IdentityOutbox_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [AggregateId] <> '00000000-0000-0000-0000-000000000000' AND ([CompanyId] IS NULL OR [CompanyId] <> '00000000-0000-0000-0000-000000000000') AND [SchemaVersion] >= 1 AND [AggregateVersion] >= 1 AND LEN([EventType]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_IdentityOutbox_Payload", "ISJSON([PayloadJson]) = 1");
                         });
                 });
 
@@ -440,6 +572,33 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("Users", "identity");
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Infrastructure.Persistence.IdentityCompanyReference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegalName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Companies", "organization", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Approvals.AccessGrantRequest", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
@@ -523,11 +682,29 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Bootstrap.IdentityBootstrapState", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FounderUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
                         .WithOne()
                         .HasForeignKey("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", "UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredentialCommand", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

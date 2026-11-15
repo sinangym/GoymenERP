@@ -39,11 +39,53 @@ public sealed class LocalAccountSessionAndOptionsTests
     }
 
     [Fact]
-    public async Task A_forced_password_change_ends_the_session()
+    public async Task A_forced_password_change_keeps_the_session_but_fences_it()
     {
         var (credential, store) = NewStore(mustChangePassword: true);
+        var validator = new LocalAccountSessionValidator(store);
 
-        Assert.False(await new LocalAccountSessionValidator(store).IsCurrentAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+        Assert.Equal(
+            LocalAccountSessionState.PasswordChangeRequired,
+            await validator.GetSessionStateAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+        Assert.False(await validator.IsCurrentAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_forced_password_change_with_another_stamp_or_an_inactive_user_still_ends_the_session()
+    {
+        var (credential, store) = NewStore(mustChangePassword: true);
+        var validator = new LocalAccountSessionValidator(store);
+
+        Assert.Equal(
+            LocalAccountSessionState.NotCurrent,
+            await validator.GetSessionStateAsync(credential.UserId, Guid.NewGuid(), CancellationToken.None));
+        store.UserIsActive = false;
+        Assert.Equal(
+            LocalAccountSessionState.NotCurrent,
+            await validator.GetSessionStateAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task An_outstanding_temporary_password_ends_the_session_even_with_the_stored_stamp()
+    {
+        var (credential, store) = NewStore(mustChangePassword: true);
+        typeof(LocalCredential)
+            .GetProperty(nameof(LocalCredential.TemporaryPasswordIssuedAtUtc))!
+            .SetValue(credential, Now.AddHours(-1));
+
+        Assert.Equal(
+            LocalAccountSessionState.NotCurrent,
+            await new LocalAccountSessionValidator(store).GetSessionStateAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_current_session_reports_the_current_state()
+    {
+        var (credential, store) = NewStore();
+
+        Assert.Equal(
+            LocalAccountSessionState.Current,
+            await new LocalAccountSessionValidator(store).GetSessionStateAsync(credential.UserId, credential.SecurityStamp, CancellationToken.None));
     }
 
     [Fact]
@@ -78,7 +120,8 @@ public sealed class LocalAccountSessionAndOptionsTests
         {
             "Lockout:MaxFailedAttempts", "Lockout:Duration", "Session:IdleTimeout", "Session:AbsoluteLifetime",
             "PasswordHashing:Algorithm", "PasswordHashing:Pbkdf2Iterations", "RateLimit:Login:PermitLimit",
-            "RateLimit:Login:Window", "RateLimit:Login:PartitionBy",
+            "RateLimit:Login:Window", "RateLimit:Login:PartitionBy", "PasswordPolicy:MinimumLength",
+            "PasswordPolicy:MaximumLength", "PasswordPolicy:BlocklistEnabled", "PasswordPolicy:RequireCharacterClasses",
         })
         {
             Assert.Contains(errors, error => error.Contains(LocalAccountOptions.SectionName + ":" + key, StringComparison.Ordinal));
@@ -144,6 +187,57 @@ public sealed class LocalAccountSessionAndOptionsTests
         options.RateLimit.Login.PartitionBy = (LocalAccountLoginRateLimitPartition)99;
 
         Assert.Single(options.Validate());
+    }
+
+    [Fact]
+    public void The_validated_password_policy_carries_the_configured_values()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.PasswordPolicy.BlockedTerms = ["sentetik-terim"];
+
+        var policy = options.ToPasswordPolicy();
+
+        Assert.Equal((8, 128, true), (policy.MinimumLength, policy.MaximumLength, policy.BlocklistEnabled));
+        Assert.Equal(["sentetik-terim"], policy.BlockedTerms);
+    }
+
+    [Fact]
+    public void Missing_password_policy_values_alone_keep_the_mode_closed()
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.PasswordPolicy = new LocalAccountPasswordPolicySettings();
+
+        // MinimumLength, MaximumLength, BlocklistEnabled and RequireCharacterClasses.
+        Assert.Equal(4, options.Validate().Count);
+        Assert.Throws<InvalidOperationException>(options.EnsureValid);
+    }
+
+    [Theory]
+    [InlineData(0, 128)]
+    [InlineData(8, 63)]
+    [InlineData(200, 128)]
+    public void A_password_length_window_outside_the_rules_is_invalid(int minimumLength, int maximumLength)
+    {
+        var options = LocalAccountLoginServiceTests.ValidOptions();
+        options.PasswordPolicy.MinimumLength = minimumLength;
+        options.PasswordPolicy.MaximumLength = maximumLength;
+
+        Assert.Single(options.Validate());
+    }
+
+    [Fact]
+    public void Turning_on_an_undecided_password_rule_stops_the_host()
+    {
+        var withClasses = LocalAccountLoginServiceTests.ValidOptions();
+        withClasses.PasswordPolicy.RequireCharacterClasses = true;
+        var withMaximumAge = LocalAccountLoginServiceTests.ValidOptions();
+        withMaximumAge.PasswordPolicy.MaximumAgeDays = 90;
+        var withBlankTerm = LocalAccountLoginServiceTests.ValidOptions();
+        withBlankTerm.PasswordPolicy.BlockedTerms = [" "];
+
+        Assert.Contains(withClasses.Validate(), error => error.Contains("RequireCharacterClasses", StringComparison.Ordinal));
+        Assert.Contains(withMaximumAge.Validate(), error => error.Contains("MaximumAgeDays", StringComparison.Ordinal));
+        Assert.Contains(withBlankTerm.Validate(), error => error.Contains("BlockedTerms", StringComparison.Ordinal));
     }
 
     private static (LocalCredential Credential, InMemoryLocalCredentialStore Store) NewStore(bool mustChangePassword = false)

@@ -610,6 +610,10 @@ internal sealed class LocalAccountApiFactory : WebApplicationFactory<Program>
             ["Identity:LocalAccount:PasswordHashing:Algorithm"] = LocalAccountPasswordHashingSettings.Pbkdf2Algorithm,
             ["Identity:LocalAccount:PasswordHashing:Pbkdf2Iterations"] =
                 LocalAccountOptions.MinimumPbkdf2Iterations.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["Identity:LocalAccount:PasswordPolicy:MinimumLength"] = "8",
+            ["Identity:LocalAccount:PasswordPolicy:MaximumLength"] = "128",
+            ["Identity:LocalAccount:PasswordPolicy:RequireCharacterClasses"] = "false",
+            ["Identity:LocalAccount:PasswordPolicy:BlocklistEnabled"] = "true",
         };
         if (permitLimit is { } limit)
         {
