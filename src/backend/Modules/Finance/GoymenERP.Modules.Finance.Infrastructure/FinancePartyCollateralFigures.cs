@@ -16,6 +16,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// the collateral was recorded still answers its rate: the collateral itself is held until it is released.</item>
 /// <item><b>Documentary risk (FNS-D58):</b> every customer instrument of the account whose status is neither Collected
 /// nor ReturnedToCustomer, summed per currency; a status Finance does not know makes the figure unavailable.</item>
+/// <item><b>Held collateral (F018 §L3, "mevcut teminat"):</b> the held received collaterals in force on the read date at
+/// their recorded amount, summed per currency; a stored amount that does not parse makes it unavailable.</item>
+/// <item><b>Collateral utilization (F018 §L3, FNS-D31 (4), "teminat doluluğu"):</b> the open receivables taken from the
+/// weighted collateral — per currency the smaller of the two (a currency with nothing used is left out). When one currency
+/// has collateral left over while another has receivables uncovered, how the leftover covers the other currency is not
+/// decided (NEEDS-SINAN): the figure is unavailable rather than a per-currency answer that may understate it. Either input
+/// unavailable makes it unavailable.</item>
 /// </list>
 /// </summary>
 internal static class FinancePartyCollateralFigures
@@ -25,6 +32,8 @@ internal static class FinancePartyCollateralFigures
     public const string DocumentaryRiskStatusUnknown = "finance_documentary_risk_status_unknown";
     public const string DocumentaryRiskUnreadable = "finance_documentary_risk_unreadable";
     public const string DocumentaryRiskWithheld = "finance_documentary_risk_withheld";
+    public const string UtilizationSourceUnavailable = "finance_collateral_utilization_source_unavailable";
+    public const string UtilizationCurrencyRuleNotSet = "finance_collateral_utilization_currency_rule_not_set";
 
     private const int RateTextMaximumLength = 64;
     private const int PercentScale = 2;
@@ -129,6 +138,80 @@ internal static class FinancePartyCollateralFigures
         }
 
         return new Figure(true, Ordered(sums), null);
+    }
+
+    /// <summary>F018 §L3 "mevcut teminat": the in-force held collaterals at their recorded amount, per currency.</summary>
+    internal static Figure Gross(IReadOnlyList<HeldCollateral> held, DateOnly asOf)
+    {
+        ArgumentNullException.ThrowIfNull(held);
+        var sums = new Dictionary<Guid, FinanceExactDecimalText>();
+        foreach (var collateral in held.Where(collateral => IsInForce(collateral.ValidFrom, collateral.ValidUntil, asOf)))
+        {
+            if (collateral.CurrencyId == Guid.Empty
+                || !FinanceExactDecimalText.TryParsePositive(collateral.AmountText, out var amount))
+            {
+                return Figure.Unavailable(CollateralUnreadable);
+            }
+
+            sums[collateral.CurrencyId] = sums.TryGetValue(collateral.CurrencyId, out var sum) ? sum.Add(amount) : amount;
+        }
+
+        return new Figure(true, Ordered(sums), null);
+    }
+
+    /// <summary>
+    /// F018 §L3 "teminat doluluğu": per currency the smaller of the open receivables and the weighted collateral; a leftover
+    /// in one currency beside an uncovered receivable in another has no decided rule and fails closed.
+    /// </summary>
+    internal static Figure Utilization(Figure openReceivables, Figure weighted)
+    {
+        ArgumentNullException.ThrowIfNull(openReceivables);
+        ArgumentNullException.ThrowIfNull(weighted);
+        if (!openReceivables.IsAvailable || !weighted.IsAvailable
+            || !TryPerCurrency(openReceivables.Amounts, out var owed) || !TryPerCurrency(weighted.Amounts, out var held))
+        {
+            return Figure.Unavailable(UtilizationSourceUnavailable);
+        }
+
+        var zero = new FinanceExactDecimalText(BigInteger.Zero, 0);
+        var used = new Dictionary<Guid, FinanceExactDecimalText>();
+        var collateralLeftOver = false;
+        var receivableUncovered = false;
+        foreach (var currencyId in owed.Keys.Union(held.Keys))
+        {
+            var open = owed.TryGetValue(currencyId, out var openAmount) ? openAmount : zero;
+            var cover = held.TryGetValue(currencyId, out var coverAmount) ? coverAmount : zero;
+            var comparison = open.CompareTo(cover);
+            receivableUncovered |= comparison > 0;
+            collateralLeftOver |= comparison < 0;
+            var smaller = comparison <= 0 ? open : cover;
+            if (!smaller.IsZero)
+            {
+                used[currencyId] = smaller;
+            }
+        }
+
+        return collateralLeftOver && receivableUncovered
+            ? Figure.Unavailable(UtilizationCurrencyRuleNotSet)
+            : new Figure(true, Ordered(used), null);
+    }
+
+    private static bool TryPerCurrency(IReadOnlyList<CurrencyAmount> amounts,
+        out Dictionary<Guid, FinanceExactDecimalText> perCurrency)
+    {
+        perCurrency = new Dictionary<Guid, FinanceExactDecimalText>();
+        foreach (var amount in amounts)
+        {
+            if (amount is null || amount.CurrencyId == Guid.Empty || perCurrency.ContainsKey(amount.CurrencyId)
+                || !FinanceExactDecimalText.TryParseNonNegative(amount.Amount, out var parsed))
+            {
+                return false;
+            }
+
+            perCurrency[amount.CurrencyId] = parsed;
+        }
+
+        return true;
     }
 
     /// <summary>The exact CLR decimal of an amount text, or nothing when it does not fit one exactly.</summary>
