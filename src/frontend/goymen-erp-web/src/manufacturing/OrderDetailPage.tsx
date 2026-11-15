@@ -75,6 +75,7 @@ import {
 } from './factAttempt'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OrderCostTracePanel } from './OrderCostTracePanel'
+import { OrderCostPanel } from './OrderCostPanel'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -236,6 +237,16 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
       />
       {canReadCostTrace ? (
         <OrderCostTracePanel
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
+          companyId={activeCompanyId ?? ''}
+          orderId={order.orderId}
+          orderVersion={order.version}
+        />
+      ) : null}
+      {/* URT-S17 (SAT-D317): the recorded production cost, under the same control (order read + reports read). */}
+      {canReadCostTrace ? (
+        <OrderCostPanel
           namespace={namespace ?? 'no-context'}
           routeEntryGeneration={shell.routeEntryGeneration}
           companyId={activeCompanyId ?? ''}

@@ -493,7 +493,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingMonthlyScrapPriceStore? scrapPrices = null,
     IManufacturingOrderDueDateStore? orderDueDates = null,
     IManufacturingScrapCostDistributionPortV1? costDistribution = null,
-    IOrganizationWorkCenterPlanningReferenceV2? workCenterCalendars = null)
+    IOrganizationWorkCenterPlanningReferenceV2? workCenterCalendars = null,
+    IManufacturingProductionCostPortV2? productionCost = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
