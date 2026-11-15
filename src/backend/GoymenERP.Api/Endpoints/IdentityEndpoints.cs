@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Authentication;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class IdentityEndpoints
+public static partial class IdentityEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
 
@@ -51,6 +51,7 @@ public static class IdentityEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapAccessView(group);
+        MapAccessAssignments(group);
         MapLocalAccountSession(group);
 
         return endpoints;
@@ -382,8 +383,8 @@ public static class IdentityEndpoints
     /// AT-004 read-only access view ("Kullanıcılar ve yetkiler"). Four GETs, all on
     /// <see cref="IdentityPermissionManifestV1.AssignmentsRead"/> in the server-resolved company, all re-authorized
     /// company-wide by the service. An unknown id, another company's user and a user with no assignment here are one
-    /// code-less 404, never a 403 that would confirm the user exists. Responses are private and never cached. There is
-    /// deliberately no write route: assignment and revocation are blocked (NEEDS-SINAN #66 5738113623, OPEN-013).
+    /// code-less 404, never a 403 that would confirm the user exists. Responses are private and never cached. The writes
+    /// (assignment, revocation and the Critical role request) are mapped by <see cref="MapAccessAssignments"/> (spec ID-3).
     /// </summary>
     private static void MapAccessView(RouteGroupBuilder group)
     {

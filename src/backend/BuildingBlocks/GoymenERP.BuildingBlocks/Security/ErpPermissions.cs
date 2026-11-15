@@ -1153,6 +1153,13 @@ public static class ErpPermissions
     /// </summary>
     public const string IdentityAssignmentsRead = "identity.assignments.read";
     /// <summary>
+    /// KIM-D9 (user decision 2026-11-12): manage local user accounts (create, deactivate, reset a password) in the
+    /// company. Registered, not granted: no role, seed or user receives it here (a grant is a human gate). Company-wide
+    /// only. Not Critical: the account itself carries no permission; what it may do is decided by role assignment,
+    /// which stays under identity.roles.manage and identity.access.approve.
+    /// </summary>
+    public const string IdentityUsersManage = "identity.users.manage";
+    /// <summary>
     /// ADR-SEC-001 section 5 read of the company's security event channel (security.SecurityEvents). Company-wide
     /// only; platform rows need a separate platform permission. Critical (user decision 2026-11-11, Issue #66
     /// comment 6810051185 item 19: held only by Sinan and the admin; any other holder needs Sinan's approval). No
@@ -1353,6 +1360,7 @@ public static class ErpPermissions
             IdentityRolesManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            IdentityUsersManage,
             PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
@@ -1557,6 +1565,7 @@ public static class ErpPermissions
             SettingsManufacturingToleranceProfilesPublish,
             IdentityAuditRead,
             IdentityAssignmentsRead,
+            IdentityUsersManage,
             PlatformSecurityEventsRead,
         ],
         StringComparer.Ordinal);
