@@ -169,9 +169,7 @@ public sealed class MaterialLabel
 
     /// <summary>
     /// BS-5: null for every label that production did not mark. It is set once, when the label is born from a
-    /// Manufacturing output or inherits it from its sources in a split/merge (KLN-D46,
-    /// <see cref="InventoryLabelTransformation.InheritedProductionStatus"/>), and never changes afterwards; it is not
-    /// reconstructed from the classification.
+    /// Manufacturing output, and never changes afterwards; it is not reconstructed from the classification.
     /// </summary>
     public LabelProductionStatus? ProductionStatus { get; private set; }
 
