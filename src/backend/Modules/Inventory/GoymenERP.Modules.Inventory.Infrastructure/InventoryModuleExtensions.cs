@@ -69,6 +69,15 @@ public static class InventoryModuleExtensions
         services.AddInventoryStockPositions();
         services.AddInventoryLabelDetails();
         services.AddInventoryMovementTimeline();
+        // F-017 STOK F017-b: the future supply allocation writer (no route yet, F017-b2) and the ports Purchasing and Sales use.
+        // The purchase and sales line lock binders and the purchase line source are the host's; the defaults below are
+        // fail-closed (identity-only conversion, purchase source unavailable) until the host replaces them.
+        services.AddScoped<IInventoryFutureAllocationWriterV1, InventoryFutureAllocationWriter>();
+        services.AddScoped<IInventoryFutureAllocationReadPortV1, InventoryFutureAllocationReadPort>();
+        services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
+        services.AddScoped<IInventoryFutureDemandSourceV1, InventoryFutureDemandSource>();
+        services.TryAddScoped<IInventoryFutureUnitConverterV1, InventoryIdentityFutureUnitConverterV1>();
+        services.TryAddScoped<IInventoryFutureSupplySourceV1, InventoryUnavailableFutureSupplySourceV1>();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }
