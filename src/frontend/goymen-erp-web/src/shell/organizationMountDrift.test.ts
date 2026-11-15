@@ -27,11 +27,12 @@ import {
 } from '../organization/capabilities'
 
 describe('shell ↔ Organization lane capability ids', () => {
-  it('declares the same four route ids the lane does', () => {
+  it('declares the same five route ids the lane does', () => {
     expect(CAPABILITY.organizationSitesList).toBe(ORGANIZATION_CAPABILITY.settingsList)
     expect(CAPABILITY.organizationLocationsDetail).toBe(ORGANIZATION_CAPABILITY.locationDetail)
     expect(CAPABILITY.organizationWorkCentersList).toBe(ORGANIZATION_CAPABILITY.workCentersList)
     expect(CAPABILITY.organizationWorkCentersDetail).toBe(ORGANIZATION_CAPABILITY.workCenterDetail)
+    expect(CAPABILITY.organizationCompanyTaxId).toBe(ORGANIZATION_CAPABILITY.companyTaxId)
   })
 
   it('mounts every ROUTE the lane declares, and nothing that is only a control', () => {
@@ -69,6 +70,7 @@ describe('shell ↔ Organization lane capability ids', () => {
       [CAPABILITY.organizationLocationsDetail, ORGANIZATION_CAPABILITY.locationDetail],
       [CAPABILITY.organizationWorkCentersList, ORGANIZATION_CAPABILITY.workCentersList],
       [CAPABILITY.organizationWorkCentersDetail, ORGANIZATION_CAPABILITY.workCenterDetail],
+      [CAPABILITY.organizationCompanyTaxId, ORGANIZATION_CAPABILITY.companyTaxId],
     ] as const) {
       expect(CAPABILITY_ROUTE[shellId]).toBe(ORGANIZATION_ROUTE[laneId])
       expect(CAPABILITY_NAV_LABEL[shellId]).toBe(ORGANIZATION_NAV_LABEL[laneId])
@@ -101,9 +103,17 @@ describe('shell ↔ Organization lane capability ids', () => {
     expect(matchPath(cardPattern, cardUrl)?.params.workCenterId).toBe('7b1c0f2e-0000-4a00-8000-000000000004')
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationWorkCentersList], cardUrl)).toBeNull()
     expect(matchPath(cardPattern, CAPABILITY_ROUTE[CAPABILITY.organizationWorkCentersList])).toBeNull()
+
+    // ORG-05: the static tax-id path is never read as a location or work-centre card, nor as a list.
+    const taxIdUrl = CAPABILITY_ROUTE[CAPABILITY.organizationCompanyTaxId]
+    expect(matchPath(taxIdUrl, taxIdUrl)).not.toBeNull()
+    expect(matchPath(pattern, taxIdUrl)).toBeNull()
+    expect(matchPath(cardPattern, taxIdUrl)).toBeNull()
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationSitesList], taxIdUrl)).toBeNull()
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationWorkCentersList], taxIdUrl)).toBeNull()
   })
 
-  it('gives the card no nav entry, so the sidebar gains exactly two entries', () => {
+  it('gives the cards no nav entry, so the sidebar gains exactly three entries', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationSitesList]).toBe('Organizasyon')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationLocationsDetail]).toBe('')
     // ORG-03 is the second, and it is a sidebar entry for a reason rather than by symmetry: its
@@ -113,5 +123,8 @@ describe('shell ↔ Organization lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationWorkCentersList]).toBe('İş Merkezleri')
     // ORG-04 is a card, reached from a work-centre row: no sidebar entry.
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationWorkCentersDetail]).toBe('')
+    // ORG-05 (KIM-S23) is the third: its route stands on `organization.context.read`, so it is not reachable from
+    // ORG-01 for a caller without `organization.locations.read`.
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationCompanyTaxId]).toBe('Şirket Vergi Numarası')
   })
 })

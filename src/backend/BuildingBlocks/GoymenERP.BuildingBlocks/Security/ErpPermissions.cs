@@ -28,6 +28,19 @@ public static class ErpPermissions
     /// </summary>
     public const string OrganizationWorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
 
+    /// <summary>
+    /// KIM-D28 / DEC-ORG-005 company tax number (VKN): propose the resolved company's VKN or a change of it (the
+    /// maker), and approve or reject someone else's proposal (the checker) — the owner's
+    /// OrganizationCompanyTaxIdPermissionsV1 names. Registered, not granted: no role, seed or user receives them here (who
+    /// holds them is a human gate). Company-wide only: the company record has no narrower scope dimension. Not
+    /// Critical: whether the approve grant itself needs grant-time dual control is not decided (human gate). Holding
+    /// approve never lets the proposer decide their own request: that is the module's maker-checker rule, not a grant.
+    /// </summary>
+    public const string OrganizationCompanyTaxIdRequest = "organization.company.tax-id.request";
+
+    /// <inheritdoc cref="OrganizationCompanyTaxIdRequest"/>
+    public const string OrganizationCompanyTaxIdApprove = "organization.company.tax-id.approve";
+
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
     public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
@@ -1171,6 +1184,8 @@ public static class ErpPermissions
             OrganizationLocationsWrite,
             OrganizationWorkCentersWrite,
             OrganizationWorkCenterCalendarsWrite,
+            OrganizationCompanyTaxIdRequest,
+            OrganizationCompanyTaxIdApprove,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -1379,6 +1394,8 @@ public static class ErpPermissions
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
             OrganizationSitesWrite,
+            OrganizationCompanyTaxIdRequest,
+            OrganizationCompanyTaxIdApprove,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,

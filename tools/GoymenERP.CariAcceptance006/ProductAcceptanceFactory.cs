@@ -65,11 +65,11 @@ public sealed class ProductAcceptanceFactory(ProductEnvironmentSettings settings
             ["BootstrapIdentity:Users:2:UserId"] = ProductEnvironmentSettings.Actor,
             ["BootstrapIdentity:Users:2:DisplayName"] = "Synthetic explicit global Product actor",
             ["OrganizationSeed:Companies:0:LegalName"] = "Synthetic Product company A",
-            ["OrganizationSeed:Companies:0:Vkn"] = "1111111111",
+            ["OrganizationSeed:Companies:0:Vkn"] = "",
             ["OrganizationSeed:Companies:0:IsPlaceholder"] = "true",
             ["OrganizationSeed:Companies:0:InvoiceCapable"] = "false",
             ["OrganizationSeed:Companies:1:LegalName"] = "Synthetic Product company B",
-            ["OrganizationSeed:Companies:1:Vkn"] = "1111111111",
+            ["OrganizationSeed:Companies:1:Vkn"] = "",
             ["OrganizationSeed:Companies:1:IsPlaceholder"] = "true",
             ["OrganizationSeed:Companies:1:InvoiceCapable"] = "false",
         }));

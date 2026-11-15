@@ -30,7 +30,7 @@ internal sealed partial class OrganizationMasterDataService(
     IOrganizationLocationOperatorEligibilityPortV1 locationOperatorEligibility,
     IAuditEventCollector auditEventCollector,
     ILogger<OrganizationMasterDataService> logger)
-    : IOrganizationMasterDataService, IOrganizationWorkCenterCalendarService
+    : IOrganizationMasterDataService, IOrganizationWorkCenterCalendarService, IOrganizationCompanyTaxIdService
 {
     private const int CommandExecutionSchemaVersion = 1;
     internal const string CreateSiteCommandName = "organization.site.create.v1";

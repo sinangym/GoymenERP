@@ -8,7 +8,7 @@ using GoymenERP.Modules.Organization.Domain.WorkCenters;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class OrganizationEndpoints
+public static partial class OrganizationEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
 
@@ -464,6 +464,7 @@ public static class OrganizationEndpoints
             .WithMasterDataUpdateContract<UpdateWorkCenter>("UpdateOrganizationWorkCenterV1");
 
         MapWorkCenterCalendar(group);
+        MapCompanyTaxId(group);
     }
 
     /// <summary>

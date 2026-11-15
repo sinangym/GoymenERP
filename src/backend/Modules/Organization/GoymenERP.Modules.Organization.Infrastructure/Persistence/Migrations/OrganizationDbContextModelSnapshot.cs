@@ -311,11 +311,104 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("Vkn")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Companies_Vkn")
+                        .HasFilter("[Vkn] IS NOT NULL");
+
                     b.ToTable("Companies", "organization", t =>
                         {
                             t.HasCheckConstraint("CK_Companies_Placeholder_InvoiceDisabled", "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_Companies_Vkn_Format", "[Vkn] IS NULL OR (LEN([Vkn]) = 10 AND [Vkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
+
+                            t.HasCheckConstraint("CK_Companies_Vkn_RequiredUnlessPlaceholder", "[IsPlaceholder] = 1 OR [Vkn] IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdChangeRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CompanyVersionAtRequest")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CurrentVkn")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ProposedVkn")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CompanyTaxIdChangeRequests_CompanyId_Pending")
+                        .HasFilter("[Status] = N'Pending'");
+
+                    b.HasIndex("CompanyId", "RequestedAtUtc");
+
+                    b.ToTable("CompanyTaxIdChangeRequests", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_CurrentVkn", "[CurrentVkn] IS NULL OR (LEN([CurrentVkn]) = 10 AND [CurrentVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Decision", "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL) OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_DistinctVkn", "[CurrentVkn] IS NULL OR [CurrentVkn] <> [ProposedVkn]");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_MakerChecker", "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_ProposedVkn", "LEN([ProposedVkn]) = 10 AND [ProposedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%'");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Status", "[Status] IN (N'Pending', N'Approved', N'Rejected')");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Version", "[Version] >= 1 AND [CompanyVersionAtRequest] >= 1");
                         });
                 });
 
@@ -596,6 +689,15 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_WorkCenterCalendarShifts_Window", "[StartTime] < [EndTime]");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdChangeRequest", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.Companies.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Locations.Location", b =>

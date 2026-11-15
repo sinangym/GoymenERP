@@ -181,6 +181,15 @@ internal sealed class OrganizationDataSeeder(
                 "Seed şirket kimliği ve kodu benzersiz olmalıdır.");
         }
 
+        // KIM-D28: a VKN identifies exactly one company across the group (the database index enforces it too).
+        if (seed.Companies
+            .Where(x => !string.IsNullOrWhiteSpace(x.Vkn))
+            .GroupBy(x => x.Vkn!.Trim(), StringComparer.Ordinal)
+            .Any(group => group.Count() > 1))
+        {
+            throw new InvalidOperationException("Seed şirket VKN'leri benzersiz olmalıdır.");
+        }
+
         foreach (var company in seed.Companies)
         {
             _ = new Company(

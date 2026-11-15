@@ -144,6 +144,13 @@ export const CAPABILITY = {
    * list row, never from the sidebar.
    */
   organizationWorkCentersDetail: 'organization.work-centers.detail',
+  /**
+   * ORG-05 (KIM-S23, KIM-D28) the active company's VKN and its maker-checker change flow. Route
+   * `/ayarlar/organizasyon/sirket-vergi-no`, owner the Organization lane. The route stands on
+   * `organization.context.read`; the VKN itself is returned only to a holder of one of the two tax-id names, and
+   * the request/decide buttons follow the server's own viewer flags.
+   */
+  organizationCompanyTaxId: 'organization.company.tax-id',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
@@ -335,6 +342,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // ORG-04: a parameter BELOW the static list. The list never matches the card and the card never matches
   // `lokasyon/:locationId`, whose static segment differs (#172 P1-2).
   [CAPABILITY.organizationWorkCentersDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
+  // ORG-05: a static sibling of the work-centre list; no url matches it and any other Organization route.
+  [CAPABILITY.organizationCompanyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
