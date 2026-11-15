@@ -15,7 +15,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 /// (stored terminal answers replay), the PARTY version as the fence, the company's account as the existence fence (no
 /// account in the active company = 404), and one audit event per real change. A save of the stored value is a guarded
 /// no-op: the same Version + rowversion predicate runs, the logical version does not move and no audit event is written.
-/// The legal name is never touched here (CARI-DEC-004: approval-bound); the persistence guard refuses any other Party
+/// The legal name is never touched here (ALS-D95: its own command and permission); the persistence guard refuses any other Party
 /// column in the same save.
 /// </summary>
 internal sealed partial class CounterpartyCommandService : ICounterpartyTradeNameService

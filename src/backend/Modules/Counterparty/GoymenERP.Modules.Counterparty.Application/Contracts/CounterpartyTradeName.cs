@@ -6,8 +6,8 @@ namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 /// F-027 / C-02 Cari card name edit, the direct part. The trade name (ticari ad) is a basic card field: it is changed with
 /// the company-wide <c>counterparty.parties.update.basic</c> permission (SAT-D192: "cari kartı açma/değiştirme") plus
 /// <c>counterparty.parties.read</c>, fenced on the PARTY version, one Idempotency-Key, and one audit event per real change.
-/// The official legal name (resmi unvan) is shown read-only: CARI-DEC-004 makes its change approval-bound, so it never
-/// travels through this command.
+/// The official legal name (resmi unvan) is shown read-only here and never travels through this command: it has its own
+/// one-step command under a separate permission (ALS-D95, <see cref="ICounterpartyLegalNameService"/>).
 /// </summary>
 public interface ICounterpartyTradeNameService
 {

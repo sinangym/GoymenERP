@@ -71,6 +71,16 @@ public static class ErpPermissions
     public const string CounterpartyAccountsEDocumentUpdate = "counterparty.accounts.e-document.update";
 
     /// <summary>
+    /// ALS-D95 (confirmed by SINAN-CEVAP 19.22): change a Cari card's official legal name (resmi/hukuki unvan) in one
+    /// step, with no approval step — the Counterparty owner's name (CounterpartyLegalNamePermissionsV1). Registered, not
+    /// granted: no role, seed or user receives it here; the decision flags it for the accounting persona and the grant is
+    /// a human gate (19.31). Company-wide only, as every Counterparty name. Not Critical: the decision makes it a
+    /// single-person change. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants are not
+    /// widened (19.22 chose a separate permission over the basic edit).
+    /// </summary>
+    public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -1181,6 +1191,7 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
+            CounterpartyPartiesLegalNameUpdate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -1389,6 +1400,7 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
+            CounterpartyPartiesLegalNameUpdate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

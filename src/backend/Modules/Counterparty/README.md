@@ -172,3 +172,14 @@ consistency, override shape); nothing seeded. Rollback is refused with `51122` w
 table it drops the table. Forward-fix plan otherwise: keep the additive table and correct with a new migration.
 
 Screen: the Cari card's account section (`src/frontend/goymen-erp-web/src/cari/CariEDocumentPanel.tsx`).
+
+## ALS-D95 / ALS-D97 — official legal name and trade name on the Cari card (F-027; ALS-D95 confirmed by SINAN-CEVAP 19.22)
+
+| Rule | Behaviour |
+|---|---|
+| Legal name (ALS-D95) | `GET /api/v1/counterparties/{partyId}/legal-name` → `partyId`, `companyId`, `code`, the PARTY `version` as decimal text, `legalName`, `viewer {canUpdateLegalName}`. `PUT …/legal-name` `{expectedVersion, legalName}` → 204: one step, **no approval step**, under the separate company-wide permission `counterparty.parties.legal-name.update` plus `counterparty.parties.read`, both re-validated before the single save. One Idempotency-Key; the stored terminal answers (204, 404 `not_found`, 409 `version_conflict`) replay for the same key and body. |
+| Validation | Trimmed; blank is 400 `validation_failed`, longer than 250 is 400 (never truncated). Re-sending the stored value is a fenced no-op: no new version, no audit event. |
+| Audit | One `counterparty.party.legal-name.changed.v1` event per real change; `BeforeJson`/`AfterJson` carry `{LegalName, Version}` (the old and the new legal name), `PermissionCode` is the legal-name permission and `ApprovalContextJson` is empty. Logs never carry the name. |
+| Persistence guard | A legal-name save may change only `LegalName`, `Version`, `UpdatedAtUtc` and the rowversion; anything ridden along (trade name, tax identity, MERSİS, state) is refused. No migration: the column already exists. |
+| Permission | Registered in the central catalogue (company-wide only, not Critical). **Registering grants nothing**: no role, seed or user holds it. It is meant for the accounting persona; the grant is a human gate placed at the end of the train (SINAN-CEVAP 19.31). Until then every legal-name PUT is 403 and the screen shows the legal name read-only. |
+| Trade name (ALS-D97) | Unchanged: `…/trade-name` under `counterparty.parties.update.basic`, fenced on the same PARTY version. VKN/TCKN, MERSİS and IBAN stay in the CARI-DEC-004 maker-checker flow. |
