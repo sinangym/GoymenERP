@@ -101,8 +101,9 @@ public enum ProductManufacturingUnitWeightSourceV2
     ManualVerified = 1,
 
     /// <summary>
-    /// The product master: the kg/m stored on the "Ebat/kalınlık" row — the table value of a profile (#66 m.21) or of a round
-    /// tube, where it wins over the formula (#66 m.24).
+    /// The product master: the kg/m the "Ebat/kalınlık" read answers — the company's current imported kg/m table value of a
+    /// profile (#66 m.21, URN-D16) or of a round tube, where it wins over the formula (#66 m.24). The card never stores a typed
+    /// kg/m (URN-D11); the table version is not part of the recipe binding yet.
     /// </summary>
     ProductMaster = 2,
 

@@ -107,8 +107,7 @@ public sealed class ProductManufacturingTechnicalSnapshotServiceV2(
 
         if (row.Version is not { } version || version <= 0
             || ProductDimensionShape.Refusal(new SetProductDimensionRequestV1(null, row.SectionKind, row.ThicknessMm,
-                row.WidthMm, row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, row.KgPerMetre,
-                null), out _) is not null)
+                row.WidthMm, row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, null), out _) is not null)
             throw new InvalidOperationException("The stored Product dimension row breaks its section-kind rule.");
 
         var dimension = new ProductManufacturingDimensionV2(ProductManufacturingDimensionSourceV2.Stored,
