@@ -85,6 +85,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ApproveCashAccountPassivation => ErpPermissions.FinanceCashAccountPassivationApprove,
         FinanceAction.ProposeCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationPropose,
         FinanceAction.ApproveCashAccountReactivation => ErpPermissions.FinanceCashAccountReactivationApprove,
+        // API-85a: the credit limit master's own names, registered centrally (company-wide; not Critical; no grant).
+        FinanceAction.ReadCreditLimits => ErpPermissions.FinanceCreditLimitsRead,
+        FinanceAction.ProposeCreditLimit => ErpPermissions.FinanceCreditLimitsPropose,
+        FinanceAction.ApproveCreditLimit => ErpPermissions.FinanceCreditLimitsApprove,
         _ => null,
     };
 

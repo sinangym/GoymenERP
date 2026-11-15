@@ -38,6 +38,10 @@ public sealed class FinancePermissionPortTests
             FinancePermissionPort.NameOf(FinanceAction.ProposeCashAccountReactivation));
         Assert.Equal(ErpPermissions.FinanceCashAccountReactivationApprove,
             FinancePermissionPort.NameOf(FinanceAction.ApproveCashAccountReactivation));
+        // API-85a: the credit limit master's three names; holding one maps to nothing of another.
+        Assert.Equal("finance.credit-limits.read", FinancePermissionPort.NameOf(FinanceAction.ReadCreditLimits));
+        Assert.Equal("finance.credit-limits.propose", FinancePermissionPort.NameOf(FinanceAction.ProposeCreditLimit));
+        Assert.Equal("finance.credit-limits.approve", FinancePermissionPort.NameOf(FinanceAction.ApproveCreditLimit));
         // Record's name is NOT invented here: card #66 5743678389 §1 names it and sources it to Ö4
         // (Sinan 5722637822), which answers #254 §5's OPEN-009 question FOR THIS COMMAND ONLY — one narrow
         // authorised operator, no second approval, no amount threshold. A name grants nothing: the central

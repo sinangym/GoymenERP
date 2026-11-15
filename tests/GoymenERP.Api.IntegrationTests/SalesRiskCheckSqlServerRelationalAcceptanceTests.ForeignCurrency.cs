@@ -42,7 +42,7 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         // rate never becomes a decision reason.
         Assert.Equal(
             [("ShippedNotInvoiced", "invoicing_owner_missing"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
-                ("CreditLimit", "finance_credit_limit_owner_missing")],
+                ("CreditLimit", "finance_credit_limit_not_set")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
 
         // The open receivables: one amount per currency, each in its own currency — the USD amount is not converted to TL.

@@ -109,6 +109,8 @@ public enum FinanceAction
     // API-30 passivation/reactivation: each its own propose/approve pair, so who may do which stays a separate grant.
     ProposeCashAccountPassivation, ApproveCashAccountPassivation,
     ProposeCashAccountReactivation, ApproveCashAccountReactivation,
+    // API-85a: the party credit limit master (F018 §L1).
+    ReadCreditLimits, ProposeCreditLimit, ApproveCreditLimit,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
