@@ -137,7 +137,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionWithdrawal", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
-        Assert.Equal("20261111090320_AddCustomerReturnRejectionAndCancellation", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddOrderRiskLimitWarnings", StringComparison.Ordinal));
+        Assert.Equal("20261115123637_AddOrderRiskLimitWarnings", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -328,6 +329,36 @@ public sealed class SalesPersistenceModelTests
         var restore = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[^1]);
         Assert.Contains("ALTER TRIGGER [sales].[TR_CustomerReturns_Guard]", restore.Sql, StringComparison.Ordinal);
         Assert.Equal(2, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().Count());
+    }
+
+    /// <summary>F-018 / plan S1 (FNS-D27(3)): the order's credit limit warnings — one append-only row per transition version under the
+    /// company filter, no amount column; Up is pure DDL and Down is a forward fix (51418) first.</summary>
+    [Fact]
+    public void The_order_risk_warning_model_keys_one_warning_per_draft_version_and_its_down_refuses_with_51418_first()
+    {
+        using var context = Context();
+        var warning = context.Model.FindEntityType(typeof(DraftRiskWarningRow))!;
+        Assert.Equal(("sales", "DraftRiskWarnings"), (warning.GetSchema(), warning.GetTableName()));
+        Assert.Equal(["CompanyId", "DraftId", "DraftVersion"], warning.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Single(warning.GetDeclaredQueryFilters());
+        Assert.DoesNotContain(warning.GetProperties(), property => property.ClrType == typeof(decimal) || property.ClrType == typeof(decimal?));
+        Assert.All(warning.GetProperties(), property => Assert.False(property.IsNullable, property.Name));
+        var foreignKey = Assert.Single(warning.GetForeignKeys());
+        Assert.Equal((typeof(DraftRow), DeleteBehavior.Restrict), (foreignKey.PrincipalEntityType.ClrType, foreignKey.DeleteBehavior));
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DraftRiskWarningRow))!;
+        Assert.Equal(SalesDbContext.DraftRiskWarningFactsConstraint,
+            Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_DraftRiskWarnings_Facts").Sql);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddOrderRiskLimitWarnings();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(SalesDbContext.DraftRiskWarningFactsConstraint,
+            Assert.Single(Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>()).CheckConstraints).Sql);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51418,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[sales].[DraftRiskWarnings]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[^1]);
     }
 
     [Fact]

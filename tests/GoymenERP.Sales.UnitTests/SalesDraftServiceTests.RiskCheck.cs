@@ -323,9 +323,9 @@ public sealed partial class SalesDraftServiceTests
     public async Task The_risk_check_refuses_before_anything_is_read_and_another_companys_or_an_unknown_draft_is_404()
     {
         var world = new World();
+        var approved = await PricedApprovedAsync(world, "a");
         var partyRisk = new FakePartyRisk(FinanceLike([]));
         world.PartyRisk = partyRisk;
-        var approved = await PricedApprovedAsync(world, "a");
 
         world.Authority.Denied.Add(ReadPermission);
         var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftRiskCheckAsync(approved.Draft.Id));
@@ -377,7 +377,11 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Priced(discount: null), Metadata($"{key}-create"))).Detail;
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata($"{key}-submit"));
-        return (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
+        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
+        // F-018 / plan S1: the submission and the approval evaluated the risk for their warning record; the read-only check's own
+        // order list reads start from here.
+        world.Store.OpenApprovedOrderReads.Clear();
+        return approved;
     }
 
     /// <summary>The answer shape of the Finance owner on main: receivables as given (taxes included), limit and collateral without a master.</summary>

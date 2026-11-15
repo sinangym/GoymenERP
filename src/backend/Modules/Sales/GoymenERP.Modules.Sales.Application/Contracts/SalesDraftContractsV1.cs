@@ -458,6 +458,9 @@ public static class SalesDraftApiV1
     // MOD-01 / API-06: the read-only customer risk check (DEC-FIN-007 gross risk against the credit limit), under the draft read.
     public const string RiskCheckPath = "/api/v1/sales/drafts/{id}/risk-check";
 
+    // F-018 / plan S1: the order's recorded limit warnings at submit / approve (read-only, no amount), under the draft read.
+    public const string RiskWarningsPath = "/api/v1/sales/drafts/{id}/risk-warnings";
+
     // MOD-07: the order's current revision as a PDF attachment (application/pdf), under the draft-read authority; prices only
     // under the price read (otherwise the price-less variant). Rendered on request, stored nowhere.
     public const string OrderPdfPath = "/api/v1/sales/drafts/{id}/pdf";

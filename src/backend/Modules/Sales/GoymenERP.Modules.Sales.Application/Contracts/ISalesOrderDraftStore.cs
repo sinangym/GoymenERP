@@ -249,11 +249,19 @@ public interface ISalesOrderDraftStore
     /// A same-key attempt already stored answers <see cref="SalesDraftWriteOutcome.Replayed"/> with the
     /// draft as it is now; another content or actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>;
     /// a lost race (attempt key, draft version) is <see cref="SalesDraftStoreCodes.ConcurrentChange"/>
-    /// with nothing stored.
+    /// with nothing stored. F-018 / plan S1: a non-null <paramref name="riskWarning"/> appends the order's limit warning and its
+    /// audit event (<see cref="SalesOrderRiskWarnings.RecordedEventType"/>, no amount) in the SAME save; a replay writes none.
     /// </summary>
     Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null);
+
+    /// <summary>
+    /// F-018 / plan S1: the limit warnings recorded on the company's draft, newest first and at most
+    /// <see cref="SalesDraftRiskWarningsApiV1.MaximumListed"/> + 1 (so the caller knows whether more exist; append-only, no
+    /// amount). Another company's draft, or none, is null (never 403).
+    /// </summary>
+    Task<IReadOnlyList<SalesOrderRiskWarningRecord>?> ListDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored draft, or null (another company's draft is null too, never 403).</summary>
     /// <summary>
@@ -673,3 +681,19 @@ public sealed record SalesSourcePlanWriteInput(SourcePlanInput Plan, IReadOnlyLi
 
 /// <summary>One open linked supply item a source plan confirmation covered (the audit's picture; nothing else is derived from it).</summary>
 public sealed record SalesSourcePlanLinkedItem(string Kind, string DocumentType, Guid SupplyId, Guid? SupplyLineId, Guid? OrderLineId);
+
+/// <summary>
+/// F-018 / plan S1 (ASSUMPTION-SAT-RISK-1): one recorded limit warning of an order — the command that recorded it, the order's
+/// revision and its version after that command, who and when (UTC and business day), the outcome, the category and the risk read
+/// contract. No amount.
+/// </summary>
+public sealed record SalesOrderRiskWarningRecord(
+    int Revision,
+    long DraftVersion,
+    string Command,
+    SalesOrderRiskWarningOutcome Outcome,
+    SalesOrderRiskWarningCategory Category,
+    string RecordedBy,
+    DateTimeOffset RecordedAtUtc,
+    DateOnly CheckBusinessDay,
+    string RiskSourceContract);
