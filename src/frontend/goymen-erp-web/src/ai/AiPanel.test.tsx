@@ -185,6 +185,8 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     renderShell()
     const panel = await openPanel()
     const question = await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel })
+    const reminder = within(panel).getByText(AI_TEXT.questionSensitiveReminder)
+    expect(question.getAttribute('aria-describedby')?.split(' ')).toContain(reminder.id)
     await userEvent.type(question, 'Kalem özeti nedir?')
     await userEvent.type(within(panel).getByRole('textbox', { name: AI_TEXT.argumentsLabel }), '{{"itemId":"SENTETIK-1"}')
     await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))

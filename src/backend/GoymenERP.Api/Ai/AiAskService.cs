@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -93,6 +94,13 @@ public sealed class AiAskService(
                 .Select(descriptor => new AiModelToolV1(descriptor.ToolId, descriptor.Version, descriptor.DataClass, descriptor.FieldAllowlist))
                 .ToArray();
             plan = await provider.PlanAsync(new AiModelRequestV1(question, available, hint), cancellationToken);
+        }
+        catch (AiExternalEgressRefusedException)
+        {
+            // AI-D4: the question holds a sensitive value or the Settings policy keeps it in; nothing was sent.
+            await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                companyId, actorId, null, null, cancellationToken);
+            return AiAskResultV1.Of(AiAskStatusV1.Refused);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai.External;
 using GoymenERP.BuildingBlocks.Ai;
 using Microsoft.Extensions.Hosting;
 
@@ -16,8 +17,10 @@ public sealed class AiRuntimeOptions
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// The model provider kind. Only <see cref="AiProviderKindsV1.Fake"/> exists in this slice. An external provider
-    /// is refused until OPEN-020 / AI-D4 is decided; the fake provider is refused in the Production environment.
+    /// The model provider kind. <see cref="AiProviderKindsV1.Fake"/> is refused in the Production environment.
+    /// <see cref="AiProviderKindsV1.External"/> is admitted only while its own readiness holds (provider selected and
+    /// complete, attestations recorded, egress transport registered, key in the secret store, production activation
+    /// recorded in Production); none of that is configured by default (OPEN-020, AI-D5/AI-D6/AI-D7).
     /// </summary>
     public string? Provider { get; set; }
 
@@ -47,6 +50,9 @@ public sealed class AiAllowedToolOptions
 public static class AiProviderKindsV1
 {
     public const string Fake = "Fake";
+
+    /// <summary>The provider-neutral external adapter (section <c>Ai:External</c>). Closed until a human enables it.</summary>
+    public const string External = "External";
 }
 
 public enum AiRuntimeAvailability
@@ -79,11 +85,17 @@ public static class AiRuntimeStateEvaluator
             return new AiRuntimeState(AiRuntimeAvailability.Disabled, null);
         }
 
-        // OPEN-020 / AI-D4: no external provider. Only the in-process fake provider is admitted, and never in Production.
-        if (!string.Equals(options.Provider, AiProviderKindsV1.Fake, StringComparison.Ordinal)
-            || provider is null
-            || !string.Equals(provider.ProviderKind, options.Provider, StringComparison.Ordinal)
-            || environment.IsProduction())
+        // The configured kind and the resolved provider must agree. The in-process fake provider is never admitted in
+        // Production; the external provider only while its own readiness holds (OPEN-020 / AI-D4..AI-D7).
+        var admitted = provider is not null
+            && string.Equals(provider.ProviderKind, options.Provider, StringComparison.Ordinal)
+            && options.Provider switch
+            {
+                AiProviderKindsV1.Fake => !environment.IsProduction(),
+                AiProviderKindsV1.External => provider is IAiProviderReadinessV1 readiness && readiness.IsReady(environment),
+                _ => false,
+            };
+        if (!admitted)
         {
             return new AiRuntimeState(AiRuntimeAvailability.ProviderRefused, null);
         }
