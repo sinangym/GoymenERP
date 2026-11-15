@@ -149,7 +149,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Main merge after #1146: the AI-2a registration (015f177e…) and the U5-b1 and F-021 / B-24b registrations
         // (ee696d73…) are all present; re-measured on the merged Program.cs, neither parent's value (-> 3a7d166d…).
         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-        "5653c485d77d4a430863508bfbfbab06552a323d769a91669c9e05f8ed3b4e9f";
+        // Re-fingerprinted for tren-1 wave 2 trial integration: the team registrations combined, including AI-3's AddAiRuntime (off unless Ai:Enabled);
+        // the network-isolation surface needs the K3 review of AI-3 (5653c485... -> 6c36f610...).
+        "6c36f610fe70fa86ece3a4e02f9f5b7861ae78bba1f094e4ec7cbbf802239225";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -405,7 +407,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (15ad9659…) are all present; re-derived from the merged inventory, neither parent's value
                 // (-> e17f2323…).
                 // Re-fingerprinted for tren-1 wave 1: +4 facts, ordinal-sorted (e17f2323… -> d968a25e…).
-                "d968a25e8e49b50dc2eb25d93dddedf46a8bb0d7714ac34dd8aeb6990a83641a",
+                // Re-fingerprinted for tren-1 wave 2 trial integration: the Manufacturing team's facts added, ordinal-sorted (d968a25e... -> d6273307...).
+                "d6273307d31432f8671317fe852d5ebd6abf19a5056fc2249ee55055be175db0",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -446,7 +449,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // retry/conflict; code-list checks and their migration round trip) and +1 read fact (own-company rows
                 // only; the read is recorded as security.events.read) (70eab799… -> fe173b17…).
                 // Re-fingerprinted for tren-1 wave 1: +2 facts, ordinal-sorted (fe173b17… -> c34f45fc…).
-                "c34f45fc2e4d8d5c911fbdbff19b30ca07a57cf00f474e3dd81b7efb03dab7ec",
+                // Re-fingerprinted for tren-1 wave 2 trial integration: the team facts combined, ordinal-sorted (c34f45fc... -> a75473ad...).
+                "a75473ad9c5a9c75e4f67da959c0d07cf86f264e9317d54f3dc17a637bfee9b0",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -611,7 +615,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // one unnamed shipment makes the whole line unnamed), kept ordinal-sorted (eeed0741... -> 46a4216c...).
                 // F-020 review fixes: +1 SalesOrderCancellation fact (a cancelled instruction's loading line reads as no loading through
                 // the real Sales preview, never as a malformed owner answer), kept ordinal-sorted (46a4216c... -> 5a014a10...).
-                "5a014a10da35668c05e27c1aa29f2d605aa3ad925ddd2d43effb31b5af7210b1",
+                // Tren-1 wave 2 trial integration: +3 F018 limit-warning/risk-gate facts (satis wave 2) and +2 SAT-S14 SalesContract facts,
+                // kept ordinal-sorted (5a014a10... -> cebac90b...).
+                "cebac90b525a5430cb0b36597a8d0a57c676610032fb7a7b879456cf754ff61b",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -642,7 +648,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
     private const string ReviewedSeederFingerprint =
-        "84c4a5cd933a92fc58c59e4a93480fcb7a6ce6d3cfa33bfaeba3ca3be7221a8a";
+        // Re-fingerprinted for tren-1 wave 2 trial integration (KIM-D28): the seeder refuses duplicate seed VKNs before any read; the three IgnoreQueryFilters
+        // projections are unchanged (84c4a5cd... -> 5b46dec3...).
+        "5b46dec3a28ece710b935c63c3b5497114938107e5c6a8924edc20eb9cdd95ee";
 
     // This is a reviewed source inventory, not a claim that every entity mapped by every
     // context has a global query filter. Any context change must receive a fresh tenant-safety
@@ -706,7 +714,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for review B P2 / EK31 SAT-D198: the record state check admits the official NotFound bulletin
                 // state and the reasoned manual half-day mark; the write fence is unchanged.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "1505fc34bde60dd3bba5069054e73e6d29e83308f8d16e02aa45fa10c781192a",
+                // Re-fingerprinted for tren-1 wave 2 trial integration: the Settings team slice (1.3) combined; reviewed tokens unchanged (1505fc34... -> 1338eb2e...).
+                "1338eb2e01f9b1b086433b079dc6b50e976dff4f44d1f2af5e6beb5a36b1a72b",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -784,7 +793,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // or direct database surface; recomputed on the merged context (8a351e15... -> 28dc8473...).
                 // SAT-D290 (2, 3): the facts, maker-checker and attempt-command checks admit a rejected (State 5) or cancelled (State 6)
                 // return with its decision facts; no query-filter bypass or direct database surface (28dc8473... -> e838b21d...).
-                "e838b21dd4d72a0a41d016e825e07fc3f93ed8accfdcdb4a5b26342a7fbfa9b3",
+                // Tren-1 wave 2 trial integration: satis wave 2 (F018 limit warnings) and SAT-S14 contracts, contract attempts, payment plan and
+                // discount rule rows on the same company filter; no query-filter bypass or direct database surface (e838b21d... -> cedf03b1...).
+                "cedf03b126df3e02cf6b1482ec08532d57201fd3ac3bbfbd011ee9c28a01b6d6",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -898,7 +909,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Stack merge of API-23 + API-30 (#1095, #1109) and F-005 D1 (#1102): all three sets of entities, filters
             // and write guards are present; recomputed on the merged context (fe8918ac… + e342b071… -> a17bc2d3…).
             // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-            "659f985fc8794903fb1f63d5d5afd3b422134b514faf94a7a75949dea4b433b0",
+            // Re-fingerprinted for tren-1 wave 2 trial integration: the Finance team slice (FIN-S1..S5) combined; reviewed tokens unchanged (659f985f... -> 9aa2e8a8...).
+            "9aa2e8a8def45b2eeb91913fdb35b8b1921ec6d0e1d96b7809a5cfbee94d0640",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1043,7 +1055,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
                 [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
                 [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
-                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                // tren-1 wave 2 trial integration (FIN-S5 D5): the second counted site is a target-typed issue list; no new writer.
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 2),
                 // MOD-04 (F2a) invoice admission: the one counted site is a target-typed refusal result.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] = ("FinanceDbContext", 1),
                 // F2b invoice cancellation: likewise one target-typed refusal result.
@@ -1078,6 +1091,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
                 [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
                 [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1),
+                // tren-1 wave 2 trial integration: target-typed result/issue/option sites only (no explicit DbContext construction,
+                // no new DbContext writer); exact source counts. Pending the owning teams' K3 review.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialSalesInvoiceImportDocumentsV2.cs"] = ("FinanceDbContext", 12),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "PartyLedgerReadService.cs"] = ("FinanceDbContext", 4),
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
+                 + "Bootstrap/FounderBootstrapService.cs"] = ("IdentityDbContext", 3),
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/PurchasingStore.cs"] = ("PurchasingDbContext", 1),
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/SalesQuoteAndEInvoicePolicyReads.cs"] = ("SettingsDbContext", 1),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/InventoryLabelDispositionReader.cs"] = ("InventoryDbContext", 3),
+                // tren-1 wave 2 trial integration (STK future allocation): the writer and the engine count target-typed result/option
+                // sites only; the read/release port also constructs one InventoryDbContext on the Purchasing owner's open connection and
+                // transaction under the server-resolved company (release session, no own connection). Pending the owning team's K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationWriter.cs"] = ("InventoryDbContext", 1),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationEngine.cs"] = ("InventoryDbContext", 2),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationPorts.cs"] = ("InventoryDbContext", 3),
                 // tren-1 wave 1: target-typed refusal/plan results only (no new DbContext writer); exact source counts.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceInvoiceAcceptanceService.cs"] = ("FinanceDbContext", 2),
@@ -1367,7 +1400,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Inventory connection and current parent-label truth before constructing one Manufacturing context.
                 [ReviewedManufacturingInventoryReturnOutputHostPath] =
                     new(
-                        "91e00eebf5d7499a8fe5f1e3d950d0a2d6188f50fa906d4410e750ef9d3b7688",
+                        // Re-fingerprinted for tren-1 wave 2 trial integration (URT-S16): output-class mapping refusal before any read and the remnant classification
+                        // passed through; reviewed tokens and the one context construction unchanged (91e00eeb... -> 0e650b11...).
+                        "0e650b113c2acc57de0b3e1de6ebff58add8af789ae4ea457056ac9f605ae069",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -1599,6 +1634,152 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["DbConnection"] = 3,
                             ["CreateCommand"] = 1
                         }),
+                // tren-1 wave 2 trial integration (SAT sales order line lock): the BuildingBlocks contract names DbConnection/DbTransaction only in
+                // its binder signature; it opens nothing and runs no statement. Pending K3 review.
+                ["src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Concurrency/SalesOrderLineSerializationLockContractsV1.cs"] =
+                    new(
+                        "ffe175cb4dab081ab559bf8bb89becbe502c0605fdeb2e3f16d6e40b10aeaf00",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (STK future allocation): the host binder passes the caller's own open connection and transaction
+                // under the server-resolved company only (sp_getapplock lock path). Pending K3 review.
+                ["src/backend/GoymenERP.Api/Endpoints/InventoryFutureAllocationHostPorts.cs"] =
+                    new(
+                        "45cfb07732e7e47e5fc7f6912642eeec0c1d50158cd5a9c03cfa8bf391043f1d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 4,
+                            ["CreateCommand"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (FIN cash transfer): same R47 shape; SqlClient classifies 2601/2627 races after SaveChanges
+                // only. No connection, command, raw SQL or bypass. Pending K3 review.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashTransferService.cs"] =
+                    new(
+                        "dec25621fff0cf14edb0282e341a511875fdac95d4e020dc993869f9a32c3e91",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (kimlik founder bootstrap): SqlClient classifies 2601/2627 races only; the counted constructions
+                // are target-typed results. Pending K3 review.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs"] =
+                    new(
+                        "9dd6232849741c9f396415761baab66dd62c1441649fc25bd63f3c4c5f19d0aa",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (kimlik local credential): SqlClient classifies 2601/2627 races only. Pending K3 review.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/LocalAccount/SqlLocalCredentialCommandStore.cs"] =
+                    new(
+                        "4dcb30ade9c68298ceed3390be0368e75ff90ce9426b481ff799ff849ac9b85e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (kimlik ID-3 assignment): SqlClient classifies 2601/2627 races only. Pending K3 review.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Plumbing.cs"] =
+                    new(
+                        "da39ce7483a661e75aeccafe274b7041c0b3a88df03e3257bb657de6007c10d3",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (kimlik ID-3 / KIM-D17): two fixed statements on the caller's open EF transaction, parameters
+                // only: sp_getapplock (Exclusive, Transaction owner) and a READCOMMITTEDLOCK count of the other company-scoped Admin
+                // holders filtered by @companyId. This is a raw read outside the EF query filter. Pending K3 review (two reviews).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAdminLock.cs"] =
+                    new(
+                        "bbfad86c1173eb133eb693ef62f0afd540b170d5bb549dc0f6605a7714b34b96",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["CreateCommand"] = 4,
+                            ["DbCommand"] = 2,
+                            ["GetDbConnection"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (STK future allocation): the contract names DbConnection/DbTransaction only in its port
+                // signature; it opens nothing and runs no statement. Pending K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/InventoryFutureAllocationContractsV1.cs"] =
+                    new(
+                        "32b1ac1dd5fc743b403d74586726295a485b6abff852b31b31b240a266d92a29",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (STK future allocation): the release port binds one InventoryDbContext to the owner's open
+                // connection and transaction (no own connection, no command, no bypass). Pending K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationPorts.cs"] =
+                    new(
+                        "938eaa5b524acc5b5c79e49a09dc23b6b3c9f37c6ca8a0ea345c2c130564dc0b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 2
+                        }),
+                // tren-1 wave 2 trial integration (STK future allocation): the writer uses the bound connection to check the owner transaction
+                // and classifies 2601/2627 with SqlClient. Pending K3 review (NEEDS-SINAN item in the integration report).
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationWriter.cs"] =
+                    new(
+                        "534220afafa14a2a7def2af1fa2f8562230206c391f24f58c43eda883715b7cd",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 2,
+                            ["DbConnection"] = 2,
+                            ["System.Data.Common"] = 4
+                        }),
+                // tren-1 wave 2 trial integration (STK future allocation): engine helpers only; no provider token. Pending K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryFutureAllocationEngine.cs"] =
+                    new(
+                        "73702690ac154502d831fd30c5d81cf8e99f6cbace2a39a66d620cfa5c8bf676",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                // tren-1 wave 2 trial integration (SAT-D262 average cost ledger): one tracked-entity .Local lookup in the same save. Pending K3 review.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryAverageCostLedgerWriter.cs"] =
+                    new(
+                        "39fa1418136229e24784a21d6a900efdb7865f6e22f8b846fedc8ade15db74dc",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".Local"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (URT monthly scrap prices): System.Data.Common is used for the DbException catch only. Pending K3 review.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.ScrapPrices.cs"] =
+                    new(
+                        "5e8f6e1eef2aa09dc3cfc1d9e830838ae70b98cecc99e391d9e70017727296ba",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1
+                        }),
+                // tren-1 wave 2 trial integration (AI-3): .Find is an in-memory tool catalog lookup, not EF. Pending K3 review.
+                ["src/backend/GoymenERP.Api/Ai/AiAskService.cs"] =
+                    new(
+                        "265451228ee1920efce2aaea6caa01055588b10cf7c419073e05417e4c043f51",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".Find"] = 1
+                        }),
+                // tren-1 wave 2 trial integration: construction-only surfaces (target-typed sites); no provider token. Pending K3 review.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceImportDocumentsV2.cs"] =
+                    new(
+                        "5ce7a2d45caab8d0b1b970274bcfad3b862a970d50bec147c853387461d8e545",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/PartyLedgerReadService.cs"] =
+                    new(
+                        "ec707e40d0261336feb91058180deeb942da6544e5f8fc480f67a34333ac310a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SalesQuoteAndEInvoicePolicyReads.cs"] =
+                    new(
+                        "a880d3c603a76c4ae310bf09e16cd460f3ced8331c975ff8f026c885ec88d0b5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryLabelDispositionReader.cs"] =
+                    new(
+                        "b0cf25ca5fe84d055f14f31ca13b71bc3cff2f3bd9c24f05de0e8a4cf5acadc5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // F-03: allocation writes stay on the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
                 // connection, command or raw SQL surface.
@@ -1663,9 +1844,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
                 // connection, command, raw SQL or query-filter bypass surface.
+                // Re-fingerprinted for tren-1 wave 2 trial integration (FIN-S5 D5): one more target-typed issue list; same SqlClient use (cb022616... -> 8df7bc91...).
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
                     new(
-                        "cb0226168d0b11ff1999321e308c854607b56ca455cd483ddbcaa421c9c8ff7c",
+                        "8df7bc91a2a3a404e2f43e7b3833e126e8925eb9a2512fa2ec82ab9e23ba2f80",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2033,7 +2215,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // slices (a tenant-filtered, no-tracking read on the same context) so it replays the schedule revisions;
                         // the reviewed constructions and provider tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "23106d16e2050cef85ad8965f569d523f2b3914a32870bdf9ea805c0a5aa9c47",
+                        // Re-fingerprinted for tren-1 wave 2 trial integration (API-11): the restore also reads the order's line closure events (AsNoTracking, same
+                        // company-filtered context); reviewed tokens and the three construction sites unchanged (23106d16... -> 60aab061...).
+                        "60aab06159b2e01a6efd52b0a38a27c5cb77c1248877b2a185e1d1086af913bf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2165,7 +2349,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // recorder registered since #1085); registrations and token counts unchanged (8389326f... -> 1c25c7fd...).
                     new(
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "146d4145959b39beef656a4b1db4216376863515eb09dfc96f3a1c3012898581",
+                        // Re-fingerprinted for tren-1 wave 2 trial integration: SAT-S14 contract service/store and the shipment risk gate read port are
+                        // DI-only registrations; reviewed tokens unchanged (146d4145... -> bf9e0937...).
+                        "bf9e09379e0f2a19cb67c873a6127d0cce593781a09f74ab0408fad8ae340867",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2228,7 +2414,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // attempt, audit) and its restore through the same filtered context; SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D252..SAT-D255: the source-plan command joins the draft replay command set (its write is the
                     // partial SalesStore.SourcePlan.cs over the same filtered context); SqlClient count unchanged.
-                        "44b86f834573a8bcb472126adc49b8321475b72965073de66a4d4513f829638c",
+                        // Re-fingerprinted for tren-1 wave 2 trial integration (F-018 S1): the draft transition may append its limit warning in the same save;
+                        // reviewed tokens unchanged (44b86f83... -> 07051578...).
+                        "07051578f2cab23c27a1db4cd6899f91558570dd2513b9fac27ee2df14d90e35",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2407,6 +2595,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // tren-1 wave 2 — SAT-S14 sales contracts: TR_Contracts_Guard keeps the contract facts, payment plan and discount rules and allows one discount decision (51471, number shared with Inventory's transfer dispatch cancellation guard), TR_ContractAttempts_Guard keeps attempts append-only (51472); Down refuses (51473) while contracts exist (forward fix). Three Sql; K3 review.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
+                 + "Persistence/Migrations/20261115160935_AddSalesContracts.cs"] =
+                    new(
+                        "f77825b7b47abec848f79d09da125dbece0d9da5950fed6795d3ad3234ae7449",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 3
+                        }),
                 // tren-1 wave 2 — KIM founder bootstrap state: Down refuses (51399) while bootstrap state, outbox or credential command rows exist (forward fix). One guard Sql; K3 review.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
                  + "Persistence/Migrations/20261115144305_AddIdentityBootstrapState.cs"] =
