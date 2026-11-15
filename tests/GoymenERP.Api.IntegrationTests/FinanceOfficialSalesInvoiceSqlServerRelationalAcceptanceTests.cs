@@ -559,8 +559,9 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
                 var rollback = await Assert.ThrowsAsync<SqlException>(() =>
                     context.GetService<IMigrator>().MigrateAsync(BeforeDecisionsMigration));
                 Assert.Equal(51273, rollback.Number);
-                // The newer AddCashTransfers, AddOfficialInvoiceIdentityClaims, RequirePartyCreditLimitSecondPerson (no
-                // direct record stored, so its Down only widens a check), AddExpensePayments, AddCustomerReturnCredits
+                // The newer RestorePartyCreditLimitOneStep (no direct record stored, so its Down guard passes),
+                // AddCashTransfers, AddOfficialInvoiceIdentityClaims, RequirePartyCreditLimitSecondPerson (its Down
+                // only widens a check), AddExpensePayments, AddCustomerReturnCredits
                 // and AddPartyCreditLimits rolled back first on
                 // their empty stores (each in its own transaction).
                 Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal",

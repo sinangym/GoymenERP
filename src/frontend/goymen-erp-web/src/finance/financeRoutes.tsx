@@ -110,7 +110,7 @@ function CashTransferRoute() {
 }
 
 /**
- * F-018 L1 (FNS-D45): the credit-limit list. Proposing and deciding are controls of it, each behind its own capability;
+ * F-018 L1 (FNS-D27 / FNS-D27a; one step, FNS-D56 / FNS-D57(3)): the credit-limit list. Proposing and deciding are controls of it, each behind its own capability;
  * the screen itself refuses to work without a single active company and the server checks every command anyway.
  */
 function CreditLimitRoute() {

@@ -14,14 +14,13 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// API-85a (F018 plan §L1; FNS-D27/D27a, FNS-D45) against a REAL SQL Server: the Finance party credit limit master on
+/// API-85a (F018 plan §L1; FNS-D27/D27a, FNS-D56/FNS-D57(3)) against a REAL SQL Server: the Finance party credit limit master on
 /// Finance's own migrations over the host's migrated and seeded database, with Audit's real save interceptor.
 /// <para>
 /// Permission, the Settings currency candidates and Counterparty's party account answer are ISOLATED SYNTHETIC
 /// ports: no Finance credit-limit grant exists, so these tests prove the store, its constraints and its rules,
 /// not a user outcome. Every identity, amount and currency below is SENTETIK / NOT_ENV test data. A credit limit
-/// moves no money. FNS-D45: a set, a change and a removal are each a proposal approved by another person; no
-/// one-step direct record exists.
+/// moves no money.
 /// </para>
 /// </summary>
 public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
@@ -32,7 +31,7 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     private const string Reason = "SENTETIK gerekçe";
     private const int DownGuardNumber = 51322;
     private const int SecondPersonUpGuardNumber = 51362;
-    private const int CheckViolationNumber = 547;
+    private const int OneStepDownGuardNumber = 51563;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Currency = Guid.Parse("8f2e3d4c-5b6a-4798-8a1b-2c3d4e5f6a01");
@@ -40,42 +39,42 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     private static readonly Guid Account = Guid.Parse("8f2e3d4c-5b6a-4798-8a1b-2c3d4e5f6a03");
 
     [SqlServerFact]
-    public async Task A_set_and_a_removal_each_take_a_proposal_and_another_persons_approval_with_their_attempts_and_audit()
+    public async Task An_approver_sets_and_removes_a_limit_in_one_save_each_with_its_record_attempt_and_audit()
     {
         await using var run = await Run.StartAsync();
 
-        // FNS-D45: no amount threshold and no one-step path; the set and the removal go the same two-person way.
-        var set = await ApprovedAsync(run, "s",
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "150000.50", "0"));
-        Assert.Equal((PartyCreditLimitStatus.Approved, false, "1", "150000.50"), (set.Status, set.IsDirect, set.Revision, set.Amount));
+        PartyCreditLimitRecordView set;
+        PartyCreditLimitRecordView removed;
+        await using (var a = run.Open(CompanyA, Approver))
+        {
+            var stored = await a.Limits.SetAsync(a.Context, Key("s-1"),
+                new PartyCreditLimitSetRequest(Party, Account, Currency, "150000.50", "0"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, stored.Outcome);
+            set = stored.Resource!;
+            Assert.Equal((PartyCreditLimitStatus.Approved, true, "1", "150000.50"), (set.Status, set.IsDirect, set.Revision, set.Amount));
 
-        var removed = await ApprovedAsync(run, "r",
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Remove, null, null, "1"));
-        Assert.Equal((PartyCreditLimitKind.Remove, (Guid?)null, (string?)null, "2", false),
-            (removed.Kind, removed.CurrencyId, removed.Amount, removed.Revision, removed.IsDirect));
+            var gone = await a.Limits.RemoveAsync(a.Context, Key("r-1"),
+                new PartyCreditLimitRemoveRequest(Party, Account, "1"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, gone.Outcome);
+            removed = gone.Resource!;
+            Assert.Equal((PartyCreditLimitKind.Remove, (Guid?)null, (string?)null, "2"),
+                (removed.Kind, removed.CurrencyId, removed.Amount, removed.Revision));
+        }
 
-        // The amount is stored as given (never rounded); the set is superseded by the approved removal.
+        // The amount is stored as given (never rounded); the set is superseded by the removal.
         Assert.Equal("150000.50", await run.ScalarAsync<string>(
             "SELECT AmountText FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", set.Id)));
         Assert.Equal(FinancePartyCreditLimitService.Superseded, await run.ScalarAsync<int>(
             "SELECT Status FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", set.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.PartyCreditLimits WHERE CompanyAccountId = @a AND Status = 2", ("@a", Account)));
-        // Every stored record was proposed by one actor and decided by another; none is direct.
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.PartyCreditLimits WHERE IsDirect = 1 OR DecidedBy = ProposedBy"));
-        Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.PartyCreditLimits WHERE ProposedBy = @p AND DecidedBy = @a",
-            ("@p", Proposer), ("@a", Approver)));
-        // Two proposals and two approvals, each its own attempt and its own audit event.
-        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimitCommands"));
-        Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.proposed.v1'"));
-        Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.approved.v1' "
-            + "AND ApprovalContextJson LIKE N'%FNS-D45%'"));
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType IN (N'finance.credit-limit.set.v1', N'finance.credit-limit.removed.v1')"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimitCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.set.v1' AND EntityId = @id",
+            ("@id", set.Id.ToString())));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.removed.v1' AND EntityId = @id",
+            ("@id", removed.Id.ToString())));
         // No money effect.
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }
@@ -105,7 +104,7 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
         var check = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "UPDATE finance.PartyCreditLimits SET Status = 2, DecidedBy = ProposedBy, DecidedAtUtc = SYSUTCDATETIME(), "
             + "AccountRevision = 1, Version = 2 WHERE Id = @id", ("@id", proposal.Id)));
-        Assert.Equal(CheckViolationNumber, check.Number);
+        Assert.Equal(547, check.Number);
         Assert.Equal(FinancePartyCreditLimitService.Proposed, await run.ScalarAsync<int>(
             "SELECT Status FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", proposal.Id)));
 
@@ -132,8 +131,12 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
 
-        var set = await ApprovedAsync(run, "s",
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "1000", "0"));
+        PartyCreditLimitRecordView set;
+        await using (var b = run.Open(CompanyA, Approver))
+        {
+            set = (await b.Limits.SetAsync(b.Context, Key("s-1"),
+                new PartyCreditLimitSetRequest(Party, Account, Currency, "1000", "0"), CancellationToken.None)).Resource!;
+        }
 
         PartyCreditLimitRecordView proposal;
         await using (var p = run.Open(CompanyA, Proposer))
@@ -158,6 +161,36 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
             "SELECT RejectionReason FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", proposal.Id)));
         Assert.Equal(FinancePartyCreditLimitService.Approved, await run.ScalarAsync<int>(
             "SELECT Status FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", set.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task Two_racing_direct_sets_from_one_revision_leave_one_effective_limit_and_the_loser_a_concurrent_change()
+    {
+        await using var run = await Run.StartAsync();
+
+        // Two approvers change the never-limited account from revision 0 with different keys; both read the same
+        // state, then meet at the save, where the live-state and revision unique indexes are the authority.
+        var barrier = new Barrier(2);
+        async Task<PartyCreditLimitCommandResult> SetAsync(string approver, string amount)
+        {
+            await using var scope = run.Open(CompanyA, approver, new BarrierInterceptor(barrier));
+            return await scope.Limits.SetAsync(scope.Context, Key("s-" + approver),
+                new PartyCreditLimitSetRequest(Party, Account, Currency, amount, "0"), CancellationToken.None);
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => SetAsync(Approver, "100")), Task.Run(() => SetAsync(SecondApprover, "200")));
+        var won = Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
+        var lost = Assert.Single(results, result => result.Outcome == CommandOutcome.VersionConflict);
+        Assert.Equal("concurrent_change", Assert.Single(lost.Issues).Code);
+        Assert.Null(lost.Resource);
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimits"));
+        Assert.Equal(won.Resource!.Id, await run.ScalarAsync<Guid>(
+            "SELECT Id FROM finance.PartyCreditLimits WHERE CompanyAccountId = @a AND Status = 2", ("@a", Account)));
+        // The winner's attempt only; the loser's attempt and audit event rolled back with its save.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimitCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.set.v1'"));
     }
 
     [SqlServerFact]
@@ -228,44 +261,24 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     public async Task The_same_key_replays_with_its_first_correlation_and_a_stale_revision_is_a_recorded_conflict()
     {
         await using var run = await Run.StartAsync();
-        var request = new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "500", "0");
+        var request = new PartyCreditLimitSetRequest(Party, Account, Currency, "500", "0");
 
-        PartyCreditLimitCommandResult first;
-        await using (var p = run.Open(CompanyA, Proposer))
-        {
-            first = await p.Limits.ProposeAsync(p.Context, Key("k-1"), request, CancellationToken.None);
-            var replay = await p.Limits.ProposeAsync(p.Context with { CorrelationId = run.Correlation + "-again" }, Key("k-1"),
-                request, CancellationToken.None);
-            Assert.Equal((CommandOutcome.Succeeded, true, run.Correlation, first.Resource!.Id),
-                (replay.Outcome, replay.IsReplay, replay.OriginalCorrelationId, replay.Resource!.Id));
-        }
+        await using var a = run.Open(CompanyA, Approver);
+        var first = await a.Limits.SetAsync(a.Context, Key("k-1"), request, CancellationToken.None);
+        var replay = await a.Limits.SetAsync(a.Context with { CorrelationId = run.Correlation + "-again" }, Key("k-1"), request,
+            CancellationToken.None);
+        Assert.Equal((CommandOutcome.Succeeded, true, run.Correlation, first.Resource!.Id),
+            (replay.Outcome, replay.IsReplay, replay.OriginalCorrelationId, replay.Resource!.Id));
 
-        await using (var b = run.Open(CompanyA, Approver))
-        {
-            var approve = new PartyCreditLimitApproveRequest(first.Resource!.Id, "1");
-            Assert.Equal(CommandOutcome.Succeeded,
-                (await b.Limits.ApproveAsync(b.Context, Key("a-1"), approve, CancellationToken.None)).Outcome);
-            var again = await b.Limits.ApproveAsync(b.Context with { CorrelationId = run.Correlation + "-again" }, Key("a-1"),
-                approve, CancellationToken.None);
-            Assert.Equal((CommandOutcome.Succeeded, true, run.Correlation), (again.Outcome, again.IsReplay, again.OriginalCorrelationId));
-        }
-
-        // A new proposal still naming revision 0 is a terminal conflict: recorded without a target, no audit.
-        await using (var p = run.Open(CompanyA, Proposer))
-        {
-            var stale = await p.Limits.ProposeAsync(p.Context, Key("k-2"),
-                new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "600", "0"),
-                CancellationToken.None);
-            Assert.Equal(CommandOutcome.VersionConflict, stale.Outcome);
-        }
-
+        // A second change still naming revision 0 is a terminal conflict: recorded without a target, no audit.
+        var stale = await a.Limits.SetAsync(a.Context, Key("k-2"),
+            new PartyCreditLimitSetRequest(Party, Account, Currency, "600", "0"), CancellationToken.None);
+        Assert.Equal(CommandOutcome.VersionConflict, stale.Outcome);
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.PartyCreditLimitCommands WHERE PartyCreditLimitId IS NULL"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimits"));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.proposed.v1'"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.approved.v1'"));
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.credit-limit.set.v1'"));
     }
 
     [SqlServerFact]
@@ -301,8 +314,12 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
 
         await run.ExecuteAsync(guard);
 
-        var set = await ApprovedAsync(run, "s",
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "100", "0"));
+        PartyCreditLimitRecordView set;
+        await using (var a = run.Open(CompanyA, Approver))
+        {
+            set = (await a.Limits.SetAsync(a.Context, Key("s-1"),
+                new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"), CancellationToken.None)).Resource!;
+        }
 
         var error = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(DownGuardNumber, error.Number);
@@ -314,13 +331,10 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     public async Task The_second_person_migrations_Up_guard_passes_with_decided_records_and_refuses_while_a_direct_record_exists()
     {
         await using var run = await Run.StartAsync();
-        var migration = new RequirePartyCreditLimitSecondPerson();
-        var guard = Assert.IsType<SqlOperation>(migration.UpOperations[0]).Sql;
-        var wideCheck = Assert.IsType<AddCheckConstraintOperation>(migration.DownOperations[1]).Sql;
+        var guard = Assert.IsType<SqlOperation>(new RequirePartyCreditLimitSecondPerson().UpOperations[0]).Sql;
 
-        // A store holding only two-person records (an approved one and a pending proposal) moves on.
-        var approved = await ApprovedAsync(run, "s",
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "100", "0"));
+        // A store holding only two-person records (an approved proposal and a pending one) passes the guard.
+        await ProposeAndApproveAsync(run, "s", "100", "0");
         await using (var p = run.Open(CompanyA, Proposer))
         {
             Assert.Equal(CommandOutcome.Succeeded, (await p.Limits.ProposeAsync(p.Context, Key("p-2"),
@@ -330,52 +344,62 @@ public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
 
         await run.ExecuteAsync(guard);
 
-        // Stand in for a store written before FNS-D45: put the earlier wide decision check back, then turn the
-        // approved record into a direct one (decided by its own author), which that check admitted.
-        await run.ExecuteAsync(
-            "ALTER TABLE [finance].[PartyCreditLimits] DROP CONSTRAINT [CK_PartyCreditLimits_Decision]; "
-            + "ALTER TABLE [finance].[PartyCreditLimits] WITH CHECK ADD CONSTRAINT [CK_PartyCreditLimits_Decision] CHECK ("
-            + wideCheck + ");");
-        await run.ExecuteAsync(
-            "UPDATE [finance].[PartyCreditLimits] SET [IsDirect] = 1, [DecidedBy] = [ProposedBy] WHERE [Id] = @id",
-            ("@id", approved.Id));
+        // FNS-D56/FNS-D57(3): the restored check admits the one-step record again; the old guard still refuses it
+        // and rewrites nothing.
+        PartyCreditLimitRecordView direct;
+        await using (var a = run.Open(CompanyA, Approver))
+        {
+            direct = (await a.Limits.SetAsync(a.Context, Key("s-direct"),
+                new PartyCreditLimitSetRequest(Party, Account, Currency, "300", "1"), CancellationToken.None)).Resource!;
+        }
 
         var error = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(SecondPersonUpGuardNumber, error.Number);
-        // The direct record is neither rewritten nor deleted.
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.PartyCreditLimits WHERE Id = @id AND IsDirect = 1 AND Status = 2", ("@id", approved.Id)));
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimits"));
+            "SELECT COUNT(*) FROM finance.PartyCreditLimits WHERE Id = @id AND IsDirect = 1 AND Status = 2", ("@id", direct.Id)));
     }
 
     [SqlServerFact]
-    public async Task The_decision_check_refuses_a_direct_record_whoever_decided_it()
+    public async Task The_one_step_migrations_Down_passes_with_proposal_records_and_refuses_while_a_direct_record_exists()
     {
         await using var run = await Run.StartAsync();
-        var approved = await ApprovedAsync(run, "s",
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "100", "0"));
+        var guard = Assert.IsType<SqlOperation>(new RestorePartyCreditLimitOneStep().DownOperations[0]).Sql;
 
-        // FNS-D45 at the database: the one-step record decided by its own author is gone...
-        var self = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
-            "UPDATE finance.PartyCreditLimits SET IsDirect = 1, DecidedBy = ProposedBy WHERE Id = @id", ("@id", approved.Id)));
-        Assert.Equal(CheckViolationNumber, self.Number);
-        // ...and so is any record marked direct, even one decided by someone else.
-        var marked = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
-            "UPDATE finance.PartyCreditLimits SET IsDirect = 1 WHERE Id = @id", ("@id", approved.Id)));
-        Assert.Equal(CheckViolationNumber, marked.Number);
+        await run.ExecuteAsync(guard);
 
-        Assert.Equal((false, Approver), (
-            await run.ScalarAsync<bool>("SELECT IsDirect FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", approved.Id)),
-            await run.ScalarAsync<string>("SELECT DecidedBy FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", approved.Id))));
+        // Records decided by another person never stop the rollback.
+        var approved = await ProposeAndApproveAsync(run, "s", "100", "0");
+        await run.ExecuteAsync(guard);
+
+        // A direct record (FNS-D27) would lose its meaning under the second-person check: the rollback stops
+        // (forward fix) and the record is neither rewritten nor deleted.
+        PartyCreditLimitRecordView direct;
+        await using (var a = run.Open(CompanyA, Approver))
+        {
+            var stored = await a.Limits.SetAsync(a.Context, Key("s-direct"),
+                new PartyCreditLimitSetRequest(Party, Account, Currency, "300", approved.Revision!), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, stored.Outcome);
+            direct = stored.Resource!;
+        }
+
+        var error = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(OneStepDownGuardNumber, error.Number);
+        Assert.Equal((true, Approver, Approver), (
+            await run.ScalarAsync<bool>("SELECT IsDirect FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", direct.Id)),
+            await run.ScalarAsync<string>("SELECT ProposedBy FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", direct.Id)),
+            await run.ScalarAsync<string>("SELECT DecidedBy FROM finance.PartyCreditLimits WHERE Id = @id", ("@id", direct.Id))));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PartyCreditLimits"));
     }
 
-    /// <summary>Proposes as <see cref="Proposer"/> and approves as <see cref="Approver"/>: the only way a limit changes.</summary>
-    private static async Task<PartyCreditLimitRecordView> ApprovedAsync(Run run, string key, PartyCreditLimitProposeRequest request)
+    /// <summary>Proposes as <see cref="Proposer"/> and approves as <see cref="Approver"/> (FNS-D27a).</summary>
+    private static async Task<PartyCreditLimitRecordView> ProposeAndApproveAsync(Run run, string key, string amount, string revision)
     {
         PartyCreditLimitRecordView proposal;
         await using (var p = run.Open(CompanyA, Proposer))
         {
-            var proposed = await p.Limits.ProposeAsync(p.Context, Key("p-" + key), request, CancellationToken.None);
+            var proposed = await p.Limits.ProposeAsync(p.Context, Key("p-" + key),
+                new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, amount, revision),
+                CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
             proposal = proposed.Resource!;
         }

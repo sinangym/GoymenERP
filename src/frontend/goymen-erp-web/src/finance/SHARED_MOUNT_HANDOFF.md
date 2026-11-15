@@ -80,5 +80,8 @@ Mounted in the same change as the provider (the FNS-D25 precedent): `src/shell/c
 | `finance.credit-limits.propose` (control) | — | read + `finance.credit-limits.propose` |
 | `finance.credit-limits.approve` (control) | — | read + `finance.credit-limits.approve` (Critical, FNS-D46) |
 
+FNS-D56 / FNS-D57(3): the approve control again also sets or removes a limit in one step (FNS-D27); the FNS-D45
+second-person rule no longer applies to credit limits. The ids, routes and permissions above are unchanged.
+
 Startup stays fail-closed until the central owner re-derives the reviewed `ShellCapabilityRegistryAuthorities`
 revision for Finance 1.10. No permission is granted to a role by this change.

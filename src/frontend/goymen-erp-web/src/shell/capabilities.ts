@@ -231,7 +231,7 @@ export const CAPABILITY = {
   /** FNS-D24 (API-32/34) Virman ve Döviz Bozdurma. Its commit is a CONTROL of this workspace, never a route. */
   financeCashTransfersWorkspace: 'finance.cash-transfers.workspace',
   /**
-   * F-018 L1 (FNS-D45 / FNS-D46) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
+   * F-018 L1 (FNS-D27 / FNS-D46; one step, FNS-D57(3)) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
    */
   financeCreditLimitsList: 'finance.credit-limits.list',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */

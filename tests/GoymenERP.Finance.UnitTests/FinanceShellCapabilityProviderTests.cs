@@ -114,7 +114,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
             ("finance.party-ledger.cari", "finance.party-ledger.cari", "/cari/hesap-takibi", "C-04",
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
-            // 1.10 (FNS-D45 / FNS-D46): credit limits; propose and approve are controls of the one route.
+            // 1.10 (FNS-D27 / FNS-D46; one step, FNS-D57(3)): credit limits; propose and approve are controls of the one route.
             ("finance.credit-limits.list", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]),
             ("finance.credit-limits.propose", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
