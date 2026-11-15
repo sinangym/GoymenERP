@@ -61,9 +61,9 @@ public sealed class AccountingShellRegistrationTests
             .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
             .ToArray();
         // M-07 and its propose screen, the approve and close controls of that list, M-04 and its detail, M-01:
-        // Thirteen declarations (Accounting 1.3): the seven ACC-V0 routes/controls, three normal-draft routes, M-06,
-        // and the reversal propose control and approval route (both staged).
-        Assert.Equal(13, accounting.Length);
+        // Fourteen declarations (Accounting 1.4): the seven ACC-V0 routes/controls, three normal-draft routes, M-06,
+        // the reversal propose control and approval route (both staged) and FIN-S16's M-05 account plan (staged).
+        Assert.Equal(14, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.
@@ -90,9 +90,12 @@ public sealed class AccountingShellRegistrationTests
             == AccountingShellCapabilityProvider.JournalReversalProposeCapabilityId).Declaration.ImplementationAvailable);
         Assert.False(Assert.Single(accounting, item => item.Declaration.CapabilityId
             == AccountingShellCapabilityProvider.JournalReversalApproveCapabilityId).Declaration.ImplementationAvailable);
+        // FIN-S16: M-05 stays staged until a browser walk accepts it; its read name is registered, not granted.
+        Assert.False(Assert.Single(accounting, item => item.Declaration.CapabilityId
+            == AccountingShellCapabilityProvider.AccountPlanCapabilityId).Declaration.ImplementationAvailable);
         string[] expected =
         [
-            "accounting.journal-reversals.approve", "accounting.journal-reversals.propose",
+            "accounting.account-plan", "accounting.journal-reversals.approve", "accounting.journal-reversals.propose",
             "accounting.journals.detail", "accounting.journals.list", "accounting.normal-journal-drafts.approve",
             "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail", "accounting.periods.approve",
             "accounting.periods.close", "accounting.periods.list", "accounting.periods.propose",

@@ -357,3 +357,27 @@ function normalJournalFailureDetail(failure: NormalJournalFailure): string {
       return 'İstek biçimi desteklenmiyor.'
   }
 }
+
+// FIN-S16 — M-05 Hesap Planı (read-only). The plan is the ACTIVE approved source package exactly as approved; this
+// screen creates, renames or classifies no account. Dimensions (cost centre / project) have no decision yet.
+export const ACCOUNT_PLAN_TITLE = 'Hesap Planı'
+export const ACCOUNT_PLAN_INTRO =
+  'Şirketin etkin onaylı hesap planı onaylı kaynaktaki hâliyle, hesap koduna göre sıralı gösterilir. Bu ekran hesap açmaz, adlandırmaz veya sınıflandırmaz.'
+export const ACCOUNT_PLAN_SUBJECT = 'hesap planı'
+export const ACCOUNT_PLAN_COMPANY_SUBJECT = 'hesap planı için tek şirket bağlamı'
+export const ACCOUNT_PLAN_NO_ACTIVE_TITLE = 'Etkin hesap planı yok'
+export const ACCOUNT_PLAN_NO_ACTIVE_DETAIL =
+  'Bu şirket için henüz etkinleştirilmiş onaylı bir hesap planı kaynağı yok. Hesaplar tahminle üretilmez.'
+export const ACCOUNT_PLAN_SEARCH_LABEL = 'Kod veya ad ara'
+export const ACCOUNT_PLAN_SEARCH_PLACEHOLDER = 'Örn. 100 veya Kasa'
+export const ACCOUNT_PLAN_FILTERED_SUBJECT = 'hesap'
+export const ACCOUNT_PLAN_CODE = 'Hesap kodu'
+export const ACCOUNT_PLAN_NAME = 'Hesap adı'
+export const ACCOUNT_PLAN_SOURCE_TITLE = 'Kaynak'
+export const ACCOUNT_PLAN_SOURCE_VERSION = 'Hesap planı kaynak sürümü'
+export const ACCOUNT_PLAN_CATALOG_VERSION = 'Katalog sürümü'
+export const ACCOUNT_PLAN_SHA256 = 'Kaynak SHA-256'
+export const ACCOUNT_PLAN_ACTIVATED_AT = 'Etkinleşme zamanı'
+export const ACCOUNT_PLAN_ACCOUNT_COUNT = 'Hesap sayısı'
+export const ACCOUNT_PLAN_UNKNOWN = 'Belirtilmemiş'
+export const ACCOUNT_PLAN_SHOWING = (shown: number, total: number) => `${total} hesaptan ${shown} tanesi gösteriliyor.`

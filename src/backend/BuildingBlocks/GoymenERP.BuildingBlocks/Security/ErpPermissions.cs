@@ -1035,6 +1035,14 @@ public static class ErpPermissions
     public const string AccountingPostingMappingsActivate = "accounting.posting-mappings.activate";
 
     /// <summary>
+    /// FIN-S16 (M-05 Hesap Planı, KALAN_MODULLER_HAZIRLIK_PLANI_v1 M-05): the Accounting owner's narrow read of the
+    /// active approved account plan (code and name of each account). Its own name per #66 5738113623 §4 ("each read
+    /// is its own narrow name"). Registered, not granted: which persona reads the account plan is a human grant
+    /// decision. Company-wide only; not Critical.
+    /// </summary>
+    public const string AccountingAccountPlanRead = "accounting.account-plan.read";
+
+    /// <summary>
     /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
     /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
     /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
@@ -1283,6 +1291,7 @@ public static class ErpPermissions
             AccountingPostingMappingsRead,
             AccountingPostingMappingsPrepare,
             AccountingPostingMappingsActivate,
+            AccountingAccountPlanRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -1491,6 +1500,7 @@ public static class ErpPermissions
             AccountingPostingMappingsRead,
             AccountingPostingMappingsPrepare,
             AccountingPostingMappingsActivate,
+            AccountingAccountPlanRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

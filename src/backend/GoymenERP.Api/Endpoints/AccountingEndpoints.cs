@@ -287,6 +287,22 @@ public static class AccountingEndpoints
             .Produces<TrialBalanceReportV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: false);
 
+        // FIN-S16 (M-05 Hesap Planı): the active approved account plan, read-only, under its own narrow name.
+        // No active catalog is a 200 with a null source and no accounts (the screen's "no active plan" state).
+        group.MapGet("/account-plan", async (
+                AccountPlanReadServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadActiveAsync(cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountPlanPermissionNamesV1.Read)
+            .WithName("GetAccountingAccountPlanV1")
+            .Produces<AccountPlanViewV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: false);
+
         group.MapPost("/approved-source-catalog/packages", PrepareApprovedSourceCatalogAsync)
             .RequireCompanyContext()
             .RequireAuthorization(ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare)
