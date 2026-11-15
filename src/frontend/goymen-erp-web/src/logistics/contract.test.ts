@@ -57,11 +57,11 @@ describe('instruction decoders', () => {
     ['a line count that does not match', (b: Body) => (b.instruction.lineCount = 2)],
     ['a share of a line the instruction does not have', (b: Body) => b.shares.push({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', lineId: 'ffffffff-ffff-ffff-ffff-ffffffffffff', kind: 'Loaded',
-      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator',
     })],
     ['a load without its measurement', (b: Body) => b.shares.push({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', lineId: b.lines[0].lineId, kind: 'Loaded',
-      quantity: '1', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+      quantity: '1', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator',
     })],
     ['a zero instructed quantity', (b: Body) => (b.lines[0].instructed = '0')],
     ['an all-zero id', (b: Body) => (b.instruction.customerPartyId = '00000000-0000-0000-0000-000000000000')],
@@ -111,7 +111,7 @@ describe('instruction decoders', () => {
 
     const load = (b: Body): Body => ({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', lineId: b.lines[0].lineId, kind: 'Loaded',
-      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator',
     })
     expect(decodeInstructionDetail(cancelledWith(), INSTRUCTION)?.instruction.status).toBe('Cancelled')
     // LOJ-D7: the weighbridge record and the loads of an instruction cancelled after issue stay on it.
@@ -126,6 +126,25 @@ describe('instruction decoders', () => {
     expect(decodeInstructionDetail(cancelledWith((b) => {
       b.shares.push({ ...load(b), kind: 'Shipped', measurement: null })
     }), INSTRUCTION)).toBeNull()
+  })
+
+  it('F-020: every share carries who recorded it as the server stored it, null for an older share, and nothing else', () => {
+    const withShare = (change: (share: Body) => void): Body => tweak(loadResponseRaw, (b) => change(b.detail.shares[0]))
+    expect(decodeInstructionMutation(parse(loadResponseRaw))?.detail.shares[0].recordedBy).toBe('SENTETIK-operator')
+    expect(decodeInstructionMutation(withShare((share) => (share.recordedBy = null)))?.detail.shares[0].recordedBy).toBeNull()
+    const refused: [string, (share: Body) => void][] = [
+      ['a share without the member', (share) => delete share.recordedBy],
+      ['a number for the actor', (share) => (share.recordedBy = 7)],
+      ['an empty actor', (share) => (share.recordedBy = '')],
+      ['an actor longer than the stored column', (share) => (share.recordedBy = 'a'.repeat(129))],
+      ['a wrong-case member', (share) => {
+        share.RecordedBy = share.recordedBy
+        delete share.recordedBy
+      }],
+    ]
+    for (const [name, change] of refused) {
+      expect(decodeInstructionMutation(withShare(change)), name).toBeNull()
+    }
   })
 
   it('F-020 (LOJ-D6…D8): a Cancelled summary carries who cancelled it, when and why, as stored; any other status carries none', () => {

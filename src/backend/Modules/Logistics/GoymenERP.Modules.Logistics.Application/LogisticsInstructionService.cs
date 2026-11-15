@@ -982,7 +982,7 @@ public sealed partial class LogisticsInstructionService(
                 Text(line.ShippedQuantity), Text(line.DeliveredQuantity), Text(line.RemainingToLoad), Text(line.LoadedNotShipped),
                 Text(line.ShippedNotDelivered), line.IsBlocked))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
-                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc))],
+                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc, stored.ShareRecordedBy?.GetValueOrDefault(share.ShareId)))],
             instruction.Weighing is { } weighing ? WeighingView(weighing) : null,
             [.. instruction.DispatchNotes.Select(note => DispatchNoteView(instruction, note))]);
     }

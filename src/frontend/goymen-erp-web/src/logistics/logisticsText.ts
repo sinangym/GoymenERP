@@ -163,6 +163,8 @@ export const INSTRUCTION_DETAIL_TEXT = {
   shareQuantity: 'Miktar',
   shareMeasurement: 'Ölçüm',
   shareRecordedAt: 'Kayıt zamanı',
+  /** F-020: the user id that recorded the share; for a shipped share, the person who made the shipment (ShippedBy). */
+  shareRecordedBy: 'Kaydeden',
   issue: {
     heading: 'Yayımlama',
     note: 'Taslak talimat yayımlanınca yükleme payı kaydedilebilir. Yayımlama fiziksel etki yazmaz.',

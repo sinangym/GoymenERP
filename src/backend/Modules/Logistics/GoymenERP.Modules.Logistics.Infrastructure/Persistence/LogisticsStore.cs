@@ -462,7 +462,14 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         {
             await aggregateTransaction.CommitAsync(cancellationToken);
         }
-        return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn), LogisticsWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+        var shareActors = ShareActors(shareRows);
+        if (instruction.Shares.Count == sharesBefore + 1)
+        {
+            shareActors[instruction.Shares[^1].ShareId] = actorId;
+        }
+
+        return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn, shareActors), LogisticsWriteOutcome.Recorded,
+            envelope.CorrelationId.Trim());
     }
 
     /// <summary>
@@ -829,8 +836,16 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id),
                 [.. notes.Where(note => note.InstructionId == row.Id).OrderBy(note => note.NoteNo)],
                 [.. noteLines.Where(line => line.InstructionId == row.Id)]),
-            row.EffectiveOn))];
+            row.EffectiveOn,
+            ShareActors(shares.Where(share => share.InstructionId == row.Id))))];
     }
+
+    /// <summary>
+    /// F-020 ShippedBy column: the stored actor of each share by share id, read beside the domain record (the replay never needs
+    /// it). A share stored before the actor was kept has no actor and is left out; it is never back-filled or guessed.
+    /// </summary>
+    private static Dictionary<Guid, string> ShareActors(IEnumerable<LoadingShareRow> shareRows) =>
+        shareRows.Where(share => share.RecordedBy is not null).ToDictionary(share => share.ShareId, share => share.RecordedBy!);
 
     /// <summary>
     /// Rebuilds the instruction through the domain in recording order; the stored version and totals must be the ones the rebuild

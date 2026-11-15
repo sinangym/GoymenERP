@@ -73,8 +73,12 @@ public sealed class LogisticsStoreException(string code, string message, Excepti
     public string Code { get; } = code;
 }
 
-/// <summary>A stored instruction with the business date its unit profiles were read for (kept beside the domain record, not in it).</summary>
-public sealed record StoredLoadingInstruction(LoadingInstruction Instruction, DateOnly EffectiveOn);
+/// <summary>
+/// A stored instruction with the business date its unit profiles were read for (kept beside the domain record, not in it),
+/// plus the stored actor of each share by share id (F-020 ShippedBy column; a share stored without an actor is absent).
+/// </summary>
+public sealed record StoredLoadingInstruction(
+    LoadingInstruction Instruction, DateOnly EffectiveOn, IReadOnlyDictionary<Guid, string>? ShareRecordedBy = null);
 
 public sealed record LogisticsStoreResult(StoredLoadingInstruction Instruction, LogisticsWriteOutcome Outcome, string OriginalCorrelationId);
 
