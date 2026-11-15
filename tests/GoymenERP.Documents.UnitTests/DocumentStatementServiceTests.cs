@@ -107,7 +107,7 @@ public sealed class DocumentStatementServiceTests
         Assert.Equal((422, DocumentRuleCodes.TypeNotAllowed), (stale.Status, stale.Code));
         Assert.Equal((2, "text/csv"), (appended.Document.VersionNo, appended.Document.ContentType));
         Assert.Equal(versions + 1, world.Versions.Count);
-        Assert.Equal(1, (await service.Service.ListVersionsAsync(shared.Id, null, null)).Versions.Count);
+        Assert.Single((await service.Service.ListVersionsAsync(shared.Id, null, null)).Versions);
     }
 
     [Fact]
