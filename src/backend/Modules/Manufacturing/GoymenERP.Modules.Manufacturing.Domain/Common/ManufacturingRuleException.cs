@@ -204,6 +204,34 @@ public static class ManufacturingRuleCodes
     public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
 
     /// <summary>
+    /// URT-D53: a weighing correction names an output that is not weighed (the declared process loss has no weighing
+    /// and no label), so there is no weighing to correct.
+    /// </summary>
+    public const string WeighingCorrectionNotWeighed = "manufacturing_weighing_correction_not_weighed";
+
+    /// <summary>
+    /// URT-D53 ("fazla tartılmış çıkışın düzeltilmesi"): the correct weighing is not below the output's net recorded mass.
+    /// Only an over-weighed output is corrected here; a correction upwards is not decided and is refused, never applied.
+    /// </summary>
+    public const string WeighingCorrectionNotLower = "manufacturing_weighing_correction_not_lower";
+
+    /// <summary>
+    /// URT-D53 (2): the second person must approve. The approver (or rejecter) of a weighing correction is the person who
+    /// proposed it; refused, whatever permissions that person holds.
+    /// </summary>
+    public const string WeighingCorrectionSamePerson = "manufacturing_weighing_correction_same_person";
+
+    /// <summary>URT-D53: the weighing correction was already approved or rejected; a decided correction is final.</summary>
+    public const string WeighingCorrectionNotProposed = "manufacturing_weighing_correction_not_proposed";
+
+    /// <summary>
+    /// URT-D53: the output's net mass, or the order the correction belongs to, is not what the correction was proposed
+    /// on (another correction or reversal reached it first). The correction is not applied on facts its proposer and
+    /// approver did not see.
+    /// </summary>
+    public const string WeighingCorrectionOutputChanged = "manufacturing_weighing_correction_output_changed";
+
+    /// <summary>
     /// URT-S13 (URT-D47, URT-D65): the company already has a scrap price for this month. A recorded month is never changed
     /// or replaced here (correcting it is not decided); the answer is a conflict.
     /// </summary>

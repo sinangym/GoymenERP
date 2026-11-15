@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Manufacturing.Domain.Costing;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 
@@ -42,15 +43,24 @@ public interface IManufacturingClosedOrderListStore
 public sealed record OutputAboveInputRollViewV1(Guid ParentRollId, MassDifferenceViewV1 Difference);
 
 /// <summary>
+/// URT-D52 (1): the production cost of a listed order. <see cref="Status"/> is <c>Unreadable</c>, <see cref="Code"/> is
+/// <c>output_exceeds_input</c> and <see cref="Text"/> is its Turkish text from the resource file, "hesaplanamadı — çıkan
+/// giren kg'dan fazla". There is no amount, never zero.
+/// </summary>
+public sealed record OutputAboveInputCostViewV1(string Status, string Code, string Text);
+
+/// <summary>
 /// One closed order with output above input on at least one parent roll (URT-D41 (1), URT-D42 (1): per roll; rolls never
 /// offset each other) or, for a process without a main roll input, on its order total (URT-D49 (1)). Only the rolls or
 /// inputs above input on their own are listed. <see cref="ClosedWithExceptionApproval"/> tells how the earlier rule
-/// let it close: true with the reasoned out-of-tolerance approval, false inside the stored tolerance. The order itself is
-/// not changed by being listed.
+/// let it close: true with the reasoned out-of-tolerance approval, false inside the stored tolerance. <see cref="Cost"/>
+/// is its production cost as URT-D52 (1) reads it (<see cref="LegacyClosureCostV1"/>). The order itself is not changed
+/// by being listed.
 /// </summary>
 public sealed record OutputAboveInputClosureViewV1(
     Guid OrderId, Guid PlanId, Guid WorkCenterId, string Process, long Version, Guid ClosedByUserId,
-    DateTimeOffset ClosedAtUtc, bool ClosedWithExceptionApproval, IReadOnlyList<OutputAboveInputRollViewV1> Rolls);
+    DateTimeOffset ClosedAtUtc, bool ClosedWithExceptionApproval, IReadOnlyList<OutputAboveInputRollViewV1> Rolls,
+    OutputAboveInputCostViewV1 Cost);
 
 /// <summary>
 /// One page of the URT-D42 (3) report. The page walks the company's closed orders, the latest close first:
@@ -139,7 +149,7 @@ public sealed partial class ManufacturingCommandService
     /// that are above input on their own as its rows. The balance is <see cref="ProductionOrder.BalanceOf"/>, so the
     /// numbers are the mass-balance read's. Null when the page holds anything but this company's closed orders (another
     /// company's order, an open one, a close without its closer and moment): such a page is never reported, in part or
-    /// whole.
+    /// whole. Each listed order carries its URT-D52 (1) cost state, "hesaplanamadı — çıkan giren kg'dan fazla".
     /// </summary>
     internal OutputAboveInputClosureReportViewV1? OutputAboveInputClosureReportView(ManufacturingClosedOrderPage page)
     {
@@ -174,12 +184,21 @@ public sealed partial class ManufacturingCommandService
                         Text(difference.DifferenceKg), difference.IsFullyAccounted)));
             }
 
-            if (rolls.Count > 0)
+            if (rolls.Count == 0)
             {
-                closures.Add(new OutputAboveInputClosureViewV1(order.Id, order.PlanId, order.WorkCenterId,
-                    order.Process.ToString(), order.Version, closedBy, closedAt, order.ClosureExceptionApproval is not null,
-                    rolls));
+                continue;
             }
+
+            // URT-D52 (1): a listed order is a closed order with output above input, so its cost is the legacy state; an
+            // order listed without it would break the close's own rule, and the page fails closed.
+            if (LegacyClosureCostV1.StateOf(order) is not { } cost)
+            {
+                return null;
+            }
+
+            closures.Add(new OutputAboveInputClosureViewV1(order.Id, order.PlanId, order.WorkCenterId,
+                order.Process.ToString(), order.Version, closedBy, closedAt, order.ClosureExceptionApproval is not null,
+                rolls, new OutputAboveInputCostViewV1(cost.Status.ToString(), cost.Code, cost.Text)));
         }
 
         return new OutputAboveInputClosureReportViewV1(MassBalanceEngineV1.FormulaVersion, page.Orders.Count, closures,

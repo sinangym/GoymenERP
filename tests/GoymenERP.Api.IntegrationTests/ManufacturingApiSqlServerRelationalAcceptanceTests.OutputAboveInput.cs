@@ -231,6 +231,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 Assert.Equal((read.PlanId, read.WorkCenterId, "Slitting", read.Version, closedBy, CatalogDay, approvedClose),
                     (closure.PlanId, closure.WorkCenterId, closure.Process, closure.Version, closure.ClosedByUserId,
                         closure.ClosedAtUtc, closure.ClosedWithExceptionApproval));
+                // URT-D52 (1): the cost of each listed close gives no amount and reads the decided text.
+                Assert.Equal(new OutputAboveInputCostViewV1("Unreadable", "output_exceeds_input",
+                    "hesaplanamadı — çıkan giren kg'dan fazla"), closure.Cost);
                 var line = Assert.Single(closure.Rolls);
                 Assert.Equal(new OutputAboveInputRollViewV1(roll, new MassDifferenceViewV1("1000", accounted, difference, false)),
                     line);

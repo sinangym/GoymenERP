@@ -158,6 +158,12 @@ public enum NonKgInputUse
 /// loss or scrap ("aciklanamayan fark otomatik fire olmaz", URT-D5). WIP and measurement correction, which
 /// DEC-PRDCT-006 reconciles apart, are not inputs here: which side of the out / in comparison they belong on is not
 /// decided (NEEDS-SINAN, SINAN_KARARLARI_2026-11-13); a caller gives neither as any of the classes here.
+/// <see cref="ClosedWithOutputAboveInput"/> is true for an order closed with output above input where the close
+/// measures it (on a parent roll, or on the order total for a process without a main roll input; URT-D41 (1),
+/// URT-D42 (1), URT-D49), which only a close stored before URT-D41 can be: such an order's cost is unreadable with
+/// <c>output_exceeds_input</c>, "hesaplanamadı — çıkan giren kg'dan fazla" (URT-D52 (1), SINAN_KARARLARI_2026-11-14
+/// URETIM_EK4). The order totals here cannot show a roll that is above input while another is short, so the caller
+/// sets it from the order (<see cref="LegacyClosureCostV1.WithClosureMeasure"/>); false by default.
 /// </summary>
 public sealed record ProductionReceiptCostInput(
     bool OrderClosed,
@@ -169,7 +175,8 @@ public sealed record ProductionReceiptCostInput(
     IReadOnlyList<ScrapWeighingInput> ScrapWeighings,
     Kilograms DeclaredProcessLoss,
     ScrapCostSettingStatus ScrapSetting,
-    NonKgInputUse NonKgInput);
+    NonKgInputUse NonKgInput,
+    bool ClosedWithOutputAboveInput = false);
 
 public enum ProductionReceiptCostStatus
 {
@@ -193,6 +200,13 @@ public static class ProductionReceiptCostCodesV1
     // or the rate is entered.
     public const string InputCostZero = "input_cost_zero";
     public const string InputExchangeRateMissing = "input_exchange_rate_missing";
+
+    /// <summary>
+    /// URT-D52 (1): the order was closed with output above input on a parent roll (or on its total for a process
+    /// without a main roll input) under the rule before URT-D41; its cost shows "hesaplanamadı — çıkan giren kg'dan
+    /// fazla" (<see cref="LegacyClosureCostTextsV1.OutputExceedsInput"/>).
+    /// </summary>
+    public const string OutputExceedsInput = "output_exceeds_input";
 
     // Why a result is pending; not unreadable codes.
     public const string OrderNotClosed = "order_not_closed";
@@ -404,7 +418,8 @@ public sealed record ProductionReceiptCostIssueReasonV1(Guid IssueMovementId, st
 /// remnant, weighed scrap and declared process loss over the consumed kg, a zero divisor, an unreadable or malformed
 /// scrap price, a scrap price above the net raw-material kg cost, a cost per kg of zero or below, a missing input,
 /// list or element or an undefined <see cref="NonKgInputUse"/> (<c>cost_input_invalid</c>) or an arithmetic overflow
-/// (<c>cost_arithmetic_overflow</c>) gives <see cref="ProductionReceiptCostStatus.Unreadable"/>; an unreadable answer
+/// (<c>cost_arithmetic_overflow</c>) gives <see cref="ProductionReceiptCostStatus.Unreadable"/>, and so does an order
+/// the caller marks as closed with output above input (<c>output_exceeds_input</c>, URT-D52 (1)); an unreadable answer
 /// wins over a missing scrap price, since entering the price would not make it readable. For the same reason any
 /// other unreadable input, a return, a scrap output or the mass checks wins over a zero cost or a missing rate; the
 /// scrap price checks are made only once every issue has a cost, since they compare with the net raw-material kg cost.
@@ -434,6 +449,13 @@ public static class ProductionReceiptCostCalculatorV1
                 or NonKgInputUse.PaintLitresAndOther))
         {
             return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.InputInvalid);
+        }
+
+        // URT-D52 (1): a close stored before URT-D41 with output above input gives no amount; the order is not reopened
+        // or changed (URT-D42 (3)).
+        if (input.ClosedWithOutputAboveInput)
+        {
+            return ProductionReceiptCostResult.Unreadable(ProductionReceiptCostCodesV1.OutputExceedsInput);
         }
 
         try
