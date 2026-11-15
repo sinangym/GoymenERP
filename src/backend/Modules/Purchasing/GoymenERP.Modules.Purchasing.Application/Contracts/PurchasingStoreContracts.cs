@@ -55,16 +55,29 @@ public static class PurchasingCommands
     /// </summary>
     public const string OrderLineScheduleV1 = "purchasing.purchase-order.line-schedule.v1";
 
+    /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87): an Approved order's general line closes its unaccepted remainder (eksik teslim
+    /// kapanışı) with a required reason; writes the line closure event and the <c>purchasing.order-line.closed.v1</c> outbox message.
+    /// </summary>
+    public const string OrderLineCloseV1 = "purchasing.purchase-order.line-close.v1";
+
+    /// <summary>API-11 reopening (ALS-D10): a closed general line reopens its closed share with a required reason.</summary>
+    public const string OrderLineReopenV1 = "purchasing.purchase-order.line-reopen.v1";
+
     public static bool IsRequestCommand(string commandName) =>
         commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderCommand(string commandName) =>
-        commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1;
+        commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1;
 
     public static bool IsRequestMutation(string commandName) =>
         commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
-    public static bool IsOrderMutation(string commandName) => commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1;
+    public static bool IsOrderMutation(string commandName) =>
+        commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1;
+
+    /// <summary>API-11: the two line closure commands (both take the §3.4 line lock and write a closure event + outbox message).</summary>
+    public static bool IsLineClosure(string commandName) => commandName is OrderLineCloseV1 or OrderLineReopenV1;
 
     public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || IsOrderMutation(commandName);
 

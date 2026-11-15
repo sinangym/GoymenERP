@@ -107,6 +107,21 @@ public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 public sealed record CancelPurchaseOrderRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
+/// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87): POST …/orders/{id}/lines/{lineId}/closure — closes the not-yet-accepted remainder of
+/// one GENERAL line of an APPROVED order (eksik teslim kapanışı, a separate axis from cancellation) at the expected version, its
+/// technical slices' remainders with it, with the reason (required, at most 4000 characters, never cut). Nothing physical or
+/// financial is recorded; the line's future supply becomes zero and <c>purchasing.order-line.closed.v1</c> is published.
+/// </summary>
+public sealed record ClosePurchaseOrderLineRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
+/// API-11 reopening (ALS-D10): POST …/orders/{id}/lines/{lineId}/reopening — returns a closed general line's closed share to its
+/// remainder at the expected version, with the reason (required, at most 4000 characters, never cut). Future allocations released
+/// by the closure do not come back (ALIS_F017 v1 §3.6).
+/// </summary>
+public sealed record ReopenPurchaseOrderLineRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
 /// A3 API-30 (ALS-D33, ALS-D21 "sıra"): POST …/orders/{id}/lines/{lineId}/schedule — the line's delivery schedule (termin
 /// dilimleri) at the expected version, replacing the previous one whole: 1..500 slices with distinct client ids, each a positive
 /// quantity in the line's unit with its delivery date; their sum is exactly the line's ordered quantity. The previous schedule
@@ -197,7 +212,7 @@ public sealed record PurchaseOrderReadSummaryViewV1(
 
 /// <summary>
 /// The line's shares as exact text (§7.2, §13): ordered, moved into technical lines, committed (= ordered − technical), accepted,
-/// remaining (= committed − accepted − cancelled, the expected supply; master INV-006). A1-3: <see cref="Cancelled"/> is the
+/// remaining (= committed − accepted − cancelled − closed, the expected supply; master INV-006 with the API-11 axis). A1-3: <see cref="Cancelled"/> is the
 /// unaccepted remainder cancelled with the order (No.161 §2), "0" until then.
 /// </summary>
 public sealed record PurchaseOrderLineView(
@@ -206,6 +221,15 @@ public sealed record PurchaseOrderLineView(
     string Ordered, string Technical, string Committed, string Accepted, string Remaining)
 {
     public string Cancelled { get; init; } = "0";
+
+    /// <summary>
+    /// API-11 (ALS-D10/D12): the unaccepted remainder closed with the line's short-delivery closure, "0" while the line is open; on a
+    /// technical line its part of the general line's closure. Remaining = committed − accepted − cancelled − closed.
+    /// </summary>
+    public string Closed { get; init; } = "0";
+
+    /// <summary>API-11: the general line's current closure (who, when, why), or null while it is open (always null on a technical line).</summary>
+    public PurchaseOrderLineClosureView? Closure { get; init; }
 
     /// <summary>
     /// A2a-1: the line's price, or null — "fiyat bekliyor" (ALS-D18) when the order's <c>PriceDisclosure</c> is <c>Visible</c>,
@@ -339,6 +363,9 @@ public static class PurchasingPriceDisclosureV1
 
 /// <summary>A1-3 (No.161 §2): the recorded cancellation of an order's unaccepted remainder — who, when and why.</summary>
 public sealed record PurchaseOrderCancellationView(string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason);
+
+/// <summary>API-11 (ALS-D10/D12): the recorded closure of a general line's unaccepted remainder — who, when and why.</summary>
+public sealed record PurchaseOrderLineClosureView(string ClosedBy, DateTimeOffset ClosedAtUtc, string Reason);
 
 /// <summary>
 /// A1-3 (plan API-10): GET …/orders/{id}/cancel-impact — what a cancellation at <see cref="Version"/> would do, read under
@@ -570,6 +597,31 @@ public static class PurchasingProblemCodesV1
     /// <summary>422 (A1-3): the cancellation reason is longer than 4000 characters (refused, never cut).</summary>
     public const string OrderCancellationReasonTooLong = "purchasing_order_cancellation_reason_too_long";
 
+    /// <summary>
+    /// 409, terminal (§7; API-11, ALS-D10/ALS-D12): the general line is not in the closure state the command needs — field
+    /// <c>line</c> = <c>purchasing_line_already_closed</c> (close on a closed line) or <c>purchasing_line_not_closed</c> (reopen
+    /// on an open line). An order that is not Approved answers <see cref="OrderState"/> instead.
+    /// </summary>
+    public const string LineClosureState = "purchasing_line_closure_state";
+
+    /// <summary>409, terminal (§7; API-11 fail-closed): the general line and its technical slices have no remainder to close.</summary>
+    public const string LineNothingToClose = "purchasing_line_nothing_to_close";
+
+    /// <summary>422 (API-11): closure and reopening act on the general line; a technical slice's line id is refused (field <c>lineId</c>).</summary>
+    public const string LineClosureOnTechnicalLine = "purchasing_line_closure_on_technical_line";
+
+    /// <summary>422 (API-11, ALS-D12): the closure reason is missing or blank.</summary>
+    public const string LineClosureReasonRequired = "purchasing_line_closure_reason_required";
+
+    /// <summary>422 (API-11): the closure reason is longer than 4000 characters (refused, never cut).</summary>
+    public const string LineClosureReasonTooLong = "purchasing_line_closure_reason_too_long";
+
+    /// <summary>422 (API-11, ALS-D12): the reopening reason is missing or blank.</summary>
+    public const string LineReopenReasonRequired = "purchasing_line_reopen_reason_required";
+
+    /// <summary>422 (API-11): the reopening reason is longer than 4000 characters (refused, never cut).</summary>
+    public const string LineReopenReasonTooLong = "purchasing_line_reopen_reason_too_long";
+
     /// <summary>409, terminal (§7): the request is not in the state the command needs (a Submitted request cannot be submitted again).</summary>
     public const string RequestNotDraft = "purchasing_request_not_draft";
 
@@ -631,7 +683,8 @@ public sealed record PurchasingServiceBindings(
     string? RequestWithdrawPermission = PurchasingPermissionManifestV1.RequestsWithdraw,
     string? OrderCancelPermission = PurchasingPermissionManifestV1.OrdersCancel,
     string? PriceReadPermission = PurchasingPermissionManifestV1.OrdersPriceRead,
-    string? RevisePermission = PurchasingPermissionManifestV1.OrdersRevise);
+    string? RevisePermission = PurchasingPermissionManifestV1.OrdersRevise,
+    string? OrderClosePermission = PurchasingPermissionManifestV1.OrdersClose);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -652,6 +705,8 @@ public static class PurchasingApiV1
     public const string OrderCancellationPath = "/api/v1/purchasing/orders/{id}/cancellation";
     public const string OrderLineSchedulePath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule";
     public const string OrderLineScheduleHistoryPath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule-history";
+    public const string OrderLineClosurePath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/closure";
+    public const string OrderLineReopeningPath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/reopening";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string CurrencyCandidatesPath = "/api/v1/purchasing/references/currencies";
     public const string IdempotencyHeader = "Idempotency-Key";
@@ -836,6 +891,34 @@ public static class PurchasingJson
     public static CancelPurchaseOrderRequest ReadCancelOrder(string json)
     {
         var request = JsonSerializer.Deserialize<CancelPurchaseOrderRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>API-11: the reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
+    public static ClosePurchaseOrderLineRequest ReadCloseOrderLine(string json)
+    {
+        var request = JsonSerializer.Deserialize<ClosePurchaseOrderLineRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>API-11: the reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
+    public static ReopenPurchaseOrderLineRequest ReadReopenOrderLine(string json)
+    {
+        var request = JsonSerializer.Deserialize<ReopenPurchaseOrderLineRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersionShape(request.ExpectedVersion);
         if (request.Reason is null)

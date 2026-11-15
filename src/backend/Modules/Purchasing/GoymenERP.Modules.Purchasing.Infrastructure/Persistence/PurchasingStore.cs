@@ -364,7 +364,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         RequireAudit(audit);
         if (!PurchasingCommands.IsOrderMutation(commandName))
         {
-            throw new ArgumentException("Yalnız onay, kalan iptali ve termin komutları bir siparişi değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız onay, kalan iptali, termin ve satır kapanışı komutları bir siparişi değiştirir.", nameof(commandName));
         }
 
         var companyId = RequireResolvedCompany();
@@ -392,7 +392,10 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         // serialization lock (ascending, the one canonical order) in its own transaction BEFORE the order is read; an Inventory future
         // allocation or an acceptance share on one of those lines waits for, or is refused by, this write. Disposing the transaction
         // without its commit (a refusal, a domain refusal or a technical failure) rolls it back and releases the locks.
-        await using var lockTransaction = commandName == PurchasingCommands.OrderCancelV1
+        // API-11 (§3.4): a line closure or reopening moves one general line's remainder (and its allocatable amount), so it takes the
+        // same locks — every general line of the order, the canonical order, rather than a second lock path for the one line; the
+        // command is rare and the order's lines are few.
+        await using var lockTransaction = commandName == PurchasingCommands.OrderCancelV1 || PurchasingCommands.IsLineClosure(commandName)
             ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken)
             : null;
 
@@ -408,10 +411,13 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken);
         var sliceRows = await dbContext.DeliverySlices.AsNoTracking().Where(slice => slice.OrderId == orderId)
             .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows);
+        var closureRows = await dbContext.LineClosureEvents.AsNoTracking().Where(closure => closure.OrderId == orderId)
+            .OrderBy(closure => closure.OrderVersionAfter).ToListAsync(cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows);
         var versionBefore = order.Version;
         var before = Snapshot(order);
         var schedulesBefore = order.Lines.ToDictionary(line => line.Id, line => line.DeliverySchedule);
+        var closureChangesBefore = order.Lines.ToDictionary(line => line.Id, line => line.LastClosureChange);
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(order, now);
@@ -428,9 +434,20 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             throw new InvalidOperationException("Termin komutu tam olarak bir satırın terminini değiştirir; başka komut termin değiştirmez.");
         }
 
+        // API-11: a closure or reopening changes exactly one general line's closure; every other command changes none.
+        var reclosed = order.Lines
+            .Where(line => line.Kind == PurchaseOrderLineKind.General && !ReferenceEquals(closureChangesBefore[line.Id], line.LastClosureChange))
+            .ToArray();
+        if (reclosed.Length != (PurchasingCommands.IsLineClosure(commandName) ? 1 : 0))
+        {
+            throw new InvalidOperationException("Satır kapanışı komutu tam olarak bir genel satırın kapanışını değiştirir; başka komut değiştirmez.");
+        }
+
         // A3 API-30: a schedule changes no ordered quantity, so only the schedule command is exempt; every other command keeps the check.
-        if (commandName != PurchasingCommands.OrderLineScheduleV1 && order.Status == PurchaseOrderStatus.Approved
-            && order.SourceRequestId is { } sourceRequestId)
+        // API-11: neither does a line closure or reopening (the ordered share stays; the closed remainder is not given back to the
+        // request line's need, the ALS-D68 reading of a cancelled remainder), so it is exempt too.
+        if (commandName != PurchasingCommands.OrderLineScheduleV1 && !PurchasingCommands.IsLineClosure(commandName)
+            && order.Status == PurchaseOrderStatus.Approved && order.SourceRequestId is { } sourceRequestId)
         {
             await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken);
         }
@@ -449,6 +466,32 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             lineRow.Technical = line.TechnicalQuantity.Value;
             lineRow.Accepted = line.AcceptedQuantity.Value;
             lineRow.Cancelled = line.CancelledQuantity.Value;
+            lineRow.Closed = line.ClosedQuantity.Value;
+        }
+
+        foreach (var line in reclosed)
+        {
+            // API-11: the closure history (replayed on every rebuild) and the outbox message for the Inventory owner (F-017 §3.6),
+            // in the same save as the line totals.
+            var change = line.LastClosureChange ?? throw new InvalidOperationException("Satır kapanışı değişikliğinin kaydı yok.");
+            if (change.Closed != line.IsClosed)
+            {
+                throw new InvalidOperationException("Satır kapanışı kaydı satırın durumuyla uyuşmuyor.");
+            }
+
+            dbContext.LineClosureEvents.Add(new PurchaseOrderLineClosureEventRow
+            {
+                CompanyId = companyId,
+                OrderId = order.Id,
+                LineId = line.Id,
+                OrderVersionAfter = order.Version,
+                Closed = change.Closed,
+                Reason = change.Reason,
+                RecordedBy = change.RecordedBy,
+                RecordedAtUtc = change.RecordedAtUtc,
+                CorrelationId = envelope.CorrelationId.Trim(),
+            });
+            dbContext.OutboxMessages.Add(LineClosedMessage(companyId, order, line.Id, change.Closed, audit, envelope, now));
         }
 
         foreach (var line in rescheduled)
@@ -835,13 +878,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var lines = await dbContext.OrderLines.AsNoTracking().Where(line => ids.Contains(line.OrderId)).ToListAsync(cancellationToken);
         var acceptances = await dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken);
+        var closures = await dbContext.LineClosureEvents.AsNoTracking().Where(closure => ids.Contains(closure.OrderId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
             var ownAcceptances = acceptances.Where(acceptance => acceptance.OrderId == row.Id)
                 .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToList();
             var ownSlices = slices.Where(slice => slice.OrderId == row.Id).ToList();
-            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices), row.CompanyAccountId, row.EffectiveOn, VersionsOf(own));
+            var ownClosures = closures.Where(closure => closure.OrderId == row.Id).OrderBy(closure => closure.OrderVersionAfter).ToList();
+            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures), row.CompanyAccountId, row.EffectiveOn,
+                VersionsOf(own));
         })];
     }
 
@@ -849,13 +895,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     /// Rebuilds the order through the domain in recording order (general lines, technical slices, approval, acceptance shares);
     /// the stored version and totals must be the ones the rebuild reaches. A3 API-30: each delivery-schedule revision is replayed at
     /// the version it produced — before the approval when it was recorded on the Draft, otherwise between the acceptance shares in
-    /// version order — so every revision passes the domain's rules again (Σ slices = the line's ordered quantity).
+    /// version order — so every revision passes the domain's rules again (Σ slices = the line's ordered quantity). API-11: each line
+    /// closure or reopening is replayed the same way at the version it produced, so the stored Closed totals and the line's current
+    /// closure (who, when, why) are the domain's again.
     /// </summary>
     internal static PurchaseOrder RestoreOrder(
         PurchaseOrderRow row,
         IReadOnlyList<PurchaseOrderLineRow> lines,
         IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null,
-        IReadOnlyList<PurchaseOrderLineDeliverySliceRow>? deliverySlices = null)
+        IReadOnlyList<PurchaseOrderLineDeliverySliceRow>? deliverySlices = null,
+        IReadOnlyList<PurchaseOrderLineClosureEventRow>? closureEvents = null)
     {
         var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
@@ -911,7 +960,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var orderedAcceptances = new Queue<PurchaseAcceptanceRow>((acceptances ?? [])
             .OrderBy(acceptance => acceptance.OrderVersionAfter)
             .ThenBy(acceptance => acceptance.AcceptanceId));
-        while (orderedAcceptances.Count > 0 || revisions.Count > 0)
+        var orderedClosures = new Queue<PurchaseOrderLineClosureEventRow>((closureEvents ?? [])
+            .OrderBy(closure => closure.OrderVersionAfter));
+        while (orderedAcceptances.Count > 0 || revisions.Count > 0 || orderedClosures.Count > 0)
         {
             var expectedVersionAfter = checked(order.Version + 1);
             if (revisions.TryPeek(out var revision) && revision[0].OrderVersionAfter == expectedVersionAfter)
@@ -920,9 +971,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 continue;
             }
 
+            if (orderedClosures.TryPeek(out var closureEvent) && closureEvent.OrderVersionAfter == expectedVersionAfter)
+            {
+                ReplayClosure(order, row, lines, orderedClosures.Dequeue());
+                continue;
+            }
+
             if (!orderedAcceptances.TryDequeue(out var acceptance))
             {
-                throw new InvalidOperationException("Kayıtlı termin revizyonu sipariş sürümünde ardışık değil.");
+                throw new InvalidOperationException("Kayıtlı termin revizyonu veya satır kapanışı sipariş sürümünde ardışık değil.");
             }
 
             if (acceptance.CompanyId != row.CompanyId || acceptance.OrderId != row.Id
@@ -963,13 +1020,41 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         {
             var rebuilt = order.Lines.Single(candidate => candidate.Id == line.LineId);
             if (rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted
-                || rebuilt.CancelledQuantity.Value != line.Cancelled)
+                || rebuilt.CancelledQuantity.Value != line.Cancelled || rebuilt.ClosedQuantity.Value != line.Closed)
             {
                 throw new InvalidOperationException("Kayıtlı satır toplamları yeniden kurulan toplamlarla uyuşmuyor.");
             }
         }
 
         return order;
+    }
+
+    /// <summary>
+    /// API-11: one stored closure or reopening through the domain — this order's general line, recorded at the version the replay
+    /// reaches; the domain's rules (Approved order, general line, alternating direction, a non-blank reason) apply again.
+    /// </summary>
+    private static void ReplayClosure(PurchaseOrder order, PurchaseOrderRow row, IReadOnlyList<PurchaseOrderLineRow> lines,
+        PurchaseOrderLineClosureEventRow closure)
+    {
+        if (closure.CompanyId != row.CompanyId || closure.OrderId != row.Id
+            || lines.SingleOrDefault(candidate => candidate.LineId == closure.LineId) is not { Kind: (int)PurchaseOrderLineKind.General })
+        {
+            throw new InvalidOperationException("Kayıtlı satır kapanışı bu siparişin genel satırına ait değil.");
+        }
+
+        if (closure.Closed)
+        {
+            order.CloseLine(order.Version, closure.LineId, closure.RecordedBy, closure.Reason, closure.RecordedAtUtc);
+        }
+        else
+        {
+            order.ReopenLine(order.Version, closure.LineId, closure.RecordedBy, closure.Reason, closure.RecordedAtUtc);
+        }
+
+        if (order.Version != closure.OrderVersionAfter)
+        {
+            throw new InvalidOperationException("Kayıtlı satır kapanışının sürümü domain sürümüyle uyuşmuyor.");
+        }
     }
 
     /// <summary>
@@ -1102,6 +1187,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         {
             lineId = line.Id, ordered = line.Quantity.Value, technical = line.TechnicalQuantity.Value, accepted = line.AcceptedQuantity.Value,
             cancelled = line.CancelledQuantity.Value, sourceRequestLineId = line.SourceRequestLineId,
+            // API-11 (ALS-D10/D12): the closed remainder and the line's current closure are part of the audited record.
+            closed = line.ClosedQuantity.Value,
+            closure = line.Closure is { } lineClosure
+                ? new { closedBy = lineClosure.ClosedBy, closedAtUtc = lineClosure.ClosedAtUtc, reason = lineClosure.Reason }
+                : null,
             // A3 API-30 (ALS-D33): the line's current delivery schedule is part of the audited record.
             deliverySchedule = line.DeliverySchedule.Select(slice => new
             {
@@ -1116,6 +1206,29 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 : null,
         }),
     }, Json);
+
+    /// <summary>
+    /// API-11 (F-017 §3.6, ADR-009): the outbox message of one closure or reopening — the general line is the aggregate and the order
+    /// version the command produced is both its version and its sequence, so (type, line, sequence) is unique.
+    /// </summary>
+    private static PurchasingOutboxRow LineClosedMessage(Guid companyId, PurchaseOrder order, Guid lineId, bool closed, PurchasingMutationAudit audit,
+        PurchasingWriteEnvelope envelope, DateTimeOffset now) => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = companyId,
+        EventType = PurchasingOrderLineClosedEventV1.EventType,
+        SchemaVersion = PurchasingOrderLineClosedEventV1.SchemaVersion,
+        SourceOperation = audit.Operation,
+        AggregateType = PurchasingOrderLineClosedEventV1.AggregateType,
+        AggregateId = lineId,
+        AggregateVersion = order.Version,
+        Sequence = checked((int)order.Version),
+        PayloadJson = JsonSerializer.Serialize(new PurchasingOrderLineClosedPayloadV1(companyId, order.Id, lineId, closed, order.Version), Json),
+        OccurredAtUtc = now,
+        CorrelationId = envelope.CorrelationId.Trim(),
+        CausationId = envelope.CausationId?.Trim(),
+        RecordedAtUtc = now,
+    };
 
     private static string ProductVersionOf(IReadOnlyDictionary<Guid, string> versions, Guid lineId)
     {
