@@ -14,8 +14,8 @@ namespace GoymenERP.Identity.UnitTests;
 /// <summary>
 /// The Finance party credit limit permissions (API-85a; F018 plan §L1; FNS-D27/D27a) are REGISTERED, not
 /// granted; who holds which is a human gate. These cases keep registration and grant apart, pin the
-/// company-wide scope, and pin that none of the three is Critical: whether they should be is not decided
-/// (a human gate, reported as NEEDS-SINAN), so the catalogue does not choose it.
+/// company-wide scope, and pin the classification FNS-D46 decided: approve alone is Critical, read and
+/// propose are not. The classification is no grant: no role is seeded with any of the three.
 /// </summary>
 public sealed class FinanceCreditLimitPermissionRegistrationTests
 {
@@ -52,11 +52,15 @@ public sealed class FinanceCreditLimitPermissionRegistrationTests
         Assert.True(ErpPermissions.RequiresCompanyWideScope(permission));
     }
 
-    [Theory]
-    [MemberData(nameof(Names))]
-    public void None_is_marked_critical_until_a_user_decides(string permission)
+    [Fact]
+    public void Approve_alone_is_critical_and_read_and_propose_are_not()
     {
-        Assert.False(ErpPermissions.IsCritical(permission));
+        // FNS-D46: the approval is what changes the effective limit (FNS-D45), so only that authority is
+        // Critical; proposing changes nothing on its own.
+        Assert.True(ErpPermissions.IsCritical(ErpPermissions.FinanceCreditLimitsApprove));
+        Assert.False(ErpPermissions.IsCritical(ErpPermissions.FinanceCreditLimitsPropose));
+        Assert.False(ErpPermissions.IsCritical(ErpPermissions.FinanceCreditLimitsRead));
+        Assert.Single(AllNames, ErpPermissions.IsCritical);
     }
 
     [Theory]

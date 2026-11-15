@@ -52,6 +52,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'product.items.list',
   'finance.manual-bank-payments.list',
   'finance.expense-payments.workspace',
+  'finance.credit-limits.list',
   'finance.allocations.list',
   'finance.open-items.list',
   // B-05 (KLN-D3): the party ledger opens from Muhasebe and from Cari; both are Finance's read of one sub-ledger.
@@ -228,6 +229,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.manual-bank-payments.create': '',
   'finance.manual-bank-payments.detail': '',
   'finance.expense-payments.workspace': 'Masraf Ödemeleri',
+  'finance.credit-limits.list': 'Kredi Limitleri',
   'accounting.periods.list': 'Muhasebe Dönemleri',
   'accounting.journals.list': 'Muhasebe Fişleri',
   'accounting.posting-queues': 'Muhasebe Kontrol',
@@ -351,6 +353,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'finance.manual-bank-payments.list',
       'finance.expense-payments.workspace',
       'finance.bank-accounts.list',
+      'finance.credit-limits.list',
       'finance.customer-instruments.list',
       'finance.open-items.list',
       'finance.allocations.list',

@@ -602,20 +602,22 @@ actor to be the recorder.
 Not in this slice: the single "Kaydet" screen (reserve → upload → record, resumable with the same keys), the Sales
 read port (D3), correcting or cancelling an approved record (FNS-D20), reservation expiry and PDF retention.
 
-## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a, F018 §L1
+## API-85a L1: party credit limit master (kredi limiti) — FNS-D27/D27a/D45/D46, F018 §L1
 
 | Part | What |
 |---|---|
-| HTTP | `POST /api/v1/finance/credit-limits` (set, one step), `POST …/credit-limits/removals` (remove, one step), `POST …/credit-limits/proposals` (propose a set or a removal), `POST …/credit-limits/proposals/{proposalId}/approval`, `POST …/credit-limits/proposals/{proposalId}/rejection` (written reason), `GET …/credit-limits`, `GET …/credit-limits/accounts/{companyAccountId}`, `GET …/credit-limits/accounts/{companyAccountId}/history`, `GET …/credit-limits/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
-| Permissions | `finance.credit-limits.read`, `finance.credit-limits.propose`, `finance.credit-limits.approve`: registered, company-wide, **not granted and not Critical** (grant/rol/Critical is a human gate). The approver sets or removes a limit in one save (FNS-D27a); the proposer only proposes, and another approver decides (`finance_approver_is_proposer`, checked by the service and by `CK_PartyCreditLimits_Decision`) |
+| HTTP | `POST /api/v1/finance/credit-limits/proposals` (propose a set, a change or a removal), `POST …/credit-limits/proposals/{proposalId}/approval`, `POST …/credit-limits/proposals/{proposalId}/rejection` (written reason), `GET …/credit-limits`, `GET …/credit-limits/accounts/{companyAccountId}`, `GET …/credit-limits/accounts/{companyAccountId}/history`, `GET …/credit-limits/currency-candidates`. Company only from the server context (`X-Company-Id`), never from the body |
+| Permissions | `finance.credit-limits.read`, `finance.credit-limits.propose`, `finance.credit-limits.approve`: registered, company-wide, **not granted**. Only `approve` is Critical (FNS-D46, Sinan's classification); read and propose are not; granting any of them to a role stays a human step. Every set, change and removal is a proposal that a different approver decides, with no amount threshold (FNS-D45): the former one-step direct set/remove (`POST /credit-limits`, `POST /credit-limits/removals`) is removed, and the proposer's own decision is refused (`finance_approver_is_proposer`, checked by the service, by the save guard and by `CK_PartyCreditLimits_Decision`, which since `RequirePartyCreditLimitSecondPerson` admits no direct record) |
 | Record | Per company account: kind `Set` (positive exact decimal text amount + currency) or `Remove`; status Proposed / Approved / Rejected / Superseded. At most one live (Proposed or Approved) record per account and status (`UX_PartyCreditLimits_Live`); every approval moves the account revision by one (`UX_PartyCreditLimits_Revision`), the previous approved record becomes Superseded. Commands carry `expectedRevision` (account) or `expectedVersion` (proposal) |
 | Idempotency / audit | `finance.PartyCreditLimitCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; a stale revision is a recorded `VersionConflict` |
 | Sales port | `FinanceSalesPartyRiskReadPortV1` reads the approved record (MOD-01 above); the port name and shape are unchanged |
 | Migration `20261114200445_AddPartyCreditLimits` | Pure DDL up (records and commands). `Down` refuses with `THROW 51322` while any credit limit record or recorded attempt exists (forward fix): it is the history of who set which limit; an empty store rolls back |
+| Migration `20261115121907_RequirePartyCreditLimitSecondPerson` | FNS-D45: `CK_PartyCreditLimits_Decision` requires `IsDirect = 0` and decider ≠ proposer (binary collation) for approved and superseded records. `Up` first refuses with `THROW 51362` while a stored direct record exists (it is neither rewritten nor deleted); `Down` only widens the check again and needs no guard |
+| Shell (provider 1.10) | Route `finance.credit-limits.list` at `/finans/kredi-limitleri` (screen `F-18-CREDIT-LIMITS`) under `finance.credit-limits.read`; controls `finance.credit-limits.propose` (read + propose) and `finance.credit-limits.approve` (read + approve) of that route. The screen draws the decision buttons only from the approve control and the proposal form only from the propose control; the server checks every command on its own |
 
-Not in this slice: the threshold-based second approval (OPEN-009 / F018 N-3), the shell route and capability wiring of the
-screen (`src/frontend/goymen-erp-web/src/finance/CreditLimitPage.tsx` is built, not mounted), and the Cari-side ownership check
-of party/account (F018 N-2).
+Not in this slice: the amount/role/currency approval matrix (OPEN-009 stays open; FNS-D45 needs no threshold), the
+Cari-side ownership check of party/account (F018 N-2), and the processed-invoice set on the Sales risk port (SAT-D311 /
+FNS-D53, opened by Sales and filled later by Finance).
 
 ## F-019 / API-11 v2: customer return acceptance (müşteri iadesi kabulü)
 

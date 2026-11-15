@@ -43,6 +43,7 @@ import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CA
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import { ExpensePaymentPage } from './ExpensePaymentPage'
+import { CreditLimitPage } from './CreditLimitPage'
 import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
 import {
   ManualBankPaymentCreatePage,
@@ -88,6 +89,16 @@ function ExpensePaymentRoute() {
     canDraft={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsDraft)}
     canApprove={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsApprove)}
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.expensePaymentsRecord)} />
+}
+
+/**
+ * F-018 L1 (FNS-D45): the credit-limit list. Proposing and deciding are controls of it, each behind its own capability;
+ * the screen itself refuses to work without a single active company and the server checks every command anyway.
+ */
+function CreditLimitRoute() {
+  const shell = useShellState()
+  return <CreditLimitPage canPropose={hasCapability(shell, FINANCE_CAPABILITY.creditLimitsPropose)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.creditLimitsApprove)} />
 }
 
 function ManualBankPaymentListRoute() {
@@ -224,6 +235,10 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.expensePayments.slice(1),
     element: gate(FINANCE_CAPABILITY.expensePaymentsWorkspace, <ExpensePaymentRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.creditLimitsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.creditLimitsList, <CreditLimitRoute />),
   },
   { path: FINANCE_ROUTE.openItemsList.slice(1), element: gate(FINANCE_CAPABILITY.openItemsList, <OpenItemListPage />) },
   {

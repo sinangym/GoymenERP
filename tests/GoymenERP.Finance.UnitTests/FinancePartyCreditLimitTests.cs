@@ -18,10 +18,11 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 namespace GoymenERP.Finance.UnitTests;
 
 /// <summary>
-/// API-85a (F018 plan §L1; FNS-D27/D27a) without a database: the credit limit model (live and revision
-/// indexes, payload and decision checks, the command target), the forward-fix Down, the write guard, the payload
-/// hash, and the real service in memory: the one-step change by an approver, the proposal decided by another
-/// actor, rejection, stale revision and version, one pending proposal per account, replay, company isolation,
+/// API-85a (F018 plan §L1; FNS-D27a/D45) without a database: the credit limit model (live and revision indexes,
+/// payload and decision checks, the command target), the forward-fix Down, the migration that closes the direct
+/// record, the insert and write guards, the payload hash, and the real service in memory: every set, change and
+/// removal is a proposal that another holder of the approve authority decides (no one-step path, no amount
+/// threshold), rejection, stale revision and version, one pending proposal per account, replay, company isolation,
 /// authority lost before the save and what a read-only caller sees. What SQL Server enforces is proven by the
 /// relational acceptance tests. SENTETIK / NOT_ENV.
 /// </summary>
@@ -40,6 +41,7 @@ public sealed class FinancePartyCreditLimitTests
     private const string Reader = "SENTETIK-reader";
     private const string Reason = "SENTETIK neden";
     private const string Guard = "Kredi limiti kaydı yalnız öneri kararıyla veya yerine yenisi geçerek, sürümü bir artarak değişir.";
+    private const string BornProposal = "Kredi limiti kaydı yalnız karar bekleyen bir öneri olarak oluşur.";
     private const string Immutable = "Finans kaydının yalnız izinli alanı değişir; komut kayıtları değişmez.";
 
     [Fact]
@@ -63,10 +65,11 @@ public sealed class FinancePartyCreditLimitTests
 
         var decision = Assert.Single(designLimits.GetCheckConstraints(), check => check.Name == "CK_PartyCreditLimits_Decision");
         Assert.Equal(FinanceDbContext.PartyCreditLimitDecisionCheck, decision.Sql);
-        // FNS-D27: a direct record is decided by its author; FNS-D27a: a proposal by anyone else (binary collation).
-        Assert.Contains("[IsDirect] = 1 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 = [ProposedBy] COLLATE Latin1_General_100_BIN2",
-            decision.Sql, StringComparison.Ordinal);
-        Assert.Contains("[IsDirect] = 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2",
+        // FNS-D45: no direct record in any state; an approved record is decided by anyone but its proposer
+        // (binary collation).
+        Assert.DoesNotContain("[IsDirect] = 1", decision.Sql, StringComparison.Ordinal);
+        Assert.Contains("([Status] IN (2, 4) AND [IsDirect] = 0 AND", decision.Sql, StringComparison.Ordinal);
+        Assert.Contains("AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2) OR ",
             decision.Sql, StringComparison.Ordinal);
         Assert.Single(designLimits.GetCheckConstraints(), check => check.Name == "CK_PartyCreditLimits_Identity");
         var revision = Assert.Single(designLimits.GetCheckConstraints(), check => check.Name == "CK_PartyCreditLimits_Revision");
@@ -120,6 +123,90 @@ public sealed class FinancePartyCreditLimitTests
             migration.DownOperations.OfType<DropTableOperation>().Select(operation => operation.Name));
     }
 
+    [Fact]
+    public void The_second_person_migration_refuses_stored_direct_records_before_it_narrows_the_decision_check()
+    {
+        var migration = new RequirePartyCreditLimitSecondPerson();
+
+        // Up: the one guard comes first, before the check is dropped; a stored direct record stops the migration
+        // instead of being rewritten (what it becomes is not this migration's choice).
+        var guard = Assert.IsType<SqlOperation>(migration.UpOperations[0]);
+        Assert.Single(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 51362", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[finance].[PartyCreditLimits] WHERE [IsDirect] = 1", guard.Sql, StringComparison.Ordinal);
+        Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[1]);
+        var narrowed = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[2]);
+        Assert.Equal(3, migration.UpOperations.Count);
+        Assert.Equal(("CK_PartyCreditLimits_Decision", FinanceDbContext.PartyCreditLimitDecisionCheck),
+            (narrowed.Name, narrowed.Sql));
+
+        // Down only widens the check back to exactly what AddPartyCreditLimits created: no row loses meaning,
+        // so it carries no guard.
+        Assert.DoesNotContain(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.IsType<DropCheckConstraintOperation>(migration.DownOperations[0]);
+        var widened = Assert.Single(migration.DownOperations.OfType<AddCheckConstraintOperation>());
+        var created = new AddPartyCreditLimits().UpOperations.OfType<CreateTableOperation>()
+            .Single(table => table.Name == "PartyCreditLimits").CheckConstraints
+            .Single(check => check.Name == "CK_PartyCreditLimits_Decision");
+        Assert.Equal(created.Sql, widened.Sql);
+        Assert.Contains("[IsDirect] = 1 AND", widened.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("direct")]
+    [InlineData("approved")]
+    [InlineData("rejected")]
+    [InlineData("superseded")]
+    [InlineData("second-version")]
+    [InlineData("decided-by")]
+    [InlineData("account-revision")]
+    public async Task A_credit_limit_record_is_born_only_as_an_undecided_proposal(string fault)
+    {
+        await using var run = new Run();
+        var row = Proposal(baseRevision: 0);
+        switch (fault)
+        {
+            case "direct":
+                // The FNS-D27 one-step record: proposed and approved by the same person in one write.
+                row.IsDirect = true;
+                row.Status = FinancePartyCreditLimitService.Approved;
+                row.DecidedBy = row.ProposedBy;
+                row.DecidedAtUtc = At;
+                row.AccountRevision = 1;
+                break;
+            case "approved":
+                row.Status = FinancePartyCreditLimitService.Approved;
+                row.DecidedBy = Approver;
+                row.DecidedAtUtc = At;
+                row.AccountRevision = 1;
+                break;
+            case "rejected":
+                row.Status = FinancePartyCreditLimitService.Rejected;
+                row.DecidedBy = Approver;
+                row.DecidedAtUtc = At;
+                row.RejectionReason = Reason;
+                break;
+            case "superseded":
+                row.Status = FinancePartyCreditLimitService.Superseded;
+                row.SupersededAtUtc = At;
+                break;
+            case "second-version":
+                row.Version = 2;
+                break;
+            case "decided-by":
+                row.DecidedBy = Approver;
+                break;
+            default:
+                row.AccountRevision = 1;
+                break;
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => run.SeedAsync(row));
+
+        Assert.Equal(BornProposal, exception.Message);
+        Assert.Empty(await run.AllRowsAsync());
+    }
+
     [Theory]
     [InlineData("self-approval")]
     [InlineData("approval-without-revision")]
@@ -132,8 +219,9 @@ public sealed class FinancePartyCreditLimitTests
     public async Task A_credit_limit_record_changes_only_by_one_decision_of_another_actor_or_by_being_superseded(string fault)
     {
         await using var run = new Run();
-        var seeded = await run.SeedAsync(fault is "approved-rejected" or "superseded-decision-changed"
-            ? ApprovedSet(revision: 1) : Proposal(baseRevision: 0));
+        var seeded = fault is "approved-rejected" or "superseded-decision-changed"
+            ? await run.SeedApprovedAsync(revision: 1)
+            : await run.SeedAsync(Proposal(baseRevision: 0));
         await using var context = run.Memory(CompanyA);
         var row = await context.PartyCreditLimits.SingleAsync(candidate => candidate.Id == seeded.Id);
         switch (fault)
@@ -167,6 +255,7 @@ public sealed class FinancePartyCreditLimitTests
                 row.Version += 1;
                 break;
             default:
+                // Turning a decided proposal into a direct record is refused like any other field change.
                 Approve(row, Approver, revision: 1);
                 row.IsDirect = true;
                 break;
@@ -222,20 +311,23 @@ public sealed class FinancePartyCreditLimitTests
     [Fact]
     public void The_payload_hash_names_the_command_and_every_field()
     {
-        var request = new PartyCreditLimitSetRequest(Party, Account, Currency, "100.00", "0");
-        var hash = FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand, request);
+        var request = new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "100.00", "0");
+        var hash = FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand, request);
         Assert.Equal(64, hash.Length);
-        Assert.Equal(hash, FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand,
-            new PartyCreditLimitSetRequest(Party, Account, Currency, "100.00", "0")));
+        Assert.Equal(hash, FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand,
+            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "100.00", "0")));
         string[] others =
         [
-            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand, request),
-            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand, request with { PartyId = OtherParty }),
-            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand, request with { CompanyAccountId = Guid.NewGuid() }),
-            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand, request with { CurrencyId = OtherCurrency }),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ApproveCommand, request),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand, request with { PartyId = OtherParty }),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand,
+                request with { CompanyAccountId = Guid.NewGuid() }),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand,
+                request with { Kind = PartyCreditLimitKind.Remove }),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand, request with { CurrencyId = OtherCurrency }),
             // The exact text is the value: "100.0" is another payload than "100.00".
-            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand, request with { Amount = "100.0" }),
-            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.SetCommand, request with { ExpectedRevision = "1" }),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand, request with { Amount = "100.0" }),
+            FinancePartyCreditLimitService.PayloadHash(FinancePartyCreditLimitService.ProposeCommand, request with { ExpectedRevision = "1" }),
         ];
         Assert.All(others, other => Assert.NotEqual(hash, other));
         Assert.Equal(others.Length, others.Distinct(StringComparer.Ordinal).Count());
@@ -267,29 +359,29 @@ public sealed class FinancePartyCreditLimitTests
     [InlineData("party", "partyId", "identity_required")]
     [InlineData("account", "companyAccountId", "identity_required")]
     [InlineData("revision", "expectedRevision", "identity_required")]
+    [InlineData("null-revision", "expectedRevision", "identity_required")]
     [InlineData("currency", "currencyId", "identity_required")]
     [InlineData("zero", "amount", "credit_limit_amount_invalid")]
     [InlineData("negative", "amount", "credit_limit_amount_invalid")]
     [InlineData("comma", "amount", "credit_limit_amount_invalid")]
-    [InlineData("null-amount", "amount", "credit_limit_amount_invalid")]
-    public async Task A_direct_set_is_refused_before_Settings_or_Counterparty_is_asked(string fault, string field, string code)
+    public async Task A_set_proposal_is_refused_before_Settings_or_Counterparty_is_asked(string fault, string field, string code)
     {
         await using var run = new Run();
         var request = fault switch
         {
-            "party" => new PartyCreditLimitSetRequest(Guid.Empty, Account, Currency, "100", "0"),
-            "account" => new PartyCreditLimitSetRequest(Party, Guid.Empty, Currency, "100", "0"),
-            "revision" => new PartyCreditLimitSetRequest(Party, Account, Currency, "100", " 0"),
-            "currency" => new PartyCreditLimitSetRequest(Party, Account, Guid.Empty, "100", "0"),
-            "zero" => new PartyCreditLimitSetRequest(Party, Account, Currency, "0.00", "0"),
-            "negative" => new PartyCreditLimitSetRequest(Party, Account, Currency, "-100", "0"),
-            "comma" => new PartyCreditLimitSetRequest(Party, Account, Currency, "100,00", "0"),
-            "null-amount" => new PartyCreditLimitSetRequest(Party, Account, Currency, null!, "0"),
-            _ => new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"),
+            "party" => SetProposal(Guid.Empty, Account, "100", "0"),
+            "account" => SetProposal(Party, Guid.Empty, "100", "0"),
+            "revision" => SetProposal(Party, Account, "100", " 0"),
+            "null-revision" => SetProposal(Party, Account, "100", null!),
+            "currency" => new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Guid.Empty, "100", "0"),
+            "zero" => SetProposal(Party, Account, "0.00", "0"),
+            "negative" => SetProposal(Party, Account, "-100", "0"),
+            "comma" => SetProposal(Party, Account, "100,00", "0"),
+            _ => SetProposal(Party, Account, "100", "0"),
         };
 
-        var result = await run.SetAsync(Approver, request, key: fault == "key" ? " SENTETIK-key" : null,
-            currencies: new NoCandidates(), parties: new NoPartyRead());
+        var result = await run.ProposeAsync(Proposer, request, key: fault == "key" ? " SENTETIK-key" : null,
+            permissions: new ProposerPermission(), currencies: new NoCandidates(), parties: new NoPartyRead());
 
         AssertIssue(result, CommandOutcome.ValidationFailed, field, code);
         Assert.Empty(await run.CommandsAsync());
@@ -314,7 +406,8 @@ public sealed class FinancePartyCreditLimitTests
             _ => new PartyCreditLimitProposeRequest(Party, Account, (PartyCreditLimitKind)7, Currency, "100", "0"),
         };
 
-        var result = await run.ProposeAsync(Proposer, request, currencies: new NoCandidates(), parties: new NoPartyRead());
+        var result = await run.ProposeAsync(Proposer, request, permissions: new ProposerPermission(),
+            currencies: new NoCandidates(), parties: new NoPartyRead());
 
         var issue = Assert.Single(result.Issues);
         Assert.Equal((CommandOutcome.ValidationFailed, field, code), (result.Outcome, issue.Field, issue.Code));
@@ -322,29 +415,33 @@ public sealed class FinancePartyCreditLimitTests
     }
 
     [Fact]
-    public async Task An_approver_sets_changes_and_removes_a_limit_in_one_step_each_audited_with_old_and_new_value()
+    public async Task Setting_changing_and_removing_a_limit_are_each_a_proposal_another_person_approves_audited_with_old_and_new_value()
     {
         await using var run = new Run();
-        var permissions = new RecordingPermission(PermissionDecision.Allowed);
+        var proposePermissions = new RecordingPermission(PermissionDecision.Allowed);
 
-        var set = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "250000.50", "0"),
-            permissions: permissions);
-
-        Assert.Equal((CommandOutcome.Succeeded, false), (set.Outcome, set.IsReplay));
-        var first = set.Resource!;
-        Assert.Equal((PartyCreditLimitKind.Set, PartyCreditLimitStatus.Approved, true, "1", "1", "250000.50", (Guid?)Currency),
+        // Set: proposed by one person; nothing is effective until a second person approves.
+        var set = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "250000.50", "0"), permissions: proposePermissions);
+        Assert.Equal((CommandOutcome.Succeeded, false, PartyCreditLimitStatus.Proposed, false, (string?)null),
+            (set.Outcome, set.IsReplay, set.Resource!.Status, set.Resource.IsDirect, set.Resource.Revision));
+        // FNS-D45: a proposal is measured on the propose authority only, whoever makes it.
+        Assert.All(proposePermissions.Actions, action => Assert.Equal(FinanceAction.ProposeCreditLimit, action));
+        var first = (await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(set.Resource.Id, "1"))).Resource!;
+        Assert.Equal((PartyCreditLimitKind.Set, PartyCreditLimitStatus.Approved, false, "1", "2", "250000.50", (Guid?)Currency),
             (first.Kind, first.Status, first.IsDirect, first.Revision, first.Version, first.Amount, first.CurrencyId));
         Assert.Equal((CompanyA, Party, Account), (first.CompanyId, first.PartyId, first.CompanyAccountId));
-        // FNS-D27: the one-step change is measured on the approve authority only.
-        Assert.All(permissions.Actions, action => Assert.Equal(FinanceAction.ApproveCreditLimit, action));
 
-        var changed = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "300000", "1"));
+        // Change: this time the approver proposes and the first person approves; the roles are per change.
+        var change = await run.ProposeAsync(Approver, SetProposal(Party, Account, "300000", "1"));
+        var changed = await run.ApproveAsync(Proposer, new PartyCreditLimitApproveRequest(change.Resource!.Id, "1"));
         Assert.Equal((CommandOutcome.Succeeded, "2"), (changed.Outcome, changed.Resource!.Revision));
         var superseded = await run.RowAsync(first.Id);
-        Assert.Equal((FinancePartyCreditLimitService.Superseded, 2L, (long?)1, Approver),
-            (superseded.Status, superseded.Version, superseded.AccountRevision, superseded.DecidedBy));
+        Assert.Equal((FinancePartyCreditLimitService.Superseded, 3L, (long?)1, Proposer, Approver),
+            (superseded.Status, superseded.Version, superseded.AccountRevision, superseded.ProposedBy, superseded.DecidedBy));
 
-        var removed = await run.RemoveAsync(Approver, new PartyCreditLimitRemoveRequest(Party, Account, "2"));
+        // Remove: the same two steps; no amount threshold makes any change a one-step change.
+        var removal = await run.ProposeAsync(Proposer, RemoveProposal("2"), permissions: new ProposerPermission());
+        var removed = await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(removal.Resource!.Id, "1"));
         Assert.Equal((CommandOutcome.Succeeded, PartyCreditLimitKind.Remove, "3", (string?)null, (Guid?)null),
             (removed.Outcome, removed.Resource!.Kind, removed.Resource.Revision, removed.Resource.Amount, removed.Resource.CurrencyId));
 
@@ -353,17 +450,57 @@ public sealed class FinancePartyCreditLimitTests
         Assert.Equal((removed.Resource.Id, "3", (PartyCreditLimitRecordView?)null),
             (account.Resource!.Effective!.Id, account.Resource.Revision, account.Resource.Pending));
 
-        var audit = Assert.Single(await run.AuditsAsync(changed.Resource.Id));
-        Assert.Equal(("finance.credit-limit.set.v1", "Set", ErpPermissions.FinanceCreditLimitsApprove, Approver, (long?)null, (long?)1),
-            (audit.EventType, audit.Operation, audit.PermissionCode, audit.ActorId, audit.EntityVersionBefore, audit.EntityVersionAfter));
+        var changeAudits = await run.AuditsAsync(changed.Resource.Id);
+        Assert.Equal(["finance.credit-limit.proposed.v1", "finance.credit-limit.approved.v1"],
+            changeAudits.Select(audit => audit.EventType));
+        var audit = changeAudits[^1];
+        Assert.Equal(("Approve", ErpPermissions.FinanceCreditLimitsApprove, Proposer, (long?)1, (long?)2),
+            (audit.Operation, audit.PermissionCode, audit.ActorId, audit.EntityVersionBefore, audit.EntityVersionAfter));
         // The old value beside the new one.
         Assert.Contains("250000.50", audit.BeforeJson, StringComparison.Ordinal);
         Assert.Contains("300000", audit.AfterJson, StringComparison.Ordinal);
         using var approval = JsonDocument.Parse(audit.ApprovalContextJson!);
-        Assert.Equal(("FNS-D27", Approver, true), (approval.RootElement.GetProperty("rule").GetString(),
-            approval.RootElement.GetProperty("approvedBy").GetString(), approval.RootElement.GetProperty("direct").GetBoolean()));
-        Assert.Equal("finance.credit-limit.removed.v1", Assert.Single(await run.AuditsAsync(removed.Resource.Id)).EventType);
-        Assert.Equal(3, (await run.CommandsAsync()).Count);
+        Assert.Equal(("FNS-D45", Approver, Proposer), (approval.RootElement.GetProperty("rule").GetString(),
+            approval.RootElement.GetProperty("proposedBy").GetString(), approval.RootElement.GetProperty("approvedBy").GetString()));
+        Assert.False(approval.RootElement.TryGetProperty("direct", out _));
+        Assert.Equal("finance.credit-limit.approved.v1", (await run.AuditsAsync(removed.Resource.Id))[^1].EventType);
+        Assert.Equal(6, (await run.CommandsAsync()).Count);
+        Assert.All(await run.AllRowsAsync(), row => Assert.False(row.IsDirect));
+    }
+
+    [Theory]
+    [InlineData("set")]
+    [InlineData("change")]
+    [InlineData("remove")]
+    public async Task A_holder_of_both_authorities_cannot_approve_their_own_proposal_of_any_kind(string kind)
+    {
+        await using var run = new Run();
+        if (kind != "set")
+        {
+            await run.SetLimitAsync("1000");
+        }
+
+        // The approver holds propose and approve (the default permission port allows every action).
+        var request = kind switch
+        {
+            "set" => SetProposal(Party, Account, "1000", "0"),
+            "change" => SetProposal(Party, Account, "2000", "1"),
+            _ => RemoveProposal("1"),
+        };
+        var proposed = await run.ProposeAsync(Approver, request);
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        var proposal = proposed.Resource!.Id;
+        var before = await run.SnapshotAsync(proposal);
+
+        AssertIssue(await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(proposal, "1")),
+            CommandOutcome.Denied, "approval", "finance_approver_is_proposer");
+        AssertIssue(await run.RejectAsync(Approver, new PartyCreditLimitRejectRequest(proposal, "1", Reason)),
+            CommandOutcome.Denied, "approval", "finance_approver_is_proposer");
+
+        Assert.Equal(before, await run.SnapshotAsync(proposal));
+        Assert.Equal(FinancePartyCreditLimitService.Proposed, (await run.RowAsync(proposal)).Status);
+        var account = await run.GetAccountAsync(Reader, Account, new ReadOnlyPermission());
+        Assert.Equal(kind == "set" ? null : "1", account.Outcome == ReadOutcome.Found ? account.Resource!.Effective?.Revision : null);
     }
 
     [Fact]
@@ -400,7 +537,7 @@ public sealed class FinancePartyCreditLimitTests
         Assert.Equal(("finance.credit-limit.approved.v1", "Approve", ErpPermissions.FinanceCreditLimitsApprove, (long?)1, (long?)2),
             (audit.EventType, audit.Operation, audit.PermissionCode, audit.EntityVersionBefore, audit.EntityVersionAfter));
         using var decision = JsonDocument.Parse(audit.ApprovalContextJson!);
-        Assert.Equal(("FNS-D27a", Proposer, Approver), (decision.RootElement.GetProperty("rule").GetString(),
+        Assert.Equal(("FNS-D45", Proposer, Approver), (decision.RootElement.GetProperty("rule").GetString(),
             decision.RootElement.GetProperty("proposedBy").GetString(), decision.RootElement.GetProperty("approvedBy").GetString()));
 
         var effective = await run.GetAccountAsync(Reader, Account, new ReadOnlyPermission());
@@ -412,31 +549,25 @@ public sealed class FinancePartyCreditLimitTests
     public async Task An_approved_proposal_supersedes_the_effective_limit_and_a_remove_proposal_needs_one()
     {
         await using var run = new Run();
-        var noLimit = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Remove, null, null, "0"),
-            permissions: new ProposerPermission());
+        var noLimit = await run.ProposeAsync(Proposer, RemoveProposal("0"), permissions: new ProposerPermission());
         AssertIssue(noLimit, CommandOutcome.ValidationFailed, "kind", "credit_limit_not_set");
 
-        var set = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "500", "0"));
-        var remove = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Remove, null, null, "1"),
-            permissions: new ProposerPermission());
+        var set = await run.SetLimitAsync("500");
+        var remove = await run.ProposeAsync(Proposer, RemoveProposal("1"), permissions: new ProposerPermission());
         Assert.Equal(CommandOutcome.Succeeded, remove.Outcome);
 
         var approved = await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(remove.Resource!.Id, "1"));
         Assert.Equal((CommandOutcome.Succeeded, PartyCreditLimitKind.Remove, "2"),
             (approved.Outcome, approved.Resource!.Kind, approved.Resource.Revision));
-        Assert.Equal(FinancePartyCreditLimitService.Superseded, (await run.RowAsync(set.Resource!.Id)).Status);
+        Assert.Equal(FinancePartyCreditLimitService.Superseded, (await run.RowAsync(set.Id)).Status);
     }
 
     [Fact]
     public async Task A_rejection_needs_a_reason_and_another_actor_and_keeps_the_effective_limit()
     {
         await using var run = new Run();
-        var set = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "1000", "0"));
-        var proposed = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "2000", "1"),
-            permissions: new ProposerPermission());
+        var set = await run.SetLimitAsync("1000");
+        var proposed = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "2000", "1"), permissions: new ProposerPermission());
         var proposal = proposed.Resource!.Id;
 
         AssertIssue(await run.RejectAsync(Approver, new PartyCreditLimitRejectRequest(proposal, "1", " ")),
@@ -451,9 +582,12 @@ public sealed class FinancePartyCreditLimitTests
             (rejected.Outcome, rejected.Resource!.Status, rejected.Resource.RejectionReason, rejected.Resource.Revision));
         var audit = (await run.AuditsAsync(proposal))[^1];
         Assert.Equal(("finance.credit-limit.rejected.v1", "Reject"), (audit.EventType, audit.Operation));
+        using var decision = JsonDocument.Parse(audit.ApprovalContextJson!);
+        Assert.Equal(("FNS-D45", Approver), (decision.RootElement.GetProperty("rule").GetString(),
+            decision.RootElement.GetProperty("rejectedBy").GetString()));
 
         var account = await run.GetAccountAsync(Approver, Account);
-        Assert.Equal((set.Resource!.Id, (PartyCreditLimitRecordView?)null, "1"),
+        Assert.Equal((set.Id, (PartyCreditLimitRecordView?)null, "1"),
             (account.Resource!.Effective!.Id, account.Resource.Pending, account.Resource.Revision));
         // A decided proposal is decided once.
         AssertIssue(await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(proposal, "2")),
@@ -461,28 +595,25 @@ public sealed class FinancePartyCreditLimitTests
     }
 
     [Fact]
-    public async Task One_proposal_is_pending_per_account_and_a_direct_change_supersedes_it()
+    public async Task One_proposal_is_pending_per_account_and_an_approver_cannot_change_past_it()
     {
         await using var run = new Run();
-        var first = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "100", "0"),
-            permissions: new ProposerPermission());
-        var second = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "200", "0"),
-            permissions: new ProposerPermission());
-        AssertIssue(second, CommandOutcome.ValidationFailed, "companyAccountId", "credit_limit_proposal_pending");
+        var first = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "0"), permissions: new ProposerPermission());
+        Assert.Equal(CommandOutcome.Succeeded, first.Outcome);
 
-        var direct = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "300", "0"));
-        Assert.Equal(CommandOutcome.Succeeded, direct.Outcome);
+        // A second proposal is refused, whoever makes it: an approver has no path that supersedes a pending proposal.
+        AssertIssue(await run.ProposeAsync(Proposer, SetProposal(Party, Account, "200", "0"), permissions: new ProposerPermission()),
+            CommandOutcome.ValidationFailed, "companyAccountId", "credit_limit_proposal_pending");
+        AssertIssue(await run.ProposeAsync(Approver, SetProposal(Party, Account, "300", "0")),
+            CommandOutcome.ValidationFailed, "companyAccountId", "credit_limit_proposal_pending");
         var pending = await run.RowAsync(first.Resource!.Id);
-        Assert.Equal((FinancePartyCreditLimitService.Superseded, (string?)null, 2L),
-            (pending.Status, pending.DecidedBy, pending.Version));
+        Assert.Equal((FinancePartyCreditLimitService.Proposed, (string?)null, 1L), (pending.Status, pending.DecidedBy, pending.Version));
+        Assert.Single(await run.AllRowsAsync());
 
-        // The superseded proposal can no longer be decided: its old version is stale, its new one is not a proposal.
-        AssertIssue(await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(first.Resource.Id, "1")),
-            CommandOutcome.VersionConflict, "expectedVersion", "version_conflict");
-        AssertIssue(await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(first.Resource.Id, "2")),
-            CommandOutcome.ValidationFailed, "proposalId", "credit_limit_not_proposed");
+        // Once it is decided the account takes the next proposal.
+        await run.RejectAsync(Approver, new PartyCreditLimitRejectRequest(first.Resource.Id, "1", Reason));
+        Assert.Equal(CommandOutcome.Succeeded,
+            (await run.ProposeAsync(Approver, SetProposal(Party, Account, "300", "0"))).Outcome);
     }
 
     [Fact]
@@ -490,19 +621,20 @@ public sealed class FinancePartyCreditLimitTests
     {
         await using var run = new Run();
         var key = Key();
-        var stale = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "5"), key: key);
+        var stale = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "5"), key: key,
+            permissions: new ProposerPermission());
         AssertIssue(stale, CommandOutcome.VersionConflict, "expectedRevision", "version_conflict");
         var recorded = Assert.Single(await run.CommandsAsync());
         Assert.Null(recorded.PartyCreditLimitId);
 
-        var replay = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "5"), key: key,
-            correlation: "SENTETIK-other-correlation");
+        var replay = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "5"), key: key,
+            permissions: new ProposerPermission(), correlation: "SENTETIK-other-correlation");
         Assert.Equal((CommandOutcome.VersionConflict, true, "SENTETIK-correlation"),
             (replay.Outcome, replay.IsReplay, replay.OriginalCorrelationId));
 
-        // A proposal made on revision 0 while the account has moved to revision 1 (a race the database settles).
-        await run.SeedAsync(ApprovedSet(revision: 1));
+        // Two proposals made on revision 0 (a race the database settles): once one is approved the other is stale.
         var proposal = await run.SeedAsync(Proposal(baseRevision: 0));
+        await run.SeedApprovedAsync(revision: 1);
         AssertIssue(await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(proposal.Id, "1")),
             CommandOutcome.VersionConflict, "expectedVersion", "credit_limit_revision_stale");
         Assert.Equal(FinancePartyCreditLimitService.Proposed, (await run.RowAsync(proposal.Id)).Status);
@@ -516,18 +648,26 @@ public sealed class FinancePartyCreditLimitTests
     {
         await using var run = new Run();
         var key = Key();
-        var request = new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0");
-        var first = await run.SetAsync(Approver, request, key: key);
-        var replay = await run.SetAsync(Approver, request, key: key, correlation: "SENTETIK-retry");
+        var request = SetProposal(Party, Account, "100", "0");
+        var first = await run.ProposeAsync(Proposer, request, key: key);
+        var replay = await run.ProposeAsync(Proposer, request, key: key, correlation: "SENTETIK-retry");
         Assert.Equal((CommandOutcome.Succeeded, true, "SENTETIK-correlation", first.Resource!.Id),
             (replay.Outcome, replay.IsReplay, replay.OriginalCorrelationId, replay.Resource!.Id));
 
         Assert.Equal(CommandOutcome.IdempotencyConflict,
-            (await run.SetAsync(Approver, request with { Amount = "101" }, key: key)).Outcome);
+            (await run.ProposeAsync(Proposer, request with { Amount = "101" }, key: key)).Outcome);
         Assert.Equal(CommandOutcome.IdempotencyConflict,
-            (await run.SetAsync("SENTETIK-approver-2", request, key: key)).Outcome);
+            (await run.ProposeAsync("SENTETIK-proposer-2", request, key: key)).Outcome);
         Assert.Single(await run.AllRowsAsync());
         Assert.Single(await run.CommandsAsync());
+
+        var approveKey = Key();
+        var approval = new PartyCreditLimitApproveRequest(first.Resource.Id, "1");
+        var approved = await run.ApproveAsync(Approver, approval, key: approveKey);
+        var approvedAgain = await run.ApproveAsync(Approver, approval, key: approveKey);
+        Assert.Equal((CommandOutcome.Succeeded, true, approved.Resource!.Version),
+            (approvedAgain.Outcome, approvedAgain.IsReplay, approvedAgain.Resource!.Version));
+        Assert.Equal(2L, (await run.RowAsync(first.Resource.Id)).Version);
     }
 
     [Fact]
@@ -535,7 +675,7 @@ public sealed class FinancePartyCreditLimitTests
     {
         await using var run = new Run();
         var foreign = await run.SeedAsync(Proposal(baseRevision: 0, company: CompanyB));
-        await run.SeedAsync(ApprovedSet(revision: 1, company: CompanyB, account: Guid.NewGuid()));
+        await run.SeedApprovedAsync(revision: 1, company: CompanyB, account: Guid.NewGuid());
 
         AssertIssue(await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(foreign.Id, "1")),
             CommandOutcome.ValidationFailed, "proposalId", "credit_limit_proposal_not_found");
@@ -546,16 +686,16 @@ public sealed class FinancePartyCreditLimitTests
         Assert.Equal(ReadOutcome.NotFound, (await run.GetAccountAsync(Approver, Account)).Outcome);
         // The company's own first change starts at revision 0: another company's revisions are not this account's.
         Assert.Equal(CommandOutcome.Succeeded,
-            (await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"))).Outcome);
+            (await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "0"))).Outcome);
     }
 
     [Fact]
-    public async Task Authority_revoked_before_the_save_refuses_the_change_and_stores_nothing()
+    public async Task Authority_revoked_before_the_save_refuses_the_proposal_and_stores_nothing()
     {
         await using var run = new Run();
         // Start, after Settings, after Counterparty, after the account read: allowed; immediately before the save: denied.
-        var result = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"),
-            permissions: new RevokingPermission(FinanceAction.ApproveCreditLimit, allowed: 4));
+        var result = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "0"),
+            permissions: new RevokingPermission(FinanceAction.ProposeCreditLimit, allowed: 4));
 
         Assert.Equal((CommandOutcome.Denied, (PartyCreditLimitRecordView?)null), (result.Outcome, result.Resource));
         Assert.Empty(await run.AllRowsAsync());
@@ -565,22 +705,24 @@ public sealed class FinancePartyCreditLimitTests
     [Theory]
     [InlineData("denied", CommandOutcome.Denied)]
     [InlineData("unmapped", CommandOutcome.Unavailable)]
-    [InlineData("proposer-only", CommandOutcome.Denied)]
-    public async Task A_direct_change_needs_the_approve_authority_now(string fault, CommandOutcome outcome)
+    [InlineData("approver-only", CommandOutcome.Denied)]
+    public async Task A_proposal_needs_the_propose_authority_now_and_the_approve_authority_alone_changes_nothing(string fault,
+        CommandOutcome outcome)
     {
         await using var run = new Run();
         IFinancePermissionPort permissions = fault switch
         {
             "denied" => new RecordingPermission(PermissionDecision.Denied),
             "unmapped" => new RecordingPermission(PermissionDecision.Unavailable),
-            _ => new ProposerPermission(),
+            _ => new ApproverOnlyPermission(),
         };
 
-        var result = await run.SetAsync(Proposer, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"),
+        var result = await run.ProposeAsync(Approver, SetProposal(Party, Account, "100", "0"),
             permissions: permissions, currencies: new NoCandidates(), parties: new NoPartyRead());
 
         Assert.Equal(outcome, result.Outcome);
         Assert.Empty(await run.CommandsAsync());
+        Assert.Empty(await run.AllRowsAsync());
     }
 
     [Theory]
@@ -589,7 +731,7 @@ public sealed class FinancePartyCreditLimitTests
     [InlineData("another-party", "party_account_ineligible", CommandOutcome.ValidationFailed)]
     [InlineData("not-found", "party_account_ineligible", CommandOutcome.ValidationFailed)]
     [InlineData("unavailable", "party_account_unavailable", CommandOutcome.Unavailable)]
-    public async Task A_set_needs_Counterpartys_active_party_account_pair(string fault, string code, CommandOutcome outcome)
+    public async Task A_set_proposal_needs_Counterpartys_active_party_account_pair(string fault, string code, CommandOutcome outcome)
     {
         await using var run = new Run();
         IFinancePartyAccountPort parties = fault switch
@@ -601,8 +743,7 @@ public sealed class FinancePartyCreditLimitTests
             _ => new FixedParty(outcome: ReadOutcome.Unavailable),
         };
 
-        var result = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"),
-            parties: parties);
+        var result = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "0"), parties: parties);
 
         AssertIssue(result, outcome, "companyAccountId", code);
         Assert.Empty(await run.AllRowsAsync());
@@ -612,13 +753,16 @@ public sealed class FinancePartyCreditLimitTests
     public async Task A_remove_is_allowed_for_a_passive_account_but_never_for_an_account_another_party_holds()
     {
         await using var run = new Run();
-        await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"));
-        var removed = await run.RemoveAsync(Approver, new PartyCreditLimitRemoveRequest(Party, Account, "1"),
-            parties: new FixedParty(accountActive: false, partyActive: false));
+        await run.SetLimitAsync("100");
+        var passive = new FixedParty(accountActive: false, partyActive: false);
+        var removal = await run.ProposeAsync(Proposer, RemoveProposal("1"), parties: passive);
+        Assert.Equal(CommandOutcome.Succeeded, removal.Outcome);
+        var removed = await run.ApproveAsync(Approver, new PartyCreditLimitApproveRequest(removal.Resource!.Id, "1"),
+            parties: passive);
         Assert.Equal(CommandOutcome.Succeeded, removed.Outcome);
 
         // Counterparty answers the account for another party now: refused rather than guessed.
-        var moved = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(OtherParty, Account, Currency, "100", "2"),
+        var moved = await run.ProposeAsync(Proposer, SetProposal(OtherParty, Account, "100", "2"),
             parties: new FixedParty(party: OtherParty));
         AssertIssue(moved, CommandOutcome.ValidationFailed, "companyAccountId", "party_account_ineligible");
     }
@@ -633,7 +777,7 @@ public sealed class FinancePartyCreditLimitTests
             ? new Candidates([new MoneyCurrencyCandidateV1(OtherCurrency, "USD", "SENTETIK Dolar")])
             : new FailingCandidates("settings_unavailable");
 
-        var result = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"),
+        var result = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "100", "0"),
             currencies: currencies, parties: new NoPartyRead());
 
         AssertIssue(result, outcome, "currencyId", code);
@@ -643,26 +787,22 @@ public sealed class FinancePartyCreditLimitTests
     public async Task A_reader_sees_approved_records_only_and_a_proposer_or_approver_sees_proposals_too()
     {
         await using var run = new Run();
-        var set = await run.SetAsync(Approver, new PartyCreditLimitSetRequest(Party, Account, Currency, "100", "0"));
-        var proposed = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "200", "1"),
-            permissions: new ProposerPermission());
+        var set = await run.SetLimitAsync("100");
+        var proposed = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "200", "1"), permissions: new ProposerPermission());
         await run.RejectAsync(Approver, new PartyCreditLimitRejectRequest(proposed.Resource!.Id, "1", Reason));
-        var pending = await run.ProposeAsync(Proposer,
-            new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Set, Currency, "300", "1"),
-            permissions: new ProposerPermission());
+        var pending = await run.ProposeAsync(Proposer, SetProposal(Party, Account, "300", "1"), permissions: new ProposerPermission());
 
         var readerList = await run.ListAsync(Reader, new ReadOnlyPermission());
         var readerAccount = Assert.Single(readerList.Resource!.Items).Account;
-        Assert.Equal((set.Resource!.Id, (PartyCreditLimitRecordView?)null, false),
+        Assert.Equal((set.Id, (PartyCreditLimitRecordView?)null, false),
             (readerAccount.Effective!.Id, readerAccount.Pending, readerAccount.IsOwnPending));
         var readerHistory = await run.HistoryAsync(Reader, Account, new ReadOnlyPermission());
-        Assert.Equal([set.Resource.Id], readerHistory.Resource!.Items.Select(item => item.Id));
+        Assert.Equal([set.Id], readerHistory.Resource!.Items.Select(item => item.Id));
 
         var approverAccount = Assert.Single((await run.ListAsync(Approver)).Resource!.Items).Account;
         Assert.Equal((pending.Resource!.Id, false), (approverAccount.Pending!.Id, approverAccount.IsOwnPending));
         var history = await run.HistoryAsync(Approver, Account);
-        Assert.Equal([set.Resource.Id, proposed.Resource.Id, pending.Resource.Id], history.Resource!.Items.Select(item => item.Id));
+        Assert.Equal([set.Id, proposed.Resource.Id, pending.Resource.Id], history.Resource!.Items.Select(item => item.Id));
 
         Assert.Equal(ReadOutcome.Denied, (await run.ListAsync(Reader, new RecordingPermission(PermissionDecision.Denied))).Outcome);
         Assert.Equal(ReadOutcome.Unavailable,
@@ -690,19 +830,17 @@ public sealed class FinancePartyCreditLimitTests
 
     private static string Key() => $"SENTETIK-{Guid.NewGuid():N}";
 
+    private static PartyCreditLimitProposeRequest SetProposal(Guid party, Guid account, string amount, string expectedRevision) =>
+        new PartyCreditLimitProposeRequest(party, account, PartyCreditLimitKind.Set, Currency, amount, expectedRevision);
+
+    private static PartyCreditLimitProposeRequest RemoveProposal(string expectedRevision) =>
+        new PartyCreditLimitProposeRequest(Party, Account, PartyCreditLimitKind.Remove, null, null, expectedRevision);
+
     private static PartyCreditLimitRow Proposal(long baseRevision, Guid? company = null, Guid? account = null) => new PartyCreditLimitRow
     {
         Id = Guid.NewGuid(), CompanyId = company ?? CompanyA, PartyId = Party, CompanyAccountId = account ?? Account,
         Kind = FinancePartyCreditLimitService.SetKind, CurrencyId = Currency, AmountText = "1000", Status = FinancePartyCreditLimitService.Proposed,
         IsDirect = false, BaseRevision = baseRevision, Version = 1, ProposedBy = Proposer, ProposedAtUtc = At, UpdatedAtUtc = At,
-    };
-
-    private static PartyCreditLimitRow ApprovedSet(long revision, Guid? company = null, Guid? account = null) => new PartyCreditLimitRow
-    {
-        Id = Guid.NewGuid(), CompanyId = company ?? CompanyA, PartyId = Party, CompanyAccountId = account ?? Account,
-        Kind = FinancePartyCreditLimitService.SetKind, CurrencyId = Currency, AmountText = "500", Status = FinancePartyCreditLimitService.Approved,
-        IsDirect = true, BaseRevision = revision - 1, AccountRevision = revision, Version = 1, ProposedBy = Approver,
-        ProposedAtUtc = At, DecidedBy = Approver, DecidedAtUtc = At, UpdatedAtUtc = At,
     };
 
     private static void Approve(PartyCreditLimitRow row, string decidedBy, long? revision)
@@ -759,26 +897,46 @@ public sealed class FinancePartyCreditLimitTests
             return row;
         }
 
-        public Task<PartyCreditLimitCommandResult> SetAsync(string actor, PartyCreditLimitSetRequest request, string? key = null,
-            IFinancePermissionPort? permissions = null, ISettingsMoneyCandidateReader? currencies = null,
-            IFinancePartyAccountPort? parties = null, string? correlation = null) =>
-            CommandAsync(actor, permissions, currencies, parties, correlation,
-                (service, finance) => service.SetAsync(finance, new CommandMetadata(key ?? Key()), request, CancellationToken.None));
+        /// <summary>
+        /// Seeds an approved set record the only way one is born: a proposal of <see cref="Proposer"/>, then
+        /// <see cref="Approver"/>'s decision in a second write.
+        /// </summary>
+        public async Task<PartyCreditLimitRow> SeedApprovedAsync(long revision, Guid? company = null, Guid? account = null)
+        {
+            var row = await SeedAsync(Proposal(baseRevision: revision - 1, company: company, account: account));
+            await using var context = Memory(row.CompanyId);
+            var stored = await context.PartyCreditLimits.SingleAsync(candidate => candidate.Id == row.Id);
+            Approve(stored, Approver, revision);
+            await context.SaveChangesAsync();
+            return stored;
+        }
 
-        public Task<PartyCreditLimitCommandResult> RemoveAsync(string actor, PartyCreditLimitRemoveRequest request,
-            IFinancePartyAccountPort? parties = null) =>
-            CommandAsync(actor, null, null, parties, null,
-                (service, finance) => service.RemoveAsync(finance, new CommandMetadata(Key()), request, CancellationToken.None));
+        /// <summary>
+        /// The effective set limit through the service: <see cref="Proposer"/> proposes (propose authority only),
+        /// <see cref="Approver"/> approves.
+        /// </summary>
+        public async Task<PartyCreditLimitRecordView> SetLimitAsync(string amount, string expectedRevision = "0",
+            IFinancePartyAccountPort? parties = null)
+        {
+            var proposed = await ProposeAsync(Proposer, SetProposal(Party, Account, amount, expectedRevision),
+                permissions: new ProposerPermission(), parties: parties);
+            Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+            var approved = await ApproveAsync(Approver, new PartyCreditLimitApproveRequest(proposed.Resource!.Id, "1"),
+                parties: parties);
+            Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+            return approved.Resource!;
+        }
 
         public Task<PartyCreditLimitCommandResult> ProposeAsync(string actor, PartyCreditLimitProposeRequest request,
-            IFinancePermissionPort? permissions = null, ISettingsMoneyCandidateReader? currencies = null,
-            IFinancePartyAccountPort? parties = null) =>
-            CommandAsync(actor, permissions, currencies, parties, null,
-                (service, finance) => service.ProposeAsync(finance, new CommandMetadata(Key()), request, CancellationToken.None));
+            string? key = null, IFinancePermissionPort? permissions = null, ISettingsMoneyCandidateReader? currencies = null,
+            IFinancePartyAccountPort? parties = null, string? correlation = null) =>
+            CommandAsync(actor, permissions, currencies, parties, correlation,
+                (service, finance) => service.ProposeAsync(finance, new CommandMetadata(key ?? Key()), request, CancellationToken.None));
 
-        public Task<PartyCreditLimitCommandResult> ApproveAsync(string actor, PartyCreditLimitApproveRequest request) =>
-            CommandAsync(actor, null, null, null, null,
-                (service, finance) => service.ApproveAsync(finance, new CommandMetadata(Key()), request, CancellationToken.None));
+        public Task<PartyCreditLimitCommandResult> ApproveAsync(string actor, PartyCreditLimitApproveRequest request,
+            string? key = null, IFinancePermissionPort? permissions = null, IFinancePartyAccountPort? parties = null) =>
+            CommandAsync(actor, permissions, null, parties, null,
+                (service, finance) => service.ApproveAsync(finance, new CommandMetadata(key ?? Key()), request, CancellationToken.None));
 
         public Task<PartyCreditLimitCommandResult> RejectAsync(string actor, PartyCreditLimitRejectRequest request) =>
             CommandAsync(actor, null, null, null, null,
@@ -881,6 +1039,16 @@ public sealed class FinancePartyCreditLimitTests
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) =>
             Task.FromResult(action is FinanceAction.ReadCreditLimits or FinanceAction.ProposeCreditLimit
+                ? PermissionDecision.Allowed
+                : PermissionDecision.Denied);
+    }
+
+    /// <summary>A caller allowed to read and approve credit limits, never to propose.</summary>
+    private sealed class ApproverOnlyPermission : IFinancePermissionPort
+    {
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(action is FinanceAction.ReadCreditLimits or FinanceAction.ApproveCreditLimit
                 ? PermissionDecision.Allowed
                 : PermissionDecision.Denied);
     }
