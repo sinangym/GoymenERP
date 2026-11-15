@@ -28,6 +28,15 @@ public static class ErpTelemetry
 
     public const string DropReasonShutdown = "shutdown";
 
+    /// <summary>Level class of a record dropped because the queue was full (KLN-D51).</summary>
+    public const string DropLevelTag = "level";
+
+    public const string DropLevelInformation = "information";
+
+    public const string DropLevelWarning = "warning";
+
+    public const string DropLevelError = "error";
+
     private static readonly Meter Meter = new(MeterName);
 
     private static readonly Counter<long> FileLogDropped = Meter.CreateCounter<long>(
@@ -40,5 +49,23 @@ public static class ErpTelemetry
     internal static void RecordFileLogDropped(string reason, long count = 1)
     {
         FileLogDropped.Add(count, new KeyValuePair<string, object?>(DropReasonTag, reason));
+    }
+
+    internal static void RecordFileLogQueueFullDrop(ErpFileLogLevelClass levelClass)
+    {
+        FileLogDropped.Add(
+            1,
+            new KeyValuePair<string, object?>(DropReasonTag, DropReasonQueueFull),
+            new KeyValuePair<string, object?>(DropLevelTag, DropLevelName(levelClass)));
+    }
+
+    public static string DropLevelName(ErpFileLogLevelClass levelClass)
+    {
+        return levelClass switch
+        {
+            ErpFileLogLevelClass.Error => DropLevelError,
+            ErpFileLogLevelClass.Warning => DropLevelWarning,
+            _ => DropLevelInformation,
+        };
     }
 }

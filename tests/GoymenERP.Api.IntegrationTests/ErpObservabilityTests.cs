@@ -5,14 +5,18 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
 using OpenTelemetry.Exporter;
+using OpenTelemetry.Trace;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// F-032 / ERP-000L: the diagnostic file log and the OpenTelemetry exporter are off by default, refuse incomplete
 /// configuration, redact before writing, and prune only their own expired daily files under a retention policy.
-/// All values below are synthetic.
+/// KLN-D51: a full file log queue drops the oldest information records, keeps errors and reports the dropped count;
+/// a configured share of traces is sampled and failed requests are always traced. KLN-D52: a file log is never
+/// turned on without a retention. All values below are synthetic.
 /// </summary>
 public sealed class ErpObservabilityTests
 {
@@ -77,6 +81,51 @@ public sealed class ErpObservabilityTests
             ["Observability:FileLog:RetentionDays"] = retentionDays.Length == 0 ? null : retentionDays,
             ["Observability:FileLog:RetentionPolicyRef"] = policyRef,
         }));
+    }
+
+    [Fact]
+    public void A_file_log_without_a_retention_fails_startup_so_local_logs_are_always_pruned()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => Bind(new Dictionary<string, string?>
+        {
+            ["Observability:FileLog:Directory"] = CreateTemporaryDirectory(),
+            ["Observability:FileLog:QueueCapacity"] = "16",
+        }));
+
+        Assert.Contains("RetentionDays", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("RetentionPolicyRef", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_kln_d51_and_kln_d52_starting_values_resolve_from_settings()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            // The same keys and values as the shipped appsettings.json, with the sinks turned on.
+            var settings = Bind(new Dictionary<string, string?>
+            {
+                ["Observability:FileLog:Directory"] = directory,
+                ["Observability:FileLog:QueueCapacity"] = "10000",
+                ["Observability:FileLog:RetentionDays"] = "180",
+                ["Observability:FileLog:RetentionPolicyRef"] = "KLN-D52",
+                ["Observability:Otlp:Enabled"] = "true",
+                ["Observability:Otlp:Endpoint"] = "http://collector.invalid:4317",
+                ["Observability:Otlp:Protocol"] = "grpc",
+                ["Observability:Otlp:TraceSamplingRatio"] = "0.1",
+            });
+
+            Assert.NotNull(settings.FileLog);
+            Assert.Equal(10000, settings.FileLog.QueueCapacity);
+            Assert.Equal(180, settings.FileLog.RetentionDays);
+            Assert.Equal("KLN-D52", settings.FileLog.RetentionPolicyRef);
+            Assert.NotNull(settings.Otlp);
+            Assert.Equal(0.1, settings.Otlp.TraceSamplingRatio);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Theory]
@@ -401,6 +450,306 @@ public sealed class ErpObservabilityTests
     }
 
     [Fact]
+    public void A_full_file_log_queue_drops_the_oldest_information_record_and_keeps_errors()
+    {
+        var queue = new ErpFileLogQueue(capacity: 3);
+        Assert.Equal(new ErpFileLogEnqueueResult(true, null), queue.Enqueue(LogLevel.Information, "i1"));
+        Assert.Equal(new ErpFileLogEnqueueResult(true, null), queue.Enqueue(LogLevel.Error, "e1"));
+        Assert.Equal(new ErpFileLogEnqueueResult(true, null), queue.Enqueue(LogLevel.Debug, "i2"));
+
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(true, ErpFileLogLevelClass.Information),
+            queue.Enqueue(LogLevel.Critical, "e2"));
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(true, ErpFileLogLevelClass.Information),
+            queue.Enqueue(LogLevel.Error, "e3"));
+
+        // Only errors are queued now: a new information, warning or error record is the one dropped.
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(false, ErpFileLogLevelClass.Information),
+            queue.Enqueue(LogLevel.Information, "i3"));
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(false, ErpFileLogLevelClass.Warning),
+            queue.Enqueue(LogLevel.Warning, "w1"));
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(false, ErpFileLogLevelClass.Error),
+            queue.Enqueue(LogLevel.Error, "e4"));
+
+        Assert.Equal(3, queue.Count);
+        Assert.Equal(new[] { "e1", "e2", "e3" }, DrainQueue(queue));
+        Assert.Equal(new ErpFileLogDropCounts(3, 1, 1, 0), queue.TakeDropCounts());
+        Assert.Equal(0, queue.TakeDropCounts().Total);
+    }
+
+    [Fact]
+    public void Warnings_are_dropped_only_after_information_records_and_records_leave_in_arrival_order()
+    {
+        var queue = new ErpFileLogQueue(capacity: 3);
+        queue.Enqueue(LogLevel.Warning, "w1");
+        queue.Enqueue(LogLevel.Information, "i1");
+        queue.Enqueue(LogLevel.Warning, "w2");
+
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(true, ErpFileLogLevelClass.Information),
+            queue.Enqueue(LogLevel.Error, "e1"));
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(true, ErpFileLogLevelClass.Warning),
+            queue.Enqueue(LogLevel.Error, "e2"));
+        Assert.Equal(
+            new ErpFileLogEnqueueResult(false, ErpFileLogLevelClass.Information),
+            queue.Enqueue(LogLevel.Trace, "i2"));
+
+        Assert.Equal(new[] { "w2", "e1", "e2" }, DrainQueue(queue));
+
+        var counts = queue.TakeDropCounts();
+        Assert.Equal(new ErpFileLogDropCounts(2, 1, 0, 0), counts);
+        Assert.Equal(3, counts.QueueFull);
+
+        queue.RestoreDropCounts(counts with { WriteFailed = 5 });
+        Assert.Equal(new ErpFileLogDropCounts(2, 1, 0, 0), queue.TakeDropCounts());
+    }
+
+    [Fact]
+    public void A_completed_file_log_queue_refuses_new_records_but_still_hands_out_queued_ones()
+    {
+        var queue = new ErpFileLogQueue(capacity: 2);
+        queue.Enqueue(LogLevel.Information, "before");
+        queue.Complete();
+
+        Assert.True(queue.IsCompleted);
+        Assert.Same(ErpFileLogEnqueueResult.Refused, queue.Enqueue(LogLevel.Error, "after"));
+        Assert.Equal(0, queue.TakeDropCounts().Total);
+        Assert.Equal(new[] { "before" }, DrainQueue(queue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ErpFileLogQueue(capacity: 0));
+    }
+
+    [Fact]
+    public void Every_record_given_to_the_file_log_is_written_or_counted_in_a_drop_report_and_errors_are_kept()
+    {
+        const int recordCount = 400;
+        const int errorEvery = 100;
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            // Fewer errors than the queue holds can never fill it with errors only, so none of them is dropped.
+            var settings = new ErpFileLogSettings(
+                directory,
+                QueueCapacity: 8,
+                RetentionDays: 180,
+                RetentionPolicyRef: SyntheticPolicyRef,
+                IncludeExceptionStackTrace: false);
+            var expectedErrors = new List<string>();
+            using (var writer = new ErpFileLogWriter(settings, new FixedTimeProvider(FixedNow)))
+            {
+                for (var index = 0; index < recordCount; index++)
+                {
+                    var isError = index % errorEvery == 0;
+                    var line = "{\"n\":" + index + (isError ? ",\"e\":true}" : "}");
+                    if (isError)
+                    {
+                        expectedErrors.Add(line);
+                    }
+
+                    writer.Enqueue(isError ? LogLevel.Error : LogLevel.Information, line);
+                }
+            }
+
+            var lines = File.ReadAllLines(Path.Combine(directory, ErpFileLogWriter.FileNameFor(new DateOnly(2026, 11, 14))));
+            var written = new List<string>();
+            long dropped = 0;
+            foreach (var line in lines)
+            {
+                using var document = JsonDocument.Parse(line);
+                var root = document.RootElement;
+                if (root.TryGetProperty("eventName", out var eventName)
+                    && eventName.GetString() == ErpFileLogWriter.DropReportEventName)
+                {
+                    Assert.Equal("Warning", root.GetProperty("level").GetString());
+                    Assert.Equal(ErpFileLogWriter.DropReportTemplate, root.GetProperty("template").GetString());
+                    var properties = root.GetProperty("properties");
+                    Assert.Equal(0, properties.GetProperty(ErpFileLogWriter.DroppedErrorProperty).GetInt64());
+                    Assert.Equal(0, properties.GetProperty(ErpFileLogWriter.WriteFailuresProperty).GetInt64());
+                    dropped += properties.GetProperty(ErpFileLogWriter.DroppedInformationProperty).GetInt64()
+                        + properties.GetProperty(ErpFileLogWriter.DroppedWarningProperty).GetInt64();
+                }
+                else
+                {
+                    written.Add(line);
+                }
+            }
+
+            Assert.Equal(recordCount, written.Count + dropped);
+            Assert.Equal(
+                expectedErrors.ToArray(),
+                written.Where(line => line.Contains("\"e\"", StringComparison.Ordinal)).ToArray());
+            Assert.Equal(written.Count, written.Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void The_drop_report_is_a_redacted_record_with_the_dropped_counts_by_level()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            string line;
+            using (var provider = CreateProvider(directory, includeStackTrace: false))
+            {
+                line = provider.FormatDropReport(new ErpFileLogDropCounts(3, 2, 1, 4));
+            }
+
+            using var document = JsonDocument.Parse(line);
+            var record = document.RootElement;
+            Assert.Equal("Warning", record.GetProperty("level").GetString());
+            Assert.Equal(ErpFileLogWriter.DropReportCategory, record.GetProperty("category").GetString());
+            Assert.Equal(ErpFileLogWriter.DropReportEventName, record.GetProperty("eventName").GetString());
+            Assert.Equal(ErpFileLogWriter.DropReportTemplate, record.GetProperty("template").GetString());
+            var properties = record.GetProperty("properties");
+            Assert.Equal(3, properties.GetProperty(ErpFileLogWriter.DroppedInformationProperty).GetInt64());
+            Assert.Equal(2, properties.GetProperty(ErpFileLogWriter.DroppedWarningProperty).GetInt64());
+            Assert.Equal(1, properties.GetProperty(ErpFileLogWriter.DroppedErrorProperty).GetInt64());
+            Assert.Equal(4, properties.GetProperty(ErpFileLogWriter.WriteFailuresProperty).GetInt64());
+            Assert.False(record.TryGetProperty("correlationId", out _));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(double.NaN)]
+    public void The_trace_sampler_refuses_a_ratio_outside_zero_and_one(double ratio)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ErpFailureAwareSampler(ratio));
+    }
+
+    [Fact]
+    public void A_trace_outside_the_sampled_share_is_recorded_but_not_marked_for_export()
+    {
+        var parameters = new SamplingParameters(
+            default,
+            ActivityTraceId.CreateRandom(),
+            "SENTETIK.Operation",
+            ActivityKind.Server);
+
+        Assert.Equal(
+            SamplingDecision.RecordOnly,
+            new ErpFailureAwareSampler(0d).ShouldSample(parameters).Decision);
+        Assert.Equal(
+            SamplingDecision.RecordAndSample,
+            new ErpFailureAwareSampler(1d).ShouldSample(parameters).Decision);
+    }
+
+    [Theory]
+    [InlineData("status-error")]
+    [InlineData("error-type")]
+    [InlineData("status-code-503")]
+    [InlineData("status-code-text-500")]
+    public void A_failed_span_outside_the_sampled_share_is_marked_for_export(string failure)
+    {
+        using var activity = new Activity("SENTETIK.Operation");
+        activity.IsAllDataRequested = true;
+        activity.ActivityTraceFlags = ActivityTraceFlags.None;
+        switch (failure)
+        {
+            case "status-error":
+                activity.SetStatus(ActivityStatusCode.Error);
+                break;
+            case "error-type":
+                activity.SetTag(ErpActivityRedactionProcessor.ErrorTypeTag, typeof(TimeoutException).FullName);
+                break;
+            case "status-code-503":
+                activity.SetTag(ErpActivityRedactionProcessor.HttpResponseStatusCodeTag, 503);
+                break;
+            default:
+                activity.SetTag(ErpActivityRedactionProcessor.HttpResponseStatusCodeTag, "500");
+                break;
+        }
+
+        using var processor = new ErpFailedTraceProcessor();
+        processor.OnEnd(activity);
+
+        Assert.True(activity.Recorded);
+        Assert.Equal(ErpFailedTraceProcessor.SamplingFailure, activity.GetTagItem(ErpFailedTraceProcessor.SamplingTag));
+    }
+
+    [Theory]
+    [InlineData(200)]
+    [InlineData(404)]
+    [InlineData(409)]
+    public void A_successful_or_client_error_span_outside_the_sampled_share_stays_unexported(int statusCode)
+    {
+        using var activity = new Activity("SENTETIK.Operation");
+        activity.IsAllDataRequested = true;
+        activity.SetTag(ErpActivityRedactionProcessor.HttpResponseStatusCodeTag, statusCode);
+
+        using var processor = new ErpFailedTraceProcessor();
+        processor.OnEnd(activity);
+
+        Assert.False(activity.Recorded);
+        Assert.Null(activity.GetTagItem(ErpFailedTraceProcessor.SamplingTag));
+    }
+
+    [Fact]
+    public void A_sampled_span_is_tagged_and_a_span_dropped_by_redaction_is_never_marked_again()
+    {
+        using var processor = new ErpFailedTraceProcessor();
+
+        using var sampled = new Activity("SENTETIK.Operation");
+        sampled.IsAllDataRequested = true;
+        sampled.ActivityTraceFlags = ActivityTraceFlags.Recorded;
+        processor.OnEnd(sampled);
+        Assert.True(sampled.Recorded);
+        Assert.Equal(ErpFailedTraceProcessor.SamplingRatio, sampled.GetTagItem(ErpFailedTraceProcessor.SamplingTag));
+
+        using var dropped = new Activity("SENTETIK.Operation");
+        dropped.SetStatus(ActivityStatusCode.Error);
+        dropped.IsAllDataRequested = false;
+        processor.OnEnd(dropped);
+        Assert.False(dropped.Recorded);
+        Assert.Null(dropped.GetTagItem(ErpFailedTraceProcessor.SamplingTag));
+    }
+
+    [Fact]
+    public void With_no_sampled_share_only_the_failed_request_reaches_the_exporter()
+    {
+        var sourceName = "SENTETIK.Tracing." + Guid.NewGuid().ToString("N");
+        var exported = new List<Activity>();
+        using var source = new ActivitySource(sourceName);
+        using (Sdk.CreateTracerProviderBuilder()
+                   .AddSource(sourceName)
+                   .SetSampler(new ErpFailureAwareSampler(0d))
+                   .AddProcessor(new ErpActivityRedactionProcessor())
+                   .AddProcessor(new ErpFailedTraceProcessor())
+                   .AddProcessor(new SimpleActivityExportProcessor(new CollectingActivityExporter(exported)))
+                   .Build())
+        {
+            using (var succeeded = source.StartActivity("SENTETIK.Succeeded", ActivityKind.Server))
+            {
+                Assert.NotNull(succeeded);
+                succeeded.SetTag(ErpActivityRedactionProcessor.HttpResponseStatusCodeTag, 200);
+            }
+
+            using (var failed = source.StartActivity("SENTETIK.Failed", ActivityKind.Server))
+            {
+                Assert.NotNull(failed);
+                failed.SetTag(ErpActivityRedactionProcessor.HttpResponseStatusCodeTag, 500);
+            }
+        }
+
+        var span = Assert.Single(exported);
+        Assert.Equal(ErpFailedTraceProcessor.SamplingFailure, span.GetTagItem(ErpFailedTraceProcessor.SamplingTag));
+        Assert.Equal(500, span.GetTagItem(ErpActivityRedactionProcessor.HttpResponseStatusCodeTag));
+    }
+
+    [Fact]
     public void Nothing_is_registered_while_the_openapi_document_is_generated()
     {
         var builder = WebApplication.CreateBuilder();
@@ -428,6 +777,8 @@ public sealed class ErpObservabilityTests
             {
                 ["Observability:FileLog:Directory"] = directory,
                 ["Observability:FileLog:QueueCapacity"] = "16",
+                ["Observability:FileLog:RetentionDays"] = "180",
+                ["Observability:FileLog:RetentionPolicyRef"] = SyntheticPolicyRef,
             });
 
             var settings = builder.AddErpObservability(isOpenApiDocumentGeneration: false);
@@ -468,6 +819,17 @@ public sealed class ErpObservabilityTests
             new FixedTimeProvider(FixedNow));
     }
 
+    private static string[] DrainQueue(ErpFileLogQueue queue)
+    {
+        var lines = new List<string>();
+        while (queue.TryDequeue(out var line))
+        {
+            lines.Add(line);
+        }
+
+        return lines.ToArray();
+    }
+
     private static string CreateTemporaryDirectory()
     {
         var directory = Path.Combine(Path.GetTempPath(), "goymen-erp-observability-" + Guid.NewGuid().ToString("N"));
@@ -485,6 +847,19 @@ public sealed class ErpObservabilityTests
     private sealed class SentetikInvalidOperationException : InvalidOperationException;
 
     private sealed class SentetikException : Exception;
+
+    private sealed class CollectingActivityExporter(List<Activity> exported) : BaseExporter<Activity>
+    {
+        public override ExportResult Export(in Batch<Activity> batch)
+        {
+            foreach (var activity in batch)
+            {
+                exported.Add(activity);
+            }
+
+            return ExportResult.Success;
+        }
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
