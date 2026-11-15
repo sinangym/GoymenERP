@@ -3,6 +3,7 @@
 # One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
 # is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
 
+GoymenERP.Api.IntegrationTests.AuditOutcomeFilterSqlServerRelationalAcceptanceTests.The_outcome_filter_reads_only_that_outcome_of_the_selected_company_over_the_migrated_index
 GoymenERP.Api.IntegrationTests.C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests.FixtureArtifact_IsTheExactCanonicalContract
 GoymenERP.Api.IntegrationTests.C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests.Fixture_MaterializesOnceAndProvesC01HttpSqlAndSequenceContract
 GoymenERP.Api.IntegrationTests.CentralAuthorityRevalidationSqlServerRelationalAcceptanceTests.A_revocation_is_measured_inside_the_request_and_refuses_the_next_one
