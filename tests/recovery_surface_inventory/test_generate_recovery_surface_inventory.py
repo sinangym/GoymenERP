@@ -43,6 +43,10 @@ EXPECTED_STORES = {
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
     ("finance", "CashAccountCommands"): ("CashAccountCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "CashTransferCommands"): ("CashTransferCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "PartyCollateralCommands"): ("PartyCollateralCommandRow", "idempotency", "FinanceDbContext"),
+    ("counterparty", "OutboxMessages"): ("CounterpartyOutboxRow", "outbox", "CounterpartyDbContext"),
+    ("identity", "OutboxMessages"): ("IdentityOutboxMessage", "outbox", "IdentityDbContext"),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
     ("finance", "InvoiceCancellations"): (
         "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
@@ -89,12 +93,20 @@ EXPECTED_STORES = {
     ("product", "ProductDimensionAttempts"): (
         "ProductDimensionAttemptRow", "idempotency", "ProductPriceListDbContext"
     ),
+    ("product", "ProductProfileWeightAttempts"): (
+        "ProductProfileWeightAttemptRow", "idempotency", "ProductPriceListDbContext"
+    ),
     ("purchasing", "PurchaseAcceptanceShares"): (
         "PurchaseAcceptanceRow", "idempotency", "PurchasingDbContext"
     ),
     ("purchasing", "PurchaseAttempts"): (
         "PurchaseAttemptRow", "idempotency", "PurchasingDbContext"
     ),
+    ("purchasing", "PurchaseGoodsReceiptBatchAttempts"): (
+        "PurchaseGoodsReceiptBatchAttemptRow", "idempotency", "PurchasingDbContext"
+    ),
+    ("purchasing", "OutboxMessages"): ("PurchasingOutboxRow", "outbox", "PurchasingDbContext"),
+    ("sales", "ContractAttempts"): ("ContractAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "DraftAttempts"): ("DraftAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "InvoiceAttempts"): ("InvoiceAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "OutboxMessages"): ("SalesOutboxRow", "outbox", "SalesDbContext"),
@@ -460,7 +472,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 204, "durableStores": 38},
+            {"dbContexts": 19, "migrations": 223, "durableStores": 46},
             self.inventory["counts"],
         )
         actual = {
@@ -470,13 +482,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(38, len(actual))
+        self.assertEqual(46, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(38, len(specs_by_id))
+        self.assertEqual(46, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -1950,7 +1962,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(19, len(contexts))
-        self.assertEqual(204, len(migrations))
+        self.assertEqual(223, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -3182,12 +3194,16 @@ internal {{declaration}} : IDocumentObjectStoreV1
         with self.assertRaisesRegex(generator.InventoryError, "extra fields"):
             generator._validate_inventory_for_snapshot(self.snapshot, inventory_with_value)
 
-    def test_inventory_lists_both_inventory_outbox_contracts(self) -> None:
+    def test_inventory_lists_every_inventory_outbox_contract(self) -> None:
         outbox = next(
             store for store in self.inventory["durableStores"] if store["id"] == "inventory.outbox"
         )
         self.assertEqual(
-            ["InventoryCustomerReturnOutboxV1", "InventoryDefiniteShipmentOutboxV1"],
+            [
+                "InventoryCustomerReturnOutboxV1",
+                "InventoryDefiniteShipmentOutboxV1",
+                "InventorySupplierReturnExitOutboxV1",
+            ],
             outbox["contracts"],
         )
 
