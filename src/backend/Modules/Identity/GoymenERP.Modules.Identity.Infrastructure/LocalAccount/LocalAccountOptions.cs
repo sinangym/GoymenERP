@@ -67,17 +67,17 @@ public sealed class LocalAccountOptions
         var login = RateLimit.Login;
         if (login.PermitLimit is not >= 1)
         {
-            errors.Add($"{SectionName}:RateLimit:Login:PermitLimit tanımlanmalı ve en az 1 olmalıdır (ASSUMPTION-ID-RL-1 kararı bekleniyor).");
+            errors.Add($"{SectionName}:RateLimit:Login:PermitLimit tanımlanmalı ve en az 1 olmalıdır (KIM-D29).");
         }
 
         if (login.Window is not { } window || window <= TimeSpan.Zero)
         {
-            errors.Add($"{SectionName}:RateLimit:Login:Window pozitif bir süre olmalıdır (ASSUMPTION-ID-RL-1 kararı bekleniyor).");
+            errors.Add($"{SectionName}:RateLimit:Login:Window pozitif bir süre olmalıdır (KIM-D29).");
         }
 
         if (login.PartitionBy is not { } partition || !Enum.IsDefined(partition))
         {
-            errors.Add($"{SectionName}:RateLimit:Login:PartitionBy tanımlanmalıdır (ASSUMPTION-ID-RL-1 kararı bekleniyor).");
+            errors.Add($"{SectionName}:RateLimit:Login:PartitionBy tanımlanmalıdır (KIM-D29).");
         }
 
         return errors;
@@ -133,7 +133,10 @@ public sealed class LocalAccountRateLimitSettings
     public LocalAccountLoginRateLimitSettings Login { get; set; } = new();
 }
 
-/// <summary>Login rate limit (ASSUMPTION-ID-RL-1 candidate). It is separate from the lockout counter.</summary>
+/// <summary>
+/// Login rate limit (KIM-D29: starting value 10 attempts per minute per IP address and normalized user name). It is
+/// separate from the KIM-D4/KIM-D13 lockout counter and the value stays configurable.
+/// </summary>
 public sealed class LocalAccountLoginRateLimitSettings
 {
     public string? PolicyRef { get; set; }

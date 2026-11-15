@@ -8,7 +8,7 @@ namespace GoymenERP.Api.Security;
 /// <summary>
 /// The login rate limit (spec "Giriş hız sınırı", <c>Identity:LocalAccount:RateLimit:Login</c>). It is separate from
 /// the lockout counter: it caps attempts per window before any credential is read. There is no code default; the
-/// limiter is built from validated settings and the mode does not start without them (ASSUMPTION-ID-RL-1).
+/// limiter is built from validated settings and the mode does not start without them (KIM-D29).
 /// </summary>
 internal sealed class LocalAccountLoginRateLimiter : IDisposable
 {

@@ -104,6 +104,33 @@ public sealed class IdentityLocalCredentialSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Logout_renews_the_stamp_and_raises_the_version_only_while_the_read_stamp_is_current_on_real_SQL()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            var userId = await SeedAsync(factory, "sentetik.cikis");
+            var sessionStamp = (await ReadAsync(factory, "sentetik.cikis")).SecurityStamp;
+            var renewed = Guid.NewGuid();
+
+            // KIM-D30: one conditional UPDATE on the stored row; the old stamp no longer passes the session check.
+            Assert.True(await InStoreAsync(factory, store =>
+                store.TryRenewSecurityStampAsync(userId, sessionStamp, renewed, CancellationToken.None)));
+            Assert.Equal(renewed, (await ReadAsync(factory, "sentetik.cikis")).SecurityStamp);
+            Assert.Equal((0, (DateTimeOffset?)null, 2L), await StateAsync(factory, userId));
+            Assert.False(await InStoreAsync(factory, store =>
+                new LocalAccountSessionValidator(store).IsCurrentAsync(userId, sessionStamp, CancellationToken.None)));
+
+            // A second logout from the old session, or a renewal for another user, affects no row.
+            Assert.False(await InStoreAsync(factory, store =>
+                store.TryRenewSecurityStampAsync(userId, sessionStamp, Guid.NewGuid(), CancellationToken.None)));
+            Assert.False(await InStoreAsync(factory, store =>
+                store.TryRenewSecurityStampAsync(Guid.NewGuid(), renewed, Guid.NewGuid(), CancellationToken.None)));
+            Assert.Equal(renewed, (await ReadAsync(factory, "sentetik.cikis")).SecurityStamp);
+            Assert.Equal((0, (DateTimeOffset?)null, 2L), await StateAsync(factory, userId));
+        });
+    }
+
+    [SqlServerFact]
     public async Task The_normalized_user_name_is_unique_and_a_credential_needs_an_existing_user_on_real_SQL()
     {
         await WithDatabaseAsync(async factory =>

@@ -534,6 +534,23 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
                 credential.TemporaryPasswordIssuedAtUtc)
             : null);
 
+    public Task<bool> TryRenewSecurityStampAsync(
+        Guid userId,
+        Guid readSecurityStamp,
+        Guid newSecurityStamp,
+        CancellationToken cancellationToken)
+    {
+        RunBeforeWrite();
+        if (credential.UserId != userId || credential.SecurityStamp != readSecurityStamp)
+        {
+            return Task.FromResult(false);
+        }
+
+        Writes++;
+        credential.RenewSecurityStamp(newSecurityStamp);
+        return Task.FromResult(true);
+    }
+
     public void ReplaceStamp(Guid stamp) =>
         typeof(LocalCredential).GetProperty(nameof(LocalCredential.SecurityStamp))!.SetValue(credential, stamp);
 
