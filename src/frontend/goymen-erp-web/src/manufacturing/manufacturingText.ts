@@ -298,6 +298,10 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_input_already_issued: 'Bu olgu kimliğiyle bir girdi çıkışı zaten var.',
   manufacturing_return_already_recorded: 'Bu olgu kimliğiyle bir iade zaten var.',
   manufacturing_return_exceeds_issued: 'İade, bu rulodan çıkan kütleyi aşamaz.',
+  // F-009 D4: the return is bounded by the input still unconsumed (issued − returned − net output − WIP).
+  manufacturing_return_exceeds_unconsumed:
+    'İade, net çıktı ve yarı mamul düşüldükten sonra kalan girdi kütlesini aşamaz. Önce çıktıyı düzeltin veya ' +
+    'yarı mamulü yeniden ölçün.',
   manufacturing_output_already_declared: 'Bu olgu kimliğiyle bir çıktı zaten bildirildi.',
   manufacturing_wip_already_measured: 'Bu olgu kimliğiyle bir WIP ölçümü zaten var.',
   manufacturing_wip_measurement_not_latest: 'WIP ölçümü, rulonun son ölçümünden sonra olmalı.',

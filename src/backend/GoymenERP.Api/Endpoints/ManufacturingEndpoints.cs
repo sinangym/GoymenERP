@@ -1209,6 +1209,7 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.InputAlreadyIssued,
         ManufacturingRuleCodes.ReturnAlreadyRecorded,
         ManufacturingRuleCodes.ReturnExceedsIssued,
+        ManufacturingRuleCodes.ReturnExceedsUnconsumed,
         ManufacturingRuleCodes.OutputAlreadyDeclared,
         ManufacturingRuleCodes.WipAlreadyMeasured,
         ManufacturingRuleCodes.WipMeasurementNotLatest,

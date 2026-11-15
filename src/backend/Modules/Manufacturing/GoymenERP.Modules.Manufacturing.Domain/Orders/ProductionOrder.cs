@@ -232,7 +232,10 @@ public sealed class ProductionOrder
 
         foreach (var entry in returns.OrderBy(fact => fact.ReturnedAtUtc))
         {
-            order.ReturnUnusedInput(order.Version, entry.ReturnId, entry.ParentRollId, entry.Mass, entry.ReturnedAtUtc);
+            // F-009 D4: a stored return keeps the bound it was recorded under (one stored before D4 was bounded only by
+            // the issued kg), so replay checks the issued bound and not the unconsumed one.
+            order.ReturnUnusedInput(order.Version, entry.ReturnId, entry.ParentRollId, entry.Mass, entry.ReturnedAtUtc,
+                replayingStoredReturn: true);
         }
 
         foreach (var output in outputs.OrderBy(fact => fact.DeclaredAtUtc))
@@ -368,8 +371,23 @@ public sealed class ProductionOrder
         return issue;
     }
 
-    /// <summary>Unused input sent back; it can never exceed what is still issued.</summary>
-    public InputReturn ReturnUnusedInput(long expectedVersion, Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt)
+    /// <summary>
+    /// Unused input sent back; it can never exceed what is still issued
+    /// (<see cref="ManufacturingRuleCodes.ReturnExceedsIssued"/>).
+    /// <para>
+    /// F-009 D4 (analysis §2, §4.4): nor can it exceed the input still unconsumed — issued minus returned minus the net
+    /// output (declarations net of their reversals) minus the latest WIP reading, i.e. the BAL-003 unexplained kg of the
+    /// order's "output above input" scope: the parent roll for a roll-based process, the order total for a process
+    /// without a main roll input (<see cref="MeasuresOutputAboveInputPerRoll"/>, URT-D49). A larger return is refused
+    /// with <see cref="ManufacturingRuleCodes.ReturnExceedsUnconsumed"/>, so the input of a roll whose outputs still
+    /// stand cannot be sent back: its outputs are reversed (<see cref="ReverseOutput"/>) or its WIP re-measured first.
+    /// </para>
+    /// </summary>
+    public InputReturn ReturnUnusedInput(long expectedVersion, Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt) =>
+        ReturnUnusedInput(expectedVersion, returnId, parentRollId, mass, returnedAt, replayingStoredReturn: false);
+
+    private InputReturn ReturnUnusedInput(long expectedVersion, Guid returnId, Guid parentRollId, Kilograms mass,
+        DateTimeOffset returnedAt, bool replayingStoredReturn)
     {
         RequireVersion(expectedVersion);
         RequireOpen();
@@ -386,6 +404,14 @@ public sealed class ProductionOrder
             throw new ManufacturingRuleException(
                 ManufacturingRuleCodes.ReturnExceedsIssued,
                 "İade edilen kütle çıkış yapılan kütleyi aşamaz.");
+        }
+
+        if (!replayingStoredReturn && mass.Value > UnconsumedInputOf(parentRollId))
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.ReturnExceedsUnconsumed,
+                "İade, net çıktı ve yarı mamul düşüldükten sonra kalan girdi kütlesini aşamaz; "
+                + "önce çıktı düzeltilmeli veya yarı mamul yeniden ölçülmeli.");
         }
 
         var entry = new InputReturn(returnId, parentRollId, mass, returnedAt.ToUniversalTime());
@@ -785,6 +811,13 @@ public sealed class ProductionOrder
 
     private decimal ReturnedOf(Guid parentRollId) =>
         _returns.Where(entry => entry.ParentRollId == parentRollId).Sum(entry => entry.Mass.Value);
+
+    /// <summary>
+    /// F-009 D4: the input kg a return may still take back — the BAL-003 unexplained kg of the parent roll, or of the
+    /// order total for a process without a main roll input (URT-D49). Below zero when more is accounted than issued.
+    /// </summary>
+    private decimal UnconsumedInputOf(Guid parentRollId) =>
+        MeasuresOutputAboveInputPerRoll ? BalanceOf(parentRollId).Unexplained : TotalBalance().Unexplained;
 
     private decimal ReversedOf(Guid outputId) =>
         _outputReversals.Where(entry => entry.OutputId == outputId).Sum(entry => entry.Mass.Value);
