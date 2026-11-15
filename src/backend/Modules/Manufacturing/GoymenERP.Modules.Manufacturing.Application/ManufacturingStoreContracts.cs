@@ -81,6 +81,9 @@ public static class ManufacturingStoreCodes
     /// <summary>This company has no such order (another company's order is not found either).</summary>
     public const string OrderNotFound = "manufacturing_order_not_found";
 
+    /// <summary>URT-D72: this company has no scrap price for the month to correct (another company's is not found either).</summary>
+    public const string ScrapPriceNotFound = "manufacturing_scrap_price_not_found";
+
     /// <summary>
     /// The plan names a work center that is not one of this company's (Organization's composite key
     /// refused it). Nothing was stored.

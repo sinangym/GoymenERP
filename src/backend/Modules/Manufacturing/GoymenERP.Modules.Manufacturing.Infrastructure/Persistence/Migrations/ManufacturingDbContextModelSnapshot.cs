@@ -327,6 +327,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<int>("Month")
                         .HasColumnType("int");
 
+                    b.Property<string>("Reason")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -340,14 +344,17 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
                     b.Property<int>("Year")
                         .HasColumnType("int");
 
                     b.HasKey("CompanyId", "Id");
 
-                    b.HasIndex("CompanyId", "Year", "Month")
+                    b.HasIndex("CompanyId", "Year", "Month", "Version")
                         .IsUnique()
-                        .HasDatabaseName("IX_MonthlyScrapPrices_CompanyId_Year_Month");
+                        .HasDatabaseName("IX_MonthlyScrapPrices_CompanyId_Year_Month_Version");
 
                     b.ToTable("MonthlyScrapPrices", "manufacturing", t =>
                         {
@@ -356,6 +363,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_MonthlyScrapPrices_Period", "[Year] >= 1 AND [Year] <= 9999 AND [Month] >= 1 AND [Month] <= 12 AND [TlPerKg] > 0");
 
                             t.HasCheckConstraint("CK_MonthlyScrapPrices_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_MonthlyScrapPrices_Version", "([Version] = 1 AND [Reason] IS NULL) OR ([Version] > 1 AND [Reason] IS NOT NULL AND LEN([Reason]) > 0)");
                         });
                 });
 

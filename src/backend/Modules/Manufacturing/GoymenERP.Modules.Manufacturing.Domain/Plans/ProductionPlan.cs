@@ -511,9 +511,27 @@ public sealed class ProductionPlan
                 "Termini girilmemiş plan onaylanmaz; önce planın terminini girin.");
         }
 
+        // URT-D70: a termin before the Europe/Istanbul business day of the approval instant is refused; the user moves the
+        // termin forward (ChangeDueDate) and approves again. Still after every earlier rule, so each keeps its answer.
+        RequireDueDateNotPast(ManufacturingBusinessDay.DateOf(approvedAtUtc));
+
         ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
         // U2-a (URT-D9): the plan-entered line speed replaces the profile's value in the captured snapshot.
         ParameterSnapshot = parameterSnapshot is null ? null : CaptureWithPlanValues(parameterSnapshot);
+    }
+
+    /// <summary>
+    /// URT-D70: the plan's termin is not before <paramref name="businessToday"/> (the Europe/Istanbul business day of the
+    /// approval or of the order's opening); otherwise <see cref="ManufacturingRuleCodes.DueDateInPast"/>. A plan without a
+    /// termin is left to <see cref="ManufacturingRuleCodes.PlanDueDateRequired"/>.
+    /// </summary>
+    internal void RequireDueDateNotPast(DateOnly businessToday)
+    {
+        if (RequestedDueDate is { } dueDate && dueDate < businessToday)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.DueDateInPast,
+                "Planın termini bugünkü iş gününden önce; terminini güncelleyip yeniden deneyin.");
+        }
     }
 
     /// <summary>

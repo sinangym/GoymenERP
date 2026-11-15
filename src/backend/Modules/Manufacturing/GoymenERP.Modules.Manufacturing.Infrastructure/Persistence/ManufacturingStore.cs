@@ -831,7 +831,10 @@ public sealed partial class ManufacturingStore(
 
         // The domain decides: only an approved plan becomes an order, and (U2-a, URT-D1) only one order per plan — the
         // rebuilt plan carries the order it already opened. Racing writers meet the unique (company, plan) index.
-        var order = ProductionOrder.FromApprovedPlan(orderId, plan);
+        // URT-D70: and a plan whose termin is before the server's Istanbul business day opens no order (the user moves the
+        // termin forward first). The command service answered 503 already when the host cannot resolve the zone.
+        var order = ProductionOrder.FromApprovedPlan(orderId, plan,
+            ManufacturingBusinessDay.DateOf(timeProvider.GetUtcNow()));
 
         // U3-a (URT-D21, B-01): an input allocated at the plan's approval enters the order at the label version Inventory
         // returned with the allocation, so the order's first input issue revalidates the label Inventory last moved.
@@ -2420,7 +2423,7 @@ public sealed partial class ManufacturingStore(
 
             // URT-S13: the unique (company, year, month) scrap price index lost to another writer is the month's own rule.
             if (sql.Number is 2601 or 2627
-                && sql.Message.Contains(ManufacturingDbContext.MonthlyScrapPriceMonthIndex, StringComparison.Ordinal))
+                && sql.Message.Contains(ManufacturingDbContext.MonthlyScrapPriceVersionIndex, StringComparison.Ordinal))
             {
                 throw new ManufacturingRuleException(ManufacturingRuleCodes.ScrapPriceAlreadyRecorded,
                     "Bu ayın hurda fiyatı zaten girildi; girilmiş ay değiştirilmez.");

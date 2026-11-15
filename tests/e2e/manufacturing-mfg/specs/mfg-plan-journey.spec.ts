@@ -24,11 +24,47 @@ const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
 const IDENTITY_ME_RE = /\/api\/v1\/identity\/me$/
+const PLAN_DUE_DATE_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/due-date$/
+const DAY_MS = 24 * 60 * 60 * 1000
+/** The termin's distance from today's business day: any day not before it is accepted (URT-D66 (1), URT-D70). */
+const TERMIN_LEAD_DAYS = 7
 const PRODUCT_ACTOR = 'group-bootstrap-admin'
 const SAC_GROUP_ID = '829e576d-c635-502a-97b8-9d5074c9d6a0'
 const CUT_SHEET_FAMILY_ID = '075d01d5-c57c-44b9-903a-89c00e4db029'
 const CUT_SHEET_TEMPLATE_ID = '57937348-393e-4982-a5a4-63eff8be40c9'
 const KILOGRAM_UNIT_ID = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
+
+/**
+ * A termin TERMIN_LEAD_DAYS after today's Europe/Istanbul business day, as the server's calendar day. URT-D66 (2): a
+ * plan without a termin is not approved; URT-D70: neither the approval nor the order opening accepts a termin before
+ * today, so the journey enters one that stays valid across a midnight during the run.
+ */
+function terminAhead(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(Date.now() + TERMIN_LEAD_DAYS * DAY_MS))
+}
+
+/** Enters the reopened plan's termin through its editor and waits for the server's answer and the fresh read. */
+async function enterTermin(page: Page, planId: string): Promise<string> {
+  const termin = terminAhead()
+  await page.getByRole('button', { name: 'Termini değiştir', exact: true }).click()
+  await page.getByLabel('Termin tarihi', { exact: true }).fill(termin)
+  const saved = page.waitForResponse(
+    (response) => PLAN_DUE_DATE_RE.test(response.url()) && response.url().includes(planId)
+      && response.request().method() === 'POST',
+  )
+  await page.getByRole('button', { name: 'Termini kaydet', exact: true }).click()
+  const answer = await saved
+  expect(answer.status()).toBe(200)
+  expect(answer.request().headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+  expect(answer.request().postDataJSON()).toMatchObject({ requestedDueDate: termin })
+  await expect(page.getByText('Termin kaydedildi ve güncel plan yeniden okundu.', { exact: true })).toBeVisible()
+  return termin
+}
 
 interface CandidateAnswer {
   readonly labelId: string
@@ -600,6 +636,9 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       await api.dispose()
     }
 
+    // URT-D66 (2), URT-D70: the plan is approved only with a termin that is not before today's business day.
+    await enterTermin(page, body.planId)
+
     const approvalResponse = page.waitForResponse(
       (response) => PLAN_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST',
     )
@@ -703,7 +742,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     await expect(storedPlanInputRows(page).getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) }))
       .toBeVisible()
 
-    // Downstream: approve, then create the order from the reopened plan.
+    // Downstream: enter the termin (URT-D66 (2), URT-D70), approve, then create the order from the reopened plan.
+    await enterTermin(page, body.planId)
     const approvalResponse = page.waitForResponse(
       (response) => PLAN_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST',
     )
@@ -2169,7 +2209,9 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       await api.dispose()
     }
 
-    // The next steps read the edited plan: the approval names version 2 and the order snapshots 800 kg.
+    // The next steps read the edited plan: the termin leaves the plan version as it is (its own revision), the
+    // approval names version 2 and the order snapshots 800 kg.
+    await enterTermin(page, body.planId)
     const approvalResponse = page.waitForResponse(
       (response) => PLAN_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST',
     )

@@ -204,13 +204,22 @@ public static class ManufacturingRuleCodes
     public const string OutputReversalExceedsDeclared = "manufacturing_output_reversal_exceeds_declared";
 
     /// <summary>
-    /// URT-S13 (URT-D47, URT-D65): the company already has a scrap price for this month. A recorded month is never changed
-    /// or replaced here (correcting it is not decided); the answer is a conflict.
+    /// URT-S13 (URT-D47, URT-D65): the company already has a scrap price for this month. A first entry never replaces a
+    /// recorded month; the answer is a conflict and the month is corrected with a new version instead (URT-D72).
     /// </summary>
     public const string ScrapPriceAlreadyRecorded = "manufacturing_scrap_price_already_recorded";
 
+    /// <summary>
+    /// URT-D73: a scrap price is entered (first entry or correction) for the current or a past month only; a month after
+    /// the Europe/Istanbul business day of the entry is refused.
+    /// </summary>
+    public const string ScrapPriceFutureMonth = "manufacturing_scrap_price_future_month";
+
     /// <summary>URT-S13: a scrap price carries at most four decimals (its decimal(18,4) column); a fifth is refused, not rounded.</summary>
     public const string ScrapPricePrecisionExceeded = "manufacturing_scrap_price_precision_exceeded";
+
+    /// <summary>URT-D72: a correction with the month's effective price again opens no new version; it is refused.</summary>
+    public const string ScrapPriceUnchanged = "manufacturing_scrap_price_unchanged";
 
     /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace

@@ -473,8 +473,9 @@ internal sealed class OutputReversalRow : IManufacturingTenantRow
 }
 
 /// <summary>
-/// URT-S13 (URT-D47, URT-D65): the company's scrap price of one calendar month, in TL per kg. One row per (company,
-/// year, month); append-only: a recorded month is never changed or deleted (correcting it is not decided).
+/// URT-S13 (URT-D47, URT-D65), URT-D72: one version of the company's scrap price of one calendar month, in TL per kg.
+/// One row per (company, year, month, version); append-only: a version is never changed or deleted, a correction adds
+/// the next version with its reason and the latest version is the month's effective price.
 /// </summary>
 internal sealed class MonthlyScrapPriceRow : IManufacturingTenantRow
 {
@@ -483,6 +484,8 @@ internal sealed class MonthlyScrapPriceRow : IManufacturingTenantRow
     public int Year { get; set; }
     public int Month { get; set; }
     public decimal TlPerKg { get; set; }
+    public int Version { get; set; }
+    public string? Reason { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;

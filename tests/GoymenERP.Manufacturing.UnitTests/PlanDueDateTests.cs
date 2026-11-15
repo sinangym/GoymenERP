@@ -8,7 +8,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// the termin revision and never the plan version; a cancelled plan, a closed order, a stale termin revision and no change
 /// are refused with nothing changed. URT-D66: a day earlier than the company's Europe/Istanbul business day is refused, a
 /// plan without a termin is not approved (the last approval refusal) and an approved plan's termin is changed, never
-/// removed. The stored termin is restored and checked.
+/// removed. The stored termin is restored and checked. URT-D70: approval refuses a termin before the Europe/Istanbul
+/// business day of the approval instant; the termin day itself is approved.
 /// </summary>
 public sealed class PlanDueDateTests
 {
@@ -63,6 +64,54 @@ public sealed class PlanDueDateTests
 
         Assert.Equal(ManufacturingRuleCodes.PlanDueDateRequired, refusal.Code);
         Assert.Equal((PlanStatus.Draft, 1L), (plan.Status, plan.Version));
+    }
+
+    [Fact]
+    public void Approval_refuses_a_termin_before_the_Istanbul_business_day_of_the_approval_and_nothing_changes()
+    {
+        // URT-D70: the termin was valid when entered; by the approval instant its day has passed.
+        var plan = Draft();
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
+        var dayAfter = new DateTimeOffset(2027, 1, 1, 10, 0, 0, TimeSpan.Zero);
+
+        var refusal = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(1, Guid.NewGuid(), dayAfter));
+
+        Assert.Equal(ManufacturingRuleCodes.DueDateInPast, refusal.Code);
+        Assert.Equal((PlanStatus.Draft, 1L, DayA, 1L),
+            (plan.Status, plan.Version, plan.RequestedDueDate, plan.DueDateRevision));
+
+        // Moving the termin forward lets the same approval through.
+        plan.ChangeDueDate(1, 1, DayB, orderClosed: false, ManufacturingBusinessDay.DateOf(dayAfter));
+        plan.Approve(1, Guid.NewGuid(), dayAfter);
+        Assert.Equal(PlanStatus.Approved, plan.Status);
+    }
+
+    [Fact]
+    public void Approval_on_the_termin_day_itself_is_taken_and_the_Istanbul_day_decides()
+    {
+        // 31 Dec 20:59 UTC is still 31 Dec in Istanbul (UTC+3); 21:00 UTC is already 1 Jan.
+        var onTheDay = Draft();
+        onTheDay.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
+        onTheDay.Approve(1, Guid.NewGuid(), new DateTimeOffset(2026, 12, 31, 20, 59, 0, TimeSpan.Zero));
+        Assert.Equal(PlanStatus.Approved, onTheDay.Status);
+
+        var nextDay = Draft();
+        nextDay.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
+        var refusal = Assert.Throws<ManufacturingRuleException>(
+            () => nextDay.Approve(1, Guid.NewGuid(), new DateTimeOffset(2026, 12, 31, 21, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(ManufacturingRuleCodes.DueDateInPast, refusal.Code);
+        Assert.Equal(PlanStatus.Draft, nextDay.Status);
+    }
+
+    [Fact]
+    public void A_past_termin_keeps_the_version_conflict_of_a_stale_plan()
+    {
+        var plan = Draft();
+        plan.ChangeDueDate(1, 0, DayA, orderClosed: false, Today);
+
+        Assert.Throws<ManufacturingVersionConflictException>(
+            () => plan.Approve(2, Guid.NewGuid(), new DateTimeOffset(2027, 1, 1, 10, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(PlanStatus.Draft, plan.Status);
     }
 
     [Fact]
