@@ -25,7 +25,7 @@ public sealed class ManufacturingScrapCostDistributionPortTests
         new(new ProductionReceiptCostInput(
                 closed,
                 [new IssueCostInput(Guid.Parse("c0000000-0000-0000-0000-00000000000a"), new Kilograms(1000m),
-                    IssueCostReadStatus.Value, 40m)],
+                    IssueCostReadStatus.Value, 40m, IssueCostCurrencyInput.FunctionalCurrency)],
                 [],
                 new Kilograms(900m),
                 new Kilograms(50m),
