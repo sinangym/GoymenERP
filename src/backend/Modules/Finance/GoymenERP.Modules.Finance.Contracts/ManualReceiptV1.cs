@@ -121,6 +121,8 @@ public enum FinanceAction
     ReadCollaterals, RecordCollateral,
     // FIN-S9 (FNS-D23): the cash/bank/party opening balance; read, a specialist's proposal and a manager's decision.
     ReadOpeningBalances, ProposeOpeningBalance, ApproveOpeningBalance,
+    // FIN-SC47 (FNS-D88): the credit account (kredi) with its imported repayment plan; read, proposal and decision.
+    ReadCredits, ProposeCredit, ApproveCredit,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

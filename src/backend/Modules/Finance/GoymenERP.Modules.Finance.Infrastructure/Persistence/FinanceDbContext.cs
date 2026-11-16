@@ -57,6 +57,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<OpeningBalanceMovementRow> OpeningBalanceMovements => Set<OpeningBalanceMovementRow>();
 
+    internal DbSet<CreditAccountRow> CreditAccounts => Set<CreditAccountRow>();
+
+    internal DbSet<CreditAccountInstallmentRow> CreditAccountInstallments => Set<CreditAccountInstallmentRow>();
+
+    internal DbSet<CreditAccountCommandRow> CreditAccountCommands => Set<CreditAccountCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -164,6 +170,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureOfficialSalesInvoices(modelBuilder);
         ConfigureExpensePayments(modelBuilder);
         ConfigureCashTransfers(modelBuilder);
+        ConfigureCreditAccounts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2017,6 +2024,140 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// FIN-SC47 (FNS-D87, FNS-D88, FNS-D93, FNS-D94): the credit account, its imported repayment plan lines and its
+    /// idempotency records. One live (proposed or approved) account per (lender, contract reference); the decision is taken
+    /// by another actor (binary collation, as the opening's).
+    /// </summary>
+    private void ConfigureCreditAccounts(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CreditAccountRow>();
+        entity.ToTable("CreditAccounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CreditAccounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ProposedBy]) > 0 AND LEN([LenderName]) > 0 AND LEN([ContractReference]) > 0");
+            table.HasCheckConstraint("CK_CreditAccounts_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_CreditAccounts_Group", CreditAccountGroupCheck);
+            table.HasCheckConstraint("CK_CreditAccounts_Amount", CreditAccountAmountCheck);
+            table.HasCheckConstraint("CK_CreditAccounts_Decision", CreditAccountDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.LenderName).HasMaxLength(200).IsRequired();
+        entity.Property(x => x.ContractReference).HasMaxLength(100).IsRequired();
+        entity.Property(x => x.PrincipalAmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.StartDate).HasColumnType("date");
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.HasIndex(x => new { x.CompanyId, x.LenderName, x.ContractReference }, CreditAccountLiveIndex)
+            .HasFilter(CreditAccountLiveFilter).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.Status, x.ProposedAtUtc }, "IX_CreditAccounts_Status");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var installment = modelBuilder.Entity<CreditAccountInstallmentRow>();
+        installment.ToTable("CreditAccountInstallments", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CreditAccountInstallments_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint("CK_CreditAccountInstallments_Amounts", CreditAccountInstallmentAmountsCheck);
+        });
+        installment.HasKey(x => new { x.CompanyId, x.CreditAccountId, x.Sequence });
+        installment.Property(x => x.DueDate).HasColumnType("date");
+        installment.Property(x => x.InstallmentText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        installment.Property(x => x.PrincipalText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        installment.Property(x => x.InterestText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        installment.Property(x => x.BsmvText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        installment.Property(x => x.KkdfText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        installment.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        installment.HasOne<CreditAccountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CreditAccountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        installment.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<CreditAccountCommandRow>();
+        command.ToTable("CreditAccountCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_CreditAccountCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_CreditAccountCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_CreditAccountCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_CreditAccountCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal whose target does not exist (ADR-011 §7).
+            table.HasCheckConstraint("CK_CreditAccountCommands_Target",
+                "([CreditAccountId] IS NOT NULL AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([CreditAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.CreditAccountId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<CreditAccountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CreditAccountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>Per (lender, contract reference) at most one live credit account (proposed or approved).</summary>
+    internal const string CreditAccountLiveIndex = "UX_CreditAccounts_Live";
+
+    internal const string CreditAccountLiveFilter = "[Status] IN (1, 2)";
+
+    /// <summary>FNS-D87: the four groups (1 cash, 2 non-cash, 3 instrument and factoring, 4 leasing).</summary>
+    internal const string CreditAccountGroupCheck = "[CreditGroup] IN (1, 2, 3, 4)";
+
+    /// <summary>The credit amount: an unsigned decimal text with at least one non-zero digit (the service parses it exactly).</summary>
+    internal const string CreditAccountAmountCheck =
+        "LEN([PrincipalAmountText]) > 0 AND [PrincipalAmountText] NOT LIKE '%[^0-9.]%' "
+        + "AND [PrincipalAmountText] NOT LIKE '%.%.%' AND [PrincipalAmountText] NOT LIKE '.%' "
+        + "AND [PrincipalAmountText] NOT LIKE '%.' AND [PrincipalAmountText] LIKE '%[1-9]%'";
+
+    /// <summary>
+    /// FNS-D94: each plan amount is an unsigned decimal text (zero allowed: an interest-free or a tax-free line); the
+    /// installment and principal sums are the service's deterministic calculator's (FinanceCreditPlanCalculator).
+    /// </summary>
+    internal const string CreditAccountInstallmentAmountsCheck =
+        "LEN([InstallmentText]) > 0 AND [InstallmentText] NOT LIKE '%[^0-9.]%' AND [InstallmentText] NOT LIKE '%.%.%' "
+        + "AND [InstallmentText] NOT LIKE '.%' AND [InstallmentText] NOT LIKE '%.' "
+        + "AND LEN([PrincipalText]) > 0 AND [PrincipalText] NOT LIKE '%[^0-9.]%' AND [PrincipalText] NOT LIKE '%.%.%' "
+        + "AND [PrincipalText] NOT LIKE '.%' AND [PrincipalText] NOT LIKE '%.' "
+        + "AND LEN([InterestText]) > 0 AND [InterestText] NOT LIKE '%[^0-9.]%' AND [InterestText] NOT LIKE '%.%.%' "
+        + "AND [InterestText] NOT LIKE '.%' AND [InterestText] NOT LIKE '%.' "
+        + "AND LEN([BsmvText]) > 0 AND [BsmvText] NOT LIKE '%[^0-9.]%' AND [BsmvText] NOT LIKE '%.%.%' "
+        + "AND [BsmvText] NOT LIKE '.%' AND [BsmvText] NOT LIKE '%.' "
+        + "AND LEN([KkdfText]) > 0 AND [KkdfText] NOT LIKE '%[^0-9.]%' AND [KkdfText] NOT LIKE '%.%.%' "
+        + "AND [KkdfText] NOT LIKE '.%' AND [KkdfText] NOT LIKE '%.'";
+
+    /// <summary>
+    /// FNS-D88 maker≠checker: a proposal carries no decision; an approval carries a decider other than the proposer and no
+    /// reason; a rejection carries a decider other than the proposer and its reason (the opening reversal's rule).
+    /// </summary>
+    internal const string CreditAccountDecisionCheck = OpeningBalanceReversalDecisionCheck;
+
     /// <summary>Per opening at most one live reversal (proposed or approved).</summary>
     internal const string OpeningBalanceReversalLiveIndex = "UX_OpeningBalanceReversals_Live";
 
@@ -2256,6 +2397,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Açılış bakiyesi ters kaydı yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.");
                 }
 
+                if (entry.Entity is CreditAccountRow creditAccount
+                    && !IsAllowedCreditAccountDecision(entry, creditAccount))
+                {
+                    throw new InvalidOperationException(
+                        "Kredi hesabı yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.");
+                }
+
                 if (entry.Entity is FinanceAllocationRow allocation
                     && !IsAllowedAllocationRelease(entry, allocation))
                 {
@@ -2357,6 +2505,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(OpeningBalanceReversalRow.DecidedAtUtc),
                         nameof(OpeningBalanceReversalRow.RejectionReason),
                         nameof(OpeningBalanceReversalRow.UpdatedAtUtc),
+                    ],
+                    // FIN-SC47 (FNS-D88): only the one decision; the account's values and its imported plan never
+                    // change (an installment line is append-only: no entry here).
+                    CreditAccountRow =>
+                    [
+                        nameof(CreditAccountRow.Status), nameof(CreditAccountRow.DecidedBy),
+                        nameof(CreditAccountRow.DecidedAtUtc), nameof(CreditAccountRow.RejectionReason),
+                        nameof(CreditAccountRow.UpdatedAtUtc),
                     ],
                     // API-85b: only a revision superseded by a newer one; the collateral's values never change.
                     PartyCollateralRow =>
@@ -2715,6 +2871,32 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             || entry.OriginalValues[nameof(OpeningBalanceReversalRow.DecidedBy)] is not null
             || entry.OriginalValues[nameof(OpeningBalanceReversalRow.DecidedAtUtc)] is not null
             || entry.OriginalValues[nameof(OpeningBalanceReversalRow.RejectionReason)] is not null)
+        {
+            return false;
+        }
+
+        var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+        return decided && ((current.Status == approved && current.RejectionReason is null)
+            || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
+    }
+
+    /// <summary>
+    /// FNS-D88: a credit account changes once, from a pending proposal to an approval (no reason) or a rejection (with its
+    /// reason) by a person other than the proposer, exactly one version step; a decided account never changes again.
+    /// </summary>
+    private static bool IsAllowedCreditAccountDecision(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry, CreditAccountRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        var originalVersion = (long)entry.OriginalValues[nameof(CreditAccountRow.Version)]!;
+        if (current.Version != checked(originalVersion + 1)
+            || (int)entry.OriginalValues[nameof(CreditAccountRow.Status)]! != proposed
+            || entry.OriginalValues[nameof(CreditAccountRow.DecidedBy)] is not null
+            || entry.OriginalValues[nameof(CreditAccountRow.DecidedAtUtc)] is not null
+            || entry.OriginalValues[nameof(CreditAccountRow.RejectionReason)] is not null)
         {
             return false;
         }
