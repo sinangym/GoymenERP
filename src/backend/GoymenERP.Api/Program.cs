@@ -302,6 +302,8 @@ builder.Services.AddScoped<IInventoryStockProductFilterV1, InventoryStockProduct
 // STK-S30 (KLN-D39/D70): the Product owner's similarity facts behind label suggestions and the substitute check.
 builder.Services.AddScoped<IInventoryProductSimilarityFactsV1, InventoryProductSimilarityFactsHost>();
 builder.Services.AddScoped<IInventoryStockOwnerDisplaySourceV1, InventoryStockOwnerDisplayHost>();
+// STK-S25 (BS-1, SAT-D295): the Purchasing owner's supplier invoice rate behind the foreign-currency average cost.
+builder.Services.AddScoped<IInventoryPurchaseInvoiceCostRateSourceV1, InventoryPurchaseInvoiceCostRateHost>();
 builder.Services.AddInventoryMovementTimelineCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddInventoryParentRollReferences();

@@ -37,6 +37,10 @@ public static class InventoryAverageCostUnreadableCodesV1
 {
     public const string NegativeStock = "negative_stock";
     public const string UnitConversion = "unit_conversion_undecided";
+    /// <summary>
+    /// BS-1: a foreign-currency cost whose supplier invoice rate is not recorded yet (TL cost Unavailable). The wire text is
+    /// kept as published; it is a stable code, not a statement that the rule is open.
+    /// </summary>
     public const string ForeignCurrency = "foreign_currency_undecided";
     public const string LandedOrAdditionalCost = "additional_cost_undecided";
     public const string Return = "return_effect_undecided";

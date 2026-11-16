@@ -40,7 +40,9 @@ public enum AverageCostMovementKind
 /// (required), the original issue's unit cost for a customer return and the original purchase line's unit cost for a
 /// purchase return (null when that original cost is unavailable). Ignored for an issue or a production receipt.</param>
 /// <param name="UnitCostIsPerStockKg">False when the purchase price is not per stock kilogram (unit conversion is OPEN).</param>
-/// <param name="IsBaseCurrency">False for a foreign-currency cost (rate and date are OPEN).</param>
+/// <param name="IsBaseCurrency">False for a foreign-currency cost whose TL value is not known yet (BS-1: the supplier invoice's
+/// official rate is not recorded); the core answers <see cref="AverageCostUnreadableReason.ForeignCurrency"/>. A converted cost
+/// enters as a base-currency cost.</param>
 /// <param name="AdditionalCostPerStockKg">Purchase receipts only: freight, customs or other additional cost per stock kilogram,
 /// kept apart from <paramref name="UnitCostPerStockKg"/>. SAT-D302 (1): it never enters the v1 average. Keeping it apart in
 /// its own field is the implementation reading of that decision (reversible); it is carried so the later setting
