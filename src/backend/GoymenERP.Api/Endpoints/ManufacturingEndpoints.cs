@@ -397,6 +397,23 @@ public static class ManufacturingEndpoints
             .Produces<PlanPreviewViewV1>(StatusCodes.Status200OK)
             .WithPreviewPlanProblems();
 
+        // URT-D34/D35: advisory current/free/missing kg of the plan's stored inputs only; no reservation is made.
+        group.MapGet("/plans/{planId:guid}/input-availability", async (
+                Guid planId, ManufacturingCommandService service, HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanInputAvailabilityAsync(planId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanInputAvailabilityV1")
+            .Produces<PlanInputAvailabilityViewV1>(StatusCodes.Status200OK)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
         group.MapPost("/plans/{planId:guid}/approval", async (
                 Guid planId,
                 ApprovePlanRequestV1 request,

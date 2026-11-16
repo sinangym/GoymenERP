@@ -567,3 +567,13 @@ export const PLAN_REAPPROVAL_TEXT = {
   history: 'Yeniden onay geçmişi',
   historyLine: (number: number, at: string, version: number) => `${number}. yeniden onay: ${at}, plan sürümü ${version}`,
 } as const
+
+export const PLAN_INPUT_AVAILABILITY_TEXT = {
+  heading: 'Girdi miktarları ve iptal geçmişi', subject: 'Plan girdilerinin güncel miktarları',
+  help: 'Bu okuma stok ayırmaz. Serbest miktar başka işlemlerle değişebilir; yeniden onayda bütün girdiler birlikte tekrar kontrol edilir. Fiziksel bakiye serbest miktar değildir.',
+  caption: 'Stok kaynağından okunan miktarlar (kg)', label: 'Etiket', version: 'Güncel etiket sürümü',
+  requested: 'Planlanan', physical: 'Fiziksel', blocked: 'Blokeli', allocated: 'Ayrılmış', free: 'Serbest', missing: 'Eksik',
+  positions: 'Serbest pozisyon sayısı', positionRefusal: 'Ayırma için tek serbest pozisyon gerekir',
+  readAt: 'Okuma zamanı', refresh: 'Miktarları yeniden oku', cancelledHistory: 'İptal edilen emir geçmişi',
+  cancelledLine: (orderId: string, version: number) => `İptal edilen emir ${orderId}; iptal sonrası plan sürümü ${version}`,
+} as const
