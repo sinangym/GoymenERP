@@ -248,6 +248,8 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   inventory_stock_count_not_found: 'Sayım bu şirkette bulunamadı.',
   inventory_label_version_conflict: 'Etiket siz sayımı girerken değişti; defter miktarı artık farklı olabilir. Etiketi yeniden açıp tekrar sayın.',
   inventory_stock_count_position_conflict: 'Sayım için etiketin tek bir fiziksel pozisyonda stoğu olmalı.',
+  // SAT-D384: only the active last label is counted; a consumed label never enters a count difference.
+  inventory_stock_count_label_converted: 'Etiket dönüştürüldü → yeni etiket: bu etiket bölme, birleştirme veya üretimde tüketildi. Sayımı dönüşümden çıkan yeni etiket üzerinden yapın; bu etiket sayım farkına girmez, hiçbir şey kaydedilmedi.',
   inventory_stock_count_conflict: 'Bu sayım kimliği farklı bir içerikle kayıtlı.',
   inventory_stock_count_not_pending: 'Bu sayımda onaylanacak fark yok.',
   inventory_stock_count_already_decided: 'Bu sayım zaten başka bir kararla sonuçlandırılmış.',

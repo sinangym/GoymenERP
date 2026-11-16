@@ -215,8 +215,8 @@ public sealed class ProductPackageStandardTests
     public void The_package_standard_migration_precedes_the_section_families_and_its_Down_refuses_first_with_51492()
     {
         using var context = Context();
-        Assert.Equal(["AddProductPackageStandards", "AddProductSectionFamilies"],
-            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(["AddProductPackageStandards", "AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles"],
+            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductPackageStandards();
@@ -230,6 +230,156 @@ public sealed class ProductPackageStandardTests
         Assert.Equal(
             ["ProductPackageStandardAttempts", "ProductPackageStandardLines", "ProductPackageStandardVersions"],
             migration.UpOperations.OfType<CreateTableOperation>().Select(operation => operation.Name).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void The_approve_permission_is_registered_once_company_wide_not_critical_and_seeded_to_nobody()
+    {
+        Assert.Equal("product.package-standards.approve", ProductPackageStandardPermissionsV3.Approve);
+        Assert.Equal(ErpPermissions.ProductPackageStandardsApprove, ProductPackageStandardPermissionsV3.Approve);
+        Assert.True(ErpPermissions.IsKnown(ProductPackageStandardPermissionsV3.Approve));
+        Assert.Single(ErpPermissions.All, name => name == ProductPackageStandardPermissionsV3.Approve);
+        Assert.True(ErpPermissions.RequiresCompanyWideScope(ProductPackageStandardPermissionsV3.Approve));
+        Assert.False(ErpPermissions.IsCritical(ProductPackageStandardPermissionsV3.Approve));
+        var seed = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "backend", "GoymenERP.Api", "Seed", "identity-seed.json"));
+        Assert.DoesNotContain(ProductPackageStandardPermissionsV3.Approve, seed, StringComparison.Ordinal);
+        Assert.False(ProductPackageStandardApprovalOptionsV3.Closed.PreparerMayDecide);
+    }
+
+    [Fact]
+    public void The_override_decision_and_kept_file_tables_are_company_scoped_insert_only_and_mapped_with_their_checks()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model;
+
+        var header = design.FindEntityType(typeof(ProductPackageStandardVersionRow))!;
+        Assert.True(header.FindProperty(nameof(ProductPackageStandardVersionRow.EditedCustomerId))!.IsNullable);
+        Assert.Contains(header.GetCheckConstraints(), check => check.Name == "CK_ProductPackageStandardVersions_Approval");
+
+        var customerLine = design.FindEntityType(typeof(ProductPackageStandardCustomerLineRow))!;
+        Assert.Equal(("product", "ProductPackageStandardCustomerLines"), (customerLine.GetSchema(), customerLine.GetTableName()));
+        Assert.Equal(["CompanyId", "Version", "CustomerId", "ProductId"],
+            customerLine.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var values = Assert.Single(customerLine.GetCheckConstraints(),
+            check => check.Name == "CK_ProductPackageStandardCustomerLines_Values");
+        Assert.Contains("[PiecesPerPackage] > 0", values.Sql, StringComparison.Ordinal);
+        Assert.Contains(customerLine.GetForeignKeys(), key =>
+            key.PrincipalEntityType.ClrType == typeof(ProductPackageStandardVersionRow) && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Single(context.Model.FindEntityType(typeof(ProductPackageStandardCustomerLineRow))!.GetDeclaredQueryFilters());
+
+        var decision = design.FindEntityType(typeof(ProductPackageStandardDecisionRow))!;
+        Assert.Equal(("product", "ProductPackageStandardDecisions"), (decision.GetSchema(), decision.GetTableName()));
+        Assert.Equal(["CompanyId", "Version"], decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var decided = Assert.Single(decision.GetCheckConstraints(), check => check.Name == "CK_ProductPackageStandardDecisions_Decision");
+        Assert.Contains("'Approved'", decided.Sql, StringComparison.Ordinal);
+        Assert.Contains("'Rejected'", decided.Sql, StringComparison.Ordinal);
+        Assert.Contains(decision.GetForeignKeys(), key =>
+            key.PrincipalEntityType.ClrType == typeof(ProductPackageStandardVersionRow) && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Single(context.Model.FindEntityType(typeof(ProductPackageStandardDecisionRow))!.GetDeclaredQueryFilters());
+
+        var file = design.FindEntityType(typeof(ProductPackageStandardImportFileRow))!;
+        Assert.Equal(("product", "ProductPackageStandardImportFiles"), (file.GetSchema(), file.GetTableName()));
+        Assert.Equal(["CompanyId", "ImportId"], file.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var outcome = Assert.Single(file.GetCheckConstraints(), check => check.Name == "CK_ProductPackageStandardImportFiles_Outcome");
+        Assert.Contains("'Accepted'", outcome.Sql, StringComparison.Ordinal);
+        Assert.Contains("'Refused'", outcome.Sql, StringComparison.Ordinal);
+        Assert.Contains(file.GetCheckConstraints(), check => check.Name == "CK_ProductPackageStandardImportFiles_File");
+        Assert.Single(context.Model.FindEntityType(typeof(ProductPackageStandardImportFileRow))!.GetDeclaredQueryFilters());
+    }
+
+    [Fact]
+    public void The_approval_migration_is_the_last_one_and_keeps_files_with_a_trigger_and_its_Down_refuses_first_with_51872()
+    {
+        using var context = Context();
+        Assert.Equal("AddProductPackageStandardApprovalAndFiles",
+            context.Database.GetMigrations().Last().Split('_', 2)[1]);
+
+        var migration = new AddProductPackageStandardApprovalAndFiles();
+        var trigger = Assert.Single(migration.UpOperations.OfType<SqlOperation>()).Sql;
+        Assert.Contains("TR_ProductPackageStandardImportFiles_Guard", trigger, StringComparison.Ordinal);
+        Assert.Contains("AFTER UPDATE, DELETE", trigger, StringComparison.Ordinal);
+        Assert.Contains("THROW 51871", trigger, StringComparison.Ordinal);
+        Assert.Equal(
+            ["ProductPackageStandardCustomerLines", "ProductPackageStandardDecisions", "ProductPackageStandardImportFiles"],
+            migration.UpOperations.OfType<CreateTableOperation>().Select(operation => operation.Name).Order(StringComparer.Ordinal));
+
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51872", guard, StringComparison.Ordinal);
+        Assert.Contains("[product].[ProductPackageStandardImportFiles]", guard, StringComparison.Ordinal);
+        Assert.Contains("[product].[ProductPackageStandardDecisions]", guard, StringComparison.Ordinal);
+        Assert.Contains("[product].[ProductPackageStandardCustomerLines]", guard, StringComparison.Ordinal);
+        Assert.Contains("is not rolled back (forward fix)", guard, StringComparison.Ordinal);
+        Assert.Equal(2, migration.DownOperations.OfType<SqlOperation>().Count());
+    }
+
+    [Fact]
+    public async Task The_approval_surface_answers_its_fences_and_malformed_input_before_anything_is_read()
+    {
+        var anonymous = Service(new FakeUser(null), new FakeAuthority(granted: true));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => anonymous.GetApprovalStateAsync());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => anonymous.ListImportsAsync());
+
+        // The approver's read and decisions measure the approve name; the preparer's surface measures the manage name.
+        var denied = new FakeAuthority(granted: false);
+        var ungranted = Service(new FakeUser("user-1"), denied);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ungranted.GetApprovalStateForApproverAsync());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            ungranted.ApproveAsync(2, new ApproveProductPackageStandardVersionRequestV3("2026-11-16", "SENTETIK"), Metadata()));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            ungranted.RejectAsync(2, new RejectProductPackageStandardVersionRequestV3("SENTETIK"), Metadata()));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ungranted.GetImportReportAsync(Guid.NewGuid()));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ungranted.SetCustomerAsync(Guid.NewGuid(), Guid.NewGuid(),
+            new SetProductPackageStandardRequestV2("0", 6, "SENTETIK"), Metadata()));
+        Assert.Equal(
+            [
+                ProductPackageStandardPermissionsV3.Approve, ProductPackageStandardPermissionsV3.Approve,
+                ProductPackageStandardPermissionsV3.Approve, ProductPackageStandardPermissionsV2.Manage,
+                ProductPackageStandardPermissionsV2.Manage,
+            ],
+            denied.Asked);
+
+        var service = Service(new FakeUser("user-1"), new FakeAuthority(granted: true));
+        await AssertDecisionUnstored(() => service.ApproveAsync(0,
+            new ApproveProductPackageStandardVersionRequestV3("2026-11-16", "SENTETIK"), Metadata()),
+            ProductPackageStandardProblemCodesV2.RequestInvalid);
+        await AssertDecisionUnstored(() => service.ApproveAsync(2,
+            new ApproveProductPackageStandardVersionRequestV3(null, "SENTETIK"), Metadata()),
+            ProductPackageStandardProblemCodesV3.EffectiveDateInvalid);
+        await AssertDecisionUnstored(() => service.ApproveAsync(2,
+            new ApproveProductPackageStandardVersionRequestV3("16.11.2026", "SENTETIK"), Metadata()),
+            ProductPackageStandardProblemCodesV3.EffectiveDateInvalid);
+        await AssertDecisionUnstored(() => service.ApproveAsync(2,
+            new ApproveProductPackageStandardVersionRequestV3("2026-11-16", " "), Metadata()),
+            ProductPackageStandardProblemCodesV2.ReasonRequired);
+        await AssertDecisionUnstored(() => service.RejectAsync(-1,
+            new RejectProductPackageStandardVersionRequestV3("SENTETIK"), Metadata()),
+            ProductPackageStandardProblemCodesV2.RequestInvalid);
+        await AssertDecisionUnstored(() => service.RejectAsync(2,
+            new RejectProductPackageStandardVersionRequestV3(null), Metadata()),
+            ProductPackageStandardProblemCodesV2.ReasonRequired);
+        await AssertDecisionUnstored(() => service.SetCustomerAsync(Guid.Empty, Guid.NewGuid(),
+            new SetProductPackageStandardRequestV2("0", 6, "SENTETIK"), Metadata()),
+            ProductPackageStandardProblemCodesV2.RequestInvalid);
+        await AssertDecisionUnstored(() => service.SetCustomerAsync(Guid.NewGuid(), Guid.NewGuid(),
+            new SetProductPackageStandardRequestV2("0", 0, "SENTETIK"), Metadata()),
+            ProductPackageStandardProblemCodesV2.PiecesInvalid);
+
+        // The empty import identity is answered as absent without a read.
+        Assert.Null(await service.GetImportReportAsync(Guid.Empty));
+    }
+
+    [Fact]
+    public void A_V3_read_without_a_value_carries_no_version_source_scope_or_date()
+    {
+        foreach (var outcome in Enum.GetValues<ProductPackageStandardReadOutcomeV2>()
+                     .Where(outcome => outcome != ProductPackageStandardReadOutcomeV2.Found))
+        {
+            var read = ProductPackageStandardReadV3.Without(outcome);
+            Assert.Equal((outcome, (int?)null, (long?)null, (Guid?)null, (string?)null, (string?)null, (string?)null,
+                    (DateOnly?)null),
+                (read.Outcome, read.PiecesPerPackage, read.StandardVersion, read.StandardVersionId, read.SourceKind,
+                    read.SourceLabel, read.EntryScope, read.EffectiveFrom));
+        }
     }
 
     [Fact]
@@ -263,6 +413,34 @@ public sealed class ProductPackageStandardTests
         await using (var context = Context())
         {
             context.Add(Version(CompanyB));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        }
+
+        await using (var context = Context())
+        {
+            var file = new ProductPackageStandardImportFileRow
+            {
+                CompanyId = CompanyA, ImportId = Guid.NewGuid(), FileName = "paket.xlsx", FileSha256 = new string('a', 64),
+                FileSizeBytes = 1, Content = [1], Outcome = ProductPackageStandardImportOutcomesV3.Refused, ReportJson = "{}",
+                SourceLabel = "SENTETIK", Reason = "SENTETIK", CreatedAtUtc = DateTimeOffset.UnixEpoch, CreatedBy = "user-1",
+                CorrelationId = "corr-1",
+            };
+            context.Attach(file);
+            context.Remove(file);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        }
+
+        await using (var context = Context())
+        {
+            var decision = new ProductPackageStandardDecisionRow
+            {
+                CompanyId = CompanyA, Version = 2, DecisionId = Guid.NewGuid(), Decision = ProductPackageStandardDecisionsV3.Approved,
+                EffectiveFrom = new DateOnly(2026, 11, 16), Reason = "SENTETIK", DecidedAtUtc = DateTimeOffset.UnixEpoch,
+                DecidedBy = "user-2", CorrelationId = "corr-1",
+            };
+            context.Attach(decision);
+            context.Entry(decision).Property(x => x.Reason).IsModified = true;
+            decision.Reason = "SENTETIK BAŞKA";
             await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         }
     }
@@ -316,17 +494,14 @@ public sealed class ProductPackageStandardTests
             ContentBase64 = Convert.ToBase64String(new byte[ProductPackageStandardInputLimitsV2.MaximumFileBytes + 1]),
         }, ProductPackageStandardProblemCodesV2.FileInvalid);
 
-        // A file whose every row is refused is answered before any product code is looked up.
-        var badRow = await service.ImportAsync(Request() with
+        // SAT-D383: a file that reaches the row check (a row error included) is kept with its report, so it needs the
+        // database; the SQL acceptance tests prove that refusal and its kept file.
+        await Assert.ThrowsAnyAsync<Exception>(() => service.ImportAsync(Request() with
         {
             ContentBase64 = Convert.ToBase64String(Workbook(
                 Row(1, Text("A", CodeHeader), Text("B", PiecesHeader)),
                 Row(2, Text("A", "SNT-001"), Number("B", "0")))),
-        }, Metadata());
-        Assert.Equal((400, ProductPackageStandardProblemCodesV2.FileInvalid, false),
-            (badRow.Answer.StatusCode, badRow.Answer.Code, badRow.IsReplay));
-        Assert.Contains("Satır 2", badRow.Answer.Detail, StringComparison.Ordinal);
-        Assert.Contains("tablo değişmedi", badRow.Answer.Detail, StringComparison.Ordinal);
+        }, Metadata()));
 
         await AssertSetUnstored(service, Guid.Empty, new SetProductPackageStandardRequestV2("0", 6, "SENTETIK"),
             ProductPackageStandardProblemCodesV2.RequestInvalid);
@@ -381,6 +556,13 @@ public sealed class ProductPackageStandardTests
     {
         // The fake database has no reachable server: an answer here proves nothing was read or stored first.
         var result = await service.ImportAsync(request, Metadata());
+        Assert.Equal((400, code, false, "corr-1"),
+            (result.Answer.StatusCode, result.Answer.Code, result.IsReplay, result.OriginalCorrelationId));
+    }
+
+    private static async Task AssertDecisionUnstored(Func<Task<ProductPackageStandardResultV2>> command, string code)
+    {
+        var result = await command();
         Assert.Equal((400, code, false, "corr-1"),
             (result.Answer.StatusCode, result.Answer.Code, result.IsReplay, result.OriginalCorrelationId));
     }

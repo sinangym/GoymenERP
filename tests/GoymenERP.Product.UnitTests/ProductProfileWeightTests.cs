@@ -234,8 +234,9 @@ public sealed class ProductProfileWeightTests
     public void The_kg_per_metre_migration_precedes_the_package_standard_and_section_family_migrations_and_its_Down_refuses_first_with_51483()
     {
         using var context = Context();
-        Assert.Equal(["AddProductProfileWeightImports", "AddProductPackageStandards", "AddProductSectionFamilies"],
-            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(["AddProductProfileWeightImports", "AddProductPackageStandards", "AddProductSectionFamilies",
+                "AddProductPackageStandardApprovalAndFiles"],
+            context.Database.GetMigrations().TakeLast(4).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductProfileWeightImports();

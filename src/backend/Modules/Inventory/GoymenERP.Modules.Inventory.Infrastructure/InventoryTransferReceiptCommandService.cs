@@ -136,6 +136,51 @@ public sealed class InventoryTransferReceiptCommandService : IInventoryTransferR
             token => FreshAuthorityFenceAsync(scope, token), cancellationToken);
     }
 
+    /// <summary>KLN-D107: a corrected excess re-request runs under the receive permission; its decision stays under the
+    /// overage approval.</summary>
+    public async Task<InventoryTransferReceiptResultV1> RenewOverageAsync(
+        Guid transferId,
+        Guid lineId,
+        RenewInventoryTransferOverageV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var scope = await RequireAsync(InventoryPermissionManifestV1.StockTransferWrite, cancellationToken);
+        var replayMetadata = await FinalizeAsync(scope, transport, cancellationToken);
+        if (await writer.ReplayRenewOverageAsync(transferId, lineId, request, replayMetadata,
+                token => FreshAuthorityFenceAsync(scope, token), cancellationToken) is { } replay)
+        {
+            return replay;
+        }
+
+        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
+        return await writer.RenewOverageAsync(transferId, lineId, request, metadata,
+            token => FreshAuthorityFenceAsync(scope, token), cancellationToken);
+    }
+
+    /// <summary>KLN-D108: withdrawing an undecided loss request runs under the loss record permission.</summary>
+    public async Task<InventoryTransferReceiptResultV1> WithdrawLossAsync(
+        Guid transferId,
+        Guid lineId,
+        WithdrawInventoryTransferLossV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var scope = await RequireAsync(InventoryPermissionManifestV1.StockTransferLossRecord, cancellationToken);
+        var replayMetadata = await FinalizeAsync(scope, transport, cancellationToken);
+        if (await writer.ReplayWithdrawLossAsync(transferId, lineId, request, replayMetadata,
+                token => FreshAuthorityFenceAsync(scope, token), cancellationToken) is { } replay)
+        {
+            return replay;
+        }
+
+        var metadata = await FinalizeAsync(scope, transport, cancellationToken);
+        return await writer.WithdrawLossAsync(transferId, lineId, request, metadata,
+            token => FreshAuthorityFenceAsync(scope, token), cancellationToken);
+    }
+
     private async Task<InventoryTransferViewV1> ReadTransferAsync(
         Scope scope,
         Guid transferId,

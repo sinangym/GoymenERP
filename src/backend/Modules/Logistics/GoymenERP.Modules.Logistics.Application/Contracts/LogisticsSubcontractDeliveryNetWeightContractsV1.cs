@@ -25,10 +25,11 @@ namespace GoymenERP.Modules.Logistics.Application.Contracts;
 /// <see cref="LogisticsSubcontractDeliveryNetWeightStatusV1.Unavailable"/> (fail closed).
 /// </para>
 /// <para>
-/// Corrections (LOJ-D13: a corrected weighing with its reason; after invoicing a Sales difference invoice) are not modelled
-/// yet: the store keeps one append-only record per instruction, so every available answer is
-/// <see cref="LogisticsSubcontractDeliveryNetWeightContractV1.OriginalWeighingRevision"/>. The revision field is in the
-/// contract now so that a later correction raises it without a new contract version.
+/// Corrections (LOJ-D13: a corrected weighing with its reason; after invoicing a Sales difference invoice): the domain keeps
+/// them append-only beside the original record and the answer states the last one with its revision
+/// (<see cref="LogisticsSubcontractDeliveryNetWeightContractV1.OriginalWeighingRevision"/> for an uncorrected record), so a
+/// correction raises the revision without a new contract version. Until the correction command and its persistence land,
+/// a stored instruction has no correction and every available answer is the original revision.
 /// </para>
 /// </summary>
 public interface ILogisticsSubcontractDeliveryNetWeightReadPortV1

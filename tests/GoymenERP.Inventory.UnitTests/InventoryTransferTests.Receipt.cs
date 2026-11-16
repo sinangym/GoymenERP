@@ -262,6 +262,8 @@ public sealed partial class InventoryTransferTests
     [InlineData("overage", ErpPermissions.InventoryStockTransferOverageApprove)]
     [InlineData("loss-request", ErpPermissions.InventoryStockTransferLossRecord)]
     [InlineData("loss-decision", ErpPermissions.InventoryStockTransferLossApprove)]
+    [InlineData("overage-renewal", ErpPermissions.InventoryStockTransferWrite)]
+    [InlineData("loss-withdrawal", ErpPermissions.InventoryStockTransferLossRecord)]
     public async Task Each_receipt_command_is_measured_and_written_only_under_its_own_permission(
         string operation,
         string permission)
@@ -285,6 +287,8 @@ public sealed partial class InventoryTransferTests
     [InlineData("overage")]
     [InlineData("loss-request")]
     [InlineData("loss-decision")]
+    [InlineData("overage-renewal")]
+    [InlineData("loss-withdrawal")]
     public async Task A_stored_receipt_answer_replays_before_the_transfer_or_destination_read(string operation)
     {
         var replay = new InventoryTransferReceiptResultV1(TransferView(Company), ReceiptFacts(), true, "original");
@@ -304,6 +308,8 @@ public sealed partial class InventoryTransferTests
     [InlineData("overage")]
     [InlineData("loss-request")]
     [InlineData("loss-decision")]
+    [InlineData("overage-renewal")]
+    [InlineData("loss-withdrawal")]
     public async Task An_unregistered_receipt_permission_is_a_setup_gap_and_never_measured_or_written(string operation)
     {
         var world = new ReceiptWorld { Known = false };
@@ -321,6 +327,8 @@ public sealed partial class InventoryTransferTests
     [InlineData("overage")]
     [InlineData("loss-request")]
     [InlineData("loss-decision")]
+    [InlineData("overage-renewal")]
+    [InlineData("loss-withdrawal")]
     public async Task A_missing_grant_or_another_transport_actor_is_forbidden_before_the_writer(string operation)
     {
         var revoked = new ReceiptWorld();
@@ -427,12 +435,17 @@ public sealed partial class InventoryTransferTests
             "loss-decision" => service.DecideLossAsync(transferId, lineId,
                 new DecideInventoryTransferLossV1("2", InventoryTransferDecisionKindV1.Approve, At.AddHours(4),
                     "SENTETIK kayıp onayı"), transport),
+            "overage-renewal" => service.RenewOverageAsync(transferId, lineId,
+                new RenewInventoryTransferOverageV1("2", At.AddHours(5), "0.4", "SENTETIK düzeltilmiş fazla talebi"),
+                transport),
+            "loss-withdrawal" => service.WithdrawLossAsync(transferId, lineId,
+                new WithdrawInventoryTransferLossV1("2", 1, At.AddHours(5), "SENTETIK talep geri çekildi"), transport),
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
         };
     }
 
     private static InventoryTransferReceiptFactsViewV1 ReceiptFacts() =>
-        new(Guid.Parse("91000000-0000-0000-0000-000000000001"), Company, "3", "Accepted", [], []);
+        new(Guid.Parse("91000000-0000-0000-0000-000000000001"), Company, "3", "Accepted", [], [], []);
 
     private sealed class ReceiptWorld
     {
@@ -511,6 +524,26 @@ public sealed partial class InventoryTransferTests
             DecideInventoryTransferLossV1 request, InventoryCommandMetadata metadata,
             Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
             Answer("loss-decision", metadata, freshAuthorityFence, cancellationToken);
+
+        public Task<InventoryTransferReceiptResultV1?> ReplayRenewOverageAsync(Guid transferId, Guid lineId,
+            RenewInventoryTransferOverageV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Replay("overage-renewal", freshAuthorityFence, cancellationToken);
+
+        public Task<InventoryTransferReceiptResultV1> RenewOverageAsync(Guid transferId, Guid lineId,
+            RenewInventoryTransferOverageV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Answer("overage-renewal", metadata, freshAuthorityFence, cancellationToken);
+
+        public Task<InventoryTransferReceiptResultV1?> ReplayWithdrawLossAsync(Guid transferId, Guid lineId,
+            WithdrawInventoryTransferLossV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Replay("loss-withdrawal", freshAuthorityFence, cancellationToken);
+
+        public Task<InventoryTransferReceiptResultV1> WithdrawLossAsync(Guid transferId, Guid lineId,
+            WithdrawInventoryTransferLossV1 request, InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+            Answer("loss-withdrawal", metadata, freshAuthorityFence, cancellationToken);
 
         private async Task<InventoryTransferReceiptResultV1> Answer(string operation,
             InventoryCommandMetadata metadata, Func<CancellationToken, Task> freshAuthorityFence,

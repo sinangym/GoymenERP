@@ -828,6 +828,171 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardCustomerLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("PiecesPerPackage")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Version", "CustomerId", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductPackageStandardCustomerLines", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductPackageStandardCustomerLines_Values", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [PiecesPerPackage] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardDecisionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("DecisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.HasIndex("CompanyId", "DecisionId")
+                        .IsUnique();
+
+                    b.ToTable("ProductPackageStandardDecisions", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductPackageStandardDecisions_Decision", "([Decision] = 'Approved' AND [EffectiveFrom] IS NOT NULL) OR ([Decision] = 'Rejected' AND [EffectiveFrom] IS NULL)");
+
+                            t.HasCheckConstraint("CK_ProductPackageStandardDecisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DecisionId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND LEN([DecidedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardImportFileRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ImportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FileSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("FileSizeBytes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ProblemCode")
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceLabel")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long?>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "ImportId");
+
+                    b.HasIndex("CompanyId", "CreatedAtUtc");
+
+                    b.HasIndex("CompanyId", "Version");
+
+                    b.ToTable("ProductPackageStandardImportFiles", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductPackageStandardImportFiles_File", "LEN([FileName]) > 0 AND LEN([FileSha256]) = 64 AND [FileSizeBytes] > 0 AND [FileSizeBytes] <= 2097152 AND DATALENGTH([Content]) = [FileSizeBytes] AND ISJSON([ReportJson]) = 1");
+
+                            t.HasCheckConstraint("CK_ProductPackageStandardImportFiles_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ImportId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN(LTRIM(RTRIM([SourceLabel]))) > 0");
+
+                            t.HasCheckConstraint("CK_ProductPackageStandardImportFiles_Outcome", "([Outcome] = 'Accepted' AND [Version] IS NOT NULL AND [ProblemCode] IS NULL) OR ([Outcome] = 'Refused' AND [Version] IS NULL AND [ProblemCode] IS NOT NULL AND LEN([ProblemCode]) > 0)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardLineRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -873,6 +1038,12 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<int>("CustomerEntryCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("EditedCustomerId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("EditedProductId")
                         .HasColumnType("uniqueidentifier");
 
@@ -897,6 +1068,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("bit");
+
                     b.Property<string>("SourceKind")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -920,9 +1094,11 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
 
                     b.ToTable("ProductPackageStandardVersions", "product", t =>
                         {
-                            t.HasCheckConstraint("CK_ProductPackageStandardVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [VersionId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND [EntryCount] >= 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                            t.HasCheckConstraint("CK_ProductPackageStandardVersions_Approval", "[RequiresApproval] = 1 OR ([CustomerEntryCount] = 0 AND [EditedCustomerId] IS NULL)");
 
-                            t.HasCheckConstraint("CK_ProductPackageStandardVersions_Source", "([SourceKind] = 'Import' AND [SourceLabel] IS NOT NULL AND LEN(LTRIM(RTRIM([SourceLabel]))) > 0 AND [FileName] IS NOT NULL AND LEN([FileName]) > 0 AND [FileSha256] IS NOT NULL AND LEN([FileSha256]) = 64 AND [FileSizeBytes] IS NOT NULL AND [FileSizeBytes] > 0 AND [EditedProductId] IS NULL AND [EntryCount] > 0) OR ([SourceKind] = 'Edit' AND [SourceLabel] IS NULL AND [FileName] IS NULL AND [FileSha256] IS NULL AND [FileSizeBytes] IS NULL AND [EditedProductId] IS NOT NULL AND [EditedProductId] <> '00000000-0000-0000-0000-000000000000')");
+                            t.HasCheckConstraint("CK_ProductPackageStandardVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [VersionId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND [EntryCount] >= 0 AND [CustomerEntryCount] >= 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_ProductPackageStandardVersions_Source", "([SourceKind] = 'Import' AND [SourceLabel] IS NOT NULL AND LEN(LTRIM(RTRIM([SourceLabel]))) > 0 AND [FileName] IS NOT NULL AND LEN([FileName]) > 0 AND [FileSha256] IS NOT NULL AND LEN([FileSha256]) = 64 AND [FileSizeBytes] IS NOT NULL AND [FileSizeBytes] > 0 AND [EditedProductId] IS NULL AND [EditedCustomerId] IS NULL AND [EntryCount] > 0) OR ([SourceKind] = 'Edit' AND [SourceLabel] IS NULL AND [FileName] IS NULL AND [FileSha256] IS NULL AND [FileSizeBytes] IS NULL AND [EditedProductId] IS NOT NULL AND [EditedProductId] <> '00000000-0000-0000-0000-000000000000' AND ([EditedCustomerId] IS NULL OR [EditedCustomerId] <> '00000000-0000-0000-0000-000000000000'))");
                         });
                 });
 
@@ -1218,6 +1394,44 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardCustomerLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListProductReference", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardDecisionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardImportFileRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPackageStandardLineRow", b =>

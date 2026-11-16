@@ -182,6 +182,13 @@ public static class ErpPermissions
     public const string ProductPackageStandardsManage = "product.package-standards.manage";
 
     /// <summary>
+    /// SAT-D382 (STK-SC36-c): the Product owner's name for approving (from an effective date) or rejecting the package standard
+    /// version waiting for approval (<c>ProductPackageStandardPermissionsV3.Approve</c>). Registered, not granted: no role, seed
+    /// or user receives it here; who approves is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductPackageStandardsApprove = "product.package-standards.approve";
+
+    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -1611,6 +1618,7 @@ public static class ErpPermissions
             ProductDimensionManage,
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
+            ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -1875,6 +1883,7 @@ public static class ErpPermissions
             ProductDimensionManage,
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
+            ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
