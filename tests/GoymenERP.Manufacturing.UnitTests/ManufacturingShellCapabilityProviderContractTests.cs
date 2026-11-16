@@ -9,7 +9,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// routes — the order screen/list and plan create/detail/list — two controls on the order screen and three on plan
 /// detail. All ten consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift
 /// is red here.
-/// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
+/// company-wide scope, and available implementations except the explicitly staged URT-D106 reorder control. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
 /// context and scope; the parent's permissions kept; never available under a staged parent) holds by
 /// construction.
@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.10"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(18, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.11"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(19, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -35,7 +35,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.True(declaration.ImplementationAvailable);
+            Assert.Equal(declaration.CapabilityId != ManufacturingShellCapabilityProvider.PlanReorderCapabilityId,
+                declaration.ImplementationAvailable);
         }
 
         var exceptionApproval = Assert.Single(declarations,

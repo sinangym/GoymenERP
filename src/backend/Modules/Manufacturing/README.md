@@ -451,3 +451,10 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 - **Ö7 profile**: approved tolerance/formula numbers and the "reason + single approval" exception path with a named approver. Until then every non-zero difference keeps the order open.
 - **Known cost**: its money shape (a currency identity, not a code string) comes with T25/Finance.
 - **Estimated facts**: every fact here is an actual measurement; R6's actual/estimated distinction arrives with the first estimated source.
+
+
+### Queue permission follow-up (URT-D106)
+
+`manufacturing.plans.reorder` is registered company-wide, granted to no role, and its shell control is staged
+(`ImplementationAvailable: false`). URT-D106 supersedes URT-D101 for manual queue movement; priority-score entry
+remains under `manufacturing.plans.approve` (URT-D103). The queue write and its audit are still pending.

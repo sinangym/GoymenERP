@@ -5,7 +5,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 
 /// <summary>
 /// Publishes the Manufacturing order and plan screens to the shell (MFG-UI card, coordinator-approved) —
-/// PUBLISHED: every declaration is <c>ImplementationAvailable: true</c>, after the corresponding
+/// Published screens declare <c>ImplementationAvailable: true</c>, after the corresponding
 /// browser suite accepted the staged screen (the S03-c / FIN-UI-1c pattern). The screen opens to whoever
 /// holds the permission in the context company; publishing grants nothing (every grant is a human gate).
 /// <list type="bullet">
@@ -57,8 +57,8 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
     // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
-    // (URT-S19): the order cost trace control.
-    public const string OwnerContractVersion = "1.10";
+    // (URT-S19): the order cost trace control. 1.10 adds correction/cancel; 1.11 stages reorder (URT-D106).
+    public const string OwnerContractVersion = "1.11";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string OutputCorrectionCapabilityId = "manufacturing.orders.output-correction";
@@ -86,6 +86,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanApproveCapabilityId = "manufacturing.plans.approve";
     public const string PlanOrderCreateCapabilityId = "manufacturing.plans.order-create";
     public const string PlanEditCapabilityId = "manufacturing.plans.edit";
+    public const string PlanReorderCapabilityId = "manufacturing.plans.reorder";
     public const string PlanCancelCapabilityId = "manufacturing.plans.cancel";
     public const string PlanListCapabilityId = "manufacturing.plans.list";
     public const string PlanListRouteId = "manufacturing.plan-list";
@@ -254,6 +255,14 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 CapabilityId = PlanCancelCapabilityId,
                 ParentCapabilityId = PlanDetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansCancel],
+            },
+            // URT-D106: registered-only, staged until the queue command and its screen are implemented.
+            planDetail with
+            {
+                CapabilityId = PlanReorderCapabilityId,
+                ParentCapabilityId = PlanDetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansReorder],
+                ImplementationAvailable = false,
             },
             planList,
             scrapPriceList,

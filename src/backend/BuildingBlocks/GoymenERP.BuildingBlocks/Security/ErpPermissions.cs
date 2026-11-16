@@ -533,6 +533,12 @@ public static class ErpPermissions
     public const string ManufacturingPlansCancel = "manufacturing.plans.cancel";
 
     /// <summary>
+    /// URT-D106 supersedes URT-D101: moving a plan in the production queue has its own permission.
+    /// Registered, not granted; company-wide only. Critical classification and role assignments remain human gates.
+    /// </summary>
+    public const string ManufacturingPlansReorder = "manufacturing.plans.reorder";
+
+    /// <summary>
     /// URT-S13 (SAT-D316 (3)-(4), URT-D47, URT-D65): reading the company's monthly scrap prices (TL per kg). Its own name
     /// because a price list is neither a plan nor an order. Registered, not granted: no role and no user receives it here;
     /// who sees the price (URT-D57 (1) "like Sales") is a human gate. Company-wide only for the reason above (the route
@@ -1671,6 +1677,7 @@ public static class ErpPermissions
             ManufacturingOrdersCancel,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingPlansReorder,
             ManufacturingScrapPricesRead,
             ManufacturingScrapPricesWrite,
             ManufacturingReportsRead,
@@ -1936,6 +1943,7 @@ public static class ErpPermissions
             ManufacturingOrdersCancel,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
+            ManufacturingPlansReorder,
             ManufacturingScrapPricesRead,
             ManufacturingScrapPricesWrite,
             ManufacturingReportsRead,
