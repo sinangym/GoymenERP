@@ -132,8 +132,8 @@ public sealed partial class ManufacturingCommandServiceTests
         var view = (await service.GetOrderLineageAsync(order.Id, CancellationToken.None)).Resource!;
 
         Assert.True(view.Truncated);
-        Assert.Equal(["0.3333333333333333333333333333", "0.6666666666666666666666666667"],
-            view.Outputs[0].Inputs.Select(input => input.Share).ToArray());
+        Assert.Equal<string?>(["0.3333333333333333333333333333", "0.6666666666666666666666666667"],
+            view.Outputs[0].Inputs.Select(input => input.Share));
     }
 
     [Fact]
