@@ -90,8 +90,8 @@ describe('API-11 order source plan (SAT-D252..SAT-D255)', () => {
       ])()),
     })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
-    expect(await screen.findByTestId('sales-source-plan-cancelled-order')).toHaveTextContent(cancelled)
-    expect(screen.queryByTestId('sales-source-plan-linked-present')).not.toBeInTheDocument()
+    expect((await screen.findByTestId('sales-source-plan-cancelled-order')).textContent).toContain(cancelled)
+    expect(screen.queryByTestId('sales-source-plan-linked-present')).toBeNull()
   })
 
   it('shows the server figures and records the touched line with the exact body and a fresh key', async () => {

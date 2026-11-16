@@ -56,7 +56,7 @@ describe('decodeOrder', () => {
     expect(decodeOrder(cancelled)?.status).toBe('Cancelled')
     expect(decodeOrder({ ...cancelled, cancelledAtUtc: null })).toBeNull()
     expect(decodeOrder({ ...cancelled, status: 'Open' })).toBeNull()
-    expect(decodeOrderList(orderList([orderSummary({ status: 'Cancelled' })]))?.items[0].status)
+    expect(decodeOrderList(orderList([orderSummary({ status: 'Cancelled' })]))?.orders[0].status)
       .toBe('Cancelled')
   })
 
