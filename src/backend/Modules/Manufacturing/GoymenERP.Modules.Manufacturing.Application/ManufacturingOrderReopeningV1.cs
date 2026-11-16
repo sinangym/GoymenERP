@@ -83,7 +83,7 @@ public sealed partial class ManufacturingCommandService
                         return new(ManufacturingApiStatus.Unavailable, null, false, null);
                     return new(ManufacturingApiStatus.Ok, OrderView(reopened), false, null);
                 }
-                catch (ManufacturingOrderReopenFenceExceptionV1 refused) { return Refusal<OrderViewV1>(refused.Refusal); }
+                catch (ManufacturingOrderReopenFenceExceptionV1 finalRefusal) { return Refusal<OrderViewV1>(finalRefusal.Refusal); }
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
         return await FenceCapturedAsync<object>(ErpPermissions.ManufacturingOrdersRead, capturedCompany, capturedActor, cancellationToken) is { } finalRead
             ? Refusal<OrderViewV1>(finalRead) : answer;
