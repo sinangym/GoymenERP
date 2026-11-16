@@ -50,7 +50,25 @@ export interface GoodsReceiptOptions {
   readonly locations: readonly ReceiptLocation[]
   readonly searchWindowFull: boolean
 }
-export interface GoodsReceiptResponse { readonly receipt: GoodsReceipt; readonly isReplay: boolean; readonly originalCorrelationId: string }
+/** KLN-D94 link failure codes Inventory reports for a released future supply allocation (F-017 STOK §3.5). */
+export const FUTURE_SUPPLY_RELEASE_CODES = ['label-blocked', 'unit-conversion-unavailable', 'demand-not-approved',
+  'product-mismatch', 'insufficient-label-quantity', 'owner-not-company'] as const
+export type FutureSupplyReleaseCode = typeof FUTURE_SUPPLY_RELEASE_CODES[number]
+
+/** KLN-D94: a future supply allocation released in full because this receipt could not link it to the label. */
+export interface FutureSupplyRelease {
+  readonly futureAllocationId: string
+  /** The whole remainder released, in the purchase unit (not only this receipt's share). */
+  readonly releasedQuantity: string
+  readonly failureCode: FutureSupplyReleaseCode
+}
+
+export interface GoodsReceiptResponse {
+  readonly receipt: GoodsReceipt
+  readonly isReplay: boolean
+  readonly originalCorrelationId: string
+  readonly futureSupplyReleases: readonly FutureSupplyRelease[]
+}
 
 const record = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null && !Array.isArray(value)
   ? value as Record<string, unknown> : null
@@ -139,5 +157,26 @@ export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrder
     || !version(sent.expectedPurchaseOrderVersion)
     || BigInt(receipt.purchaseOrderVersion) !== BigInt(sent.expectedPurchaseOrderVersion) + 1n
     || Date.parse(receipt.occurredAtUtc) !== Date.parse(sent.occurredAtUtc)) return null
-  return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId }
+  const futureSupplyReleases = decodeFutureSupplyReleases(body.futureSupplyReleases)
+  if (futureSupplyReleases === null) return null
+  return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId, futureSupplyReleases }
+}
+
+/**
+ * KLN-D94: an absent list means nothing was released (older answers); a present list must be exact. A malformed list is not
+ * shown as a partial warning: the whole answer is refused so a dropped Sales reservation is never hidden.
+ */
+export function decodeFutureSupplyReleases(value: unknown): readonly FutureSupplyRelease[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 100) return null
+  const releases: FutureSupplyRelease[] = []
+  for (const raw of value) {
+    const item = record(raw)
+    if (item === null || Object.keys(item).length !== 3 || !guid(item.futureAllocationId)
+      || !quantity(item.releasedQuantity) || item.releasedQuantity === '0'
+      || !FUTURE_SUPPLY_RELEASE_CODES.some((code) => code === item.failureCode)
+      || releases.some((current) => current.futureAllocationId === item.futureAllocationId)) return null
+    releases.push(item as unknown as FutureSupplyRelease)
+  }
+  return releases
 }

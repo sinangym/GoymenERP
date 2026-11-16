@@ -81,11 +81,15 @@ public sealed partial class PurchasingService
                     throw ReceiptSourceInvalid();
                 }
 
+                var releases = RequireFutureSupplyReleases(inventory.FutureSupplyReleases);
                 return new PurchaseGoodsReceiptResponseV1(new(scope.CompanyId, request.AcceptanceId, orderId, lineId,
                     purchase.PurchaseOrderVersion, source.ProductId, inventory.ProductVersion, source.UnitId,
                     purchase.AcceptedQuantity, purchase.RemainingQuantity, inventory.LotId, inventory.LabelId,
                     request.LabelCode, inventory.LabelVersion, inventory.MovementId, request.LocationId,
-                    inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc), purchase.IsReplay, purchase.OriginalCorrelationId);
+                    inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc), purchase.IsReplay, purchase.OriginalCorrelationId)
+                {
+                    FutureSupplyReleases = releases,
+                };
             }, token => RequireStillAsync(scope, permission, token), cancellationToken);
         }
         catch (PurchaseAcceptanceParticipantException exception)
@@ -233,6 +237,30 @@ public sealed partial class PurchasingService
             throw ReceiptSourceInvalid();
         }
     }
+
+    /// <summary>
+    /// KLN-D94: the released future allocations are owner facts from Inventory's conversion in the same transaction. A malformed
+    /// list is not shown as a partial warning; it fails closed like any other inconsistent receipt source (the receipt rolls back).
+    /// </summary>
+    private static IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> RequireFutureSupplyReleases(
+        IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>? releases)
+    {
+        if (releases is null || releases.Count == 0) return [];
+        var seen = new HashSet<Guid>();
+        foreach (var release in releases)
+        {
+            if (release is null || release.FutureAllocationId == Guid.Empty || !seen.Add(release.FutureAllocationId)
+                || !ReceiptPositiveQuantity(release.ReleasedQuantity)
+                || release.FailureCode is null || !PurchaseReceiptFutureSupplyReleaseCodesV1.All.Contains(release.FailureCode))
+            {
+                throw ReceiptSourceInvalid();
+            }
+        }
+        return releases.ToArray();
+    }
+
+    private static bool ReceiptPositiveQuantity(string? value) => value is not null && value == value.Trim()
+        && decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var quantity) && quantity > 0m;
 
     private static bool ReceiptVersion(string value) => long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
         && version > 0 && version.ToString(CultureInfo.InvariantCulture) == value;
