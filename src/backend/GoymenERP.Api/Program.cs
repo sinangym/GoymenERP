@@ -432,6 +432,8 @@ builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
 builder.Services.AddScoped<IPurchaseGoodsReceiptTransactionV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddScoped<IPurchaseGoodsReceiptReadsV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddScoped<IPurchaseGoodsReceiptBatchTransactionV1, PurchaseGoodsReceiptBatchHost>();
+// ALC-S5 (B-19; SAT-D306): one transaction for the supplier return row and Inventory's exit at the original line cost.
+builder.Services.AddScoped<IPurchaseSupplierReturnTransactionV1, PurchaseSupplierReturnHost>();
 // F-017 F17-1 (§3.4): Inventory's future allocation takes the purchase general line's lock through this binder (no module reference).
 builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineSerializationLockHostBinder>();
 // F-017 STOK F017-b: the sales order line lock (taken before the purchase line lock) and the Purchasing adapter of Inventory's

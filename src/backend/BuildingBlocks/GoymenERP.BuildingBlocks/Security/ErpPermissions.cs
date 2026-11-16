@@ -1215,6 +1215,13 @@ public static class ErpPermissions
     public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
     /// <summary>
+    /// ALC-S5 (B-19; SAT-D306): records a return to supplier of one received label (stock leaves at the original purchase line's
+    /// unit cost). The cost exception decision is NOT this permission: it uses <see cref="PurchasingOrdersApprove"/> (SAT-D396).
+    /// Registered, not granted: no role, seed or user receives it here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingSupplierReturnsRecord = "purchasing.supplier-returns.record";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1631,6 +1638,7 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingSupplierReturnsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1884,6 +1892,7 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingSupplierReturnsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

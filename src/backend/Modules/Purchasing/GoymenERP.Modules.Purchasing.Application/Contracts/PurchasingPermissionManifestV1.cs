@@ -91,7 +91,15 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string GoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
+    /// <summary>
+    /// ALC-S5 (B-19, SAT-D306): record a return to the supplier of a received label — the stock leaves at the original purchase
+    /// line's unit cost. Apart from recording a receipt; neither confers the other. The cost exception of a return whose invoice
+    /// cost cannot be read is decided under <see cref="OrdersApprove"/> (SAT-D396). Company-wide, not critical. Registered only:
+    /// the grant is a human gate.
+    /// </summary>
+    public const string SupplierReturnsRecord = "purchasing.supplier-returns.record";
+
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
-            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance];
+            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance, SupplierReturnsRecord];
 }

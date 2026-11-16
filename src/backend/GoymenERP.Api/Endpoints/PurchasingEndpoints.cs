@@ -589,6 +589,7 @@ public static partial class PurchasingEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapGoodsReceiptBatches(group);
+        MapSupplierReturns(group);
     }
 
     private static bool IsListQueryValid(HttpContext httpContext, HashSet<string> allowedNames, int? pageSize, string? cursor, string? status,
@@ -689,6 +690,7 @@ public static partial class PurchasingEndpoints
         PurchaseOrderResponse order => order.IsReplay,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.IsReplay,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.IsReplay,
+        PurchaseSupplierReturnResponseV1 supplierReturn => supplierReturn.IsReplay,
         _ => false,
     };
 
@@ -698,6 +700,7 @@ public static partial class PurchasingEndpoints
         PurchaseOrderResponse order => order.OriginalCorrelationId,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.OriginalCorrelationId,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.OriginalCorrelationId,
+        PurchaseSupplierReturnResponseV1 supplierReturn => supplierReturn.OriginalCorrelationId,
         _ => throw new InvalidOperationException("Replay without its original correlation."),
     };
 

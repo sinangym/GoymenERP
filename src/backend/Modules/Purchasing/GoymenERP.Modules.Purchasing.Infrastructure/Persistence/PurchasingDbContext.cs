@@ -192,6 +192,11 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     internal DbSet<PurchaseGoodsReceiptBatchAttemptRow> GoodsReceiptBatchAttempts => Set<PurchaseGoodsReceiptBatchAttemptRow>();
 
+    /// <summary>ALC-S5 (B-19; SAT-D306/SAT-D393): returns to supplier of received labels.</summary>
+    internal DbSet<PurchaseSupplierReturnRow> SupplierReturns => Set<PurchaseSupplierReturnRow>();
+
+    internal DbSet<PurchaseSupplierReturnAttemptRow> SupplierReturnAttempts => Set<PurchaseSupplierReturnAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -210,6 +215,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureOutbox(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureGoodsReceiptBatches(modelBuilder);
+        ConfigureSupplierReturns(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -697,6 +703,92 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     private const int PurchaseGoodsReceiptBatchMaximumReasonLength = Domain.GoodsReceipts.PurchaseGoodsReceiptBatch.MaximumReasonLength;
 
+    /// <summary>
+    /// ALC-S5 (SAT-D392/SAT-D393): a return recorded at the invoice unit cost (basis 1) is Recorded (2) at once and never decided; a
+    /// manual cost (basis 2) waits as PendingCostException (1) with no decision fact, then is Recorded (2) by an approver (no reason)
+    /// or Rejected (3) with a reason. Whether the decider may be the requester is a configurable policy (SAT-D396, NEEDS-SINAN), so the
+    /// table does not lock it. A CHECK passes on UNKNOWN, so every fact is tested with IS [NOT] NULL.
+    /// </summary>
+    internal const string SupplierReturnDecisionCheck =
+        "([CostBasis] = 1 AND [Status] = 2 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) "
+        + "OR ([CostBasis] = 2 AND [Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) "
+        + "OR ([CostBasis] = 2 AND [Status] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NULL) "
+        + "OR ([CostBasis] = 2 AND [Status] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0)";
+
+    private void ConfigureSupplierReturns(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PurchaseSupplierReturnRow>();
+        entity.ToTable("PurchaseSupplierReturns", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Identity",
+                $"[ReturnId] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [ReturnLineId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} "
+                + $"AND [LineId] <> {EmptyGuid} AND [GoodsAcceptanceId] <> {EmptyGuid} AND [MovementId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Status", "[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Values",
+                "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') AND [ReplacementExpected] = 0");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Text",
+                "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Decision", SupplierReturnDecisionCheck);
+        });
+        entity.HasKey(x => x.ReturnId);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.ReturnId });
+        entity.Property(x => x.ReturnId).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.SourceBlock).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        entity.Property(x => x.UnitCostTryPerKg).HasPrecision(18, 4);
+        entity.Property(x => x.Reason).HasMaxLength(PurchaseSupplierReturnMaximumReasonLength).IsRequired();
+        entity.Property(x => x.RequestedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128);
+        entity.Property(x => x.DecisionReason).HasMaxLength(PurchaseSupplierReturnMaximumReasonLength);
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.RequestedAtUtc, x.ReturnId }).HasDatabaseName("IX_PurchaseSupplierReturns_Order");
+        entity.HasIndex(x => new { x.CompanyId, x.Status, x.RequestedAtUtc, x.ReturnId }).HasDatabaseName("IX_PurchaseSupplierReturns_Status");
+        // One stock exit is one return (the movement id is the exit's idempotent identity in Inventory).
+        entity.HasIndex(x => new { x.CompanyId, x.MovementId }).IsUnique().HasDatabaseName("UX_PurchaseSupplierReturns_MovementId");
+        entity.HasIndex(x => new { x.CompanyId, x.GoodsAcceptanceId }).HasDatabaseName("IX_PurchaseSupplierReturns_GoodsAcceptanceId");
+        entity.HasOne<PurchaseOrderRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PurchaseOrderLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<PurchaseSupplierReturnAttemptRow>();
+        attempt.ToTable("PurchaseSupplierReturnAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseSupplierReturnAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturnAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturnAttempts_Outcome",
+                $"([Outcome] = 1 AND [RefusalJson] IS NULL AND [ReturnId] IS NOT NULL AND [ReturnId] <> {EmptyGuid}) "
+                + "OR ([Outcome] = 2 AND [ReturnId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasIndex(x => new { x.CompanyId, x.ReturnId }).HasDatabaseName("IX_PurchaseSupplierReturnAttempts_ReturnId");
+        attempt.HasOne<PurchaseSupplierReturnRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReturnId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.ReturnId })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private const int PurchaseSupplierReturnMaximumReasonLength = Domain.Returns.PurchaseSupplierReturn.MaximumReasonLength;
+
     private void ApplyWriteGuards()
     {
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
@@ -751,6 +843,12 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                         nameof(PurchaseGoodsReceiptBatchRow.DecidedAtUtc), nameof(PurchaseGoodsReceiptBatchRow.DecisionReason),
                     ],
                     PurchaseGoodsReceiptBatchLabelRow => [nameof(PurchaseGoodsReceiptBatchLabelRow.Released)],
+                    // ALC-S5: a supplier return moves once (a pending cost exception is approved or rejected).
+                    PurchaseSupplierReturnRow =>
+                    [
+                        nameof(PurchaseSupplierReturnRow.Status), nameof(PurchaseSupplierReturnRow.DecidedBy),
+                        nameof(PurchaseSupplierReturnRow.DecidedAtUtc), nameof(PurchaseSupplierReturnRow.DecisionReason),
+                    ],
                     _ => [],
                 };
                 var changed = entry.Properties
