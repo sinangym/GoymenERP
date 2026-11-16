@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Data;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -30,7 +31,7 @@ internal sealed partial class PurchaseReceiptReversalHost
             for (var attempt = 0; attempt < PurchaseGoodsReceiptPrelock.MaximumPreparationAttempts; attempt++)
             {
                 await freshAuthority(cancellationToken);
-                await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
+                await using var transaction = await purchasing.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
                 var connection = purchasing.Database.GetDbConnection(); var borrowed = transaction.GetDbTransaction();
                 await using var purchase = await batchOwnerFactory(connection, borrowed, companyId, cancellationToken);
                 var supply = new BatchPostAdjustmentSupply(purchase);
@@ -58,10 +59,12 @@ internal sealed partial class PurchaseReceiptReversalHost
                         return first;
                     });
                     var correctionRefusal = await PreflightCorrectionsAsync();
+                    var notificationSnapshots = await CaptureRevivalNotificationsAsync(connection, borrowed, companyId, write.OrderId,
+                        targets.Values.ToArray(), freshAuthority, cancellationToken);
                     var adjusted = await Checked(() => purchase.StageBatchAsync(new(companyId, write.Request.BatchId, write.OrderId,
                         write.Request.ExpectedPurchaseOrderVersion, write.Request.Reason, write.Request.OccurredAtUtc, command, hash,
                         write.Request.Lines.Select(line => new PurchaseReceiptAdjustmentBatchLineV1(line.AdjustmentId, line.AcceptanceId,
-                            line.UndoQuantity, false, false, line.ReplacementReceipt?.AcceptanceId, line.ReplacementReceipt?.AcceptedQuantity)).ToArray()),
+                            line.UndoQuantity, false, false, line.ReplacementReceipt?.AcceptanceId, line.ReplacementReceipt?.AcceptedQuantity)).ToArray(), notificationSnapshots),
                         envelope, cancellationToken));
                     RequireBatchResult(adjusted, companyId, write);
                     var supplies = adjusted.Supplies.ToDictionary(value => value.GeneralLineId);
