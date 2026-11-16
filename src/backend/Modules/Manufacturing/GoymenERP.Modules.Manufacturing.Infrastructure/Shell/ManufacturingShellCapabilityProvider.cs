@@ -58,9 +58,11 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
     // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
     // (URT-S19): the order cost trace control.
-    public const string OwnerContractVersion = "1.9";
+    public const string OwnerContractVersion = "1.10";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
+    public const string OutputCorrectionCapabilityId = "manufacturing.orders.output-correction";
+    public const string CancelCapabilityId = "manufacturing.orders.cancel";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
     public const string ListCapabilityId = "manufacturing.orders.list";
     public const string CloseCapabilityId = "manufacturing.orders.close";
@@ -208,6 +210,18 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 CapabilityId = CostTraceCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingReportsRead],
+            },
+            detail with
+            {
+                CapabilityId = OutputCorrectionCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsCorrect],
+            },
+            detail with
+            {
+                CapabilityId = CancelCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCancel],
             },
             list,
             planCreate,

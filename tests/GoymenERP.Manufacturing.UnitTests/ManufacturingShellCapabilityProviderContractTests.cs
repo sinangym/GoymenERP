@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.9"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(16, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.10"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(18, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -100,6 +100,10 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             [ErpPermissions.ManufacturingScrapPricesRead, ErpPermissions.ManufacturingScrapPricesWrite]);
 
         // The controls: the same route as the order screen, its permission plus their own.
+        AssertControl(declarations, detail, "manufacturing.orders.output-correction",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsCorrect]);
+        AssertControl(declarations, detail, "manufacturing.orders.cancel",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCancel]);
         AssertControl(declarations, detail, "manufacturing.orders.facts",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord]);
         AssertControl(declarations, detail, "manufacturing.orders.close",

@@ -284,7 +284,8 @@ public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
-    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false);
+    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false,
+    string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -3211,7 +3212,8 @@ public sealed partial class ManufacturingCommandService(
                     CommercialContextView(input.CommercialContext));
             })],
             nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc,
-            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan);
+            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan,
+            order.CancellationReason, order.CancelledByUserId, order.CancelledAtUtc);
     }
 
     /// <summary>

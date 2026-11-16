@@ -76,7 +76,7 @@ export interface ManufacturingOutputLocationCandidates {
   readonly searchWindowFull: boolean
 }
 
-export type OrderStatus = 'Open' | 'Closed'
+export type OrderStatus = 'Open' | 'Closed' | 'Cancelled'
 
 export interface RollBalance {
   readonly parentRollId: string
@@ -317,6 +317,9 @@ export interface ProductionOrderView {
   readonly planDueDate: string | null
   /** URT-D66 (4): the server's "emir termini plandan farklı" flag; never computed here. False for legacy JSON. */
   readonly dueDateDiffersFromPlan: boolean
+  readonly cancellationReason?: string | null
+  readonly cancelledByUserId?: string | null
+  readonly cancelledAtUtc?: string | null
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -1077,12 +1080,21 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     dueDateRevision === undefined ||
     dueDateDiffersFromPlan === undefined ||
     typeof body.process !== 'string' ||
-    (body.status !== 'Open' && body.status !== 'Closed') ||
+    (body.status !== 'Open' && body.status !== 'Closed' && body.status !== 'Cancelled') ||
     body.costStatus !== 'NotCalculated' ||
     !Array.isArray(body.rolls)
   ) {
     return null
   }
+  // URT-D33: cancellation is retained and cannot be mistaken for an open order.
+  const cancellationReason = body.cancellationReason === undefined || body.cancellationReason === null
+    ? null : boundedSnapshotText(body.cancellationReason, 256) ? body.cancellationReason : undefined
+  const cancelledByUserId = body.cancelledByUserId === undefined ? null : nullableGuid(body.cancelledByUserId)
+  const cancelledAtUtc = body.cancelledAtUtc === undefined ? null : nullableInstant(body.cancelledAtUtc)
+  if (cancellationReason === undefined || cancelledByUserId === undefined || cancelledAtUtc === undefined) return null
+  const cancellationComplete = cancellationReason !== null && cancelledByUserId !== null && cancelledAtUtc !== null
+  if (body.status === 'Cancelled' ? !cancellationComplete || closedAtUtc !== null || closedByUserId !== null
+    : cancellationReason !== null || cancelledByUserId !== null || cancelledAtUtc !== null) return null
   // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
   if (dueDateRevision > 0 && dueDate === null) return null
   // The flag is the server's, but it never contradicts the two days it was computed from.
@@ -1111,6 +1123,9 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     dueDateRevision,
     planDueDate,
     dueDateDiffersFromPlan,
+    cancellationReason,
+    cancelledByUserId,
+    cancelledAtUtc,
   }
 }
 
@@ -1543,7 +1558,7 @@ function decodeSummary(value: unknown): OrderSummary | null {
     createdAtUtc === null ||
     closedAtUtc === undefined ||
     typeof value.process !== 'string' ||
-    (value.status !== 'Open' && value.status !== 'Closed')
+    (value.status !== 'Open' && value.status !== 'Closed' && value.status !== 'Cancelled')
   ) {
     return null
   }

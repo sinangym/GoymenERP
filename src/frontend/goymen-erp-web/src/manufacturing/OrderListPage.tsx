@@ -36,7 +36,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './OrderListPage.module.css'
 import { Button } from '../ui/Button'
 
-const ORDER_STATUSES: readonly OrderStatus[] = ['Open', 'Closed']
+const ORDER_STATUSES: readonly OrderStatus[] = ['Open', 'Closed', 'Cancelled']
 
 /** Presentation only: an unreadable instant is shown as it came, never rewritten. */
 function formatInstant(value: string): string {

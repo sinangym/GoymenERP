@@ -90,6 +90,7 @@ import {
   APPLIED_DETAIL,
   APPLIED_TITLE,
   CLOSED_ORDER_TEXT,
+  CANCELLED_ORDER_TEXT,
   CLOSE_TEXT,
   COST_STATUS_TEXT,
   ENGINE_REFUSED,
@@ -478,9 +479,9 @@ function CloseSection({
     <section aria-labelledby="mfg-close-heading" className={styles.section} data-testid="order-close">
       <h2 id="mfg-close-heading">{CLOSE_TEXT.heading}</h2>
       <p className={styles.help}>{CLOSE_TEXT.help}</p>
-      {order.status === 'Closed' ? (
+      {order.status !== 'Open' ? (
         <p className={styles.help} data-testid="order-already-closed">
-          {CLOSED_ORDER_TEXT}
+          {order.status === 'Cancelled' ? CANCELLED_ORDER_TEXT : CLOSED_ORDER_TEXT}
           {order.closedAtUtc !== null ? ` ${CLOSE_TEXT.closedAt}: ${order.closedAtUtc}` : ''}
         </p>
       ) : attempt.phase === 'confirming' ? (
@@ -616,7 +617,7 @@ function OrderDueDateSection({
     <section aria-labelledby="mfg-order-due-date-heading" className={styles.section} data-testid="order-due-date">
       <h2 id="mfg-order-due-date-heading">{ORDER_DUE_DATE_TEXT.heading}</h2>
       <p className={styles.help}>{ORDER_DUE_DATE_TEXT.help}</p>
-      {order.status === 'Closed' ? (
+      {order.status !== 'Open' ? (
         <p className={styles.help} data-testid="order-due-date-closed">{ORDER_DUE_DATE_TEXT.closedReadOnly}</p>
       ) : attempt.phase === 'unknown' ? (
         <div className={styles.actions}>
@@ -1163,7 +1164,7 @@ function FactSection({
   )
 
   const busy = attempt.phase === 'submitting'
-  const closed = order.status === 'Closed'
+  const closed = order.status !== 'Open'
 
   const dirty = unresolved || Object.entries(form).some(([key, value]) => key !== 'kind' && value.length > 0)
   useEffect(() => {
@@ -1298,7 +1299,7 @@ function FactSection({
   return (
     <section aria-labelledby="mfg-facts-heading" className={styles.section}>
       <h2 id="mfg-facts-heading">{FACT_FORM_TEXT.heading}</h2>
-      {closed ? <p className={styles.help}>{CLOSED_ORDER_TEXT}</p> : null}
+      {closed ? <p className={styles.help}>{order.status === 'Cancelled' ? CANCELLED_ORDER_TEXT : CLOSED_ORDER_TEXT}</p> : null}
 
       <AttemptNotice
         attempt={attempt}

@@ -41,6 +41,16 @@ import {
 } from './testHarness'
 
 describe('decodeOrder', () => {
+  it('accepts retained cancellation metadata and rejects an incomplete cancellation', () => {
+    const cancelled = order({ status: 'Cancelled', cancellationReason: 'SENTETIK iptal',
+      cancelledByUserId: APPROVER, cancelledAtUtc: '2026-11-16T10:00:00Z' })
+    expect(decodeOrder(cancelled)?.status).toBe('Cancelled')
+    expect(decodeOrder({ ...cancelled, cancelledAtUtc: null })).toBeNull()
+    expect(decodeOrder({ ...cancelled, status: 'Open' })).toBeNull()
+    expect(decodeOrderList(orderList([orderSummary({ status: 'Cancelled' })]))?.items[0].status)
+      .toBe('Cancelled')
+  })
+
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
     const decoded = decodeOrder(
       order({ rolls: [roll(ROLL_1, { issuedKg: '1000.125', unexplainedKg: '-2.5', isFullyAccounted: false })] }),

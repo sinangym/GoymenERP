@@ -29,6 +29,7 @@ export const REMNANT_CLASSIFICATION_LABEL: Record<RemnantClassification, string>
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   Open: 'Açık',
   Closed: 'Kapalı',
+  Cancelled: 'İptal',
 }
 
 export const TARGET_BASIS_LABEL: Record<string, string> = {
@@ -93,6 +94,7 @@ export const KG_FORMAT_HELP = 'Nokta ile ondalık, işaretsiz (ör. 1250.5). Ond
 export const KG_FORMAT_ERROR = 'Kilogram biçimi geçersiz: işaretsiz, nokta ile ondalık bir sayı girin.'
 export const ROLL_REQUIRED = 'Bir ana rulo seçin.'
 export const TIME_REQUIRED = 'Olgunun zamanını girin.'
+export const CANCELLED_ORDER_TEXT = 'Emir iptal edildi; yeni gerçekleşme kaydedilmez.'
 export const CLOSED_ORDER_TEXT = 'Emir kapalı; yeni gerçekleşme kaydedilmez.'
 
 export const OUTPUT_INVENTORY_TEXT = {
