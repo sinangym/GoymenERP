@@ -27,8 +27,8 @@ public sealed class IdentityPersistenceModelTests
 
         Assert.Equal(
             ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow",
-                "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition"],
-            context.Database.GetMigrations().TakeLast(5));
+                "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition", "20261116205256_AddExplicitCompanySetupAuthority"],
+            context.Database.GetMigrations().TakeLast(6));
         Assert.False(context.Database.HasPendingModelChanges());
         Assert.Null(context.Model.FindEntityType("GoymenERP.Modules.Audit.Domain.Events.AuditEvent"));
         // Audit was excluded from Identity migrations already. The generated ownership
@@ -122,7 +122,7 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal("nvarchar(max)", entity.FindProperty(nameof(IdentityOutboxMessage.PayloadJson))!.GetColumnType());
         Assert.Equal(
             ["IX_IdentityOutbox_Recorded", "IX_OutboxMessages_CompanyId_Position"],
-            entity.GetIndexes().Select(index => index.GetDatabaseName()).Order(StringComparer.Ordinal).ToArray());
+            entity.GetIndexes().Select(index => index.GetDatabaseName()!).Order(StringComparer.Ordinal).ToArray());
         var recorded = Assert.Single(entity.GetIndexes(), index => index.GetDatabaseName() == "IX_IdentityOutbox_Recorded");
         Assert.Equal("IX_IdentityOutbox_Recorded", recorded.GetDatabaseName());
         Assert.False(recorded.IsUnique);

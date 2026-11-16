@@ -81,8 +81,10 @@ public static class IdentityModuleExtensions
         // ID-3 role assignment, revocation and the Critical role request (KIM-D1/D5/D15/D17). It grants nothing by
         // itself: who holds identity.roles.manage and identity.access.approve stays a human gate.
         services.AddScoped<IIdentityAccessAssignmentService, IdentityAccessAssignmentService>();
+        services.AddScoped<ICompanySetupGroupAuthorityV1, SqlCompanySetupGroupAuthorityV1>();
         services.AddScoped<IdentityCompanySetupService>();
         services.AddScoped<IIdentityCompanySetupServiceV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
+        services.AddScoped<IIdentityFirstAdminCandidatesV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
         // MOD-08 user directory: a company-fenced, read-only display-name port for another module's central adapter.
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).

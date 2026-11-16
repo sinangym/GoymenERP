@@ -505,6 +505,52 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.CompanyOpeningExecution", b =>
+                {
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OriginalCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "RecordedAtUtc");
+
+                    b.ToTable("CompanyOpeningExecutions", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyOpeningExecutions_Shape", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ActorUserId] <> '00000000-0000-0000-0000-000000000000' AND [StatusCode] IN (201,409) AND ISJSON([ResponseJson]) = 1 AND LEN([IdempotencyKeyHash]) = 64 AND [IdempotencyKeyHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%' AND LEN([RequestHash]) = 64 AND [RequestHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%' AND LEN([OriginalCorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.CompanySetupInboxReceipt", b =>
                 {
                     b.Property<Guid>("CompanyId")

@@ -39,7 +39,7 @@ public sealed partial class IdentityDbContext(DbContextOptions<IdentityDbContext
     internal const string AccessGrantSecondApprovalCheck =
         "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR "
         + "([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR "
-        + "([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener') AND [DecidedByUserId] = [RequestedByUserId]) OR "
+        + "([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority') AND [DecidedByUserId] = [RequestedByUserId]) OR "
         + "([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])";
 
     /// <summary>ID-3: a pending request has no decision; every decided state (Withdrawn included) names who and when.</summary>
@@ -50,7 +50,7 @@ public sealed partial class IdentityDbContext(DbContextOptions<IdentityDbContext
 
     /// <summary>ID-3: the approval mode is recorded exactly on an approved request.</summary>
     internal const string AccessGrantApprovalModeCheck =
-        "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener')) OR "
+        "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority')) OR "
         + "([Status] <> N'Approved' AND [ApprovalMode] IS NULL)";
 
     /// <summary>ID-3: a reject carries its reason code; no other state does.</summary>
@@ -117,6 +117,7 @@ public sealed partial class IdentityDbContext(DbContextOptions<IdentityDbContext
         ConfigureLocalCredentialCommand(modelBuilder);
         ConfigureCompanyReference(modelBuilder);
         ConfigureCompanySetup(modelBuilder);
+        ConfigureCompanySetupAuthority(modelBuilder);
         modelBuilder.ConfigureProductMasterAssignment();
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
     }
