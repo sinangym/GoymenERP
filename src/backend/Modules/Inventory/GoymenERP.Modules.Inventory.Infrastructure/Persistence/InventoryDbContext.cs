@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ICompanyContext companyContext)
+public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "inventory";
@@ -287,6 +287,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureAllocations(modelBuilder);
         ConfigureAllocationChanges(modelBuilder);
         ConfigureAverageCostLedger(modelBuilder);
+        ConfigureMovementCosting(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
@@ -1671,6 +1672,17 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(AverageCostLedgerRow.Status), nameof(AverageCostLedgerRow.UnreadableReason),
                         nameof(AverageCostLedgerRow.QuantityKg), nameof(AverageCostLedgerRow.AverageCostPerKg),
                         nameof(AverageCostLedgerRow.Version), nameof(AverageCostLedgerRow.UpdatedAtUtc),
+                    ],
+                    CurrencyAverageCostLedgerRow =>
+                    [
+                        nameof(CurrencyAverageCostLedgerRow.Status), nameof(CurrencyAverageCostLedgerRow.UnreadableReason),
+                        nameof(CurrencyAverageCostLedgerRow.QuantityKg), nameof(CurrencyAverageCostLedgerRow.AverageCostPerKg),
+                        nameof(CurrencyAverageCostLedgerRow.Version), nameof(CurrencyAverageCostLedgerRow.UpdatedAtUtc),
+                    ],
+                    ManufacturingCostGenerationRow =>
+                    [
+                        nameof(ManufacturingCostGenerationRow.Version), nameof(ManufacturingCostGenerationRow.State),
+                        nameof(ManufacturingCostGenerationRow.LastResultJson), nameof(ManufacturingCostGenerationRow.UpdatedAtUtc),
                     ],
                     AllocationRow =>
                     [

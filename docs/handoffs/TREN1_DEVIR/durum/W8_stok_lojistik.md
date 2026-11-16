@@ -41,6 +41,23 @@
 
 ## Merkezi entegrasyon listesi
 
+## STK-SC36 / URT-D67 maliyet kaynağı — PARTIAL, kaynak checkpoint
+
+- Ayrı değişmez hareket maliyet damgası: gerçek receipt fiyat/birim/kur kanıtı, TL ve bağımsız USD havuzu; üretim issue hareketi anının ortalaması ve para birimi izi. Geçmiş `NotCalculated` hareket ve hash değiştirilmez, bugünün ortalamasıyla geçmiş maliyet doldurulmaz. Eksik USD, okunabilir TL'yi bozmaz.
+- Üretim iadesi açık `SourceIssueMovementId` ile kendi emir/etiket/çıkış miktarı üzerinden bağlanır. Eski boş alan JSON/hash'e eklenmez. Tek gerçek issue varsa bağ kanıtlanabilir; çoklu ve eski bağsız iade halinde FIFO/ortalama seçilmez, maliyet okunamaz kalır. Fiziksel toplam iade sınırı korunur.
+- `InventoryManufacturingCostGenerationParticipant` host'un mevcut açık bağlantı/işlemini ödünç alır. Pending/Unreadable nesil fiziksel kapanışta tutarsız parasal rakam yaratmaz; sonra aynı nesil ve fiziksel set için bir kez gerçek tanıma, append-only geçmiş, maliyet etkisi ve Audit owner flush yazılır. Yeniden açma exact nesil/sürüm ile tersler. Label version çiti fiziksel yarışa katılır; yeni fiziksel hareket veya eski çıkış güncellemesi yoktur.
+- URT-D79/D80 gereği gerçek etiket TL tutarı, 4 ondalıklı kg maliyetinden bağımsız taşınır. Kalan+tüketilen=özgün tutar, JSON'da tam decimal hassasiyetiyle korunur; konumlar arasında tam kalan residual son sıralı konumda tutulur. Stok ortalaması mevcut 4 ondalıklı kayıtlı giriş birim maliyetini kullanır. USD yalnız üretim gösterimidir.
+- Ayrı SMM öneri olayı `inventory.manufacturing-cost-difference.proposed.v1`; gerçek net kesin sevkle kanıtlanmayan eksik bakiye tüketim sayılmaz. Yoldaki transfer/downstream dönüşüm izinin maliyet yayılımı henüz tamamlanmadığında tanıma typed unavailable'dır. Fiziksel kapanışın Pending kaydı korunur. Muhasebe tüketicisi, açık dönem/tarih ve farklı muhasebe yetkilisi onayı ayrı owner entegrasyonudur.
+- Çok satırlı hareket maliyet havuzu çalışma kopyasıyla sırayla hesaplanır; ikinci satır ilk satırdan önceki fiziksel toplamı tekrar kullanmaz. Kısmen fiyatlanmış özel havuz lokasyon portundan bütün stok maliyeti diye yayımlanmaz. Transfer dispatch damgası özgün fiyatı korur; accept/cancel/shortage aynı dispatch kaynağını okur; transit loss eşlenik In/Out ortalamayı değiştirmez.
+- Açık teknik işler: gerçek API receipt cost bridge + Purchasing aynı-işlem fiyat/fatura kanıtı ve merkezi DI; EF üretimi maliyet migration'ı (ayrılmış THROW 51959), outbox committed-rowversion migration'ı (51958); kalan customer/supplier return ve karma giriş/lineage maliyet yayılımı; eski muhasebe/maliyet okuma kabul kaynaklarının yeni fiziksel eşitlik çitine hizalanması. Mevcut dönüş ortalamasının sıfır stokta residual reddi korunur; yeni para politikası uydurulmaz.
+- Model/contract/birim ve gerçek SQL movement/stamp, çok satırlı havuz, Pending→Recognized rollback/replay kaynakları yazıldı. Bu yeni kaynaklar henüz derlenmedi (**NOT_BUILT**); bütün runtime test/SQL/browser/Vitest/CI **NOT_RUN**. Bu kayıt source DONE veya K3 kabulü değildir.
+
+## Ek merkezi maliyet entegrasyonu
+
+- Factory `InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, companyId, IAuditEventCollector, IAuditTransactionWriterV1, cancellationToken)`; sahibi yalnız Inventory tablosunu yazar. Host commit/rollback sahibidir.
+- Goods-receipt factory sonunda isteğe bağlı `IInventoryPurchaseReceiptCostSourceV1 costSource`; gerçek implementor yalnız aynı ödünç işlemin Purchasing kanıtını okur. İlk giriş FX'i ile fatura stok maliyeti FX'i karıştırılmaz; BS-1/SAT-D413 foreign→TL fatura olmadan provisional değer yaratmaz.
+- Yeni model, migration, SQL fact ve context construction merkez inventory/fingerprint/K3 listesine alınmalıdır. Bypass/ham SQL izin listesi genişletilmedi.
+
 - Yeni migration ve THROW 51950; recovery/release migration sayıları.
 - Yeni SQL fact tam adları; ilişkisel envanter ve test grupları.
 - InventoryDbContext ve değişen ilgili kaynak fingerprint'leri; yeni context construction için gerekçeli K3 değerlendirmesi.

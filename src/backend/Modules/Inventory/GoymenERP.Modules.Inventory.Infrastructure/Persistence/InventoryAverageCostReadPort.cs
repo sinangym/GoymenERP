@@ -44,6 +44,15 @@ internal sealed class InventoryAverageCostReadPort(InventoryDbContext dbContext,
             return InventoryAverageCostReadAnswerV1.ForNoSource(companyId, locationId, productId);
         }
 
+        // A pending production/entry valuation may leave a private priced sub-pool. It is never the cost of the whole
+        // physical position. The same physical/ledger equality is required by the company-wide owner reader.
+        var physicalKg = await InventoryAverageCostLedgerRows.CostedStock(dbContext, companyId, productId)
+            .Where(candidate => candidate.LocationId == locationId)
+            .SumAsync(candidate => (decimal?)candidate.QuantityKg, cancellationToken) ?? 0m;
+        if (row.Status == (int)AverageCostStatus.Known && row.QuantityKg != physicalKg)
+            return InventoryAverageCostReadAnswerV1.ForUnreadable(companyId, locationId, productId,
+                InventoryAverageCostUnreadableCodesV1.LedgerStockMismatch, row.Version);
+
         return (AverageCostStatus)row.Status switch
         {
             AverageCostStatus.Known when row.AverageCostPerKg is { } average =>
