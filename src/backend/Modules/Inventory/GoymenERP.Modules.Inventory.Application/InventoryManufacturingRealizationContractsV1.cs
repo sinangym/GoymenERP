@@ -93,7 +93,9 @@ public sealed record InventoryManufacturingInputReturnRequestV1(
     string ExpectedParentLabelVersion,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    Guid? SourceIssueMovementId = null);
 
 public sealed record InventoryManufacturingInputReturnResultV1(
     Guid CompanyId,
