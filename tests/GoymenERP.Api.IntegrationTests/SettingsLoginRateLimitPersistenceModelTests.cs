@@ -68,6 +68,29 @@ public sealed class SettingsLoginRateLimitPersistenceModelTests
         Assert.Single(migration.DownOperations.OfType<DropTableOperation>());
     }
 
+    [Fact]
+    public void The_trusted_proxy_list_is_a_required_bounded_ascii_column_added_by_a_pure_DDL_migration_with_a_forward_fix_Down()
+    {
+        using var context = CreateDbContext();
+        var proxies = Entity<LoginRateLimitVersionRow>(context).FindProperty(nameof(LoginRateLimitVersionRow.TrustedProxies));
+
+        Assert.NotNull(proxies);
+        Assert.False(proxies.IsNullable);
+        Assert.False(proxies.IsUnicode());
+        Assert.Equal(LoginRateLimitInputLimitsV1.TrustedProxiesStorageMaximumLength, proxies.GetMaxLength());
+
+        var migration = new AddLoginRateLimitTrustedProxies();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var added = Assert.IsType<AddColumnOperation>(Assert.Single(migration.UpOperations));
+        Assert.Equal(("settings", "LoginRateLimitVersions", "TrustedProxies"), (added.Schema, added.Table, added.Name));
+        Assert.Equal(string.Empty, added.DefaultValue);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains("THROW 51734", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[TrustedProxies] <> ''", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<DropColumnOperation>());
+    }
+
     private static string Invariant(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     private static IEntityType Entity<T>(SettingsDbContext context) =>

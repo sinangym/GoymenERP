@@ -11,6 +11,10 @@
  *
  * The decoder fails CLOSED: one bad entry invalidates the whole answer, keys must match the contract exactly, the partition
  * must be one of the closed list, and exactly the newest entry is the current one.
+ *
+ * KIM-D42 (`SINAN_KARARLARI_2026-11-15_DALGA2_EK13.md`): the same record carries the trusted proxy list. The sign-in path
+ * reads `X-Forwarded-For` only when the direct peer is on that list; an empty list (the default) means the header is never
+ * read. Entries are single addresses or CIDR blocks; the server checks and canonicalizes them, the screen only checks shape.
  */
 
 import { isUuid } from './discountLimitContract'
@@ -41,6 +45,9 @@ export const LOGIN_RATE_LIMIT_INPUT = {
   maximumPermitLimit: 1_000_000,
   minimumWindowSeconds: 1,
   maximumWindowSeconds: 86_400,
+  maximumTrustedProxyCount: 64,
+  /** The longest textual entry the decoder accepts (an IPv6 address with a /128 prefix fits well inside). */
+  trustedProxyMaximumLength: 64,
 } as const
 
 /** The closed list of what one window counts per (`LoginRateLimitPartitionsV1`). */
@@ -60,6 +67,8 @@ export interface LoginRateLimitVersion {
   readonly permitLimit: number
   readonly windowSeconds: number
   readonly partitionBy: LoginRateLimitPartition
+  /** Canonical addresses / CIDR blocks, ordered and distinct; empty means the forwarded header is never read. */
+  readonly trustedProxies: readonly string[]
   readonly isCurrent: boolean
   readonly recordedBy: string
   readonly recordedInCompanyId: string
@@ -79,6 +88,7 @@ export interface RecordLoginRateLimitBody {
   readonly permitLimit: number
   readonly windowSeconds: number
   readonly partitionBy: LoginRateLimitPartition
+  readonly trustedProxies: readonly string[]
   readonly reason: string
 }
 
@@ -87,6 +97,7 @@ const POSITIVE_VERSION = /^[1-9][0-9]*$/
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
 const INSTANT_MAXIMUM_LENGTH = 64
 const WHOLE_NUMBER = /^[0-9]+$/
+const TRUSTED_PROXY_SHAPE = /^[0-9A-Fa-f.:]+(\/[0-9]+)?$/
 
 const VERSION_FIELDS = [
   'profileId',
@@ -94,6 +105,7 @@ const VERSION_FIELDS = [
   'permitLimit',
   'windowSeconds',
   'partitionBy',
+  'trustedProxies',
   'isCurrent',
   'recordedBy',
   'recordedInCompanyId',
@@ -144,6 +156,40 @@ export function parseBoundedWhole(text: string, minimum: number, maximum: number
   return isWithin(value, minimum, maximum) ? value : null
 }
 
+/** One trusted proxy entry's shape: hex digits, dots and colons with an optional "/prefix". The server checks the rest. */
+export function isTrustedProxyShape(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= LOGIN_RATE_LIMIT_INPUT.trustedProxyMaximumLength &&
+    TRUSTED_PROXY_SHAPE.test(value)
+  )
+}
+
+/**
+ * The typed list, one entry per line (commas also separate); blank lines are skipped. Null when an entry is malformed,
+ * repeated or the list is too long; the empty list is valid and means "never read the forwarded header".
+ */
+export function parseTrustedProxies(text: string): readonly string[] | null {
+  const entries = text
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+  if (entries.length > LOGIN_RATE_LIMIT_INPUT.maximumTrustedProxyCount) return null
+  if (!entries.every(isTrustedProxyShape)) return null
+  return new Set(entries).size === entries.length ? entries : null
+}
+
+function decodeTrustedProxies(raw: unknown): readonly string[] | null {
+  if (!Array.isArray(raw) || raw.length > LOGIN_RATE_LIMIT_INPUT.maximumTrustedProxyCount) return null
+  const entries: string[] = []
+  for (const entry of raw) {
+    if (!isTrustedProxyShape(entry) || entries.includes(entry)) return null
+    entries.push(entry)
+  }
+  return entries
+}
+
 function decodeVersion(raw: unknown): LoginRateLimitVersion | null {
   if (!isRecord(raw) || !hasExactKeys(raw, VERSION_FIELDS)) return null
   const { profileId, version, permitLimit, windowSeconds, partitionBy, isCurrent } = raw
@@ -158,10 +204,12 @@ function decodeVersion(raw: unknown): LoginRateLimitVersion | null {
     return null
   }
   if (!isPartition(partitionBy) || typeof isCurrent !== 'boolean') return null
+  const trustedProxies = decodeTrustedProxies(raw.trustedProxies)
+  if (trustedProxies === null) return null
   if (!isNonEmpty(recordedBy) || !isGuid(recordedInCompanyId) || !isInstant(recordedAtUtc)) return null
   if (!isNonEmpty(reason) || reason.length > LOGIN_RATE_LIMIT_INPUT.reasonMaximumLength) return null
   return {
-    profileId, version, permitLimit, windowSeconds, partitionBy, isCurrent,
+    profileId, version, permitLimit, windowSeconds, partitionBy, trustedProxies, isCurrent,
     recordedBy, recordedInCompanyId, recordedAtUtc, reason,
   }
 }

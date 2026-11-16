@@ -5,7 +5,8 @@
  * There is no seed: an authorized administrator enters every value per company, with a required reason, an expected version
  * and an Idempotency-Key; the server audits it. Until a version is in force the dependent calculations are refused
  * (fail-closed). The decision's suggestions are reminder text only and never pre-fill the form; the coefficient's rounding
- * direction has no suggestion at all (URN-D8 is open). The form starts from the version in force, or empty.
+ * direction is decided (KLN-D88, half and above away from zero), shown and sent as such, never chosen. The form starts from
+ * the version in force, or empty.
  *
  * Remounted per committed context and route entry; a group (multi-company) context shows the no-company state; a version
  * conflict closes the form and re-reads; an unknown outcome keeps the same Idempotency-Key for "retry".
@@ -31,6 +32,7 @@ import {
 } from './SalesPolicyParts'
 import { fetchUnitConversionPolicy, recordUnitConversionPolicyVersion } from './unitConversionPolicyApi'
 import {
+  DECIDED_COEFFICIENT_ROUNDING,
   UNIT_CONVERSION_BASES,
   UNIT_CONVERSION_BOUNDARIES,
   UNIT_CONVERSION_POLICY_INPUT,
@@ -214,9 +216,6 @@ function PolicyForm({
   const [coefficientDecimalsText, setCoefficientDecimalsText] = useState(
     base === null ? '' : String(base.coefficientDecimals),
   )
-  const [coefficientRounding, setCoefficientRounding] = useState<UnitConversionRounding | null>(
-    base?.coefficientRounding ?? null,
-  )
   const [documentTotalDecimalsText, setDocumentTotalDecimalsText] = useState(
     base === null ? '' : String(base.documentTotalDecimals),
   )
@@ -246,7 +245,6 @@ function PolicyForm({
       !isPercentInput(toleranceText) ||
       coefficientDecimals === null ||
       documentTotalDecimals === null ||
-      coefficientRounding === null ||
       documentTotalRounding === null ||
       wholeUnitRounding === null ||
       toleranceBoundary === null ||
@@ -259,7 +257,7 @@ function PolicyForm({
       expectedVersion: data.version,
       densityGramsPerCubicCentimetre: densityText,
       coefficientDecimals,
-      coefficientRounding,
+      coefficientRounding: DECIDED_COEFFICIENT_ROUNDING,
       documentTotalDecimals,
       documentTotalRounding,
       wholeUnitRounding,
@@ -332,12 +330,11 @@ function PolicyForm({
           />
         )}
       </Field>
-      <RoundingChoice
-        name="unit-conversion-coefficient-rounding"
-        legend={T.coefficientRoundingLegend}
-        value={coefficientRounding}
-        onChange={setCoefficientRounding}
-      />
+      <fieldset className={styles.fieldset}>
+        <legend>{T.coefficientRoundingLegend}</legend>
+        <p>{roundingLabel(DECIDED_COEFFICIENT_ROUNDING)}</p>
+        <p className={styles.muted}>{T.coefficientRoundingDecided}</p>
+      </fieldset>
       <Field
         label={T.documentTotalDecimalsLabel}
         help={T.decimalsHelp}

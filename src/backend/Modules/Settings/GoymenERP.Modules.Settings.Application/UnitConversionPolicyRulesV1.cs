@@ -34,6 +34,21 @@ public static class UnitConversionPolicyRulesV1
     public static bool IsRoundingDecimals(int? decimals) =>
         decimals is >= 0 and <= UnitConversionPolicyInputLimitsV1.MaximumRoundingDecimals;
 
+    /// <summary>
+    /// KLN-D88: the coefficient rounding code is exactly <see cref="UnitConversionRoundingModesV1.DecidedCoefficientRounding"/>
+    /// (case-sensitive). Any other listed mode, a blank or an unknown code is refused; nothing is rewritten to the decided mode.
+    /// </summary>
+    public static bool TryParseCoefficientRounding(string? code, out MidpointRounding mode)
+    {
+        if (string.Equals(code, UnitConversionRoundingModesV1.DecidedCoefficientRounding, StringComparison.Ordinal))
+        {
+            return TryParseRounding(code, out mode);
+        }
+
+        mode = default;
+        return false;
+    }
+
     /// <summary>A rounding mode code from <see cref="UnitConversionRoundingModesV1.All"/> (exact, case-sensitive).</summary>
     public static bool TryParseRounding(string? code, out MidpointRounding mode)
     {

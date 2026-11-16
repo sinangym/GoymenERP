@@ -93,6 +93,15 @@ describe('sendCompanyTaxIdChangeRequest', () => {
     })
   })
 
+  it('classifies the check-digit 422 by its code (KIM-D40)', async () => {
+    stub(answer(422, { code: COMPANY_TAX_ID_PROBLEM.checkDigitInvalid }))
+    expect(await sendCompanyTaxIdChangeRequest(COMPANY, KEY, REQUEST_COMMAND)).toEqual({
+      type: 'failed',
+      failure: { kind: 'tax-id-check-digit-invalid' },
+      replayed: false,
+    })
+  })
+
   it('treats a 422 without the in-use code as unknown', async () => {
     stub(answer(422, { code: COMPANY_TAX_ID_PROBLEM.changePending }))
     const outcome = await sendCompanyTaxIdChangeRequest(COMPANY, KEY, REQUEST_COMMAND)

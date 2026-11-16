@@ -25,6 +25,8 @@ import {
 export type TaxIdFailure =
   /** 422 — another company already carries the proposed VKN (DEC-ORG-005). */
   | { readonly kind: 'tax-id-in-use' }
+  /** 422 — KIM-D40: the proposed VKN fails the official last-digit check; nothing was recorded for approval. */
+  | { readonly kind: 'tax-id-check-digit-invalid' }
   /** 409 — the company already has an open change request; it must be decided first. */
   | { readonly kind: 'tax-id-change-pending' }
   /** 409 — the proposed VKN is the company's current one. */
@@ -97,7 +99,11 @@ function classify(status: number, body: unknown, replayed: boolean): CompanyTaxI
   if (status === 415) return { kind: 'unsupported-media' }
   if (status !== 409 && status !== 422) return null
   const code = decodeCompanyTaxIdProblemCode(body)
-  if (status === 422) return code === COMPANY_TAX_ID_PROBLEM.inUse ? { kind: 'tax-id-in-use' } : null
+  if (status === 422) {
+    if (code === COMPANY_TAX_ID_PROBLEM.inUse) return { kind: 'tax-id-in-use' }
+    if (code === COMPANY_TAX_ID_PROBLEM.checkDigitInvalid) return { kind: 'tax-id-check-digit-invalid' }
+    return null
+  }
   switch (code) {
     case COMPANY_TAX_ID_PROBLEM.versionConflict: {
       const conflict = decodeTaxIdVersionConflict(body)

@@ -222,9 +222,10 @@ function isSource(value: unknown): value is SalesPolicySource {
 
 /**
  * The fields every version entry shares. `transferred` is the view's flag: before the transfer an entry is the compiled
- * catalog's (no recorder, no reason); afterwards it is a stored record and names who recorded it, when and why.
+ * catalog's (no recorder, no reason); afterwards it is a stored record and names who recorded it, when and why. Shared
+ * with the F-029 unit profile screen, whose versions carry the same meta fields.
  */
-function decodeMeta(raw: Record<string, unknown>, transferred: boolean): SalesPolicyVersionMeta | null {
+export function decodeMeta(raw: Record<string, unknown>, transferred: boolean): SalesPolicyVersionMeta | null {
   const { profileId, version, isActive, effectiveFrom, effectiveThrough, state, sourceKind } = raw
   const { decisionReference, recordedBy, recordedAtUtc, reason } = raw
   if (!isGuid(profileId) || typeof version !== 'string' || !POSITIVE_VERSION.test(version)) return null

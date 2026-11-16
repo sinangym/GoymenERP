@@ -54,7 +54,7 @@ public sealed class SettingsUnitConversionPolicyProviderV1 : ISettingsUnitConver
             || row.DensityGramsPerCubicCentimetre <= 0m
             || !UnitConversionPolicyRulesV1.IsRoundingDecimals(row.CoefficientDecimals)
             || !UnitConversionPolicyRulesV1.IsRoundingDecimals(row.DocumentTotalDecimals)
-            || !UnitConversionPolicyRulesV1.TryParseRounding(row.CoefficientRounding, out var coefficientRounding)
+            || !UnitConversionPolicyRulesV1.TryParseCoefficientRounding(row.CoefficientRounding, out var coefficientRounding)
             || !UnitConversionPolicyRulesV1.TryParseRounding(row.DocumentTotalRounding, out var documentTotalRounding)
             || !UnitConversionPolicyRulesV1.TryParseRounding(row.WholeUnitRounding, out var wholeUnitRounding)
             || row.WeighbridgeTolerancePercent < UnitConversionPolicyInputLimitsV1.MinimumPercent

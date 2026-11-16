@@ -61,6 +61,13 @@ export const UNIT_CONVERSION_ROUNDING = {
 export type UnitConversionRounding = (typeof UNIT_CONVERSION_ROUNDING)[keyof typeof UNIT_CONVERSION_ROUNDING]
 export const UNIT_CONVERSION_ROUNDINGS: readonly UnitConversionRounding[] = Object.values(UNIT_CONVERSION_ROUNDING)
 
+/**
+ * `UnitConversionRoundingModesV1.DecidedCoefficientRounding` (KLN-D88): the coefficient is rounded half and above away from
+ * zero; only its decimals count is a company setting. The server refuses any other coefficient mode. Stored history may
+ * still show another mode, so the decoder keeps accepting every listed mode.
+ */
+export const DECIDED_COEFFICIENT_ROUNDING: UnitConversionRounding = UNIT_CONVERSION_ROUNDING.awayFromZero
+
 /** `UnitConversionToleranceBoundariesV1` (BS-16). */
 export const UNIT_CONVERSION_BOUNDARY = { inclusive: 'Inclusive', exclusive: 'Exclusive' } as const
 export type UnitConversionBoundary = (typeof UNIT_CONVERSION_BOUNDARY)[keyof typeof UNIT_CONVERSION_BOUNDARY]

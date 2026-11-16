@@ -11,7 +11,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// KIM-D34: the login rate limiter follows the group-wide Settings record. Nothing recorded keeps the configured starting value;
 /// a recorded version replaces it on the next refresh; a read error or a value the host cannot apply never lifts the limit; the
-/// refresh interval decides how often the record is read. The numbers are SENTETIK test inputs, not policy values.
+/// refresh interval decides how often the record is read. KIM-D42: the forwarded header counts only behind a trusted proxy
+/// (documentation address ranges). The numbers are SENTETIK test inputs, not policy values.
 /// </summary>
 public sealed class LocalAccountLoginRateLimiterSettingsTests
 {
@@ -123,8 +124,79 @@ public sealed class LocalAccountLoginRateLimiterSettingsTests
         Assert.Contains(options.Validate(), error => error.Contains("SettingsRefreshInterval", StringComparison.Ordinal));
     }
 
-    private static SettingsLoginRateLimitV1 Stored(long version, int permitLimit, string partitionBy) =>
-        new(new ProfileVersionV1(Guid.NewGuid(), version), permitLimit, TimeSpan.FromMinutes(1), partitionBy);
+    [Fact]
+    public async Task With_an_empty_trusted_proxy_list_the_forwarded_header_is_never_read()
+    {
+        using var limiter = Limiter(permitLimit: 1, refreshInterval: null, out _);
+        var provider = new FakeProvider(_ => Stored(version: 1, permitLimit: 1, LoginRateLimitPartitionsV1.IpAddress));
+
+        Assert.True(await limiter.TryAcquireAsync(Request(ProxyAddress, "203.0.113.5"), "a", provider, CancellationToken.None));
+        Assert.False(await limiter.TryAcquireAsync(Request(ProxyAddress, "203.0.113.6"), "a", provider, CancellationToken.None));
+        Assert.Equal(IPAddress.Parse(ProxyAddress),
+            LocalAccountLoginRateLimiter.ClientAddress(LoginTrustedProxyList.Empty, Request(ProxyAddress, "203.0.113.5")));
+    }
+
+    [Fact]
+    public async Task A_trusted_peer_lets_the_forwarded_client_address_count_per_client()
+    {
+        using var limiter = Limiter(permitLimit: 1, refreshInterval: null, out _);
+        var provider = new FakeProvider(_ =>
+            Stored(version: 2, permitLimit: 1, LoginRateLimitPartitionsV1.IpAddress, ["198.51.100.0/24"]));
+
+        Assert.True(await limiter.TryAcquireAsync(Request(ProxyAddress, "203.0.113.5"), "a", provider, CancellationToken.None));
+        Assert.True(await limiter.TryAcquireAsync(Request(ProxyAddress, "203.0.113.6"), "a", provider, CancellationToken.None));
+        Assert.False(await limiter.TryAcquireAsync(Request(ProxyAddress, "203.0.113.5"), "a", provider, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task The_forwarded_header_of_a_peer_not_on_the_list_is_ignored()
+    {
+        using var limiter = Limiter(permitLimit: 1, refreshInterval: null, out _);
+        var provider = new FakeProvider(_ =>
+            Stored(version: 2, permitLimit: 1, LoginRateLimitPartitionsV1.IpAddress, [ProxyAddress]));
+
+        Assert.True(await limiter.TryAcquireAsync(Request(Address, "203.0.113.5"), "a", provider, CancellationToken.None));
+        Assert.False(await limiter.TryAcquireAsync(Request(Address, "203.0.113.6"), "a", provider, CancellationToken.None));
+    }
+
+    [Fact]
+    public void In_a_multi_hop_header_the_first_address_after_the_trusted_proxies_is_the_client()
+    {
+        var proxies = LoginTrustedProxyList.FromCanonical(["198.51.100.0/24"]);
+        Assert.NotNull(proxies);
+
+        Assert.Equal(IPAddress.Parse("203.0.113.9"),
+            LocalAccountLoginRateLimiter.ClientAddress(proxies, Request(ProxyAddress, "203.0.113.9, 198.51.100.8")));
+        Assert.Equal(IPAddress.Parse("203.0.113.9"),
+            LocalAccountLoginRateLimiter.ClientAddress(proxies, Request(ProxyAddress, "192.0.2.99, 203.0.113.9")));
+        Assert.Equal(IPAddress.Parse("198.51.100.8"),
+            LocalAccountLoginRateLimiter.ClientAddress(proxies, Request(ProxyAddress, "198.51.100.8")));
+        Assert.Equal(IPAddress.Parse(ProxyAddress),
+            LocalAccountLoginRateLimiter.ClientAddress(proxies, Request(ProxyAddress, "203.0.113.9, not-an-address")));
+        Assert.Equal(IPAddress.Parse(ProxyAddress),
+            LocalAccountLoginRateLimiter.ClientAddress(proxies, Request(ProxyAddress, forwardedFor: null)));
+    }
+
+    [Fact]
+    public async Task A_change_of_the_trusted_proxy_list_alone_keeps_the_open_windows()
+    {
+        using var limiter = Limiter(permitLimit: 1, refreshInterval: null, out _);
+        IReadOnlyList<string> proxies = [];
+        var provider = new FakeProvider(_ => Stored(version: proxies.Count == 0 ? 1 : 2, permitLimit: 1,
+            LoginRateLimitPartitionsV1.IpAddress, proxies));
+
+        Assert.True(await limiter.TryAcquireAsync(Request(Address), "a", provider, CancellationToken.None));
+        proxies = [ProxyAddress];
+        Assert.False(await limiter.TryAcquireAsync(Request(Address), "a", provider, CancellationToken.None));
+        Assert.Equal((long?)2, limiter.Current.SettingsVersion);
+    }
+
+    private const string ProxyAddress = "198.51.100.7";
+
+    private static SettingsLoginRateLimitV1 Stored(
+        long version, int permitLimit, string partitionBy, IReadOnlyList<string>? trustedProxies = null) =>
+        new(new ProfileVersionV1(Guid.NewGuid(), version), permitLimit, TimeSpan.FromMinutes(1), partitionBy,
+            trustedProxies ?? []);
 
     private static LocalAccountOptions Options(int permitLimit, TimeSpan? refreshInterval)
     {
@@ -145,10 +217,15 @@ public sealed class LocalAccountLoginRateLimiterSettingsTests
             NullLogger<LocalAccountLoginRateLimiter>.Instance);
     }
 
-    private static DefaultHttpContext Request(string address)
+    private static DefaultHttpContext Request(string address, string? forwardedFor = null)
     {
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse(address);
+        if (forwardedFor is not null)
+        {
+            context.Request.Headers[LoginTrustedProxyList.ForwardedForHeaderName] = forwardedFor;
+        }
+
         return context;
     }
 

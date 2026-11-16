@@ -85,6 +85,7 @@ public static class IdentityModuleExtensions
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).
         services.AddScoped<IUserCompanyMembershipReadPortV1, UserDirectoryReadPortV1>();
+        services.AddScoped<ICompanySingleActiveMemberReadPortV1, UserDirectoryReadPortV1>();
         // ID-1 local account login. The settings are validated (fail-closed) by the host only when the
         // LocalAccount authentication mode is on; the password hasher is supplied by the host.
         services.AddOptions<LocalAccountOptions>()

@@ -155,6 +155,69 @@ public sealed class LocalCredential
     }
 
     /// <summary>
+    /// ID-2r <c>recover-founder reactivate</c> (KIM-D22): the founder must set a new password at the next login, the
+    /// lockout resets, any temporary password is cleared, the stamp is renewed and <see cref="Version"/> rises by
+    /// one. The password hash and the 2FA state are kept (the decision does not touch them, fail-closed).
+    /// </summary>
+    public void ApplyFounderReactivation(Guid newSecurityStamp)
+    {
+        RequireNewSecurityStamp(newSecurityStamp);
+
+        MustChangePassword = true;
+        TemporaryPasswordIssuedAtUtc = null;
+        TemporaryPasswordExpiresAtUtc = null;
+        TemporaryPasswordConsumedAtUtc = null;
+        FailedAccessCount = 0;
+        LockoutEndUtc = null;
+        SecurityStamp = newSecurityStamp;
+        Version++;
+    }
+
+    /// <summary>
+    /// ID-2r <c>recover-founder reset-password</c> (KIM-D23): the temporary password hash replaces the old one, the
+    /// founder must set a new password at the next login, the lockout resets, the temporary password window opens
+    /// (issued, expires, not consumed), the stamp is renewed (every session ends) and <see cref="Version"/> rises by
+    /// one. The lifetime is configuration owned by the caller; this method only refuses a window that is not in
+    /// the future of its issue time.
+    /// </summary>
+    public void IssueTemporaryPassword(
+        string temporaryPasswordHash,
+        int hashFormatVersion,
+        DateTimeOffset issuedAtUtc,
+        DateTimeOffset expiresAtUtc,
+        Guid newSecurityStamp)
+    {
+        if (string.IsNullOrWhiteSpace(temporaryPasswordHash))
+        {
+            throw new ArgumentException("Parola özeti boş olamaz.", nameof(temporaryPasswordHash));
+        }
+
+        if (hashFormatVersion < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(hashFormatVersion));
+        }
+
+        if (expiresAtUtc <= issuedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expiresAtUtc), "Geçici parolanın bitiş anı veriliş anından sonra olmalıdır.");
+        }
+
+        RequireNewSecurityStamp(newSecurityStamp);
+
+        PasswordHash = temporaryPasswordHash;
+        HashFormatVersion = hashFormatVersion;
+        MustChangePassword = true;
+        PasswordChangedAtUtc = issuedAtUtc;
+        TemporaryPasswordIssuedAtUtc = issuedAtUtc;
+        TemporaryPasswordExpiresAtUtc = expiresAtUtc;
+        TemporaryPasswordConsumedAtUtc = null;
+        FailedAccessCount = 0;
+        LockoutEndUtc = null;
+        SecurityStamp = newSecurityStamp;
+        Version++;
+    }
+
+    /// <summary>
     /// Applies a successful login: the counter and the lockout reset, an optional rehash replaces the hash. Used
     /// by non-relational stores; the SQL store writes the same values in one conditional UPDATE.
     /// </summary>
@@ -171,6 +234,14 @@ public sealed class LocalCredential
         {
             PasswordHash = rehashedPasswordHash;
             HashFormatVersion = rehashedFormatVersion!.Value;
+        }
+    }
+
+    private void RequireNewSecurityStamp(Guid newSecurityStamp)
+    {
+        if (newSecurityStamp == Guid.Empty || newSecurityStamp == SecurityStamp)
+        {
+            throw new ArgumentException("Yeni güvenlik damgası boş olamaz ve eskisinden farklı olmalıdır.", nameof(newSecurityStamp));
         }
     }
 }

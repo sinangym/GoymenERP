@@ -63,6 +63,11 @@ public static class SettingsModuleExtensions
         // Product / stock-logistics consume. No compiled value: the port refuses until a person records the first version.
         services.AddScoped<ISettingsUnitConversionPolicyAdministrationV1, SettingsUnitConversionPolicyAdministration>();
         services.AddScoped<ISettingsUnitConversionPolicyProviderV1, SettingsUnitConversionPolicyProviderV1>();
+        // F-029 S1/S2 (URN-D2…D5): the persistent unit profile and its administration. The prerequisite port keeps its
+        // signature (spec P2) and answers from the reviewed catalog, byte-identical, until the company's one-time baseline
+        // transfer; from then on the Settings table is its only unit profile source. Money and period reads are unchanged.
+        services.Replace(ServiceDescriptor.Scoped<ISettingsPrerequisiteProvider, SettingsUnitProfilePrerequisiteProvider>());
+        services.AddScoped<ISettingsUnitProfileAdministrationV1, SettingsUnitProfileAdministration>();
         // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
         // port approving modules consume. No row answers the decided default: the preparer may not approve.
         services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();
@@ -71,6 +76,11 @@ public static class SettingsModuleExtensions
         // limiter refreshes from. Nothing is seeded: until the first version the host keeps its configured starting value.
         services.AddScoped<ISettingsLoginRateLimitAdministrationV1, SettingsLoginRateLimitAdministration>();
         services.AddScoped<ISettingsLoginRateLimitProviderV1, SettingsLoginRateLimitProviderV1>();
+        // URT-D89 (URT-D87 the unit, URT-D91/URT-D92 the buffer): the per-work-center capacity record, its administration and
+        // the read port the Manufacturing due-date suggestion consumes. Nothing is seeded: no version is no capacity. The work
+        // center reference port is composed by the API host over the Organization owner's read (none composed: fail closed).
+        services.AddScoped<ISettingsWorkCenterCapacityAdministrationV1, SettingsWorkCenterCapacityAdministration>();
+        services.AddScoped<ISettingsWorkCenterCapacityProviderV1, SettingsWorkCenterCapacityProviderV1>();
         services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
         services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both

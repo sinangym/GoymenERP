@@ -50,6 +50,7 @@ export const COMPANY_TAX_ID_PROBLEM = {
   changeStale: 'organization_company_tax_id_change_stale',
   selfDecision: 'organization_company_tax_id_self_decision',
   unchanged: 'organization_company_tax_id_unchanged',
+  checkDigitInvalid: 'organization_company_tax_id_check_digit_invalid',
   versionConflict: 'organization_company_tax_id_version_conflict',
   idempotencyConflict: 'organization_company_tax_id_idempotency_conflict',
 } as const

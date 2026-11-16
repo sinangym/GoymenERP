@@ -737,7 +737,7 @@ authorized person through the route below; until then the port refuses.
 | Table | `UnitConversionPolicyVersions`: density `decimal(12,6)`, coefficient and document total decimals (0…12) with their rounding mode codes, the whole-unit rounding mode, tolerance percent `decimal(7,4)` (0…100), boundary (`Inclusive`/`Exclusive`, BS-16) and base (`TheoreticalKg`/`WeighedKg`, BS-17). Every row carries `CompanyId` under the company query filter; PK `(CompanyId, Version)`; insert-only with a start date; windows are derived (`SalesPolicyTimelineV1`), a later version on the same date supersedes the earlier one. CHECKs hold the code lists and the technical bounds. |
 | Migration | `AddUnitConversionPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51330` while any version exists (forward fix); an empty store rolls back freely. |
 | Port | `ISettingsUnitConversionPolicyProviderV1.GetUnitConversionPolicyAsync(date)` → `SettingsUnitConversionPolicyV1` (typed `MidpointRounding`, boundary and base enums, the stored `ProfileVersionV1`). None in force on the date → `settings_unit_conversion_policy_not_found`; unreadable store → `settings_provider_unavailable`; malformed stored codes → `settings_profile_invalid`. No fallback. Consumers: Product unit conversion and stock/logistics weighbridge checks (their wiring is their own slice). |
-| Separate settings | The coefficient rounding mode (URN-D8) is its own setting, distinct from the document total rounding; the URN-D8 "en yakın, yarım yukarı" direction is an author reading recorded as a value, not a code default. URN-D9 (document line kg → Quantity) is a fixed calculator rule and is **not** a setting here. |
+| Separate settings | The coefficient rounding direction is decided (KLN-D88): `AwayFromZero` (`UnitConversionRoundingModesV1.DecidedCoefficientRounding`); a record with any other coefficient mode is refused (400) and a stored row with another mode makes the port answer `settings_profile_invalid`. Only the coefficient decimals stay a company setting; the column and its CHECK are unchanged (no migration). The document total rounding stays its own setting. URN-D9 (document line kg → Quantity) is a fixed calculator rule and is **not** a setting here. |
 | Name | `settings.unit-conversion-policies.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
 | Routes | `GET /api/v1/settings/unit-conversion-policy` (timeline; version "0" and an empty list when none), `POST /api/v1/settings/unit-conversion-policy/versions` (204). |
 | Commands | Idempotency-Key, expected version ("0" for the first), reason (≤ 4000), lossless invariant decimal text (`7.85`; `7,85` is 400), one save with the execution row and one audit event (`settings.unit-conversion-policy.recorded.v1`). Terminal refusals are stored and replay; a start date before today (Europe/Istanbul) is 422; an unchanged in-force policy is a stored no-op without audit. |
@@ -745,6 +745,28 @@ authorized person through the route below; until then the port refuses.
 
 Not in this slice: the frontend screen and its shell capability, product-level overrides (URN-D8: none), the consumers'
 switch from their own settings record to this port.
+
+## Unit profiles (F-029 S1/S2; URN-D2…D5)
+
+Sources: `docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md` §5.4(4) and
+`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` URN-D2…D5. The approved unit profiles (T02-a,
+`ApprovedUnitProfileCatalog`) become a persistent, versioned Settings record managed on a screen (URN-D2) by one authorized
+manager with a mandatory reason and audit, no second approver (URN-D3), effective only from today forward (URN-D4), after a
+one-time transfer of the reviewed entries with their values unchanged (URN-D5).
+
+| Part | What |
+|---|---|
+| Tables | `UnitProfileVersions`: PK `(CompanyId, UnitId, Version)`, unique `(CompanyId, ProfileId)`; unit code, dimension and kilogram flag copied from the unit identity, scale (0…28; a kilogram profile at most 3, Ö2), active flag, start date, source kind (`CompiledBaselineV0` for transferred rows), decision reference, recorder, time and reason. Insert-only; windows are derived (`SalesPolicyTimelineV1`), a later version on the same date supersedes the earlier one. `UnitProfileBaselineTransfers`: one marker row per company (PK `CompanyId`) with the transferred entry count. Both carry `CompanyId` under the company query filter. |
+| Migration | `AddUnitProfileVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51341` while any version or a baseline transfer marker exists (forward fix); an empty store rolls back freely. |
+| Port | `ISettingsPrerequisiteProvider` keeps its signature (spec P2). `SettingsUnitProfilePrerequisiteProvider` answers `GetUnitProfileAsync` from the reviewed catalog, byte-identical, until the company's transfer; from then on the table is the only unit profile source (none in force → not found; no fallback to the catalog). Money and period reads delegate unchanged to the approved provider. The unit identity catalog (`ISettingsUnitIdentityCatalogV1`) is unchanged. Consumers: Product and stock/logistics through the same port. |
+| Name | `settings.unit-profiles.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/unit-profiles` (per-unit timeline, the identity options with their maximum scale), `POST /api/v1/settings/unit-profiles/baseline-transfer` (204), `POST /api/v1/settings/unit-profiles/versions` (204). |
+| Commands | Idempotency-Key, the unit's expected version ("0" for a unit with no stored row), reason (≤ 4000), one save with the execution row and one audit event (`settings.unit-profile.baseline-transferred.v1`, `settings.unit-profile.recorded.v1`). Recording before the transfer is 409 `settings_unit_profile_baseline_required`; a second transfer is 409 `settings_unit_profile_already_transferred`; a start date before today (Europe/Istanbul) is 422; an unchanged in-force profile is a stored no-op without audit. Terminal refusals are stored and replay. |
+| Shell | Capability `AY-BRP-01`, route `/ayarlar/birim-profilleri` (Settings provider 1.5). |
+| Evidence | Model: `SettingsUnitProfilePersistenceModelTests`. Names: `SettingsUnitProfilePermissionRegistrationTests`. Real SQL: `SettingsUnitProfileSqlServerRelationalAcceptanceTests`. Screen: `UnitProfilePage.test.tsx`. |
+
+Not in this slice: profile data for units other than kilogram (the identity catalog holds only kg), a group-wide persistent
+unit identity table, the ton↔kg coefficient (unit conversion policy).
 
 ## Bank CSV column mapping (F-014; FNS-D52)
 
@@ -778,6 +800,8 @@ module applies. **The decided default needs no row**: with no recorded version t
 | Migration | `AddSegregationOfDutiesPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51622` while any version exists (forward fix); an empty store rolls back freely. |
 | Port | `ISettingsSegregationOfDutiesPolicyProviderV1.GetSegregationOfDutiesPolicyAsync(companyId)` → `SettingsSegregationOfDutiesPolicyV1(CompanyId, PreparerMayApprove, Version)`. No version → the decided default, version 0. A company other than the server-resolved one → `settings_access_denied`; unreadable store → `settings_provider_unavailable`; malformed stored row → `settings_profile_invalid`. No permissive fallback: a consumer refuses the approval on an error. |
 | Rule | `SegregationOfDutiesRuleV1.PermitsApproval(policy, preparedBy, approvedBy)`: a different person always passes; the preparer passes only when `PreparerMayApprove` is true; a missing preparer or approver never passes (actor ids, trimmed, ordinal). A consumer keeps the policy version beside the approval it records. |
+| Scope (KIM-D38) | The setting relaxes only the general check (`SegregationOfDutiesControlKindV1.General`, the two-argument rule). A locked dual control (`LockedDualControl`, e.g. KIM-D28/D35, the Critical grant, SAT-D290) never consults it: `PermitsLockedDualControlApproval` always needs a different present person; an unknown kind is treated as locked. |
+| Single user (KIM-D39) | `true` is recorded only while the Identity owner (`ICompanySingleActiveMemberReadPortV1`, through the central `SettingsCompanyActiveUsersHost`) reports exactly one active user in the company; otherwise a stored 409 `settings_segregation_of_duties_relaxation_requires_single_user`. The port answers `false` at the same version as soon as a second active user exists (it writes nothing); the administration read closes it durably with a system version (`RecordedBy` = `SegregationOfDutiesRuleV1.AutomaticCloseActorId`, `recordedAutomatically`) and one system audit event `settings.segregation-of-duties.closed-automatically.v1`. The view carries `relaxationPermitted`. Fail-closed: no composed port or an owner failure → `settings_provider_unavailable`. |
 | Scope | The setting relaxes only the generic "preparer = approver" check of the consuming flows. It does **not** relax the locked four-eyes rules that have their own decisions (Organization VKN change dual approval, Identity Critical grant dual control, a module's own locked maker ≠ checker rule); which document flows consume it is each owning module's slice. |
 | Name | `settings.segregation-of-duties.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
 | Routes | `GET /api/v1/settings/segregation-of-duties` (the setting in force, version "0" and an empty history when none), `POST /api/v1/settings/segregation-of-duties/versions` (204). |
@@ -807,6 +831,37 @@ the fallback while the record cannot be read.
 | Screen | Ayarlar → Giriş deneme sınırı (`/ayarlar/giris-deneme-siniri`): the decision value is a reminder text only and never pre-fills the form. |
 | Evidence | Unit: `LoginRateLimitRulesV1Tests`. Model: `SettingsLoginRateLimitPersistenceModelTests`. Names: `SettingsLoginRateLimitPermissionRegistrationTests`. Limiter: `LocalAccountLoginRateLimiterSettingsTests`. Screen: `LoginRateLimitPage.test.tsx`. |
 
-Open: the client IP behind a reverse proxy (forwarded headers) decides the partition key; it is NEEDS-SINAN and not changed
-here. The unit conversion policy screen (Ayarlar → Birim çevrim politikası, KIM-D37) is in this slice too: no value is
-seeded, the decision values are reminder texts, and the coefficient rounding direction (URN-D8) has no suggestion.
+**Trusted proxies (KIM-D42, `SINAN_KARARLARI_2026-11-15_DALGA2_EK13.md`):** each version also carries the trusted proxy
+list (IPv4/IPv6 addresses or CIDR blocks, canonical, at most 64 entries; mandatory in the command, may be empty). The login
+rate limiter reads `X-Forwarded-For` only when the direct peer is on the list; an empty list (the default, and every version
+recorded before the column) means the header is never read. In a multi-hop header the hops are walked from the right and the
+first address that is not a trusted proxy is the client; a malformed hop stops at the nearest trusted hop. A list change is
+an ordinary audited version; a change of the list alone keeps the open windows. Migration
+`AddLoginRateLimitTrustedProxies` (dotnet ef, pure DDL Up); `Down` refuses with `THROW 51734` while any version holds a
+non-empty list (forward fix).
+
+The unit conversion policy screen (Ayarlar → Birim çevrim politikası, KIM-D37) is in this slice too: no value is
+seeded, the decision values are reminder texts, and the coefficient rounding direction is shown as decided (KLN-D88, `AwayFromZero`) and is not selectable.
+
+## Work center capacity and due-date safety buffer (URT-D87, URT-D89, URT-D91, URT-D92)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK12.md` URT-D89 and the URT-D91/URT-D92 notes. Each work center
+can have a versioned capacity record: input kg per hour (URT-D87) and an optional due-date safety buffer. The decided persona
+is Üretim Müdürü; that is a note for the human grant, and no role gets the name. Nothing is seeded (URT-D91). A work center
+without a record has no capacity, so the due-date suggestion answers "hesaplanamadı". A record without a buffer counts as
+buffer 0. The per-work-center buffer is the only buffer (URT-D92); there is no company-wide buffer.
+
+| Part | What |
+|---|---|
+| Table | `WorkCenterCapacityVersions`, keyed by (`CompanyId`, `WorkCenterId`, `Version`) under the company filter. It holds the input capacity (`decimal(18,6)`, > 0), the buffer value (`decimal(9,3)`, > 0) and the buffer unit (`Hours`/`Days`) as a pair that is either both null (no buffer) or both set, plus who recorded it, when and why. Rows are insert-only and the latest version is in force. CHECK constraints hold the shape. Settings stores the Organization work center id and writes no Organization table. |
+| Migration | `AddWorkCenterCapacityVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51333` while any version exists (forward fix). An empty store rolls back freely. |
+| Port | `ISettingsWorkCenterCapacityProviderV1.GetWorkCenterCapacityAsync(companyId, workCenterId)` returns `SettingsWorkCenterCapacityV1` (the latest version), or `null` when nothing is recorded. The company must be the server company. Errors are `settings_access_denied`, `settings_provider_unavailable` and `settings_profile_invalid`; an error never falls back to a default capacity. The consumer decides how a `Days` buffer is counted (working or calendar days; NEEDS-SINAN). Settings stores the value with the unit it was entered in. |
+| Work center check | `ISettingsWorkCenterReferenceV1`: the API host adapter `SettingsWorkCenterReferenceHost` asks the Organization owner's `IOrganizationWorkCenterPlanningReferenceV1`. An unknown or foreign work center gives a stored 404 `settings_work_center_capacity_work_center_not_found`. A missing or failing owner gives 503 `settings_provider_unavailable` (fail closed). |
+| Name | `settings.work-center-capacities.manage`: registered, company-wide, not Critical, **granted to no role** (human gate; persona Üretim Müdürü). |
+| Routes | `GET /api/v1/settings/work-center-capacities` lists the work centers that have a record, each with its versions newest first. `POST /api/v1/settings/work-center-capacities/{workCenterId}/versions` returns 204. Decimals travel as invariant text. |
+| Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). It makes one save with the execution row and one audit event (`settings.work-center-capacity.recorded.v1`, entity = work center id). There is no second approval. Terminal refusals (404, 409) are stored and replay. An unchanged value is a stored no-op without audit. |
+| Screen | Ayarlar → İş merkezi kapasitesi (`/ayarlar/is-merkezi-kapasitesi`, AY-IMK-01). It lists the Organization work centers with their current capacity and buffer, the history and a new-version form. It suggests no value. |
+| Evidence | Unit: `WorkCenterCapacityRulesV1Tests`. Model: `SettingsWorkCenterCapacityPersistenceModelTests`. Names: `SettingsWorkCenterCapacityPermissionRegistrationTests`, `SettingsShellAuthorityTests`. Real SQL: `SettingsWorkCenterCapacitySqlServerRelationalAcceptanceTests`. Screen: `WorkCenterCapacityPage.test.tsx`. |
+
+Open: whether a `Days` buffer counts working days or calendar days (NEEDS-SINAN; the consumer applies it), and a
+company-wide buffer (NEEDS-SINAN, URT-D91 limits).

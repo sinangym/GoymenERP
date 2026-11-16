@@ -78,6 +78,9 @@ public static class OrganizationProblemCodesV1
     /// <summary>409 — KIM-S23: the proposed VKN equals the current one.</summary>
     public const string CompanyTaxIdUnchanged = "organization_company_tax_id_unchanged";
 
+    /// <summary>422 — KIM-D40: the proposed VKN fails the official last-digit check (refused before approval).</summary>
+    public const string CompanyTaxIdCheckDigitInvalid = "organization_company_tax_id_check_digit_invalid";
+
     /// <summary>409 — KIM-S23: the company's version differs from <c>expectedVersion</c>; reload the tax-id view.</summary>
     public const string CompanyTaxIdVersionConflict = "organization_company_tax_id_version_conflict";
 

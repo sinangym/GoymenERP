@@ -14,7 +14,9 @@ public static class SettingsUnitConversionPolicyPermissionManifestV1
 
 /// <summary>
 /// The closed list of rounding mode codes a unit conversion policy carries (each is a <see cref="MidpointRounding"/> name).
-/// Which mode a company uses is a Settings value (BS-13, URN-D8); nothing here prefers one.
+/// The document total and whole unit modes are Settings values (BS-13); nothing here prefers one of them. The coefficient mode
+/// is decided (KLN-D88): <see cref="DecidedCoefficientRounding"/>, half and above away from zero (e.g. 1.2345 to 1.235 at three
+/// decimals); only its decimals count (<c>CoefficientDecimals</c>, BS-13/URN-D8) stays a company setting.
 /// </summary>
 public static class UnitConversionRoundingModesV1
 {
@@ -25,6 +27,12 @@ public static class UnitConversionRoundingModesV1
     public const string ToPositiveInfinity = nameof(MidpointRounding.ToPositiveInfinity);
 
     public static IReadOnlyList<string> All { get; } = [ToEven, AwayFromZero, ToZero, ToNegativeInfinity, ToPositiveInfinity];
+
+    /// <summary>
+    /// KLN-D88: the only coefficient rounding mode a version may carry (URN-D8's coefficient rounding is ordinary rounding,
+    /// half and above away from zero). A request or a stored row with any other coefficient mode is refused, never rewritten.
+    /// </summary>
+    public const string DecidedCoefficientRounding = AwayFromZero;
 }
 
 /// <summary>Whether a weighbridge deviation exactly equal to the tolerance passes (BS-16; the value is a Settings choice).</summary>
@@ -120,7 +128,9 @@ public static class UnitConversionPolicyProblemCodesV1
 /// <item><c>DensityGramsPerCubicCentimetre</c>: the steel density in g/cm³ as lossless positive decimal text (BS-9's example
 /// "7.85"), at most <see cref="UnitConversionPolicyInputLimitsV1.DensityMaximumScale"/> decimals;</item>
 /// <item><c>CoefficientDecimals</c> / <c>CoefficientRounding</c>: the decimals and rounding mode a coefficient (kg per piece,
-/// kg per metre) is rounded with once where it is produced (BS-13, URN-D8; kept apart from the document total's mode);</item>
+/// kg per metre) is rounded with once where it is produced (BS-13, URN-D8; kept apart from the document total's mode). The
+/// decimals are the company's setting; the mode must be <see cref="UnitConversionRoundingModesV1.DecidedCoefficientRounding"/>
+/// (KLN-D88);</item>
 /// <item><c>DocumentTotalDecimals</c> / <c>DocumentTotalRounding</c>: the document kg total's decimals and rounding mode
 /// (BS-13);</item>
 /// <item><c>WholeUnitRounding</c>: the kg-to-whole-unit-count rounding mode (BS-13);</item>
