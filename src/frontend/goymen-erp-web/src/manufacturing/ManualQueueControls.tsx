@@ -15,7 +15,9 @@ export function ManualQueueControls({ companyId, planId, namespace, queue, allow
   const boundary = useAuthBoundary(); const boundaryRef = useRef(boundary); boundaryRef.current = boundary
   const currentKey = useRef(key); currentKey.current = key
   const [saved, setSaved] = useState(() => readQueueMove(key))
-  const [moving, setMoving] = useState(''); const [before, setBefore] = useState(''); const [reason, setReason] = useState('')
+  const [moving, setMoving] = useState(() => saved.kind === 'pending' ? saved.attempt.movingPlanId : '')
+  const [before, setBefore] = useState(() => saved.kind === 'pending' ? saved.attempt.beforePlanId ?? '' : '')
+  const [reason, setReason] = useState(() => saved.kind === 'pending' ? saved.attempt.reason : '')
   const [message, setMessage] = useState<string | null>(saved.kind === 'pending' ? T.unknown : null)
   const [sending, setSending] = useState(false); const inFlight = useRef(false)
   const locked = sending || saved.kind !== 'empty'
@@ -50,10 +52,14 @@ export function ManualQueueControls({ companyId, planId, namespace, queue, allow
         expectedQueueRevision: queue.queueRevision, movingPlanId: moving, beforePlanId: before || null, reason: reason.trim() })
     }}>
       <label className={styles.control}>{T.moving}<select value={moving} disabled={blocked || locked} onChange={event => setMoving(event.target.value)}>
-        <option value="">—</option>{members.map(item => <option key={item.planId} value={item.planId}>{item.planId}</option>)}
+        <option value="">—</option>{saved.kind === 'pending' && !members.some(item => item.planId === moving)
+          ? <option value={moving}>{moving}</option> : null}
+        {members.map(item => <option key={item.planId} value={item.planId}>{item.planId}</option>)}
       </select></label>
       <label className={styles.control}>{T.before}<select value={before} disabled={blocked || locked} onChange={event => setBefore(event.target.value)}>
-        <option value="">{T.end}</option>{members.filter(item => item.planId !== moving).map(item => <option key={item.planId} value={item.planId}>{item.planId}</option>)}
+        <option value="">{T.end}</option>{saved.kind === 'pending' && before && !members.some(item => item.planId === before)
+          ? <option value={before}>{before}</option> : null}
+        {members.filter(item => item.planId !== moving).map(item => <option key={item.planId} value={item.planId}>{item.planId}</option>)}
       </select></label>
       <label className={styles.control}>{T.reason}<textarea value={reason} maxLength={256} disabled={blocked || locked} onChange={event => setReason(event.target.value)} /></label>
       {saved.kind === 'pending' ? <Button type="button" disabled={blocked || sending} onClick={() => void send(saved.attempt)}>{T.resend}</Button>

@@ -33,6 +33,8 @@ describe('manual queue controls', () => {
     expect((screen.getByLabelText(T.moving) as HTMLSelectElement).disabled).toBe(true)
     const original = vi.mocked(moveQueuePlan).mock.calls[0]
     first.unmount(); render(controls())
+    expect((screen.getByLabelText(T.moving) as HTMLSelectElement).value).toBe(secondId)
+    expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).value).toBe('Synthetic manager override')
     fireEvent.click(screen.getByRole('button', { name: T.resend }))
     await waitFor(() => expect(moveQueuePlan).toHaveBeenCalledTimes(2))
     expect(vi.mocked(moveQueuePlan).mock.calls[1]).toEqual(original)
