@@ -17,15 +17,21 @@ public sealed class RefusedAttemptWriteOwnershipGuardTests
     private const string FactoryPath = InfrastructureRoot + "Services/AuditEventFactory.cs";
     private const string ModuleExtensionsPath = InfrastructureRoot + "AuditModuleExtensions.cs";
     private const string AuditModelsPath = ApplicationContractsRoot + "AuditModels.cs";
+    // F023-5a: the audit read's outcome filter names Refused to match it; it reads and writes no row.
+    private const string QueryContractPath = ApplicationContractsRoot + "IAuditQueryService.cs";
+    private const string QueryServicePath = InfrastructureRoot + "Services/AuditQueryService.cs";
+    // Product package-standard import outcome (Accepted/Refused): a Product contract value, not an audit outcome.
+    private const string ProductImportOutcomesPath =
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Application/Contracts/ProductPackageStandardContractsV3.cs";
 
     [Fact]
     public void The_refused_outcome_is_named_only_by_the_audit_module_draft_path()
     {
         Assert.Equal(
-            new[] { DbContextPath, FactoryPath, MapperPath }.Order(StringComparer.Ordinal),
+            new[] { DbContextPath, FactoryPath, MapperPath, QueryContractPath, QueryServicePath }.Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("AuditOutcomes.Refused"));
         Assert.Equal(
-            new[] { AuditModelsPath },
+            new[] { AuditModelsPath, ProductImportOutcomesPath }.Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("const string Refused = \"Refused\""));
     }
 

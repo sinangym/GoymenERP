@@ -40,7 +40,7 @@ internal static class ProductDimensionShape
     }
 
     /// <summary>A geometric fit both sides hold: the C# test and the same comparison in SQL.</summary>
-    internal sealed record Fit(Func<Measures, bool> Holds, string Sql, string Refusal);
+    internal sealed record Fit(Func<Measures, bool> Holds, string SqlClause, string Refusal);
 
     /// <summary>
     /// One section kind: the presence of each field and its fits. <c>Profile</c> is the structural series AND size designation
@@ -235,7 +235,7 @@ internal static class ProductDimensionShape
             Add(clauses, "ProfileSize", rule.Profile);
             Add(clauses, "SurfaceFinish", rule.Surface);
             Add(clauses, "KgPerMetre", rule.LegacyKgPerMetre ? Presence.Optional : Presence.Forbidden);
-            clauses.AddRange(rule.Fits.Select(fit => fit.Sql).Distinct(StringComparer.Ordinal));
+            clauses.AddRange(rule.Fits.Select(fit => fit.SqlClause).Distinct(StringComparer.Ordinal));
             builder.Append('(').AppendJoin(" AND ", clauses).Append(')');
         }
 

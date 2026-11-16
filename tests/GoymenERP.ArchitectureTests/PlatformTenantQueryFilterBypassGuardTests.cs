@@ -1607,7 +1607,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (32243ecc… -> 145799ea…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (145799ea… -> 3cd51383…).
-                        "3cd51383d85770e60e7ab91f830d2a3a7ec09f7c6931af39e5d010ee81a96182",
+                        // tren-1 W5 fix: three read-port lambdas moved to named factories (ICompanyContext single registration); token counts unchanged (3cd51383… -> 46d85fde…).
+                        "46d85fde40bb771dd79dfc7c05df4ac3f87a2673dd79ad4f2cda0b9dadac904c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -10236,14 +10237,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             .Select(source => source.Key)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
-        var reviewedHostedServicePaths = new[] { identityPath, workHostedServicePath }
+        // tren-1 W5: the idempotency retention purge (OPEN-021, NS-12) is the third reviewed custom hosted service,
+        // registered only outside OpenAPI document generation like the two above.
+        var idempotencyHostedServicePath = ReviewedRuntimeDatabaseBypassSources.Keys.Single(path =>
+            path.EndsWith("IdempotencyModuleExtensions.cs", StringComparison.Ordinal));
+        var reviewedHostedServicePaths = new[] { identityPath, workHostedServicePath, idempotencyHostedServicePath }
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
         if (!hostedServiceRegistrations.SequenceEqual(reviewedHostedServicePaths, StringComparer.Ordinal))
         {
             errors.Add(
                 "OpenAPI build-time composition must have exactly the reviewed custom "
-                + "hosted-service registrations (Identity and Work outbox dispatcher): "
+                + "hosted-service registrations (Identity, Work outbox dispatcher and idempotency retention purge): "
                 + string.Join(", ", hostedServiceRegistrations));
         }
 
@@ -10255,6 +10260,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             errors.Add(
                 "The Work outbox dispatcher hosted service must be registered only inside "
+                + "if (!OpenApiDocumentGenerationMode.IsActive).");
+        }
+
+        if (!sources.TryGetValue(idempotencyHostedServicePath, out var idempotencyHostedServiceSource)
+            || !Regex.IsMatch(
+                idempotencyHostedServiceSource,
+                @"if\s*\(\s*!OpenApiDocumentGenerationMode\.IsActive\s*\)\s*\{\s*services\.AddHostedService<IdempotencyRetentionPurgeHostedService>\(\);",
+                RegexOptions.CultureInvariant))
+        {
+            errors.Add(
+                "The idempotency retention purge hosted service must be registered only inside "
                 + "if (!OpenApiDocumentGenerationMode.IsActive).");
         }
 

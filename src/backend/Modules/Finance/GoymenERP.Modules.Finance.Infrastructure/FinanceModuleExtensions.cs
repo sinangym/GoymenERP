@@ -100,14 +100,7 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
-        services.AddScoped<IFinancePartyCreditPanelReader>(provider => new FinancePartyCreditPanelService(
-            provider.GetRequiredService<FinanceDbContext>(),
-            provider.GetRequiredService<ICompanyContext>(),
-            provider.GetRequiredService<ICurrentUser>(),
-            provider.GetRequiredService<FinancePermissionPort>(),
-            provider.GetRequiredService<IFinancePartyAccountPort>(),
-            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
-            provider.GetRequiredService<TimeProvider>()));
+        services.AddScoped<IFinancePartyCreditPanelReader>(CreatePartyCreditPanelService);
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
@@ -137,17 +130,11 @@ public static class FinanceModuleExtensions
         // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items, (API-85a) the
         // effective credit limit record and (API-85b) the held received collaterals weighted by the Settings type rate
         // at read time. It carries no authority; the Sales risk read measures its own.
-        services.AddScoped<ISalesPartyRiskReadPortV1>(provider => new FinanceSalesPartyRiskReadPortV1(
-            provider.GetRequiredService<FinanceDbContext>(),
-            provider.GetRequiredService<ICompanyContext>(),
-            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
-            provider.GetRequiredService<TimeProvider>()));
+        services.AddScoped<ISalesPartyRiskReadPortV1>(CreateSalesPartyRiskReadPort);
         // FIN-S6 (F-005 D3): the official sales invoice record read by official number + ETTN over Finance's own store,
         // and the Sales-declared API-35 port answered from it (approved records only). Neither carries authority; the
         // Sales match measures its own.
-        services.AddScoped<IFinanceOfficialSalesInvoiceReadPortV1>(provider => new FinanceOfficialSalesInvoiceReadPortV1(
-            provider.GetRequiredService<FinanceDbContext>(),
-            provider.GetRequiredService<ICompanyContext>()));
+        services.AddScoped<IFinanceOfficialSalesInvoiceReadPortV1>(CreateOfficialSalesInvoiceReadPort);
         services.AddScoped<ISalesOfficialInvoiceReadPortV1>(provider => new FinanceSalesOfficialInvoiceReadPortV1(
             provider.GetRequiredService<IFinanceOfficialSalesInvoiceReadPortV1>()));
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
@@ -167,6 +154,28 @@ public static class FinanceModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
+
+    private static FinancePartyCreditPanelService CreatePartyCreditPanelService(IServiceProvider provider) =>
+        new FinancePartyCreditPanelService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<FinancePermissionPort>(),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<TimeProvider>());
+
+    private static FinanceSalesPartyRiskReadPortV1 CreateSalesPartyRiskReadPort(IServiceProvider provider) =>
+        new FinanceSalesPartyRiskReadPortV1(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<TimeProvider>());
+
+    private static FinanceOfficialSalesInvoiceReadPortV1 CreateOfficialSalesInvoiceReadPort(IServiceProvider provider) =>
+        new FinanceOfficialSalesInvoiceReadPortV1(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>());
 
     private static FinanceBankAccountService CreateBankAccountService(IServiceProvider provider)
     {

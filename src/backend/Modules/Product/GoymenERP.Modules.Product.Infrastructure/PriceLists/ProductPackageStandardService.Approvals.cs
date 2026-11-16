@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Linq.Expressions;
 using System.Text.Json;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -35,7 +34,9 @@ internal sealed partial class ProductPackageStandardService
             .OrderByDescending(file => file.CreatedAtUtc)
             .ThenByDescending(file => file.ImportId)
             .Take(ProductPackageStandardListLimitsV3.MaximumListedImports)
-            .Select(KeptFileProjection)
+            // The kept files of the company without their content (the content is never read back here).
+            .Select(file => new KeptFileRow(file.ImportId, file.FileName, file.FileSha256, file.FileSizeBytes, file.Outcome,
+                file.ProblemCode, file.ReportJson, file.Version, file.SourceLabel, file.CreatedAtUtc, file.CreatedBy))
             .ToListAsync(cancellationToken);
         await MeasureAsync(cancellationToken);
         return new ProductPackageStandardImportFileListV3(scope.CompanyId, [.. rows.Select(row =>
@@ -55,7 +56,8 @@ internal sealed partial class ProductPackageStandardService
             ? null
             : await database.PackageStandardImportFiles.AsNoTracking()
                 .Where(file => file.CompanyId == scope.CompanyId && file.ImportId == importId)
-                .Select(KeptFileProjection)
+                .Select(file => new KeptFileRow(file.ImportId, file.FileName, file.FileSha256, file.FileSizeBytes, file.Outcome,
+                    file.ProblemCode, file.ReportJson, file.Version, file.SourceLabel, file.CreatedAtUtc, file.CreatedBy))
                 .SingleOrDefaultAsync(cancellationToken);
         await MeasureAsync(cancellationToken);
         if (row is null)
@@ -608,11 +610,6 @@ internal sealed partial class ProductPackageStandardService
             version.Reason, version.EntryCount, version.CustomerEntryCount, version.CreatedAtUtc, version.CreatedBy,
             decision?.EffectiveFrom is { } from ? ProductPriceListWire.FormatDate(from) : null, decision?.DecidedBy,
             decision?.DecidedAtUtc, decision?.Reason);
-
-    /// <summary>The kept files of the company without their content (the content is never read back here).</summary>
-    private static readonly Expression<Func<ProductPackageStandardImportFileRow, KeptFileRow>> KeptFileProjection =
-        file => new KeptFileRow(file.ImportId, file.FileName, file.FileSha256, file.FileSizeBytes, file.Outcome,
-            file.ProblemCode, file.ReportJson, file.Version, file.SourceLabel, file.CreatedAtUtc, file.CreatedBy);
 
     private static KeptReport ReportOf(string json) =>
         JsonSerializer.Deserialize<KeptReport>(json, Json)
