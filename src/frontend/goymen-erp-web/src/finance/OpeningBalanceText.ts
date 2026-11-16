@@ -164,6 +164,8 @@ export const OPENING_BALANCE_ISSUE: Readonly<Record<string, string>> = {
   opening_period_version_changed:
     'Açılış dönemi ayarı öneriden sonra değişti; bu öneriye karar verilemez. Yeni dönemde yeniden önerin.',
   finance_business_day_unavailable: 'İş günü şu anda belirlenemiyor; işlem yapılamaz.',
+  finance_treasury_balance_unavailable: 'Hesabın güncel bakiyesi doğrulanamadı; ters kayıt onaylanmadı.',
+  finance_treasury_balance_insufficient: 'Hesabın güncel bakiyesi bu ters kayıt için yeterli değil; açılış bakiyesi değiştirilmedi.',
   opening_currency_mismatch: 'Seçilen para birimi kasanın veya banka hesabının para birimi değil.',
   opening_direction_required: 'Cari açılışı için cari ve yön gerekir; kasa ve banka açılışında yön verilmez.',
   opening_period_closed: 'Açılış dönemi kapalı; işlem yapılamaz.',

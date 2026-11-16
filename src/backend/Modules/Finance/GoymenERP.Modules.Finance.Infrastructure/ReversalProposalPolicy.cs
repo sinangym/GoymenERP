@@ -77,8 +77,7 @@ internal static class ReversalProposalPolicy
         string correlationId,
         DateTimeOffset recordedAtUtc)
     {
-        ValidateDecision(original, proposal, request.ProposalId, request.ExpectedVersion, actorId);
-        EnsureNotBeforeReceipt(proposal.OccurredOn, original);
+        ValidateApproval(original, proposal, request, actorId);
         if (reversalSourceId == Guid.Empty || reversalEventId == Guid.Empty || reversalSourceId == original.Id
             || string.IsNullOrWhiteSpace(correlationId))
         {
@@ -143,6 +142,13 @@ internal static class ReversalProposalPolicy
         proposal.ReversalSourceId = reversalSourceId;
         proposal.Version++;
         return new ApprovedReversalRows(source, moneyEvent);
+    }
+
+    internal static void ValidateApproval(ReceiptDraftRow original, ReversalProposalRow proposal,
+        ApproveReversalRequest request, string actorId)
+    {
+        ValidateDecision(original, proposal, request.ProposalId, request.ExpectedVersion, actorId);
+        EnsureNotBeforeReceipt(proposal.OccurredOn, original);
     }
 
     public static void Reject(

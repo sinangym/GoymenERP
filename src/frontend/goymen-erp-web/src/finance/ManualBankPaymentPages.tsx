@@ -3,6 +3,7 @@ import { isDateOnly } from './dateOnly'
 import { amountInputFromWire, parseAmountInput } from './decimalText'
 import { decodeReadResult, isBoundUuid, isOpaqueVersion, type ProfileReference } from './contract'
 import { useFinancePort } from './financePort'
+import { issueText } from './financeText'
 import {
   decodeManualBankPaymentCommandResult,
   decodeManualBankPaymentPage,
@@ -335,6 +336,12 @@ export function ManualBankPaymentDetailPage({
       return
     }
     const decoded = decodeManualBankPaymentCommandResult(reply.body, companyId)
+    if (decoded.ok && decoded.value.outcome !== 'Succeeded') {
+      const balanceIssue = decoded.value.issues.find((issue) =>
+        issue.code === 'finance_treasury_balance_unavailable' || issue.code === 'finance_treasury_balance_insufficient')
+      setMessage(balanceIssue === undefined ? 'İşlem tamamlanamadı.' : issueText(balanceIssue.code))
+      return
+    }
     if (!decoded.ok || decoded.value.outcome !== 'Succeeded' || decoded.value.resource.id !== paymentId) {
       setMessage('İşlem tamamlanamadı.')
       return

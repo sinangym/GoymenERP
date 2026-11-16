@@ -1126,7 +1126,7 @@ public sealed class FinanceOpeningBalanceTests
                 new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]),
                 parties ?? new FixedParty(),
                 period ?? new FixedPeriod(new FinanceOpeningPeriodAnswer(OpeningPeriodState.Open, PeriodVersion)),
-                new ObservedAuditCollector(collector, auditObserved), Envelopes(), new FixedClock());
+                new ObservedAuditCollector(collector, auditObserved), Envelopes(), new FixedClock(), new SyntheticSufficientTreasuryBalanceGuard());
             return await call(service, new FinanceContext(companyId, actor, correlation ?? "SENTETIK-correlation", null));
         }
     }
