@@ -1621,3 +1621,58 @@ export function closeBody(snapshot: CloseSnapshot): Record<string, unknown> {
     exceptionReason: snapshot.exceptionReason ?? null,
   }
 }
+
+/**
+ * F-009 D3/D6 (API-25, UI-14): one output correction as the caller froze it. The reversal fact id, Inventory's
+ * reversal movement id and the key are minted once; re-sending the SAME snapshot sends all three unchanged, so the
+ * server answers it as the same command (ADR-011) and never takes the mass back twice. `outputId` is the declaration
+ * being corrected (the path's fact id); `labelId` / `expectedLabelVersion` are its output label as Inventory's detail
+ * read it. The kilograms stay text (Ö2); the server's kg profile decides the scale.
+ */
+export interface OutputCorrectionSnapshot {
+  readonly idempotencyKey: string
+  readonly outputId: string
+  readonly reversalId: string
+  readonly movementId: string
+  readonly expectedVersion: number
+  readonly labelId: string
+  /** Inventory's label version as its detail read sent it: a positive invariant integer text. */
+  readonly expectedLabelVersion: string
+  readonly kg: string
+  readonly reason: string
+  /** UTC instant (`…Z`) the user named for the correction. */
+  readonly occurredAtUtc: string
+}
+
+/** The request body exactly as `CorrectOutputRequestV1` names it; the declaration's id travels in the path. */
+export function outputCorrectionBody(snapshot: OutputCorrectionSnapshot): Record<string, unknown> {
+  return {
+    reversalId: snapshot.reversalId,
+    expectedVersion: snapshot.expectedVersion,
+    labelId: snapshot.labelId,
+    expectedLabelVersion: snapshot.expectedLabelVersion,
+    movementId: snapshot.movementId,
+    kg: snapshot.kg,
+    reason: snapshot.reason,
+    occurredAtUtc: snapshot.occurredAtUtc,
+  }
+}
+
+/**
+ * F-009 D5/D6 (URT-D33): one order cancel as the caller froze it — the order version this screen read, a required
+ * reason and the key. The cancel endpoint is URT-S4's; until its contract is merged this body is a draft
+ * (`expectedVersion`, `reason`) and the control that sends it is behind a capability no provider publishes.
+ */
+export interface OrderCancelSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+  readonly reason: string
+}
+
+/** The draft request body of the order cancel (URT-S4); see {@link OrderCancelSnapshot}. */
+export function orderCancelBody(snapshot: OrderCancelSnapshot): Record<string, unknown> {
+  return {
+    expectedVersion: snapshot.expectedVersion,
+    reason: snapshot.reason,
+  }
+}
