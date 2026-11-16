@@ -49,6 +49,9 @@ public sealed class SecurityEventContractTests
     [InlineData(SecurityEventTypesV1.SecurityEventsRead, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailClosed)]
     [InlineData(SecurityEventTypesV1.AiToolCalled, SecurityEventPhasesV1.Started, SecurityEventWriteFailureMode.FailClosed)]
     [InlineData(SecurityEventTypesV1.AiToolCalled, SecurityEventPhasesV1.Completed, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
+    [InlineData(SecurityEventTypesV1.FounderRecovered, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailClosed)]
+    [InlineData(SecurityEventTypesV1.FounderPasswordReset, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailClosed)]
+    [InlineData(SecurityEventTypesV1.FounderRecoveryRefused, SecurityEventPhasesV1.Single, SecurityEventWriteFailureMode.FailOpenWithAlarm)]
     public void Failure_mode_map_follows_decision_E1(string eventType, string phase, SecurityEventWriteFailureMode expected)
     {
         Assert.Equal(expected, SecurityEventWriteFailureModesV1.Resolve(eventType, phase));
@@ -114,6 +117,9 @@ public sealed class SecurityEventContractTests
     [InlineData(SecurityEventTypesV1.AuthorizationDenied, SecurityEventRetentionClassesV1.No134)]
     [InlineData(SecurityEventTypesV1.SecurityEventsRead, SecurityEventRetentionClassesV1.No134)]
     [InlineData(SecurityEventTypesV1.LoginRateLimited, SecurityEventRetentionClassesV1.No134)]
+    [InlineData(SecurityEventTypesV1.FounderRecovered, SecurityEventRetentionClassesV1.No134)]
+    [InlineData(SecurityEventTypesV1.FounderPasswordReset, SecurityEventRetentionClassesV1.No134)]
+    [InlineData(SecurityEventTypesV1.FounderRecoveryRefused, SecurityEventRetentionClassesV1.No134)]
     public void Retention_class_map_follows_No134_No157_and_E9(string eventType, string expected)
     {
         Assert.Equal(expected, SecurityEventRetentionClassesV1.ForEventType(eventType));
@@ -157,6 +163,88 @@ public sealed class SecurityEventContractTests
         // The summary is already a count over its own window; the writer never folds it into another row.
         Assert.DoesNotContain(SecurityEventTypesV1.LoginRateLimited, SecurityEventTypesV1.DenialTypes);
         Assert.False(SecurityEventAggregationEligibilityV1.IsEligible(SecurityEventTypesV1.LoginRateLimited, SecurityEventPhasesV1.Single));
+    }
+
+    [Fact]
+    public void Founder_recovery_type_names_are_pinned_and_are_not_aggregated()
+    {
+        Assert.Equal("identity.founder.recovered", SecurityEventTypesV1.FounderRecovered);
+        Assert.Equal("identity.founder.password_reset", SecurityEventTypesV1.FounderPasswordReset);
+        Assert.Equal("identity.founder.recovery_refused", SecurityEventTypesV1.FounderRecoveryRefused);
+        Assert.All(SecurityEventTypesV1.FounderRecoveryTypes, type =>
+        {
+            Assert.Contains(type, SecurityEventTypesV1.All);
+            // Every recovery run is its own row; a refused run is never folded into a denial aggregate.
+            Assert.DoesNotContain(type, SecurityEventTypesV1.DenialTypes);
+            Assert.False(SecurityEventAggregationEligibilityV1.IsEligible(type, SecurityEventPhasesV1.Single));
+        });
+    }
+
+    [Fact]
+    public void Valid_founder_recovery_fixtures_pass_validation()
+    {
+        Assert.Empty(SecurityEventV1Validator.Validate(FounderRecovery(SecurityEventTypesV1.FounderRecovered)));
+        Assert.Empty(SecurityEventV1Validator.Validate(FounderRecovery(SecurityEventTypesV1.FounderPasswordReset)));
+        Assert.Empty(SecurityEventV1Validator.Validate(FounderRecovery(SecurityEventTypesV1.FounderRecoveryRefused)));
+    }
+
+    [Fact]
+    public void Founder_recovery_events_require_platform_scope_without_company()
+    {
+        var withCompany = FounderRecovery(SecurityEventTypesV1.FounderRecovered) with
+        {
+            ScopeKind = SecurityEventScopeKindsV1.Company,
+            CompanyId = Guid.NewGuid(),
+        };
+        var withRequestedCompany = FounderRecovery(SecurityEventTypesV1.FounderPasswordReset) with
+        {
+            RequestedCompanyId = Guid.NewGuid(),
+        };
+
+        Assert.Contains("founder_recovery_requires_platform_scope_without_company", SecurityEventV1Validator.Validate(withCompany));
+        Assert.Contains(
+            "founder_recovery_requires_platform_scope_without_company",
+            SecurityEventV1Validator.Validate(withRequestedCompany));
+    }
+
+    [Fact]
+    public void Founder_recovery_events_require_the_system_actor_and_no_permission_code()
+    {
+        var userActor = FounderRecovery(SecurityEventTypesV1.FounderRecovered) with
+        {
+            ActorType = SecurityEventActorTypesV1.User,
+            ActorId = Guid.NewGuid().ToString("D"),
+        };
+        var withPermission = FounderRecovery(SecurityEventTypesV1.FounderRecovered) with
+        {
+            PermissionCode = "identity.users.manage",
+        };
+
+        Assert.Contains("founder_recovery_requires_system_actor", SecurityEventV1Validator.Validate(userActor));
+        Assert.Contains("founder_recovery_forbids_permission_code", SecurityEventV1Validator.Validate(withPermission));
+    }
+
+    [Fact]
+    public void Founder_recovery_outcomes_are_fixed_per_type_and_a_refusal_carries_only_policy_refused()
+    {
+        var deniedSuccess = FounderRecovery(SecurityEventTypesV1.FounderPasswordReset) with
+        {
+            Outcome = SecurityEventOutcomesV1.Denied,
+            ReasonCode = SecurityEventReasonCodesV1.PolicyRefused,
+        };
+        var allowedRefusal = FounderRecovery(SecurityEventTypesV1.FounderRecoveryRefused) with
+        {
+            Outcome = SecurityEventOutcomesV1.Allowed,
+            ReasonCode = null,
+        };
+        var otherReason = FounderRecovery(SecurityEventTypesV1.FounderRecoveryRefused) with
+        {
+            ReasonCode = SecurityEventReasonCodesV1.CredentialsInvalid,
+        };
+
+        Assert.NotEmpty(SecurityEventV1Validator.Validate(deniedSuccess));
+        Assert.NotEmpty(SecurityEventV1Validator.Validate(allowedRefusal));
+        Assert.Contains("founder_recovery_reason_code_not_policy_refused", SecurityEventV1Validator.Validate(otherReason));
     }
 
     [Fact]

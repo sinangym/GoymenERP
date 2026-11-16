@@ -27,7 +27,7 @@ internal sealed class ConsoleFounderBootstrapConsole(TextWriter prompts) : IFoun
 
     public string? ReadNewPasswordConfirmation() => ReadSecret(FounderBootstrapTexts.PasswordConfirmationPrompt);
 
-    private string ReadSecret(string prompt)
+    internal string ReadSecret(string prompt)
     {
         prompts.Write(prompt);
         var secret = new StringBuilder();

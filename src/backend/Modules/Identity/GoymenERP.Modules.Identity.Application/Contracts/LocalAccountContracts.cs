@@ -38,7 +38,9 @@ public sealed record LocalCredentialLoginState(
     DateTimeOffset? LockoutEndUtc,
     DateTimeOffset? TemporaryPasswordIssuedAtUtc,
     Guid SecurityStamp,
-    bool UserIsActive);
+    bool UserIsActive,
+    DateTimeOffset? TemporaryPasswordExpiresAtUtc = null,
+    DateTimeOffset? TemporaryPasswordConsumedAtUtc = null);
 
 /// <summary>
 /// Storage port of the login path. Login writes are single conditional updates that never raise
@@ -61,6 +63,20 @@ public interface ILocalCredentialStore
         int? rehashedFormatVersion,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// KIM-D23/KIM-D43 one-time use of a temporary password: one conditional write that sets
+    /// <c>TemporaryPasswordConsumedAtUtc</c> to <paramref name="nowUtc"/> (and the optional rehash) only while the
+    /// row is still the one read and the temporary password is still unconsumed. The temporary fields are not cleared;
+    /// the forced password change clears them. <see langword="false"/> means another attempt consumed it first or the
+    /// row changed; nothing was written.
+    /// </summary>
+    Task<bool> TryConsumeTemporaryPasswordAsync(
+        LocalCredentialLoginState read,
+        string? rehashedPasswordHash,
+        int? rehashedFormatVersion,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken);
+
     /// <summary>The per-request session check: the stored stamp and whether the account may still hold a session.</summary>
     Task<LocalCredentialSessionState?> FindForSessionAsync(Guid userId, CancellationToken cancellationToken);
 
@@ -80,7 +96,8 @@ public sealed record LocalCredentialSessionState(
     Guid SecurityStamp,
     bool UserIsActive,
     bool MustChangePassword,
-    DateTimeOffset? TemporaryPasswordIssuedAtUtc);
+    DateTimeOffset? TemporaryPasswordIssuedAtUtc,
+    DateTimeOffset? TemporaryPasswordConsumedAtUtc = null);
 
 /// <summary>ID-1 local account login (<c>POST /api/v1/identity/session/login</c>). It takes no idempotency key.</summary>
 public interface ILocalAccountLoginService
@@ -126,7 +143,7 @@ public interface ILocalAccountSessionValidator
 
 public enum LocalAccountSessionState
 {
-    /// <summary>Unknown user, other stamp, inactive account or an outstanding temporary password: the session ends.</summary>
+    /// <summary>Unknown user, other stamp, inactive account or an unconsumed temporary password: the session ends.</summary>
     NotCurrent = 0,
 
     /// <summary>The session is valid and unrestricted.</summary>

@@ -1446,6 +1446,29 @@ public static class ErpPermissions
     public const string SettingsSegregationOfDutiesManage = "settings.segregation-of-duties.manage";
 
     /// <summary>
+    /// KIM-S19 (B-13): read the company's Finance opening-balance period and record open/close versions
+    /// (<c>SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage</c>). Registered, not granted: no role, seed or
+    /// user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
+
+    /// <summary>
+    /// KIM-S18 (KIM-D49/KIM-D51, API-98): read the company's purchasing reference lists (expense type, service type) and add,
+    /// rename, deactivate or reactivate their entries (<c>SettingsReferenceListPermissionManifestV1.PurchasingListsManage</c>).
+    /// The decided personas (KIM-D51: purchasing manager and administrator) are a persona note only. Registered, not granted:
+    /// no role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsReferenceListsManage = "settings.reference-lists.manage";
+
+    /// <summary>
+    /// KIM-S18 (B-14, URT-D8): read the company's production reference lists (paint color, scrap kind) and add, rename,
+    /// deactivate or reactivate their entries (<c>SettingsReferenceListPermissionManifestV1.ProductionListsManage</c>). Who edits
+    /// these lists is not decided (NEEDS-SINAN). Registered, not granted: no role, seed or user receives it here. Company-wide
+    /// only. Not Critical.
+    /// </summary>
+    public const string SettingsProductionReferenceListsManage = "settings.production-reference-lists.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1777,6 +1800,9 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsFinanceOpeningPeriodManage,
+            SettingsReferenceListsManage,
+            SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -2038,6 +2064,9 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsFinanceOpeningPeriodManage,
+            SettingsReferenceListsManage,
+            SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,

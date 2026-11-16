@@ -9,7 +9,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { COMPANY_A, installFetch, json, noContent, problem, renderAt, type RecordedRequest } from './testHarness'
+import {
+  COMPANY_A,
+  installFetch,
+  json,
+  noContent,
+  problem,
+  renderAt,
+  type HarnessOptions,
+  type RecordedRequest,
+} from './testHarness'
 import { ORGANIZATION_CAPABILITY, ORGANIZATION_ROUTE } from './capabilities'
 import { COMPANY_TAX_ID_PROBLEM } from './companyTaxIdContract'
 import { COMPANY_TAX_ID_TEXT } from './companyTaxIdText'
@@ -20,6 +29,22 @@ const REQUEST = 'cccccccc-0000-0000-0000-000000000003'
 const VIEW_RE = /\/organization\/company\/tax-id$/
 const CREATE_RE = /\/organization\/company\/tax-id\/change-requests$/
 const DECIDE_RE = /\/organization\/company\/tax-id\/change-requests\/[^/]+\/decision$/
+const CORRECTIONS_RE = /\/organization\/company\/tax-id\/corrections$/
+const APPLY_RE = /\/organization\/company\/tax-id\/corrections\/[^/]+\/apply$/
+const CORRECTION = 'dddddddd-0000-0000-0000-000000000004'
+
+/** KIM-D48: a case that is not about corrections sees an empty correction list, never a 404 block. */
+function installTaxIdFetch(options: HarnessOptions): RecordedRequest[] {
+  const respond = options.respond
+  return installFetch({
+    ...options,
+    respond: (url, init) =>
+      respond?.(url, init) ??
+      (CORRECTIONS_RE.test(url) && (init?.method ?? 'GET') === 'GET'
+        ? json({ companyId: COMPANY_A, companyVersion: 3, canApply: false, items: [] })
+        : undefined),
+  })
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -72,7 +97,7 @@ const writes = (recorded: readonly RecordedRequest[]) => recorded.filter((reques
 
 describe('CompanyTaxIdPage', () => {
   it('shows the active company’s VKN and nothing to decide when nothing is pending', async () => {
-    const recorded = installFetch({
+    const recorded = installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url) => (VIEW_RE.test(url) ? json(view(MAKER)) : undefined),
     })
@@ -88,7 +113,7 @@ describe('CompanyTaxIdPage', () => {
   })
 
   it('renders the server’s 403 as the forbidden block, never an empty card', async () => {
-    installFetch({
+    installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url) => (VIEW_RE.test(url) ? problem(403) : undefined),
     })
@@ -99,7 +124,7 @@ describe('CompanyTaxIdPage', () => {
   })
 
   it('treats an answer about another company as malformed', async () => {
-    installFetch({
+    installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url) =>
         VIEW_RE.test(url) ? json(view(MAKER, { companyId: 'bbbbbbbb-0000-0000-0000-000000000002' })) : undefined,
@@ -118,7 +143,7 @@ describe('CompanyTaxIdPage', () => {
   })
 
   it('refuses a malformed VKN locally without minting a request', async () => {
-    const recorded = installFetch({
+    const recorded = installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url) => (VIEW_RE.test(url) ? json(view(MAKER)) : undefined),
     })
@@ -135,7 +160,7 @@ describe('CompanyTaxIdPage', () => {
 
   it('sends the request with the read version and a key, then re-reads the view', async () => {
     let created = false
-    const recorded = installFetch({
+    const recorded = installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url, init) => {
         if (CREATE_RE.test(url) && init?.method === 'POST') {
@@ -167,7 +192,7 @@ describe('CompanyTaxIdPage', () => {
   })
 
   it('says the VKN is used by another company when the server refuses with 422', async () => {
-    installFetch({
+    installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url, init) => {
         if (CREATE_RE.test(url) && init?.method === 'POST') {
@@ -189,7 +214,7 @@ describe('CompanyTaxIdPage', () => {
 
   it('keeps the key and the command after an unknown outcome and resends them unchanged', async () => {
     let attempts = 0
-    const recorded = installFetch({
+    const recorded = installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url, init) => {
         if (CREATE_RE.test(url) && init?.method === 'POST') {
@@ -220,7 +245,7 @@ describe('CompanyTaxIdPage', () => {
   })
 
   it('never offers approve or reject to the preparer of the pending request', async () => {
-    installFetch({
+    installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url) => (VIEW_RE.test(url) ? json(view(BOTH_AS_PREPARER, { pending: pending() })) : undefined),
     })
@@ -233,7 +258,7 @@ describe('CompanyTaxIdPage', () => {
 
   it('lets another holder approve with the read version and shows the decided request afterwards', async () => {
     let decided = false
-    const recorded = installFetch({
+    const recorded = installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url, init) => {
         if (DECIDE_RE.test(url) && init?.method === 'POST') {
@@ -273,7 +298,7 @@ describe('CompanyTaxIdPage', () => {
   })
 
   it('explains a stale request refusal and offers a reload', async () => {
-    installFetch({
+    installTaxIdFetch({
       capabilities: CAPABILITIES,
       respond: (url, init) => {
         if (DECIDE_RE.test(url) && init?.method === 'POST') {
@@ -289,5 +314,154 @@ describe('CompanyTaxIdPage', () => {
     const alert = await screen.findByRole('alert')
     expect(within(alert).getByText('Şirket kaydı talepten sonra değişti')).toBeTruthy()
     expect(within(alert).getByRole('button', { name: COMPANY_TAX_ID_TEXT.reload })).toBeTruthy()
+  })
+
+  it('lists a staged placeholder correction and lets an approver apply it with the read company version', async () => {
+    let appliedCorrection = false
+    const correction = (overrides: Record<string, unknown> = {}) => ({
+      id: CORRECTION,
+      source: 'organization.migration.stage-company-tax-id-corrections',
+      stagedVkn: '1111111111',
+      correctedVkn: null,
+      reason: 'Yer tutucu VKN işaretlendi',
+      status: 'pending',
+      stagedAtUtc: '2026-11-15T20:00:00Z',
+      appliedBy: null,
+      appliedAtUtc: null,
+      isCurrent: true,
+      ...overrides,
+    })
+    const recorded = installTaxIdFetch({
+      capabilities: CAPABILITIES,
+      respond: (url, init) => {
+        if (APPLY_RE.test(url) && init?.method === 'POST') {
+          appliedCorrection = true
+          return noContent()
+        }
+        if (CORRECTIONS_RE.test(url)) {
+          return json({
+            companyId: COMPANY_A,
+            companyVersion: appliedCorrection ? 4 : 3,
+            canApply: true,
+            items: [
+              appliedCorrection
+                ? correction({
+                    status: 'applied',
+                    appliedBy: 'Onaylayan B',
+                    appliedAtUtc: '2026-11-15T21:00:00Z',
+                    isCurrent: false,
+                  })
+                : correction(),
+            ],
+          })
+        }
+        if (VIEW_RE.test(url)) {
+          return json(
+            view(CHECKER, appliedCorrection ? { vkn: null, isPlaceholder: true, version: 4 } : { vkn: '1111111111', isPlaceholder: true }),
+          )
+        }
+        return undefined
+      },
+    })
+    renderAt(PATH)
+
+    expect(await screen.findByText(COMPANY_TAX_ID_TEXT.correctionsHeading)).toBeTruthy()
+    await userEvent.click(await screen.findByRole('button', { name: COMPANY_TAX_ID_TEXT.applyCorrection }))
+
+    expect(await screen.findByText(COMPANY_TAX_ID_TEXT.correctionAppliedTitle)).toBeTruthy()
+    const [write] = writes(recorded)
+    expect(write.url).toMatch(new RegExp(`/corrections/${CORRECTION}/apply$`))
+    expect(write.body).toEqual({ expectedVersion: 3 })
+    expect(write.headers['Idempotency-Key']).toBeTruthy()
+    expect(await screen.findByText('Uygulandı')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: COMPANY_TAX_ID_TEXT.applyCorrection })).toBeNull()
+  })
+
+  it('never offers apply without the approve name or on a correction that is no longer current', async () => {
+    installTaxIdFetch({
+      capabilities: CAPABILITIES,
+      respond: (url) => {
+        if (CORRECTIONS_RE.test(url)) {
+          return json({
+            companyId: COMPANY_A,
+            companyVersion: 3,
+            canApply: false,
+            items: [
+              {
+                id: CORRECTION,
+                source: 'organization.migration.stage-company-tax-id-corrections',
+                stagedVkn: '1111111111',
+                correctedVkn: null,
+                reason: 'Yer tutucu VKN işaretlendi',
+                status: 'pending',
+                stagedAtUtc: '2026-11-15T20:00:00Z',
+                appliedBy: null,
+                appliedAtUtc: null,
+                isCurrent: true,
+              },
+            ],
+          })
+        }
+        return VIEW_RE.test(url) ? json(view(MAKER, { vkn: '1111111111', isPlaceholder: true })) : undefined
+      },
+    })
+    renderAt(PATH)
+
+    expect(await screen.findByText(COMPANY_TAX_ID_TEXT.correctionNoPermission)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: COMPANY_TAX_ID_TEXT.applyCorrection })).toBeNull()
+  })
+
+  it('explains a stale correction refusal and offers a reload', async () => {
+    installTaxIdFetch({
+      capabilities: CAPABILITIES,
+      respond: (url, init) => {
+        if (APPLY_RE.test(url) && init?.method === 'POST') {
+          return json({ code: COMPANY_TAX_ID_PROBLEM.correctionStale, status: 409 }, 409)
+        }
+        if (CORRECTIONS_RE.test(url)) {
+          return json({
+            companyId: COMPANY_A,
+            companyVersion: 3,
+            canApply: true,
+            items: [
+              {
+                id: CORRECTION,
+                source: 'organization.migration.stage-company-tax-id-corrections',
+                stagedVkn: '1111111111',
+                correctedVkn: null,
+                reason: 'Yer tutucu VKN işaretlendi',
+                status: 'pending',
+                stagedAtUtc: '2026-11-15T20:00:00Z',
+                appliedBy: null,
+                appliedAtUtc: null,
+                isCurrent: true,
+              },
+            ],
+          })
+        }
+        return VIEW_RE.test(url) ? json(view(CHECKER, { vkn: '1111111111', isPlaceholder: true })) : undefined
+      },
+    })
+    renderAt(PATH)
+
+    await userEvent.click(await screen.findByRole('button', { name: COMPANY_TAX_ID_TEXT.applyCorrection }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('Düzeltme güncelliğini yitirdi')).toBeTruthy()
+    expect(within(alert).getByRole('button', { name: COMPANY_TAX_ID_TEXT.reload })).toBeTruthy()
+  })
+
+  it('shows a malformed correction list as its own block without hiding the VKN card', async () => {
+    installTaxIdFetch({
+      capabilities: CAPABILITIES,
+      respond: (url) => {
+        if (CORRECTIONS_RE.test(url)) return json({ companyId: COMPANY_A, items: [] })
+        return VIEW_RE.test(url) ? json(view(MAKER)) : undefined
+      },
+    })
+    renderAt(PATH)
+
+    expect(await screen.findByText('1234567890')).toBeTruthy()
+    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
   })
 })

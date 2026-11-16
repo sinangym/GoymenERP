@@ -122,6 +122,12 @@ public enum CommandResult
 
     /// <summary>KIM-D40: the proposed VKN fails the official last-digit check; it is refused before approval.</summary>
     TaxIdCheckDigitInvalid = 15,
+
+    /// <summary>KIM-D48: the staged VKN correction is no longer pending (already applied).</summary>
+    TaxIdCorrectionNotPending = 16,
+
+    /// <summary>KIM-D48: the company's VKN moved after the correction was staged; it cannot be applied.</summary>
+    TaxIdCorrectionStale = 17,
 }
 
 public sealed record CommandExecutionResult(
@@ -218,6 +224,16 @@ public static class CommandResponses
                 422,
                 "VKN kontrol hanesi hatalı.",
                 "Önerilen VKN resmî kontrol hanesi kuralını sağlamıyor; VKN'yi kontrol edip yeniden girin."),
+            CommandResult.TaxIdCorrectionNotPending => new CommandResponseSnapshot(
+                result,
+                409,
+                "VKN düzeltmesi beklemede değil.",
+                "Bu VKN düzeltmesi artık onay beklemiyor; ekranı yenileyin."),
+            CommandResult.TaxIdCorrectionStale => new CommandResponseSnapshot(
+                result,
+                409,
+                "VKN düzeltmesi güncelliğini yitirdi.",
+                "Düzeltme hazırlandıktan sonra şirketin VKN'si değişti; düzeltme uygulanamaz."),
             CommandResult.Created => throw new ArgumentException(
                 "Created cevabı oluşturulan kaydın kimliğini ve sürümünü içermelidir.",
                 nameof(result)),

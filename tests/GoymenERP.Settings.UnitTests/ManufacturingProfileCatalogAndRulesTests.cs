@@ -176,7 +176,7 @@ public sealed class ManufacturingProfileCatalogAndRulesTests
     }
 
     [Fact]
-    public void The_parameter_lifecycle_reuses_the_tolerance_lifecycle_policy_maker_checker()
+    public void The_parameter_lifecycle_reuses_the_tolerance_lifecycle_policy_single_flow()
     {
         var at = new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero);
         var company = ApprovedUnitProfileCatalog.GdcCompanyId;
@@ -184,15 +184,14 @@ public sealed class ManufacturingProfileCatalogAndRulesTests
             Guid.NewGuid(), SettingsManufacturingProcessesV1.Paint, 1,
             new ManufacturingToleranceProfileCommandContextV1(company, "maker", 0, "k1", "taslak", at)));
         Assert.Equal(ManufacturingProfileStatusesV1.Draft, draft.Status.ToString());
-        Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired,
+        Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired,
             Assert.Throws<ManufacturingToleranceProfileLifecycleException>(() =>
                 ManufacturingToleranceProfileLifecyclePolicyV1.Approve(draft,
-                    new ManufacturingToleranceProfileCommandContextV1(company, "maker", 1, "k2", "onay", at))).Code);
-        var approved = ManufacturingToleranceProfileLifecyclePolicyV1.Approve(draft,
-            new ManufacturingToleranceProfileCommandContextV1(company, "checker", 1, "k3", "onay", at));
-        var published = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(approved,
-            new ManufacturingToleranceProfileCommandContextV1(company, "checker", 2, "k4", "yayın", at));
-        Assert.Equal((ManufacturingProfileStatusesV1.Published, 3L), (published.Status.ToString(), published.StateVersion));
+                    new ManufacturingToleranceProfileCommandContextV1(company, "checker", 1, "k2", "onay", at))).Code);
+        var published = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(draft,
+            new ManufacturingToleranceProfileCommandContextV1(company, "maker", 1, "k3", "yayın", at));
+        Assert.Equal((ManufacturingProfileStatusesV1.Published, 2L), (published.Status.ToString(), published.StateVersion));
+        Assert.Null(published.ApprovedBy);
     }
 
     [Fact]

@@ -649,6 +649,25 @@ D-MFG-PROFILE-AUTH-01=A (the existing `ManufacturingToleranceProfileLifecyclePol
   dates are Europe/Istanbul business dates (the same as before U1-b). Work center ids are not validated against Organization
   (as for parameter profiles). A predecessor whose window was closed by a successor shows the registry window in the view but
   its lifecycle row keeps the prepared one.
+- **URN-D6 single flow (F029-C, KIM-S15).** Both families are now prepare → publish: `POST …/{id}/publication` publishes a
+  Draft directly and the preparer may publish their own version (no maker/publisher separation). `POST …/{id}/approval`
+  is retired: it keeps its route, permission fence and idempotency, changes nothing and stores the terminal refusal
+  `settings_manufacturing_profile_approval_retired` (409, replayed under the same key). Versions approved under
+  D-MFG-PROFILE-AUTH-01=A stay valid history and an Approved version can still be published (its approval is kept). A direct
+  publication writes the registry row with `ApprovalStatus = 'Published'` and the publisher in the authorization columns; a
+  legacy approved one still writes `'Approved'` with the approver. The `published.v1` audit payload is unchanged (no v2). The
+  `…approve` names stay registered (granted to no role) for the retired route.
+- **Migration** `AdoptManufacturingProfileSingleFlow` (forward fix, dotnet ef): widens `CK_SettingsMfgParameterProfiles_Lifecycle`
+  and `CK_SettingsMfgToleranceVersions_Lifecycle` (a Published row needs a publication and either no approval or, as history, an
+  approval by someone other than the preparer) and `CK_SettingsMfgTolerance_Approval` (`ApprovalStatus IN ('Approved',
+  'Published')`). `Down` refuses first with `THROW 51345` while any version is published without an approval or by its
+  preparer, or a `'Published'` registry row exists; an empty store rolls back to the approval-era checks. Evidence: unit
+  `ManufacturingToleranceProfileLifecyclePolicyV1Tests`, model `SettingsManufacturingProfileSingleFlowPersistenceModelTests`,
+  real SQL `SettingsManufacturingProfileSqlServerRelationalAcceptanceTests` (every lifecycle scenario asserts the 51345 refusal;
+  `Single_flow_migration_rolls_back_to_the_approval_checks_and_reapplies_on_an_empty_store_on_real_sql`).
+- **Not done here (URN-D5 version-0 transfer).** Copying the reviewed version-0 catalog into company-owned Settings versions
+  (an audited, idempotent transfer command) is not built: which companies receive it and under which permission name is
+  NEEDS-SINAN; until then the catalog keeps answering as version 0.
 
 ## Exchange-rate record (DEC-FIN-010; KUR_GUNU SAT-D54/D55; EK24 SAT-D169…D172; OPEN-012 partial)
 
@@ -865,3 +884,44 @@ buffer 0. The per-work-center buffer is the only buffer (URT-D92); there is no c
 
 Open: whether a `Days` buffer counts working days or calendar days (NEEDS-SINAN; the consumer applies it), and a
 company-wide buffer (NEEDS-SINAN, URT-D91 limits).
+
+## Company policy registry and finance opening period (B-13, ADR-SET-002, URT-D96, SAT-D381, ALS-D105, FNS-D97)
+
+One registry of company-wide policy keys kept as insert-only, versioned Settings records. A missing record is never read as a
+permissive value. Nothing is seeded.
+
+| Part | What |
+|---|---|
+| Tables | `CompanyPolicyVersions`, keyed by (`CompanyId`, `PolicyKey`, `Version`) under the company filter: one version sequence per company and key (`finance.opening-period`, `manufacturing.due-date-buffer`, `sales.subcontract-tax-default`, `purchasing.subcontract-tax-default`). `FinanceCreditAccountMappingVersions`, keyed by (`CompanyId`, `Purpose`, `Version`), is empty (FNS-D97: no write path yet). CHECK constraints hold the shape. |
+| Migration | `AddCompanyPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51853` while any policy or mapping version exists (forward fix). An empty store rolls back freely. |
+| Opening period | Finance's `IFinanceOpeningPeriodReader` is answered in the host by `SettingsFinanceOpeningPeriodReader` (registered with `Replace` after the Finance default). No record, a refused or unreadable read or an invalid row answers `NotAvailable`; it is never assumed open. The version text is `finance.opening-period:<version>` and changes on every open or close. |
+| Due-date buffer | URT-D96: company-wide working days, start value 0 when nothing is recorded. The upper bound is NEEDS-SINAN. |
+| Subcontract tax default | SAT-D381 (sales) and ALS-D105 (purchasing) are separate keys with the tax master's item type default shape; codes must exist in the tax master. Only the sales side has a write route; the purchasing write authority is NEEDS-SINAN, so it reads "no default". |
+| Credit account mapping | FNS-D97: `ISettingsFinanceCreditAccountMappingProviderV1` answers `MappingMissing` ("eşleme eksik") until a mapping is recorded. |
+| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered (NEEDS-SINAN N-12: format, reset, gaps). |
+| Names | `settings.finance-opening-period.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). The due-date buffer route uses `manufacturing.plans.approve`; the sales tax default route uses `purchasing.orders.approve` (to be confirmed, NEEDS-SINAN). |
+| Routes | `GET` and `POST .../versions` under `/api/v1/settings/company-policies/` for `finance-opening-period`, `manufacturing-due-date-buffer` and `sales-subcontract-tax-default`. POST returns 204. |
+| Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). One save with the execution row and one audit event. Terminal refusals (409, 422) are stored and replay. |
+| Evidence | Unit: `CompanyPolicyRulesV1Tests`. Model: `SettingsCompanyPolicyPersistenceModelTests`. Names: `SettingsCompanyPolicyPermissionRegistrationTests`. Adapter: `SettingsFinanceOpeningPeriodReaderTests`. No real-SQL acceptance test yet. |
+
+## Reference lists — expense type, service type, paint color, scrap kind (API-98, B-14; ALS-D79, BS-10, KIM-D49, KIM-D51)
+
+The company's reference lists are versioned Settings records. The purchasing, stock/logistics, production and finance modules
+read them through `ISettingsReferenceListReaderV1`. Every list starts empty and nothing is seeded. Only the expense type,
+service type, paint color and scrap kind lists are open. The operation type list is not opened: it has no route, no write and
+no stored kind, and the reader answers it as not enabled. The service type list holds service types only, so the sales
+subcontract ("satış fasonu", an operation type value) is outside it by construction.
+
+| Part | What |
+|---|---|
+| Tables | `ReferenceListEntries`, keyed by (`CompanyId`, `EntryId`) with a unique (`CompanyId`, `Kind`, `Code`), holds the list kind (`ExpenseType`, `ServiceType`, `PaintColor`, `ScrapKind`; binary collation) and the code (1–32 of `A–Z 0–9 . _ -`, starting with a letter or digit). `ReferenceListEntryVersions`, keyed by (`CompanyId`, `EntryId`, `Version`), holds the name (≤ 200), active flag, who recorded it, when and why. Both are under the company filter. Version rows are insert-only and the latest is in force. The code never changes. CHECK constraints hold the shape. |
+| Migration | `AddReferenceListEntries` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51886` while any entry or version exists (forward fix). An empty store rolls back freely. |
+| Port | `ISettingsReferenceListReaderV1.ListAsync(companyId, kind)` returns `SettingsReferenceListV1` with every entry `{Id, Code, Name, Active, Version}` by code, and `Enabled = false` with no entries for a list that is not open. `GetAsync(companyId, kind, entryId)` answers `Found`, `NotFound`, `Inactive` or `Unavailable`. A list read gives `settings_access_denied`, `settings_provider_unavailable` or `settings_profile_invalid`; a lookup turns store and data errors into `Unavailable`. Neither falls back to a default. The consumer applies its own permission. |
+| Names | `settings.reference-lists.manage` (expense and service types; decided editors Satınalma Müdürü and Admin) and `settings.production-reference-lists.manage` (paint colors and scrap kinds; editor NEEDS-SINAN). Both are registered, company-wide, not Critical and **granted to no role** (human gate). |
+| Routes | Under `/api/v1/settings/reference-lists/`: `expense-types`, `service-types`, `paint-colors`, `scrap-kinds`. `GET /{list}` lists the entries. `POST /{list}/entries` (204) adds an active entry; a code already in the list is 409. `POST /{list}/entries/{entryId}/versions` (204) renames, deactivates or reactivates an entry; an unknown entry is 404. |
+| Commands | Each command takes an Idempotency-Key and a reason (≤ 4000); a new version also takes the entry's expected version. One save with the execution row and one audit event (`settings.reference-list-entry.created.v1` / `.recorded.v1`, entity = entry id). Terminal refusals (404, 409) are stored and replay. An unchanged entry is a stored no-op without audit. There is no hard delete. |
+| Screens | Ayarlar → Masraf ve hizmet tipleri (`/ayarlar/referans-listeleri`, AY-RFL-01) and Ayarlar → Boya rengi ve hurda türü (`/ayarlar/uretim-referans-listeleri`, AY-URL-01). Each screen shows its two lists with an add form and a per-entry edit form. It suggests no entry. |
+| Evidence | Unit: `ReferenceListRulesV1Tests`. Model: `SettingsReferenceListPersistenceModelTests`. Names: `SettingsShellAuthorityTests`. Screen: `ReferenceListPage.test.tsx`. No real-SQL acceptance test yet. |
+
+Open: who edits the paint color and scrap kind lists (NEEDS-SINAN), the operation type list (not opened), and any further
+expense structure beyond code and name (NEEDS-SINAN).

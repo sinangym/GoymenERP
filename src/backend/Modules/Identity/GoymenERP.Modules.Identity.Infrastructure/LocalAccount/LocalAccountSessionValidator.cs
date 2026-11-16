@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Identity.Domain.Credentials;
 
 namespace GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 
@@ -27,7 +28,9 @@ internal sealed class LocalAccountSessionValidator(ILocalCredentialStore store) 
         if (state is null
             || state.SecurityStamp != securityStamp
             || !state.UserIsActive
-            || state.TemporaryPasswordIssuedAtUtc is not null)
+            || LocalTemporaryPasswordRules.BlocksSession(
+                state.TemporaryPasswordIssuedAtUtc,
+                state.TemporaryPasswordConsumedAtUtc))
         {
             return LocalAccountSessionState.NotCurrent;
         }

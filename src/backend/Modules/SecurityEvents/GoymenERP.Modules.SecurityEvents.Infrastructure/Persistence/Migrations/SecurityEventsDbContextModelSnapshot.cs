@@ -193,7 +193,7 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SecurityEvents_AiRiskClass", "[AiRiskClass] IS NULL OR [AiRiskClass] IN ('Read', 'Draft', 'Simulate', 'Write')");
 
-                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read', 'auth.login.rate_limited')");
+                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read', 'auth.login.rate_limited', 'identity.founder.recovered', 'identity.founder.password_reset', 'identity.founder.recovery_refused')");
 
                             t.HasCheckConstraint("CK_SecurityEvents_LegalHold", "[LegalHold] = 0");
 

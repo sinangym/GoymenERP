@@ -4,8 +4,8 @@ using GoymenERP.Modules.Identity.Domain.Users;
 namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
-/// ID-2r <c>recover-founder</c> domain transitions (KIM-D22 reactivate, KIM-D23 reset-password). The command itself
-/// waits for the ADR-SEC-001 recovery codes; these rules are what it will apply. SENTETIK.
+/// ID-2r <c>recover-founder</c> domain transitions (KIM-D22 reactivate, KIM-D23 reset-password): the rules the command
+/// (<c>FounderRecoveryService</c>) applies. SENTETIK.
 /// </summary>
 public sealed class FounderRecoveryDomainTests
 {
@@ -27,6 +27,35 @@ public sealed class FounderRecoveryDomainTests
         Assert.Equal((newStamp, versionBefore + 1), (credential.SecurityStamp, credential.Version));
         Assert.Equal(("temporary", 4), (credential.PasswordHash, credential.HashFormatVersion));
         Assert.False(credential.TwoFactorEnabled);
+    }
+
+    [Fact]
+    public void Reactivation_with_a_typed_password_replaces_the_hash_and_still_forces_a_change_at_the_next_login()
+    {
+        var credential = LockedCredentialWithTemporaryPassword(Guid.NewGuid());
+        var versionBefore = credential.Version;
+        var newStamp = Guid.NewGuid();
+        var changedAt = Now.AddMinutes(3);
+
+        credential.ApplyFounderReactivation("typed", 5, changedAt, newStamp);
+
+        Assert.Equal(("typed", 5, changedAt), (credential.PasswordHash, credential.HashFormatVersion, credential.PasswordChangedAtUtc));
+        Assert.Equal((true, 0, (DateTimeOffset?)null), (credential.MustChangePassword, credential.FailedAccessCount, credential.LockoutEndUtc));
+        Assert.Equal(((DateTimeOffset?)null, (DateTimeOffset?)null, (DateTimeOffset?)null),
+            (credential.TemporaryPasswordIssuedAtUtc, credential.TemporaryPasswordExpiresAtUtc, credential.TemporaryPasswordConsumedAtUtc));
+        Assert.Equal((newStamp, versionBefore + 1), (credential.SecurityStamp, credential.Version));
+    }
+
+    [Fact]
+    public void Reactivation_with_a_typed_password_refuses_an_empty_hash_or_a_bad_format_and_then_changes_nothing()
+    {
+        var stamp = Guid.NewGuid();
+        var credential = new LocalCredential(Guid.NewGuid(), "kurucu", "hash", 3, mustChangePassword: false, Now, stamp);
+
+        Assert.Throws<ArgumentException>(() => credential.ApplyFounderReactivation(" ", 4, Now, Guid.NewGuid()));
+        Assert.Throws<ArgumentOutOfRangeException>(() => credential.ApplyFounderReactivation("t", 0, Now, Guid.NewGuid()));
+
+        Assert.Equal(("hash", false, stamp, 1L), (credential.PasswordHash, credential.MustChangePassword, credential.SecurityStamp, credential.Version));
     }
 
     [Fact]

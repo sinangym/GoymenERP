@@ -75,3 +75,10 @@
 
 - Shell (provider 1.4 → 1.5): route `organization.company.tax-id` → `/ayarlar/organizasyon/sirket-vergi-no` (`ORG-05`, single company, company-wide, on `organization.context.read`); the request/approve buttons follow the server's viewer flags.
 - Not here: VKN check-digit validation, whether a placeholder's first VKN may skip approval, whether the approve grant is Critical or needs grant-time dual control, and the placeholder seed VKN are open questions for the owner (NEEDS-SINAN); OPEN-030 status is unchanged.
+
+## KIM-SC34 — staged placeholder VKN correction (KIM-D41 / KIM-D48)
+
+- Migration `StageCompanyTaxIdCorrections` creates `organization.CompanyTaxIdCorrections` (company-owned, tenant-filtered, never deleted) and stages one `Pending` row per placeholder, non-invoice-capable company that still carries the stand-in VKN. The `Companies` row is **not** changed by the migration: the earlier `ClearPlaceholderCompanyVkn` Up is emptied (superseded).
+- `GET /api/v1/organization/company/tax-id/corrections` lists the resolved company's corrections (either tax-id permission company-wide; `canApply` = approve). `POST …/corrections/{id}/apply` `{expectedVersion}` → 204 (permission `organization.company.tax-id.approve`) writes the corrected VKN (or clears it) and closes the correction in one transaction, with one audit event `organization.company.tax-id.correction-applied.v1`: SYSTEM actor (the staging source), before `{OldVkn, NewVkn, Source}`, approver in the payload.
+- Problem codes: 409 `…_correction_not_pending`, `…_correction_stale` (the company VKN moved since staging); 422 `organization_company_tax_id_in_use`.
+- Down guard **51877** refuses while any correction is `Applied` (forward fix); pending-only rows roll back freely.

@@ -13,8 +13,10 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
 /// API-01/02 (Üretim U1-a; URT-D6, D7, D9, D10; DEC-SET-001): the write path of the Manufacturing parameter profiles and of the
-/// Manufacturing tolerance registry, on the D-MFG-PROFILE-AUTH-01=A lifecycle (<see cref="ManufacturingToleranceProfileLifecyclePolicyV1"/>:
-/// prepare → approve → publish; the approver and the publisher are not the preparer).
+/// Manufacturing tolerance registry, on the URN-D6 single flow (<see cref="ManufacturingToleranceProfileLifecyclePolicyV1"/>:
+/// prepare → publish by an authorized actor, the preparer included; no second approval, the audit records who published).
+/// The approval routes stay and answer the registered <see cref="ManufacturingProfileProblemCodesV1.ApprovalRetired"/>;
+/// versions approved or published under D-MFG-PROFILE-AUTH-01=A keep their approval as history and are not rewritten.
 /// <list type="bullet">
 /// <item><b>Authority</b>: each action its own name (<see cref="ManufacturingParameterProfileActionsV1"/>,
 /// <see cref="ManufacturingToleranceProfileActionsV1"/>, <see cref="ManufacturingToleranceProfileReadActionV1"/>), company-wide,
@@ -276,10 +278,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
             ManufacturingToleranceProfileLifecycleCodesV1.VersionConflict => Answers.VersionConflict(),
             ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition => Answers.Problem(409,
                 ManufacturingProfileProblemCodesV1.TransitionInvalid, "Bu adım uygulanamaz.",
-                "Profil bu adım için uygun durumda değil (taslak onaylanır, onaylı profil yayımlanır)."),
-            ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired => Answers.Problem(422,
-                ManufacturingProfileProblemCodesV1.MakerSeparationRequired, "Hazırlayan onaylayamaz.",
-                "Profili hazırlayan kişi onaylayamaz veya yayımlayamaz; başka bir yetkili gerekir."),
+                "Profil bu adım için uygun durumda değil (yalnız taslak ya da önceden onaylanmış profil yayımlanır)."),
+            ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired => Answers.ApprovalRetired(),
             _ => Answers.Invalid("Komut bilgileri profil yaşam döngüsü kurallarına uymuyor."),
         };
 
@@ -341,6 +341,11 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
         public static ManufacturingProfileCommandAnswerV1 WindowOverlap() =>
             Problem(409, ManufacturingProfileProblemCodesV1.WindowOverlap, "Geçerlilik aralığı çakışıyor.",
                 "Bu prosesin yayımlanmış bir tolerans profili aynı tarihleri kapsıyor; yayımlanmış profil değiştirilemez.");
+
+        /// <summary>URN-D6: the separate approval step is retired; the draft is published directly.</summary>
+        public static ManufacturingProfileCommandAnswerV1 ApprovalRetired() =>
+            Problem(409, ManufacturingProfileProblemCodesV1.ApprovalRetired, "Onay adımı kaldırıldı.",
+                "Üretim profilleri artık ayrı onay almaz; yetkili kişi taslağı doğrudan yayımlar.");
 
         public static ManufacturingProfileCommandAnswerV1 Problem(int status, string code, string title, string detail) =>
             new ManufacturingProfileCommandAnswerV1(status, code, title, detail, null);

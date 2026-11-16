@@ -31,7 +31,12 @@ import {
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 import { decodeWorkCenterCalendar, type WorkCenterCalendar } from './workCenterCalendarContract'
-import { decodeCompanyTaxId, type CompanyTaxId } from './companyTaxIdContract'
+import {
+  decodeCompanyTaxId,
+  decodeCompanyTaxIdCorrections,
+  type CompanyTaxId,
+  type CompanyTaxIdCorrections,
+} from './companyTaxIdContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -241,6 +246,23 @@ export async function fetchCompanyTaxId(
   if (typeof result === 'string') return transportOutcome(result)
   if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
   const view = decodeCompanyTaxId(result.body, companyId)
+  if (view === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: view }
+}
+
+/**
+ * `GET /api/v1/organization/company/tax-id/corrections` — KIM-D41/KIM-D48. The staged VKN corrections of the ACTIVE
+ * company (pending first). Same visibility as the VKN card: 403 is passed through. Another company's answer is
+ * malformed.
+ */
+export async function fetchCompanyTaxIdCorrections(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CompanyTaxIdCorrections>> {
+  const result = await read('/organization/company/tax-id/corrections', companyId, signal)
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const view = decodeCompanyTaxIdCorrections(result.body, companyId)
   if (view === null) return { type: 'malformed' }
   return { type: 'ok-single', data: view }
 }

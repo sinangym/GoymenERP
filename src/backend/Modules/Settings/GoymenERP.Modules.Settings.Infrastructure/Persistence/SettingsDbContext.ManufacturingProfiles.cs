@@ -115,8 +115,9 @@ public sealed partial class SettingsDbContext
     }
 
     /// <summary>
-    /// A registry row may only be ADDED, and only beside its own lifecycle version (same company and profile id) moving from
-    /// Approved to Published in the same save; any other write of the registry is refused before SQL.
+    /// A registry row may only be ADDED, and only beside its own lifecycle version (same company and profile id) moving to
+    /// Published in the same save — from Draft (URN-D6 single flow) or from a pre-URN-D6 Approved state; any other write of
+    /// the registry is refused before SQL.
     /// </summary>
     private bool IsToleranceRegistryPublication(
         Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, ManufacturingTolerancePolicyRow policy) =>
@@ -127,7 +128,8 @@ public sealed partial class SettingsDbContext
             && version.Entity.ProfileVersion == policy.Version
             && version.Entity.WorkCenterId == policy.WorkCenterId
             && version.Entity.Status == ManufacturingProfileStatusesV1.Published
-            && Equals(version.Property(row => row.Status).OriginalValue, ManufacturingProfileStatusesV1.Approved));
+            && version.Property(row => row.Status).OriginalValue is ManufacturingProfileStatusesV1.Draft
+                or ManufacturingProfileStatusesV1.Approved);
 
     /// <summary>
     /// U1-b: the one permitted change of a published registry row — its open-ended window closed on the day before a
@@ -176,20 +178,31 @@ public sealed partial class SettingsDbContext
     }
 
     /// <summary>
-    /// The lifecycle shape of D-MFG-PROFILE-AUTH-01=A as data: a Draft carries no approval or publication, an Approved row an
-    /// approval by someone other than the preparer, a Published row both, each by someone other than the preparer.
+    /// The lifecycle shape as data (URN-D6 forward fix <c>AdoptManufacturingProfileSingleFlow</c>): a Draft carries no approval
+    /// or publication; an Approved row (left from D-MFG-PROFILE-AUTH-01=A) an approval by someone other than the preparer; a
+    /// Published row a publication by anyone (the preparer included) and either no approval (single flow) or, as history, an
+    /// approval by someone other than the preparer.
     /// </summary>
-    private const string LifecycleCheck =
+    internal const string LifecycleCheck =
         "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND ("
         + "([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL "
         + "AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR "
         + "([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] "
         + "AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 "
         + "AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR "
-        + "([Status] = 'Published' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] "
-        + "AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 "
-        + "AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedBy] <> [PreparedBy] "
-        + "AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0))";
+        + "([Status] = 'Published' AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 "
+        + "AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0 AND ("
+        + "([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL) OR "
+        + "(LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] "
+        + "AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0))))";
+
+    /// <summary>
+    /// The registry row's authorization (URN-D6 forward fix): <c>Approved</c> for a version approved under
+    /// D-MFG-PROFILE-AUTH-01=A, <c>Published</c> for one published directly (the publisher in the authorization columns).
+    /// </summary>
+    internal const string ToleranceRegistryApprovalCheck =
+        "[ApprovalStatus] IN ('Approved','Published') AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 "
+        + "AND [ApprovedAtUtc] > '0001-01-01T00:00:00+00:00' AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0";
 
     private static void ConfigureLifecycleColumns<T>(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<T> entity)
         where T : class

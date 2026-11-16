@@ -89,6 +89,45 @@ public sealed class Company
         UpdatedAtUtc = utcNow;
     }
 
+    /// <summary>
+    /// KIM-D41/KIM-D48: applies an approved staged correction (<see cref="CompanyTaxIdCorrection"/>). The company must
+    /// still carry <paramref name="stagedVkn"/>. A null <paramref name="correctedVkn"/> clears the VKN and is allowed only
+    /// on a placeholder company that issues no invoice (the schema's CK_Companies_Vkn_RequiredUnlessPlaceholder and
+    /// CK_Companies_Placeholder_InvoiceDisabled say the same).
+    /// </summary>
+    public void ApplyTaxIdCorrection(string stagedVkn, string? correctedVkn, DateTimeOffset utcNow)
+    {
+        if (!string.Equals(Vkn, stagedVkn, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Şirketin VKN'si düzeltilecek değerle eşleşmiyor.");
+        }
+
+        if (correctedVkn is null)
+        {
+            if (!IsPlaceholder || InvoiceCapable)
+            {
+                throw new InvalidOperationException(
+                    "VKN yalnız fatura üretmeyen placeholder şirkette boşaltılabilir.");
+            }
+
+            Vkn = null;
+        }
+        else
+        {
+            var normalized = RequireVkn(correctedVkn)
+                ?? throw new ArgumentException("Düzeltilmiş VKN boş olamaz.", nameof(correctedVkn));
+            if (string.Equals(normalized, Vkn, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Düzeltilmiş VKN şirketin mevcut VKN'si ile aynı olamaz.");
+            }
+
+            Vkn = normalized;
+        }
+
+        Version++;
+        UpdatedAtUtc = utcNow;
+    }
+
     private static string RequireText(string value, string parameterName, int maximumLength)
     {
         var normalized = value?.Trim();

@@ -85,6 +85,7 @@ public static partial class SecurityEventV1Validator
         ValidateReferences(e, errors);
         ValidateAiFields(e, errors);
         ValidateRateLimitSummary(e, errors);
+        ValidateFounderRecovery(e, errors);
 
         return errors;
     }
@@ -190,6 +191,12 @@ public static partial class SecurityEventV1Validator
     {
         if (eventType == SecurityEventTypesV1.LoginSucceeded) return outcome == SecurityEventOutcomesV1.Allowed;
         if (eventType == SecurityEventTypesV1.LoginRateLimited) return outcome == SecurityEventOutcomesV1.Denied;
+        if (eventType == SecurityEventTypesV1.FounderRecoveryRefused) return outcome == SecurityEventOutcomesV1.Denied;
+        if (eventType is SecurityEventTypesV1.FounderRecovered or SecurityEventTypesV1.FounderPasswordReset)
+        {
+            return outcome == SecurityEventOutcomesV1.Allowed;
+        }
+
         if (SecurityEventTypesV1.DenialTypes.Contains(eventType, StringComparer.Ordinal)) return outcome == SecurityEventOutcomesV1.Denied;
         if (eventType == SecurityEventTypesV1.AiToolCalled)
         {
@@ -310,6 +317,34 @@ public static partial class SecurityEventV1Validator
             || summary.Window.Ticks / TimeSpan.TicksPerSecond > int.MaxValue)
         {
             errors.Add("rate_limit_window_length_invalid");
+        }
+    }
+
+    /// <summary>
+    /// ID-2r founder recovery types: the terminal command has no company context and no permission (spec ID-2r), so the
+    /// record is platform-wide (<c>CompanyId</c> and requested company null, never a sentinel), the actor is the
+    /// <c>System</c> command token and no permission code is invented. A refusal carries the closed <c>policy_refused</c>
+    /// reason.
+    /// </summary>
+    private static void ValidateFounderRecovery(SecurityEventV1 e, List<string> errors)
+    {
+        if (!SecurityEventTypesV1.FounderRecoveryTypes.Contains(e.EventType, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        if (e.ScopeKind != SecurityEventScopeKindsV1.Platform || e.CompanyId is not null || e.RequestedCompanyId is not null)
+        {
+            errors.Add("founder_recovery_requires_platform_scope_without_company");
+        }
+
+        if (e.ActorType != SecurityEventActorTypesV1.System) errors.Add("founder_recovery_requires_system_actor");
+        if (e.PermissionCode is not null) errors.Add("founder_recovery_forbids_permission_code");
+        if (e.EventType == SecurityEventTypesV1.FounderRecoveryRefused
+            && e.ReasonCode is not null
+            && e.ReasonCode != SecurityEventReasonCodesV1.PolicyRefused)
+        {
+            errors.Add("founder_recovery_reason_code_not_policy_refused");
         }
     }
 

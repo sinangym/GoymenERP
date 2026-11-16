@@ -174,6 +174,35 @@ public sealed class LocalCredential
     }
 
     /// <summary>
+    /// ID-2r <c>recover-founder reactivate</c> with the password the operator typed at the terminal (spec ID-2r step 2:
+    /// "yeni parola etkileşimli okunur"; "reset-password dışındaki her parola yazımı TemporaryPassword* alanlarını
+    /// null'lar"): the new hash replaces the old one, the founder must still set his own password at the next login
+    /// (<c>MustChangePassword=true</c>), any temporary password is cleared, the lockout resets, the stamp is renewed
+    /// and <see cref="Version"/> rises by one. The 2FA state is kept (fail-closed).
+    /// </summary>
+    public void ApplyFounderReactivation(
+        string newPasswordHash,
+        int hashFormatVersion,
+        DateTimeOffset changedAtUtc,
+        Guid newSecurityStamp)
+    {
+        if (string.IsNullOrWhiteSpace(newPasswordHash))
+        {
+            throw new ArgumentException("Parola özeti boş olamaz.", nameof(newPasswordHash));
+        }
+
+        if (hashFormatVersion < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(hashFormatVersion));
+        }
+
+        ApplyFounderReactivation(newSecurityStamp);
+        PasswordHash = newPasswordHash;
+        HashFormatVersion = hashFormatVersion;
+        PasswordChangedAtUtc = changedAtUtc;
+    }
+
+    /// <summary>
     /// ID-2r <c>recover-founder reset-password</c> (KIM-D23): the temporary password hash replaces the old one, the
     /// founder must set a new password at the next login, the lockout resets, the temporary password window opens
     /// (issued, expires, not consumed), the stamp is renewed (every session ends) and <see cref="Version"/> rises by

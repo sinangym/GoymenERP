@@ -171,6 +171,10 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.unit-profiles.manage',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
   'settings.work-center-capacities.manage',
+  /** API-98, KIM-D49: the Settings expense and service type lists, drawn only where the server granted its one name. */
+  'settings.reference-lists.manage',
+  /** B-14, KIM-D51: the Settings paint color and scrap kind lists, drawn only where the server granted its one name. */
+  'settings.production-reference-lists.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -279,6 +283,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.unit-conversion-policies.manage': 'Birim çevrim politikası',
   'settings.unit-profiles.manage': 'Birim profilleri',
   'settings.work-center-capacities.manage': 'İş merkezi kapasitesi',
+  'settings.reference-lists.manage': 'Masraf ve hizmet tipleri',
+  'settings.production-reference-lists.manage': 'Boya rengi ve hurda türü',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -425,6 +431,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.unit-conversion-policies.manage',
       // F-029 S1/S2: the unit profiles follow the unit conversion policy, still before the rates.
       'settings.unit-profiles.manage',
+      // API-98, B-14 (KIM-D49, KIM-D51): the company reference lists are master data, after the units and before the rates.
+      'settings.reference-lists.manage',
+      'settings.production-reference-lists.manage',
       // F-025 / B-11: rates follow the organization entries inside Ana Veriler (KLN-D2 order: organization, units, rates).
       'settings.exchange-rates.read',
       'settings.sales-discount-limits.manage',
