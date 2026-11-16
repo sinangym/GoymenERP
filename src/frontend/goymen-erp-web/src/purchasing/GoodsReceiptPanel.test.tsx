@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { recordGoodsReceipt } from './goodsReceiptApi'
 import { resetReceiptAttemptsForTests } from './goodsReceiptAttempt'
-import { decodeGoodsReceiptPage, decodeGoodsReceiptResponse, receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest } from './goodsReceiptContract'
+import { decodeGoodsReceiptOptions, decodeGoodsReceiptPage, decodeGoodsReceiptResponse, receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail } from './contract'
 
@@ -52,7 +52,8 @@ function fixture(unknownFirst = false, futureSupplyReleases?: readonly unknown[]
     }
     if (url.endsWith('goods-receipt-options')) return json({ source: { companyId: COMPANY, purchaseOrderId: ORDER,
       purchaseOrderLineId: LINE, purchaseOrderVersion: '3', productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: '2026-09-25' },
-    locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Mal Kabul', siteName: 'Fabrika' }], searchWindowFull: false })
+    locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Mal Kabul', siteName: 'Fabrika' }], searchWindowFull: false,
+    futureSupply: { companyId: COMPANY, purchaseOrderId: ORDER, purchaseOrderGeneralLineId: LINE, unitId: UNIT, activeAllocatedQuantity: '2.125' } })
     const compared = receipts.find((receipt) => url.endsWith(`/goods-receipts/${receipt.acceptanceId}/quantity-comparison`))
     if (compared !== undefined) { comparisonReads.push(compared.acceptanceId); return json(comparison(compared)) }
     return json({ items: receipts, searchWindowFull: false })
@@ -77,6 +78,23 @@ async function fill() {
 afterEach(() => { cleanup(); resetReceiptAttemptsForTests(); vi.unstubAllGlobals() })
 
 describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
+  it('shows the owner active future allocation figure and its advisory meaning without calculating a receipt conversion', async () => {
+    fixture(); mount()
+    const summary = await screen.findByTestId('goods-receipt-line-1-future-supply-summary')
+    expect(summary.textContent).toContain(T.futureSupplyAllocated('2.125'))
+    expect(summary.textContent).toContain(T.futureSupplyAdvisory)
+    expect(summary.textContent).not.toContain(LINE)
+  })
+  it.each(['missing', 'company', 'order', 'general', 'unit', 'quantity', 'extra'])('rejects %s allocation information rather than displaying an assumed zero', (fault) => {
+    const futureSupply = { companyId: COMPANY, purchaseOrderId: ORDER, purchaseOrderGeneralLineId: LINE, unitId: UNIT, activeAllocatedQuantity: '2.125' }
+    const value = { source: { companyId: COMPANY, purchaseOrderId: ORDER, purchaseOrderLineId: LINE, purchaseOrderVersion: '3',
+      productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: '2026-09-25' }, locations: [], searchWindowFull: false,
+    futureSupply: fault === 'missing' ? undefined : { ...futureSupply,
+      ...(fault === 'company' ? { companyId: ORDER } : {}), ...(fault === 'order' ? { purchaseOrderId: COMPANY } : {}),
+      ...(fault === 'general' ? { purchaseOrderGeneralLineId: PRODUCT } : {}), ...(fault === 'unit' ? { unitId: LOCATION } : {}),
+      ...(fault === 'quantity' ? { activeAllocatedQuantity: '2.1250' } : {}), ...(fault === 'extra' ? { price: '1' } : {}) } }
+    expect(decodeGoodsReceiptOptions(value, detail, detail.lines[0])).toBeNull()
+  })
   it('does not expose a receipt form/read when the central control is unpublished', () => {
     fixture(); mount(false)
     expect(screen.queryByText(T.heading)).toBeNull()

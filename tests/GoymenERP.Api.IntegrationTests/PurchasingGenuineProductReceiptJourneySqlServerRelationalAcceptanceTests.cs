@@ -187,6 +187,8 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
                     SettingsUnitIdentitiesV1.Kilogram),
                 (options.Source.ProductId, options.Source.ProductVersion, options.Source.UnitId));
             Assert.NotEmpty(options.Locations);
+            Assert.Equal(new PurchaseReceiptFutureSupplySummaryV1(CompanyA, approved.Detail.Order.Id, approvedLine.LineId,
+                SettingsUnitIdentitiesV1.Kilogram, "0"), options.FutureSupply);
             var location = options.Locations[0];
 
             var receipt = new RecordPurchaseGoodsReceiptV1(

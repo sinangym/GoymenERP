@@ -109,9 +109,28 @@ internal sealed class PurchaseGoodsReceiptHost(
     {
         var answer = await locationCandidates.SearchAsync(source.CompanyId,
             new OrganizationLocationCandidateQueryV1(null, 100), cancellationToken);
+        if (source.PurchaseOrderGeneralLineId == Guid.Empty) throw PurchaseGoodsReceiptPrelock.Unavailable();
+        var allocated = await services.GetRequiredService<IInventoryFutureAllocationReadPortV1>()
+            .GetAllocatedOnPurchaseLineAsync(source.PurchaseOrderGeneralLineId, cancellationToken);
         return new PurchaseGoodsReceiptOptionsV1(source, answer.Items.Select(item =>
             new PurchaseReceiptLocationV1(item.LocationId, item.LocationCode, item.LocationName, item.SiteName)).ToArray(),
-            answer.SearchWindowFull);
+            answer.SearchWindowFull) { FutureSupply = FutureSupplySummary(source, allocated) };
+    }
+
+    internal static PurchaseReceiptFutureSupplySummaryV1 FutureSupplySummary(PurchaseReceiptSourceV1 source,
+        InventoryFutureAllocationSumV1? answer)
+    {
+        if (source.CompanyId == Guid.Empty || source.PurchaseOrderId == Guid.Empty || source.PurchaseOrderGeneralLineId == Guid.Empty
+            || source.UnitId == Guid.Empty) throw PurchaseGoodsReceiptPrelock.Unavailable();
+        var quantity = answer switch
+        {
+            { Outcome: InventoryFutureAllocationReadOutcomeV1.None, QuantityText: null, UnitId: null } => "0",
+            { Outcome: InventoryFutureAllocationReadOutcomeV1.Present, QuantityText: { } text, UnitId: { } unit }
+                when unit == source.UnitId && InventoryFutureAllocationTextV1.TryPositiveQuantity(text, out var parsed)
+                    && parsed.ToString() == text => text,
+            _ => throw PurchaseGoodsReceiptPrelock.Unavailable(),
+        };
+        return new(source.CompanyId, source.PurchaseOrderId, source.PurchaseOrderGeneralLineId, source.UnitId, quantity);
     }
 
     public async Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId,

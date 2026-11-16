@@ -8,6 +8,41 @@ namespace GoymenERP.Purchasing.UnitTests;
 public sealed partial class PurchasingServiceTests
 {
     [Fact]
+    public async Task Receipt_options_carry_the_purchasing_general_target_and_the_owner_allocation_measurement()
+    {
+        var (world, reader, orderId, lineId, _) = await ReceiptDetailWorldAsync();
+        var options = await world.Service(reads: reader).GetGoodsReceiptOptionsAsync(orderId, lineId);
+        Assert.Equal(lineId, options.Source.PurchaseOrderGeneralLineId);
+        Assert.Equal(new PurchaseReceiptFutureSupplySummaryV1(Company, orderId, lineId, options.Source.UnitId, "2.125"), options.FutureSupply);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("company")]
+    [InlineData("order")]
+    [InlineData("general")]
+    [InlineData("unit")]
+    [InlineData("quantity")]
+    public async Task Receipt_options_do_not_hide_an_inconsistent_allocation_summary(string fault)
+    {
+        var (world, reader, orderId, lineId, _) = await ReceiptDetailWorldAsync();
+        reader.OptionsFault = fault;
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptOptionsAsync(orderId, lineId));
+        Assert.Equal((503, PurchaseGoodsReceiptCodesV1.SourceInvalid), (refused.Status, refused.Code));
+    }
+
+    [Fact]
+    public async Task Receipt_options_revalidate_the_receipt_command_permission_after_the_advisory_owner_read()
+    {
+        var (world, reader, orderId, lineId, _) = await ReceiptDetailWorldAsync();
+        reader.BeforeReturn = () => world.Authority.Granted = false;
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptOptionsAsync(orderId, lineId));
+        Assert.Equal(403, refused.Status);
+    }
+
+    [Fact]
     public async Task Receipt_detail_reopens_the_exact_owner_source_without_mutating_the_order()
     {
         var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
@@ -291,9 +326,29 @@ public sealed partial class PurchasingServiceTests
         public PurchaseGoodsReceiptViewV1? Receipt { get; set; } = receipt;
         public Action? BeforeReturn { get; set; }
         public int Calls { get; private set; }
+        public string? OptionsFault { get; set; }
 
         public Task<PurchaseGoodsReceiptOptionsV1> GetOptionsAsync(PurchaseReceiptSourceV1 source,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            var future = new PurchaseReceiptFutureSupplySummaryV1(source.CompanyId, source.PurchaseOrderId,
+                source.PurchaseOrderGeneralLineId, source.UnitId, "2.125");
+            BeforeReturn?.Invoke();
+            return Task.FromResult(new PurchaseGoodsReceiptOptionsV1(source, [], false)
+            {
+                FutureSupply = OptionsFault switch
+                {
+                    "missing" => null,
+                    "company" => future with { CompanyId = Guid.NewGuid() },
+                    "order" => future with { PurchaseOrderId = Guid.NewGuid() },
+                    "general" => future with { PurchaseOrderGeneralLineId = Guid.NewGuid() },
+                    "unit" => future with { UnitId = Guid.NewGuid() },
+                    "quantity" => future with { ActiveAllocatedQuantity = "2.1250" },
+                    _ => future,
+                },
+            });
+        }
 
         public Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId,
             CancellationToken cancellationToken)
