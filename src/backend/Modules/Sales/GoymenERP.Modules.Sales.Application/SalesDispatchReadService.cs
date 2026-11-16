@@ -36,7 +36,9 @@ public sealed class SalesDispatchReadService(
     ISalesPartyDisplaySourceV1? partyDisplays = null,
     ISalesDispatchNoteReadPortV1? dispatchNotes = null,
     ISalesInvoiceableShipmentReadPortV1? invoiceableShipments = null,
-    ISettingsExchangeRateResolverV1? exchangeRates = null) : ISalesDispatchReadService
+    ISettingsExchangeRateResolverV1? exchangeRates = null,
+    ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null)
+    : ISalesDispatchReadService, ISalesDispatchWeighingDifferenceReadService
 {
     private const int MaximumCursorLength = 8192;
 
@@ -139,6 +141,69 @@ public sealed class SalesDispatchReadService(
         }
 
         return new SalesDispatchListResponse(items, answer.NextCursor);
+    }
+
+    /// <summary>
+    /// SAT-S13 (EK1 SAT-D343; SAT-D319 (6); SAT-D389 / SAT-D405): one dispatch note's weighing-difference summary from the Logistics
+    /// owner (STK-S24) under the API-30 read name, measured before and after the owner read. The owner's totals are shown verbatim
+    /// (Ö2 kilogram texts, never rounded to fit); the invoice wait is <see cref="SalesDispatchWeighingInvoiceRule"/>, the same rule the
+    /// invoice gate applies. Not composed, refusing, failing, foreign or inconsistent: 503, never a zero.
+    /// </summary>
+    public async Task<SalesDispatchWeighingDifferenceView> GetWeighingDifferenceAsync(Guid dispatchNoteId,
+        CancellationToken cancellationToken = default)
+    {
+        var permission = bindings.DispatchReadPermission;
+        var scope = await RequireScopeAsync(permission, cancellationToken);
+        if (dispatchNoteId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+
+        var owner = weighingDifferences ?? throw WeighingDifferenceUnavailable();
+        SalesDispatchWeighingDifferenceReadV1? answer;
+        try
+        {
+            answer = await owner.ReadAsync(scope.CompanyId, dispatchNoteId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw WeighingDifferenceUnavailable();
+        }
+
+        await RequireStillAsync(scope, permission, cancellationToken);
+        if (answer is null || answer.CompanyId != scope.CompanyId || answer.DispatchNoteId != dispatchNoteId)
+        {
+            throw WeighingDifferenceUnavailable();
+        }
+
+        switch (answer.Status)
+        {
+            case SalesDispatchWeighingDifferenceStatusV1.NotRecorded when answer.Value is null:
+                return new SalesDispatchWeighingDifferenceView(dispatchNoteId, scope.CompanyId, SalesDispatchWeighingDifferenceStateView.NotRecorded,
+                    null, null, null, null, null, null, null, null, SaleMayProceed: false, SalesDispatchWeighingInvoiceRule.Wait(answer), null);
+            case SalesDispatchWeighingDifferenceStatusV1.Recorded when answer.Value is { } value:
+                return new SalesDispatchWeighingDifferenceView(dispatchNoteId, scope.CompanyId, SalesDispatchWeighingDifferenceStateView.Recorded,
+                    value.RecordId, KilogramText(value.TheoreticalKg), KilogramText(value.ScaleKg), KilogramText(value.DifferenceKg),
+                    KilogramText(value.TotalExcessKg), value.BandLevel, value.Decision, value.State, value.SaleMayProceed,
+                    SalesDispatchWeighingInvoiceRule.Wait(answer), value.Version);
+            default:
+                throw WeighingDifferenceUnavailable();
+        }
+    }
+
+    /// <summary>A signed owner kilogram as an Ö2 text (≤ 3 decimals); one outside the scale is a malformed owner answer (503).</summary>
+    private static string KilogramText(decimal value)
+    {
+        try
+        {
+            var magnitude = Quantity.Of(Math.Abs(value), QuantityUnit.Kilogram).Value;
+            return (value < 0m ? -magnitude : magnitude).ToString(CultureInfo.InvariantCulture);
+        }
+        catch (ArgumentException)
+        {
+            throw WeighingDifferenceUnavailable();
+        }
     }
 
     public async Task<SalesInvoiceCandidatesResponse> GetInvoiceCandidatesAsync(SalesInvoiceCandidateQuery query,
@@ -552,6 +617,9 @@ public sealed class SalesDispatchReadService(
 
     private static SalesDraftServiceException DispatchUnavailable() =>
         new(503, SalesDispatchProblemCodesV1.DispatchProviderUnavailable);
+
+    private static SalesDraftServiceException WeighingDifferenceUnavailable() =>
+        new(503, SalesDispatchProblemCodesV1.WeighingDifferenceProviderUnavailable);
 
     private static SalesDraftServiceException ReferenceInvalid() =>
         new(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
