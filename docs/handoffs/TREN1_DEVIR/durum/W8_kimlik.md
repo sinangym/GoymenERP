@@ -5,7 +5,7 @@
 - **KIM-S5: PARTIAL — kaynak kullanıcı akışı tamam; son backend test/audit ilavelerinin derlemesi ve entegrasyon bekliyor.** Bu kayıt global DONE, gerçek kullanıcı kabulü,
   gerçek SQL veya production kullanılabilirliği iddiası değildir.
 - Dilim commit başlığı: `KIM-S5: explicit company opening and first Admin (KIM-D56 KIM-D20 KIM-D21 KIM-D28 KIM-D40)`.
-  Exact commit entegrasyon makbuzunda kaydedilir. Önceki dar model assertion hizalaması ayrı `fd90499c9` commit'idir.
+  Kaynak commit `ca8121d4f90aaccda23f33a594d076fc9cc74d8e`. Önceki dar model assertion hizalaması ayrı `fd90499c9` commit'idir.
 - Dayanak: [EK27 / KIM-D56](https://github.com/sinangym/GoymenERP/pull/1196) ve doğrudan kullanıcı A cevabı:
   yönetim veya genel müdür yetkililerinden biri açar; ilk Admin'i açıkça seçer; açana otomatik yetki verilmez;
   açma için ikinci kişi onayı aranmaz. KIM-D20 Pending yaşam döngüsü ve mevcut şirket bootstrap'ı korunur.
@@ -90,3 +90,19 @@
   otomatik allowlist'e eklenmedi. Önceki W7 outbox horizon SQL inceleme kapıları aynen kalır.
 - Gerçek yönetim/GM eligibility mapping/grant ve roller insan kapısındadır; kod rol adı veya persona'dan hak seçmez.
   İki bağımsız K3 inceleme, gerçek SQL/failure/browser/CI, dispatcher aktivasyonu ve production onayı ayrı kalır.
+
+
+## KIM-S20 / STK-S11 typed birim kaynağı takip işi
+
+- Kaynak durumu: SOURCE_READY adayı; build/test koşumu henüz NOT_RUN. Master §28.1 ağırlık kg/ton ve ALS-D43/D51
+  metre/adet kararları uygulanır. Yeni bir fiziksel veya ticari çevrim formülü seçilmedi.
+- Ayrı `ISettingsPhysicalUnitSemanticsV1.ReadAsync(UnitId)` portu: Found/NotFound/Unavailable, istenen UnitId,
+  açık Kilogram/Tonne/Metre/Piece sınıfı, yalnız kütle birimlerinde exact KgPerUnit (1/1000), kaynak sürümü.
+  Metre/adet kilogram katsayısı null'dır; Product sahibi sürümlü çevrim olmadan mass varsayımı yapılamaz.
+- Canonical UnitId'ler aynı mevcut UUIDv5 namespace/name yöntemiyle atanmıştır; code/name/dimension'dan tür türetilmez.
+  Owner kaynağı kimliği veya meta verisi uyuşmazsa Unavailable, bilinmeyen kimlikte NotFound.
+- Settings gerçek provider DI kaydı vardır. Yeni global kimlikler şirket profili oluşturmaz/aktifleştirmez;
+  mevcut üç şirketin yalnız kg onaylı profilleri aynen kalır. Tüketici şirketin uygun tarihli profilini ayrıca doğrular.
+- Unit/contract kaynakları dört exact identity ve source revision, kg/ton mass katsayıları, metre/adet null mass,
+  kg adını taşıyan yabancı identity, bozuk owner cevabı, owner failure/cancellation ve unchanged company profillerini kapsar.
+- Migration/DB/rol/grant/seed/production/pin yoktur. STK-S11 kullanımı kendi consumer diliminde bağlanır.
