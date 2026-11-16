@@ -2,13 +2,17 @@
 
 Bu belge önceki karar dosyalarını silmez. Şu kararları ekler: KLN-D102…KLN-D108, SAT-D374…SAT-D393, URT-D95…URT-D98,
 FNS-D77 ve KIM-D43…KIM-D48. Şu önceki kararlar aynen geçerlidir: KLN-D8/D9, KLN-D18, KLN-D30/D32, KLN-D66, KLN-D87,
-KLN-D89, KLN-D97/D98, KLN-D100, SAT-D129, SAT-D306, SAT-D330/D331/D334, SAT-D362, URT-D49, URT-D89, URT-D91, FNS-D73,
-FNS-D76 ve KIM-D41. Aşağıdaki kararlar ise yalnız burada adı geçen noktada güncellenir; geri kalanları aynen geçerlidir.
+KLN-D89, KLN-D97/D98, KLN-D100, SAT-D129, SAT-D306, SAT-D330/D331/D334, SAT-D362, URT-D49, FNS-D73, FNS-D76 ve
+KIM-D41. Aşağıdaki kararlar ise yalnız burada adı geçen noktada güncellenir; geri kalanları aynen geçerlidir.
 
 **Güncellenen noktalar:**
 
 - **URT-D97**, URT-D86 kuyruk sırasını değiştirir.
 - **URT-D96**, URT-D92'deki "şirket geneli ayrı tampon açılmaz" hükmünü kaldırır.
+- **URT-D96**, URT-D89'daki "güvenlik payı girilmemişse sıfır kabul edilir" hükmünü ve URT-D91'deki tek tampon alanını
+  iki seviyeli yapar (şirket varsayılanı + iş merkezi): iş merkezinde değer girilmemişse şirket geneli varsayılan kullanılır. URT-D89'un
+  kapasite kuralı ve persona dağılımı ile URT-D91'deki başlangıç değeri 0, hazır değer (seed) yok ve denetim kuralı
+  aynen geçerlidir.
 - **SAT-D374**, SAT-D368'i okur: bitiş başlangıca eşit olabilir (SAT-D362 ile aynı yön).
 - **SAT-D375**, SAT-D370'i ve kilitli DEC-SAL-003'ün termin izni kısmını değiştirir. SAT-D375'in kendisi de daha sonra
   SINAN-CEVAP 41.2 ile değiştirildi (aşağıda SAT-D375 satırı). DEC-SAL-003'ün `KARAR_SICILI` satırı bu belgeyle
@@ -17,6 +21,14 @@ FNS-D76 ve KIM-D41. Aşağıdaki kararlar ise yalnız burada adı geçen noktada
 - **SAT-D378**, SAT-D312 (3)'teki "fatura kesilmişse fark Satış'tan fark faturasıyla kapatılır" hükmünü değiştirir:
   faturalanmış tartı düzeltilemez, önce fatura iptal edilir. SAT-D312 (2) ve (3)'ün faturasız tartı düzeltmesi kısmı
   aynen geçerlidir.
+- **SAT-D376**, Lojistik tarafındaki **LOJ-D12**'nin (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md`; SAT-D312 (1)-(2) ile
+  aynı cevap) paylaştırma esasını da günceller: "sevk satırlarındaki beyan kg oranı" yerine "teorik kg oranı".
+  LOJ-D12'nin tartısız teslim kuralı ("tartısı olmayan fason teslim kaydedilemez") ve bedel kg'ının teslim tartısı net
+  kg'ı olması aynen geçerlidir.
+- **SAT-D378**, **LOJ-D13**'teki (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md`) "fatura kesilmişse fark Satış'tan fark
+  faturasıyla kapatılır" cümlesini günceller: faturalanmış tartı düzeltilemez, önce fatura iptal edilir. LOJ-D13'ün
+  yetkili kişinin gerekçeli düzeltme kaydı, eski değerin denetim izinde kalması, Lojistik'in fatura kesmemesi ve
+  grant/rol insan kapısı kısmı aynen geçerlidir.
 - **SAT-D392 ve SAT-D393**, SAT-D371'deki "fark" tanımını ve farkın okunamadığı durumu günceller.
 - **KIM-D43**, KIM-D23'ün geçici parolası için ömür verir ve `configuration_missing` reddini kaldırır
   (`ASSUMPTION-ID-TMP-1` adayı bu kararla karşılanır).
@@ -97,7 +109,7 @@ soruldu.
 | SAT-D380 | Dövizli fason faturada kur günü (36.11) | Kur, **fatura tarihindeki onaylı kur kaynağından** alınır (satış faturası kuralıyla aynı). O gün için kur yoksa fatura kesinleştirilemez (fail-closed). | Satış fason fatura kesinleştirme |
 | SAT-D381 | Fason hizmet KDV ve tevkifat kodu (36.12) | Serbest metin cevap: "Fason hizmetler tek kdv ve tevkifat kodu ayarlardan değiştirilebilir ve siparişte satır bazında değiştirilebilir". Fason hizmetler için **tek bir varsayılan KDV ve tevkifat kodu** Ayarlar'da tutulur ve oradan değiştirilir. Fason sipariş satırında bu kod **satır bazında değiştirilebilir**; değişiklik denetime yazılır. Faturaya satırdaki kod taşınır. Kod/oran listesinin içeriği mevzuat ayarıdır. Ayar değiştirme ve satır değiştirme izinlerinin hangi mevcut izinler olacağı `NEEDS-SINAN`'dır (bkz. Sınırlar). | Ayarlar (fason vergi varsayılanı), fason sipariş satırı + migration, fason fatura |
 | KLN-D106 | Teslim edilen miktarın olayı (36.13; KLN-D100) | Satış siparişinde "teslim edilen miktar", **sevk (stok çıkışı) onayı** anında artar. Ayrı bir müşteri teslim teyidi (POD) beklenmez; sevk ve teslim aynı sayaçtır. | Satış sipariş miktar özeti, Lojistik/Stok sevk olayı tüketimi |
-| URT-D95 | Üretimden iade üst sınırı (36.14; F-009 D4) | İade edilebilir miktar en çok **çekilen − tüketilen** kadardır; aşan iade reddedilir. Koddaki hesap bu kuralın kilitli biçimi olarak kabul edilir: `çekilen − önceki iadeler − net çıktı − son yarı mamul (WIP)`. Burada tüketilen = önceki iadeler dışında net çıktıya ve yarı mamule giden miktardır; "net çıktı" bütün çıktı sınıflarını kapsar (hurda/fire ve proses kaybı dahil), ana kütle dengesiyle (`çekilen − iade = Σ çıktılar + WIP + açıklanamayan`) aynı yönde. Kod formülünün bu yazımla birebir aynı olduğu formül golden'ıyla doğrulanır. Rulo bazlı süreçlerde ana ruloda, boyada (URT-D49) emir toplamında ölçülmesi sorulmadı; bu kapsam `NEEDS-SINAN` olarak kalır. Kod bugünkü davranışla (fail-closed) devam eder. | Üretim iade komutu (URT-S6/S2) |
+| URT-D95 | Üretimden iade üst sınırı (36.14; F-009 D4) | İade edilebilir miktar en çok **çekilen − tüketilen** kadardır; aşan iade reddedilir. Yazar okuması (36.14 cevabında yoktur; formül golden'ı ve Sinan teyidi bekler, geri alınabilir): koddaki `çekilen − önceki iadeler − net çıktı − son yarı mamul (WIP)` hesabı bu kuralın biçimi olarak okunur; bu okumada tüketilen = önceki iadeler dışında net çıktıya ve yarı mamule giden miktardır; "net çıktı" bütün çıktı sınıflarını kapsar (hurda/fire ve proses kaybı dahil), ana kütle dengesiyle (`çekilen − iade = Σ çıktılar + WIP + açıklanamayan`) aynı yönde. Bu eşleme kilitli değildir; kod formülünün bu yazımla birebir aynı olduğu ve "tüketilen" eşlemesi formül golden'ıyla doğrulanır. Rulo bazlı süreçlerde ana ruloda, boyada (URT-D49) emir toplamında ölçülmesi sorulmadı; bu kapsam `NEEDS-SINAN` olarak kalır. Kod bugünkü davranışla (fail-closed) devam eder. | Üretim iade komutu (URT-S6/S2) |
 | URT-D96 | Termin güvenlik tamponu (36.15 + 36.40; URT-D89/URT-D91/URT-D92'yi günceller) | Tampon **çalışma günü** ile sayılır (işletme takvimi). **Şirket geneli varsayılan** bir tampon (gün) vardır. İş merkezinde (URT-D89) değer girilmişse o kullanılır; şirket varsayılanı yerine geçer, ikisi **toplanmaz**. Ürün bazında ezme yoktur (36.40'ta seçilmedi; 36.15'in açıklamasındaki "ürün/hat" ezmesi böylece iş merkezi düzeyinde netleşti). URT-D92'deki "şirket geneli ayrı tampon açılmaz" hükmü kalkar. URT-D91'deki başlangıç değeri 0, hazır değer (seed) yok ve denetim kuralı her iki seviyeye uygulanır. Şirket varsayılanını kimin gireceği (persona/izin) `NEEDS-SINAN`'dır; bu karar gelene kadar şirket varsayılanı 0 kalır. | Üretim termin hesaplayıcısı, Ayarlar şirket kaydı + migration, iş merkezi kaydı |
 | URT-D97 | İş merkezi kuyruk sırası (36.39; URT-D86'yı günceller, 36.16'nın yerine geçer) | Kuyruk sırası: **önce termin, eşitlikte öncelik puanı, sonra kayıt zamanı**. Planlayıcı sırayı elle taşıyabilir; her taşıma denetime yazılır. Koddaki "onay zamanı + tam plan kg'ı" sıralaması bu kararla değişir. Öncelik puanının alanı, değer aralığı ve varsayılanı uygulama ayrıntısıdır (geri alınabilir); varsayılan puan eşitlik sağlar. Öncelik puanını giren izin SINAN-CEVAP 42.13 ile cevaplandı (EK20 URT-D103, #1186). Elle taşımanın hangi izinle yapılacağı `NEEDS-SINAN`'dır; karar gelene kadar elle taşıma kapalıdır. Kuyrukta her planın tam kg'ıyla mı yoksa kalan kg'ıyla mı sayılacağı bu soruda ayrıca seçilmedi; koddaki "tam kg" davranışı sürer. | Üretim kuyruk/kapasite hesaplayıcısı, plan kaydı + migration |
 | URT-D98 | Çıktı etiketinde elle kod (36.18) | Etiket kod formatı tanımlıysa kod **yalnız formatla üretilir**; elle giriş reddedilir. Elle kod yalnız format tanımlı değilken girilebilir; benzersizlik kontrolü korunur. | Üretim çıktı etiketi komutu |
@@ -130,6 +142,8 @@ soruldu.
   - URT-D96: şirket geneli tamponu girecek persona/izin.
   - URT-D97: kuyrukta elle sıra taşıma izni.
   - URT-D95: boya emri toplamı kapsamı.
+  - URT-D95: "tüketilen"in koddaki `önceki iadeler − net çıktı − WIP` hesabıyla eşlenmesi (yazar okuması; formül
+    golden'ında Sinan teyidiyle).
   - FNS-D77: çok girdili üretim çıktısında hangi mal kabulünün kuru.
   - SAT-D393: istisna onayının izni.
 - Bu maddeler karar gelene kadar fail-closed kalır; hiçbiri tahminle etkinleştirilmez.
