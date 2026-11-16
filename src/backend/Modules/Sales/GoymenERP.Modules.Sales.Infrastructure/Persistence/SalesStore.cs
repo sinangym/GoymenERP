@@ -214,9 +214,28 @@ public sealed partial class SalesStore(
         await SaveAsync(cancellationToken);
     }
 
-    public async Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default,
-        SalesOrderRiskAssessment? riskWarning = null)
+    public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
+        UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken, riskWarning);
+
+    public Task<SalesDraftStateResult?> UpdateDraftStateWithTransactionAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task> withinTransaction,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null)
+    {
+        ArgumentNullException.ThrowIfNull(withinTransaction);
+        if (commandName is not (SalesDraftCommands.ApproveV1 or SalesDraftCommands.RecordCustomerAcceptanceV1))
+            throw new ArgumentException("Talep bırakma yalnız revizyonun son onay/kabul adımına katılır.", nameof(commandName));
+        return UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, withinTransaction,
+            cancellationToken, riskWarning);
+    }
+
+    private async Task<SalesDraftStateResult?> UpdateDraftStateCoreAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
+        CancellationToken cancellationToken, SalesOrderRiskAssessment? riskWarning)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -281,6 +300,8 @@ public sealed partial class SalesStore(
         var rejectionsBefore = draft.CustomerRejections.Count;
         var versionBefore = draft.Version;
         var linesBefore = LineRevisionStates(draft);
+        var previouslyAcceptedRevision = draft.CustomerAcceptance?.Revision;
+        await using var transaction = withinTransaction is null ? null : await BeginCancellationTransactionAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
         // The domain decides: the expected version, the allowed transition and the reason bound. A
         // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
@@ -296,6 +317,9 @@ public sealed partial class SalesStore(
         {
             throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
         }
+
+        if (transaction is not null)
+            await withinTransaction!(draft, previouslyAcceptedRevision, transaction.GetDbTransaction(), cancellationToken);
 
         // SAT-D211 (EK36): only an internal rejection moves lines — it reverts the rejected revision's removals.
         var reverted = RequireLineRevisionChanges(draft, linesBefore, lineRevision: null,
@@ -386,6 +410,8 @@ public sealed partial class SalesStore(
         }
 
         await SaveAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 

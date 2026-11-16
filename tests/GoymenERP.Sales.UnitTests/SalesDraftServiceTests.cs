@@ -1703,6 +1703,7 @@ public sealed partial class SalesDraftServiceTests
         public bool NoFutureAllocations { get; set; }
         /// <summary>X1 / KLN-D28 (9): the host's future allocation release participant; null = not composed (future ones block).</summary>
         public ISalesOrderFutureAllocationReleaseParticipantV1? FutureAllocationRelease { get; set; }
+        public ISalesOrderFutureDemandReductionParticipantV1? FutureDemandReduction { get; set; } = new FakeFutureDemandReduction();
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         /// <summary>AT-018 / MOD-02: the Product price tier chain; null = not composed.</summary>
@@ -1758,7 +1759,7 @@ public sealed partial class SalesDraftServiceTests
                 LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
                 InvoiceRecords, PostedShares,
                 NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()),
-                FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this));
+                FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this), FutureDemandReduction);
         }
 
         /// <summary>
@@ -2122,7 +2123,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     /// <summary>An in-memory store with the contract's replay semantics; no database, no owner rule.</summary>
-    private sealed class FakeStore : ISalesOrderDraftStore
+    private sealed partial class FakeStore : ISalesOrderDraftStore
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation, SalesDraftReplayResult? Result)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
@@ -2173,7 +2174,8 @@ public sealed partial class SalesDraftServiceTests
         private async Task<SalesDraftStateResult?> UpdateDraftStateAsyncCore(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
             Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken,
-            Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
+            Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null,
+            Func<SalesOrderDraft, int?, CancellationToken, Task>? withinTransaction = null)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
@@ -2195,7 +2197,26 @@ public sealed partial class SalesDraftServiceTests
             }
 
             var before = draft.Version;
-            mutate(draft, TimeProvider.System.GetUtcNow());
+            var savedState = (draft.ApprovalState, draft.Approval, draft.CustomerAcceptance, draft.Version, draft.UpdatedAtUtc);
+            try
+            {
+                mutate(draft, TimeProvider.System.GetUtcNow());
+                if (withinTransaction is not null)
+                    await withinTransaction(draft, savedState.CustomerAcceptance?.Revision, cancellationToken);
+            }
+            catch
+            {
+                if (withinTransaction is not null)
+                {
+                    // SYNTHETIC store rollback of the five state-command columns; real SQL proves transactional behavior.
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.ApprovalState))!.SetValue(draft, savedState.ApprovalState);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.Approval))!.SetValue(draft, savedState.Approval);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.CustomerAcceptance))!.SetValue(draft, savedState.CustomerAcceptance);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.Version))!.SetValue(draft, savedState.Version);
+                    typeof(SalesOrderDraft).GetProperty(nameof(draft.UpdatedAtUtc))!.SetValue(draft, savedState.UpdatedAtUtc);
+                }
+                throw;
+            }
             var storedResult = replayResult?.Invoke(draft);
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId, storedResult);
             Transitions.Add((commandName, draftId, envelope, audit, before, draft.Version));

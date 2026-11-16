@@ -256,6 +256,17 @@ public interface ISalesOrderDraftStore
         Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null);
 
+    /// <summary>KLN-D105: validates the domain transition first, then calls the owner participant inside this store's
+    /// SQL transaction before the single save/commit. The old customer-accepted revision is captured before the transition
+    /// replaces its acceptance fact. A refusal rolls back owner writes and leaves Sales unchanged; replay calls no participant.
+    /// Unsupported stores fail closed. The callback runs before EF rows/audit/attempts are staged.</summary>
+    Task<SalesDraftStateResult?> UpdateDraftStateWithTransactionAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task> withinTransaction,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
+        throw new SalesFutureAllocationReleaseException(503, "service_unavailable", terminal: false);
+
     /// <summary>
     /// F-018 / plan S1: the limit warnings recorded on the company's draft, newest first and at most
     /// <see cref="SalesDraftRiskWarningsApiV1.MaximumListed"/> + 1 (so the caller knows whether more exist; append-only, no
