@@ -44,11 +44,6 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
-        // Never discard the explicit issue trace while the Inventory owner contract is being integrated.
-        // The integration adapter replaces this fence with the exact owner request member, before any fact is staged.
-        if (command.SourceIssueMovementId is not null)
-            throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
-                InventoryManufacturingRealizationCodesV1.Unavailable);
         try
         {
             var result = await ReturnAsync(new ManufacturingInventoryInputReturnCommand(
@@ -59,7 +54,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedParentLabelVersion,
                 command.MovementId,
                 command.Quantity,
-                command.OccurredAtUtc), metadata, cancellationToken);
+                command.OccurredAtUtc, command.SourceIssueMovementId), metadata, cancellationToken);
             return new ManufacturingInventoryInputReturnPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.IsReplay);
         }
@@ -426,7 +421,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
                 Quantity(command.Quantity),
-                command.OccurredAtUtc);
+                command.OccurredAtUtc, command.SourceIssueMovementId);
             var inventoryMetadata = InventoryMetadata(metadata, companyId, command.OrderId, command.ReturnId,
                 "manufacturing-input-return");
             var connection = manufacturing.Database.GetDbConnection();
@@ -937,7 +932,7 @@ internal sealed record ManufacturingInventoryInputReturnCommand(
     long ExpectedParentLabelVersion,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc, Guid? SourceIssueMovementId = null);
 
 internal sealed record ManufacturingInventoryOutputCommand(
     Guid OrderId,
