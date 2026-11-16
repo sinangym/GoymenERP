@@ -5,6 +5,9 @@ import { reapprovePlan, type PlanReapprovalSnapshot } from './planCommandApi'
 import { PLAN_REAPPROVAL_TEXT as T } from './manufacturingText'
 import { Button } from '../ui/Button'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { PlanInputAvailabilityPanel } from './PlanInputAvailabilityPanel'
+import { PlanAllocationShortfallPanel } from './PlanAllocationShortfallPanel'
+import type { PlanAllocationShortfall } from './planAllocationShortfall'
 
 // Like pendingFactStore, an unknown outcome keeps its exact key and selection across route remounts in this session.
 const pending = new Map<string, PlanReapprovalSnapshot>()
@@ -22,19 +25,25 @@ export function PlanReapprovalSection({ plan, companyId, namespace, canApprove, 
   const [attempt, setAttempt] = useState<PlanReapprovalSnapshot | null>(() => pending.get(storeKey) ?? null)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState<string | null>(() => pending.has(storeKey) ? T.pending : null)
+  const [refreshGeneration, setRefreshGeneration] = useState(0)
+  const [shortfall, setShortfall] = useState<PlanAllocationShortfall | null>(null)
   const send = async (snapshot: PlanReapprovalSnapshot) => {
     const captured = boundary.capture()
-    setSending(true); setAttempt(snapshot); pending.set(storeKey, snapshot)
+    setSending(true); setShortfall(null); setAttempt(snapshot); pending.set(storeKey, snapshot)
     const result = await reapprovePlan(companyId, plan.planId, snapshot)
     setSending(false)
     if (result.type === 'unknown') { setMessage(T.pending); return }
     pending.delete(storeKey); setAttempt(null)
     if (result.type === 'applied') { setMessage(T.applied); await onApplied(result.resource); return }
     if (result.status === 401 || result.status === 403) boundary.report(result.status, captured)
+    setRefreshGeneration((current) => current + 1)
+    setShortfall(result.planAllocationShortfall ?? null)
     setMessage(result.code === 'manufacturing_plan_reapproval_settings_changed' ? T.changedSettings
       : result.code === 'manufacturing_plan_reapproval_label_mismatch' ? T.changedLabels : T.refused)
   }
   return <section aria-label={T.heading}>
+    <PlanInputAvailabilityPanel key={`${companyId}:${plan.planId}:${plan.version}`}
+      companyId={companyId} planId={plan.planId} planVersion={plan.version} refreshGeneration={refreshGeneration} />
     {(plan.reapprovals ?? []).length > 0 ? <>
       <h3>{T.history}</h3>
       <ul>{plan.reapprovals!.map((entry) => <li key={entry.number}>
@@ -55,6 +64,7 @@ export function PlanReapprovalSection({ plan, companyId, namespace, canApprove, 
           void send({ idempotencyKey: newCommandId(), expectedVersion: plan.version, selectedLabelIds: [...selection] })
         }}>{T.submit}</Button>}
     </> : null}
+    {shortfall !== null ? <PlanAllocationShortfallPanel value={shortfall} /> : null}
     {message !== null ? <p role="status">{message}</p> : null}
   </section>
 }

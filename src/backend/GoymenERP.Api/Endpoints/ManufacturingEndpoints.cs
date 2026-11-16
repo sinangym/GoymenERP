@@ -397,6 +397,23 @@ public static class ManufacturingEndpoints
             .Produces<PlanPreviewViewV1>(StatusCodes.Status200OK)
             .WithPreviewPlanProblems();
 
+        // URT-D34/D35: advisory current/free/missing kg of the plan's stored inputs only; no reservation is made.
+        group.MapGet("/plans/{planId:guid}/input-availability", async (
+                Guid planId, ManufacturingCommandService service, HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanInputAvailabilityAsync(planId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanInputAvailabilityV1")
+            .Produces<PlanInputAvailabilityViewV1>(StatusCodes.Status200OK)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
         group.MapPost("/plans/{planId:guid}/approval", async (
                 Guid planId,
                 ApprovePlanRequestV1 request,
@@ -569,6 +586,40 @@ public static class ManufacturingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        // URT-D97/D103: independent append-only priority revisions; the existing approval grant changes the score.
+        group.MapGet("/plans/{planId:guid}/priority", async (Guid planId, ManufacturingCommandService service,
+                HttpContext httpContext, CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanPriorityAsync(planId, cancellationToken), null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanPriorityV1").Produces<PlanPriorityViewV1>()
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/plans/{planId:guid}/priority", async (Guid planId, ChangePlanPriorityRequestV1 request,
+                ManufacturingCommandService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ChangePlanPriorityAsync(planId, request, key, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ChangeManufacturingPlanPriorityV1").Accepts<ChangePlanPriorityRequestV1>("application/json")
+            .Produces<PlanPriorityViewV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, ManufacturingRuleCodes.PlanCancelled,
+                "manufacturing_plan_priority_reason_required", "manufacturing_plan_priority_unchanged"])
+            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
+
+        // URT-D99/D107: the same server queue used by termin calculation, including its non-blocking over-plan flag.
+        group.MapGet("/plans/{planId:guid}/work-center-queue", async (Guid planId, ManufacturingCommandService service,
+                HttpContext httpContext, CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanWorkCenterQueueAsync(planId, cancellationToken), null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanWorkCenterQueueV1").Produces<PlanWorkCenterQueueViewV1>()
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
         // MFG-PLAN-EDIT: the plan's history under the plan read's grant — revision 0 as created, then every recorded
         // Draft edit with its reason, actor and time. Another company's plan is the same code-less 404 as an unknown id.
@@ -1221,7 +1272,7 @@ public static class ManufacturingEndpoints
                 detail: "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor.",
                 statusCode: StatusCodes.Status404NotFound),
             ManufacturingApiStatus.Conflict => Problem(StatusCodes.Status409Conflict, result.Code!, result.Field,
-                result.ExpectedVersion, result.CurrentVersion, result.StockShortfall),
+                result.ExpectedVersion, result.CurrentVersion, result.StockShortfall, result.PlanAllocationShortfall),
             ManufacturingApiStatus.Unprocessable => Problem(StatusCodes.Status422UnprocessableEntity, result.Code!,
                 result.Field),
             ManufacturingApiStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
@@ -1270,7 +1321,8 @@ public static class ManufacturingEndpoints
     };
 
     private static IResult Problem(int statusCode, string code, string? field, long? expectedVersion = null,
-        long? currentVersion = null, ManufacturingStockShortfallViewV1? stockShortfall = null)
+        long? currentVersion = null, ManufacturingStockShortfallViewV1? stockShortfall = null,
+        ManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null)
     {
         var extensions = new Dictionary<string, object?> { ["code"] = code };
         if (field is not null)
@@ -1289,6 +1341,7 @@ public static class ManufacturingEndpoints
         {
             extensions["stockShortfall"] = stockShortfall;
         }
+        if (planAllocationShortfall is not null) extensions["planAllocationShortfall"] = planAllocationShortfall;
 
         return Results.Problem(statusCode: statusCode, extensions: extensions);
     }

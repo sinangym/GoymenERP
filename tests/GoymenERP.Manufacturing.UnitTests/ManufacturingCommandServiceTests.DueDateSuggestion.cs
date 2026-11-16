@@ -27,14 +27,15 @@ public sealed partial class ManufacturingCommandServiceTests
 
     private static (Fixture Fixture, ManufacturingCommandService Service) SuggestionCase(
         SuggestionCalendarPort? calendar, SuggestionCapacityPort? capacity, SuggestionQueuePort? queue = null,
-        bool withoutQueue = false)
+        bool withoutQueue = false, SuggestionCompanyBufferPort? companyBuffer = null, bool withoutCompanyBuffer = false)
     {
         var fixture = new Fixture();
         var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
             new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
             fixture.Correlation, new FixedTime(), workCenterCalendars: calendar,
             workCenterQueues: withoutQueue ? null : queue ?? new SuggestionQueuePort(),
-            workCenterCapacities: capacity);
+            workCenterCapacities: capacity,
+            companyDueDateBuffer: withoutCompanyBuffer ? null : companyBuffer ?? new SuggestionCompanyBufferPort());
         return (fixture, service);
     }
 
@@ -497,6 +498,70 @@ public sealed partial class ManufacturingCommandServiceTests
             ManufacturingCommandService.SafetyBufferOf(3m, WorkCenterSafetyBufferUnitsV1.Hours, companyDefault));
         Assert.Equal(((DueDateSafetyMarginV1?)DueDateSafetyMarginV1.None, (string?)null),
             ManufacturingCommandService.SafetyBufferOf(0m, null, (0m, null)));
+    }
+
+    [Fact]
+    public async Task The_real_company_buffer_is_read_only_without_a_work_center_override_and_counts_working_days()
+    {
+        var buffer = new SuggestionCompanyBufferPort { Days = 2 };
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
+            new SuggestionCapacityPort { CapacityKgPerHour = 250m }, companyBuffer: buffer);
+        var plan = SuggestionPlan(fixture);
+        var result = await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(((int?)2, (DateOnly?)new DateOnly(2026, 9, 22)),
+            (result.Resource!.SafetyMarginDays, result.Resource.SuggestedDueDate));
+        Assert.Equal(Company, Assert.Single(buffer.Calls));
+
+        var unavailableCompany = new SuggestionCompanyBufferPort { Fail = true };
+        var (overrideFixture, overrideService) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
+            new SuggestionCapacityPort { CapacityKgPerHour = 250m, BufferValue = 1m, BufferUnit = "Days" },
+            companyBuffer: unavailableCompany);
+        var own = SuggestionPlan(overrideFixture);
+        var overridden = await overrideService.GetPlanDueDateSuggestionAsync(own.Id, CancellationToken.None);
+        Assert.Equal(1, overridden.Resource!.SafetyMarginDays);
+        Assert.Empty(unavailableCompany.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_missing_or_unreadable_company_buffer_provider_is_503_instead_of_a_zero_day_suggestion(bool missing)
+    {
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
+            new SuggestionCapacityPort(), companyBuffer: new SuggestionCompanyBufferPort { Fail = true },
+            withoutCompanyBuffer: missing);
+        var result = await service.GetPlanDueDateSuggestionAsync(SuggestionPlan(fixture).Id, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.Null(result.Resource);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_foreign_company_buffer_or_a_nonzero_unrecorded_default_is_unavailable(bool foreign)
+    {
+        var source = new SuggestionCompanyBufferPort { Days = 2, Version = 0, AnswerCompany = foreign ? OtherCompany : Company };
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
+            new SuggestionCapacityPort(), companyBuffer: source);
+        var answer = await service.GetPlanDueDateSuggestionAsync(SuggestionPlan(fixture).Id, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Unavailable, answer.Status); Assert.Null(answer.Resource);
+    }
+
+    private sealed class SuggestionCompanyBufferPort : ISettingsManufacturingDueDateBufferProviderV1
+    {
+        public int Days { get; init; }
+        public bool Fail { get; init; }
+        public long? Version { get; init; }
+        public Guid? AnswerCompany { get; init; }
+        public List<Guid> Calls { get; } = [];
+        public Task<SettingsManufacturingDueDateBufferV1> GetDueDateBufferAsync(Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add(companyId);
+            if (Fail) throw new InvalidOperationException("Synthetic company buffer read failure");
+            return Task.FromResult(new SettingsManufacturingDueDateBufferV1(AnswerCompany ?? companyId, Days, Version ?? (Days == 0 ? 0 : 1)));
+        }
     }
 
     /// <summary>The work center queue store as a test double: an answer built for the asked target (empty queue by
