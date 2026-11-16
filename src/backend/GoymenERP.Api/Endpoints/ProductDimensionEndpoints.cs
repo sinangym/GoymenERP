@@ -137,7 +137,8 @@ public static class ProductDimensionEndpoints
             .ProducesErpConflict(
                 ProductDimensionProblemCodesV1.IdempotencyConflict,
                 ProductDimensionProblemCodesV1.VersionConflict,
-                ProductDimensionProblemCodesV1.WeightSourceMissing)
+                ProductDimensionProblemCodesV1.WeightSourceMissing,
+                ProductDimensionProblemCodesV1.WeightSourceConflict)
             .ProducesErpServiceUnavailable(ProductDimensionProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 

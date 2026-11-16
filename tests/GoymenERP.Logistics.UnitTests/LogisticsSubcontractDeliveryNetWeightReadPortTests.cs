@@ -101,6 +101,23 @@ public sealed class LogisticsSubcontractDeliveryNetWeightReadPortTests
     }
 
     [Fact]
+    public void The_split_denominator_is_the_weighbridge_net_and_never_the_declared_or_shipment_share_kilograms()
+    {
+        // KLN-D89: the denominator is the measured net (23 880); the declared shipment shares (18 001.5 + 5 000) and the
+        // loaded totals are facts that differ from it, and later shipments never move the net.
+        var (instruction, _, _, weighingId, _, _) = WeighedAndShipped();
+
+        var value = SubcontractDeliveryNetWeightReader.Read(CompanyA, instruction.Id, weighingId, instruction).Value!;
+
+        var net = decimal.Parse(value.NetKg, CultureInfo.InvariantCulture);
+        var declared = value.Shipments.Sum(shipment => decimal.Parse(shipment.ShippedKg, CultureInfo.InvariantCulture));
+        var loaded = decimal.Parse(value.LoadedKgAtWeighing, CultureInfo.InvariantCulture);
+        Assert.Equal((23_880m, 23_001.5m, 24_000m), (net, declared, loaded));
+        Assert.NotEqual(declared, net);
+        Assert.NotEqual(loaded, net);
+    }
+
+    [Fact]
     public void An_instruction_without_a_weighing_or_with_another_weighing_id_answers_no_source_never_a_zero_net()
     {
         var (instruction, first, _) = Issued();

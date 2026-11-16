@@ -26,7 +26,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// <item><b>kg/m</b> (URN-D16, STK-S37R): never taken from the request and never stored on the card; the view and the read port
 /// resolve it from the acting company's current imported table (<see cref="ProductProfileWeightTableService.FindAsync"/>) and
 /// name its source label and table version. A profile whose (width, height, wall) the current table does not hold is refused
-/// (<see cref="ProductDimensionProblemCodesV1.WeightSourceMissing"/>); a round tube's table value is optional.</item>
+/// (<see cref="ProductDimensionProblemCodesV1.WeightSourceMissing"/>); a round tube's table value is optional. A profile matches
+/// the table with width and height swapped too (URN-D19); both directions with different kg/m is a table conflict
+/// (<see cref="ProductDimensionProblemCodesV1.WeightSourceConflict"/>), never a pick.</item>
 /// </list>
 /// </summary>
 internal sealed class ProductDimensionService(
@@ -58,7 +60,8 @@ internal sealed class ProductDimensionService(
 
         var row = await database.Dimensions.AsNoTracking()
             .SingleOrDefaultAsync(dimension => dimension.ProductId == productId, cancellationToken);
-        var weight = row is null ? null : await WeightOfAsync(row, scope.CompanyId, cancellationToken);
+        // A URN-D19 table conflict shows no kg/m in the view (never one of the two values); the save names the conflict.
+        var weight = row is null ? null : (await WeightOfAsync(row, scope.CompanyId, cancellationToken)).Match;
         await MeasureAsync(cancellationToken);
         return row is null
             ? new ProductDimensionViewV1(scope.CompanyId, productId, "0", null, null, null, null, null, null, null, null, null, null,
@@ -135,10 +138,19 @@ internal sealed class ProductDimensionService(
             refusal = VersionConflict();
         }
 
-        var weight = refusal is null
+        var lookup = refusal is null
             ? await ProductProfileWeightTableService.FindAsync(database, scope.CompanyId, shape.SectionKind, shape.WidthMm,
                 shape.HeightMm, shape.OuterDiameterMm, shape.WallThicknessMm, cancellationToken)
             : null;
+        var weight = lookup?.Match;
+        if (refusal is null && lookup is { IsConflict: true })
+        {
+            // URN-D19: the two directions of these measures hold different kg/m in the table; neither is picked.
+            refusal = Problem(409, ProductDimensionProblemCodesV1.WeightSourceConflict, "Metre ağırlığı tablosu çelişkili.",
+                "Şirketin güncel metre ağırlığı tablosunda bu ölçünün iki yönü (en ve yükseklik yer değiştirmiş) farklı kg/m ile "
+                + "duruyor; önce tabloyu düzeltip yeniden içe aktarın.");
+        }
+
         if (refusal is null && weight is null
             && string.Equals(shape.SectionKind, ProductDimensionSectionKindsV1.Profile, StringComparison.Ordinal))
         {
@@ -231,10 +243,12 @@ internal sealed class ProductDimensionService(
                 return ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.NoSource);
             }
 
-            var weight = await WeightOfAsync(row, companyContext.CompanyId, cancellationToken);
+            var lookup = await WeightOfAsync(row, companyContext.CompanyId, cancellationToken);
+            var weight = lookup.Match;
             return new ProductDimensionReadV1(ProductDimensionOutcomeV1.Found, row.SectionKind, row.ThicknessMm, row.WidthMm,
                 row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, weight?.KgPerMetre, row.Version,
-                weight?.SourceLabel, weight?.TableVersion);
+                weight?.SourceLabel ?? lookup.ConflictSourceLabel, weight?.TableVersion ?? lookup.ConflictTableVersion,
+                lookup.IsConflict);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -259,8 +273,8 @@ internal sealed class ProductDimensionService(
         return new Scope(companyContext.CompanyId, [.. measured.RoleCodes.Order(StringComparer.Ordinal)]);
     }
 
-    /// <summary>The acting company's current table value for the stored measures (URN-D16); null without one.</summary>
-    private Task<ProfileWeightMatch?> WeightOfAsync(ProductCardDimensionRow row, Guid companyId,
+    /// <summary>The acting company's current table lookup for the stored measures (URN-D16, either direction URN-D19).</summary>
+    private Task<ProfileWeightLookup> WeightOfAsync(ProductCardDimensionRow row, Guid companyId,
         CancellationToken cancellationToken) =>
         ProductProfileWeightTableService.FindAsync(database, companyId, row.SectionKind, row.WidthMm, row.HeightMm,
             row.OuterDiameterMm, row.WallThicknessMm, cancellationToken);

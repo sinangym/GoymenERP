@@ -227,6 +227,27 @@ describe('product dimension panel (BS-9)', () => {
     ])
   })
 
+  it('reads a two-direction kg/m table conflict as its own refusal', async () => {
+    const user = userEvent.setup()
+    const sent = install((method) =>
+      method === 'GET' ? json(UNSET) : json({ code: DIMENSION_PROBLEM.weightSourceConflict }, 409))
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: DIMENSION_TEXT.change }))
+    await user.selectOptions(screen.getByRole('combobox', { name: DIMENSION_TEXT.kindLabel }), 'Profile')
+    await user.type(screen.getByRole('textbox', { name: DIMENSION_TEXT.reasonLabel }), 'SENTETIK')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.widthMm }), '40')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.heightMm }), '60')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }), '3')
+    await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
+
+    expect(await screen.findByText(DIMENSION_TEXT.weightSourceConflict)).toBeTruthy()
+    expect(screen.queryByText(DIMENSION_TEXT.weightSourceMissing)).toBeNull()
+    expect(sent.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
+      { expectedVersion: '0', sectionKind: 'Profile', ...EMPTY_MEASURES, widthMm: 40, heightMm: 60, wallThicknessMm: 3, reason: 'SENTETIK' },
+    ])
+  })
+
   it('reloads after a version conflict', async () => {
     const user = userEvent.setup()
     let reads = 0

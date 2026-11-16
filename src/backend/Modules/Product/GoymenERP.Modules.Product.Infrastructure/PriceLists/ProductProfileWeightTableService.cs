@@ -243,16 +243,21 @@ internal sealed class ProductProfileWeightTableService(
 
     /// <summary>
     /// URN-D16: the kg/m of the company's CURRENT table for a profile (width, height, wall — exact values, no tolerance) or a round
-    /// tube (outer diameter, wall); null for any other kind, without a table or without that row.
+    /// tube (outer diameter, wall); <see cref="ProfileWeightLookup.None"/> for any other kind, without a table or without that row.
+    /// <para>
+    /// URN-D19 (SINAN-CEVAP 34.10): a profile also matches with width and height swapped (40×60 finds the table's 60×40 row); the
+    /// wall must be the same. When the two directions of the same measures stand in the table with different kg/m the lookup is
+    /// a table conflict (<see cref="ProfileWeightLookup.IsConflict"/>), never a pick of one of them. A round tube has no direction.
+    /// </para>
     /// </summary>
-    internal static async Task<ProfileWeightMatch?> FindAsync(ProductPriceListDbContext database, Guid companyId,
+    internal static async Task<ProfileWeightLookup> FindAsync(ProductPriceListDbContext database, Guid companyId,
         string? sectionKind, decimal? widthMm, decimal? heightMm, decimal? outerDiameterMm, decimal? wallThicknessMm,
         CancellationToken cancellationToken)
     {
         if (sectionKind is not (ProductDimensionSectionKindsV1.Profile or ProductDimensionSectionKindsV1.RoundTube)
             || wallThicknessMm is not { } wall)
         {
-            return null;
+            return ProfileWeightLookup.None;
         }
 
         var header = await database.ProfileWeightImports.AsNoTracking()
@@ -262,7 +267,7 @@ internal sealed class ProductProfileWeightTableService(
             .FirstOrDefaultAsync(cancellationToken);
         if (header is null)
         {
-            return null;
+            return ProfileWeightLookup.None;
         }
 
         var lines = database.ProfileWeightLines.AsNoTracking().Where(line => line.CompanyId == companyId
@@ -271,23 +276,31 @@ internal sealed class ProductProfileWeightTableService(
         {
             if (widthMm is not { } width || heightMm is not { } height)
             {
-                return null;
+                return ProfileWeightLookup.None;
             }
 
-            lines = lines.Where(line => line.WidthMm == width && line.HeightMm == height);
+            // URN-D19: either direction of the section; a square profile finds its one row through both branches.
+            lines = lines.Where(line => (line.WidthMm == width && line.HeightMm == height)
+                || (line.WidthMm == height && line.HeightMm == width));
         }
         else
         {
             if (outerDiameterMm is not { } diameter)
             {
-                return null;
+                return ProfileWeightLookup.None;
             }
 
             lines = lines.Where(line => line.OuterDiameterMm == diameter);
         }
 
-        var kg = await lines.Select(line => (decimal?)line.KgPerMetre).SingleOrDefaultAsync(cancellationToken);
-        return kg is { } value ? new ProfileWeightMatch(value, header.SourceLabel, header.Version) : null;
+        // At most two distinct values are needed to tell "one value" from "a table conflict".
+        var weights = await lines.Select(line => line.KgPerMetre).Distinct().Take(2).ToListAsync(cancellationToken);
+        return weights.Count switch
+        {
+            0 => ProfileWeightLookup.None,
+            1 => ProfileWeightLookup.Found(new ProfileWeightMatch(weights[0], header.SourceLabel, header.Version)),
+            _ => ProfileWeightLookup.Conflict(header.SourceLabel, header.Version),
+        };
     }
 
     private Task<long> CurrentVersionAsync(Guid companyId, CancellationToken cancellationToken) =>
@@ -433,6 +446,22 @@ internal sealed class ProductProfileWeightTableService(
 
 /// <summary>A kg/m read from the company's current table, with that table's source label and version (URN-D14/D16).</summary>
 internal sealed record ProfileWeightMatch(decimal KgPerMetre, string SourceLabel, long TableVersion);
+
+/// <summary>
+/// The answer of one table lookup: a single value (<see cref="Match"/>), nothing (<see cref="None"/>), or a URN-D19 table conflict
+/// — the two directions of the same profile measures hold different kg/m — with the conflicting table's source label and version.
+/// A conflict never carries a value.
+/// </summary>
+internal sealed record ProfileWeightLookup(ProfileWeightMatch? Match, bool IsConflict, string? ConflictSourceLabel,
+    long? ConflictTableVersion)
+{
+    public static ProfileWeightLookup None { get; } = new(null, false, null, null);
+
+    public static ProfileWeightLookup Found(ProfileWeightMatch match) =>
+        new(match ?? throw new ArgumentNullException(nameof(match)), false, null, null);
+
+    public static ProfileWeightLookup Conflict(string sourceLabel, long tableVersion) => new(null, true, sourceLabel, tableVersion);
+}
 
 /// <summary>
 /// URN-D13 fail-closed default of the vault port: until Platform offers a port that keeps the import file under the user-upload

@@ -70,6 +70,8 @@ export const DIMENSION_PROBLEM = {
   idempotencyConflict: 'product_dimension_idempotency_conflict',
   /** URN-D16: the company's current kg/m table does not hold this profile's width, height and wall. */
   weightSourceMissing: 'product_dimension_weight_source_missing',
+  /** URN-D19: both directions (width and height swapped) of this profile stand in the table with different kg/m. */
+  weightSourceConflict: 'product_dimension_weight_source_conflict',
 } as const
 
 export type DimensionMeasures = Readonly<Record<DimensionMeasure, number | null>>
