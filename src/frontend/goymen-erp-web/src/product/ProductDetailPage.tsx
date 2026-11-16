@@ -78,6 +78,7 @@ import { DuplicateCandidatesPanel } from './DuplicateCandidates'
 import { ProductItemTypePanel } from './ProductItemTypePanel'
 import { ProductDimensionPanel } from './ProductDimensionPanel'
 import { ProfileWeightTablePanel } from './ProfileWeightTablePanel'
+import { PackageApprovalPanel } from './PackageApprovalPanel'
 import { PackageImportPanel } from './PackageImportPanel'
 import {
   duplicateIds,
@@ -961,6 +962,11 @@ function ProductCardView({
       {/* B-08 / BS-10: the selected company's package standard (pieces per package) and this product's entry. */}
       {itemTypeCompany !== null && itemTypeNamespace !== null ? (
         <PackageImportPanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
+      ) : null}
+
+      {/* SAT-D382 / SAT-D383: the package standard's approval, customer overrides and kept import files. */}
+      {itemTypeCompany !== null && itemTypeNamespace !== null ? (
+        <PackageApprovalPanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
       ) : null}
 
       <section className={styles.section} aria-labelledby="product-roles-heading">

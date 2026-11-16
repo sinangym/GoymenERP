@@ -3,7 +3,8 @@
  * then edited in the ERP one product at a time; each import or edit is a new version. Without
  * `product.package-standards.manage` (granted to no role here) the server answers 403 and the panel shows nothing; an ended
  * session (401), an unwired provider (503) and a failed read each say so instead of "kaynak yok". While no table or no entry
- * exists the panel says "kaynak yok" (NoSource) and guesses nothing. The forms check the input only to help the person; the
+ * is in effect today the panel says "kaynak yok" (NoSource) and guesses nothing. SAT-D382 (STK-SC36-c): an import or an edit is
+ * proposed and waits for approval (`PackageApprovalPanel`); the table shown is the version in effect today. The forms check the input only to help the person; the
  * server holds every rule.
  */
 
@@ -215,6 +216,10 @@ function refusalText(status: number, code: string | null, detail: string | null)
       return PACKAGE_STANDARD_TEXT.piecesInvalid
     case PACKAGE_STANDARD_PROBLEM.idempotencyConflict:
       return PACKAGE_STANDARD_TEXT.idempotencyConflict
+    case PACKAGE_STANDARD_PROBLEM.approvalPending:
+      return PACKAGE_STANDARD_TEXT.approvalPending
+    case PACKAGE_STANDARD_PROBLEM.productInactive:
+      return PACKAGE_STANDARD_TEXT.productInactive
     default:
       return status === 404 && code === null ? PACKAGE_STANDARD_TEXT.productMissing : PACKAGE_STANDARD_TEXT.refused
   }

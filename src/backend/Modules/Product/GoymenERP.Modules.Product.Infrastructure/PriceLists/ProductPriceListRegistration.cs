@@ -71,6 +71,11 @@ public static class ProductPriceListRegistration
             serviceProvider.GetRequiredService<ProductPackageStandardService>());
         services.AddScoped<IProductPackageStandardReaderV2>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        // SAT-D382 / SAT-D383 (STK-SC36-c): the approval, the customer override, the kept files and the dated read port.
+        services.AddScoped<IProductPackageStandardServiceV3>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        services.AddScoped<IProductPackageStandardReaderV3>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
         return services;
     }
 
@@ -141,7 +146,11 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<ICurrentUser>(),
         serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
         serviceProvider.GetRequiredService<IAuditEventCollector>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        // The Cari owner's port (a host adapter); absent → no override is stored and no customer name is shown.
+        serviceProvider.GetService<IProductPackageStandardCustomerPortV3>(),
+        // Whether the preparer may decide (NEEDS-SINAN); absent → closed.
+        serviceProvider.GetService<ProductPackageStandardApprovalOptionsV3>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),

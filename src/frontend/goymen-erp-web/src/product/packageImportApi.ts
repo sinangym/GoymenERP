@@ -33,6 +33,10 @@ export const PACKAGE_STANDARD_PROBLEM = {
   idempotencyConflict: 'product_package_standard_idempotency_conflict',
   versionConflict: 'product_package_standard_version_conflict',
   providerUnavailable: 'product_package_standard_provider_unavailable',
+  /** SAT-D382 (STK-SC36-c): another version waits for approval. */
+  approvalPending: 'product_package_standard_approval_pending',
+  /** SAT-D383 (STK-SC36-c): a passive product gets no entry. */
+  productInactive: 'product_package_standard_product_inactive',
 } as const
 
 /** `ProductPackageStandardSourceKindsV2`. */
@@ -57,9 +61,9 @@ export interface PackageStandardSource {
 }
 
 export interface PackageStandardTableView {
-  /** "0" while no table exists. */
+  /** The head version ("0" while no table exists): the expected version of the next command. */
   readonly version: string
-  /** Null exactly when the version is "0". */
+  /** The version in effect today; null while none is (no table, or only a version waiting for approval). */
   readonly source: PackageStandardSource | null
   readonly entries: readonly PackageStandardEntry[]
 }
@@ -148,10 +152,14 @@ export function decodePackageStandardTable(raw: unknown, companyId: string): Pac
     || typeof raw.version !== 'string' || !VERSION.test(raw.version) || !Array.isArray(raw.entries)) {
     return null
   }
-  if (raw.version === '0') {
-    if (SOURCE_KEYS.some((key) => raw[key] !== null) || raw.entries.length !== 0) return null
-    return { version: '0', source: null, entries: [] }
+  // SAT-D382 (STK-SC36-c): the version is the head (the next command's expected version); the source and the entries are those
+  // of the version in effect today. Before any version takes effect (no table, or only a pending one) every source member is
+  // null and no entry exists.
+  if (SOURCE_KEYS.every((key) => raw[key] === null)) {
+    if (raw.entries.length !== 0) return null
+    return { version: raw.version, source: null, entries: [] }
   }
+  if (raw.version === '0') return null
   const kind = raw.sourceKind
   if (!PACKAGE_STANDARD_SOURCE_KINDS.includes(kind as PackageStandardSourceKind)
     || !isNonEmptyString(raw.createdAtUtc) || !isNonEmptyString(raw.createdBy)) {

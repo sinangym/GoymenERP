@@ -12,35 +12,50 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 
 /// <summary>
-/// B-08 / BS-10 (STK-S12): the company's package standard table (pieces per package of a product; 2026-10-21 #9 company +
-/// product scope), imported from an Excel file and then edited in the ERP one product at a time.
+/// B-08 / BS-10 (STK-S12) and SAT-D382 / SAT-D383 (STK-SC36-c): the company's package standard table (pieces per package of a
+/// product; 2026-10-21 #9 company + product scope, with a customer's override), imported from an Excel file and then edited in
+/// the ERP one entry at a time; every new version takes effect only once approved, from its effective date.
 /// <list type="bullet">
-/// <item><b>Authority</b>: <see cref="ProductPackageStandardPermissionsV2.Manage"/> company-wide in the server-resolved company,
-/// measured fresh first and again right before the answer and the save; granted to no role here.</item>
+/// <item><b>Authority</b>: <see cref="ProductPackageStandardPermissionsV2.Manage"/> (prepare) and
+/// <see cref="ProductPackageStandardPermissionsV3.Approve"/> (decide), company-wide in the server-resolved company, measured fresh
+/// first and again right before the answer and the save; granted to no role here.</item>
 /// <item><b>Import</b>: the server reads the rows from the file (<see cref="ProductPackageStandardWorkbook"/>) and resolves every
-/// product code against the shared card; any row error refuses the whole file (nothing is partially imported). Only the file's
-/// name, SHA-256 and size are kept with the version (the file itself is not stored; whether it must be kept is open).</item>
-/// <item><b>Edit</b>: one product's entry is set or removed; the other entries are carried over into the new version. An edit
-/// that changes nothing stores its answer but makes no version and no audit event.</item>
+/// product code against the shared card; an unknown code or a passive product is a row error and any row error refuses the whole
+/// file (nothing is partially imported). Every file that reaches the row check is kept with its result report
+/// (<see cref="ProductPackageStandardImportFileRow"/>), accepted or refused (SAT-D383).</item>
+/// <item><b>Edit</b>: one product's default or one customer's override is set or removed; the other entries are carried over
+/// from the newest approved version. An edit that changes nothing stores its answer but makes no version and no audit event.</item>
+/// <item><b>Approval</b>: a new version waits as Pending (only one at a time) until the approver approves it from an effective
+/// date (today's business day or later) or rejects it. The versions written before approvals existed stay effective.</item>
 /// <item><b>Command</b>: one person, a mandatory reason (and source label for an import), Idempotency-Key (the stored terminal
-/// answer replays), the expected table version as decimal text ("0" = none yet), correlation/causation and ONE audit event per
-/// new version. Every version is insert-only; the newest is current.</item>
-/// <item><b>Read port</b> (<see cref="IProductPackageStandardReaderV2"/>): access only (authenticated member of the company), no
-/// permission; NoSource while no table or entry exists; Unavailable on any storage failure (never throws).</item>
+/// answer replays), the expected table version as decimal text ("0" = none yet; the head version, pending included),
+/// correlation/causation and ONE audit event per new version, decision or kept file. Every row is insert-only.</item>
+/// <item><b>Read port</b> (<see cref="IProductPackageStandardReaderV3"/>, and V2 for today): access only (authenticated member of
+/// the company), no permission; NoSource while no effective entry exists; Unavailable on any storage failure (never throws).</item>
 /// </list>
 /// </summary>
-internal sealed class ProductPackageStandardService(
+internal sealed partial class ProductPackageStandardService(
     ProductPriceListDbContext database,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IProductPackageStandardServiceV2, IProductPackageStandardReaderV2
+    TimeProvider timeProvider,
+    IProductPackageStandardCustomerPortV3? customers = null,
+    ProductPackageStandardApprovalOptionsV3? approvalOptions = null)
+    : IProductPackageStandardServiceV2, IProductPackageStandardReaderV2, IProductPackageStandardServiceV3,
+        IProductPackageStandardReaderV3
 {
     private const string Permission = ProductPackageStandardPermissionsV2.Manage;
+    private const string ApprovePermission = ProductPackageStandardPermissionsV3.Approve;
     internal const string ImportCommandName = "product.package-standards.import.v2";
     internal const string SetCommandName = "product.package-standards.set.v2";
+    internal const string SetCustomerCommandName = "product.package-standards.set-customer.v3";
+    internal const string ApproveCommandName = "product.package-standards.approve.v3";
+    internal const string RejectCommandName = "product.package-standards.reject.v3";
     private const string EntityType = "Product.PackageStandardTable";
+    private const string ImportFileEntityType = "Product.PackageStandardImportFile";
+    private const int ProductInactive = (int)Domain.Products.ProductLifecycle.Inactive;
 
     // Product codes are resolved in bounded batches so that one query never carries an unbounded parameter list.
     private const int CodeLookupBatchSize = 500;
@@ -50,13 +65,16 @@ internal sealed class ProductPackageStandardService(
     public async Task<ProductPackageStandardTableViewV2> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
         var scope = await MeasureAsync(cancellationToken);
-        var header = await CurrentHeaderAsync(scope.CompanyId, cancellationToken);
-        if (header is null)
+        var head = await CurrentVersionAsync(scope.CompanyId, cancellationToken);
+        var effective = await EffectiveHeaderAsync(scope.CompanyId, Today(), cancellationToken);
+        var headText = head.ToString(CultureInfo.InvariantCulture);
+        if (effective is null)
         {
             await MeasureAsync(cancellationToken);
-            return new ProductPackageStandardTableViewV2(scope.CompanyId, "0", null, null, null, null, null, null, []);
+            return new ProductPackageStandardTableViewV2(scope.CompanyId, headText, null, null, null, null, null, null, []);
         }
 
+        var header = effective.Header;
         var entries = await (
                 from line in database.PackageStandardLines.AsNoTracking()
                 join product in database.Products.AsNoTracking() on line.ProductId equals product.Id
@@ -65,9 +83,8 @@ internal sealed class ProductPackageStandardService(
                 select new ProductPackageStandardEntryV2(line.ProductId, product.Code, product.Name, line.PiecesPerPackage))
             .ToListAsync(cancellationToken);
         await MeasureAsync(cancellationToken);
-        return new ProductPackageStandardTableViewV2(scope.CompanyId, header.Version.ToString(CultureInfo.InvariantCulture),
-            header.SourceKind, header.SourceLabel, header.FileName, header.FileSha256, header.CreatedAtUtc, header.CreatedBy,
-            entries);
+        return new ProductPackageStandardTableViewV2(scope.CompanyId, headText, header.SourceKind, header.SourceLabel,
+            header.FileName, header.FileSha256, header.CreatedAtUtc, header.CreatedBy, entries);
     }
 
     public async Task<ProductPackageStandardResultV2> ImportAsync(ImportProductPackageStandardsRequestV2 request,
@@ -105,14 +122,6 @@ internal sealed class ProductPackageStandardService(
             return Unstored(FileInvalid(fileRefusal), metadata);
         }
 
-        var workbook = ProductPackageStandardWorkbook.Read(content);
-        var errors = workbook.Errors.ToList();
-        var resolved = await ResolveCodesAsync(workbook.Rows, errors, cancellationToken);
-        if (errors.Count > 0)
-        {
-            return Unstored(FileInvalid(Describe(errors)), metadata);
-        }
-
         var fileSha256 = Convert.ToHexStringLower(SHA256.HashData(content));
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new
@@ -126,49 +135,49 @@ internal sealed class ProductPackageStandardService(
             return Replay(existing, requestHash, metadata);
         }
 
+        var workbook = ProductPackageStandardWorkbook.Read(content);
+        var errors = workbook.Errors.ToList();
+        var resolved = await ResolveCodesAsync(workbook.Rows, errors, cancellationToken);
+        var file = new KeptFile(VersionIdOf(ImportCommandName + ".file", scope.CompanyId, keyHash), fileName, fileSha256,
+            content, sourceLabel, reason, workbook.Rows.Count, resolved.Count, errors);
+        if (errors.Count > 0)
+        {
+            return await RefuseImportAsync(scope, file, FileInvalid(Describe(errors)), keyHash, requestHash, metadata,
+                cancellationToken);
+        }
+
         var currentVersion = await CurrentVersionAsync(scope.CompanyId, cancellationToken);
         if (currentVersion != expectedVersion)
         {
-            return await StoreAsync(ImportCommandName, VersionConflict(), keyHash, requestHash, metadata, cancellationToken);
+            return await RefuseImportAsync(scope, file, VersionConflict(), keyHash, requestHash, metadata, cancellationToken);
         }
 
+        if (await PendingHeaderAsync(scope.CompanyId, cancellationToken) is not null)
+        {
+            return await RefuseImportAsync(scope, file, ApprovalPending(), keyHash, requestHash, metadata, cancellationToken);
+        }
+
+        // The file replaces the product defaults; the customer overrides of the approved base are carried over.
+        var basis = await ApprovedBaseAsync(scope.CompanyId, cancellationToken);
+        var defaults = resolved.ToDictionary(row => row.ProductId, row => row.Pieces);
         var version = checked(currentVersion + 1);
         var versionId = VersionIdOf(ImportCommandName, scope.CompanyId, keyHash);
-        database.PackageStandardVersions.Add(new ProductPackageStandardVersionRow
-        {
-            CompanyId = scope.CompanyId,
-            Version = version,
-            VersionId = versionId,
-            SourceKind = ProductPackageStandardSourceKindsV2.Import,
-            SourceLabel = sourceLabel,
-            Reason = reason,
-            FileName = fileName,
-            FileSha256 = fileSha256,
-            FileSizeBytes = content.Length,
-            EditedProductId = null,
-            EntryCount = resolved.Count,
-            CreatedAtUtc = timeProvider.GetUtcNow(),
-            CreatedBy = metadata.ActorId,
-            CorrelationId = metadata.CorrelationId,
-        });
-        foreach (var (productId, pieces) in resolved)
-        {
-            database.PackageStandardLines.Add(new ProductPackageStandardLineRow
-            {
-                CompanyId = scope.CompanyId, Version = version, ProductId = productId, PiecesPerPackage = pieces,
-            });
-        }
+        AddVersion(scope.CompanyId, version, versionId, ProductPackageStandardSourceKindsV2.Import, sourceLabel, reason,
+            fileName, fileSha256, content.Length, null, null, defaults, basis.Overrides, metadata);
+        AddKeptFile(scope.CompanyId, file, ProductPackageStandardImportOutcomesV3.Accepted, null, version, metadata);
 
         var after = new
         {
             VersionId = versionId, Version = version, SourceKind = ProductPackageStandardSourceKindsV2.Import,
             SourceLabel = sourceLabel, Reason = reason, FileName = fileName, FileSha256 = fileSha256,
-            FileSizeBytes = content.Length, EntryCount = resolved.Count,
+            FileSizeBytes = content.Length, EntryCount = defaults.Count, CustomerEntryCount = basis.Overrides.Count,
+            ImportId = file.ImportId, State = ProductPackageStandardVersionStatesV3.Pending,
         };
         auditEvents.Enqueue(new AuditEventDraft(scope.CompanyId, "product.package-standards.imported.v2", EntityType,
             versionId.ToString("D"), "ImportPackageStandardTable", currentVersion == 0 ? null : currentVersion, version,
             AuditActorTypes.User, metadata.ActorId, Permission, scope.RoleCodes, "{}", JsonSerializer.Serialize(after, Json),
-            "Şirketin paket standardı tablosu Excel dosyasından içe aktarıldı; kaynak etiketi ve gerekçe kayıt içeriğindedir",
+            "Şirketin paket standardı tablosu Excel dosyasından içe aktarıldı ve onaya sunuldu; kaynak etiketi ve gerekçe kayıt "
+            + "içeriğindedir",
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel,
             metadata.ClientIpAddress, metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         return await SaveVersionAsync(ImportCommandName, keyHash, requestHash, metadata, cancellationToken);
@@ -186,20 +195,9 @@ internal sealed class ProductPackageStandardService(
                 "Ürün kimliği zorunludur."), metadata);
         }
 
-        if (!TryParseVersion(request.ExpectedVersion, out var expectedVersion))
+        if (EntryRefusal(request, out var expectedVersion, out var reason) is { } refusal)
         {
-            return Unstored(ExpectedVersionInvalid(), metadata);
-        }
-
-        if (request.PiecesPerPackage is <= 0)
-        {
-            return Unstored(Problem(400, ProductPackageStandardProblemCodesV2.PiecesInvalid, "Paket içi adet geçersiz.",
-                "Paket içi adet pozitif tam sayı olmalıdır; kaydı kaldırmak için boş bırakın."), metadata);
-        }
-
-        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
-        {
-            return Unstored(reasonRefusal, metadata);
+            return Unstored(refusal, metadata);
         }
 
         var pieces = request.PiecesPerPackage;
@@ -214,129 +212,185 @@ internal sealed class ProductPackageStandardService(
             return Replay(existing, requestHash, metadata);
         }
 
-        if (!await database.Products.AsNoTracking().AnyAsync(product => product.Id == productId, cancellationToken))
+        return await ProposeEntryAsync(scope, SetCommandName, null, productId, pieces, expectedVersion, reason, keyHash,
+            requestHash, metadata, cancellationToken);
+    }
+
+    /// <summary>
+    /// One entry's proposal (a product default when <paramref name="customerId"/> is null, otherwise that customer's override):
+    /// the card must exist, a value needs an active card, the table must be at the expected version with no version waiting,
+    /// and the entry must change against the approved base. The new version carries every other entry of the base over.
+    /// </summary>
+    private async Task<ProductPackageStandardResultV2> ProposeEntryAsync(Scope scope, string commandName, Guid? customerId,
+        Guid productId, int? pieces, long expectedVersion, string reason, string keyHash, string requestHash,
+        ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken)
+    {
+        var lifecycle = await database.Products.AsNoTracking()
+            .Where(product => product.Id == productId)
+            .Select(product => (int?)product.Lifecycle)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (lifecycle is null)
         {
-            return await StoreAsync(SetCommandName, new ProductPackageStandardAnswerV2(404, null, "Ürün bulunamadı.",
+            return await StoreAsync(commandName, new ProductPackageStandardAnswerV2(404, null, "Ürün bulunamadı.",
                 "İstenen ürün kartı yok."), keyHash, requestHash, metadata, cancellationToken);
+        }
+
+        if (pieces is not null && lifecycle == ProductInactive)
+        {
+            return await StoreAsync(commandName, Problem(409, ProductPackageStandardProblemCodesV3.ProductInactive,
+                "Ürün pasif.", "Pasif ürün kartına paket standardı yazılmaz."), keyHash, requestHash, metadata,
+                cancellationToken);
         }
 
         var currentVersion = await CurrentVersionAsync(scope.CompanyId, cancellationToken);
         if (currentVersion != expectedVersion)
         {
-            return await StoreAsync(SetCommandName, VersionConflict(), keyHash, requestHash, metadata, cancellationToken);
+            return await StoreAsync(commandName, VersionConflict(), keyHash, requestHash, metadata, cancellationToken);
         }
 
-        var lines = currentVersion == 0
-            ? []
-            : await database.PackageStandardLines.AsNoTracking()
-                .Where(line => line.CompanyId == scope.CompanyId && line.Version == currentVersion)
-                .Select(line => new { line.ProductId, line.PiecesPerPackage })
-                .ToListAsync(cancellationToken);
-        var entries = lines.ToDictionary(line => line.ProductId, line => line.PiecesPerPackage);
-        int? before = entries.TryGetValue(productId, out var current) ? current : null;
-        if (before == pieces)
+        if (await PendingHeaderAsync(scope.CompanyId, cancellationToken) is not null)
         {
-            // No change: no version move and no audit event; the key still records its answer.
-            return await StoreAsync(SetCommandName, NoContent(), keyHash, requestHash, metadata, cancellationToken);
+            return await StoreAsync(commandName, ApprovalPending(), keyHash, requestHash, metadata, cancellationToken);
         }
 
-        if (pieces is { } value)
+        var basis = await ApprovedBaseAsync(scope.CompanyId, cancellationToken);
+        var defaults = new Dictionary<Guid, int>(basis.Defaults);
+        var overrides = new Dictionary<(Guid CustomerId, Guid ProductId), int>(basis.Overrides);
+        int? before;
+        if (customerId is { } customer)
         {
-            entries[productId] = value;
+            before = overrides.TryGetValue((customer, productId), out var current) ? current : null;
+            if (pieces is { } value)
+            {
+                overrides[(customer, productId)] = value;
+            }
+            else
+            {
+                overrides.Remove((customer, productId));
+            }
         }
         else
         {
-            entries.Remove(productId);
+            before = defaults.TryGetValue(productId, out var current) ? current : null;
+            if (pieces is { } value)
+            {
+                defaults[productId] = value;
+            }
+            else
+            {
+                defaults.Remove(productId);
+            }
+        }
+
+        if (before == pieces)
+        {
+            // No change: no version move and no audit event; the key still records its answer.
+            return await StoreAsync(commandName, NoContent(), keyHash, requestHash, metadata, cancellationToken);
         }
 
         var version = checked(currentVersion + 1);
-        var versionId = VersionIdOf(SetCommandName, scope.CompanyId, keyHash);
-        database.PackageStandardVersions.Add(new ProductPackageStandardVersionRow
-        {
-            CompanyId = scope.CompanyId,
-            Version = version,
-            VersionId = versionId,
-            SourceKind = ProductPackageStandardSourceKindsV2.Edit,
-            SourceLabel = null,
-            Reason = reason,
-            FileName = null,
-            FileSha256 = null,
-            FileSizeBytes = null,
-            EditedProductId = productId,
-            EntryCount = entries.Count,
-            CreatedAtUtc = timeProvider.GetUtcNow(),
-            CreatedBy = metadata.ActorId,
-            CorrelationId = metadata.CorrelationId,
-        });
-        foreach (var (entryProductId, entryPieces) in entries.OrderBy(entry => entry.Key))
-        {
-            database.PackageStandardLines.Add(new ProductPackageStandardLineRow
-            {
-                CompanyId = scope.CompanyId, Version = version, ProductId = entryProductId, PiecesPerPackage = entryPieces,
-            });
-        }
+        var versionId = VersionIdOf(commandName, scope.CompanyId, keyHash);
+        AddVersion(scope.CompanyId, version, versionId, ProductPackageStandardSourceKindsV2.Edit, null, reason, null, null, null,
+            productId, customerId, defaults, overrides, metadata);
 
-        var beforeJson = JsonSerializer.Serialize(new { ProductId = productId, PiecesPerPackage = before }, Json);
+        var beforeJson = JsonSerializer.Serialize(new { CustomerId = customerId, ProductId = productId, PiecesPerPackage = before },
+            Json);
         var afterJson = JsonSerializer.Serialize(new
         {
             VersionId = versionId, Version = version, SourceKind = ProductPackageStandardSourceKindsV2.Edit,
-            ProductId = productId, PiecesPerPackage = pieces, Reason = reason, EntryCount = entries.Count,
+            CustomerId = customerId, ProductId = productId, PiecesPerPackage = pieces, Reason = reason,
+            EntryCount = defaults.Count, CustomerEntryCount = overrides.Count, BasisVersion = basis.Version,
+            State = ProductPackageStandardVersionStatesV3.Pending,
         }, Json);
-        auditEvents.Enqueue(new AuditEventDraft(scope.CompanyId, "product.package-standards.entry-set.v2", EntityType,
-            versionId.ToString("D"), "SetPackageStandardEntry", currentVersion == 0 ? null : currentVersion, version,
-            AuditActorTypes.User, metadata.ActorId, Permission, scope.RoleCodes, beforeJson, afterJson,
-            pieces is null
-                ? "Ürünün paket standardı kaydı şirket tablosundan kaldırıldı; gerekçe kayıt içeriğindedir"
-                : "Ürünün paket içi adedi şirket tablosunda ayarlandı; gerekçe kayıt içeriğindedir",
+        var (eventType, operation, summary) = (customerId, pieces) switch
+        {
+            (null, null) => ("product.package-standards.entry-set.v2", "SetPackageStandardEntry",
+                "Ürünün paket standardı kaydının kaldırılması onaya sunuldu; gerekçe kayıt içeriğindedir"),
+            (null, _) => ("product.package-standards.entry-set.v2", "SetPackageStandardEntry",
+                "Ürünün paket içi adedi onaya sunuldu; gerekçe kayıt içeriğindedir"),
+            (_, null) => ("product.package-standards.customer-entry-set.v3", "SetPackageStandardCustomerEntry",
+                "Müşteriye özel paket standardının kaldırılması onaya sunuldu; gerekçe kayıt içeriğindedir"),
+            _ => ("product.package-standards.customer-entry-set.v3", "SetPackageStandardCustomerEntry",
+                "Müşteriye özel paket içi adet onaya sunuldu; gerekçe kayıt içeriğindedir"),
+        };
+        auditEvents.Enqueue(new AuditEventDraft(scope.CompanyId, eventType, EntityType, versionId.ToString("D"), operation,
+            currentVersion == 0 ? null : currentVersion, version, AuditActorTypes.User, metadata.ActorId, Permission,
+            scope.RoleCodes, beforeJson, afterJson, summary,
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel,
             metadata.ClientIpAddress, metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
-        return await SaveVersionAsync(SetCommandName, keyHash, requestHash, metadata, cancellationToken);
+        return await SaveVersionAsync(commandName, keyHash, requestHash, metadata, cancellationToken);
     }
 
     async Task<ProductPackageStandardReadV2> IProductPackageStandardReaderV2.GetAsync(Guid productId,
         CancellationToken cancellationToken)
     {
+        var read = await ReadAsync(productId, null, Today(), cancellationToken);
+        return new ProductPackageStandardReadV2(read.Outcome, read.PiecesPerPackage, read.StandardVersion,
+            read.StandardVersionId, read.SourceKind, read.SourceLabel);
+    }
+
+    Task<ProductPackageStandardReadV3> IProductPackageStandardReaderV3.GetAsync(Guid productId, Guid? customerId, DateOnly on,
+        CancellationToken cancellationToken) => ReadAsync(productId, customerId, on, cancellationToken);
+
+    /// <summary>
+    /// The value in effect on <paramref name="on"/>: the customer's override in the effective version if any, otherwise the
+    /// product default of that version.
+    /// </summary>
+    private async Task<ProductPackageStandardReadV3> ReadAsync(Guid productId, Guid? customerId, DateOnly on,
+        CancellationToken cancellationToken)
+    {
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId) || !companyContext.IsResolved
             || companyContext.CompanyId == Guid.Empty || !currentUser.CanAccessCompany(companyContext.CompanyId))
         {
-            return ProductPackageStandardReadV2.Without(ProductPackageStandardReadOutcomeV2.Denied);
+            return ProductPackageStandardReadV3.Without(ProductPackageStandardReadOutcomeV2.Denied);
         }
 
         try
         {
-            if (productId == Guid.Empty
+            if (productId == Guid.Empty || customerId == Guid.Empty
                 || !await database.Products.AsNoTracking().AnyAsync(product => product.Id == productId, cancellationToken))
             {
-                return ProductPackageStandardReadV2.Without(ProductPackageStandardReadOutcomeV2.NotFound);
+                return ProductPackageStandardReadV3.Without(ProductPackageStandardReadOutcomeV2.NotFound);
             }
 
             var companyId = companyContext.CompanyId;
-            var header = await CurrentHeaderAsync(companyId, cancellationToken);
-            if (header is null)
+            var effective = await EffectiveHeaderAsync(companyId, on, cancellationToken);
+            if (effective is null)
             {
-                return ProductPackageStandardReadV2.Without(ProductPackageStandardReadOutcomeV2.NoSource);
+                return ProductPackageStandardReadV3.Without(ProductPackageStandardReadOutcomeV2.NoSource);
+            }
+
+            var header = effective.Header;
+            if (customerId is { } customer)
+            {
+                var overridden = await database.PackageStandardCustomerLines.AsNoTracking()
+                    .Where(line => line.CompanyId == companyId && line.Version == header.Version && line.CustomerId == customer
+                        && line.ProductId == productId)
+                    .Select(line => (int?)line.PiecesPerPackage)
+                    .SingleOrDefaultAsync(cancellationToken);
+                if (overridden is { } value)
+                {
+                    return Found(value, ProductPackageStandardEntryScopesV3.Customer);
+                }
             }
 
             var pieces = await database.PackageStandardLines.AsNoTracking()
                 .Where(line => line.CompanyId == companyId && line.Version == header.Version && line.ProductId == productId)
                 .Select(line => (int?)line.PiecesPerPackage)
                 .SingleOrDefaultAsync(cancellationToken);
-            return pieces is { } value
-                ? new ProductPackageStandardReadV2(ProductPackageStandardReadOutcomeV2.Found, value, header.Version,
-                    header.VersionId, header.SourceKind, header.SourceLabel)
-                : ProductPackageStandardReadV2.Without(ProductPackageStandardReadOutcomeV2.NoSource);
+            return pieces is { } fallback
+                ? Found(fallback, ProductPackageStandardEntryScopesV3.Product)
+                : ProductPackageStandardReadV3.Without(ProductPackageStandardReadOutcomeV2.NoSource);
+
+            ProductPackageStandardReadV3 Found(int value, string scope) =>
+                new(ProductPackageStandardReadOutcomeV2.Found, value, header.Version, header.VersionId, header.SourceKind,
+                    header.SourceLabel, scope, effective.EffectiveFrom);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return ProductPackageStandardReadV2.Without(ProductPackageStandardReadOutcomeV2.Unavailable);
+            return ProductPackageStandardReadV3.Without(ProductPackageStandardReadOutcomeV2.Unavailable);
         }
     }
-
-    private Task<ProductPackageStandardVersionRow?> CurrentHeaderAsync(Guid companyId, CancellationToken cancellationToken) =>
-        database.PackageStandardVersions.AsNoTracking()
-            .Where(version => version.CompanyId == companyId)
-            .OrderByDescending(version => version.Version)
-            .FirstOrDefaultAsync(cancellationToken);
 
     private async Task<long> CurrentVersionAsync(Guid companyId, CancellationToken cancellationToken) =>
         await database.PackageStandardVersions.AsNoTracking()
@@ -345,17 +399,19 @@ internal sealed class ProductPackageStandardService(
             .MaxAsync(cancellationToken) ?? 0;
 
     /// <summary>
-    /// Resolves each accepted row's product code against the shared card by exact (ordinal) code; an unknown code is a row error.
+    /// Resolves each accepted row's product code against the shared card by exact (ordinal) code; an unknown code or a passive
+    /// (inactive) card is a row error (SAT-D383).
     /// </summary>
     private async Task<IReadOnlyList<(Guid ProductId, int Pieces)>> ResolveCodesAsync(
         IReadOnlyList<PackageStandardSourceRow> rows, List<string> errors, CancellationToken cancellationToken)
     {
         var byCode = new Dictionary<string, List<Guid>>(StringComparer.Ordinal);
+        var inactive = new HashSet<Guid>();
         foreach (var batch in rows.Select(row => row.ProductCode).Distinct(StringComparer.Ordinal).Chunk(CodeLookupBatchSize))
         {
             var found = await database.Products.AsNoTracking()
                 .Where(product => batch.Contains(product.Code))
-                .Select(product => new { product.Id, product.Code })
+                .Select(product => new { product.Id, product.Code, product.Lifecycle })
                 .ToListAsync(cancellationToken);
             foreach (var product in found)
             {
@@ -365,6 +421,10 @@ internal sealed class ProductPackageStandardService(
                 }
 
                 ids.Add(product.Id);
+                if (product.Lifecycle == ProductInactive)
+                {
+                    inactive.Add(product.Id);
+                }
             }
         }
 
@@ -383,6 +443,13 @@ internal sealed class ProductPackageStandardService(
             {
                 errors.Add(ProductPackageStandardWorkbook.RowError(row.RowNumber,
                     $"'{row.ProductCode}' ürünü dosyada birden çok kez bulunuyor."));
+                continue;
+            }
+
+            if (inactive.Contains(ids[0]))
+            {
+                errors.Add(ProductPackageStandardWorkbook.RowError(row.RowNumber,
+                    $"'{row.ProductCode}' ürünü pasif; pasif ürüne paket standardı yazılmaz."));
                 continue;
             }
 
@@ -405,7 +472,7 @@ internal sealed class ProductPackageStandardService(
     private async Task<ProductPackageStandardResultV2> SaveVersionAsync(string commandName, string keyHash, string requestHash,
         ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken)
     {
-        await MeasureAsync(cancellationToken);
+        await MeasureAsync(PermissionOf(commandName), cancellationToken);
         AddAttempt(commandName, NoContent(), keyHash, requestHash, metadata);
         try
         {
@@ -436,7 +503,9 @@ internal sealed class ProductPackageStandardService(
         }
     }
 
-    private async Task<Scope> MeasureAsync(CancellationToken cancellationToken)
+    private Task<Scope> MeasureAsync(CancellationToken cancellationToken) => MeasureAsync(Permission, cancellationToken);
+
+    private async Task<Scope> MeasureAsync(string permission, CancellationToken cancellationToken)
     {
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId) || !companyContext.IsResolved
             || companyContext.CompanyId == Guid.Empty || !currentUser.CanAccessCompany(companyContext.CompanyId))
@@ -444,7 +513,7 @@ internal sealed class ProductPackageStandardService(
             throw new UnauthorizedAccessException();
         }
 
-        var measured = await authority.RevalidatePermissionScopeAsync(Permission, companyContext.CompanyId, cancellationToken);
+        var measured = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
         if (!measured.IsGranted || !measured.IsCompanyWide)
         {
             throw new UnauthorizedAccessException();
@@ -544,7 +613,7 @@ internal sealed class ProductPackageStandardService(
     private async Task<ProductPackageStandardResultV2> StoreAsync(string commandName, ProductPackageStandardAnswerV2 answer,
         string keyHash, string requestHash, ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken)
     {
-        await MeasureAsync(cancellationToken);
+        await MeasureAsync(PermissionOf(commandName), cancellationToken);
         database.ChangeTracker.Clear();
         AddAttempt(commandName, answer, keyHash, requestHash, metadata);
         try
