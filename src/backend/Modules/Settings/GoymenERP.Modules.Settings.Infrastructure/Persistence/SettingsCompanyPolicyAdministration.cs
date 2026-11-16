@@ -420,6 +420,21 @@ internal sealed class SettingsCompanyPolicyAdministration(
         }
     }
 
+    private async Task RequireReplayStillAsync(KeySpec spec, SettingsCommandMetadataV1 metadata,
+        CancellationToken cancellationToken)
+    {
+        RequireOriginalIdentity();
+        await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
+        RequireOriginalIdentity();
+
+        void RequireOriginalIdentity()
+        {
+            if (!currentUser.IsAuthenticated || !companyContext.IsResolved || companyContext.CompanyId != metadata.CompanyId
+                || !string.Equals(currentUser.UserId, metadata.ActorId, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException();
+        }
+    }
+
     /// <summary>A read of the store; an unreadable store is <c>settings_provider_unavailable</c> (503), never a 500.</summary>
     private static async Task<T> ReadAsync<T>(Func<Task<T>> read)
     {
@@ -508,6 +523,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
                 throw;
             }
 
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Replay(winner, requestHash, metadata);
         }
     }
@@ -534,6 +550,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
             var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
             if (winner is not null)
             {
+                await RequireReplayStillAsync(spec, metadata, cancellationToken);
                 return Replay(winner, requestHash, metadata);
             }
 
@@ -561,7 +578,11 @@ internal sealed class SettingsCompanyPolicyAdministration(
         if (!conflict) return new(answer, false, metadata.CorrelationId);
         database.ChangeTracker.Clear();
         var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
-        if (winner is not null) return Replay(winner, requestHash, metadata);
+        if (winner is not null)
+        {
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
+            return Replay(winner, requestHash, metadata);
+        }
         await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
         return await StoreRefusalAsync(spec, onConflict, keyHash, requestHash, metadata, cancellationToken);
     }
