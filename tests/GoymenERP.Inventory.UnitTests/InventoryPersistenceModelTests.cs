@@ -648,7 +648,7 @@ public sealed class InventoryPersistenceModelTests
         Assert.True(cancellations.FindProperty("EDispatchConfirmationVersion")!.IsNullable);
 
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
-        Assert.Contains("THROW 51471", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51823", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[Kind] = 11", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[TransferDispatchCancellations]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[TransferDispatchCancelClosures]", guard.Sql, StringComparison.Ordinal);

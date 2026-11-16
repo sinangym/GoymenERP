@@ -590,7 +590,7 @@ Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
   writing. No gate port, a failing read or a malformed answer is a code-less 503.
 - **Migration.** `AddInventoryTransferDispatchCancellation` adds the column (default Off) with
   `CK_TransferDispatches_SourceScaleSetting`, both tables, widens `CK_Transfers_State` to status 5 and
-  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51471) while a kind 11 movement, a cancellation or closure row,
+  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51823) while a kind 11 movement, a cancellation or closure row,
   a non-Off stored setting or a cancelled transfer exists (forward fix).
 - **Not decided here (NEEDS-SINAN, fail-closed):** the cost golden of the reverse movement (transfers post no cost
   today), whether an unreadable reading should ever be persisted, whether dispatch should refuse an unreadable

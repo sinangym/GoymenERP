@@ -135,7 +135,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     OR EXISTS (SELECT 1 FROM [inventory].[TransferDispatches] WHERE [SourceScaleSettingAtDispatch] <> 1)
                     OR EXISTS (SELECT 1 FROM [inventory].[Transfers] WHERE [Status] = 5)
                 BEGIN
-                    THROW 51471, 'A transfer dispatch cancellation, cancel window closure or stored source scale setting exists; AddInventoryTransferDispatchCancellation is not rolled back (forward fix).', 1;
+                    THROW 51823, 'A transfer dispatch cancellation, cancel window closure or stored source scale setting exists; AddInventoryTransferDispatchCancellation is not rolled back (forward fix).', 1;
                 END;
                 """);
 
