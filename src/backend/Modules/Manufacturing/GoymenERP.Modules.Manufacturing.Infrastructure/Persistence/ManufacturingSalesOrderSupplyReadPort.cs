@@ -21,8 +21,16 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
     private const int ApprovedStatus = (int)PlanStatus.Approved;
     private const int OpenOrderStatus = (int)OrderStatus.Open;
 
-    public async Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListOpenForSalesOrderAsync(Guid companyId,
-        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListOpenForSalesOrderAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default) =>
+        ReadAsync(companyId, salesOrderId, salesOrderLineIds, includeCancelled: false, cancellationToken);
+
+    public Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListLinkedForSalesOrderAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default) =>
+        ReadAsync(companyId, salesOrderId, salesOrderLineIds, includeCancelled: true, cancellationToken);
+
+    private async Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ReadAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, bool includeCancelled, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty || companyContext.CompanyId != companyId)
@@ -53,6 +61,7 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
                 equals new { order.CompanyId, order.PlanId } into orders
             from order in orders.DefaultIfEmpty()
             where order == null || order.Status == OpenOrderStatus
+                || (includeCancelled && order.Status == (int)OrderStatus.Cancelled)
             select new
             {
                 plan.CompanyId,
@@ -77,7 +86,7 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
             .Where(revision => ids.Contains(revision.PlanId))
             .Select(revision => new { revision.PlanId, revision.RevisionNo, revision.PlanVersion })
             .ToListAsync(cancellationToken);
-        var currentRevision = rows.ToDictionary(row => row.Id, row => revisions
+        var currentRevision = rows.DistinctBy(row => row.Id).ToDictionary(row => row.Id, row => revisions
             .Where(revision => revision.PlanId == row.Id && revision.PlanVersion <= row.Version)
             .Select(revision => revision.RevisionNo).DefaultIfEmpty(0).Max());
         var revised = currentRevision.Where(pair => pair.Value > 0).Select(pair => pair.Key).ToArray();

@@ -32,6 +32,32 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_cancelled_linked_order_is_retained_in_history_but_is_not_open_supply()
+    {
+        await using var run = await Run.StartAsync();
+        var (plan, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var store = run.Store(CompanyA))
+        {
+            var current = (await store.Plans.FindPlanAsync(plan.Id))!;
+            await store.SalesOrderLinks.ChangeSalesOrderLinkAsync(plan.Id, current.Version, 0,
+                SalesLink(run, LinkedSalesLine), Metadata(run));
+            await store.Corrections.CancelOrderAsync(orderId, 1, run.Actor, At.AddHours(1),
+                "SENTETIK linked order cancellation", Metadata(run));
+        }
+
+        await using var context = run.Context(CompanyA);
+        var owner = SupplyReadPort(context, CompanyA);
+        Assert.Empty(await owner.ListOpenForSalesOrderAsync(CompanyA, LinkedSalesOrder, null));
+        var item = Assert.Single(await owner.ListLinkedForSalesOrderAsync(CompanyA, LinkedSalesOrder, null));
+        Assert.Equal((orderId, "Cancelled", plan.Id), (item.OrderId, item.OrderStatus, item.PlanId));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            owner.ListLinkedForSalesOrderAsync(CompanyB, LinkedSalesOrder, null));
+        await using var other = run.Context(CompanyB);
+        Assert.Empty(await SupplyReadPort(other, CompanyB).ListLinkedForSalesOrderAsync(CompanyB,
+            LinkedSalesOrder, null));
+    }
+
+    [SqlServerFact]
     public async Task Linked_plans_and_open_orders_are_read_for_the_sales_order_of_the_company_only()
     {
         await using var run = await Run.StartAsync();
