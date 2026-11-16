@@ -92,7 +92,14 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (balance is null)
         {
-            throw StockCountError(409, InventoryStockCountCodesV1.PositionConflict);
+            // SAT-D384: only the active last label is counted. A label a split, merge or manufacturing transformation
+            // consumed answers its own warning ("dönüştürüldü → yeni etiket") and never enters a count difference;
+            // the counter is sent to the output labels (genealogy read), nothing is written.
+            var converted = await IsConvertedLabelAsync(label.Id, cancellationToken);
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            throw StockCountError(409, converted
+                ? InventoryStockCountCodesV1.LabelConverted
+                : InventoryStockCountCodesV1.PositionConflict);
         }
 
         if (balance.ProductId != label.ProductId)
@@ -612,7 +619,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
     /// (its zero balance row): its only stored position, or, when it was moved before, the zero position named by the
     /// last movement that touched the label. No other position is guessed: several candidates are a conflict.</item>
     /// <item>A label that a split, merge or manufacturing transformation consumed is not counted again: its kilograms
-    /// live on in its output labels, so a surplus on it would count the same steel twice.</item>
+    /// live on in its output labels, so a surplus on it would count the same steel twice (SAT-D384: the caller answers
+    /// <see cref="InventoryStockCountCodesV1.LabelConverted"/>).</item>
     /// </list>
     /// </summary>
     private async Task<BalanceRow?> CountedPositionAsync(Guid labelId, CancellationToken cancellationToken)
@@ -655,6 +663,18 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 && SamePosition(balance, candidate.Line)))
             .ToList();
         return named.Count == 1 ? named[0] : null;
+    }
+
+    /// <summary>
+    /// SAT-D384: a label holding no stock that a split, merge or manufacturing transformation consumed as an input.
+    /// Its kilograms live on in the output labels; it is not a countable position.
+    /// </summary>
+    private async Task<bool> IsConvertedLabelAsync(Guid labelId, CancellationToken cancellationToken)
+    {
+        var holdsStock = await dbContext.Balances.AsNoTracking()
+            .AnyAsync(row => row.LabelId == labelId && row.QuantityKg > 0m, cancellationToken);
+        return !holdsStock && await dbContext.LabelTransformationInputs.AsNoTracking()
+            .AnyAsync(row => row.LabelId == labelId, cancellationToken);
     }
 
     private static bool SamePosition(BalanceRow balance, MovementLineRow line) =>
