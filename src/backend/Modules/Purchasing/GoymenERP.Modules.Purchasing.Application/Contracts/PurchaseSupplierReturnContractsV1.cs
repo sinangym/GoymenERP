@@ -10,8 +10,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 // The return names the original goods acceptance; Inventory resolves the label and leaves stock at the ORIGINAL purchase line's
 // unit cost (SAT-D306). SAT-D392: that unit cost is read from the invoice that bills the related order's receipt. SAT-D393: when it
 // cannot be read the return carries a manual unit cost and waits for an exception approval (SAT-D396: purchasing.orders.approve,
-// audited); without that approval no stock leaves. ALS-D91: the order quantity is NOT reopened (only a "replacement expected"
-// return would reopen it, and that variant is not offered by this contract version — refused, never silently ignored).
+// audited); without that approval no stock leaves. ALS-D91/D92: explicit purchase-unit undo metadata enables the genuine net
+// receipt adjustment. Replacement-expected returns reopen that quantity; definitive returns retain a separate returned share.
 
 /// <summary>
 /// A supplier return of one goods acceptance (label). Ids are client-made (idempotent posting). <see cref="SourceBlock"/> is
@@ -25,7 +25,8 @@ public sealed record CreatePurchaseSupplierReturnV1(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UndoQuantity = null);
 
 /// <summary>An approval or a rejection of a pending cost exception; a rejection needs a reason.</summary>
-public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason);
+public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null);
 
 public sealed record PurchaseSupplierReturnViewV1(
     Guid CompanyId, Guid ReturnId, Guid ReturnLineId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, Guid GoodsAcceptanceId,
@@ -80,7 +81,7 @@ public static class PurchaseSupplierReturnCodesV1
     /// <summary>The invoice cost reader answered an unusable value (non-positive or too precise); 503, fail-closed.</summary>
     public const string InvoiceCostInvalid = "purchasing_supplier_return_invoice_cost_invalid";
 
-    /// <summary>ALS-D91: a "replacement expected" return (which reopens the order quantity) is not offered by this contract version.</summary>
+    /// <summary>A replacement-expected return requires explicit purchase-unit undo quantity and the expected order version.</summary>
     public const string ReplacementUnsupported = "purchasing_supplier_return_replacement_unsupported";
 
     /// <summary>The return id is already used by another return.</summary>
@@ -152,7 +153,8 @@ public sealed record StoredPurchaseSupplierReturn(
     string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason);
 
 /// <summary>A same-key attempt already stored: the return it recorded, or its terminal refusal.</summary>
-public sealed record PurchaseSupplierReturnReplay(Guid? ReturnId, PurchasingTerminalRefusal? Refusal, string OriginalCorrelationId);
+public sealed record PurchaseSupplierReturnReplay(Guid? ReturnId, PurchasingTerminalRefusal? Refusal, string OriginalCorrelationId,
+    StoredPurchaseSupplierReturn? Original = null);
 
 /// <summary>
 /// The supplier return's own records (return, attempts, audit). Every write is ONE SaveChanges: the return change, its attempt and
@@ -221,7 +223,8 @@ public static class PurchaseSupplierReturnJsonV1
     public static void ValidateDecision(DecidePurchaseSupplierReturnV1 request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (!Version(request.ExpectedVersion) || !BoundedReason(request.Reason, required: false))
+        if (!Version(request.ExpectedVersion) || !BoundedReason(request.Reason, required: false)
+            || request.ExpectedPurchaseOrderVersion is not null && !Version(request.ExpectedPurchaseOrderVersion))
         {
             throw new JsonException("Invalid decision shape; a canonical version and a bounded reason are required.");
         }

@@ -31,4 +31,16 @@ public sealed class PurchaseSupplierReturnAdjustmentMetadataTests
 
     private static CreatePurchaseSupplierReturnV1 Request() => new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
         "Free", "1.9", "12.3456", false, "SENTETIK return metadata", DateTimeOffset.UnixEpoch);
+
+    [Fact]
+    public void A_later_cost_approval_names_a_fresh_order_version_explicitly_and_preserves_legacy_hash_when_absent()
+    {
+        var request = new DecidePurchaseSupplierReturnV1("1", null);
+        var id = Guid.NewGuid();
+        var legacy = new { request.ExpectedVersion, request.Reason };
+        Assert.Equal(PurchasingRequestHash.Compute(PurchaseSupplierReturnCommandsV1.ApproveCostExceptionV1, id, new { request = legacy }),
+            PurchasingRequestHash.Compute(PurchaseSupplierReturnCommandsV1.ApproveCostExceptionV1, id, new { request }));
+        PurchaseSupplierReturnJsonV1.ValidateDecision(request with { ExpectedPurchaseOrderVersion = "7" });
+        Assert.Throws<JsonException>(() => PurchaseSupplierReturnJsonV1.ValidateDecision(request with { ExpectedPurchaseOrderVersion = "07" }));
+    }
 }
