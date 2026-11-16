@@ -4,7 +4,7 @@ public enum InventoryManufacturingCostGenerationStateV1 { Pending = 1, Unreadabl
 
 /// <summary>Physical identity and net mass come from the Manufacturing owner; cost is null while its source is unreadable.</summary>
 public sealed record InventoryManufacturingCostGenerationOutputV1(Guid OutputId, Guid ReceiptMovementId, Guid LabelId,
-    decimal NetQuantityKg, decimal? TlUnitCostPerKg, decimal? UsdUnitCostPerKg);
+    decimal NetQuantityKg, decimal? TlUnitCostPerKg, decimal? UsdUnitCostPerKg, decimal? TlAmount = null);
 
 /// <summary>
 /// A close may stage Pending/Unreadable without any amount. URT-D67 recognizes money only once the real cost becomes readable;
@@ -33,7 +33,8 @@ public sealed record InventoryManufacturingCostPositionEffectV1(Guid LocationId,
 public sealed record InventoryManufacturingCostGenerationOutputResultV1(Guid OutputId, Guid ReceiptMovementId, Guid LabelId,
     decimal NetQuantityKg, decimal RemainingQuantityKg, decimal ConsumedQuantityKg,
     decimal? TlUnitCostPerKg, decimal? RemainingTlValue, decimal? ConsumedTlDifference,
-    decimal? UsdUnitCostPerKg, IReadOnlyList<InventoryManufacturingCostPositionEffectV1> Positions);
+    decimal? UsdUnitCostPerKg, IReadOnlyList<InventoryManufacturingCostPositionEffectV1> Positions,
+    decimal? OriginalTlAmount = null);
 
 public sealed record InventoryManufacturingCostGenerationResultV1(Guid CompanyId, Guid ManufacturingOrderId,
     Guid GenerationId, string GenerationVersion, string ClosedOrderVersion, InventoryManufacturingCostGenerationStateV1 State,
