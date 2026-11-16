@@ -49,6 +49,10 @@ export const KIND_LABEL: Readonly<Record<PartyLedgerEntryKind, string>> = {
   OpenItemCancellation: 'Satış faturası iptali (ters kayıt)',
   PayableOpenItemCancellation: 'Alış faturası iptali (ters kayıt)',
   ManualBankPaymentReversal: 'Ödeme ters kaydı',
+  OpeningBalanceDebit: 'Açılış bakiyesi (borç)',
+  OpeningBalanceCredit: 'Açılış bakiyesi (alacak)',
+  OpeningBalanceDebitReversal: 'Açılış bakiyesi ters kaydı (borç açılışının)',
+  OpeningBalanceCreditReversal: 'Açılış bakiyesi ters kaydı (alacak açılışının)',
 }
 
 /** Borçlu / alacaklı from the company's view of the party's account. */
@@ -69,6 +73,8 @@ export const OPEN_PAYMENT = 'Ödemeyi aç'
 export const OPEN_REVERSED_PAYMENT = 'Ters kaydedilen ödemeyi aç'
 /** An admitted open item has no detail screen yet: its official document is shown by reference only. */
 export const OPEN_ITEM_NO_SCREEN = 'Resmî belge (ayrıntı ekranı yok)'
+/** An opening and its reversal are read on the opening balances screen; the row names the opening by reference. */
+export const OPENING_BALANCE_SOURCE = 'Açılış bakiyesi'
 
 export function reference(id: string): string {
   return `ref. …${id.slice(-8)}`

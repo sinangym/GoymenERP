@@ -2,11 +2,13 @@
  * Turkish text for FIN-S9 — Açılış bakiyeleri (FNS-D23).
  *
  * Same rule as ./financeText.ts: chosen from a decoded state or a stable code, never parsed from server prose. An
- * approved opening is recorded and audited; it moves no money yet, so no text may suggest a posted balance.
+ * approved opening writes one opening movement (FNS-D84): a party opening appears in the party ledger; a cash or bank
+ * opening does not yet change the treasury balance, so no text may suggest one. A correction is a reversal (FNS-D85).
  */
 
 import type {
   OpeningBalanceDirection,
+  OpeningBalanceReversalStatus,
   OpeningBalanceStatus,
   OpeningBalanceTargetKind,
   OpeningPeriodState,
@@ -20,8 +22,11 @@ export const OPENING_BALANCE_TEXT = {
   currencySubject: 'para birimi adayları',
   notice:
     'Kasa, banka ve cari açılış bakiyeleri yalnız Ayarlar\'daki açılış dönemi açıkken girilir. Uzman önerir, müdür ' +
-    'onaylar veya reddeder; öneren kendi önerisini onaylayamaz. Onaylanan açılış kaydedilir ve denetim izine yazılır; ' +
-    'şimdilik bakiye veya cari hareket oluşturmaz.',
+    'onaylar veya reddeder; öneren kendi önerisini onaylayamaz. Onaylanan açılış tek bir açılış hareketi olarak ' +
+    'kaydedilir ve denetim izine yazılır; cari açılışı cari ekstrede görünür, kasa ve banka açılışı şimdilik kasa veya ' +
+    'banka bakiyesini değiştirmez. Onaylı açılış düzeltilmez: ters kaydı önerilir, başka bir yetkili onaylar ve ' +
+    'ardından yeni öneri girilir. Bakiye tarihi bugünden sonra olamaz; dönem ayarı öneriden sonra değiştiyse karar ' +
+    'verilemez.',
   listCaption: 'Açılış bakiyeleri',
   listEmpty: 'Henüz açılış bakiyesi önerilmedi.',
   column: {
@@ -36,6 +41,7 @@ export const OPENING_BALANCE_TEXT = {
     proposedAt: 'Öneri zamanı',
     decidedAt: 'Karar zamanı',
     rejectionReason: 'Red gerekçesi',
+    reversal: 'Ters kayıt',
     action: 'İşlem',
   },
   none: '—',
@@ -70,6 +76,15 @@ export const OPENING_BALANCE_TEXT = {
   rejectReason: 'Red gerekçesi',
   rejectReasonRequired: 'Red gerekçesi yazın.',
   rejectSubmit: 'Reddet',
+  reversalOpen: 'Ters kayıt öner',
+  reversalHeading: 'Açılış bakiyesi için ters kayıt öner',
+  reversalReason: 'Ters kayıt gerekçesi',
+  reversalReasonRequired: 'Ters kayıt gerekçesi yazın.',
+  reversalSubmit: 'Ters kaydı öner',
+  reversalApprove: 'Ters kaydı onayla',
+  reversalRejectOpen: 'Ters kaydı reddet',
+  reversalRejectHeading: 'Ters kaydı reddet',
+  reversalOwnProposal: 'Ters kayıt sizin öneriniz; başka bir yetkili karar verir.',
   close: 'Kapat',
   submitting: 'Gönderiliyor…',
   unknownTitle: 'Sonuç bilinmiyor',
@@ -107,6 +122,9 @@ export const OPENING_BALANCE_SUCCESS: Readonly<Record<OpeningBalanceOperation, s
   propose: 'Açılış bakiyesi önerildi; başka bir yetkilinin onayını bekliyor.',
   approve: 'Açılış bakiyesi onaylandı.',
   reject: 'Açılış bakiyesi reddedildi; aynı hedef için yeni öneri girilebilir.',
+  'reversal-propose': 'Ters kayıt önerildi; başka bir yetkilinin onayını bekliyor.',
+  'reversal-approve': 'Ters kayıt onaylandı; aynı hedef için yeni açılış önerisi girilebilir.',
+  'reversal-reject': 'Ters kayıt reddedildi; açılış bakiyesi onaylı kalır.',
 }
 
 export const OPENING_BALANCE_TARGET: Readonly<Record<OpeningBalanceTargetKind, string>> = {
@@ -124,6 +142,13 @@ export const OPENING_BALANCE_STATUS: Readonly<Record<OpeningBalanceStatus, strin
   Proposed: 'Onay bekliyor',
   Approved: 'Onaylandı',
   Rejected: 'Reddedildi',
+  Reversed: 'Ters kaydı alındı',
+}
+
+export const OPENING_BALANCE_REVERSAL_STATUS: Readonly<Record<OpeningBalanceReversalStatus, string>> = {
+  Proposed: 'Ters kayıt onay bekliyor',
+  Approved: 'Ters kayıt onaylandı',
+  Rejected: 'Ters kayıt reddedildi',
 }
 
 /** Stable issue codes → text. An unknown code falls back to the generic refusal. */
@@ -132,6 +157,13 @@ export const OPENING_BALANCE_ISSUE: Readonly<Record<string, string>> = {
   opening_balance_exists: 'Bu hedef ve para birimi için bekleyen veya onaylanmış bir açılış bakiyesi zaten var.',
   opening_balance_not_found: 'Açılış bakiyesi bulunamadı.',
   opening_balance_not_proposed: 'Bu açılış bakiyesine zaten karar verilmiş.',
+  opening_balance_not_approved: 'Yalnız onaylanmış bir açılış bakiyesi için ters kayıt önerilebilir.',
+  opening_balance_reversal_exists: 'Bu açılış bakiyesi için bekleyen veya onaylanmış bir ters kayıt zaten var.',
+  opening_balance_reversal_not_proposed: 'Bu açılış bakiyesinin karar bekleyen bir ters kaydı yok.',
+  opening_as_of_date_in_future: 'Bakiye tarihi bugünden (İstanbul iş günü) sonra olamaz.',
+  opening_period_version_changed:
+    'Açılış dönemi ayarı öneriden sonra değişti; bu öneriye karar verilemez. Yeni dönemde yeniden önerin.',
+  finance_business_day_unavailable: 'İş günü şu anda belirlenemiyor; işlem yapılamaz.',
   opening_currency_mismatch: 'Seçilen para birimi kasanın veya banka hesabının para birimi değil.',
   opening_direction_required: 'Cari açılışı için cari ve yön gerekir; kasa ve banka açılışında yön verilmez.',
   opening_period_closed: 'Açılış dönemi kapalı; işlem yapılamaz.',

@@ -32,7 +32,9 @@ internal sealed record PartyLedgerFact(
 /// and a payable open item (the party's purchase invoice installment, MOD-15) are credit (alacak); a reversal is the
 /// reverse side of the receipt it reverses (debit), as its own row — the original row stays as it was recorded. An
 /// invoice cancellation (F2b, SAT-D96) is likewise its own row on the reverse side of the open item it reverses, and so
-/// is an approved payment reversal (API-23: credit, the reverse of the payment's debit).
+/// is an approved payment reversal (API-23: credit, the reverse of the payment's debit). An approved party opening
+/// balance (FIN-S9, FNS-D84) is its own "opening" row on its direction's side, and its approved reversal (FNS-D85) its own
+/// row on the reverse side.
 /// </para>
 /// </summary>
 internal static class PartyLedgerPolicy
@@ -48,6 +50,10 @@ internal static class PartyLedgerPolicy
         PartyLedgerEntryKind.OpenItemCancellation => PartyLedgerSide.Credit,
         PartyLedgerEntryKind.PayableOpenItemCancellation => PartyLedgerSide.Debit,
         PartyLedgerEntryKind.ManualBankPaymentReversal => PartyLedgerSide.Credit,
+        PartyLedgerEntryKind.OpeningBalanceDebit => PartyLedgerSide.Debit,
+        PartyLedgerEntryKind.OpeningBalanceCredit => PartyLedgerSide.Credit,
+        PartyLedgerEntryKind.OpeningBalanceDebitReversal => PartyLedgerSide.Credit,
+        PartyLedgerEntryKind.OpeningBalanceCreditReversal => PartyLedgerSide.Debit,
         _ => throw new InvalidOperationException("Cari ekstre satır türü tanınmadı; ekstre hesaplanmaz."),
     };
 

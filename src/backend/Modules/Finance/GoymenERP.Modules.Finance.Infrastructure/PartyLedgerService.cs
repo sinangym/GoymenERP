@@ -19,6 +19,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item>every admitted open item of the account, by the UTC day Finance admitted it (the source contract carries no
 /// document date yet), with its official document and due date;</item>
 /// <item>F2b: every invoice-cancellation reversal of one of those open items, by the UTC day of the cancellation.</item>
+/// <item>FIN-S9: the movement of every approved opening of the account and the movement of its approved reversal, by the
+/// opening's AsOfDate.</item>
 /// </list>
 /// Drafts are never read: a draft has no money event and no open item. Each fact is one stored row, read once, so a
 /// replayed command (which stored nothing new) and a reversal (which stored its own counter-event) appear exactly as
@@ -105,8 +107,13 @@ public sealed class PartyLedgerService(
             .OrderBy(row => row.CancelledAtUtc).ThenBy(row => row.OpenItemId)
             .Take(take)
             .ToListAsync(cancellationToken);
+        var openings = await OpeningMovementsQuery(partyId, accountId)
+            .Where(row => row.OccurredOn >= from && row.OccurredOn <= to)
+            .OrderBy(row => row.OccurredOn).ThenBy(row => row.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
         if (moneyEvents.Count + payments.Count + paymentReversals.Count + openItems.Count + cancellations.Count
-            > PartyLedgerRules.MaximumEntries)
+            + openings.Count > PartyLedgerRules.MaximumEntries)
         {
             return await AfterReadAsync(context, PartyLedgerOutcome.TooManyEntries, cancellationToken);
         }
@@ -172,6 +179,16 @@ public sealed class PartyLedgerService(
         foreach (var row in cancellations)
         {
             if (CancellationFactOf(row) is not { } fact)
+            {
+                return Refused(PartyLedgerOutcome.Unavailable);
+            }
+
+            facts.Add(fact);
+        }
+
+        foreach (var row in openings)
+        {
+            if (OpeningFactOf(row) is not { } fact)
             {
                 return Refused(PartyLedgerOutcome.Unavailable);
             }
@@ -260,8 +277,12 @@ public sealed class PartyLedgerService(
             .OrderBy(row => row.OpenItemId)
             .Take(take)
             .ToListAsync(cancellationToken);
+        var openings = await OpeningMovementsQuery(partyId, accountId)
+            .OrderBy(row => row.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
         var tooMany = moneyEvents.Count + payments.Count + paymentReversals.Count + openItems.Count
-            + cancellations.Count > PartyBalanceRules.MaximumFacts;
+            + cancellations.Count + openings.Count > PartyBalanceRules.MaximumFacts;
         var reversalSourceIds = tooMany
             ? []
             : moneyEvents.Where(row => row.Kind == MoneyEventKinds.ManualBankReceiptReversed)
@@ -330,6 +351,16 @@ public sealed class PartyLedgerService(
         foreach (var row in cancellations)
         {
             if (CancellationFactOf(row) is not { } fact)
+            {
+                return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
+            }
+
+            facts.Add(fact);
+        }
+
+        foreach (var row in openings)
+        {
+            if (OpeningFactOf(row) is not { } fact)
             {
                 return new PartyBalanceResult(PartyBalanceOutcome.Unavailable, null);
             }
@@ -460,6 +491,43 @@ public sealed class PartyLedgerService(
         FinanceOpenItemDirectionCodes.Payable => PartyLedgerEntryKind.PayableOpenItemCancellation,
         _ => null,
     };
+
+    /// <summary>
+    /// FIN-S9 (FNS-D84/D85): the approved party opening's one movement and, when it was reversed, the reversal movement —
+    /// on the opening's AsOfDate, in its currency and exact amount. The source is the opening; the reversal names it. No
+    /// open item is created for an opening (not decided).
+    /// </summary>
+    private IQueryable<OpeningFact> OpeningMovementsQuery(Guid partyId, Guid accountId) =>
+        dbContext.OpeningBalanceMovements.AsNoTracking()
+            .Where(row => row.TargetKind == FinanceOpeningBalanceService.PartyAccountKind
+                && row.PartyId == partyId && row.TargetId == accountId)
+            .Select(row => new OpeningFact(row.Id, row.OpeningBalanceId, row.Kind, row.Direction, row.CurrencyId,
+                row.AmountText, row.OccurredOn, row.RecordedAtUtc));
+
+    private sealed record OpeningFact(Guid Id, Guid OpeningBalanceId, int Kind, int? Direction, Guid CurrencyId,
+        string AmountText, DateOnly OccurredOn, DateTimeOffset RecordedAtUtc);
+
+    private static PartyLedgerFact? OpeningFactOf(OpeningFact row)
+    {
+        PartyLedgerEntryKind? kind = (row.Kind, row.Direction) switch
+        {
+            (FinanceOpeningBalanceService.OpeningMovement, FinanceOpeningBalanceService.DebitDirection) =>
+                PartyLedgerEntryKind.OpeningBalanceDebit,
+            (FinanceOpeningBalanceService.OpeningMovement, FinanceOpeningBalanceService.CreditDirection) =>
+                PartyLedgerEntryKind.OpeningBalanceCredit,
+            (FinanceOpeningBalanceService.ReversalMovement, FinanceOpeningBalanceService.DebitDirection) =>
+                PartyLedgerEntryKind.OpeningBalanceDebitReversal,
+            (FinanceOpeningBalanceService.ReversalMovement, FinanceOpeningBalanceService.CreditDirection) =>
+                PartyLedgerEntryKind.OpeningBalanceCreditReversal,
+            _ => null,
+        };
+        return kind is not { } known
+            ? null
+            : new PartyLedgerFact(known, row.Id, row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText,
+                row.OpeningBalanceId,
+                row.Kind == FinanceOpeningBalanceService.ReversalMovement ? row.OpeningBalanceId : null,
+                null, null, null);
+    }
 
     private sealed record OpenItemFact(Guid Id, Guid DocumentId, Guid CurrencyId, string AmountText, DateOnly? DueOn,
         DateTimeOffset CreatedAtUtc, int Direction);

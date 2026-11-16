@@ -9,6 +9,7 @@ import {
 } from './OpeningBalanceHttp'
 import {
   approved,
+  approvedWithReversal,
   currencyCandidates,
   jsonResponse,
   listPage,
@@ -21,6 +22,7 @@ import {
   proposed,
   refusal,
   rejected,
+  reversed,
   succeeded,
 } from './openingBalanceFixtures'
 
@@ -128,6 +130,44 @@ describe('opening balance commands', () => {
       .toEqual({ kind: 'unknown', reason: 'undecodable' })
     stubFetch(() => jsonResponse(succeeded(rejected({ id: obId(3) }))))
     expect(await sendOpeningBalanceCommand(OB_COMPANY, approveCommand, KEY))
+      .toEqual({ kind: 'unknown', reason: 'undecodable' })
+  })
+
+  it('posts the reversal commands to their routes and answers them only with the reversal in its new state', async () => {
+    const proposeReversal: OpeningBalanceCommand = {
+      operation: 'reversal-propose', openingBalanceId: obId(3),
+      body: { expectedVersion: '2', reason: 'SENTETIK ters kayıt gerekçesi' },
+    }
+    const approveReversal: OpeningBalanceCommand = {
+      operation: 'reversal-approve', openingBalanceId: obId(5), body: { expectedVersion: '1' },
+    }
+    const rejectReversal: OpeningBalanceCommand = {
+      operation: 'reversal-reject', openingBalanceId: obId(3), body: { expectedVersion: '1', reason: 'SENTETIK red' },
+    }
+    expect(openingBalanceCommandUrl(proposeReversal)).toMatch(new RegExp(`/finance/opening-balances/${obId(3)}/reversal$`))
+    expect(openingBalanceCommandUrl(approveReversal))
+      .toMatch(new RegExp(`/finance/opening-balances/${obId(5)}/reversal/approve$`))
+    expect(openingBalanceCommandUrl(rejectReversal))
+      .toMatch(new RegExp(`/finance/opening-balances/${obId(3)}/reversal/reject$`))
+
+    const seen = stubFetch(() => jsonResponse(succeeded(approvedWithReversal())))
+    expect((await sendOpeningBalanceCommand(OB_COMPANY, proposeReversal, KEY)).kind).toBe('answered')
+    expect(JSON.parse(seen[0].body ?? 'null')).toEqual(proposeReversal.body)
+    stubFetch(() => jsonResponse(succeeded(reversed())))
+    expect((await sendOpeningBalanceCommand(OB_COMPANY, approveReversal, KEY)).kind).toBe('answered')
+    stubFetch(() => jsonResponse(succeeded(approvedWithReversal({
+      status: 'Rejected', decidedAtUtc: '2026-11-15T11:00:00+00:00', rejectionReason: 'SENTETIK red', version: '2',
+    }))))
+    expect((await sendOpeningBalanceCommand(OB_COMPANY, rejectReversal, KEY)).kind).toBe('answered')
+
+    stubFetch(() => jsonResponse(succeeded(approved())))
+    expect(await sendOpeningBalanceCommand(OB_COMPANY, proposeReversal, KEY))
+      .toEqual({ kind: 'unknown', reason: 'undecodable' })
+    stubFetch(() => jsonResponse(succeeded(approvedWithReversal())))
+    expect(await sendOpeningBalanceCommand(OB_COMPANY, rejectReversal, KEY))
+      .toEqual({ kind: 'unknown', reason: 'undecodable' })
+    stubFetch(() => jsonResponse(succeeded(reversed({ id: obId(9) }))))
+    expect(await sendOpeningBalanceCommand(OB_COMPANY, approveReversal, KEY))
       .toEqual({ kind: 'unknown', reason: 'undecodable' })
   })
 

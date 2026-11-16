@@ -515,6 +515,51 @@ internal sealed class OpeningBalanceRow : IFinanceTenantRow
 }
 
 /// <summary>
+/// FIN-S9 (FNS-D85): a reversal of an APPROVED opening balance: proposed by one person, approved or rejected by another
+/// (status 1 proposed, 2 approved, 3 rejected). At most one pending or approved reversal per opening. Its approval marks the
+/// opening reversed (status 4) and writes the reversal movement; a rejected one stays as history.
+/// </summary>
+internal sealed class OpeningBalanceReversalRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid OpeningBalanceId { get; set; }
+    public int Status { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string OpeningPeriodVersion { get; set; } = string.Empty;
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-S9 (FNS-D84, FNS-D85): the one recorded money fact of an opening balance — kind 1 the opening (written when the
+/// opening is approved), kind 2 its reversal (written when the reversal is approved; the reverse side). The opening's
+/// target, currency, direction and exact amount are copied; <see cref="OccurredOn"/> is the opening's AsOfDate (a
+/// Europe/Istanbul business date). (company, opening, kind) is unique: a movement is never produced twice. Append-only.
+/// </summary>
+internal sealed class OpeningBalanceMovementRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid OpeningBalanceId { get; set; }
+    public int Kind { get; set; }
+    public int TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+    public Guid? PartyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public int? Direction { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// FIN-S9: one accepted opening balance command attempt (ADR-011), like <see cref="CashAccountCommandRow"/>. (company,
 /// command, key hash) is its key; only the key's SHA-256 is kept. <see cref="OpeningBalanceId"/> is the opening balance
 /// the command wrote or decided (null only for a recorded refusal whose target does not exist). Append-only.

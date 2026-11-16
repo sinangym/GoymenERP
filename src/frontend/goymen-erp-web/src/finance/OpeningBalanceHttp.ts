@@ -9,6 +9,9 @@
  * | `propose` | `POST /finance/opening-balances` with `Idempotency-Key` |
  * | `approve` | `POST /finance/opening-balances/{id}/approve` with `Idempotency-Key` |
  * | `reject` | `POST /finance/opening-balances/{id}/reject` with `Idempotency-Key` |
+ * | `reversal-propose` | `POST /finance/opening-balances/{id}/reversal` with `Idempotency-Key` (FNS-D85) |
+ * | `reversal-approve` | `POST /finance/opening-balances/{id}/reversal/approve` with `Idempotency-Key` |
+ * | `reversal-reject` | `POST /finance/opening-balances/{id}/reversal/reject` with `Idempotency-Key` |
  *
  * Reads answer 200 with the resource; 403 / 404 / 503 are code-less platform problems and become `http` outcomes.
  * Commands answer the `CommandResult` body on 200 / 409 / 422; a replay carries `Idempotency-Replayed: true` and
@@ -31,6 +34,7 @@ import {
   type OpeningBalanceListPage,
   type OpeningBalanceProposeBody,
   type OpeningBalanceRejectBody,
+  type OpeningBalanceReversalProposeBody,
   type OpeningPeriodView,
 } from './OpeningBalanceContract'
 import { API_BASE, devHeaders } from './http'
@@ -90,6 +94,13 @@ export type OpeningBalanceCommand =
   | { readonly operation: 'propose'; readonly body: OpeningBalanceProposeBody }
   | { readonly operation: 'approve'; readonly openingBalanceId: string; readonly body: OpeningBalanceApproveBody }
   | { readonly operation: 'reject'; readonly openingBalanceId: string; readonly body: OpeningBalanceRejectBody }
+  | {
+      readonly operation: 'reversal-propose'
+      readonly openingBalanceId: string
+      readonly body: OpeningBalanceReversalProposeBody
+    }
+  | { readonly operation: 'reversal-approve'; readonly openingBalanceId: string; readonly body: OpeningBalanceApproveBody }
+  | { readonly operation: 'reversal-reject'; readonly openingBalanceId: string; readonly body: OpeningBalanceRejectBody }
 
 export type OpeningBalanceOperation = OpeningBalanceCommand['operation']
 
@@ -110,6 +121,12 @@ export function openingBalanceCommandUrl(command: OpeningBalanceCommand): string
       return `${base}/${encodeURIComponent(command.openingBalanceId)}/approve`
     case 'reject':
       return `${base}/${encodeURIComponent(command.openingBalanceId)}/reject`
+    case 'reversal-propose':
+      return `${base}/${encodeURIComponent(command.openingBalanceId)}/reversal`
+    case 'reversal-approve':
+      return `${base}/${encodeURIComponent(command.openingBalanceId)}/reversal/approve`
+    case 'reversal-reject':
+      return `${base}/${encodeURIComponent(command.openingBalanceId)}/reversal/reject`
   }
 }
 
@@ -136,6 +153,16 @@ function answersTheCommand(command: OpeningBalanceCommand, result: OpeningBalanc
       return resource.status === 'Approved' && resource.id === command.openingBalanceId
     case 'reject':
       return resource.status === 'Rejected' && resource.id === command.openingBalanceId
+    // A reversal answers the opening it names, with that reversal in the state the command leads to.
+    case 'reversal-propose':
+      return resource.status === 'Approved' && resource.id === command.openingBalanceId &&
+        resource.reversal?.status === 'Proposed'
+    case 'reversal-approve':
+      return resource.status === 'Reversed' && resource.id === command.openingBalanceId &&
+        resource.reversal?.status === 'Approved'
+    case 'reversal-reject':
+      return resource.status === 'Approved' && resource.id === command.openingBalanceId &&
+        resource.reversal?.status === 'Rejected'
   }
 }
 

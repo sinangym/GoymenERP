@@ -53,6 +53,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<OpeningBalanceCommandRow> OpeningBalanceCommands => Set<OpeningBalanceCommandRow>();
 
+    internal DbSet<OpeningBalanceReversalRow> OpeningBalanceReversals => Set<OpeningBalanceReversalRow>();
+
+    internal DbSet<OpeningBalanceMovementRow> OpeningBalanceMovements => Set<OpeningBalanceMovementRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -1936,7 +1940,98 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        ConfigureOpeningBalanceReversals(modelBuilder);
+        ConfigureOpeningBalanceMovements(modelBuilder);
     }
+
+    /// <summary>
+    /// FIN-S9 (FNS-D85): the reversal of an approved opening, decided by another actor (binary collation). At most one
+    /// pending or approved reversal per opening (<c>UX_OpeningBalanceReversals_Live</c>); a rejected one stays as history.
+    /// </summary>
+    private void ConfigureOpeningBalanceReversals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OpeningBalanceReversalRow>();
+        entity.ToTable("OpeningBalanceReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningBalanceReversals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OpeningBalanceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ProposedBy]) > 0 AND LEN([OpeningPeriodVersion]) > 0 AND LEN([Reason]) > 0");
+            table.HasCheckConstraint("CK_OpeningBalanceReversals_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_OpeningBalanceReversals_Decision", OpeningBalanceReversalDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+        entity.Property(x => x.OpeningPeriodVersion).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.HasIndex(x => new { x.CompanyId, x.OpeningBalanceId }, OpeningBalanceReversalLiveIndex)
+            .HasFilter(OpeningBalanceLiveFilter).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OpeningBalanceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpeningBalanceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// FIN-S9 (FNS-D84, FNS-D85): the opening's one movement per kind (1 opening, 2 reversal), unique per (company, opening,
+    /// kind) so an approval or a replay never writes it twice. Append-only; the target and amount rules are the opening's.
+    /// </summary>
+    private void ConfigureOpeningBalanceMovements(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OpeningBalanceMovementRow>();
+        entity.ToTable("OpeningBalanceMovements", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningBalanceMovements_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OpeningBalanceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([RecordedBy]) > 0");
+            table.HasCheckConstraint("CK_OpeningBalanceMovements_Kind", "[Kind] IN (1, 2)");
+            table.HasCheckConstraint("CK_OpeningBalanceMovements_Target", OpeningBalanceTargetCheck);
+            table.HasCheckConstraint("CK_OpeningBalanceMovements_Amount", OpeningBalanceAmountCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.OpeningBalanceId, x.Kind }, OpeningBalanceMovementIndex).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId, x.TargetId, x.OccurredOn },
+            "IX_OpeningBalanceMovements_Party");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OpeningBalanceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpeningBalanceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>Per opening at most one live reversal (proposed or approved).</summary>
+    internal const string OpeningBalanceReversalLiveIndex = "UX_OpeningBalanceReversals_Live";
+
+    /// <summary>Per (opening, kind) exactly one movement (FNS-D84: never produced twice).</summary>
+    internal const string OpeningBalanceMovementIndex = "UX_OpeningBalanceMovements_Kind";
+
+    /// <summary>FNS-D85: as the opening's decision — a reversal is decided by an actor other than its proposer.</summary>
+    internal const string OpeningBalanceReversalDecisionCheck =
+        "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
 
     /// <summary>Per (target kind, target, currency) at most one live opening balance (proposed or approved).</summary>
     internal const string OpeningBalanceLiveIndex = "UX_OpeningBalances_Live";
@@ -1963,11 +2058,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     /// <summary>
     /// FNS-D23 maker≠approver: a proposal carries no decision; an approval carries a decider other than the proposer and no
-    /// reason; a rejection carries a decider other than the proposer and its reason.
+    /// reason; a rejection carries a decider other than the proposer and its reason. A reversed opening (4, FNS-D85) keeps
+    /// its approval as it was.
     /// </summary>
     internal const string OpeningBalanceDecisionCheck =
         "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR "
-        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
         + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
         + "AND [RejectionReason] IS NULL) OR "
         + "([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
@@ -2150,7 +2246,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                     && !IsAllowedOpeningBalanceDecision(entry, openingBalance))
                 {
                     throw new InvalidOperationException(
-                        "Açılış bakiyesi yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.");
+                        "Açılış bakiyesi yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla ya da onaylı açılışın onaylı ters kaydıyla değişir.");
+                }
+
+                if (entry.Entity is OpeningBalanceReversalRow openingReversal
+                    && !IsAllowedOpeningBalanceReversalDecision(entry, openingReversal))
+                {
+                    throw new InvalidOperationException(
+                        "Açılış bakiyesi ters kaydı yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.");
                 }
 
                 if (entry.Entity is FinanceAllocationRow allocation
@@ -2240,12 +2343,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(PartyCreditLimitRow.AccountRevision), nameof(PartyCreditLimitRow.SupersededAtUtc),
                         nameof(PartyCreditLimitRow.UpdatedAtUtc),
                     ],
-                    // FIN-S9 (FNS-D23): only the one decision; the opening's values never change.
+                    // FIN-S9 (FNS-D23): only the one decision (and FNS-D85's reversed mark); the opening's values never
+                    // change. A movement is append-only (no entry here).
                     OpeningBalanceRow =>
                     [
                         nameof(OpeningBalanceRow.Status), nameof(OpeningBalanceRow.DecidedBy),
                         nameof(OpeningBalanceRow.DecidedAtUtc), nameof(OpeningBalanceRow.RejectionReason),
                         nameof(OpeningBalanceRow.UpdatedAtUtc),
+                    ],
+                    OpeningBalanceReversalRow =>
+                    [
+                        nameof(OpeningBalanceReversalRow.Status), nameof(OpeningBalanceReversalRow.DecidedBy),
+                        nameof(OpeningBalanceReversalRow.DecidedAtUtc),
+                        nameof(OpeningBalanceReversalRow.RejectionReason),
+                        nameof(OpeningBalanceReversalRow.UpdatedAtUtc),
                     ],
                     // API-85b: only a revision superseded by a newer one; the collateral's values never change.
                     PartyCollateralRow =>
@@ -2551,7 +2662,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     /// <summary>API-85b: a collateral revision only leaves the effective state, superseded by the next revision.</summary>
     /// <summary>
     /// FIN-S9 (FNS-D23): proposed → approved (no reason) or rejected (a reason), by an actor other than the proposer, exactly
-    /// one version step; a decided opening never changes again.
+    /// one version step; FNS-D85: approved → reversed, the approval kept as it was. Nothing else ever changes.
     /// </summary>
     private static bool IsAllowedOpeningBalanceDecision(
         Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry, OpeningBalanceRow current)
@@ -2559,12 +2670,51 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         const int proposed = 1;
         const int approved = 2;
         const int rejected = 3;
+        const int reversed = 4;
         var originalVersion = (long)entry.OriginalValues[nameof(OpeningBalanceRow.Version)]!;
-        if (current.Version != checked(originalVersion + 1)
-            || (int)entry.OriginalValues[nameof(OpeningBalanceRow.Status)]! != proposed
+        if (current.Version != checked(originalVersion + 1))
+        {
+            return false;
+        }
+
+        if ((int)entry.OriginalValues[nameof(OpeningBalanceRow.Status)]! == approved)
+        {
+            return current.Status == reversed
+                && Equals(entry.OriginalValues[nameof(OpeningBalanceRow.DecidedBy)], current.DecidedBy)
+                && Equals(entry.OriginalValues[nameof(OpeningBalanceRow.DecidedAtUtc)], current.DecidedAtUtc)
+                && current.RejectionReason is null;
+        }
+
+        if ((int)entry.OriginalValues[nameof(OpeningBalanceRow.Status)]! != proposed
             || entry.OriginalValues[nameof(OpeningBalanceRow.DecidedBy)] is not null
             || entry.OriginalValues[nameof(OpeningBalanceRow.DecidedAtUtc)] is not null
             || entry.OriginalValues[nameof(OpeningBalanceRow.RejectionReason)] is not null)
+        {
+            return false;
+        }
+
+        var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+        return decided && ((current.Status == approved && current.RejectionReason is null)
+            || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
+    }
+
+    /// <summary>
+    /// FIN-S9 (FNS-D85): a reversal goes proposed → approved (no reason) or rejected (a reason), by an actor other than its
+    /// proposer, exactly one version step; a decided reversal never changes again.
+    /// </summary>
+    private static bool IsAllowedOpeningBalanceReversalDecision(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry, OpeningBalanceReversalRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        var originalVersion = (long)entry.OriginalValues[nameof(OpeningBalanceReversalRow.Version)]!;
+        if (current.Version != checked(originalVersion + 1)
+            || (int)entry.OriginalValues[nameof(OpeningBalanceReversalRow.Status)]! != proposed
+            || entry.OriginalValues[nameof(OpeningBalanceReversalRow.DecidedBy)] is not null
+            || entry.OriginalValues[nameof(OpeningBalanceReversalRow.DecidedAtUtc)] is not null
+            || entry.OriginalValues[nameof(OpeningBalanceReversalRow.RejectionReason)] is not null)
         {
             return false;
         }

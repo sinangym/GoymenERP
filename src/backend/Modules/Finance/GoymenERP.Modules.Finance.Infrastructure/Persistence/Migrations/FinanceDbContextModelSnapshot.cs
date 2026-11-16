@@ -2675,6 +2675,143 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceMovementRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AmountText")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Direction")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("OccurredOn")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("OpeningBalanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("TargetKind")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "CompanyId", "PartyId", "TargetId", "OccurredOn" }, "IX_OpeningBalanceMovements_Party");
+
+                    b.HasIndex(new[] { "CompanyId", "OpeningBalanceId", "Kind" }, "UX_OpeningBalanceMovements_Kind")
+                        .IsUnique();
+
+                    b.ToTable("OpeningBalanceMovements", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OpeningBalanceMovements_Amount", "LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' AND [AmountText] LIKE '%[1-9]%'");
+
+                            t.HasCheckConstraint("CK_OpeningBalanceMovements_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OpeningBalanceId] <> '00000000-0000-0000-0000-000000000000' AND [TargetId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([RecordedBy]) > 0");
+
+                            t.HasCheckConstraint("CK_OpeningBalanceMovements_Kind", "[Kind] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_OpeningBalanceMovements_Target", "([TargetKind] IN (1, 2) AND [PartyId] IS NULL AND [Direction] IS NULL) OR ([TargetKind] = 3 AND [PartyId] IS NOT NULL AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [Direction] IS NOT NULL AND [Direction] IN (1, 2))");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceReversalRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("OpeningBalanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OpeningPeriodVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("ProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProposedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "CompanyId", "OpeningBalanceId" }, "UX_OpeningBalanceReversals_Live")
+                        .IsUnique()
+                        .HasFilter("[Status] IN (1, 2)");
+
+                    b.ToTable("OpeningBalanceReversals", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OpeningBalanceReversals_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)");
+
+                            t.HasCheckConstraint("CK_OpeningBalanceReversals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OpeningBalanceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0 AND LEN([OpeningPeriodVersion]) > 0 AND LEN([Reason]) > 0");
+
+                            t.HasCheckConstraint("CK_OpeningBalanceReversals_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2758,7 +2895,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_OpeningBalances_Amount", "LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' AND [AmountText] LIKE '%[1-9]%'");
 
-                            t.HasCheckConstraint("CK_OpeningBalances_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)");
+                            t.HasCheckConstraint("CK_OpeningBalances_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] IN (2, 4) AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)");
 
                             t.HasCheckConstraint("CK_OpeningBalances_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TargetId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0 AND LEN([OpeningPeriodVersion]) > 0");
 
@@ -3973,6 +4110,38 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "OpeningBalanceId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceMovementRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OpeningBalanceId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceReversalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OpeningBalanceId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OpeningBalanceRow", b =>
