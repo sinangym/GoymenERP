@@ -105,6 +105,7 @@ public sealed partial class ManufacturingCommandServiceTests
     [InlineData(ManufacturingApiStatus.Unprocessable, ManufacturingStoreCodes.OutputLabelCodeRequired, "labelCode")]
     [InlineData(ManufacturingApiStatus.Unprocessable, ManufacturingStoreCodes.OutputLabelCodeFormatInvalid, null)]
     [InlineData(ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.OutputLabelCodeConflict, "labelCode")]
+    [InlineData(ManufacturingApiStatus.Unprocessable, ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed, "labelCode")]
     public async Task A_host_output_label_code_refusal_keeps_its_status_code_and_field(
         ManufacturingApiStatus status, string code, string? field)
     {

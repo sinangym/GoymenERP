@@ -468,6 +468,8 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 ManufacturingApiStatus.Unprocessable, exception.Code),
             ManufacturingStoreCodes.OutputLabelCodeConflict => new ManufacturingInventoryRealizationPortException(
                 ManufacturingApiStatus.Conflict, exception.Code, "labelCode"),
+            ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed => new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unprocessable, exception.Code, "labelCode"),
             _ => null,
         };
 

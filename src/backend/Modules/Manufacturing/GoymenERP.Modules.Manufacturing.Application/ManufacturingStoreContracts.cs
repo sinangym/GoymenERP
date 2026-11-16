@@ -144,6 +144,12 @@ public static class ManufacturingStoreCodes
     /// format was found within the attempt bound. A code is never renamed silently; nothing of this write is stored.
     /// </summary>
     public const string OutputLabelCodeConflict = "manufacturing_output_label_code_conflict";
+
+    /// <summary>
+    /// URT-SC36 (URT-D98): an output label code was entered for a new output while Ayarlar defines an output label number
+    /// format; the code then comes only from the format and manual entry is refused. Nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeEntryNotAllowed = "manufacturing_output_label_code_entry_not_allowed";
 }
 
 /// <summary>
