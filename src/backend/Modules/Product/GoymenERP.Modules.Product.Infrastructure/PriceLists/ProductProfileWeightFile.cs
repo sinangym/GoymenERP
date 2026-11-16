@@ -12,13 +12,53 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 internal static class ProductProfileWeightFile
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-    private const int FieldCount = 6;
+    internal const int FieldCount = 6;
 
-    /// <summary>Null when the file is a valid table; otherwise the reason. <paramref name="rows"/> keep the file order.</summary>
-    internal static string? Refusal(byte[] content, out IReadOnlyList<ProductProfileWeightRowV1> rows)
+    /// <summary>Null when the CSV file is a valid table; otherwise the reason. <paramref name="rows"/> keep the file order.</summary>
+    internal static string? Refusal(byte[] content, out IReadOnlyList<ProductProfileWeightRowV1> rows) =>
+        Refusal(ProductProfileWeightFileKindV1.Csv, content, out rows);
+
+    /// <summary>
+    /// URN-D18: null when the file of the given kind is a valid table; otherwise the reason. The kind comes from the file name and
+    /// is proven here by the content (a workbook is a ZIP, a CSV is UTF-8 text that is not one).
+    /// </summary>
+    internal static string? Refusal(ProductProfileWeightFileKindV1 kind, byte[] content,
+        out IReadOnlyList<ProductProfileWeightRowV1> rows)
     {
         ArgumentNullException.ThrowIfNull(content);
         rows = [];
+        IReadOnlyList<SourceLine> lines;
+        switch (kind)
+        {
+            case ProductProfileWeightFileKindV1.Csv:
+                if (ProductProfileWeightWorkbook.HasZipSignature(content))
+                {
+                    return "Dosya içeriği .csv uzantısıyla uyuşmuyor (Excel çalışma kitabı); uzantı .xlsx olmalıdır.";
+                }
+
+                if (CsvLines(content, out lines) is { } csvRefusal)
+                {
+                    return csvRefusal;
+                }
+
+                break;
+            case ProductProfileWeightFileKindV1.Xlsx:
+                if (ProductProfileWeightWorkbook.Lines(content, FieldCount, out lines) is { } workbookRefusal)
+                {
+                    return workbookRefusal;
+                }
+
+                break;
+            default:
+                return "Dosya türü desteklenmiyor.";
+        }
+
+        return LinesRefusal(lines, out rows);
+    }
+
+    private static string? CsvLines(byte[] content, out IReadOnlyList<SourceLine> lines)
+    {
+        lines = [];
         string text;
         try
         {
@@ -34,22 +74,34 @@ internal static class ProductProfileWeightFile
             text = text[1..];
         }
 
-        var lines = text.Split('\n');
+        var raw = text.Split('\n');
+        var parsed = new List<SourceLine>(raw.Length);
+        for (var index = 0; index < raw.Length; index++)
+        {
+            var line = raw[index].TrimEnd('\r');
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                parsed.Add(new SourceLine(index + 1, line.Split(ProductProfileWeightFileFormatV1.Separator)));
+            }
+        }
+
+        lines = parsed;
+        return null;
+    }
+
+    /// <summary>The shared table rules: the header line first, then the rows (same rules for CSV and XLSX).</summary>
+    private static string? LinesRefusal(IReadOnlyList<SourceLine> lines, out IReadOnlyList<ProductProfileWeightRowV1> rows)
+    {
+        rows = [];
         var parsed = new List<ProductProfileWeightRowV1>();
         var keys = new HashSet<(string, decimal?, decimal?, decimal?, decimal)>();
         var headerSeen = false;
-        for (var index = 0; index < lines.Length; index++)
+        foreach (var line in lines)
         {
-            var line = lines[index].TrimEnd('\r');
-            var lineNo = index + 1;
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-
             if (!headerSeen)
             {
-                if (!string.Equals(line.Trim(), ProductProfileWeightFileFormatV1.Header, StringComparison.Ordinal))
+                if (!string.Equals(string.Join(ProductProfileWeightFileFormatV1.Separator, line.Fields).Trim(),
+                        ProductProfileWeightFileFormatV1.Header, StringComparison.Ordinal))
                 {
                     return $"İlk satır başlık olmalıdır: {ProductProfileWeightFileFormatV1.Header}";
                 }
@@ -63,14 +115,14 @@ internal static class ProductProfileWeightFile
                 return $"Dosya en fazla {ProductProfileWeightInputLimitsV1.MaximumRows} satır içerebilir.";
             }
 
-            if (Row(line, lineNo, out var row) is { } refusal)
+            if (Row(line.Fields, line.LineNo, out var row) is { } refusal)
             {
                 return refusal;
             }
 
             if (!keys.Add((row!.SectionKind, row.WidthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm)))
             {
-                return $"Satır {lineNo}: aynı ölçü dosyada birden fazla kez geçiyor.";
+                return $"Satır {line.LineNo}: aynı ölçü dosyada birden fazla kez geçiyor.";
             }
 
             parsed.Add(row);
@@ -90,11 +142,10 @@ internal static class ProductProfileWeightFile
         return null;
     }
 
-    private static string? Row(string line, int lineNo, out ProductProfileWeightRowV1? row)
+    private static string? Row(IReadOnlyList<string> fields, int lineNo, out ProductProfileWeightRowV1? row)
     {
         row = null;
-        var fields = line.Split(ProductProfileWeightFileFormatV1.Separator);
-        if (fields.Length != FieldCount)
+        if (fields.Count != FieldCount)
         {
             return $"Satır {lineNo}: {FieldCount} alan olmalıdır.";
         }
@@ -187,3 +238,6 @@ internal static class ProductProfileWeightFile
         return true;
     }
 }
+
+/// <summary>One non-empty source line (CSV line or worksheet row) with its 1-based number in the file and its fields.</summary>
+internal sealed record SourceLine(int LineNo, IReadOnlyList<string> Fields);

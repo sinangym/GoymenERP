@@ -13,13 +13,18 @@ import { PRODUCT_SECTION_KINDS, type ProductSectionKind } from './dimensionApi'
 export const TABLE_SECTION_KINDS = ['Profile', 'RoundTube'] as const satisfies readonly ProductSectionKind[]
 export type TableSectionKind = (typeof TABLE_SECTION_KINDS)[number]
 
-/** `ProductProfileWeightInputLimitsV1` / `ProductProfileWeightFileFormatV1` (reversible details, KLN-D54). */
+/**
+ * `ProductProfileWeightInputLimitsV1` / `ProductProfileWeightFileFormatV1` (reversible details, KLN-D54). The size is the
+ * URN-D21 starting value (5 MB); the server applies the Settings record and refuses the file itself (URN-D18: CSV or XLSX).
+ */
 export const PROFILE_WEIGHT_LIMITS = {
   sourceLabelMaximumLength: 200,
   reasonMaximumLength: 4000,
   fileNameMaximumLength: 255,
-  maximumFileBytes: 1_048_576,
+  maximumFileBytes: 5_242_880,
   fileExtension: '.csv',
+  workbookFileExtension: '.xlsx',
+  workbookContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   header: 'sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre',
 } as const
 
@@ -241,11 +246,14 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-export type FileCheck = 'ok' | 'not-csv' | 'too-large' | 'empty' | 'name-too-long'
+export type FileCheck = 'ok' | 'unsupported-type' | 'too-large' | 'empty' | 'name-too-long'
 
 /** Helps the person before sending: the server reads and refuses the file itself. */
 export function checkFile(file: { readonly name: string; readonly size: number }): FileCheck {
-  if (!file.name.toLowerCase().endsWith(PROFILE_WEIGHT_LIMITS.fileExtension)) return 'not-csv'
+  const name = file.name.toLowerCase()
+  if (!name.endsWith(PROFILE_WEIGHT_LIMITS.fileExtension) && !name.endsWith(PROFILE_WEIGHT_LIMITS.workbookFileExtension)) {
+    return 'unsupported-type'
+  }
   if (file.name.length > PROFILE_WEIGHT_LIMITS.fileNameMaximumLength) return 'name-too-long'
   if (file.size === 0) return 'empty'
   if (file.size > PROFILE_WEIGHT_LIMITS.maximumFileBytes) return 'too-large'

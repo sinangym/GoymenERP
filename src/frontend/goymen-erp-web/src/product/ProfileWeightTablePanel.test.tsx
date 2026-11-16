@@ -251,9 +251,9 @@ describe('company kg/m table panel (URN-D13…D16)', () => {
     await user.click(screen.getByRole('button', { name: PROFILE_WEIGHT_TEXT.submit }))
     expect(await screen.findByText(PROFILE_WEIGHT_TEXT.fileRequired)).toBeTruthy()
 
-    await user.upload(fileInput(), csvFile(CSV, 'agirlik.xlsx'))
+    await user.upload(fileInput(), csvFile(CSV, 'agirlik.xlsm'))
     await user.click(screen.getByRole('button', { name: PROFILE_WEIGHT_TEXT.submit }))
-    expect(await screen.findByText(PROFILE_WEIGHT_TEXT.fileNotCsv)).toBeTruthy()
+    expect(await screen.findByText(PROFILE_WEIGHT_TEXT.fileUnsupportedType)).toBeTruthy()
 
     await user.upload(fileInput(), csvFile(''))
     await user.click(screen.getByRole('button', { name: PROFILE_WEIGHT_TEXT.submit }))
@@ -296,9 +296,13 @@ describe('company kg/m table panel (URN-D13…D16)', () => {
 
   it('checks a file name and size only to help the person', () => {
     expect(checkFile({ name: 'a.CSV', size: 1 })).toBe('ok')
-    expect(checkFile({ name: 'a.txt', size: 1 })).toBe('not-csv')
+    expect(checkFile({ name: 'a.Xlsx', size: 1 })).toBe('ok')
+    expect(checkFile({ name: 'a.txt', size: 1 })).toBe('unsupported-type')
+    expect(checkFile({ name: 'a.xlsm', size: 1 })).toBe('unsupported-type')
+    expect(checkFile({ name: 'a.xls', size: 1 })).toBe('unsupported-type')
     expect(checkFile({ name: 'a.csv', size: 0 })).toBe('empty')
-    expect(checkFile({ name: 'a.csv', size: 1_048_577 })).toBe('too-large')
+    expect(checkFile({ name: 'a.xlsx', size: 5_242_880 })).toBe('ok')
+    expect(checkFile({ name: 'a.xlsx', size: 5_242_881 })).toBe('too-large')
     expect(checkFile({ name: `${'a'.repeat(252)}.csv`, size: 1 })).toBe('name-too-long')
     expect(bytesToBase64(new TextEncoder().encode('kg;m'))).toBe('a2c7bQ==')
   })

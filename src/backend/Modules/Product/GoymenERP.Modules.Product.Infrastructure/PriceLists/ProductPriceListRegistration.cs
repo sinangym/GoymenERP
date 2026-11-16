@@ -125,7 +125,9 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
         serviceProvider.GetRequiredService<IAuditEventCollector>(),
         serviceProvider.GetRequiredService<IProductProfileWeightFileVaultV1>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        // URN-D21: the Settings group-level file size record; absent → the decided 5 MB starting value.
+        serviceProvider.GetService<IProductProfileWeightImportLimitSourceV1>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),

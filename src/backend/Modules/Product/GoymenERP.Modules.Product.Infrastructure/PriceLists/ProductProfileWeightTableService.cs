@@ -23,6 +23,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// <item><b>Command</b>: one person, a mandatory source label (URN-D14) and reason, Idempotency-Key (the stored terminal answer
 /// replays), the expected table version as decimal text ("0" = none yet), correlation/causation and ONE audit event per
 /// import. Each import is a new insert-only version; the newest is current. No draft table is seeded (URN-D16).</item>
+/// <item><b>Kinds and size</b> (URN-D18/D21): a <c>.csv</c> or <c>.xlsx</c> file, its kind proven by its content; the largest file
+/// is the Settings group-level record read through <see cref="IProductProfileWeightImportLimitSourceV1"/>, or the decided 5 MB
+/// starting value while none is recorded (an unreachable source refuses 503, nothing is guessed).</item>
 /// </list>
 /// </summary>
 internal sealed class ProductProfileWeightTableService(
@@ -32,7 +35,8 @@ internal sealed class ProductProfileWeightTableService(
     IErpAuthorityRevalidationService authority,
     IAuditEventCollector auditEvents,
     IProductProfileWeightFileVaultV1 vault,
-    TimeProvider timeProvider) : IProductProfileWeightTableServiceV1
+    TimeProvider timeProvider,
+    IProductProfileWeightImportLimitSourceV1? limits = null) : IProductProfileWeightTableServiceV1
 {
     private const string Permission = ProductProfileWeightPermissionsV1.Import;
     private const string ImportCommandName = "product.profile-weights.import.v1";
@@ -110,12 +114,19 @@ internal sealed class ProductProfileWeightTableService(
                 $"Gerekçe en fazla {ProductProfileWeightInputLimitsV1.ReasonMaximumLength} karakter olabilir."), metadata);
         }
 
-        if (FileRefusal(request, out var fileName, out var content) is { } fileRefusal)
+        if (await MaximumFileBytesAsync(scope.CompanyId, cancellationToken) is not { } maximumFileBytes)
+        {
+            return Unstored(Problem(503, ProductProfileWeightProblemCodesV1.ProviderUnavailable, "Dosya boyutu sınırı okunamıyor.",
+                "İçe aktarım dosyası boyut sınırı Ayarlar'dan şu anda okunamıyor; tablo değişmedi. Daha sonra yeniden deneyin."),
+                metadata);
+        }
+
+        if (FileRefusal(request, maximumFileBytes, out var fileName, out var fileKind, out var content) is { } fileRefusal)
         {
             return Unstored(Problem(400, ProductProfileWeightProblemCodesV1.FileInvalid, "Dosya geçersiz.", fileRefusal), metadata);
         }
 
-        if (ProductProfileWeightFile.Refusal(content, out var rows) is { } rowsRefusal)
+        if (ProductProfileWeightFile.Refusal(fileKind, content, out var rows) is { } rowsRefusal)
         {
             return Unstored(Problem(400, ProductProfileWeightProblemCodesV1.FileInvalid, "Dosya geçersiz.", rowsRefusal), metadata);
         }
@@ -145,7 +156,7 @@ internal sealed class ProductProfileWeightTableService(
         try
         {
             stored = await vault.StoreAsync(new ProductProfileWeightFileV1(scope.CompanyId, importId, fileName,
-                ProductProfileWeightFileFormatV1.ContentType, content, fileSha256, metadata.ActorId, metadata.IdempotencyKey,
+                ContentTypeOf(fileKind), content, fileSha256, metadata.ActorId, metadata.IdempotencyKey,
                 metadata.CorrelationId, metadata.CausationId), cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -310,31 +321,90 @@ internal sealed class ProductProfileWeightTableService(
         return new Scope(companyContext.CompanyId, [.. measured.RoleCodes.Order(StringComparer.Ordinal)]);
     }
 
-    /// <summary>The file name (a bare <c>.csv</c> name, no path) and the decoded content within the size bound.</summary>
-    private static string? FileRefusal(ImportProductProfileWeightTableRequestV1 request, out string fileName,
-        out byte[] content)
+    /// <summary>
+    /// URN-D21: the largest file now, from the Settings group-level record (null there → the decided starting value). Null here
+    /// means the source could not answer or answered a value that is not a positive size: the import refuses (fail-closed).
+    /// </summary>
+    private async Task<long?> MaximumFileBytesAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        if (limits is null)
+        {
+            return ProductProfileWeightInputLimitsV1.MaximumFileBytes;
+        }
+
+        long? recorded;
+        try
+        {
+            recorded = await limits.GetMaximumFileBytesAsync(companyId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
+
+        return recorded switch
+        {
+            null => ProductProfileWeightInputLimitsV1.MaximumFileBytes,
+            > 0 => recorded,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The file name (a bare <c>.csv</c> or <c>.xlsx</c> name, no path; URN-D18), the kind its extension names and the decoded
+    /// content within the size bound. The content proves the kind later (<see cref="ProductProfileWeightFile"/>).
+    /// </summary>
+    private static string? FileRefusal(ImportProductProfileWeightTableRequestV1 request, long maximumFileBytes, out string fileName,
+        out ProductProfileWeightFileKindV1 kind, out byte[] content)
     {
         content = [];
+        kind = ProductProfileWeightFileKindV1.Csv;
         fileName = request.FileName?.Trim() ?? string.Empty;
+        var extension = KindOf(fileName);
         if (fileName.Length == 0 || fileName.Length > ProductProfileWeightInputLimitsV1.FileNameMaximumLength
             || fileName.Any(character => char.IsControl(character) || character is '/' or '\\' or ':')
-            || !fileName.EndsWith(ProductProfileWeightFileFormatV1.FileExtension, StringComparison.OrdinalIgnoreCase)
-            || fileName.Length == ProductProfileWeightFileFormatV1.FileExtension.Length)
+            || extension is not { } named || fileName.Length == ExtensionOf(named).Length)
         {
-            return $"Dosya adı yolsuz ve {ProductProfileWeightFileFormatV1.FileExtension} uzantılı olmalıdır "
+            return $"Dosya adı yolsuz ve {ProductProfileWeightFileFormatV1.FileExtension} veya "
+                + $"{ProductProfileWeightFileFormatV1.WorkbookFileExtension} uzantılı olmalıdır "
                 + $"(en fazla {ProductProfileWeightInputLimitsV1.FileNameMaximumLength} karakter).";
         }
 
+        kind = named;
+        var tooLarge = $"Dosya içeriği boş olamaz ve en fazla {maximumFileBytes} bayt olabilir.";
         var encoded = request.ContentBase64 ?? string.Empty;
-        var buffer = new byte[ProductProfileWeightInputLimitsV1.MaximumFileBytes];
-        if (encoded.Length == 0 || !Convert.TryFromBase64String(encoded, buffer, out var written) || written == 0)
+        // A base64 text of n characters decodes to at most 3n/4 bytes: a larger text is refused before anything is allocated.
+        var decodedBound = (encoded.Length / 4L * 3L) + 3L;
+        var bufferBytes = Math.Min(decodedBound, maximumFileBytes);
+        if (encoded.Length == 0 || bufferBytes > int.MaxValue)
         {
-            return $"Dosya içeriği boş olamaz ve en fazla {ProductProfileWeightInputLimitsV1.MaximumFileBytes} bayt olabilir.";
+            return tooLarge;
+        }
+
+        var buffer = new byte[(int)bufferBytes];
+        if (!Convert.TryFromBase64String(encoded, buffer, out var written) || written == 0)
+        {
+            return tooLarge;
         }
 
         content = buffer[..written];
         return null;
     }
+
+    private static ProductProfileWeightFileKindV1? KindOf(string fileName) =>
+        fileName.EndsWith(ProductProfileWeightFileFormatV1.FileExtension, StringComparison.OrdinalIgnoreCase)
+            ? ProductProfileWeightFileKindV1.Csv
+            : fileName.EndsWith(ProductProfileWeightFileFormatV1.WorkbookFileExtension, StringComparison.OrdinalIgnoreCase)
+                ? ProductProfileWeightFileKindV1.Xlsx
+                : null;
+
+    private static string ExtensionOf(ProductProfileWeightFileKindV1 kind) => kind == ProductProfileWeightFileKindV1.Xlsx
+        ? ProductProfileWeightFileFormatV1.WorkbookFileExtension
+        : ProductProfileWeightFileFormatV1.FileExtension;
+
+    private static string ContentTypeOf(ProductProfileWeightFileKindV1 kind) => kind == ProductProfileWeightFileKindV1.Xlsx
+        ? ProductProfileWeightFileFormatV1.WorkbookContentType
+        : ProductProfileWeightFileFormatV1.ContentType;
 
     /// <summary>The import record id for the company and the command key: a retry of the same command links the same record.</summary>
     private static Guid ImportIdOf(Guid companyId, string keyHash)
