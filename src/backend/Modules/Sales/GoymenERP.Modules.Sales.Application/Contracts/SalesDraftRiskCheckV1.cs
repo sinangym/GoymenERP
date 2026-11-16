@@ -116,6 +116,12 @@ public static class SalesDraftRiskReasonCodesV1
     /// <summary>An open approved order exists but the delivery owner (AT-024) is not composed or failed.</summary>
     public const string DeliveryProviderUnavailable = "delivery_provider_unavailable";
 
+    /// <summary>SAT-D406: an open approved order exists but the shipment plan owner (SAT-D367, Logistics) is not composed, failed or refused.</summary>
+    public const string PlanProviderUnavailable = "plan_provider_unavailable";
+
+    /// <summary>SAT-D406: the shipment plan owner answered another company, an order not asked or left unanswered, a duplicate line or a quantity in another unit than the order line's.</summary>
+    public const string PlanAnswerInvalid = "plan_answer_invalid";
+
     /// <summary>The delivery owner answered another company or order, an unknown line, or a total in another unit.</summary>
     public const string DeliveryAnswerInvalid = "delivery_answer_invalid";
 

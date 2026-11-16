@@ -111,8 +111,8 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
         // LOJ-D19 (SAT-D285): the usage mirror of the Logistics definite-shipment events over the Sales store, and its inbox
-        // consumer. The consumer is NOT handed to the Work dispatcher (AddWorkInboxConsumer) yet: the Logistics outbox source
-        // does not exist until its owner registers it, and the dispatcher refuses an unknown source at start.
+        // consumer. The Api host hands the consumer to the Work dispatcher (AddWorkInboxConsumer) after the Logistics source
+        // (SAT-SC33); this module does not reference Work's infrastructure.
         services.AddScoped<ISalesRiskExceptionUsageStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<SalesLogisticsShipmentInboxConsumer>();
         // F-018 / plan S2 (FNS-D30, SAT-D310): the shipment risk gate read for the Logistics gate — the same deterministic risk
@@ -303,7 +303,10 @@ public static class SalesModuleExtensions
         // X1 (KLN-D28): the host participant that releases a cancelled order's future supply allocations through Inventory's
         // release port in the cancellation's own transaction. Until it is registered a future allocation keeps blocking the
         // cancellation (fail-closed); it is never released outside the Sales transaction.
-        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>());
+        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>(),
+        // SAT-D406 / SAT-D367: the risk remainder's plan quantity (issued, not yet shipped loading instructions), bound by the host to
+        // the Logistics owner's read; until it is, the "approved, not shipped" remainder is "Unavailable", never an assumed zero.
+        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
