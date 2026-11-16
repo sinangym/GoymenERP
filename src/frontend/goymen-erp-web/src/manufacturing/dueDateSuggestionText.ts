@@ -1,8 +1,8 @@
 /**
- * URT-S10 (F-010b) termin suggestion text, in Turkish and in its own file. The suggestion is the server's: computed from
- * the work center's shift calendar and the hourly capacity in the plan's parameter profile. It is never applied by
- * itself; the user takes it into the termin field and saves it like a hand-entered termin, or types another day. The
- * line is assumed free from now on (no queue of other work is counted); these words say so.
+ * URT-S10 (F-010b) / URT-SC33 termin suggestion text, in Turkish and in its own file. The suggestion is the server's:
+ * computed from the work center's shift calendar, the input capacity (kg/h) and the safety margin in the plan's
+ * parameter profile, after the planned work already queued on the work center (URT-D86..D89). It is never applied by
+ * itself; the user takes it into the termin field and saves it like a hand-entered termin, or types another day.
  */
 
 export const DUE_DATE_SUGGESTION_TEXT = {
@@ -10,13 +10,20 @@ export const DUE_DATE_SUGGESTION_TEXT = {
   request: 'Termin önerisi al',
   refresh: 'Öneriyi yenile',
   heading: 'Termin önerisi',
-  help: 'Öneri iş merkezinin vardiya takviminden ve parametre profilindeki saatlik kapasiteden, işe şimdi başlandığı ve hattın boş olduğu varsayımıyla hesaplanır. Kaydedilmez; kullanmak için alana alın ve termini kaydedin.',
+  help: 'Öneri iş merkezinin vardiya takviminden, parametre profilindeki giriş kapasitesinden (kg/saat) ve güvenlik payından hesaplanır; iş merkezinde sırada bekleyen onaylı planlar önce sayılır. Vardiya başladığı güne aittir. Kaydedilmez; kullanmak için alana alın ve termini kaydedin.',
   suggested: 'Önerilen termin',
   completesAt: 'Tahmini bitiş (takvim saati)',
   requiredKg: 'Planlanan giriş',
   requiredTime: 'Gereken çalışma süresi',
   minutes: 'dk',
-  capacity: 'Saatlik kapasite',
+  queue: 'Sıradaki iş',
+  queuePlans: 'plan',
+  queueTime: 'Sıradaki işin süresi',
+  safetyMargin: 'Güvenlik payı',
+  safetyMarginHoursUnit: 'saat',
+  safetyMarginDaysUnit: 'iş günü',
+  totalTime: 'Toplam çalışma süresi (sıra + plan + pay)',
+  capacity: 'Giriş kapasitesi',
   capacityUnit: 'kg/saat',
   profile: 'parametre profili sürümü',
   calendar: 'Takvim',
@@ -44,16 +51,18 @@ export function dueDateSuggestionSourceText(source: string | null): string {
 const REASON_TEXT: Record<string, string> = {
   plan_cancelled: 'Plan iptal edilmiş; termin önerilmez.',
   capacity_not_configured:
-    'Planın parametre profilinde saatlik kapasite (kg/saat) tanımlı değil; öneri için Ayarlar’da tanımlanmalıdır.',
-  capacity_invalid: 'Parametre profilindeki saatlik kapasite geçerli değil (birim kg/saat ve pozitif bir sayı olmalı).',
+    'Termin hesaplanamadı: iş merkezinin giriş kapasitesi (kg/saat) Ayarlar’da tanımlı değil.',
+  capacity_invalid: 'Parametre profilindeki giriş kapasitesi geçerli değil (birim kg/saat ve pozitif bir sayı olmalı).',
+  safety_margin_invalid:
+    'Parametre profilindeki güvenlik payı geçerli değil (saat payı sıfır veya pozitif, gün payı sıfır veya pozitif tam sayı olmalı).',
+  queue_unavailable: 'İş merkezinde sırada bekleyen iş şu anda okunamadı; daha sonra yeniden deneyin.',
+  due_date_input_invalid: 'Termin hesabının girdileri geçerli değil.',
   capacity_source_unavailable: 'Parametre profili şu anda okunamadı; daha sonra yeniden deneyin.',
   calendar_unavailable: 'İş merkezinin vardiya takvimi şu anda okunamadı; daha sonra yeniden deneyin.',
   calendar_answer_invalid: 'İş merkezinin vardiya takvimi beklenen biçimde değil.',
   work_center_not_found: 'Planın iş merkezi bu şirket bağlamında bulunamadı.',
   no_working_time: 'Takvimde bu işi bitirecek kadar çalışma zamanı yok (arama sınırı içinde).',
   calendar_invalid: 'Vardiya takviminde geçersiz bir vardiya var.',
-  overnight_holiday_spill_undecided:
-    'İş, tatile taşan bir gece vardiyası saatine ihtiyaç duyuyor; bu durumun politikası henüz karara bağlanmadı. Termini elle girin.',
 }
 
 /** Why no termin is suggested, in the user's terms; an unknown reason names its code. */

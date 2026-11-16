@@ -4,8 +4,9 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// URT-S19 (B-27, DEC-PRDCT-009, API-42): <c>manufacturing.reports.read</c> is a registered central name — once,
-/// company-wide only, NOT Critical — and handed to nobody by the shipped seed. Who reads production cost data is not
-/// decided, so the grant stays a human gate.
+/// company-wide only, NOT Critical — and handed to nobody by the shipped seed. URT-D90 (SINAN-CEVAP 34.16) declares its
+/// personas — Üretim Müdürü, Üretim Planlama and Genel Müdür — but that is a persona distribution, not a grant: the grant
+/// stays a human gate, so the seed still carries the name for no role.
 /// </summary>
 public sealed class ManufacturingReportsPermissionRegistrationTests
 {

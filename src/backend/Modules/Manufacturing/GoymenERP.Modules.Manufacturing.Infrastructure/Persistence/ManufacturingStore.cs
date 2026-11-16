@@ -2429,6 +2429,15 @@ public sealed partial class ManufacturingStore(
                     "Bu ayın hurda fiyatı zaten girildi; girilmiş ay değiştirilmez.");
             }
 
+            // URT-S21 (URT-D62): an output label code another writer took first is the code's own conflict; it is never
+            // renamed. A generated number another writer took first stays the concurrent change below (read and retry).
+            if (sql.Number is 2601 or 2627
+                && sql.Message.Contains(ManufacturingDbContext.OutputLabelCodeCodeIndex, StringComparison.Ordinal))
+            {
+                throw Refused(ManufacturingStoreCodes.OutputLabelCodeConflict,
+                    "Bu çıktı etiket kodu şirkette başka bir çıktıya verildi; hiçbir şey kaydedilmedi.", exception);
+            }
+
             var code = sql.Number switch
             {
                 2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,

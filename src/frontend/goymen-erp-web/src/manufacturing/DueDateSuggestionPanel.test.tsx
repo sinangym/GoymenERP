@@ -61,6 +61,9 @@ describe('F-010b termin suggestion (URT-S10)', () => {
     expect((await screen.findByTestId('due-date-suggestion-day')).textContent).toContain('2026-09-22')
     expect(screen.getByText(/100 kg\/saat/)).toBeTruthy()
     expect(screen.getByText('2026-09-22 11:00')).toBeTruthy()
+    // URT-D86/URT-D89: the queued work and the margin are the server's figures, shown as they came.
+    expect(screen.getByTestId('due-date-suggestion-queue').textContent).toBe('2 plan · 400.5 kg')
+    expect(screen.getByTestId('due-date-suggestion-margin').textContent).toBe('1.5 saat · 1 iş günü')
     const reads = requestsFor(recorded, SUGGESTION_PATH, 'GET')
     expect(reads).toHaveLength(1)
     expect(reads[0].headers['X-Company-Id']).toBe(COMPANY_A)

@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -613,6 +616,80 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.ToTable("WorkCenters", "organization", t =>
                         {
                             t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputLabelCodeRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OutputId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long?>("GeneratedNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("LabelCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("OutputKind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "OutputId");
+
+                    b.HasIndex("CompanyId", "GeneratedNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OutputLabelCodes_CompanyId_GeneratedNumber")
+                        .HasFilter("[GeneratedNumber] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "LabelCode")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OutputLabelCodes_CompanyId_LabelCode");
+
+                    b.HasIndex("CompanyId", "LabelId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OutputLabelCodes_CompanyId_LabelId");
+
+                    b.HasIndex("CompanyId", "OrderId");
+
+                    b.HasIndex("CompanyId", "OutputKind", "OutputId");
+
+                    b.ToTable("OutputLabelCodes", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutputLabelCodes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [OutputId] <> '00000000-0000-0000-0000-000000000000' AND [LabelId] <> '00000000-0000-0000-0000-000000000000' AND [OutputKind] = 3");
+
+                            t.HasCheckConstraint("CK_OutputLabelCodes_Source", "([Source] = 1 AND [GeneratedNumber] IS NULL AND [Format] IS NULL) OR ([Source] = 2 AND [GeneratedNumber] IS NOT NULL AND [GeneratedNumber] > 0 AND [Format] IS NOT NULL AND LEN([Format]) > 0)");
+
+                            t.HasCheckConstraint("CK_OutputLabelCodes_Text", "LEN([LabelCode]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
                 });
 
@@ -1648,6 +1725,22 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationWorkCenterReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "WorkCenterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OutputLabelCodeRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.FactRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OutputKind", "OutputId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

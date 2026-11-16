@@ -63,6 +63,21 @@ public static class ManufacturingEndpoints
         InventoryManufacturingRealizationCodesV1.ConcurrentChange,
     ];
 
+    // URT-S21 (URT-D62): the output declaration gives the output label its own code; a code already used in the company
+    // (entered, or no free number in the Ayarlar format) is its 409, a missing or unusable Ayarlar format its 422.
+    private static readonly string[] DeclareOutputConflictCodes =
+    [
+        .. ConflictCodes,
+        ManufacturingStoreCodes.OutputLabelCodeConflict,
+    ];
+
+    private static readonly string[] DeclareOutputUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingStoreCodes.OutputLabelCodeRequired,
+        ManufacturingStoreCodes.OutputLabelCodeFormatInvalid,
+    ];
+
     private static readonly string[] SavePlanConflictCodes =
     [
         .. ConflictCodes,
@@ -621,7 +636,7 @@ public static class ManufacturingEndpoints
             .WithName("DeclareManufacturingOutputV1")
             .Accepts<DeclareInventoryOutputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithDeclareOutputProblems();
 
         // MFG-ORD: the close of an order at the version the caller read. The persisted Settings snapshot
         // supplies the exact company/process/date tolerance; a reasoned out-of-tolerance close additionally
@@ -731,6 +746,28 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-S22 (API-28, URT-D63, KLN-D44): the order's lineage — every output label with all its input labels and
+        // their kg shares from the one share calculator (backward), every input label with the outputs it went into
+        // (forward), and one step into other orders. The order read's context, permission and answers; no new
+        // permission. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/lineage", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetOrderLineageAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderLineageV1")
+            .Produces<OrderLineageViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // URT-S19 (B-27, DEC-PRDCT-009, API-42): the order's cost trace — lots, line, fire, subcontract owner, sales-order
         // link and fact moments from the stored facts, and the production cost port's answer (never a second formula, never
         // a zero). Its own grant, registered and granted to no role. A read: nothing is stored.
@@ -747,6 +784,29 @@ public static class ManufacturingEndpoints
             .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
             .WithName("GetManufacturingOrderCostTraceV1")
             .Produces<CostTraceViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // URT-S17 (SAT-D317): the order's production cost as the production cost port version 2 records it — the kg cost,
+        // the TL per line, the rounding remainder, the currency lines and the inputs that keep the cost from being computed.
+        // An order that is not closed is pending (order_not_closed); no port source answers unavailable, never a zero. The
+        // reports grant, registered and granted to no role. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/production-cost", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetProductionCostAsync(orderId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderProductionCostV1")
+            .Produces<ProductionCostViewV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
@@ -884,6 +944,17 @@ public static class ManufacturingEndpoints
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
+
+    private static RouteHandlerBuilder WithDeclareOutputProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(DeclareOutputConflictCodes)
+            .ProducesErpUnprocessableEntity(DeclareOutputUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
     // SAT-D318 (owner decision of 2026-11-13): the input issue's 409 is the write set's problem plus an optional
     // `stockShortfall` member that names the issue Inventory refused for physical stock. Same status, same codes.
@@ -1209,6 +1280,7 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.InputAlreadyIssued,
         ManufacturingRuleCodes.ReturnAlreadyRecorded,
         ManufacturingRuleCodes.ReturnExceedsIssued,
+        ManufacturingRuleCodes.ReturnExceedsUnconsumed,
         ManufacturingRuleCodes.OutputAlreadyDeclared,
         ManufacturingRuleCodes.WipAlreadyMeasured,
         ManufacturingRuleCodes.WipMeasurementNotLatest,

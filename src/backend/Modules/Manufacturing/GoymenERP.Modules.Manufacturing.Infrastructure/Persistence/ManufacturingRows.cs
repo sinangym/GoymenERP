@@ -507,6 +507,34 @@ internal sealed class OutputLineageEdgeRow : IManufacturingTenantRow
 }
 
 /// <summary>
+/// URT-S21 (URT-D62): the output label's own code, one row per (company, output). <see cref="Source"/> is 1 (entered) or 2
+/// (generated from the Ayarlar format); a generated code carries its number and the format it was made with, an entered
+/// code neither. The number is the company's running output label number: a generated number is never given twice and
+/// never reused. The input labels the output came from are its lineage edges, never part of this code. Append-only.
+/// </summary>
+internal sealed class OutputLabelCodeRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OrderId { get; set; }
+
+    /// <summary>Always <see cref="FactKind.OutputDeclaration"/>: with <see cref="OutputId"/> it names the output fact.</summary>
+    public int OutputKind { get; set; }
+
+    public Guid OutputId { get; set; }
+
+    /// <summary>The output's label in Inventory the code was given to.</summary>
+    public Guid LabelId { get; set; }
+
+    public string LabelCode { get; set; } = string.Empty;
+    public int Source { get; set; }
+    public long? GeneratedNumber { get; set; }
+    public string? Format { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// URT-S13 (URT-D47, URT-D65), URT-D72: one version of the company's scrap price of one calendar month, in TL per kg.
 /// One row per (company, year, month, version); append-only: a version is never changed or deleted, a correction adds
 /// the next version with its reason and the latest version is the month's effective price.

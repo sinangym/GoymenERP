@@ -14,6 +14,7 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Engines;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
+using GoymenERP.Modules.Manufacturing.Domain.Lineage;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
@@ -493,7 +494,10 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingMonthlyScrapPriceStore? scrapPrices = null,
     IManufacturingOrderDueDateStore? orderDueDates = null,
     IManufacturingScrapCostDistributionPortV1? costDistribution = null,
-    IOrganizationWorkCenterPlanningReferenceV2? workCenterCalendars = null)
+    IOrganizationWorkCenterPlanningReferenceV2? workCenterCalendars = null,
+    IManufacturingProductionCostPortV2? productionCost = null,
+    IManufacturingLabelLineageReadPortV1? labelLineage = null,
+    IManufacturingWorkCenterQueueStore? workCenterQueues = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1590,7 +1594,10 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("remnantClassification"));
         }
 
-        if (string.IsNullOrWhiteSpace(request.LabelCode))
+        // URT-S21 (URT-D62): the output label code is optional. Sent, it is the output label's own code and must be a
+        // usable code once trimmed; omitted, the host gives the next number of the company's Ayarlar output label format.
+        var enteredLabelCode = request.LabelCode?.Trim();
+        if (request.LabelCode is not null && !ProductionOutputLabelCodes.IsValidCode(enteredLabelCode))
         {
             return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
         }
@@ -1640,7 +1647,7 @@ public sealed partial class ManufacturingCommandService(
             expectedProductVersion = request.ExpectedProductVersion,
             lotId = request.LotId,
             labelId = request.LabelId,
-            labelCode = request.LabelCode.Trim(),
+            labelCode = enteredLabelCode,
             request.HeatNumber,
             request.CoilNumber,
             requiredDocuments = request.RequiredDocuments,
@@ -1684,7 +1691,7 @@ public sealed partial class ManufacturingCommandService(
                     new ManufacturingInventoryOutputPortCommandV1(
                         orderId, request.ExpectedVersion, request.OutputId, request.ParentRollId,
                         expectedParentLabelVersion, outputClass, request.ProductId, request.ExpectedProductVersion!,
-                        request.LotId, request.LabelId, request.LabelCode.Trim(), request.HeatNumber,
+                        request.LotId, request.LabelId, enteredLabelCode, request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
                         request.MovementId, mass.Value, occurredAt, remnantClassification),

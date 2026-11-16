@@ -125,6 +125,25 @@ public static class ManufacturingStoreCodes
     /// order, an id is empty, or the share calculator cannot read the inputs. Nothing of this write is stored.
     /// </summary>
     public const string LineageInvalid = "manufacturing_lineage_invalid";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the output was declared without a label code and Ayarlar holds no output label number format,
+    /// so no independent number can be given. Nothing of this write is stored; the operator enters a code or the format
+    /// is entered in Ayarlar. A number is never invented.
+    /// </summary>
+    public const string OutputLabelCodeRequired = "manufacturing_output_label_code_required";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the output label number format read from Ayarlar is not usable (it must hold exactly one
+    /// <c>{n}</c> and nothing that is not printable). Nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeFormatInvalid = "manufacturing_output_label_code_format_invalid";
+
+    /// <summary>
+    /// URT-S21 (URT-D62): the entered output label code is already taken in the company, or no free number of the Ayarlar
+    /// format was found within the attempt bound. A code is never renamed silently; nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeConflict = "manufacturing_output_label_code_conflict";
 }
 
 /// <summary>
@@ -406,3 +425,28 @@ public interface IManufacturingOrderStore
     Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// URT-SC33 (URT-D86): the planned work queued on one work center ahead of a plan — how many plans and their planned
+/// input kg (the current content of each, its newest revision when revised).
+/// </summary>
+public sealed record ManufacturingWorkCenterQueue(int PlanCount, Kilograms PlannedInputKg);
+
+/// <summary>
+/// URT-SC33 (URT-D86): reads the queue of a work center for the termin suggestion. A port of its own, beside
+/// <see cref="IManufacturingPlanStore"/>, so the plan store's existing implementations are not widened (the plan-list
+/// pattern); the one store implements it. The queue rule (reversible, reported in the slice): the server-resolved
+/// company's APPROVED plans whose current work center is <c>workCenterId</c>, other than <c>excludedPlanId</c>, whose
+/// production order is not closed (no order yet, or an open one). Drafts and cancelled plans are not queued. The queue
+/// order is (approvedAtUtc, id): with <c>queuedBefore</c> only the plans ahead of that key are counted; without it
+/// (the target is still a draft) every queued plan is counted. Each queued plan counts its whole planned input kg (no
+/// progress is netted). Read only.
+/// </summary>
+public interface IManufacturingWorkCenterQueueStore
+{
+    Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid excludedPlanId,
+        ManufacturingWorkCenterQueueKey? queuedBefore, CancellationToken cancellationToken = default);
+}
+
+/// <summary>The queue order key of an approved plan (URT-D86): its approval moment, then its id.</summary>
+public sealed record ManufacturingWorkCenterQueueKey(DateTimeOffset ApprovedAtUtc, Guid PlanId);

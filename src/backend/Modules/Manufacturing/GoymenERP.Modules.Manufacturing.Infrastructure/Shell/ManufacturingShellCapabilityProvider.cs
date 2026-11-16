@@ -40,7 +40,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// and granted to no role: who edits an order is not decided.</item>
 /// <item><c>manufacturing.orders.cost-trace</c> (URT-S19, contract 1.9): a control on the order detail route adding
 /// <see cref="ErpPermissions.ManufacturingReportsRead"/> — the order's cost trace (B-27, DEC-PRDCT-009, API-42). The name
-/// is registered and granted to no role: who reads production cost data is not decided.</item>
+/// is registered and granted to no role: URT-D90 declares its personas (Üretim Müdürü, Üretim Planlama, Genel Müdür), and
+/// the grant itself stays a human gate.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens

@@ -59,6 +59,9 @@ public sealed record ManufacturingInventoryInputReturnPortCommandV1(
 /// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the label classification the operator chose for a
 /// <c>UsableRemnant</c> output (Standard or SecondQuality); null means the default of
 /// <see cref="ManufacturingOutputClassMappingV1"/>. Every other output class leaves it null.
+/// URT-S21 (URT-D62): <see cref="LabelCode"/> is the output label's own code as the operator entered it (trimmed), or
+/// null when the host gives the next number of the company's Ayarlar output label format. It never carries an input
+/// label's number.
 /// </summary>
 public sealed record ManufacturingInventoryOutputPortCommandV1(
     Guid OrderId,
@@ -71,7 +74,7 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     string ExpectedProductVersion,
     Guid LotId,
     Guid LabelId,
-    string LabelCode,
+    string? LabelCode,
     string? HeatNumber,
     string? CoilNumber,
     IReadOnlyList<string> RequiredDocuments,

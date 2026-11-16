@@ -1185,7 +1185,8 @@ export type FactSnapshot =
       readonly expectedProductVersion: string
       readonly lotId: string
       readonly labelId: string
-      readonly labelCode: string
+      /** URT-S21 (URT-D62): null lets the server give the output label the next number of the Ayarlar format. */
+      readonly labelCode: string | null
       readonly heatNumber: string | null
       readonly coilNumber: string | null
       readonly requiredDocuments: readonly string[]

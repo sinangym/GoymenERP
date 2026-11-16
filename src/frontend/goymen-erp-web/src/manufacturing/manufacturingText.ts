@@ -99,7 +99,6 @@ export const OUTPUT_INVENTORY_TEXT = {
   productRequired: 'Sunucunun doğruladığı bir stok ürünü seçin.',
   locationRequired: 'Sunucunun doğruladığı aktif bir lokasyon seçin.',
   classRequired: 'Çıktı sınıfını seçin.',
-  labelRequired: 'Yeni çıktı etiket kodunu girin.',
   blockRequired: 'İlk stok durumunu açıkça seçin; ekran varsayılan seçmez.',
   productLoading: 'Ürün seçenekleri yükleniyor…',
   locationLoading: 'Lokasyon seçenekleri yükleniyor…',
@@ -130,7 +129,10 @@ export const OUTPUT_INVENTORY_TEXT = {
   moreMatches: 'Daha fazla eşleşme var; aramayı daraltın.',
   locationSearch: 'Lokasyon ara',
   location: 'Lokasyon',
-  labelCode: 'Yeni etiket kodu',
+  labelCode: 'Yeni etiket kodu (opsiyonel)',
+  labelCodeHelp:
+    "Boş bırakılırsa çıktı etiketinin numarası Ayarlar'daki çıktı etiket biçiminden verilir. Girdi rulosunun " +
+    'numarası çıktı etiketine yazılmaz; girdi yalnız soy bağı olarak kalır.',
   heatNumber: 'Döküm no (opsiyonel)',
   coilNumber: 'Rulo no (opsiyonel)',
   documents: 'Belge referansları (satır başına)',
@@ -298,7 +300,23 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_input_already_issued: 'Bu olgu kimliğiyle bir girdi çıkışı zaten var.',
   manufacturing_return_already_recorded: 'Bu olgu kimliğiyle bir iade zaten var.',
   manufacturing_return_exceeds_issued: 'İade, bu rulodan çıkan kütleyi aşamaz.',
+  // F-009 D4: the return is bounded by the input still unconsumed (issued − returned − net output − WIP).
+  manufacturing_return_exceeds_unconsumed:
+    'İade, net çıktı ve yarı mamul düşüldükten sonra kalan girdi kütlesini aşamaz. Önce çıktıyı düzeltin veya ' +
+    'yarı mamulü yeniden ölçün.',
   manufacturing_output_already_declared: 'Bu olgu kimliğiyle bir çıktı zaten bildirildi.',
+  // F-009 D2/D6 (URT-D28, URT-D30): the output reversal's own domain refusals. Nothing is deleted; a reversal is a new
+  // fact linked to the declaration, and its sum never exceeds the declared mass.
+  manufacturing_output_not_declared: 'Düzeltilmek istenen çıktı bu emirde beyan edilmedi.',
+  manufacturing_output_line_missing:
+    'Bu çıktı beyanı bir plan çıktı satırına bağlı değil (satır referansı gelmeden kaydedilmiş). Satır sınırı ' +
+    'hesaplanamadığı için düzeltilemez; emir bugünkü kapanış kurallarıyla kapatılır.',
+  manufacturing_output_line_not_in_plan:
+    'Çıktının bağlandığı satır bu emrin plan çıktı satırlarından biri değil ya da çıktı sınıfına uymuyor.',
+  manufacturing_output_reversal_already_recorded: 'Bu kimlikle bir çıktı düzeltmesi zaten kaydedildi.',
+  manufacturing_output_reversal_exceeds_declared:
+    'Düzeltme, bu çıktı beyanının kalan net kütlesini aşıyor; bir beyanın ters kayıtlarının toplamı beyan edilen ' +
+    'kütleyi geçemez.',
   manufacturing_wip_already_measured: 'Bu olgu kimliğiyle bir WIP ölçümü zaten var.',
   manufacturing_wip_measurement_not_latest: 'WIP ölçümü, rulonun son ölçümünden sonra olmalı.',
   manufacturing_mass_scale_exceeded: 'Kütle, şirketin kg profilinin izin verdiğinden fazla ondalık içeriyor; yuvarlanmadı.',

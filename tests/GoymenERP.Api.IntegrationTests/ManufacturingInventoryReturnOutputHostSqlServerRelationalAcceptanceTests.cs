@@ -239,9 +239,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             + "AND EventType = N'inventory.movement.recorded.v1' "
             + "AND EntityType = N'Inventory.StockMovement'",
             ("@correlation", returnMetadata.CorrelationId)));
-        // URT-S20: the output's lineage edges add their own audit event in the same transaction.
-        Assert.Equal(6, await run.ScalarAsync<int>(
+        // URT-S20: the output's lineage edges add their own audit event in the same transaction; URT-S21: so does the
+        // output label's own code.
+        Assert.Equal(7, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.output.label-code.recorded.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
             ("@correlation", outputMetadata.CorrelationId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
@@ -469,7 +475,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             command.ExpectedProductVersion,
             command.LotId,
             command.LabelId,
-            command.LabelCode,
+            command.LabelCode ?? throw new InvalidOperationException("The orphan output carries an entered label code."),
             command.HeatNumber,
             command.CoilNumber,
             command.RequiredDocuments,
@@ -559,7 +565,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             Run run,
             IErpAuthorityRevalidationService authority,
             IManufacturingInventoryOutputAdmission admission,
-            Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null)
+            Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null,
+            IManufacturingOutputLabelCodePolicyReadPortV1? labelCodePolicy = null)
         {
             var company = new CompanyContext();
             company.Set(CompanyA);
@@ -572,7 +579,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             var context = new ManufacturingDbContext(options, company);
             var store = new ManufacturingStore(context, company, audit, TimeProvider.System);
             var host = new ManufacturingInventoryReturnOutputHost(
-                context, store, company, authority, ManufacturingSettings(run), admission, observer);
+                context, store, company, authority, ManufacturingSettings(run), admission, observer, labelCodePolicy);
             return new ReturnOutputHostScope(context, store, host);
         }
 
