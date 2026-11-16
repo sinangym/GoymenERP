@@ -49,9 +49,9 @@ EXPECTED_DB_CONTEXT_COUNT = 19
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "3d62237456b4c9d291ced56872b2748d1ce53eed7f6d6164f8cc63e406eca09c"
 )
-EXPECTED_MIGRATION_COUNT = 251
+EXPECTED_MIGRATION_COUNT = 253
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "b8a55191bb3072ebd59632d225bb3a7aea6e2ad0711bb0f4c4386b410316756b"
+    "aaf092fe788ce5801ad0f7fd4fad8c4add18cec8737243eb19c0ecc9dde61800"
 )
 # tren-1 wave 3 integration: +7 durable stores from platform/alis_cari/uretim/finans/kimlik and
 # +1 from stok_lojistik (product.profile-weight-attempts); every new classification is
@@ -95,9 +95,9 @@ EXPECTED_DURABLE_STORE_COUNT = 53
 # The full src/backend byte digest is still computed and emitted as `sourceSurface` in the
 # inventory (and copied into the release manifest).  The manifest sourceSurface is post-hoc
 # evidence, not a merge block: it is never compared with a pinned constant.
-EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1008
+EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1023
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    "cbc80a5b53d9173c7dd0d435de6b9f82d0fbd7bf26c31d11e499fd168d98f085"
+    "19d5118d50f5d3fbb6490a9531287e99da5ac2e4a7f3318fdd8c26a15c08a19e"
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -240,9 +240,9 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
 METADATA_ONLY_IDEMPOTENCY_KEY_TABLES = (("audit", "AuditEvents"),)
 AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
 AUDIT_LIVE_SOURCE_EXCLUDED_SUFFIXES = (".designer.cs", ".g.cs", ".generated.cs")
-EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT = 29
+EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT = 31
 EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT = (
-    "b18d23602a61ac96b0a40e6dacdfab804d9b1b3d56c273fabcf61a1d2bbb27f8"
+    "0bd10e408478e87e7019ad54684ca32f59650e0f735ba6156b0fa45770b49a97"
 )
 EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
@@ -1155,7 +1155,7 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
     (
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs",
         "MutateOrderCoreAsync",
-    ): "031c3dfaa4c5616c6743d60c73281cc562de83585c816173602f31b1961757ed",
+    ): "f7e89b660928c26339400268272f5f913e4e87c501b697f7f7a206f39fb6937d",
     (
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Contracts.cs",
         "StoreContractAsync",
@@ -1383,8 +1383,8 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashTransferService.cs": "dec25621fff0cf14edb0282e341a511875fdac95d4e020dc993869f9a32c3e91",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCollateralService.cs": "68315d3af1fabe73947cf5d7f2b029d3f6835128f84fab3e0426427a64b490c6",
     "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/FounderBootstrapService.cs": "9dd6232849741c9f396415761baab66dd62c1441649fc25bd63f3c4c5f19d0aa",
-    "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Plumbing.cs": "da39ce7483a661e75aeccafe274b7041c0b3a88df03e3257bb657de6007c10d3",
-    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseGoodsReceiptBatchStore.cs": "c7baa6ff4925346af35540ffa3adbf677f468ed140745782e1888e8b7cdbc724",
+    "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Plumbing.cs": "418f2f40f9906bd55d6dc201b20ded529ef32b8c9eb41163340c5d2420319b39",
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseGoodsReceiptBatchStore.cs": "ad37942b36d87f6ca9ecfca2352c344b5cb252f46eb980f73b902afb41b2d04b",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Contracts.cs": "f4014c66f561b649148f36f594c4076dfa02f26a4831c41d0401ea0573e79e2d",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs": "a9efdba2707574c85e528e03a158c6e61ba9659b794bcd8bfe9c5c327919ae6e",
     ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE: "ec26c7c5129480f90736b4f68d2b137d017c93da1b8c7ee42d01cd573e2abf88",
@@ -1407,13 +1407,13 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "ea2ff89e8adf1f4d69a2b32a2388d66e42b0abafe8d09076c778c040bbbf17ac",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "a89ec49c4342b7f753a079ef14231ecb3bfe9a4115f1e725563ac25285907753",
-    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "14691ba6091cb4058d0d05974cb42ca497e7278f2f0f2a73d0d396fb6dda8083",
+    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "4dcbc99ef9b840e50d29181742295cc56b0e0e24c77ef70a2001fcb8cbbd10e9",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "4f423055903481c538b1720377f4379c1fddab0cc2b2a9e0e7e7a1edf43190cf",
-    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "35f883d41de940ca17d18e6d3edc4c83682e9ce97e075ff5d2c826cd1ad83d24",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "3529808759c2ae714ab3116ec1757e0084bf36a03fc9c6edb2edd63f47cc662c",
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "8bd3ca9b45d31cbc39c0c10d89ed31576b8301b2d64335ee27ed6a64cd776d03",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "9b281c80d62e92f90041844760d29b6320aa26273c715f97638526d308947174",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Invoices.cs": "e3f10f2b46d35a6f4c07d08cbfe4c8421dafeade17136d1f75dd8fae89485a83",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.InvoiceFinalization.cs": "7f0340d3ee2c49415dce10b44bf8a6de8c735ae16846e93c10e31d7830f57944",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
@@ -1429,11 +1429,11 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs": "23fbd437a6ce008fba062e652a547692f2fe70f07ddad6525225736f2568f625",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": "95e9ff7c7ab8b33e8d25977172136b74a58f866301b47c87245af1ae29effe52",
     # tren-1 wave 5 integration: values from print_recovery_actuals.py; K3 review pending.
-    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountService.cs": "256ab3b0206849589175c6ac62b8b754108bce5c32ee976286303ddbaa93634e",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountService.cs": "bf0d7546171546d390af0bc8f651b0ce53d2446abefa9b2e748076dc2a37caef",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpeningBalanceService.cs": "7bbca1c6d80439b71f8049a9c770bbe23a60961533d6dc60d42d6c9a7b5fb9c3",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsWeighingDifferenceStore.cs": "06f59d9a604b71a1c560b06aa928221d6bb60192739bf8ebc9ce119c87d2bc5e",
-    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPackageStandardService.cs": "35b7b5349afea463b57714c2ec94686792c16750d86bbeb36398e9958b11557a",
-    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSupplierReturnStore.cs": "e7e33daaa48e5715a14b00406dc003e22d4a42d1e373259648519b09bc224aec",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPackageStandardService.cs": "b44f4ff760e074b6a6f7ebf1a5c1f1186e16cc269e7eba7bc0a299b035cdd573",
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSupplierReturnStore.cs": "e9eab045483ce2f7bf58a6c2d41215a781c9c38c48e67ad04ff2e7581f03e8b4",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.SubcontractServiceInvoices.cs": "f84b524ea47c1aa0078f4a29e7b54b38d77e0ab01cdec4c34d1244e7247eab5d",
 }
 
