@@ -30,6 +30,8 @@ public static class ProductPriceListHostComposition
         {
             // MOD-02: a customer-specific list asks the Cari owner through this adapter (registered before the service resolves it).
             services.TryAddScoped<IProductPriceListCustomerPortV1, CounterpartyProductPriceListCustomerPortV1>();
+            // SAT-D382: a package standard override's customer is asked of the Cari owner through this adapter.
+            services.TryAddScoped<IProductPackageStandardCustomerPortV3, CounterpartyProductPackageStandardCustomerPortV3>();
             return services.AddProductPriceLists(configuration, configureDbContext);
         }
 
@@ -47,6 +49,8 @@ public static class ProductPriceListHostComposition
         // "unavailable" (never NoSource, which would claim there is no table).
         services.TryAddScoped<IProductPackageStandardServiceV2, UnavailableProductPackageStandardService>();
         services.TryAddScoped<IProductPackageStandardReaderV2, UnavailableProductPackageStandardService>();
+        services.TryAddScoped<IProductPackageStandardServiceV3, UnavailableProductPackageStandardService>();
+        services.TryAddScoped<IProductPackageStandardReaderV3, UnavailableProductPackageStandardService>();
         return services;
     }
 }
@@ -113,8 +117,43 @@ internal sealed class UnavailableProductProfileWeightTableService : IProductProf
     }
 }
 
-internal sealed class UnavailableProductPackageStandardService : IProductPackageStandardServiceV2, IProductPackageStandardReaderV2
+internal sealed class UnavailableProductPackageStandardService : IProductPackageStandardServiceV2, IProductPackageStandardReaderV2,
+    IProductPackageStandardServiceV3, IProductPackageStandardReaderV3
 {
+    public Task<ProductPackageStandardApprovalViewV3> GetApprovalStateAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardApprovalViewV3>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardApprovalViewV3> GetApprovalStateForApproverAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardApprovalViewV3>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardImportFileListV3> ListImportsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardImportFileListV3>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardImportReportV3?> GetImportReportAsync(Guid importId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardImportReportV3?>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardResultV2> SetCustomerAsync(Guid customerId, Guid productId,
+        SetProductPackageStandardRequestV2 request, ProductPackageStandardCommandMetadataV2 metadata,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardResultV2>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardResultV2> ApproveAsync(long version, ApproveProductPackageStandardVersionRequestV3 request,
+        ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardResultV2>(Unavailable(cancellationToken));
+
+    public Task<ProductPackageStandardResultV2> RejectAsync(long version, RejectProductPackageStandardVersionRequestV3 request,
+        ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductPackageStandardResultV2>(Unavailable(cancellationToken));
+
+    Task<ProductPackageStandardReadV3> IProductPackageStandardReaderV3.GetAsync(Guid productId, Guid? customerId, DateOnly on,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ProductPackageStandardReadV3.Without(ProductPackageStandardReadOutcomeV2.Unavailable));
+    }
+
     public Task<ProductPackageStandardTableViewV2> GetCurrentAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<ProductPackageStandardTableViewV2>(Unavailable(cancellationToken));
 

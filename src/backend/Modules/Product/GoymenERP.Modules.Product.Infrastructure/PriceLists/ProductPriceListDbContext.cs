@@ -100,6 +100,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
 
     internal DbSet<ProductPackageStandardAttemptRow> PackageStandardAttempts => Set<ProductPackageStandardAttemptRow>();
 
+    internal DbSet<ProductPackageStandardCustomerLineRow> PackageStandardCustomerLines => Set<ProductPackageStandardCustomerLineRow>();
+
+    internal DbSet<ProductPackageStandardDecisionRow> PackageStandardDecisions => Set<ProductPackageStandardDecisionRow>();
+
+    internal DbSet<ProductPackageStandardImportFileRow> PackageStandardImportFiles => Set<ProductPackageStandardImportFileRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -487,13 +493,20 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         {
             table.HasCheckConstraint("CK_ProductPackageStandardVersions_Identity",
                 $"[CompanyId] <> {EmptyGuid} AND [VersionId] <> {EmptyGuid} AND [Version] >= 1 AND [EntryCount] >= 0 "
+                + "AND [CustomerEntryCount] >= 0 "
                 + "AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+            // SAT-D382 (STK-SC36-c): an edit names the product and, for a customer override, the customer; an import never
+            // names a customer. A customer override exists only on a version that requires approval.
             table.HasCheckConstraint("CK_ProductPackageStandardVersions_Source",
                 "([SourceKind] = 'Import' AND [SourceLabel] IS NOT NULL AND LEN(LTRIM(RTRIM([SourceLabel]))) > 0 "
                 + "AND [FileName] IS NOT NULL AND LEN([FileName]) > 0 AND [FileSha256] IS NOT NULL AND LEN([FileSha256]) = 64 "
-                + "AND [FileSizeBytes] IS NOT NULL AND [FileSizeBytes] > 0 AND [EditedProductId] IS NULL AND [EntryCount] > 0) "
+                + "AND [FileSizeBytes] IS NOT NULL AND [FileSizeBytes] > 0 AND [EditedProductId] IS NULL "
+                + "AND [EditedCustomerId] IS NULL AND [EntryCount] > 0) "
                 + "OR ([SourceKind] = 'Edit' AND [SourceLabel] IS NULL AND [FileName] IS NULL AND [FileSha256] IS NULL "
-                + $"AND [FileSizeBytes] IS NULL AND [EditedProductId] IS NOT NULL AND [EditedProductId] <> {EmptyGuid})");
+                + $"AND [FileSizeBytes] IS NULL AND [EditedProductId] IS NOT NULL AND [EditedProductId] <> {EmptyGuid} "
+                + $"AND ([EditedCustomerId] IS NULL OR [EditedCustomerId] <> {EmptyGuid}))");
+            table.HasCheckConstraint("CK_ProductPackageStandardVersions_Approval",
+                "[RequiresApproval] = 1 OR ([CustomerEntryCount] = 0 AND [EditedCustomerId] IS NULL)");
         });
         header.HasKey(x => new { x.CompanyId, x.Version });
         header.HasIndex(x => new { x.CompanyId, x.VersionId }).IsUnique();
@@ -542,6 +555,86 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         attempt.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)").IsRequired();
         attempt.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        ConfigurePackageStandardApprovals(modelBuilder);
+    }
+
+    /// <summary>
+    /// SAT-D382 / SAT-D383 (STK-SC36-c): the customer overrides of a version, the single approval decision of a version and the
+    /// kept import files with their result reports. All company-scoped and insert-only; the kept files are also refused an
+    /// update or delete by a database trigger (they live as long as the audit record; no destruction exists).
+    /// </summary>
+    private void ConfigurePackageStandardApprovals(ModelBuilder modelBuilder)
+    {
+        var customerLine = modelBuilder.Entity<ProductPackageStandardCustomerLineRow>();
+        customerLine.ToTable("ProductPackageStandardCustomerLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductPackageStandardCustomerLines_Values",
+                $"[CompanyId] <> {EmptyGuid} AND [CustomerId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} "
+                + "AND [PiecesPerPackage] > 0");
+        });
+        customerLine.HasKey(x => new { x.CompanyId, x.Version, x.CustomerId, x.ProductId });
+        customerLine.HasOne<ProductPackageStandardVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Version })
+            .OnDelete(DeleteBehavior.Restrict);
+        customerLine.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+        customerLine.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<ProductPackageStandardDecisionRow>();
+        decision.ToTable("ProductPackageStandardDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductPackageStandardDecisions_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [DecisionId] <> {EmptyGuid} AND [Version] >= 1 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+            table.HasCheckConstraint("CK_ProductPackageStandardDecisions_Decision",
+                "([Decision] = 'Approved' AND [EffectiveFrom] IS NOT NULL) "
+                + "OR ([Decision] = 'Rejected' AND [EffectiveFrom] IS NULL)");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.Version });
+        decision.HasIndex(x => new { x.CompanyId, x.DecisionId }).IsUnique();
+        decision.Property(x => x.Version).ValueGeneratedNever();
+        decision.Property(x => x.Decision).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        decision.Property(x => x.EffectiveFrom).HasColumnType("date");
+        decision.Property(x => x.Reason).HasMaxLength(ProductPackageStandardInputLimitsV2.ReasonMaximumLength).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasOne<ProductPackageStandardVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Version })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var file = modelBuilder.Entity<ProductPackageStandardImportFileRow>();
+        file.ToTable("ProductPackageStandardImportFiles", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductPackageStandardImportFiles_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [ImportId] <> {EmptyGuid} AND LEN([CreatedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN(LTRIM(RTRIM([SourceLabel]))) > 0");
+            table.HasCheckConstraint("CK_ProductPackageStandardImportFiles_File",
+                "LEN([FileName]) > 0 AND LEN([FileSha256]) = 64 AND [FileSizeBytes] > 0 "
+                + $"AND [FileSizeBytes] <= {ProductPackageStandardInputLimitsV2.MaximumFileBytes} "
+                + "AND DATALENGTH([Content]) = [FileSizeBytes] AND ISJSON([ReportJson]) = 1");
+            table.HasCheckConstraint("CK_ProductPackageStandardImportFiles_Outcome",
+                "([Outcome] = 'Accepted' AND [Version] IS NOT NULL AND [ProblemCode] IS NULL) "
+                + "OR ([Outcome] = 'Refused' AND [Version] IS NULL AND [ProblemCode] IS NOT NULL AND LEN([ProblemCode]) > 0)");
+        });
+        file.HasKey(x => new { x.CompanyId, x.ImportId });
+        file.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc });
+        file.Property(x => x.FileName).HasMaxLength(ProductPackageStandardInputLimitsV2.FileNameMaximumLength).IsRequired();
+        file.Property(x => x.FileSha256).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        file.Property(x => x.Content).HasColumnType("varbinary(max)").IsRequired();
+        file.Property(x => x.Outcome).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        file.Property(x => x.ProblemCode).HasMaxLength(160).IsUnicode(false).UseCollation(IdentityCollation);
+        file.Property(x => x.ReportJson).HasColumnType("nvarchar(max)").IsRequired();
+        file.Property(x => x.SourceLabel).HasMaxLength(ProductPackageStandardInputLimitsV2.SourceLabelMaximumLength).IsRequired();
+        file.Property(x => x.Reason).HasMaxLength(ProductPackageStandardInputLimitsV2.ReasonMaximumLength).IsRequired();
+        file.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        file.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        file.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        file.HasOne<ProductPackageStandardVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Version })
+            .OnDelete(DeleteBehavior.Restrict);
+        file.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ApplyWriteGuards()
@@ -647,7 +740,8 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             // B-08 / BS-10: a package standard version, its entries and its answers are insert-only (a change is a new version).
             if (entry.State != EntityState.Added
                 && entry.Entity is ProductPackageStandardVersionRow or ProductPackageStandardLineRow
-                    or ProductPackageStandardAttemptRow)
+                    or ProductPackageStandardAttemptRow or ProductPackageStandardCustomerLineRow
+                    or ProductPackageStandardDecisionRow or ProductPackageStandardImportFileRow)
             {
                 throw new InvalidOperationException("Paket standardı tablosunun sürümü ve satırları değiştirilmez veya silinmez.");
             }

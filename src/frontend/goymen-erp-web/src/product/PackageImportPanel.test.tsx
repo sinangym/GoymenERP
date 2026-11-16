@@ -339,6 +339,10 @@ describe('company package standard panel (B-08, BS-10)', () => {
 
   it('decodes only the declared table shape', () => {
     expect(decodePackageStandardTable(EMPTY, COMPANY)).toEqual({ version: '0', source: null, entries: [] })
+    // SAT-D382: a head waiting for approval with nothing in effect yet has no source and no entries, whatever its version.
+    expect(decodePackageStandardTable({ ...EMPTY, version: '1' }, COMPANY)).toEqual({ version: '1', source: null, entries: [] })
+    expect(decodePackageStandardTable({ ...EMPTY, version: '1', entries: [ENTRY] }, COMPANY)).toBeNull()
+    expect(decodePackageStandardTable(imported({ version: '0' }), COMPANY)).toBeNull()
     expect(decodePackageStandardTable(imported(), COMPANY)?.entries).toHaveLength(2)
     expect(decodePackageStandardTable(edited({ entries: [] }), COMPANY)?.entries).toHaveLength(0)
     expect(decodePackageStandardTable(imported(), OTHER_COMPANY)).toBeNull()
