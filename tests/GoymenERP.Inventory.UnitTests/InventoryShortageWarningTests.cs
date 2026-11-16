@@ -9,7 +9,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Inventory.UnitTests;
 
 /// <summary>
-/// KLN-D42 (STK-S31), without a database: the Sales demand source over fake Sales ports, the per-position free unreserved rule,
+/// KLN-D42 (STK-S31), without a database: the Sales demand source over fake Sales ports, the per-position free unreserved rule
+/// and its KLN-D96 owner rule (only company-owned stock is free),
 /// and the warning read's authority, fail-closed sources, kilogram-only summing and ordering over fakes. The SQL reads of the
 /// stock reader are not exercised here. SENTETIK / NOT_ENV.
 /// </summary>
@@ -87,6 +88,31 @@ public sealed class InventoryShortageWarningTests
             [Position(Label, Guid.Empty, 30m), Position(otherLabel, Guid.Empty, 25m)]);
 
         Assert.Equal(70m, free[ProductA]);
+    }
+
+    [Fact]
+    public void Only_company_owned_stock_is_free_and_customer_or_fason_goods_in_custody_add_nothing()
+    {
+        var customer = Guid.Parse("00000000-0000-4000-8000-000000000122");
+        var fason = Guid.Parse("00000000-0000-4000-8000-000000000123");
+        var customerLabel = Guid.Parse("00000000-0000-4000-8000-000000000124");
+        var fasonLabel = Guid.Parse("00000000-0000-4000-8000-000000000125");
+        var sisterLabel = Guid.Parse("00000000-0000-4000-8000-000000000126");
+        var counterparty = (int)GoymenERP.Modules.Inventory.Domain.Stock.StockPartyKind.Counterparty;
+
+        var free = InventoryShortagePositionFactsFreeUnreserved(
+            [
+                Position(Label, ProductA, 40m),
+                Position(customerLabel, ProductA, 500m) with { OwnerKind = counterparty, OwnerId = customer },
+                Position(fasonLabel, ProductA, 300m) with { OwnerKind = counterparty, OwnerId = fason },
+                Position(sisterLabel, ProductA, 200m) with { OwnerId = OtherCompany },
+                Position(customerLabel, ProductB, 70m) with { OwnerKind = counterparty, OwnerId = customer },
+            ],
+            [Position(Label, Guid.Empty, 10m)]);
+
+        Assert.Equal(30m, free[ProductA]);
+        Assert.False(free.ContainsKey(ProductB));
+        Assert.Empty(SqlInventoryShortageStockReader.FreeUnreserved(Guid.Empty, [Position(Label, ProductA, 40m)], []));
     }
 
     [Fact]
@@ -198,7 +224,7 @@ public sealed class InventoryShortageWarningTests
 
     private static IReadOnlyDictionary<Guid, decimal> InventoryShortagePositionFactsFreeUnreserved(
         IReadOnlyList<InventoryShortagePositionFact> balances, IReadOnlyList<InventoryShortagePositionFact> allocations) =>
-        SqlInventoryShortageStockReader.FreeUnreserved(balances, allocations);
+        SqlInventoryShortageStockReader.FreeUnreserved(Company, balances, allocations);
 
     private static InventoryShortagePositionFact Position(Guid labelId, Guid productId, decimal kilograms) =>
         new(labelId, 1, Company, 1, Company, Location, productId, kilograms);

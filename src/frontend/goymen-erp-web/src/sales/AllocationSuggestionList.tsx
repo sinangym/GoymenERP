@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import type { ViewOutcome } from '../shell/uiState'
 import { fetchAllocationSuggestions } from './allocationApi'
+import { normalizeRequestedKg } from './allocationContract'
 import type { AllocationScope, AllocationSuggestion, AllocationSuggestions } from './allocationContract'
 import { ALLOCATION_TEXT as T } from './allocationText'
 import type { AllocationLabelChoice } from './AllocationLabelPicker'
@@ -19,6 +20,8 @@ export interface AllocationSuggestionListProps {
   /** The line's own product, shown for same-product suggestions (Inventory does not repeat it). */
   readonly lineProductText: string
   readonly disabled: boolean
+  /** KLN-D99: the allocation form's kilograms as typed; the list is ordered closest to it when it is a positive amount. */
+  readonly requestedKg: string
   readonly selected: AllocationLabelChoice | null
   readonly onSelect: (choice: AllocationSuggestionChoice) => void
 }
@@ -59,7 +62,7 @@ function productText(item: AllocationSuggestion, lineProductText: string): strin
  * allocation form; the user still confirms with quantity and reason, and Inventory re-checks every rule on create.
  */
 export function AllocationSuggestionList({
-  scope, lineId, lineProductText, disabled, selected, onSelect,
+  scope, lineId, lineProductText, disabled, requestedKg, selected, onSelect,
 }: AllocationSuggestionListProps) {
   const boundary = useAuthBoundary()
   const [state, setState] = useState<SuggestionState>({ kind: 'idle' })
@@ -73,7 +76,7 @@ export function AllocationSuggestionList({
     inFlight.current = controller
     setState({ kind: 'loading' })
     const snapshot = boundary.capture()
-    const outcome = await fetchAllocationSuggestions(scope, controller.signal)
+    const outcome = await fetchAllocationSuggestions(scope, normalizeRequestedKg(requestedKg.trim()), controller.signal)
     if (controller.signal.aborted || inFlight.current !== controller) return
     inFlight.current = null
     if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
@@ -84,6 +87,9 @@ export function AllocationSuggestionList({
   const resultsId = `allocation-suggestions-${lineId}`
   const answer = state.kind === 'ready' ? state.answer : null
   const similar = answer !== null && answer.items.some((item) => item.isSubstitute)
+  // KLN-D99: the order belongs to the quantity it was read with; a changed quantity asks for a refresh, never re-sorts.
+  const orderStale = answer !== null && answer.items.length > 0
+    && answer.requestedKg !== normalizeRequestedKg(requestedKg.trim())
   return (
     <div className={styles.fieldset} data-testid={`sales-allocation-suggestions-${lineId}`}>
       <div className={styles.actions}>
@@ -105,6 +111,16 @@ export function AllocationSuggestionList({
             {answer.items.length === 0 ? (
               <p data-testid={`sales-allocation-suggestions-empty-${lineId}`}>
                 {answer.similarProductMode === 'same-product-only' ? T.suggestionEmptySameOnly : T.suggestionEmpty}
+              </p>
+            ) : null}
+            {answer.items.length > 0 ? (
+              <p className={styles.muted} data-testid={`sales-allocation-suggestions-order-${lineId}`}>
+                {answer.requestedKg === null ? T.suggestionOrderNoQuantity : T.suggestionOrderByQuantity(answer.requestedKg)}
+              </p>
+            ) : null}
+            {orderStale ? (
+              <p className={styles.notice} data-tone="unknown" data-testid={`sales-allocation-suggestions-order-stale-${lineId}`}>
+                {T.suggestionOrderStale}
               </p>
             ) : null}
             {answer.truncated ? <p className={styles.notice} data-tone="unknown">{T.suggestionTruncated}</p> : null}

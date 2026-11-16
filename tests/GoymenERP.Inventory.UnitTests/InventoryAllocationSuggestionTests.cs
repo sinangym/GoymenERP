@@ -69,6 +69,7 @@ public sealed class InventoryAllocationSuggestionTests
     [Theory]
     [InlineData("key")]
     [InlineData("width")]
+    [InlineData("coating")]
     [InlineData("nofacts")]
     public async Task A_substitute_outside_the_rule_is_refused(string breach)
     {
@@ -81,6 +82,7 @@ public sealed class InventoryAllocationSuggestionTests
                 {
                     "key" => Facts(Offered, "other", 1m, 100m),
                     "width" => Facts(Offered, "key", 1m, 120m),
+                    "coating" => Facts(Offered, "key", 1m, 100m, coating: "SYN-COAT-B"),
                     _ => Facts(Offered, null, null, null),
                 },
             ],
@@ -158,8 +160,9 @@ public sealed class InventoryAllocationSuggestionTests
         InventoryProductVersionV1 product,
         string? key,
         decimal? thickness,
-        decimal? width) =>
-        new(product.ProductId, product.ProductVersion, "SYN-P", "Sentetik ürün", key, thickness, width, null);
+        decimal? width,
+        string? coating = "SYN-COAT-A") =>
+        new(product.ProductId, product.ProductVersion, "SYN-P", "Sentetik ürün", key, thickness, width, null, coating);
 
     private static InventoryDbContext Context(bool resolved)
     {

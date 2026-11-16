@@ -368,7 +368,7 @@ public sealed class ProductStockDisplayReferenceService(
         {
             if (!exact.TryGetValue(selection, out var card))
             {
-                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, null, null, null, null, null));
+                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, null, null, null, null, null, null));
                 continue;
             }
 
@@ -393,7 +393,7 @@ public sealed class ProductStockDisplayReferenceService(
                 card.References, definition!, template);
             if (errors.Count > 0)
             {
-                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity, null, null, null, null));
+                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity, null, null, null, null, null));
                 continue;
             }
             if (ProductManufacturingTechnicalSnapshotService.UsesSyntheticDictionaryValue(
@@ -416,7 +416,8 @@ public sealed class ProductStockDisplayReferenceService(
                 complete ? SimilarityKey(family, template, card.References) : null,
                 complete ? thickness.Millimetres : null,
                 complete ? width.Millimetres : null,
-                complete ? length.Millimetres : null));
+                complete ? length.Millimetres : null,
+                complete ? CoatingCode(template, card.References) : null));
         }
 
         await RequireScopeAsync(scope, cancellationToken);
@@ -453,6 +454,27 @@ public sealed class ProductStockDisplayReferenceService(
             .Append(part.Length.ToString(CultureInfo.InvariantCulture))
             .Append(':')
             .Append(part);
+    }
+
+    /// <summary>
+    /// KLN-D95: the stored code of the template's single coating field (the explicit "none" entry is a code like any
+    /// other); null when the template has no coating field or the value is absent or blank, so the consumer fails closed.
+    /// </summary>
+    internal static string? CoatingCode(ProductTemplateV2 template, ProductReferences references)
+    {
+        var fields = template.Fields
+            .Where(field => field.Kind == ProductTemplateFieldKindV2.DictionaryReference
+                && string.Equals(field.Role, ProductTemplateFieldRolesV2.Coating, StringComparison.Ordinal))
+            .ToArray();
+        if (fields.Length != 1 || references.Attributes is null
+            || !references.Attributes.TryGetValue(fields[0].Key, out var value)
+            || value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var code = value.GetString();
+        return string.IsNullOrWhiteSpace(code) ? null : code;
     }
 
     private static bool Matches(

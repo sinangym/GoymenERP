@@ -3,10 +3,13 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
-import { CREATE_ALLOCATION_422_CODES, decodeAllocationSuggestions, decodePhysicalAllocation } from './allocationContract'
+import {
+  CREATE_ALLOCATION_422_CODES, decodeAllocationSuggestions, decodePhysicalAllocation, normalizeRequestedKg,
+} from './allocationContract'
 import type { DraftLine } from './contract'
 
-// KLN-D34/D39/D40 (STK-S30): label suggestions per Sales line, the "Muadil" flag and its server refusal. SENTETIK.
+// KLN-D34/D39/D40 (STK-S30): label suggestions per Sales line, the "Muadil" flag and its server refusal.
+// KLN-D99 (STK-SC34-d): the order closest to the requested kilograms is the server's; the user still picks. SENTETIK.
 const COMPANY = '10000000-0000-4000-8000-000000000001'
 const ORDER = '20000000-0000-4000-8000-000000000001'
 const LINE = '30000000-0000-4000-8000-000000000001'
@@ -14,6 +17,7 @@ const PRODUCT = '40000000-0000-4000-8000-000000000001'
 const OTHER_PRODUCT = '40000000-0000-4000-8000-000000000002'
 const LABEL = '50000000-0000-4000-8000-000000000001'
 const OTHER_LABEL = '50000000-0000-4000-8000-000000000002'
+const THIRD_LABEL = '50000000-0000-4000-8000-000000000003'
 const SUGGESTIONS_PATH = '/api/v1/inventory/physical-allocations/suggestions'
 
 const report = vi.fn()
@@ -44,7 +48,8 @@ const similarItem = (overrides: Record<string, unknown> = {}) => ({
 
 const suggestions = (items: unknown[], overrides: Record<string, unknown> = {}) => ({
   companyId: COMPANY, salesOrderId: ORDER, salesOrderLineId: LINE, productId: PRODUCT, productVersion: '7',
-  similarProductMode: 'dimension-tolerance', aiSuggestions: 'disabled', truncated: false, items, ...overrides,
+  similarProductMode: 'dimension-tolerance', aiSuggestions: 'disabled', truncated: false, items,
+  requestedKg: null, ...overrides,
 })
 
 const allocation = (overrides: Record<string, unknown> = {}) => ({
@@ -104,9 +109,37 @@ describe('allocation suggestion decoder', () => {
     ['a flagged own-product label', suggestions([sameItem({ isSubstitute: true })])],
     ['a zero unreserved quantity', suggestions([sameItem({ unreservedKg: '0' })])],
     ['a duplicated label', suggestions([sameItem(), sameItem()])],
+    ['a missing requested quantity echo', (() => {
+      const body: Record<string, unknown> = { ...suggestions([sameItem()]) }
+      delete body.requestedKg
+      return body
+    })()],
+    ['a requested quantity that was not sent', suggestions([sameItem()], { requestedKg: '12.5' })],
   ])('rejects %s', (_name, body) => {
     expect(decodeAllocationSuggestions(body, scope)).toBeNull()
   })
+
+  it('accepts only the echo of the requested quantity it sent and keeps the server’s order', () => {
+    const second = sameItem({ labelId: THIRD_LABEL, labelCode: 'ETK-000', unreservedKg: '13' })
+    const body = suggestions([second, sameItem()], { requestedKg: '12.5' })
+    expect(decodeAllocationSuggestions(body, scope, '12.5')?.items.map((item) => item.labelCode))
+      .toEqual(['ETK-000', 'ETK-001'])
+    expect(decodeAllocationSuggestions(body, scope, '12.5')?.requestedKg).toBe('12.5')
+    expect(decodeAllocationSuggestions(body, scope, '12.50')).toBeNull()
+    expect(decodeAllocationSuggestions(body, scope, null)).toBeNull()
+    expect(decodeAllocationSuggestions(suggestions([sameItem()], { requestedKg: 12.5 }), scope, '12.5')).toBeNull()
+  })
+
+  it.each([
+    ['12.5', '12.5'], ['12.500', '12.5'], ['007', '7'], ['0.001', '0.001'], ['40', '40'], ['10.0', '10'],
+  ])('normalizes the requested kilograms %s as %s', (typed, expected) => {
+    expect(normalizeRequestedKg(typed)).toBe(expected)
+  })
+
+  it.each(['', '0', '0.000', '-1', '+1', '1,5', '1.2345', '1.', '.5', '1e3', ' 1', 'abc', '1'.repeat(33)])(
+    'sends no requested kilograms for %j', (typed) => {
+      expect(normalizeRequestedKg(typed)).toBeNull()
+    })
 
   it('keeps the allocation’s line product and reads the substitute flag strictly', () => {
     expect(decodePhysicalAllocation(allocation(), scope)?.isSubstitute).toBe(true)
@@ -257,5 +290,75 @@ describe('Sales line label suggestions', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Önerileri yenile' }))
     expect(await within(card).findByTestId(`sales-allocation-suggestions-empty-${LINE}`)).toBeTruthy()
     expect(within(card).getByText(/liste eksik olabilir/)).toBeTruthy()
+  })
+})
+
+describe('Sales line label suggestions ordered by the requested kilograms', () => {
+  it('sends the typed quantity, keeps the server’s closest-first order and asks for a refresh when it changes', async () => {
+    const requested: (string | null)[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === SUGGESTIONS_PATH) {
+        const kg = url.searchParams.get('requestedKg')
+        requested.push(kg)
+        // The server's order (closest to 12.5 kg first); the screen must not re-sort it by code or quantity.
+        return answer(suggestions([
+          sameItem({ labelId: THIRD_LABEL, labelCode: 'ETK-300', unreservedKg: '13' }),
+          sameItem({ labelId: LABEL, labelCode: 'ETK-001', unreservedKg: '40' }),
+        ], { similarProductMode: 'same-product-only', requestedKg: kg }))
+      }
+      return answer({ items: [], searchWindowFull: false })
+    }))
+
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '12.50')
+    await userEvent.click(within(card).getByRole('button', { name: 'Etiket öner' }))
+
+    await within(card).findByTestId(`sales-allocation-suggestion-${THIRD_LABEL}`)
+    expect(requested).toEqual(['12.5'])
+    const rows = within(card).getAllByTestId(/^sales-allocation-suggestion-5/)
+    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
+      `sales-allocation-suggestion-${THIRD_LABEL}`, `sales-allocation-suggestion-${LABEL}`,
+    ])
+    expect(within(card).getByTestId(`sales-allocation-suggestions-order-${LINE}`).textContent).toContain('12.5 kg')
+    expect(within(card).queryByTestId(`sales-allocation-suggestions-order-stale-${LINE}`)).toBeNull()
+    // Nothing is picked for the user.
+    expect(within(card).queryByRole('button', { name: /seçildi/ })).toBeNull()
+
+    // A trailing zero is the same quantity; another digit is another ordering.
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '0')
+    expect(within(card).queryByTestId(`sales-allocation-suggestions-order-stale-${LINE}`)).toBeNull()
+    await userEvent.clear(within(card).getByLabelText('Tahsis kg'))
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '13')
+    expect(within(card).getByTestId(`sales-allocation-suggestions-order-stale-${LINE}`)).toBeTruthy()
+    await userEvent.click(within(card).getByRole('button', { name: 'Önerileri yenile' }))
+    await waitFor(() => expect(requested).toEqual(['12.5', '13']))
+    expect(await within(card).findByText(/\(13 kg\)/)).toBeTruthy()
+    expect(within(card).queryByTestId(`sales-allocation-suggestions-order-stale-${LINE}`)).toBeNull()
+  })
+
+  it('reads the list without a quantity order when no valid kilograms were typed', async () => {
+    const requested: (string | null)[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === SUGGESTIONS_PATH) {
+        requested.push(url.searchParams.get('requestedKg'))
+        return answer(suggestions([sameItem()], { similarProductMode: 'same-product-only' }))
+      }
+      return answer({ items: [], searchWindowFull: false })
+    }))
+
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '12,5')
+    await userEvent.click(within(card).getByRole('button', { name: 'Etiket öner' }))
+
+    await within(card).findByTestId(`sales-allocation-suggestion-${LABEL}`)
+    expect(requested).toEqual([null])
+    expect(within(card).getByTestId(`sales-allocation-suggestions-order-${LINE}`).textContent)
+      .toContain('kod sırasıyla')
   })
 })

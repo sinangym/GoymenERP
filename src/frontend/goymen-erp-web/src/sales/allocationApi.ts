@@ -84,16 +84,19 @@ export async function fetchPhysicalAllocations(
  */
 export async function fetchAllocationSuggestions(
   scope: AllocationScope,
+  requestedKg: string | null,
   signal?: AbortSignal,
 ): Promise<ViewOutcome<AllocationSuggestions>> {
   const query = new URLSearchParams({ salesOrderId: scope.salesOrderId, salesOrderLineId: scope.salesOrderLineId })
+  // KLN-D99: with a quantity the server orders the line's labels closest to it first; without one, by label code.
+  if (requestedKg !== null) query.set('requestedKg', requestedKg)
   const raw = await request(`${PHYSICAL_ALLOCATION_SUGGESTIONS_PATH}?${query}`, { headers: headers(scope.companyId) }, signal)
   if ('failure' in raw) {
     if (raw.failure === 'aborted') return { type: 'fence-stale' }
     return { type: raw.failure === 'offline' ? 'offline' : 'network-error' }
   }
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
-  const suggestions = decodeAllocationSuggestions(raw.body, scope)
+  const suggestions = decodeAllocationSuggestions(raw.body, scope, requestedKg)
   return suggestions === null ? { type: 'malformed' } : { type: 'ok-single', data: suggestions }
 }
 
