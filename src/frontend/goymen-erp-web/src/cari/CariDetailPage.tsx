@@ -1,10 +1,15 @@
 /**
  * C-03 Cari 360 — authorized core summary.
  *
- * Scope is the accepted spec §5.1 and nothing beyond it. Deliberately absent, and
- * forbidden by `mockTruthForbidden`: balance, risk, credit limit, open items,
- * orders, stock, bank/tax/registry, timeline, CRM, AI. A tab or a card whose owner
- * API does not exist is not rendered empty — it is not rendered.
+ * Scope is the accepted spec §5.1 and nothing beyond it. Deliberately absent from the
+ * card's own read, and forbidden by `mockTruthForbidden`: balance, risk, credit limit,
+ * open items, orders, stock, bank/tax/registry, timeline, CRM, AI. A tab or a card whose
+ * owner API does not exist is not rendered empty — it is not rendered.
+ *
+ * ALC-S13: the Cari 360 tabs (Satış, Alış, Finans) below are NOT the card's read. Each is
+ * its owner module's own port (Sales' open-order report, Purchasing's supplier-filtered
+ * order list, Finance's party-account view), offered only under that owner's capability
+ * and read only when the user opens the tab. Cari computes nothing in them.
  *
  * Documents are no longer on that list: AT-065 gave them an owner API (the document
  * vault). The panel below is the vault's, answered by the server under the vault's
@@ -47,6 +52,7 @@ import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { FINANCE_ROUTE, partyLedgerPath } from '../finance/capabilities'
 import { CreditPanel } from '../finance/CreditPanel'
+import { Cari360Tabs } from './Cari360Tabs'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -619,6 +625,26 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           />
         ) : null}
       </section>
+
+      {/**
+        * ALC-S13: the Cari 360 tabs, each its owner module's answer for this account in the
+        * active company. Offered only for the account read for that company, and only with at
+        * least one owner capability; no tab reads anything until it is opened.
+        */}
+      {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&
+      (hasCapability(shell, CAPABILITY.salesReportsView) || hasCapability(shell, CAPABILITY.purchasingOrdersList) ||
+        hasCapability(shell, CAPABILITY.financePartyLedgerCari)) ? (
+        <Cari360Tabs
+          partyId={detail.id}
+          companyAccountId={account.id}
+          companyId={activeCompanyId}
+          namespace={namespace}
+          canViewSales={hasCapability(shell, CAPABILITY.salesReportsView)}
+          canListPurchaseOrders={hasCapability(shell, CAPABILITY.purchasingOrdersList)}
+          canOpenPurchaseOrder={hasCapability(shell, CAPABILITY.purchasingOrdersDetail)}
+          canViewFinance={hasCapability(shell, CAPABILITY.financePartyLedgerCari)}
+        />
+      ) : null}
 
       {/**
         * AT-065: this card's documents in the active company. The vault answers the list only
