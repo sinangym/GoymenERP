@@ -258,7 +258,7 @@ public sealed class CompanyTaxIdCorrectionServiceTests
         {
             Companies =
             [
-                new SeedCompany { Id = CompanyA, Code = "SYN-A", LegalName = "Sentetik A", Vkn = VknA },
+                new SeedCompany { Id = CompanyA, Code = "SYN-A", LegalName = "Sentetik A", Vkn = VknA, ApplyTopologyTemplates = true },
                 new SeedCompany
                 {
                     Id = Placeholder,
@@ -269,6 +269,7 @@ public sealed class CompanyTaxIdCorrectionServiceTests
                     InvoiceCapable = false,
                 },
             ],
+            SiteTemplates = [new SeedSiteTemplate { Code = "SYN-TAX-SITE", Name = "Sentetik VKN tesisi", Type = "Factory" }],
         })).SeedAsync(CancellationToken.None);
         return database;
     }

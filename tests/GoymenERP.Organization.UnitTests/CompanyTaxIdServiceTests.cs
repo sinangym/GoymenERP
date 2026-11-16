@@ -411,9 +411,10 @@ public sealed class CompanyTaxIdServiceTests
         {
             Companies =
             [
-                new SeedCompany { Id = CompanyA, Code = "SYN-A", LegalName = "Sentetik A", Vkn = VknA },
+                new SeedCompany { Id = CompanyA, Code = "SYN-A", LegalName = "Sentetik A", Vkn = VknA, ApplyTopologyTemplates = true },
                 new SeedCompany { Id = CompanyB, Code = "SYN-B", LegalName = "Sentetik B", Vkn = $" {VknA} " },
             ],
+            SiteTemplates = [new SeedSiteTemplate { Code = "SYN-TAX-SITE", Name = "Sentetik VKN tesisi", Type = "Factory" }],
         });
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => SeedWithAsync(database, options));
@@ -427,9 +428,10 @@ public sealed class CompanyTaxIdServiceTests
         {
             Companies =
             [
-                new SeedCompany { Id = CompanyA, Code = "SYN-A", LegalName = "Sentetik A", Vkn = VknA },
+                new SeedCompany { Id = CompanyA, Code = "SYN-A", LegalName = "Sentetik A", Vkn = VknA, ApplyTopologyTemplates = true },
                 new SeedCompany { Id = CompanyB, Code = "SYN-B", LegalName = "Sentetik B", Vkn = VknB },
             ],
+            SiteTemplates = [new SeedSiteTemplate { Code = "SYN-TAX-SITE", Name = "Sentetik VKN tesisi", Type = "Factory" }],
         }));
         return database;
     }
