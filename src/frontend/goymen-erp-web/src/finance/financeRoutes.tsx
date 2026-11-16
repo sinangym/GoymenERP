@@ -45,6 +45,7 @@ import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
 import { ExpensePaymentPage } from './ExpensePaymentPage'
 import { CreditLimitPage } from './CreditLimitPage'
 import { CollateralPage } from './CollateralPage'
+import { OpeningBalancePage } from './OpeningBalancePage'
 import { EXPENSE_PAYMENT_TEXT } from './expensePaymentText'
 import { CashTransferPage } from './CashTransferPage'
 import { CASH_TRANSFER_TEXT } from './cashTransferText'
@@ -127,6 +128,17 @@ function CreditLimitRoute() {
 function CollateralRoute() {
   const shell = useShellState()
   return <CollateralPage canRecord={hasCapability(shell, FINANCE_CAPABILITY.collateralsRecord)} />
+}
+
+/**
+ * FIN-S9 (FNS-D23): opening balances while the Settings opening period is open. Proposing and deciding are controls; the
+ * server checks every command and refuses a proposer's own decision anyway.
+ */
+function OpeningBalanceRoute() {
+  const shell = useShellState()
+  return <OpeningBalancePage
+    canPropose={hasCapability(shell, FINANCE_CAPABILITY.openingBalancesPropose)}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.openingBalancesApprove)} />
 }
 
 function ManualBankPaymentListRoute() {
@@ -275,6 +287,10 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.collateralsList.slice(1),
     element: gate(FINANCE_CAPABILITY.collateralsList, <CollateralRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.openingBalancesList.slice(1),
+    element: gate(FINANCE_CAPABILITY.openingBalancesList, <OpeningBalanceRoute />),
   },
   { path: FINANCE_ROUTE.openItemsList.slice(1), element: gate(FINANCE_CAPABILITY.openItemsList, <OpenItemListPage />) },
   {

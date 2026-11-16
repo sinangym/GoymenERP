@@ -69,11 +69,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// approval, FNS-D57) is one control of that route under <c>finance.collaterals.record</c>. Neither name is Critical and no
 /// role or user receives either name here (the persona distribution is open).
 /// </para>
+/// <para>
+/// <b>1.13 (FIN-S9; FNS-D23):</b> the cash, bank and party opening balances open at <c>/finans/acilis-bakiyeleri</c>
+/// under <c>finance.opening-balances.read</c>; proposing (the specialist) and approving or rejecting (a manager other than
+/// the proposer, service and database) are two controls of that route under their own narrow names. The screen shows
+/// only a notice while the Settings opening period is not open. No name is Critical and no role or user receives any of
+/// these names here.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.13";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -173,6 +180,12 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string CollateralListRouteId = "finance.collaterals.list";
     public const string CollateralListRoutePath = "/finans/teminatlar";
     public const string CollateralRecordCapabilityId = "finance.collaterals.record";
+    public const string OpeningBalanceListScreenId = "F-23-OPENING-BALANCES";
+    public const string OpeningBalanceListCapabilityId = "finance.opening-balances.list";
+    public const string OpeningBalanceListRouteId = "finance.opening-balances.list";
+    public const string OpeningBalanceListRoutePath = "/finans/acilis-bakiyeleri";
+    public const string OpeningBalanceProposeCapabilityId = "finance.opening-balances.propose";
+    public const string OpeningBalanceApproveCapabilityId = "finance.opening-balances.approve";
     public const string CashTransferWorkspaceScreenId = "F-32-CASH-TRANSFERS";
     public const string CashTransferWorkspaceCapabilityId = "finance.cash-transfers.workspace";
     public const string CashTransferWorkspaceRouteId = "finance.cash-transfers.workspace";
@@ -203,6 +216,9 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             CreditLimitListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]);
         var collaterals = Declaration(CollateralListCapabilityId, CollateralListRouteId, CollateralListRoutePath,
             CollateralListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCollateralsRead]);
+        var openingBalances = Declaration(OpeningBalanceListCapabilityId, OpeningBalanceListRouteId,
+            OpeningBalanceListRoutePath, OpeningBalanceListScreenId, ShellCapabilityRoutePrecedence.Static,
+            [ErpPermissions.FinanceOpeningBalancesRead]);
         return
         [
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
@@ -366,6 +382,22 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = CollateralRecordCapabilityId,
                 ParentCapabilityId = CollateralListCapabilityId,
                 RequiredPermissions = [ErpPermissions.FinanceCollateralsRead, ErpPermissions.FinanceCollateralsRecord],
+            },
+            // 1.13 (FNS-D23): the specialist proposes; a manager other than the proposer approves or rejects.
+            openingBalances,
+            openingBalances with
+            {
+                CapabilityId = OpeningBalanceProposeCapabilityId,
+                ParentCapabilityId = OpeningBalanceListCapabilityId,
+                RequiredPermissions =
+                    [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesPropose],
+            },
+            openingBalances with
+            {
+                CapabilityId = OpeningBalanceApproveCapabilityId,
+                ParentCapabilityId = OpeningBalanceListCapabilityId,
+                RequiredPermissions =
+                    [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesApprove],
             },
             // 1.11 (FNS-D24): one transaction per transfer; the commit also needs the Accounting period read.
             cashTransfers,
