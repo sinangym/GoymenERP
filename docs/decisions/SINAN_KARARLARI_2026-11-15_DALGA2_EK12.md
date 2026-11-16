@@ -90,11 +90,8 @@ cevap sözleşme tarihleri için uygulanır.
 - FNS-D73, Sinan'ın serbest metin cevabının ("Satış siparişinde yada alış siparişinde hangisini söylediysem") yazıya
   geçirilmiş halidir: kur türünü sistem seçmez, siparişte belirtilen kur geçerlidir. Siparişe bağlanamayan çevrimde
   hangi kurun kullanılacağı seçilmedi ve `NEEDS-SINAN` olarak kalır; Sinan farklı bir okuma kastettiyse netleştirir.
-- SAT-D370 ↔ SAT-D375 çelişkisi: EK15'teki SAT-D375 (SINAN-CEVAP 36.6, #1179) termin düzenlemesini başlık düzenleme
-  iznine taşıyıp ayrı `sales.orders.delivery-schedule.write` iznini kaldırıyordu. Daha sonra verilen SINAN-CEVAP 39.1
-  mevcut izni ve DEC-SAL-003'ü korur; "çelişkide daha yeni kullanıcı kararı geçerlidir" kuralıyla geçerli olan 39.1'dir.
-  39.1 sorulurken SAT-D375 soru metninde gösterilmedi; bu yüzden SAT-D375'in geri alındığının teyidi `NEEDS-SINAN`
-  olarak kalır. Teyit gelene kadar izin kaldırılmaz (mevcut durum korunur); izin yüzeyini değiştiren kod yazılmaz.
+- SAT-D370 ↔ SAT-D375 çelişkisi: SINAN-CEVAP 41.2 ile karara bağlandı (EK19 SAT-D398, #1185): termini sipariş
+  düzenleme izni olan değiştirir; termin değişikliği onayı düşürmez (DEC-SAL-003).
 - FNS-D73'teki "siparişte belirtilen kur" ifadesinin kur türü mü yoksa kur tarihi mi olduğu bu belgede netleşmedi.
   Sipariş kurunun kim tarafından ve hangi varsayılanla girildiği sonraki SINAN-CEVAP 40'ta soruldu ve ayrı karar
   dosyasında yazılır; bu belge onu seçmez.
