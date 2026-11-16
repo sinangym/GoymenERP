@@ -47,10 +47,16 @@ public static class SubcontractDeliveryNetWeightReader
                 LogisticsSubcontractDeliveryNetWeightReasonCodesV1.InstructionCancelled);
         }
 
+        // LOJ-D13: the last reasoned correction (if any) states the weighing in force; the loaded snapshot stays the original's.
+        var corrections = instruction.WeighingCorrections;
+        var correction = corrections.Count == 0 ? null : corrections[corrections.Count - 1];
+        var net = correction?.Net ?? weighing.Net;
         var inconsistent = LogisticsSubcontractDeliveryNetWeightReadV1.Unavailable(companyId, loadingInstructionId, weighingId,
             LogisticsSubcontractDeliveryNetWeightReasonCodesV1.RecordInconsistent);
         if (instruction.Status != LoadingInstructionStatus.Issued
-            || weighing.Net.Unit != QuantityUnit.Kilogram || weighing.Net.Value <= 0m
+            || net.Unit != QuantityUnit.Kilogram || net.Value <= 0m
+            || correction is not null && (correction.Revision != instruction.WeighingRevision
+                || correction.SharesBefore < weighing.SharesBefore || correction.SharesBefore > instruction.Shares.Count)
             || weighing.LoadedAtWeighing.Unit != QuantityUnit.Kilogram
             || weighing.SharesBefore < 0 || weighing.SharesBefore > instruction.Shares.Count
             || instruction.Lines.Any(line => line.InstructedQuantity.Unit != QuantityUnit.Kilogram))
@@ -87,13 +93,13 @@ public static class SubcontractDeliveryNetWeightReader
 
         return LogisticsSubcontractDeliveryNetWeightReadV1.Available(companyId, loadingInstructionId, weighingId,
             new LogisticsSubcontractDeliveryNetWeightV1(
-                ExactText(weighing.Net.Value),
+                ExactText(net.Value),
                 LogisticsSubcontractDeliveryNetWeightContractV1.KilogramUnit,
                 LogisticsNetWeightMeasurementKindV1.ManualWeighbridge,
-                weighing.Direction.ToString(),
+                (correction?.Direction ?? weighing.Direction).ToString(),
                 ExactText(weighing.LoadedAtWeighing.Value),
-                ExactText(weighing.DifferenceKg),
-                LogisticsSubcontractDeliveryNetWeightContractV1.OriginalWeighingRevision,
+                ExactText(correction?.DifferenceKg ?? weighing.DifferenceKg),
+                instruction.WeighingRevision,
                 instruction.Version,
                 weighing.RecordedAtUtc,
                 lines,
