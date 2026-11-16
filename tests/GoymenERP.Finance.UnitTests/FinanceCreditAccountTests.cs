@@ -129,8 +129,8 @@ public sealed class FinanceCreditAccountTests
     {
         var migration = new AddCreditAccounts();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
-        Assert.Equal(["CreditAccounts", "CreditAccountCommands", "CreditAccountInstallments"],
-            migration.UpOperations.OfType<CreateTableOperation>().Select(operation => operation.Name).Order());
+        Assert.Equal(new[] { "CreditAccounts", "CreditAccountCommands", "CreditAccountInstallments" }.Order(StringComparer.Ordinal),
+            migration.UpOperations.OfType<CreateTableOperation>().Select(operation => operation.Name).Order(StringComparer.Ordinal));
 
         // Forward fix: the first Down operation is the one guard; only an empty store rolls back.
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);

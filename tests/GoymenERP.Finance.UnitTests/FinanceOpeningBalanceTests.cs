@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
@@ -440,10 +441,11 @@ public sealed class FinanceOpeningBalanceTests
         await using var run = new Run();
         await run.SeedCashAsync();
 
-        // Allowed at the start, after the replay lookup, the period, the cash account and the live read (five fences),
-        // then denied at the fence immediately before the save.
+        // Revoke authority when the command stages its audit, after business reads and
+        // immediately before saving. This does not depend on the number of earlier fences.
+        var permission = new RevocablePermission();
         var result = await run.ProposeAsync(Specialist, CashRequest(),
-            permissions: new RevokingPermission(FinanceAction.ProposeOpeningBalance, allowed: 5));
+            permissions: permission, auditObserved: () => permission.IsRevoked = true);
 
         Assert.Equal(CommandOutcome.Denied, result.Outcome);
         Assert.Empty(await run.AllRowsAsync());
@@ -1006,10 +1008,10 @@ public sealed class FinanceOpeningBalanceTests
 
         public Task<OpeningBalanceCommandResult> ProposeAsync(string actor, OpeningBalanceProposeRequest request,
             string? key = null, IFinancePermissionPort? permissions = null, IFinanceOpeningPeriodReader? period = null,
-            IFinancePartyAccountPort? parties = null, string? correlation = null) =>
+            IFinancePartyAccountPort? parties = null, string? correlation = null, Action? auditObserved = null) =>
             CallAsync(actor, CompanyA, permissions, period, parties, correlation,
                 (service, finance) => service.ProposeAsync(finance, new CommandMetadata(key ?? Key()), request,
-                    CancellationToken.None));
+                    CancellationToken.None), auditObserved);
 
         public Task<OpeningBalanceCommandResult> ApproveAsync(string actor, OpeningBalanceApproveRequest request,
             IFinancePermissionPort? permissions = null, IFinanceOpeningPeriodReader? period = null, Guid? company = null,
@@ -1111,7 +1113,7 @@ public sealed class FinanceOpeningBalanceTests
 
         private async Task<T> CallAsync<T>(string actor, Guid companyId, IFinancePermissionPort? permissions,
             IFinanceOpeningPeriodReader? period, IFinancePartyAccountPort? parties, string? correlation,
-            Func<FinanceOpeningBalanceService, FinanceContext, Task<T>> call)
+            Func<FinanceOpeningBalanceService, FinanceContext, Task<T>> call, Action? auditObserved = null)
         {
             var company = new CompanyContext();
             company.Set(companyId);
@@ -1124,7 +1126,7 @@ public sealed class FinanceOpeningBalanceTests
                 new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]),
                 parties ?? new FixedParty(),
                 period ?? new FixedPeriod(new FinanceOpeningPeriodAnswer(OpeningPeriodState.Open, PeriodVersion)),
-                collector, Envelopes(), new FixedClock());
+                new ObservedAuditCollector(collector, auditObserved), Envelopes(), new FixedClock());
             return await call(service, new FinanceContext(companyId, actor, correlation ?? "SENTETIK-correlation", null));
         }
     }
@@ -1168,15 +1170,22 @@ public sealed class FinanceOpeningBalanceTests
     }
 
     /// <summary>Allows <paramref name="revoked"/> for its first <paramref name="allowed"/> checks, then denies it.</summary>
-    private sealed class RevokingPermission(FinanceAction revoked, int allowed) : IFinancePermissionPort
+    private sealed class ObservedAuditCollector(IAuditEventCollector inner, Action? observed) : IAuditEventCollector
     {
-        private int checks;
+        public void Enqueue(AuditEventDraft auditEvent)
+        {
+            inner.Enqueue(auditEvent);
+            observed?.Invoke();
+        }
+    }
+
+    private sealed class RevocablePermission : IFinancePermissionPort
+    {
+        public bool IsRevoked { get; set; }
 
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) =>
-            Task.FromResult(action != revoked || Interlocked.Increment(ref checks) <= allowed
-                ? PermissionDecision.Allowed
-                : PermissionDecision.Denied);
+            Task.FromResult(IsRevoked ? PermissionDecision.Denied : PermissionDecision.Allowed);
     }
 
     /// <summary>Counterparty's answer for the (party, company account) pair the request names.</summary>

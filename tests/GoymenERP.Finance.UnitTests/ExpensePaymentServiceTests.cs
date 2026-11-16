@@ -272,7 +272,7 @@ public sealed class ExpensePaymentServiceTests
         }
 
         // A draft approved before the passivation was proposed is not recorded while it waits.
-        await run.SetCashChangeAsync(null, null);
+        await run.SetCashChangeAsync(PassivationChange, RejectedChange);
         var approved = await DraftAndApproveAsync(run, CashDraft());
         await run.SetCashChangeAsync(PassivationChange, PendingChange);
         var request = new RecordExpensePaymentRequest(approved.Id, approved.Version, PaymentConfirmed: true);
@@ -383,18 +383,23 @@ public sealed class ExpensePaymentServiceTests
             return run;
         }
 
-        /// <summary>Sets the SENTETIK cash account's change columns past the cash account service.</summary>
-        public async Task SetCashChangeAsync(int? kind, int? status)
+        /// <summary>Stages a synthetic proposal or its rejection, respecting the cash master's transition guard.</summary>
+        public async Task SetCashChangeAsync(int kind, int status)
         {
             await using var context = Context();
             var cash = await context.CashAccounts.SingleAsync(candidate => candidate.Id == Cash);
             cash.ChangeKind = kind;
             cash.ChangeStatus = status;
-            cash.ChangeProposedBy = kind is null ? null : "cash-maker";
-            cash.ChangeProposedAtUtc = kind is null ? null : DateTimeOffset.UtcNow;
-            cash.ChangeDecidedBy = status is null or PendingChange ? null : "cash-checker";
-            cash.ChangeDecidedAtUtc = status is null or PendingChange ? null : DateTimeOffset.UtcNow;
+            if (status == PendingChange)
+            {
+                cash.ChangeProposedBy = "cash-maker";
+                cash.ChangeProposedAtUtc = DateTimeOffset.UtcNow;
+            }
+            cash.ChangeDecidedBy = status == PendingChange ? null : "cash-checker";
+            cash.ChangeDecidedAtUtc = status == PendingChange ? null : DateTimeOffset.UtcNow;
             cash.ChangeRejectionReason = status == RejectedChange ? "SENTETIK gerekce" : null;
+            cash.Version = checked(cash.Version + 1);
+            cash.UpdatedAtUtc = DateTimeOffset.UtcNow;
             await context.SaveChangesAsync();
         }
 

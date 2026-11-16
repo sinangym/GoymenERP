@@ -363,9 +363,12 @@ public sealed class FinanceInvoiceAcceptanceTests
         Assert.True(FinanceExactDecimalText.Equal("50.00", prefill.Applied.Text));
         Assert.True(prefill.Advance.IsZero);
         Assert.Equal(FinanceCustomerReturnPlanBasis.UserSelection, plan.Basis);
+        // FNS-D81 fixes the selected amounts, not the stored order of the invoice rows.
+        // The prefill above separately verifies the nearest-due display order.
         Assert.Equal(
-            prefill.Lines.Where(line => !line.Prefill.IsZero).Select(line => (line.Item, line.Prefill.Text)),
-            plan.Reductions.Select(r => (r.Item, r.Reduced.Text)));
+            prefill.Lines.Where(line => !line.Prefill.IsZero).Select(line => (line.Item, line.Prefill.Text))
+                .OrderBy(line => line.Item.Id),
+            plan.Reductions.Select(r => (r.Item, r.Reduced.Text)).OrderBy(line => line.Item.Id));
     }
 
     [Fact]
