@@ -45,21 +45,14 @@ dilimlerini durduran `NEEDS-SINAN` maddelerinden geldi. 40.4'ün cevabı serbest
 
 - Bu belge yeni izin adı açmaz ve rol/grant ataması yapmaz. Grant ataması insanda kalır.
 - `NEEDS-SINAN` olarak kalanlar:
-  - KIM-D49: hizmet tipi ve masraf tipi listesine kimin değer ekleyip pasifleştireceği.
   - ALS-D105: alış fasonu vergi varsayılanını Ayarlar'da kimin değiştireceği.
   - ALS-D105: satırdaki kodu hangi mevcut iznin değiştireceği.
-  - FNS-D79: dövizli alış siparişinde kurun **zorunlu** olup olmadığı.
-  - FNS-D79: kurun **onaydan sonra** değiştirilip değiştirilemeyeceği, ve değişikliğin revizyon gerektirip
-    gerektirmediği.
   - FNS-D79: hazırlayanın değişikliğinin gerekçe isteyip istemediği.
-  - FNS-D79: varsayılanın hesaplanamadığı gün (kur yok veya arife belirlenemedi) siparişin nasıl davranacağı.
-    O zamana kadar FNS-D29 ve SAT-D198 gibi güvenli tarafta kalınır: varsayılan önerilmez, sistem kur tahmin
-    etmez.
-- Önceki turlardan kalan `NEEDS-SINAN`'lar:
-  - ALC-S8: ek alış masraf satırı tip seçilmeden kaydedilebilir mi? Liste artık açıldığı için soru daraldı.
-    Liste boşken ne olacağı da bu soruya dahildir.
-  - KLN-D94 (EK13): bağ kurulamazsa uyarıyı kim alır, hangi kanalla gider?
-  - KLN-D94 (EK13): "kalan ayrımın tamamı" aynı alış satırının diğer Aktif ayırmalarını da kapsar mı?
+- SINAN-CEVAP 42 ile cevaplananlar (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md`, #1186):
+  - KIM-D49 liste yetkisi: SINAN-CEVAP 42.3, EK20 KIM-D51.
+  - FNS-D79 kurun zorunluluğu, onaydan sonra değişikliği ve kur yokken davranış: SINAN-CEVAP 42.2, EK20 FNS-D80.
+  - ALC-S8 tip seçilmeden kayıt: SINAN-CEVAP 42.1, EK20 ALS-D107.
+  - KLN-D94 (EK13) uyarının alıcısı/kanalı ve "kalan ayrımın tamamı": SINAN-CEVAP 42.5 ve 42.6, EK20 KLN-D110.
 - İnsan kapıları değişmez:
   - deployment, environment ve secret;
   - Settings → Actions etkinleştirmesi;
