@@ -330,6 +330,8 @@ export const CAPABILITY = {
    */
   settingsUnitProfiles: 'settings.unit-profiles.manage',
   settingsMoneyProfiles: 'settings.money-profiles.manage',
+  settingsManufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
+  settingsManufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /**
    * URT-D89 Ayarlar > İş merkezi kapasitesi: each work center's input capacity (kg/hour) and optional safety buffer
    * versions (no seed). Route `/ayarlar/is-merkezi-kapasitesi`, owner Settings 1.5; one non-Critical name, granted to no
@@ -481,6 +483,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsUnitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [CAPABILITY.settingsUnitProfiles]: '/ayarlar/birim-profilleri',
   [CAPABILITY.settingsMoneyProfiles]: '/ayarlar/para-profilleri',
+  [CAPABILITY.settingsManufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
+  [CAPABILITY.settingsManufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
   [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
   [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',

@@ -9,6 +9,8 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
+  manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /** Route `/ayarlar/iskonto-limitleri`; it carries its sidebar label. */
   salesDiscountLimits: 'settings.sales-discount-limits.manage',
   /**
@@ -79,7 +81,14 @@ export const SETTINGS_EXCHANGE_RATE_CONTROL = {
 
 export type SettingsCapabilityId = (typeof SETTINGS_CAPABILITY)[keyof typeof SETTINGS_CAPABILITY]
 
+export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
+  parameters: { prepare: 'settings.manufacturing-parameter-profiles.prepare', publish: 'settings.manufacturing-parameter-profiles.publish' },
+  tolerances: { prepare: 'settings.manufacturing-tolerance-profiles.prepare', publish: 'settings.manufacturing-tolerance-profiles.publish' },
+} as const
+
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
+  [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [SETTINGS_CAPABILITY.salesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [SETTINGS_CAPABILITY.taxMaster]: '/ayarlar/vergi',
   [SETTINGS_CAPABILITY.exchangeRates]: '/ayarlar/kurlar',
@@ -95,6 +104,8 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
+  [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',
   [SETTINGS_CAPABILITY.salesDiscountLimits]: 'İskonto limitleri',
   [SETTINGS_CAPABILITY.taxMaster]: 'Vergi (KDV / tevkifat)',
   [SETTINGS_CAPABILITY.exchangeRates]: 'Kurlar',

@@ -98,4 +98,3 @@ function Editor({ profile, today, company, finish }: { readonly profile: MoneyPr
     <Button type="button" disabled={pending || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>
   </form>
 }
-

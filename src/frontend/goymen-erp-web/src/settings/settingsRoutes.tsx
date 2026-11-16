@@ -18,8 +18,17 @@ import { UnitConversionPolicyPage } from './UnitConversionPolicyPage'
 import { UnitProfilePage } from './UnitProfilePage'
 import { MoneyProfilePage } from './MoneyProfilePage'
 import { WorkCenterCapacityPage } from './WorkCenterCapacityPage'
+import { ManufacturingProfilePage } from './ManufacturingProfilePage'
 
 export const settingsRoutes: RouteObject[] = [
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.manufacturingParameters].slice(1),
+    element: <CapabilityRoute capability={SETTINGS_CAPABILITY.manufacturingParameters}><ManufacturingProfilePage kind="parameters" /></CapabilityRoute>,
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.manufacturingTolerances].slice(1),
+    element: <CapabilityRoute capability={SETTINGS_CAPABILITY.manufacturingTolerances}><ManufacturingProfilePage kind="tolerances" /></CapabilityRoute>,
+  },
   {
     path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.moneyProfiles].slice(1),
     element: <CapabilityRoute capability={SETTINGS_CAPABILITY.moneyProfiles}><MoneyProfilePage /></CapabilityRoute>,

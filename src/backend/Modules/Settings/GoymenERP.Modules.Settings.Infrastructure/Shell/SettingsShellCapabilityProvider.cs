@@ -39,7 +39,12 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
+
+    public const string ManufacturingParametersCapabilityId = ManufacturingParameterProfileActionsV1.Read;
+    public const string ManufacturingParametersRoutePath = "/ayarlar/uretim-parametre-profilleri";
+    public const string ManufacturingTolerancesCapabilityId = ManufacturingToleranceProfileReadActionV1.Read;
+    public const string ManufacturingTolerancesRoutePath = "/ayarlar/uretim-tolerans-profilleri";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -131,6 +136,16 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
     {
+        var parameters = new ShellCapabilityDeclaration(ManufacturingParametersCapabilityId,
+            ManufacturingParametersCapabilityId, ManufacturingParametersRoutePath, "AY-UPP-01",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ManufacturingParameterProfileActionsV1.Read],
+            ImplementationAvailable: true);
+        var tolerances = new ShellCapabilityDeclaration(ManufacturingTolerancesCapabilityId,
+            ManufacturingTolerancesCapabilityId, ManufacturingTolerancesRoutePath, "AY-UTP-01",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ManufacturingToleranceProfileReadActionV1.Read],
+            ImplementationAvailable: true);
         var exchangeRates = new ShellCapabilityDeclaration(
             ExchangeRatesCapabilityId,
             ExchangeRatesRouteId,
@@ -144,6 +159,20 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            parameters,
+            parameters with { CapabilityId = ManufacturingParameterProfileActionsV1.Prepare,
+                ParentCapabilityId = ManufacturingParametersCapabilityId,
+                RequiredPermissions = [ManufacturingParameterProfileActionsV1.Read, ManufacturingParameterProfileActionsV1.Prepare] },
+            parameters with { CapabilityId = ManufacturingParameterProfileActionsV1.Publish,
+                ParentCapabilityId = ManufacturingParametersCapabilityId,
+                RequiredPermissions = [ManufacturingParameterProfileActionsV1.Read, ManufacturingParameterProfileActionsV1.Publish] },
+            tolerances,
+            tolerances with { CapabilityId = ManufacturingToleranceProfileActionsV1.Prepare,
+                ParentCapabilityId = ManufacturingTolerancesCapabilityId,
+                RequiredPermissions = [ManufacturingToleranceProfileReadActionV1.Read, ManufacturingToleranceProfileActionsV1.Prepare] },
+            tolerances with { CapabilityId = ManufacturingToleranceProfileActionsV1.Publish,
+                ParentCapabilityId = ManufacturingTolerancesCapabilityId,
+                RequiredPermissions = [ManufacturingToleranceProfileReadActionV1.Read, ManufacturingToleranceProfileActionsV1.Publish] },
             new ShellCapabilityDeclaration(
                 SalesDiscountLimitsCapabilityId,
                 SalesDiscountLimitsRouteId,

@@ -25,8 +25,8 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(settings?.entries).toContain(CAPABILITY.settingsSalesDiscountLimits)
   })
 
-  it('mounts the eleven static routes', () => {
-    expect(settingsRoutes).toHaveLength(11)
+  it('mounts each static Settings route declared by the owner', () => {
+    expect(settingsRoutes).toHaveLength(Object.keys(SETTINGS_ROUTE).length)
     expect(matchRoutes(settingsRoutes, '/ayarlar/iskonto-limitleri')?.at(-1)?.route.path).toBe('ayarlar/iskonto-limitleri')
     expect(matchRoutes(settingsRoutes, '/ayarlar/vergi')?.at(-1)?.route.path).toBe('ayarlar/vergi')
     expect(matchRoutes(settingsRoutes, '/ayarlar/kurlar')?.at(-1)?.route.path).toBe('ayarlar/kurlar')
@@ -95,6 +95,8 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
       [CAPABILITY.settingsUnitConversionPolicy, SETTINGS_CAPABILITY.unitConversionPolicy],
       [CAPABILITY.settingsUnitProfiles, SETTINGS_CAPABILITY.unitProfiles],
       [CAPABILITY.settingsMoneyProfiles, SETTINGS_CAPABILITY.moneyProfiles],
+      [CAPABILITY.settingsManufacturingParameters, SETTINGS_CAPABILITY.manufacturingParameters],
+      [CAPABILITY.settingsManufacturingTolerances, SETTINGS_CAPABILITY.manufacturingTolerances],
     ] as const
     const entries = NAV_GROUPS.find((group) => group.id === 'settings')?.entries ?? []
     for (const [shellId, settingsId] of pairs) {

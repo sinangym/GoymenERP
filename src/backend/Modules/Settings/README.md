@@ -943,3 +943,18 @@ after transfer, a missing or unreadable series fails closed and never returns to
 | Routes | `GET /api/v1/settings/money-profiles` and `POST /api/v1/settings/money-profiles/versions`. Commands require fresh authority, expected version, idempotency key, correlation and reason. A change, its terminal execution and audit event commit together. Same-value commands are durable no-ops without audit; version and key conflicts are durable terminal answers. |
 | Screen | Ayarlar → Para profilleri (`/ayarlar/para-profilleri`, AY-PRP-01). It shows the company, operation, current and proposed scales and state, plus the historical/future timeline. Today or a future date may be selected. An unknown response keeps the same request and key for retry. |
 | Source evidence | `SettingsMoneyProfilePersistenceModelTests`, `SettingsMoneyProfileSqlServerRelationalAcceptanceTests`, `moneyProfileContract.test.ts`, `MoneyProfilePage.test.tsx`. The SQL fact includes company and operation isolation, unchanged baseline history, replay, stale version, authority, audit and Down refusal. Test execution is reserved for the final train acceptance run. |
+
+## Manufacturing profile screens (KIM-S15, URN-D6)
+
+The existing parameter and tolerance profile services are reachable at Ayarlar → Üretim parametre profilleri and
+Üretim tolerans profilleri. Each route needs its existing read permission; prepare and publish buttons need separate
+read-plus-command capabilities. No approval button or new permission is added. A draft is published directly, and its
+preparer may publish it under URN-D6. Previously approved versions remain visible and can be published. All commands carry
+the server's expected state/profile version, a reason and a caller-owned idempotency key. An unknown outcome freezes the
+request for same-key retry. Work center selection uses the Organization owner's company-fenced read and requires that
+read's own authority; an unavailable list does not become an invented scope. Values are entered as text and the existing
+backend validates them. The screen calculates no formula, threshold or tolerance.
+
+The existing reviewed catalog is displayed read-only. Version-0 transfer remains outside this slice (TK-38 human gate).
+No starting value, grant or activation is installed. Component and decoder evidence is in
+`ManufacturingProfilePage.test.tsx` and `manufacturingProfileContract.test.ts`; execution is reserved for train acceptance.
