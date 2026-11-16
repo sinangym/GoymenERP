@@ -31,7 +31,8 @@ internal sealed class SqlLocalCredentialCommandStore(IdentityDbContext dbContext
                     credential.SecurityStamp,
                     credential.Version,
                     user.IsActive,
-                    credential.TemporaryPasswordIssuedAtUtc))
+                    credential.TemporaryPasswordIssuedAtUtc,
+                    credential.TemporaryPasswordConsumedAtUtc))
             .SingleOrDefaultAsync(cancellationToken);
 
     public Task<LocalCredentialCommandRecord?> FindCommandAsync(
@@ -79,7 +80,8 @@ internal sealed class SqlLocalCredentialCommandStore(IdentityDbContext dbContext
                 && credential.Version == version
                 && credential.SecurityStamp == stamp
                 && credential.PasswordHash == hash
-                && credential.TemporaryPasswordIssuedAtUtc == null)
+                && (credential.TemporaryPasswordIssuedAtUtc == null
+                    || credential.TemporaryPasswordConsumedAtUtc != null))
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(credential => credential.PasswordHash, newPasswordHash)

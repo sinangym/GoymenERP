@@ -35,6 +35,11 @@ public static class SecurityEventWriteFailureModesV1
             [(SecurityEventTypesV1.SecurityEventsRead, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailClosed,
             // Same as auth.login.failed: losing the summary never changes the 429 the limiter already returned.
             [(SecurityEventTypesV1.LoginRateLimited, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
+            // ID-2r: a founder recovery is an authorization change (E1 class, identity.permission.changed pattern).
+            [(SecurityEventTypesV1.FounderRecovered, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailClosed,
+            [(SecurityEventTypesV1.FounderPasswordReset, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailClosed,
+            // authz.denied pattern: the refusal stays in force, a lost record raises the alarm.
+            [(SecurityEventTypesV1.FounderRecoveryRefused, SecurityEventPhasesV1.Single)] = SecurityEventWriteFailureMode.FailOpenWithAlarm,
         };
 
     /// <summary>Every valid (type, phase) pair, in a stable order.</summary>
@@ -111,6 +116,9 @@ public static class SecurityEventRetentionClassesV1
         [SecurityEventTypesV1.AiRequestRefused] = No157,
         [SecurityEventTypesV1.SecurityEventsRead] = No134,
         [SecurityEventTypesV1.LoginRateLimited] = No134,
+        [SecurityEventTypesV1.FounderRecovered] = No134,
+        [SecurityEventTypesV1.FounderPasswordReset] = No134,
+        [SecurityEventTypesV1.FounderRecoveryRefused] = No134,
     };
 
     public static string? ForEventType(string? eventType) =>

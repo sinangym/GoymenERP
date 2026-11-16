@@ -47,9 +47,12 @@ internal sealed class LocalAccountPasswordChangeService(
             return Replay(recorded, fingerprint);
         }
 
-        if (state.TemporaryPasswordIssuedAtUtc is not null)
+        if (LocalTemporaryPasswordRules.BlocksSession(
+                state.TemporaryPasswordIssuedAtUtc,
+                state.TemporaryPasswordConsumedAtUtc))
         {
-            // The KIM-D23 temporary password flow (ID-2r/ID-3) is not built; such a credential has no session.
+            // KIM-D23: an unconsumed temporary password has no session yet. Once a login consumed it, the fenced
+            // session may change the password; the change clears the three temporary fields.
             return LocalAccountPasswordChangeResult.Of(LocalAccountPasswordChangeStatus.SessionNotCurrent);
         }
 

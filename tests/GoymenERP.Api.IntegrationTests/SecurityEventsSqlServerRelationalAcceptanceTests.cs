@@ -344,6 +344,37 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
         });
     }
 
+    /// <summary>
+    /// ID-2r: the three founder recovery types are stored as platform System rows. Without such rows the widening
+    /// migration rolls back and reapplies; once one exists its Down refuses with 51851 (forward fix) and the row survives.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Founder_recovery_rows_are_stored_and_their_migration_down_refuses_with_51851_on_real_sql()
+    {
+        await WithHostAsync(async (services, connectionString) =>
+        {
+            await using var context = Db(connectionString, TestCompanyIds.CompanyA);
+            await context.GetService<IMigrator>().MigrateAsync(nameof(AddLoginRateLimitedSecurityEvent));
+            await context.Database.MigrateAsync();
+
+            var writer = services.GetRequiredService<ISecurityEventWriterV1>();
+            foreach (var type in SecurityEventTypesV1.FounderRecoveryTypes)
+            {
+                Assert.True((await writer.WriteAsync(PlatformFounderRecovery(type), CancellationToken.None)).Recorded);
+            }
+
+            Assert.Equal("3", await ScalarAsync(connectionString,
+                "SELECT COUNT(*) FROM [security].[SecurityEvents] WHERE [EventType] LIKE N'identity.founder.%' "
+                + "AND [CompanyId] IS NULL AND [ActorType] = N'System'"));
+
+            var refusal = await Assert.ThrowsAnyAsync<Exception>(
+                () => context.GetService<IMigrator>().MigrateAsync(nameof(AddLoginRateLimitedSecurityEvent)));
+            Assert.Equal(51851, Sql(refusal).Number);
+            Assert.Equal("3", await ScalarAsync(connectionString,
+                "SELECT COUNT(*) FROM [security].[SecurityEvents] WHERE [EventType] LIKE N'identity.founder.%'"));
+        });
+    }
+
     [SqlServerFact]
     public async Task Down_drops_an_empty_security_events_table_and_up_reapplies_it_on_real_sql()
     {
@@ -408,6 +439,25 @@ public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
         RateLimitSummary = new SecurityEventRateLimitSummaryV1(
             OccurredAt.AddMinutes(-1), OccurredAt, RejectedAttemptCount: 7, PermitLimit: 10, Window: TimeSpan.FromMinutes(1)),
     };
+
+    private static SecurityEventV1 PlatformFounderRecovery(string eventType)
+    {
+        var refused = eventType == SecurityEventTypesV1.FounderRecoveryRefused;
+        return new SecurityEventV1
+        {
+            EventId = Guid.NewGuid(),
+            OccurredAtUtc = OccurredAt,
+            ScopeKind = SecurityEventScopeKindsV1.Platform,
+            ActorType = SecurityEventActorTypesV1.System,
+            ActorId = "identity.recover-founder",
+            EventType = eventType,
+            Outcome = refused ? SecurityEventOutcomesV1.Denied : SecurityEventOutcomesV1.Allowed,
+            ReasonCode = refused ? SecurityEventReasonCodesV1.PolicyRefused : null,
+            Severity = SecurityEventSeveritiesV1.High,
+            CorrelationId = $"corr-{Guid.NewGuid():N}",
+            SourceChannel = SourceChannels.System,
+        };
+    }
 
     private static SecurityEventsDbContext Db(string connectionString, Guid companyId)
     {

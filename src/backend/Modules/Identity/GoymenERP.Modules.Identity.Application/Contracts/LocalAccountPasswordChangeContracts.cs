@@ -74,7 +74,8 @@ public sealed record LocalCredentialCommandState(
     Guid SecurityStamp,
     long Version,
     bool UserIsActive,
-    DateTimeOffset? TemporaryPasswordIssuedAtUtc);
+    DateTimeOffset? TemporaryPasswordIssuedAtUtc,
+    DateTimeOffset? TemporaryPasswordConsumedAtUtc = null);
 
 /// <summary>A recorded credential command, read back for an idempotent replay.</summary>
 public sealed record LocalCredentialCommandRecord(byte[] RequestFingerprint, long ResultVersion);

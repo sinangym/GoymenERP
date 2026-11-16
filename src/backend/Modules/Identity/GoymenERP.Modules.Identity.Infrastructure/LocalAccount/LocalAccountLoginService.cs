@@ -65,27 +65,62 @@ internal sealed class LocalAccountLoginService(
             return await RefuseAsync(SecurityEventReasonCodesV1.CredentialsInvalid, nowUtc, cancellationToken);
         }
 
-        if (state.TemporaryPasswordIssuedAtUtc is not null)
-        {
-            // The KIM-D23 temporary password flow belongs to ID-2r/ID-3. Until it exists such an account cannot open
-            // a session (fail-closed); nothing is written. MustChangePassword alone opens a fenced session (ID-2):
-            // the session validator then allows only the password change and logout.
-            return await RefuseAsync(SecurityEventReasonCodesV1.PolicyRefused, nowUtc, cancellationToken);
-        }
-
         var rehashedPasswordHash = verification == LocalPasswordVerification.SuccessRehashNeeded
             ? passwordHasher.Hash(suppliedPassword)
             : null;
+        var rehashedFormatVersion = rehashedPasswordHash is null ? (int?)null : passwordHasher.FormatVersion;
+
+        if (state.TemporaryPasswordIssuedAtUtc is not null)
+        {
+            // KIM-D23/KIM-D43 (ID-2r): a temporary password opens exactly one session, and only before the stored
+            // expiry. A consumed or expired one, or one without a stored expiry, is a failed attempt like a wrong
+            // password: the counter rises and the caller sees the same generic refusal. The fresh session is fenced
+            // by MustChangePassword (only the password change and logout).
+            if (!LocalTemporaryPasswordRules.IsUsable(
+                    state.TemporaryPasswordExpiresAtUtc,
+                    state.TemporaryPasswordConsumedAtUtc,
+                    nowUtc))
+            {
+                _ = await store.TryRecordFailedAccessAsync(
+                    state,
+                    options.Value.ToLockoutPolicy(),
+                    nowUtc,
+                    cancellationToken);
+                return await RefuseAsync(SecurityEventReasonCodesV1.CredentialsInvalid, nowUtc, cancellationToken);
+            }
+
+            var consumed = await store.TryConsumeTemporaryPasswordAsync(
+                state,
+                rehashedPasswordHash,
+                rehashedFormatVersion,
+                nowUtc,
+                cancellationToken);
+            if (!consumed)
+            {
+                return await RefuseAsync(SecurityEventReasonCodesV1.CredentialsInvalid, nowUtc, cancellationToken);
+            }
+
+            return await SucceedAsync(state, nowUtc, cancellationToken);
+        }
+
         var recorded = await store.TryRecordSuccessfulAccessAsync(
             state,
             rehashedPasswordHash,
-            rehashedPasswordHash is null ? null : passwordHasher.FormatVersion,
+            rehashedFormatVersion,
             cancellationToken);
         if (!recorded)
         {
             return await RefuseAsync(SecurityEventReasonCodesV1.CredentialsInvalid, nowUtc, cancellationToken);
         }
 
+        return await SucceedAsync(state, nowUtc, cancellationToken);
+    }
+
+    private async Task<LocalAccountLoginResult> SucceedAsync(
+        LocalCredentialLoginState state,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
         await securityEventWriter.WriteAsync(
             NewEvent(nowUtc) with
             {

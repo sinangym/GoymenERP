@@ -104,6 +104,12 @@ public static class IdentityModuleExtensions
         services.AddOptions<IdentityBootstrapOptions>()
             .Bind(configuration.GetSection(IdentityBootstrapOptions.SectionName));
         services.AddScoped<IFounderBootstrapService, FounderBootstrapService>();
+        // ID-2r founder recovery (KIM-D22/D23/D43): KIM-D16 evaluator, company lock seam and the CLI service.
+        services.AddOptions<FounderRecoveryOptions>()
+            .Bind(configuration.GetSection(FounderRecoveryOptions.SectionName));
+        services.AddScoped<IdentityUserManagementEvaluator>();
+        services.AddScoped<IFounderRecoveryCompanyLock, SqlFounderRecoveryCompanyLock>();
+        services.AddScoped<IFounderRecoveryService, FounderRecoveryService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);

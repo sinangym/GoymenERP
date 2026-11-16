@@ -84,6 +84,26 @@ internal static class SecurityEventFixtures
             OccurredAt.AddMinutes(-1), OccurredAt, RejectedAttemptCount: 7, PermitLimit: 10, Window: TimeSpan.FromMinutes(1)),
     };
 
+    /// <summary>An ID-2r founder recovery record: platform scope, System command actor, no company, no permission.</summary>
+    public static SecurityEventV1 FounderRecovery(string eventType)
+    {
+        var refused = eventType == SecurityEventTypesV1.FounderRecoveryRefused;
+        return new SecurityEventV1
+        {
+            EventId = Guid.NewGuid(),
+            OccurredAtUtc = OccurredAt,
+            ScopeKind = SecurityEventScopeKindsV1.Platform,
+            ActorType = SecurityEventActorTypesV1.System,
+            ActorId = "identity.recover-founder",
+            EventType = eventType,
+            Outcome = refused ? SecurityEventOutcomesV1.Denied : SecurityEventOutcomesV1.Allowed,
+            ReasonCode = refused ? SecurityEventReasonCodesV1.PolicyRefused : null,
+            Severity = SecurityEventSeveritiesV1.High,
+            CorrelationId = "corr-5",
+            SourceChannel = SourceChannels.System,
+        };
+    }
+
     public static Dictionary<string, SecurityEventRetentionClassOptions> RetentionClasses() => new(StringComparer.Ordinal)
     {
         [SecurityEventRetentionClassesV1.No134] = new() { Years = 2, PolicyRef = "TEST-No134" },

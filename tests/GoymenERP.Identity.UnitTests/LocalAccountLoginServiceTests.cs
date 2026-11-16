@@ -211,15 +211,89 @@ public sealed class LocalAccountLoginServiceTests
     }
 
     [Fact]
-    public async Task A_temporary_password_keeps_the_account_out_until_id2_and_id3_exist()
+    public async Task An_unexpired_temporary_password_opens_one_fenced_session_and_is_consumed()
     {
-        var harness = Harness.WithUser(temporaryPasswordIssuedAtUtc: Now.AddHours(-1));
+        var harness = Harness.WithTemporaryPassword(expiresAtUtc: Now.AddHours(1));
+
+        var result = await harness.LoginAsync(UserName, Password);
+
+        // KIM-D23/KIM-D43: the first login consumes the temporary password; the session is fenced by MustChangePassword.
+        Assert.True(result.Succeeded);
+        Assert.Equal(Now, harness.Credential.TemporaryPasswordConsumedAtUtc);
+        Assert.Equal(1, harness.Store.Consumptions);
+        Assert.Equal(
+            LocalAccountSessionState.PasswordChangeRequired,
+            await new LocalAccountSessionValidator(harness.Store).GetSessionStateAsync(
+                harness.Credential.UserId,
+                result.SecurityStamp!.Value,
+                CancellationToken.None));
+        var written = Assert.Single(harness.Events.Written);
+        Assert.Equal(SecurityEventTypesV1.LoginSucceeded, written.EventType);
+    }
+
+    [Fact]
+    public async Task A_consumed_temporary_password_cannot_open_a_second_session_and_counts_as_a_failure()
+    {
+        var harness = Harness.WithTemporaryPassword(expiresAtUtc: Now.AddHours(1));
+        Assert.True((await harness.LoginAsync(UserName, Password)).Succeeded);
+        harness.Events.Clear();
+
+        var second = await harness.LoginAsync(UserName, Password);
+
+        Assert.False(second.Succeeded);
+        Assert.Equal((1, 1), (harness.Store.Consumptions, harness.Credential.FailedAccessCount));
+        AssertSingleFailure(harness, SecurityEventReasonCodesV1.CredentialsInvalid);
+    }
+
+    [Fact]
+    public async Task An_expired_temporary_password_is_refused_like_a_wrong_password()
+    {
+        var harness = Harness.WithTemporaryPassword(expiresAtUtc: Now);
+
+        var result = await harness.LoginAsync(UserName, Password);
+
+        // The stored end is exclusive: at the expiry instant the password is already unusable.
+        Assert.False(result.Succeeded);
+        Assert.Equal((0, 1), (harness.Store.Consumptions, harness.Credential.FailedAccessCount));
+        Assert.Null(harness.Credential.TemporaryPasswordConsumedAtUtc);
+        AssertSingleFailure(harness, SecurityEventReasonCodesV1.CredentialsInvalid);
+    }
+
+    [Fact]
+    public async Task A_temporary_password_without_a_stored_expiry_is_refused_fail_closed()
+    {
+        var harness = Harness.WithTemporaryPassword(expiresAtUtc: null);
 
         var result = await harness.LoginAsync(UserName, Password);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(0, harness.Store.Writes);
-        AssertSingleFailure(harness, SecurityEventReasonCodesV1.PolicyRefused);
+        Assert.Equal(0, harness.Store.Consumptions);
+        AssertSingleFailure(harness, SecurityEventReasonCodesV1.CredentialsInvalid);
+    }
+
+    [Fact]
+    public async Task A_temporary_password_consumed_by_a_parallel_login_after_the_read_is_refused()
+    {
+        var harness = Harness.WithTemporaryPassword(expiresAtUtc: Now.AddHours(1));
+        harness.Store.BeforeWrite = credential => InMemoryLocalCredentialStore.MarkConsumed(credential, Now);
+
+        var result = await harness.LoginAsync(UserName, Password);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(0, harness.Store.Consumptions);
+        AssertSingleFailure(harness, SecurityEventReasonCodesV1.CredentialsInvalid);
+    }
+
+    [Fact]
+    public async Task A_wrong_password_on_a_temporary_password_account_counts_and_does_not_consume_it()
+    {
+        var harness = Harness.WithTemporaryPassword(expiresAtUtc: Now.AddHours(1));
+
+        var result = await harness.LoginAsync(UserName, WrongPassword);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal((0, 1), (harness.Store.Consumptions, harness.Credential.FailedAccessCount));
+        Assert.Null(harness.Credential.TemporaryPasswordConsumedAtUtc);
     }
 
     [Fact]
@@ -430,6 +504,16 @@ public sealed class LocalAccountLoginServiceTests
             return new Harness(credential, userIsActive);
         }
 
+        /// <summary>A recover-founder reset-password state: forced change, issued an hour ago, unconsumed.</summary>
+        public static Harness WithTemporaryPassword(DateTimeOffset? expiresAtUtc)
+        {
+            var harness = WithUser(mustChangePassword: true, temporaryPasswordIssuedAtUtc: Now.AddHours(-1));
+            typeof(LocalCredential)
+                .GetProperty(nameof(LocalCredential.TemporaryPasswordExpiresAtUtc))!
+                .SetValue(harness.Credential, expiresAtUtc);
+            return harness;
+        }
+
         public static Harness Locked()
         {
             var harness = WithUser();
@@ -498,7 +582,9 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
                 credential.LockoutEndUtc,
                 credential.TemporaryPasswordIssuedAtUtc,
                 credential.SecurityStamp,
-                UserIsActive)
+                UserIsActive,
+                credential.TemporaryPasswordExpiresAtUtc,
+                credential.TemporaryPasswordConsumedAtUtc)
             : null);
     }
 
@@ -540,13 +626,42 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
         return Task.FromResult(true);
     }
 
+    public Task<bool> TryConsumeTemporaryPasswordAsync(
+        LocalCredentialLoginState read,
+        string? rehashedPasswordHash,
+        int? rehashedFormatVersion,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        RunBeforeWrite();
+        if (!Unchanged(read) || credential.TemporaryPasswordConsumedAtUtc is not null)
+        {
+            return Task.FromResult(false);
+        }
+
+        Writes++;
+        Consumptions++;
+        credential.ApplySuccessfulAccess(rehashedPasswordHash, rehashedFormatVersion);
+        MarkConsumed(credential, nowUtc);
+        return Task.FromResult(true);
+    }
+
+    public int Consumptions { get; private set; }
+
+    /// <summary>The SQL store sets only this column; the domain has no setter because only the store consumes.</summary>
+    public static void MarkConsumed(LocalCredential target, DateTimeOffset consumedAtUtc) =>
+        typeof(LocalCredential)
+            .GetProperty(nameof(LocalCredential.TemporaryPasswordConsumedAtUtc))!
+            .SetValue(target, consumedAtUtc);
+
     public Task<LocalCredentialSessionState?> FindForSessionAsync(Guid userId, CancellationToken cancellationToken) =>
         Task.FromResult(credential.UserId == userId
             ? new LocalCredentialSessionState(
                 credential.SecurityStamp,
                 UserIsActive,
                 credential.MustChangePassword,
-                credential.TemporaryPasswordIssuedAtUtc)
+                credential.TemporaryPasswordIssuedAtUtc,
+                credential.TemporaryPasswordConsumedAtUtc)
             : null);
 
     public Task<bool> TryRenewSecurityStampAsync(
