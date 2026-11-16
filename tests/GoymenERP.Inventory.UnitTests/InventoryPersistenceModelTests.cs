@@ -203,7 +203,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventorySupplierReturnExit", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryTransferReversals", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryTransferReversals", StringComparison.Ordinal));
+        Assert.Equal("AllowInventoryZeroBookStockCounts", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -790,6 +792,31 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("[inventory].[TransferReversals]", guard.Sql, StringComparison.Ordinal);
         Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_zero_book_stock_count_migration_relaxes_only_the_book_check_and_its_Down_refuses_first()
+    {
+        // SAT-D330 (STK-S22): a label shown at 0 is countable, so a stored count's book may be 0.
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AllowInventoryZeroBookStockCounts();
+        using var context = Context();
+        var counts = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(StockCountRow))!;
+
+        Assert.Equal(InventoryDbContext.StockCountStateCheck,
+            Assert.Single(counts.GetCheckConstraints(), check => check.Name == "CK_StockCounts_State").Sql);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51748", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[StockCounts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[BookKg] = 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var relaxed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.UpOperations[^1]);
+        Assert.Equal(("CK_StockCounts_State", InventoryDbContext.StockCountStateCheck), (relaxed.Name, relaxed.Sql));
+        var restored = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.DownOperations[^1]);
+        Assert.Equal(InventoryDbContext.StockCountStateCheck.Replace("[BookKg] >= 0", "[BookKg] > 0", StringComparison.Ordinal),
+            restored.Sql);
     }
 
     [Fact]
