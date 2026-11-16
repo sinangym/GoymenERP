@@ -93,7 +93,9 @@ public sealed partial class PurchasingService
 
         var draft = new PurchaseSupplierReturnDraft(request.ReturnId, request.ReturnLineId, orderId, lineId, request.GoodsAcceptanceId,
             request.InventoryMovementId, status, request.SourceBlock, ParseKg(request.QuantityKg), basis, unitCost, ReplacementExpected: false,
-            request.Reason.Trim(), request.OccurredAtUtc);
+            request.Reason.Trim(), request.OccurredAtUtc,
+            request.ExpectedPurchaseOrderVersion is null ? null : long.Parse(request.ExpectedPurchaseOrderVersion, CultureInfo.InvariantCulture),
+            request.UndoQuantity is null ? null : ParseKg(request.UndoQuantity));
         try
         {
             StoredPurchaseSupplierReturn saved;
@@ -338,7 +340,8 @@ public sealed partial class PurchasingService
         return new(stored.CompanyId, item.ReturnId, item.ReturnLineId, item.PurchaseOrderId, item.PurchaseOrderLineId, item.GoodsAcceptanceId,
             item.InventoryMovementId, item.Status.ToString(), stored.Version.ToString(CultureInfo.InvariantCulture), item.SourceBlock,
             Kg(item.QuantityKg), item.CostBasis.ToString(), UnitCostText(item.UnitCostTryPerKg), item.ReplacementExpected, item.Reason,
-            item.OccurredAtUtc, stored.RequestedBy, stored.RequestedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason);
+            item.OccurredAtUtc, stored.RequestedBy, stored.RequestedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason,
+            item.ExpectedPurchaseOrderVersion?.ToString(CultureInfo.InvariantCulture), item.UndoQuantity is { } undo ? Kg(undo) : null);
     }
 
     private static string UnitCostText(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
