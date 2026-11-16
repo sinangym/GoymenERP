@@ -284,9 +284,9 @@ export function correctOutput(
 }
 
 /**
- * F-009 D5/D6 (URT-D33): cancels an order with nothing left on it. DRAFT route `POST …/orders/{orderId}/cancel`: the
- * endpoint is URT-S4's and not merged, so the screen draws no control for it (its capability is published by no
- * provider) until the contract is confirmed. The same outcomes as the close.
+ * F-009 D5/D6 (URT-D33): cancels an order with nothing left on it, through URT-S4's `POST …/orders/{orderId}/cancellation`
+ * with `{expectedVersion, reason}`. The screen draws no control for it until the shell provider publishes its capability.
+ * The same outcomes as the close.
  */
 export function cancelOrder(
   companyId: string,
@@ -296,7 +296,7 @@ export function cancelOrder(
 ): Promise<FactOutcome> {
   return sendCommand(
     companyId,
-    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/cancel`,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/cancellation`,
     snapshot.idempotencyKey,
     orderCancelBody(snapshot),
     signal,

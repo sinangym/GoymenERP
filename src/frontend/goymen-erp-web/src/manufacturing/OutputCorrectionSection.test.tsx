@@ -214,7 +214,7 @@ describe('output correction (UI-14)', () => {
 })
 
 describe('order cancel (URT-S4 draft)', () => {
-  const CANCEL_URL = `/manufacturing/orders/${ORDER}/cancel`
+  const CANCEL_URL = `/manufacturing/orders/${ORDER}/cancellation`
   const CANCELLER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail, MANUFACTURING_CAPABILITY.orderCancel]
 
   it('requires a reason and sends the version the screen read', async () => {
