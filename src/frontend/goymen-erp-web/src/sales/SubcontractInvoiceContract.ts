@@ -57,7 +57,10 @@ export const SUBCONTRACT_INVOICE_REASON = {
   notSubcontractOrder: 'not_subcontract_order',
   weighingMissing: 'weighing_missing',
   weighingOrderMismatch: 'weighing_order_mismatch',
+  /** Retired by SAT-D376/D402 (the server splits a shared weighing now); kept so an older answer still reads. */
   sharePolicyPending: 'subcontract_share_policy_pending',
+  theoreticalKgUnavailable: 'subcontract_theoretical_kg_unavailable',
+  shareNotPositive: 'subcontract_share_not_positive',
   currencyPending: 'subcontract_currency_pending',
   lineNotKilogram: 'subcontract_line_not_kilogram',
   weighingAlreadyInvoiced: 'subcontract_weighing_already_invoiced',
@@ -77,7 +80,7 @@ export interface SubcontractInvoiceLine {
   readonly priceBasisRevision: string
   readonly productId: string
   readonly unitId: string
-  /** The billed kilograms: the weighing's net kg, as the server wrote it. */
+  /** The billed kilograms: the line's whole-kg share of the weighing's net kg (SAT-D376/D377), as the server wrote it. */
   readonly quantity: string
   readonly netUnitPrice: string
   readonly vatPercent: string

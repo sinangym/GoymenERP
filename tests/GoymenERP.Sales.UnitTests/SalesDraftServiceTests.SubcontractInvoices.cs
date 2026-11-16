@@ -9,7 +9,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// <summary>
 /// F2 (SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1 §F2) through the service over SYNTHETIC owners: the write and the price read
 /// are measured first; the shape is checked before any owner is asked; another company's or an unknown order is a 404; a normal
-/// order, a missing weighing (LOJ-D12), a weighing of another order or a split weighing (SAT-D312 share policy open) are 409
+/// order, a missing weighing (LOJ-D12), a weighing of another order or a shared weighing without theoretical kg (SAT-D376) are 409
 /// <c>invoice_not_ready</c> and write nothing; an unavailable, throwing or inconsistent Logistics answer is a 503; a foreign-currency
 /// order and a non-kg line wait together (open points), never guessed. SENTETIK.
 /// </summary>
@@ -131,7 +131,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task A_weighing_of_another_order_or_a_split_weighing_waits_for_the_share_policy_and_writes_nothing()
+    public async Task A_weighing_of_another_order_is_a_mismatch_and_a_shared_weighing_without_theoretical_kg_waits_and_writes_nothing()
     {
         var invoicing = await SubcontractInvoicing.CreateAsync();
         var served = invoicing.Weighings.Value!.Lines[0];
@@ -142,12 +142,36 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.WeighingOrderMismatch),
             (Assert.Single(mismatch.Errors).Field, mismatch.Errors[0].Code));
 
-        // SAT-D312: the instruction also served another order — the denominator and the residue are open; nothing is split by guess.
-        invoicing.Weighings.Value = invoicing.Weighings.Value with { Lines = [served, served with { SourceOrderId = Guid.NewGuid() }] };
+        // SAT-D376 (fail closed): the instruction also served another order's line, and a line has no theoretical kg to weigh
+        // the split by; nothing is split by guess.
+        var other = served with { SourceOrderId = Guid.NewGuid(), SourceOrderLineId = Guid.NewGuid(), TheoreticalKg = "400.000" };
+        invoicing.Weighings.Value = invoicing.Weighings.Value with { Lines = [served, other] };
         var shared = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             invoicing.Service().CreateSubcontractServiceInvoiceAsync(invoicing.Request(), Metadata("k-fason-inv-shared")));
-        Assert.Equal(("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.SharePolicyPending),
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.InvoiceNotReady), Status(shared));
+        Assert.Equal(("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.TheoreticalKgUnavailable),
             (Assert.Single(shared.Errors).Field, shared.Errors[0].Code));
+        Assert.Empty(invoicing.Invoices.Stored);
+    }
+
+    [Fact]
+    public async Task A_shared_weighing_with_theoretical_kg_is_split_and_no_longer_waits_for_a_share_policy()
+    {
+        // SAT-D376/D402: with every line's theoretical kg the split is computed; the synthetic order then waits only for its own
+        // currency and unit (open in this synthetic world), never for the retired share-policy reason.
+        var invoicing = await SubcontractInvoicing.CreateAsync();
+        var served = invoicing.Weighings.Value!.Lines[0] with { TheoreticalKg = "800.000" };
+        var other = served with { SourceOrderId = Guid.NewGuid(), SourceOrderLineId = Guid.NewGuid(), TheoreticalKg = "400.000" };
+        invoicing.Weighings.Value = invoicing.Weighings.Value with { Lines = [served, other] };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().CreateSubcontractServiceInvoiceAsync(invoicing.Request(), Metadata("k-fason-inv-split")));
+
+        Assert.Equal((409, SalesInvoiceProblemCodesV1.InvoiceNotReady), Status(refused));
+        Assert.DoesNotContain(refused.Errors, error => error.Code is SalesSubcontractServiceInvoiceReasonCodesV1.SharePolicyPending
+            or SalesSubcontractServiceInvoiceReasonCodesV1.TheoreticalKgUnavailable);
+        Assert.Contains(refused.Errors, error =>
+            error is { Field: "lines[0]", Code: SalesSubcontractServiceInvoiceReasonCodesV1.LineNotKilogram });
         Assert.Empty(invoicing.Invoices.Stored);
     }
 

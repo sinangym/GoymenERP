@@ -537,6 +537,18 @@ public static class SalesRuleCodes
     public const string SubcontractLineNotWeighed = "sales_subcontract_line_not_weighed";
 
     /// <summary>
+    /// SAT-D376 (fail closed): a line served by a shared delivery weighing has no readable positive theoretical kg, so the
+    /// weighing's net kg is not split.
+    /// </summary>
+    public const string SubcontractTheoreticalKgUnavailable = "sales_subcontract_theoretical_kg_unavailable";
+
+    /// <summary>
+    /// SAT-D376/D402: a line's whole-kg share of a shared weighing would be zero or negative after rounding and the residue; such
+    /// a line is never billed as zero.
+    /// </summary>
+    public const string SubcontractShareNotPositive = "sales_subcontract_share_not_positive";
+
+    /// <summary>
     /// KLN-D100: the approved customer returns of a line exceed its delivered total; no correction rule covers that, so the open
     /// quantity is not computed.
     /// </summary>
