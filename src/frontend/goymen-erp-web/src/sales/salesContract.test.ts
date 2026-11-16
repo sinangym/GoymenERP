@@ -155,19 +155,26 @@ describe('S-11 sales contract decoder', () => {
     expect(decodeSalesContract(missing)).toBeNull()
   })
 
-  it('reads withheld amounts as null while terms, dates and rates stay visible (SAT-D361)', () => {
+  it('reads withheld amounts and discount percentages as null while terms and dates stay visible (SAT-D361/D363)', () => {
     const [first, second] = activeWithoutDiscount().installments as Body[]
     const withheld = pendingWithoutLimit({
       amountDisclosure: 'Withheld',
       installments: [{ ...first, amount: null }, { ...second, amount: null }],
       plannedTotalAmount: null,
+      discountRules: (pendingWithoutLimit().discountRules as Body[]).map((rule) => ({ ...rule, ratePercent: null })),
+      discountLimitDefined: true,
+      discountLimitPercent: null,
     })
     const contract = decodeSalesContract(withheld)
     expect(contract).not.toBeNull()
     expect(contract?.amountDisclosure).toBe('Withheld')
     expect(contract?.plannedTotalAmount).toBeNull()
     expect(contract?.installments.map((item) => [item.dueDate, item.amount])).toEqual([['2026-12-01', null], ['2027-01-01', null]])
-    expect(contract?.discountRules.map((rule) => rule.ratePercent)).toEqual(['5', '2.5'])
+    expect(contract?.discountRules.map((rule) => rule.ratePercent)).toEqual([null, null])
+    expect(contract?.discountLimitDefined).toBe(true)
+    expect(contract?.discountLimitPercent).toBeNull()
+    expect(decodeSalesContract({ ...withheld, discountLimitPercent: '10' })).toBeNull()
+    expect(decodeSalesContract({ ...withheld, discountRules: pendingWithoutLimit().discountRules })).toBeNull()
     expect(decodeSalesContract(activeWithoutDiscount())?.amountDisclosure).toBe('Visible')
   })
 

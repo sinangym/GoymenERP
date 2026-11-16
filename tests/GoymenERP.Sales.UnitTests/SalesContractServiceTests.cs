@@ -353,9 +353,9 @@ public sealed class SalesContractServiceTests
         Assert.Equal(SalesPriceDisclosure.Withheld, result.Contract.AmountDisclosure);
         Assert.All(result.Contract.Installments, item => Assert.Null(item.Amount));
         Assert.Null(result.Contract.PlannedTotalAmount);
-        // Everything that is not an amount stays visible: the plan's dates, the rates, the state and the validity.
+        // SAT-D363: dates and rule labels remain; discount percentages are withheld together with amounts.
         Assert.Equal([new DateOnly(2026, 12, 1), new DateOnly(2027, 1, 1)], result.Contract.Installments.Select(item => item.DueDate));
-        Assert.Equal("0.5", Assert.Single(result.Contract.DiscountRules).RatePercent);
+        Assert.Null(Assert.Single(result.Contract.DiscountRules).RatePercent);
         Assert.Equal(("PendingDiscountApproval", new DateOnly(2026, 11, 1), (DateOnly?)new DateOnly(2027, 10, 31), "SENTETIK teslim maddesi"),
             (result.Contract.State, result.Contract.ValidFrom, result.Contract.ValidThrough, result.Contract.Clauses));
     }
@@ -377,6 +377,8 @@ public sealed class SalesContractServiceTests
             Assert.Equal(SalesPriceDisclosure.Withheld, view.AmountDisclosure);
             Assert.Null(Assert.Single(view.Installments).Amount);
             Assert.Null(view.PlannedTotalAmount);
+            Assert.All(view.DiscountRules, rule => Assert.Null(rule.RatePercent));
+            Assert.Null(view.DiscountLimitPercent);
         }
 
         authority.Narrow.Clear();
@@ -397,6 +399,23 @@ public sealed class SalesContractServiceTests
         Assert.Equal(("Active", SalesPriceDisclosure.Withheld, (string?)null), (result.Contract.State, result.Contract.AmountDisclosure,
             result.Contract.PlannedTotalAmount));
         Assert.Equal(SalesContractState.Active, store.Stored!.State);
+    }
+
+    [Fact]
+    public async Task A_configured_discount_limit_and_rule_rate_are_withheld_without_changing_the_stored_contract_SAT_D363()
+    {
+        var (service, store, _, authority) = Build(limits: new Limits(10m));
+        authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+        var hidden = (await service.CreateContractAsync(Request(LineRule("0.5")), Metadata)).Contract;
+        Assert.True(hidden.DiscountLimitDefined);
+        Assert.Null(hidden.DiscountLimitPercent);
+        Assert.Null(Assert.Single(hidden.DiscountRules).RatePercent);
+        Assert.Equal(10m, store.Stored!.DiscountLimitPercent);
+        Assert.Equal(0.5m, Assert.Single(store.Stored.DiscountRules).RatePercent);
+        authority.Denied.Clear();
+        var visible = await service.GetContractAsync(hidden.Id);
+        Assert.Equal("10", visible.DiscountLimitPercent);
+        Assert.Equal("0.5", Assert.Single(visible.DiscountRules).RatePercent);
     }
 
     [Fact]

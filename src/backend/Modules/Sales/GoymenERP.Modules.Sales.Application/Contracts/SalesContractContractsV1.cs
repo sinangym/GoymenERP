@@ -98,7 +98,7 @@ public sealed record CreateSalesContractRequest(
 /// <summary>One installment as read: its amount is null when the contract's <c>AmountDisclosure</c> is <c>Withheld</c> (SAT-D361).</summary>
 public sealed record SalesContractInstallmentView(int InstallmentNo, DateOnly DueDate, string? Amount);
 
-public sealed record SalesContractDiscountRuleView(int RuleNo, string Kind, string Label, string RatePercent);
+public sealed record SalesContractDiscountRuleView(int RuleNo, string Kind, string Label, string? RatePercent);
 
 /// <summary>
 /// One contract as the screens see it. <see cref="State"/> is the stored axis (<c>PendingDiscountApproval</c>, <c>Active</c>,
@@ -109,8 +109,8 @@ public sealed record SalesContractDiscountRuleView(int RuleNo, string Kind, stri
 /// SAT-D361: <see cref="AmountDisclosure"/> is never absent and follows the sales order price read exactly
 /// (<c>sales.orders.price.read</c>, asked, never required): <c>Visible</c> → every installment amount and
 /// <see cref="PlannedTotalAmount"/> are the exact texts; <c>Withheld</c> → they are null BECAUSE the caller may not see them
-/// (never zero, never empty). Every other field stays visible. The discount rules carry percentage rates only, no amount, so they
-/// are not withheld.
+/// (never zero, never empty). SAT-D363 also withholds discount rule percentages and the configured limit percentage;
+/// rule labels, dates, approval state and whether a limit was configured remain visible.
 /// </para>
 /// </summary>
 public sealed record SalesContractView(

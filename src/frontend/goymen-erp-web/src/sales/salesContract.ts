@@ -74,7 +74,7 @@ export interface SalesContractDiscountRule {
   readonly ruleNo: number
   readonly kind: SalesContractDiscountKind
   readonly label: string
-  readonly ratePercent: string
+  readonly ratePercent: string | null
 }
 
 export interface SalesContract {
@@ -182,11 +182,12 @@ function decodeInstallment(value: unknown, index: number, scale: number, visible
 
 const disclosures: readonly string[] = ['Visible', 'Withheld']
 
-function decodeRule(value: unknown, index: number): SalesContractDiscountRule | null {
+function decodeRule(value: unknown, index: number, visible: boolean): SalesContractDiscountRule | null {
   const o = exact(value, RULE_KEYS)
   if (o === null || !ordinal(o.ruleNo, index + 1) || typeof o.kind !== 'string' || !kinds.includes(o.kind) || !text(o.label)
-    || o.label.length > SALES_CONTRACT_LIMITS.label || !isRateText(o.ratePercent, true)) return null
-  return { ruleNo: o.ruleNo as number, kind: o.kind as SalesContractDiscountKind, label: o.label, ratePercent: o.ratePercent }
+    || o.label.length > SALES_CONTRACT_LIMITS.label
+    || !(visible ? isRateText(o.ratePercent, true) : o.ratePercent === null)) return null
+  return { ruleNo: o.ruleNo as number, kind: o.kind as SalesContractDiscountKind, label: o.label, ratePercent: o.ratePercent as string | null }
 }
 
 /** One contract; null unless every key is present, typed and consistent with the state. `expectedId` pins a detail read. */
@@ -214,15 +215,15 @@ export function decodeSalesContract(value: unknown, expectedId?: string): SalesC
   }
   const rules: SalesContractDiscountRule[] = []
   for (const [index, item] of o.discountRules.entries()) {
-    const rule = decodeRule(item, index)
+    const rule = decodeRule(item, index, visible)
     if (rule === null) return null
     rules.push(rule)
   }
   if (rules.filter((rule) => rule.kind === SALES_CONTRACT_DISCOUNT_KIND.total).length > 1) return null
 
-  // SAT-D346: the limit is either configured (a percentage) or not (null); the flag and the value say the same thing.
+  // SAT-D346/D363: the presence flag survives redaction; the percentage is present only for an authorized reader.
   const limit = o.discountLimitPercent
-  if (o.discountLimitDefined ? !isRateText(limit, false) : limit !== null) return null
+  if (visible && o.discountLimitDefined ? !isRateText(limit, false) : limit !== null) return null
   // NS-13: no rule never needs approval; rules recorded without a configured limit always do. Whether a rule exceeds a configured
   // limit is the server's comparison and is not redone here.
   if (rules.length === 0 && o.discountApprovalRequired) return null

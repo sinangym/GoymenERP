@@ -126,11 +126,14 @@ describe('S-11 sales contracts panel', () => {
     expect(validity).toContain('süresiz')
   })
 
-  it('says withheld amounts are hidden, never 0, and keeps dates and rates visible (SAT-D361)', () => {
+  it('says amounts and discount percentages are hidden while dates and rule labels remain visible (SAT-D361/D363)', () => {
     const hidden = contract(pendingWire({
       amountDisclosure: 'Withheld',
       installments: [{ installmentNo: 1, dueDate: '2026-12-01', amount: null }],
       plannedTotalAmount: null,
+      discountRules: [{ ruleNo: 1, kind: 'Line', label: 'SENTETIK hacim', ratePercent: null }],
+      discountLimitDefined: true,
+      discountLimitPercent: null,
     }))
     const { section } = renderPanel({ outcome: { type: 'ok-single', data: [ACTIVE, hidden] } })
     const card = within(section).getByTestId('sales-contract-2')
@@ -141,6 +144,10 @@ describe('S-11 sales contracts panel', () => {
     expect(within(card).getByTestId('sales-contract-2-amounts-withheld').getAttribute('role')).toBe('note')
     expect(card.textContent).not.toContain('0.00')
     expect(card.textContent).toContain('SENTETIK hacim')
+    const rules = within(card).getByTestId('sales-contract-2-rules')
+    expect(within(rules).getByText(T.amountWithheld)).toBeTruthy()
+    expect(within(card).getByTestId('sales-contract-2-limit').textContent).toContain(T.limitWithheld)
+    expect(within(card).getByTestId('sales-contract-2-limit').textContent).not.toContain(T.limitNotDefined)
     const visible = within(section).getByTestId('sales-contract-1')
     expect(within(visible).queryByTestId('sales-contract-1-amounts-withheld')).toBeNull()
     expect(within(visible).getByTestId('sales-contract-1-total').textContent).toBe(T.plannedTotal('1500.00'))

@@ -43,4 +43,15 @@ Bu takip tek başına DONE sayısını artırmaz: önceki 11/17 (%64,7) kaynak D
 
 ## Karar durumu
 
+### SAT-SC32 doğrulama ve düzeltme
+
+Sipariş PDF'i mevcut gerçek endpoint/composer ve HTTP/SQL/Vitest kaynaklarında bulunuyor; SAT-D365 ayrı yazdırma
+izni istemez, mevcut sipariş okumasını tüketir. SAT-D363 ise kaynakta tamam değildi: sözleşme okuması fiyat
+görme hakkı olmayan kullanıcıya iskonto oranını ve sınır yüzdesini döndürüyordu. Sunucu bunları null döndürecek,
+strict decoder yalnız bu redaksiyonla cevap kabul edecek ve ekran oran/sınır için Gizli gösterecek şekilde düzeltildi.
+Sınırın tanımlı olduğu bilgisi, kural adı, tarihler ve onay durumu korunur; saklanan oran/sınır değişmez.
+Create, list, detail, replay ve karar cevapları aynı merkezi redaksiyonu kullanır. Eski birim beklentisi yeni
+karara uyarlandı; yapılandırılmış sınır, taze yetki ve saklı domain değerleri için ek test kaynağı yazıldı.
+Bu kaynak tamamlanmasıdır; test/SQL/Vitest/browser koşumları NOT_RUN. OpenAPI nullable alanı üreticiyle yenilenecek.
+
 KLN-D105 zamanlaması EK15'ten, dilim port sırası KLN-D112/EK24'ten okundu. Önceki W5 zamanlama sorusu cevaplıdır; yeni karar tahmin edilmedi. Teknik eksik host köprüsü için NEEDS-SINAN oluşturulmadı.

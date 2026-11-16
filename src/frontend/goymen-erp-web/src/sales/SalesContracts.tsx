@@ -486,7 +486,7 @@ function ContractCard({
                   <td>{rule.ruleNo}</td>
                   <td>{T.kind[rule.kind]}</td>
                   <td>{rule.label}</td>
-                  <td className={pages.numeric}>{rule.ratePercent}</td>
+                  <td className={pages.numeric}>{rule.ratePercent ?? T.amountWithheld}</td>
                 </tr>
               ))}
             </tbody>
@@ -495,7 +495,8 @@ function ContractCard({
       )}
       {item.discountRules.length === 0 ? null : (
         <p data-testid={`${id}-limit`}>
-          {item.discountLimitPercent === null ? T.limitNotDefined : T.limitDefined(item.discountLimitPercent)} ·{' '}
+          {!item.discountLimitDefined ? T.limitNotDefined
+            : item.discountLimitPercent === null ? T.limitWithheld : T.limitDefined(item.discountLimitPercent)} ·{' '}
           {item.discountApprovalRequired ? T.approvalRequired : T.approvalNotRequired}
         </p>
       )}

@@ -458,7 +458,7 @@ public sealed class SalesContractService(
 
     // ---- mapping --------------------------------------------------------------------------------------------------------------
 
-    /// <summary>SAT-D361: a withheld contract carries no amount at all (null beside <c>Withheld</c>), never a zero.</summary>
+    /// <summary>SAT-D361/D363: a withheld contract carries no amount, discount rate or limit percentage, never a zero.</summary>
     internal static SalesContractView View(SalesContract item, DateOnly today, SalesPriceDisclosure disclosure)
     {
         var visible = disclosure == SalesPriceDisclosure.Visible;
@@ -477,11 +477,12 @@ public sealed class SalesContractService(
         [.. item.Installments.Select(installment => new SalesContractInstallmentView(installment.InstallmentNo, installment.DueDate,
             visible ? Amount(installment.Amount.Amount, item.MoneyScale) : null))],
         visible ? Amount(item.PlannedTotal.Amount, item.MoneyScale) : null,
-        [.. item.DiscountRules.Select(rule => new SalesContractDiscountRuleView(rule.RuleNo, rule.Kind.ToString(), rule.Label, Rate(rule.RatePercent)))],
+        [.. item.DiscountRules.Select(rule => new SalesContractDiscountRuleView(rule.RuleNo, rule.Kind.ToString(), rule.Label,
+            visible ? Rate(rule.RatePercent) : null))],
         item.Clauses,
         item.DiscountApprovalRequired,
         item.DiscountLimitPercent is not null,
-        item.DiscountLimitPercent is { } limit ? Rate(limit) : null,
+        visible && item.DiscountLimitPercent is { } limit ? Rate(limit) : null,
         item.IsInEffectOn(today),
         item.CreatedBy,
         item.CreatedAtUtc,
