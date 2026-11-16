@@ -13,8 +13,12 @@ kararlarla ilişki" bölümündeki gibidir:
   kalır.
 - Kısmen geçerli: `URN-D11`'in dört türünün ölçü alanları geçerlidir; "şimdilik dört" sınırı `KLN-D87` (#1176) ile
   kalkmıştır.
-- Uygulanmaz, `NEEDS-SINAN`: `FNS-D54` (yerine `FNS-D44` geçerli), `ALS-D98`'in "yeni yetki yoktur" kısmı (yerine
-  `ALS-D95`/19.22 geçerli), `SAT-D353` (yerine `SAT-D351` ve `SAT-D348` geçerli; kaynak için `SAT-D367`, #1176).
+- Sonraki turda cevaplandı: `FNS-D54`, `ALS-D98`'in "yeni yetki yoktur" kısmı ve `SAT-D353`. Güncel durum, main'deki
+  `SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md` (SINAN-CEVAP 21) "Önceki kararlarla ilişki" ve "Sınırlar"
+  bölümlerindedir: SINAN-CEVAP 42.14 → `FNS-D81`; 42.15 ve 44.2 → `ALS-D108` ve `ALS-D110`; 42.16 → `SAT-D406`
+  (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md`, #1186). `ALS-D110` daha sonra `ALS-D111` ile değişir
+  (`SINAN_KARARLARI_2026-11-16_DALGA4_EK21.md`, #1187). Bu belge bu üç madde için karar vermez; onlar için
+  yukarıdaki belgeler geçerlidir.
 
 Bu belgedeki `KLN-D58` ve `URN-D12`, `KLN-D56` ve `URN-D10`'a atıf yapar; bunlar `KLN-D49` ve `KLN-D47` ile aynı
 kurallardır.
