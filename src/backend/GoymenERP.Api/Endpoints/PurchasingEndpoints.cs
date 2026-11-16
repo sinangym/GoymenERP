@@ -736,6 +736,7 @@ public static partial class PurchasingEndpoints
 
         MapGoodsReceiptBatches(group);
         MapSupplierReturns(group);
+        MapReceiptReversals(group);
     }
 
     private static bool IsListQueryValid(HttpContext httpContext, HashSet<string> allowedNames, int? pageSize, string? cursor, string? status,

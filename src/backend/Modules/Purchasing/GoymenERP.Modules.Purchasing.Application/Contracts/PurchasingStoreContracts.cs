@@ -108,7 +108,8 @@ public static class PurchasingCommands
 
     public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || IsOrderMutation(commandName);
 
-    public static bool IsKnown(string commandName) => IsRequestCommand(commandName) || IsOrderCommand(commandName);
+    public static bool IsKnown(string commandName) => IsRequestCommand(commandName) || IsOrderCommand(commandName)
+        || commandName == PurchaseReceiptReversalApiV1.CommandName;
 }
 
 /// <summary>F-017 F17-4: the JSON snapshots of the released allocation for the order's audit record (before / after).</summary>

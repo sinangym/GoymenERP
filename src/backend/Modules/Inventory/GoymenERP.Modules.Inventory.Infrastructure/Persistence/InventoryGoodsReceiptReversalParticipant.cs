@@ -4,8 +4,6 @@ using System.Globalization;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
-using GoymenERP.Modules.Audit.Infrastructure.Persistence;
-using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
@@ -33,7 +31,8 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
     private const int ResizeChangeKind = 1;
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
-    private readonly AuditEventCollector audit;
+    private readonly IAuditEventCollector audit;
+    private readonly IAuditTransactionWriterV1 auditWriter;
     private readonly DbConnection connection;
     private readonly DbTransaction transaction;
     private readonly Guid companyId;
@@ -45,12 +44,13 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
     private bool disposed;
     private int started;
 
-    private InventoryGoodsReceiptReversalParticipant(InventoryDbContext context, InventoryStore store, AuditEventCollector audit,
+    private InventoryGoodsReceiptReversalParticipant(InventoryDbContext context, InventoryStore store, IAuditEventCollector audit,
+        IAuditTransactionWriterV1 auditWriter,
         DbConnection connection, DbTransaction transaction, Guid companyId, ISettingsPrerequisiteProvider settings,
         IInventoryFutureDemandSourceV1 demands, IInventoryFutureUnitConverterV1 units,
         IInventoryFutureSupplySourceV1 supply, TimeProvider clock)
     {
-        this.context = context; this.store = store; this.audit = audit; this.connection = connection;
+        this.context = context; this.store = store; this.audit = audit; this.auditWriter = auditWriter; this.connection = connection;
         this.transaction = transaction; this.companyId = companyId; this.settings = settings;
         this.demands = demands; this.units = units; this.supply = supply; this.clock = clock;
     }
@@ -58,25 +58,27 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
     public static async Task<IInventoryGoodsReceiptReversalParticipantV1> EnlistAsync(DbConnection connection,
         DbTransaction transaction, Guid companyId, ISettingsPrerequisiteProvider settings,
         IInventoryFutureDemandSourceV1 demands, IInventoryFutureUnitConverterV1 units,
-        IInventoryFutureSupplySourceV1 sameTransactionSupplySource, CancellationToken cancellationToken = default,
+        IInventoryFutureSupplySourceV1 sameTransactionSupplySource, IAuditEventCollector audit,
+        IAuditTransactionWriterV1 auditWriter, CancellationToken cancellationToken = default,
         TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(connection); ArgumentNullException.ThrowIfNull(transaction);
         ArgumentNullException.ThrowIfNull(settings); ArgumentNullException.ThrowIfNull(demands);
         ArgumentNullException.ThrowIfNull(units); ArgumentNullException.ThrowIfNull(sameTransactionSupplySource);
+        ArgumentNullException.ThrowIfNull(audit); ArgumentNullException.ThrowIfNull(auditWriter);
         if (companyId == Guid.Empty || connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection))
             throw new InvalidOperationException("Kabul ters kaydı sahibin açık işlemini ve şirketini ister.");
+        if (auditWriter.HasPendingDrafts) throw Error(503, Codes.Unavailable);
         var company = new CompanyContext(); company.Set(companyId);
-        var collector = new AuditEventCollector();
         var options = new DbContextOptionsBuilder<InventoryDbContext>().UseSqlServer(connection, contextOwnsConnection: false)
-            .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options;
+            .Options;
         var context = new InventoryDbContext(options, company);
         try
         {
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
             var effectiveClock = clock ?? TimeProvider.System;
-            var store = new InventoryStore(context, company, collector, new InventoryKilogramScale(settings), effectiveClock);
-            return new InventoryGoodsReceiptReversalParticipant(context, store, collector, connection, transaction,
+            var store = new InventoryStore(context, company, audit, new InventoryKilogramScale(settings), effectiveClock);
+            return new InventoryGoodsReceiptReversalParticipant(context, store, audit, auditWriter, connection, transaction,
                 companyId, settings, demands, units, sameTransactionSupplySource, effectiveClock);
         }
         catch { await context.DisposeAsync(); throw; }
@@ -141,7 +143,15 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
         InventoryGoodsReceiptReversalSupplyV1 expectedSupply, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
-        try { return await StageCoreAsync(request, expectedSupply, metadata, cancellationToken); }
+        // Never consume drafts owned by a prior caller. Purchasing flushes its own batch before this stage starts.
+        if (auditWriter.HasPendingDrafts) throw Error(503, Codes.Unavailable);
+        var completed = false;
+        try
+        {
+            var result = await StageCoreAsync(request, expectedSupply, metadata, cancellationToken);
+            completed = true;
+            return result;
+        }
         catch (DbUpdateConcurrencyException exception) { throw Error(409, Codes.ConcurrentChange, exception); }
         catch (DbUpdateException exception) { throw Error(503, Codes.Unavailable, exception); }
         catch (InventoryStoreException exception) { throw StoreRefusal(exception.Code, exception); }
@@ -154,6 +164,7 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
         catch (FutureSupplyReceiptReversalPrecisionException exception) { throw Error(422, Codes.PartialQuantityNotRepresentable, exception); }
         catch (ArgumentException exception) { throw Error(503, Codes.Unavailable, exception); }
         catch (OverflowException exception) { throw Error(503, Codes.Unavailable, exception); }
+        finally { if (!completed) auditWriter.DiscardPending(); }
     }
 
     private async Task<InventoryGoodsReceiptReversalResultV1> StageCoreAsync(InventoryGoodsReceiptReversalRequestV1 request,
@@ -296,6 +307,7 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
         }
         // Persist deallocations before the physical participant checks the remaining reservations. Everything is still uncommitted.
         await context.SaveChangesAsync(cancellationToken);
+        await auditWriter.WritePendingAsync(transaction, cancellationToken);
         string labelVersion;
         if (request.Kind == InventoryGoodsReceiptReversalKindV1.SupplierReturn)
         {
@@ -317,6 +329,11 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
             Kind = (int)request.Kind, QuantityKg = undoKg, Reason = request.Reason, RecordedBy = metadata.ActorId,
             CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
         context.FutureSupplyConversionReversals.AddRange(reversalRows);
+        audit.Enqueue(new AuditEventDraft(companyId, Codes.EventType, "Inventory.GoodsReceiptReversal", request.ReversalId.ToString("D"),
+            "ReverseReceipt", 0, 1, AuditActorTypes.User, metadata.ActorId, metadata.PermissionCode, metadata.RoleCodes,
+            null, JsonSerializer.Serialize(answerResult, Engine.Json), request.Reason, ApprovalContextJson: null,
+            AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
+            metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         context.Commands.Add(new() { CompanyId = companyId, CommandName = Codes.CommandName, IdempotencyKeyHash = Engine.KeyHash(metadata.IdempotencyKey),
             PayloadHash = Engine.PayloadHash(request), ActorId = metadata.ActorId, TargetId = request.ReversalId,
             ResultJson = JsonSerializer.Serialize(answerResult, Engine.Json), CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
@@ -325,6 +342,7 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
             AggregateId = request.ReversalId, AggregateVersion = 1, Sequence = 1, PayloadJson = JsonSerializer.Serialize(answerResult, Engine.Json),
             OccurredAtUtc = request.OccurredAtUtc, CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, RecordedAtUtc = clock.GetUtcNow() });
         await context.SaveChangesAsync(cancellationToken);
+        await auditWriter.WritePendingAsync(transaction, cancellationToken);
         return answerResult;
     }
 

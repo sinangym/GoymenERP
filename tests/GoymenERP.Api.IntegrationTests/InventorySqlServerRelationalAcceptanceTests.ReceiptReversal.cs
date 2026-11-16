@@ -1,6 +1,8 @@
 using System.Data.Common;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.FutureSupply;
@@ -10,6 +12,7 @@ using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -179,8 +182,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await new SalesOrderLineSerializationLockHostBinder(company).Bind(connection, transaction).AcquireAsync(seed.SalesLine);
         await new PurchaseLineSerializationLockHostBinder(company).Bind(connection, transaction).AcquireAsync(seed.Receipt.PurchaseOrderLineId);
         var owners = new ReceiptReversalOwners(seed, unavailableOwners, wrongDemandProduct);
+        await using var auditScope = run.Factory.Services.CreateAsyncScope();
+        auditScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
         await using var participant = await InventoryGoodsReceiptReversalParticipant.EnlistAsync(connection, transaction,
-            CompanyA, GoodsReceiptSettings(run), owners, new ReceiptPrelockKilograms(), owners);
+            CompanyA, GoodsReceiptSettings(run), owners, new ReceiptPrelockKilograms(), owners,
+            auditScope.ServiceProvider.GetRequiredService<IAuditEventCollector>(),
+            auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
         var result = await participant.StageAsync(request, new(CompanyA, seed.Receipt.PurchaseOrderId,
             seed.Receipt.PurchaseOrderLineId, 5, "2", "3"), metadata);
         if (commit) await transaction.CommitAsync(); else await transaction.RollbackAsync();

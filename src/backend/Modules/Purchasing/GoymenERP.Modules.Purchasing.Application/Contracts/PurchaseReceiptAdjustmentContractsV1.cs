@@ -10,7 +10,12 @@ public interface IPurchaseReceiptAdjustmentParticipantV1 : IAsyncDisposable
     Task<PurchaseReceiptAdjustmentTargetV1?> ReadTargetAsync(Guid orderId, Guid acceptanceId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Replay precedes mutable target/version/cap reads; the owner checks actor, company and request hash.</summary>
+    /// <summary>
+    /// Replay precedes mutable target/version/cap reads; the owner checks actor, company and request hash.
+    /// Success and terminal refusal share the Purchasing.Attempts command/key uniqueness. A recorded success
+    /// is decoded from its immutable adjustment response, never restored from today's order. A stored refusal
+    /// throws PurchasingServiceException with IsReplay=true and the attempt's original correlation id.
+    /// </summary>
     Task<PurchaseReceiptAdjustmentResultV1?> FindReplayAsync(string commandName, string requestHash,
         PurchasingWriteEnvelope envelope, CancellationToken cancellationToken = default);
 
