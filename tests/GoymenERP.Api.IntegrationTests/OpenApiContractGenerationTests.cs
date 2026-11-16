@@ -2175,12 +2175,53 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ReleaseFutureSupplyAllocationV1",
             ["path:allocationId:true:type:string;format:uuid"]),
+        // W7: Settings SC32, first-Admin setup, and Manufacturing owner contracts.
+        new("post", "/api/v1/identity/company-setup/first-admin", "AssignFirstCompanyAdminV1",
+            AuthenticatedResponses("409:application/problem+json", "201:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/AssignFirstCompanyAdminV1"),
+        new("post", "/api/v1/manufacturing/plans/{planId}/priority", "ChangeManufacturingPlanPriorityV1",
+            AuthenticatedResponses("409:application/problem+json", "200:application/json", "400:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/ChangePlanPriorityRequestV1",
+            ["path:planId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/settings/collateral-types", "CreateSettingsCollateralTypeV1",
+            AuthenticatedResponses("409:application/problem+json", "204:", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CreateSettingsCollateralTypeRequestV1"),
+        new("get", "/api/v1/manufacturing/plans/{planId}/input-availability", "GetManufacturingPlanInputAvailabilityV1",
+            AuthenticatedResponses("409:application/problem+json", "200:application/json", "503:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:planId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/manufacturing/plans/{planId}/priority", "GetManufacturingPlanPriorityV1",
+            AuthenticatedResponses("409:application/problem+json", "200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:planId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/manufacturing/plans/{planId}/work-center-queue", "GetManufacturingPlanWorkCenterQueueV1",
+            AuthenticatedResponses("409:application/problem+json", "200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:planId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/settings/collateral-types", "GetSettingsCollateralTypesV1",
+            AuthenticatedResponses("409:application/problem+json", "200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/settings/company-policies/sales-contract-discount-limit", "GetSettingsSalesContractDiscountLimitV1",
+            AuthenticatedResponses("409:application/problem+json", "200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/settings/collateral-types/{entryId}/versions", "RecordSettingsCollateralTypeVersionV1",
+            AuthenticatedResponses("409:application/problem+json", "204:", "400:application/problem+json", "415:", "404:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordSettingsCollateralTypeRequestV1",
+            ["path:entryId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/settings/company-policies/sales-contract-discount-limit/versions", "RecordSettingsSalesContractDiscountLimitV1",
+            AuthenticatedResponses("409:application/problem+json", "204:", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RecordSalesContractDiscountLimitRequestV1"),
         .. ProductOperations,
     ];
 
     private static readonly IReadOnlyDictionary<string, string> ExpectedSuccessSchemas =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            ["AssignFirstCompanyAdminV1"] = "ref:IdentityAccessCommandOutcomeV1",
+            ["ChangeManufacturingPlanPriorityV1"] = "ref:PlanPriorityViewV1",
+            ["CreateSettingsCollateralTypeV1"] = "none",
+            ["GetManufacturingPlanInputAvailabilityV1"] = "ref:PlanInputAvailabilityViewV1",
+            ["GetManufacturingPlanPriorityV1"] = "ref:PlanPriorityViewV1",
+            ["GetManufacturingPlanWorkCenterQueueV1"] = "ref:PlanWorkCenterQueueViewV1",
+            ["GetSettingsCollateralTypesV1"] = "ref:SettingsCollateralTypesViewV1",
+            ["GetSettingsSalesContractDiscountLimitV1"] = "ref:SalesContractDiscountLimitViewV1",
+            ["RecordSettingsCollateralTypeVersionV1"] = "none",
+            ["RecordSettingsSalesContractDiscountLimitV1"] = "none",
             ["GetLivenessV1"] = "type:string",
             ["GetReadinessV1"] = "type:string",
             ["GetAuditEventsV1"] = "ref:AuditEventPage",
@@ -3386,6 +3427,16 @@ public sealed partial class OpenApiContractGenerationTests
         "ListInventoryTransfersV1",
         "RecordSettingsMoneyProfileV1",
         "ReleaseInventoryFutureAllocationV1",
+        "AssignFirstCompanyAdminV1",
+        "ChangeManufacturingPlanPriorityV1",
+        "CreateSettingsCollateralTypeV1",
+        "GetManufacturingPlanInputAvailabilityV1",
+        "GetManufacturingPlanPriorityV1",
+        "GetManufacturingPlanWorkCenterQueueV1",
+        "GetSettingsCollateralTypesV1",
+        "GetSettingsSalesContractDiscountLimitV1",
+        "RecordSettingsCollateralTypeVersionV1",
+        "RecordSettingsSalesContractDiscountLimitV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -3713,12 +3764,22 @@ public sealed partial class OpenApiContractGenerationTests
         "GenerateInventoryLabelPdfV1",
         "RecordSettingsMoneyProfileV1",
         "ReleaseInventoryFutureAllocationV1",
+        "AssignFirstCompanyAdminV1",
+        "ChangeManufacturingPlanPriorityV1",
+        "CreateSettingsCollateralTypeV1",
+        "RecordSettingsCollateralTypeVersionV1",
+        "RecordSettingsSalesContractDiscountLimitV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
         ReplayableResponseStatuses =
             new Dictionary<string, HashSet<int>>(StringComparer.Ordinal)
             {
+                ["AssignFirstCompanyAdminV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["ChangeManufacturingPlanPriorityV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CreateSettingsCollateralTypeV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict],
+                ["RecordSettingsCollateralTypeVersionV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["RecordSettingsSalesContractDiscountLimitV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict],
                 ["SetOrganizationLocationActiveStateV1"] =
                 [
                     StatusCodes.Status204NoContent,
@@ -4619,6 +4680,11 @@ public sealed partial class OpenApiContractGenerationTests
         "GenerateInventoryLabelPdfV1",
         "RecordSettingsMoneyProfileV1",
         "ReleaseInventoryFutureAllocationV1",
+        "AssignFirstCompanyAdminV1",
+        "ChangeManufacturingPlanPriorityV1",
+        "CreateSettingsCollateralTypeV1",
+        "RecordSettingsCollateralTypeVersionV1",
+        "RecordSettingsSalesContractDiscountLimitV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -4920,6 +4986,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GenerateInventoryLabelPdfV1:404",
         "ListInventoryFutureSupplyOptionsV1:404",
         "ReleaseInventoryFutureAllocationV1:404",
+        "ChangeManufacturingPlanPriorityV1:404",
+        "GetManufacturingPlanInputAvailabilityV1:404",
+        "GetManufacturingPlanPriorityV1:404",
+        "GetManufacturingPlanWorkCenterQueueV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -5142,6 +5212,11 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateSettingsScrapKindEntryV1:400",
         "RecordSettingsScrapKindEntryVersionV1:400",
         "RecordSettingsMoneyProfileV1:400",
+        "AssignFirstCompanyAdminV1:400",
+        "ChangeManufacturingPlanPriorityV1:400",
+        "CreateSettingsCollateralTypeV1:400",
+        "RecordSettingsCollateralTypeVersionV1:400",
+        "RecordSettingsSalesContractDiscountLimitV1:400",
     ];
 
     // MFG-API (#313): every Manufacturing write advertises the endpoint's one conflict and one
@@ -5210,6 +5285,27 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["AssignFirstCompanyAdminV1:409"] = ["identity.access.idempotency_conflict", "identity.access.version_conflict", "identity.assignment.user_not_assignable", "identity.company.admin_already_assigned", "organization.company.setup_pending_required"],
+            ["AssignFirstCompanyAdminV1:400"] = ["identity.access.idempotency_key_invalid", "identity.access.request_invalid"],
+            ["ChangeManufacturingPlanPriorityV1:409"] = ManufacturingConflictCodes,
+            ["ChangeManufacturingPlanPriorityV1:400"] = ["manufacturing_request_invalid"],
+            ["ChangeManufacturingPlanPriorityV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "manufacturing_plan_cancelled",
+                    "manufacturing_plan_priority_reason_required", "manufacturing_plan_priority_unchanged"],
+            ["CreateSettingsCollateralTypeV1:409"] = ["settings_collateral_type_code_conflict", "settings_collateral_type_idempotency_conflict"],
+            ["CreateSettingsCollateralTypeV1:400"] = ["settings_collateral_type_command_metadata_invalid", "settings_collateral_type_reason_required", "settings_collateral_type_reason_too_long", "settings_collateral_type_request_invalid"],
+            ["CreateSettingsCollateralTypeV1:503"] = ["settings_provider_unavailable"],
+            ["GetSettingsCollateralTypesV1:400"] = ["settings_collateral_type_request_invalid"],
+            ["GetSettingsCollateralTypesV1:503"] = ["settings_provider_unavailable"],
+            ["GetSettingsSalesContractDiscountLimitV1:400"] = ["settings_company_policy_request_invalid"],
+            ["GetSettingsSalesContractDiscountLimitV1:503"] = ["settings_provider_unavailable"],
+            ["RecordSettingsCollateralTypeVersionV1:409"] = ["settings_collateral_type_idempotency_conflict", "settings_collateral_type_version_conflict"],
+            ["RecordSettingsCollateralTypeVersionV1:400"] = ["settings_collateral_type_command_metadata_invalid", "settings_collateral_type_reason_required", "settings_collateral_type_reason_too_long", "settings_collateral_type_request_invalid"],
+            ["RecordSettingsCollateralTypeVersionV1:404"] = ["settings_collateral_type_not_found"],
+            ["RecordSettingsCollateralTypeVersionV1:503"] = ["settings_provider_unavailable"],
+            ["RecordSettingsSalesContractDiscountLimitV1:409"] = ["settings_company_policy_idempotency_conflict", "settings_company_policy_version_conflict"],
+            ["RecordSettingsSalesContractDiscountLimitV1:400"] = ["settings_company_policy_command_metadata_invalid", "settings_company_policy_reason_required", "settings_company_policy_reason_too_long", "settings_company_policy_request_invalid"],
+            ["RecordSettingsSalesContractDiscountLimitV1:503"] = ["settings_provider_unavailable"],
             // ID-1: the login rate limit's single code, read from the owner's contract.
             ["LoginLocalAccountV1:429"] = [IdentitySessionProblemCodesV1.LoginRateLimited],
             // INV-OPEN-1 part 2: the owner's closed sets (InventoryOpeningCodesV1), read here, never retyped.
@@ -6491,6 +6587,96 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["SettingsCollateralKindV1"] = ScalarSchema("enum:BankGuaranteedPayment|Dbs|GuaranteeLetter|CreditCard|Vinov|Mortgage"),
+                ["SettingsCollateralTypeViewV1"] = ObjectSchema(
+                    ["id", "code", "name", "kind", "active", "ratePercent", "version", "recordedBy", "recordedAtUtc"],
+                    ("id", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("kind", "ref:SettingsCollateralKindV1"),
+                    ("active", "type:boolean"),
+                    ("ratePercent", "type:string"),
+                    ("version", "type:string"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
+                ["SettingsCollateralTypesViewV1"] = ObjectSchema(
+                    ["companyId", "entries"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("entries", "type:array;items:ref:SettingsCollateralTypeViewV1")),
+                ["SalesContractDiscountLimitVersionViewV1"] = ObjectSchema(
+                    ["version", "limitPercent", "recordedBy", "recordedAtUtc", "reason"],
+                    ("version", "type:string"),
+                    ("limitPercent", "type:string"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string")),
+                ["SalesContractDiscountLimitViewV1"] = ObjectSchema(
+                    ["companyId", "limitPercent", "version", "versions"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("limitPercent", "type:null|string"),
+                    ("version", "type:string"),
+                    ("versions", "type:array;items:ref:SalesContractDiscountLimitVersionViewV1")),
+                ["PlanPriorityViewV1"] = ObjectSchema(
+                    ["companyId", "planId", "planVersion", "priorityScore", "priorityRevision", "recordedBy", "recordedAtUtc", "reason"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("planId", "type:string;format:uuid"),
+                    ("planVersion", "type:integer|string;format:int64"),
+                    ("priorityScore", "type:integer|string;format:int32"),
+                    ("priorityRevision", "type:integer|string;format:int64"),
+                    ("recordedBy", "type:null|string"),
+                    ("recordedAtUtc", "type:null|string;format:date-time"),
+                    ("reason", "type:null|string")),
+                ["PlanWorkCenterQueueLineV1"] = ObjectSchema(
+                    ["planId", "dueDate", "priorityScore", "priorityRevision", "plannedKg", "processedKg", "remainingKg", "isOverPlanned", "isQueued"],
+                    ("planId", "type:string;format:uuid"),
+                    ("dueDate", "type:null|string;format:date"),
+                    ("priorityScore", "type:integer|string;format:int32"),
+                    ("priorityRevision", "type:integer|string;format:int64"),
+                    ("plannedKg", "type:string"),
+                    ("processedKg", "type:string"),
+                    ("remainingKg", "type:string"),
+                    ("isOverPlanned", "type:boolean"),
+                    ("isQueued", "type:boolean")),
+                ["PlanWorkCenterQueueViewV1"] = ObjectSchema(
+                    ["contractVersion", "companyId", "workCenterId", "targetPlanId", "targetPlanVersion", "items"],
+                    ("contractVersion", "type:integer|string;format:int32"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("targetPlanId", "type:string;format:uuid"),
+                    ("targetPlanVersion", "type:integer|string;format:int64"),
+                    ("items", "type:array;items:ref:PlanWorkCenterQueueLineV1")),
+                ["PlanInputAvailabilityLineV1"] = ObjectSchema(
+                    ["labelId", "productId", "labelVersion", "requestedKg", "physicalKg", "blockedKg", "allocatedKg", "freeKg", "missingKg", "freePositionCount"],
+                    ("labelId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("requestedKg", "type:string"),
+                    ("physicalKg", "type:string"),
+                    ("blockedKg", "type:string"),
+                    ("allocatedKg", "type:string"),
+                    ("freeKg", "type:string"),
+                    ("missingKg", "type:string"),
+                    ("freePositionCount", "type:integer|string;format:int32")),
+                ["PlanCancelledOrderReferenceV1"] = ObjectSchema(
+                    ["orderId", "planVersionAfterCancel"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("planVersionAfterCancel", "type:integer|string;format:int64")),
+                ["PlanInputAvailabilityViewV1"] = ObjectSchema(
+                    ["contractVersion", "companyId", "planId", "planVersion", "inputs", "cancelledOrders", "readAtUtc"],
+                    ("contractVersion", "type:integer|string;format:int32"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("planId", "type:string;format:uuid"),
+                    ("planVersion", "type:integer|string;format:int64"),
+                    ("inputs", "type:array;items:ref:PlanInputAvailabilityLineV1"),
+                    ("cancelledOrders", "type:array;items:ref:PlanCancelledOrderReferenceV1"),
+                    ("readAtUtc", "type:string;format:date-time")),
+                ["PurchaseReceiptFutureSupplySummaryV1"] = ObjectSchema(
+                    ["companyId", "purchaseOrderId", "purchaseOrderGeneralLineId", "unitId", "activeAllocatedQuantity"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("purchaseOrderId", "type:string;format:uuid"),
+                    ("purchaseOrderGeneralLineId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("activeAllocatedQuantity", "type:string")),
                 ["NativeApprovalReadDetailV1"] = ObjectSchema([]),
                 ["NativeApprovalReadDetailV1FinanceInvoiceImportNativeApprovalReadDetailV1"] = ObjectSchema(
                     ["item", "preview"],
@@ -7168,7 +7354,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ["source", "locations", "searchWindowFull"],
                     ("source", "ref:PurchaseReceiptSourceV1"),
                     ("locations", "type:array;items:ref:PurchaseReceiptLocationV1"),
-                    ("searchWindowFull", "type:boolean")),
+                    ("searchWindowFull", "type:boolean"),
+                    ("futureSupply", "oneOf:ref:PurchaseReceiptFutureSupplySummaryV1|type:null")),
                 ["PurchaseGoodsReceiptQuantityComparisonV1"] = ObjectSchema(
                     ["companyId", "acceptanceId", "purchaseOrderId", "purchaseOrderLineId", "purchaseOrderVersion", "productId", "productVersion", "unitId", "acceptedQuantity", "measuredQuantityKg", "comparisonStatus", "acceptedQuantityKg", "measuredMinusAcceptedKg"],
                     ("companyId", "type:string;format:uuid"),
@@ -13373,6 +13560,35 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["AssignFirstCompanyAdminV1"] = ObjectSchema(
+                    ["userId", "expectedCompanyVersion", "reason"],
+                    ("userId", "type:string;format:uuid"),
+                    ("expectedCompanyVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:string")),
+                ["ChangePlanPriorityRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "expectedPriorityRevision", "priorityScore", "reason"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("expectedPriorityRevision", "type:integer|string;format:int64"),
+                    ("priorityScore", "type:integer|string;format:int32"),
+                    ("reason", "type:null|string")),
+                ["CreateSettingsCollateralTypeRequestV1"] = ObjectSchema(
+                    ["code", "name", "kind", "reason"],
+                    ("code", "type:null|string"),
+                    ("name", "type:null|string"),
+                    ("kind", "oneOf:ref:SettingsCollateralKindV1|type:null"),
+                    ("reason", "type:null|string")),
+                ["RecordSettingsCollateralTypeRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "name", "active", "ratePercent", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("name", "type:null|string"),
+                    ("active", "type:boolean|null"),
+                    ("ratePercent", "type:null|string"),
+                    ("reason", "type:null|string")),
+                ["RecordSalesContractDiscountLimitRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "limitPercent", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("limitPercent", "type:null|string"),
+                    ("reason", "type:null|string")),
                 // ID-1 local account login body (KIM-D4); the password is never echoed in any response.
                 ["LocalAccountLoginRequestV1"] = ObjectSchema(
                     ["userName", "password"],
@@ -14693,6 +14909,27 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedProblemComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["ManufacturingPlanAllocationConflictProblemContract"] = ObjectSchema(
+                    ["type", "title", "status", "detail", "code"],
+                    ("type", "type:string"),
+                    ("title", "type:string"),
+                    ("status", "type:integer;format:int32"),
+                    ("detail", "type:string"),
+                    ("code", "type:string"),
+                    ("correlationId", "type:null|string"),
+                    ("conflict", "oneOf:ref:ErpVersionConflictContract|type:null"),
+                    ("planAllocationShortfall", "oneOf:ref:ManufacturingPlanAllocationShortfallV1|type:null")),
+                ["ManufacturingPlanAllocationShortfallV1"] = ObjectSchema(
+                    ["companyId", "planId", "labelId", "productId", "labelVersion", "requestedKg", "availableKg", "missingKg", "freePositionCount"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("planId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("requestedKg", "type:string"),
+                    ("availableKg", "type:string"),
+                    ("missingKg", "type:string"),
+                    ("freePositionCount", "type:integer|string;format:int32")),
                 ["ErpProblemDetailsContract"] = ObjectSchema(
                     ["type", "title", "status", "detail", "code"],
                     ("type", "type:string"),
@@ -16815,6 +17052,10 @@ public sealed partial class OpenApiContractGenerationTests
             .ToArray();
     }
 
+    private static bool HasCompanyLifecycleRefusals(string operationId) =>
+        RequiredCompanyOperations.Contains(operationId)
+        || IsProductOperation(operationId);
+
     private static IReadOnlyList<string> ExpectedProblemCodes(
         string operationId,
         string method,
@@ -16836,6 +17077,11 @@ public sealed partial class OpenApiContractGenerationTests
             && RequiredCompanyOperations.Contains(operationId))
         {
             codes.Add("company_context_invalid");
+        }
+
+        if (statusCode == StatusCodes.Status409Conflict && HasCompanyLifecycleRefusals(operationId))
+        {
+            codes.Add("organization.company.setup_pending");
         }
 
         // KIM-D31: a cookie-authenticated write without a valid antiforgery token is refused with 400.
@@ -16862,7 +17108,9 @@ public sealed partial class OpenApiContractGenerationTests
         JsonElement schema)
     {
         var responseKey = $"{operationId}:{statusCode}";
-        if (MixedProblemResponses.Contains(responseKey))
+        if (MixedProblemResponses.Contains(responseKey)
+            || (statusCode == StatusCodes.Status409Conflict && HasCompanyLifecycleRefusals(operationId)
+                && CodeLessProblemResponses.Contains(responseKey)))
         {
             Assert.False(schema.TryGetProperty("$ref", out _));
             Assert.Equal(
@@ -16877,7 +17125,10 @@ public sealed partial class OpenApiContractGenerationTests
             return;
         }
 
-        var expectedReference = EndpointProblemResponses.TryGetValue(responseKey, out var endpointReference)
+        var expectedReference = statusCode == StatusCodes.Status409Conflict
+            && operationId is ("ApproveManufacturingPlanV1" or "ReapproveManufacturingPlanV1")
+            ? "#/components/schemas/ManufacturingPlanAllocationConflictProblemContract"
+            : EndpointProblemResponses.TryGetValue(responseKey, out var endpointReference)
             ? endpointReference
             : CodeLessProblemResponses.Contains(responseKey)
                 ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
@@ -16976,11 +17227,35 @@ public sealed partial class OpenApiContractGenerationTests
         string Method,
         string Path,
         string OperationId,
-        IReadOnlyList<string> Responses,
+        IReadOnlyList<string> HandlerResponses,
         string? RequestSchemaReference = null,
         IReadOnlyList<string>? ParameterValues = null,
         string RequestMediaType = "application/json")
     {
+        // The independently listed company surface also admits the middleware's lifecycle refusals.
+        // Keep every handler media (including Finance's CommandResult JSON) in the same status response.
+        public IReadOnlyList<string> Responses
+        {
+            get
+            {
+                if (!HasCompanyLifecycleRefusals(OperationId)) return HandlerResponses;
+                var responses = HandlerResponses.ToList();
+                foreach (var statusCode in new[] { "409", "503" })
+                {
+                    var prefix = $"{statusCode}:";
+                    var mediaTypes = HandlerResponses
+                        .Where(response => response.StartsWith(prefix, StringComparison.Ordinal))
+                        .SelectMany(response => response[prefix.Length..].Split(',', StringSplitOptions.RemoveEmptyEntries))
+                        .Append("application/problem+json")
+                        .Distinct(StringComparer.Ordinal)
+                        .Order(StringComparer.Ordinal);
+                    responses.RemoveAll(response => response.StartsWith(prefix, StringComparison.Ordinal));
+                    responses.Add($"{prefix}{string.Join(',', mediaTypes)}");
+                }
+                return responses;
+            }
+        }
+
         public IReadOnlyList<string> Parameters { get; } = ParameterValues ?? [];
     }
 
