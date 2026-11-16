@@ -672,3 +672,29 @@ internal sealed class InventoryTransferLossDecisionRow : IInventoryTenantRow
     public string DecidedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// KLN-D22: the immutable link of one reverse transfer (a new transfer in the opposite direction) to the accepted
+/// transfer it undoes, with the mandatory reason. One link per reverse transfer.
+/// </summary>
+internal sealed class InventoryTransferReversalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid OriginalTransferId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>KLN-D22: one reverse transfer line and the accepted original line it brings back. Immutable.</summary>
+internal sealed class InventoryTransferReversalLineRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public Guid OriginalTransferId { get; set; }
+    public Guid OriginalLineId { get; set; }
+}

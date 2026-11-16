@@ -586,6 +586,28 @@ Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
   setting, and the disposition snapshot bucket of a cancellation (counted as other inbound kg today). The real
   Settings and Logistics/e-İrsaliye producers are those owners' integration work.
 
+### STK-S7 — reverse transfer of an accepted transfer (KLN-D22)
+
+- **Rule:** an accepted transfer is never cancelled. `POST /api/v1/inventory/transfers/{transferId}/reverse` plans a NEW
+  transfer from the original destination (location and custodian) back to the original source, under
+  `inventory.stock-transfer.write` (no new permission name). The reason (max 500, no control characters) and the link to
+  the original transfer and to each accepted original line are mandatory; `inventory.TransferReversals` and
+  `inventory.TransferReversalLines` hold that link. The reverse transfer moves stock only through the ordinary dispatch
+  and acceptance commands; planning writes no balance, movement or average cost row.
+- **Refusals:** original not PartiallyAccepted/Accepted/Closed → 409 `inventory_transfer_reverse_original_not_accepted`;
+  an original line that was not accepted → 409 `_line_not_accepted`; a receipt excess still waiting for its decision →
+  409 `_overage_pending`; a line already being brought back by a dispatched, not cancelled reverse transfer → 409
+  `_line_already_reversed` (an undispatched reverse plan is inert and does not block); missing reason → 422
+  `_reason_required`; the original source no longer an active destination → 422 `inventory_transfer_destination_*`.
+- **Idempotency:** command row `inventory.transfer.reverse.v1`; the same key or the same reverse transfer id with the
+  same payload replays the stored result, a different payload is 409 `inventory_transfer_idempotency_conflict`. Audit
+  `Inventory.Transfer` (Reverse, `inventory.transfer.reverse-planned.v1`).
+- **Read:** `GET /api/v1/inventory/transfers/{transferId}/reversal-facts` (balances read) answers the link this transfer
+  reverses and the reverse transfers that point at it, with their status.
+- **Migration:** `AddInventoryTransferReversals` creates the two link tables. Its `Down` refuses (THROW 51722) while any
+  link row exists, then drops (forward fix).
+- **Not covered:** returning a pending label by reverse transfer (KLN-D23 (2)(b)).
+
 ## Movement kinds and rollback signal (reference)
 
 `StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 11`):

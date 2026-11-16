@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -1453,6 +1456,85 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_TransferReceipts_State", "[LabelVersionAfterReceipt] >= 3");
 
                             t.HasCheckConstraint("CK_TransferReceipts_Text", "LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReversalLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OriginalLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OriginalTransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "TransferId", "LineId");
+
+                    b.HasIndex("CompanyId", "OriginalTransferId", "OriginalLineId");
+
+                    b.HasIndex("CompanyId", "TransferId", "OriginalLineId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "TransferId", "OriginalTransferId");
+
+                    b.ToTable("TransferReversalLines", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferReversalLines_Identity", "[OriginalLineId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalTransferId] <> [TransferId]");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReversalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("OriginalTransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "TransferId");
+
+                    b.HasIndex("CompanyId", "OriginalTransferId");
+
+                    b.ToTable("TransferReversals", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferReversals_Identity", "[OriginalTransferId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalTransferId] <> [TransferId]");
+
+                            t.HasCheckConstraint("CK_TransferReversals_Text", "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
                 });
 
@@ -2752,6 +2834,45 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferAcceptanceRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "TransferId", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReversalLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferAcceptanceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OriginalTransferId", "OriginalLineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReversalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId", "OriginalTransferId")
+                        .HasPrincipalKey("CompanyId", "TransferId", "OriginalTransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReversalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OriginalTransferId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

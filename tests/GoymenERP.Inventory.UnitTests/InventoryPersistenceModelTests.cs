@@ -34,6 +34,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(InventoryTransferReceiptRow), typeof(InventoryTransferOverageDecisionRow),
             typeof(InventoryTransferLossRequestRow), typeof(InventoryTransferLossDecisionRow),
             typeof(FutureSupplyConversionRow),
+            typeof(InventoryTransferReversalRow), typeof(InventoryTransferReversalLineRow),
         ];
 
     [Fact]
@@ -200,7 +201,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryFutureSupplyAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
-        Assert.Equal("AddInventorySupplierReturnExit", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventorySupplierReturnExit", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryTransferReversals", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -725,6 +728,68 @@ public sealed class InventoryPersistenceModelTests
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);
         Assert.Equal("[Kind] BETWEEN 1 AND 14", narrowed.Sql);
+    }
+
+    [Fact]
+    public void The_transfer_reversal_link_carries_the_reviewed_checks_keys_and_indexes_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferReversals();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var reversals = model.FindEntityType(typeof(InventoryTransferReversalRow))!;
+        var lines = model.FindEntityType(typeof(InventoryTransferReversalLineRow))!;
+
+        Assert.Equal(("TransferReversals", "TransferReversalLines"), (reversals.GetTableName(), lines.GetTableName()));
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["CK_TransferReversals_Identity"] = InventoryDbContext.TransferReversalIdentityCheck,
+                ["CK_TransferReversals_Text"] = InventoryDbContext.TransferReversalTextCheck,
+            },
+            reversals.GetCheckConstraints().ToDictionary(check => check.Name!, check => (string?)check.Sql));
+        Assert.Equal(InventoryDbContext.TransferReversalLineIdentityCheck,
+            Assert.Single(lines.GetCheckConstraints(), check => check.Name == "CK_TransferReversalLines_Identity").Sql);
+        Assert.Equal(new[] { "CompanyId", "TransferId" },
+            reversals.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(new[] { "CompanyId", "TransferId", "LineId" },
+            lines.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(GoymenERP.Modules.Inventory.Application.InventoryTransferReverseApiV1.MaximumReasonLength,
+            reversals.FindProperty(nameof(InventoryTransferReversalRow.Reason))!.GetMaxLength());
+        Assert.Contains(reversals.GetIndexes(), index => !index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OriginalTransferId"]));
+        // One reverse transfer brings one original line back at most once.
+        Assert.Contains(lines.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "TransferId", "OriginalLineId"]));
+        Assert.Contains(lines.GetIndexes(), index => !index.IsUnique
+            && index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "OriginalTransferId", "OriginalLineId"]));
+
+        // The reverse transfer is a real transfer of the same company, and so is the original.
+        Assert.Contains(reversals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Contains(reversals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OriginalTransferId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        // A reverse line is a line of its reverse transfer, belongs to that link's original, and names an ACCEPTED line.
+        Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLineRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId", "LineId"]));
+        Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferReversalRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "TransferId", "OriginalTransferId"]));
+        Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferAcceptanceRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "OriginalTransferId", "OriginalLineId"])
+            && key.PrincipalKey.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "TransferId", "LineId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51722", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferReversals]", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]

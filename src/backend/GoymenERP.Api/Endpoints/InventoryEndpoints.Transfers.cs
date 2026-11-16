@@ -200,6 +200,7 @@ public static partial class InventoryEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapInventoryTransferReceiptEndpoints(endpoints);
+        MapInventoryTransferReverseEndpoints(endpoints);
     }
 
     /// <summary>
