@@ -96,6 +96,8 @@ public sealed partial class PurchasingService
             request.LocationId, request.OccurredAtUtc, status, expected, received, outcome, policy.KgTolerancePercent,
             request.VarianceAcknowledged, labels);
 
+        // KLN-D94/KLN-D110: the future supply allocations Inventory released while posting the labels (only a posting has any).
+        IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> releases = [];
         try
         {
             StoredPurchaseGoodsReceiptBatch saved;
@@ -109,12 +111,12 @@ public sealed partial class PurchasingService
             {
                 saved = await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
                 {
-                    await PostBatchLabelsAsync(scope, permission, participants, source, draft, source.PurchaseOrderVersion, envelope, token);
+                    releases = await PostBatchLabelsAsync(scope, permission, participants, source, draft, source.PurchaseOrderVersion, envelope, token);
                     return await batches.SaveNewAsync(draft, envelope, requestHash, command, token);
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
-            return new(BatchView(saved), IsReplay: false, envelope.CorrelationId);
+            return new(BatchView(saved), IsReplay: false, envelope.CorrelationId) { FutureSupplyReleases = releases };
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
@@ -265,6 +267,8 @@ public sealed partial class PurchasingService
             throw new PurchasingServiceException(422, exception.Code, [new("reason", exception.Code)]);
         }
 
+        // KLN-D94/KLN-D110: the future supply allocations Inventory released while posting the labels (only a posting has any).
+        IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> releases = [];
         try
         {
             StoredPurchaseGoodsReceiptBatch saved;
@@ -279,12 +283,12 @@ public sealed partial class PurchasingService
                 var source = await ApprovalSourceAsync(scope, permission, stored, cancellationToken);
                 saved = await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
                 {
-                    await PostBatchLabelsAsync(scope, permission, participants, source, stored.Batch, source.PurchaseOrderVersion, envelope, token);
+                    releases = await PostBatchLabelsAsync(scope, permission, participants, source, stored.Batch, source.PurchaseOrderVersion, envelope, token);
                     return await batches.SaveDecisionAsync(orderId, batch, expectedVersion, envelope, requestHash, command, token);
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
-            return new(BatchView(saved), IsReplay: false, envelope.CorrelationId);
+            return new(BatchView(saved), IsReplay: false, envelope.CorrelationId) { FutureSupplyReleases = releases };
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
@@ -340,11 +344,12 @@ public sealed partial class PurchasingService
     /// single transaction. Each label carries a derived idempotency key (batch + line number), so the acceptance and stock rows of
     /// one label never collide with another label's; the order version chains from one label to the next.
     /// </summary>
-    private async Task PostBatchLabelsAsync(Scope scope, string? permission, IPurchaseGoodsReceiptBatchParticipantsV1 participants,
-        PurchaseReceiptSourceV1 source, PurchaseGoodsReceiptBatchDraft batch, string startOrderVersion, PurchasingWriteEnvelope envelope,
-        CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>> PostBatchLabelsAsync(Scope scope, string? permission,
+        IPurchaseGoodsReceiptBatchParticipantsV1 participants, PurchaseReceiptSourceV1 source, PurchaseGoodsReceiptBatchDraft batch,
+        string startOrderVersion, PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
     {
         var orderVersion = startOrderVersion;
+        var releases = new List<PurchaseReceiptFutureSupplyReleaseV1>();
         for (var index = 0; index < batch.Labels.Count; index++)
         {
             var label = batch.Labels[index];
@@ -393,6 +398,16 @@ public sealed partial class PurchasingService
                     throw ReceiptSourceInvalid();
                 }
 
+                // KLN-D94 (same rule as the single receipt path): a label whose acceptance could not be linked to a future supply
+                // allocation releases that allocation's whole remainder. The list is validated against the same code list
+                // (PurchaseReceiptFutureSupplyReleaseCodesV1.All) and an allocation can be released at most once per batch; anything
+                // else is an inconsistent answer and the whole batch fails closed rather than hiding a dropped Sales reservation.
+                if (!PurchaseGoodsReceiptBatchFutureSupplyReleasesV1.TryAppend(releases,
+                        RequireFutureSupplyReleases(inventory.FutureSupplyReleases)))
+                {
+                    throw ReceiptSourceInvalid();
+                }
+
                 orderVersion = purchase.PurchaseOrderVersion;
             }
             catch (PurchaseAcceptanceParticipantException exception)
@@ -400,6 +415,8 @@ public sealed partial class PurchasingService
                 throw new PurchasingServiceException(exception.StatusCode, exception.Code, [new(field, exception.Code)]);
             }
         }
+
+        return releases;
     }
 
     /// <summary>The idempotency key of one label's acceptance/stock rows: stable per batch and line, at most 48 characters.</summary>

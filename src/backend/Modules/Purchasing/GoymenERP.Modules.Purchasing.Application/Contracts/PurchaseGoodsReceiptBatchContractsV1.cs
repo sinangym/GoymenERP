@@ -36,7 +36,18 @@ public sealed record PurchaseGoodsReceiptBatchViewV1(
     bool VarianceAcknowledged, Guid LocationId, DateTimeOffset OccurredAtUtc, string PreparedBy, DateTimeOffset PreparedAtUtc,
     string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason, IReadOnlyList<PurchaseGoodsReceiptBatchLabelViewV1> Labels);
 
-public sealed record PurchaseGoodsReceiptBatchResponseV1(PurchaseGoodsReceiptBatchViewV1 Batch, bool IsReplay, string OriginalCorrelationId);
+public sealed record PurchaseGoodsReceiptBatchResponseV1(PurchaseGoodsReceiptBatchViewV1 Batch, bool IsReplay, string OriginalCorrelationId)
+{
+    /// <summary>
+    /// KLN-D94 (ALC-SC34): future supply allocations of the received line that a posted label could not link and that Inventory
+    /// therefore released in full (<c>acceptance-link-failed</c>), collected over every label of the batch. Same item and code
+    /// list as the single receipt (<see cref="PurchaseReceiptFutureSupplyReleaseCodesV1.All"/>). The receipt stands; the list only
+    /// tells the receiving user which Sales reservations were dropped. Empty when nothing was released, for a batch that waits
+    /// for approval, for a rejection and for a replay (the batch row does not store the list; Inventory's audit and
+    /// <c>inventory.future-allocation.released.v1</c> events stay the durable record).
+    /// </summary>
+    public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
+}
 public sealed record PurchaseGoodsReceiptBatchDetailV1(PurchaseGoodsReceiptBatchViewV1 Batch);
 public sealed record PurchaseGoodsReceiptBatchPageV1(IReadOnlyList<PurchaseGoodsReceiptBatchViewV1> Items, bool SearchWindowFull);
 
@@ -189,6 +200,28 @@ public sealed record StoredPurchaseGoodsReceiptBatch(
 
 /// <summary>A same-key attempt already stored: the batch it recorded, or its terminal refusal.</summary>
 public sealed record PurchaseGoodsReceiptBatchReplay(Guid? BatchId, PurchasingTerminalRefusal? Refusal, string OriginalCorrelationId);
+
+/// <summary>
+/// KLN-D94 (ALC-SC34): the batch answer collects each posted label's released future supply allocations in label order. An
+/// allocation is released at most once (a released allocation is no longer Active for a later label), so the same allocation
+/// arriving twice is an inconsistent answer: <see cref="TryAppend"/> reports it and the caller fails the whole batch closed.
+/// </summary>
+public static class PurchaseGoodsReceiptBatchFutureSupplyReleasesV1
+{
+    public static bool TryAppend(List<PurchaseReceiptFutureSupplyReleaseV1> batch, IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> label)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(label);
+        var seen = new HashSet<Guid>(batch.Select(release => release.FutureAllocationId));
+        if (label.Any(release => release is null || !seen.Add(release.FutureAllocationId)))
+        {
+            return false;
+        }
+
+        batch.AddRange(label);
+        return true;
+    }
+}
 
 /// <summary>
 /// The bulk receipt's own records (batch, labels, attempts, audit). Every write is ONE SaveChanges: the batch change, its attempt and its
