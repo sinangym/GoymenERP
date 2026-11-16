@@ -56,7 +56,10 @@ public sealed record ManufacturingScrapCostDistributionSourceReadV1(
     ManufacturingScrapCostDistributionSourceStatusV1 Status,
     Guid CompanyId,
     Guid OrderId,
-    ProductionScrapCostDistributionInput? Input);
+    ProductionScrapCostDistributionInput? Input)
+{
+    public ManufacturingCostInputProvenanceV1? Provenance { get; init; }
+}
 
 public enum ManufacturingScrapCostDistributionStatusV1
 {
