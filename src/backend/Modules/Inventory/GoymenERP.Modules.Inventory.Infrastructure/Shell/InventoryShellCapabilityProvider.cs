@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
+    // 1.9 / STK-S8: source-only cancel control remains unavailable until its real departure/Settings owners are wired.
     // 1.8 / STK-S18: future supply allocation read route and separately granted write control; no grant is added.
     public const string FutureAllocationReadCapabilityId = InventoryPermissionManifestV1.FutureAllocationRead;
     public const string FutureAllocationWriteCapabilityId = InventoryPermissionManifestV1.FutureAllocationWrite;
@@ -22,6 +23,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
     public const string StockPositionsScreenId = "ST-01";
     public const string PhysicalAllocationCapabilityId = ErpPermissions.InventoryPhysicalAllocationWrite;
+    public const string TransferCancelCapabilityId = ErpPermissions.InventoryStockTransferCancel;
 
     /// <summary>
     /// R19 split/merge: a CONTROL of the label detail reached from ST-01 (no route of its own). It keeps the
@@ -86,6 +88,21 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             RequiredPermissions = [InventoryPermissionManifestV1.FutureAllocationRead, InventoryPermissionManifestV1.FutureAllocationWrite],
         },
         stockPositions,
+        stockPositions with
+        {
+            CapabilityId = TransferCancelCapabilityId,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions =
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
+                ErpPermissions.InventoryStockTransferCancel,
+            ],
+            // Both sourceScaleSetting and dispatchCancelGate lack real owner registrations. A working React
+            // control or an existing command permission does not prove an executable cancellation workflow.
+            ImplementationAvailable = false,
+        },
         stockPositions with
         {
             CapabilityId = PhysicalAllocationCapabilityId,

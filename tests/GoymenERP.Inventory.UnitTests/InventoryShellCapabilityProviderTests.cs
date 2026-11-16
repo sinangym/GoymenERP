@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(11, declarations.Count);
+        Assert.Equal(12, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -75,12 +75,36 @@ public sealed class InventoryShellCapabilityProviderTests
                 || item.ParentCapabilityId == InventoryShellCapabilityProvider.StockPositionsCapabilityId)
             .ToArray();
 
-        Assert.Equal(8, declarations.Length);
+        Assert.Equal(9, declarations.Length);
         Assert.All(declarations, declaration =>
             Assert.Contains(ErpPermissions.ProductOperationalSelectionRead, declaration.RequiredPermissions));
         var openingStock = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
         Assert.Equal([ErpPermissions.InventoryOpeningStockRecord], openingStock.RequiredPermissions);
+    }
+
+    [Fact]
+    public void Transfer_cancel_control_keeps_the_existing_permission_and_fails_closed_without_real_owner_gate()
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            item => item.CapabilityId == InventoryShellCapabilityProvider.TransferCancelCapabilityId);
+
+        Assert.Equal("inventory.stock-transfer.cancel", declaration.CapabilityId);
+        Assert.Equal(InventoryShellCapabilityProvider.StockPositionsCapabilityId, declaration.ParentCapabilityId);
+        Assert.Equal("inventory.stock-positions", declaration.RouteId);
+        Assert.Equal("/stok/pozisyonlar", declaration.RoutePath);
+        Assert.Equal("ST-01", declaration.ScreenId);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.Equal(
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
+                ErpPermissions.InventoryStockTransferCancel,
+            ],
+            declaration.RequiredPermissions);
+        Assert.False(declaration.ImplementationAvailable);
     }
 
     [Fact]
