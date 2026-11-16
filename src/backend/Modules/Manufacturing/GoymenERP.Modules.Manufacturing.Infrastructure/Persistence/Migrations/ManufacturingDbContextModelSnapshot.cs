@@ -379,6 +379,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<long>("OrderVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("ApprovalOrderVersion")
                         .HasColumnType("bigint");
 
@@ -418,9 +421,6 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(64)");
 
-                    b.Property<long>("OrderVersion")
-                        .HasColumnType("bigint");
-
                     b.Property<Guid>("PolicyId")
                         .HasColumnType("uniqueidentifier");
 
@@ -441,7 +441,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("SelectedForDate")
                         .HasColumnType("date");
 
-                    b.HasKey("CompanyId", "OrderId");
+                    b.HasKey("CompanyId", "OrderId", "OrderVersion");
 
                     b.ToTable("OrderClosureDecisions", "manufacturing", t =>
                         {
@@ -506,6 +506,53 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_OrderInputs_Roll", "[ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_OrderInputs_Sequence", "[Sequence] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderReopeningRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ReopenedOrderVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ClosedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ClosedOrderVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("ReopenedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ReopenedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "OrderId", "ReopenedOrderVersion");
+
+                    b.HasIndex("CompanyId", "OrderId", "ClosedOrderVersion")
+                        .IsUnique();
+
+                    b.ToTable("OrderReopenings", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderReopenings_Transition", "[ClosedOrderVersion] >= 2 AND [ReopenedOrderVersion] = [ClosedOrderVersion] + 1 AND [ClosedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ReopenedByUserId] <> '00000000-0000-0000-0000-000000000000' AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0");
                         });
                 });
 
@@ -1866,6 +1913,16 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderInputRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderReopeningRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
                         .WithMany()

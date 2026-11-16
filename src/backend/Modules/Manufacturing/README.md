@@ -497,3 +497,23 @@ Migration `20261116210842_AddManufacturingManualQueues` was generated with `dotn
 company-filtered `WorkCenterQueueVersions` and `WorkCenterQueueEntries` with composite owner foreign keys and unique
 sequence/member constraints. Up is DDL only. Down first refuses with **THROW 51946** while either table has history;
 an empty store may roll back. Unit, real-SQL/HTTP and frontend acceptance sources are written; runtime is **NOT_RUN**.
+
+### URT-S8 reasoned reopening and close history (URT-D32/D36/D56/D77/D81)
+
+`POST /api/v1/manufacturing/orders/{orderId}/reopening` requires orders read and the separately registered
+`manufacturing.orders.reopen` permission, expected order version, reason and idempotency key. It asks Accounting's
+existing period-status port for the close's Europe/Istanbul business day and rechecks the period and captured authority
+immediately before staging. Missing, closed, unreadable and denied period outcomes remain distinct. URT-D81 permits
+legacy output-above-input orders to enter this same controlled reopening path before an approved weighing correction.
+
+Every reopen appends its prior close header and reasoned reopening; a subsequent close adds another closure decision
+instead of replacing the first. Current corrected facts are not used to re-evaluate an historical close. The store
+requires the Inventory-owned shared transaction so reopening and the prior cost-generation reversal cannot split.
+The shell control remains staged until the actual Inventory generation participant is composed; no missing cost or
+unstamped movement is converted into a successful zero or today's average. The frontend freezes an ambiguous request,
+including reason, version and key, across reload and repeats only that exact request.
+
+Migration `20261116214107_AddManufacturingOrderReopenings` was generated with `dotnet ef`. It adds company-filtered,
+append-only `OrderReopenings` and expands the closure-decision key by `OrderVersion`. Up is DDL only. Down's first
+operation refuses with **THROW 51951** if reopening history or multiple close generations would be lost; an empty
+history with a single legacy close per order remains reversible. Registration adds no grant, role or Critical flag.

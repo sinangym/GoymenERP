@@ -148,6 +148,7 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingOrderCancellation", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingPlanPriorities", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingManualQueues", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingOrderReopenings", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

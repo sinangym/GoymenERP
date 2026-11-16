@@ -1,12 +1,39 @@
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task The_reopening_Down_guard_passes_legacy_closed_orders_and_refuses_before_losing_reopening_history()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddManufacturingOrderReopenings().DownOperations[0]).Sql;
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
+        var (_, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var scope = run.Store(CompanyA))
+            await scope.Orders.CloseOrderAsync(orderId, 1, run.Actor, At, Metadata(run));
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
+        await using (var scope = run.Store(CompanyA))
+        {
+            await using var transaction = await scope.Context.Database.BeginTransactionAsync();
+            await scope.Corrections.ReopenOrderAsync(orderId, 2, run.Actor, At.AddMinutes(1), "Synthetic protected history",
+                Metadata(run), (_, _) => Task.FromResult<ManufacturingApiResult<object>?>(null));
+            await transaction.CommitAsync();
+        }
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));
+        Assert.Equal(51951, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.OrderReopenings"));
+        await using var fresh = run.Store(CompanyA);
+        Assert.Single((await fresh.Orders.FindOrderAsync(orderId))!.Reopenings);
+    }
+
     [SqlServerFact]
     public async Task A_reopening_joins_the_owner_transaction_and_a_rollback_preserves_the_original_closed_header_and_audit()
     {
