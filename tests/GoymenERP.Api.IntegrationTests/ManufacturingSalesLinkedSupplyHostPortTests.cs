@@ -35,6 +35,18 @@ public sealed class ManufacturingSalesLinkedSupplyHostPortTests
     }
 
     [Fact]
+    public async Task A_cancelled_order_is_history_and_never_an_open_cancellation_blocker()
+    {
+        var answer = await new ManufacturingSalesOrderLinkedSupplyReadPort(new FakeRead([
+            Item(order: ProductionOrder, orderStatus: "Cancelled", planStatus: "Approved"),
+        ])).ReadOrderLinkedSupplyAsync(Query());
+        Assert.Equal(SalesCancellationImpactStatusesV1.None, answer.Status);
+        Assert.Empty(answer.OpenItems);
+        var history = Assert.Single(answer.HistoricalItems!);
+        Assert.Equal((ProductionOrder, "Cancelled"), (history.SupplyId, history.Status));
+    }
+
+    [Fact]
     public async Task No_open_plan_or_order_is_None_with_no_item()
     {
         var answer = await new ManufacturingSalesOrderLinkedSupplyReadPort(new FakeRead([])).ReadOrderLinkedSupplyAsync(Query());

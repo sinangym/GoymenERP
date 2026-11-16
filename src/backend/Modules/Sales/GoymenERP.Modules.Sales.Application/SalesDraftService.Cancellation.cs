@@ -548,7 +548,7 @@ public sealed partial class SalesDraftService
 
         var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
         var seen = new HashSet<(Guid, Guid?)>();
-        foreach (var item in answer.OpenItems)
+        foreach (var item in answer.OpenItems.Concat(answer.HistoricalItems ?? []))
         {
             var typeFits = kind == SalesLinkedSupplyKindsV1.Production
                 ? item?.DocumentType is SalesLinkedSupplyDocumentTypesV1.ProductionPlan or SalesLinkedSupplyDocumentTypesV1.ProductionOrder
@@ -564,11 +564,20 @@ public sealed partial class SalesDraftService
             }
         }
 
-        return new(answer.Status, answer.OpenItems);
+        var history = answer.HistoricalItems ?? [];
+        if (history.Any(item => kind != SalesLinkedSupplyKindsV1.Production
+                || item.DocumentType != SalesLinkedSupplyDocumentTypesV1.ProductionOrder || item.Status != "Cancelled")
+            || answer.OpenItems.Any(item => item.Status == "Cancelled"))
+        {
+            return new(SalesCancellationImpactStatusesV1.Unreadable, noItems);
+        }
+
+        return new(answer.Status, answer.OpenItems, [.. history.Select(item => item.SupplyId)]);
     }
 
     /// <summary>One supply kind's validated answer: its status and (for Present) the owner's open items.</summary>
-    private sealed record LinkedSupplyRead(string Status, IReadOnlyList<SalesOrderLinkedSupplyItemV1> OpenItems);
+    private sealed record LinkedSupplyRead(string Status, IReadOnlyList<SalesOrderLinkedSupplyItemV1> OpenItems,
+        IReadOnlyList<Guid>? CancelledOrderIds = null);
 
     /// <summary>
     /// SAT-D219 (EK38): a line with an OPEN linked purchase order or production order is neither removed nor given another

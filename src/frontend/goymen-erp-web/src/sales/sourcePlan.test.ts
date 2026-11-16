@@ -41,6 +41,21 @@ function plan(overrides: Body = {}, lineOverrides: Body = {}): Body {
 }
 
 describe('decodeSourcePlan (API-11)', () => {
+  it('keeps cancelled production history separate from the open supply status', () => {
+    const cancelled = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const body = plan({ linkedSupply: [
+      { kind: 'Production', status: 'None', cancelledOrderIds: [cancelled] },
+      { kind: 'Purchasing', status: 'None', cancelledOrderIds: [] },
+    ] })
+    expect(decodeSourcePlan(body, detail())?.linkedSupply[0]).toEqual({
+      kind: 'Production', status: 'None', cancelledOrderIds: [cancelled],
+    })
+    expect(decodeSourcePlan(plan({ linkedSupply: [
+      { kind: 'Production', status: 'None', cancelledOrderIds: [cancelled, cancelled] },
+      { kind: 'Purchasing', status: 'None' },
+    ] }), detail())).toBeNull()
+  })
+
   it('decodes a plan of exactly the detail and keeps every quantity as text', () => {
     const decoded = decodeSourcePlan(plan(), detail())
     expect(decoded).not.toBeNull()
