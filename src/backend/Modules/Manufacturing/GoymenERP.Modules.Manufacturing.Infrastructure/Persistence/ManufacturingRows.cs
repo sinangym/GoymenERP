@@ -255,6 +255,21 @@ internal sealed class PlanRejectionRow : IManufacturingTenantRow
 }
 
 /// <summary>
+/// F-009 D5 (URT-D35/D39): a minimal re-approval of a plan released by a cancelled order, numbered 1..n per plan; each
+/// names the plan version it produced. Append-only: the write guard admits no column of the table.
+/// </summary>
+internal sealed class PlanReapprovalRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int ReapprovalNo { get; set; }
+    public long PlanVersion { get; set; }
+    public Guid ReapprovedByUserId { get; set; }
+    public DateTimeOffset ReapprovedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// Üretim U3-a (URT-D21, B-01): Manufacturing's copy of the allocation Inventory wrote for one plan input at the plan's
 /// approval, in the same transaction. The label version Inventory returned is what the plan's order and its input issue
 /// use; the allocation identity is what the input issue names. Inventory remains the owner of the allocation's state
@@ -345,6 +360,18 @@ internal sealed class OrderRow : IManufacturingTenantRow
 
     /// <summary>URT-D66 (3): how many times the order's termin was changed on the order (0 = as copied).</summary>
     public long DueDateRevision { get; set; }
+
+    /// <summary>F-009 D5 (URT-D33): who cancelled the order; set only with <c>Status = Cancelled</c>.</summary>
+    public Guid? CancelledByUserId { get; set; }
+
+    /// <summary>F-009 D5 (URT-D33): when the order was cancelled.</summary>
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+
+    /// <summary>F-009 D5 (URT-D33): the cancel reason.</summary>
+    public string? CancellationReason { get; set; }
+
+    /// <summary>F-009 D5 (URT-D34): the plan version the cancel's release produced on the order's plan.</summary>
+    public long? PlanVersionAfterCancel { get; set; }
 
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }

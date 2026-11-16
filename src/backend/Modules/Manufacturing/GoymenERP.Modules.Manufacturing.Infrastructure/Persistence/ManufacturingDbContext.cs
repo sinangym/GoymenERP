@@ -110,6 +110,9 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// <summary>Üretim U3-a: the Inventory allocations written for a plan's inputs at its approval (append-only).</summary>
     internal DbSet<PlanInputAllocationRow> PlanInputAllocations => Set<PlanInputAllocationRow>();
 
+    /// <summary>F-009 D5: the minimal re-approvals of plans released by a cancelled order (append-only).</summary>
+    internal DbSet<PlanReapprovalRow> PlanReapprovals => Set<PlanReapprovalRow>();
+
     /// <summary>Üretim U1-b: the parameter profile captured at plan approval (append-only).</summary>
     internal DbSet<PlanParameterSnapshotRow> PlanParameterSnapshots => Set<PlanParameterSnapshotRow>();
 
@@ -258,6 +261,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanCutLines(modelBuilder);
         ConfigurePlanRevisions(modelBuilder);
         ConfigurePlanRejections(modelBuilder);
+        ConfigurePlanReapprovals(modelBuilder);
         ConfigurePlanInputAllocations(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
@@ -574,6 +578,31 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     }
 
     /// <summary>
+    /// F-009 D5 (URT-D35/D39): a plan's minimal re-approvals, bound by (company, plan) like its rejections; numbered 1..n
+    /// per plan, each at its own plan version.
+    /// </summary>
+    private void ConfigurePlanReapprovals(ModelBuilder modelBuilder)
+    {
+        var reapproval = modelBuilder.Entity<PlanReapprovalRow>();
+        reapproval.ToTable("PlanReapprovals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanReapprovals_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ReapprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ReapprovalNo] >= 1 "
+                + "AND [PlanVersion] >= 3");
+            table.HasCheckConstraint("CK_PlanReapprovals_Text", "LEN([CorrelationId]) > 0");
+        });
+        reapproval.HasKey(x => new { x.CompanyId, x.PlanId, x.ReapprovalNo });
+        reapproval.HasIndex(x => new { x.CompanyId, x.PlanId, x.PlanVersion }).IsUnique();
+        reapproval.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        reapproval.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        reapproval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
     /// Üretim U3-a (URT-D21, B-01): one row per (company, plan, parent roll), written with the plan's approval in the same
     /// transaction as Inventory's allocation. Append-only: the write guard admits no column of the table.
     /// </summary>
@@ -589,7 +618,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanInputAllocations_Values",
                 "[LabelVersionAfter] >= 1 AND [AllocatedKg] > 0 AND [PlanVersion] >= 2");
         });
-        allocation.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
+        // F-009 D5: one generation per approval or re-approval — the plan version names the generation.
+        allocation.HasKey(x => new { x.CompanyId, x.PlanId, x.PlanVersion, x.ParentRollId });
         allocation.HasIndex(x => new { x.CompanyId, x.AllocationId }).IsUnique();
         allocation.Property(x => x.AllocatedKg).HasPrecision(18, 3);
         allocation.HasOne<PlanRow>().WithMany()
@@ -633,12 +663,21 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)");
             table.HasCheckConstraint("CK_Orders_Target",
                 "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
             table.HasCheckConstraint("CK_Orders_Close",
                 "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) "
-                + "OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL)");
+                + "OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL) "
+                + "OR ([Status] = 3 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL)");
+            // F-009 D5 (URT-D33/D34): a cancelled order carries its cancel trace and the plan version its release made.
+            table.HasCheckConstraint("CK_Orders_Cancel",
+                "([Status] = 3 AND [CancelledByUserId] IS NOT NULL "
+                + "AND [CancelledByUserId] <> '00000000-0000-0000-0000-000000000000' AND [CancelledAtUtc] IS NOT NULL "
+                + "AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0 "
+                + "AND [PlanVersionAfterCancel] IS NOT NULL AND [PlanVersionAfterCancel] >= 3) "
+                + "OR ([Status] <> 3 AND [CancelledByUserId] IS NULL AND [CancelledAtUtc] IS NULL "
+                + "AND [CancellationReason] IS NULL AND [PlanVersionAfterCancel] IS NULL)");
             table.HasCheckConstraint("CK_Orders_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Orders_DueDateRevision", OrderDueDateRevisionCheck);
         });
@@ -648,10 +687,12 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.TargetKg).HasPrecision(18, 3);
         entity.Property(x => x.DueDate).HasColumnType("date");
         entity.Property(x => x.DueDateRevision).HasDefaultValue(0L);
+        entity.Property(x => x.CancellationReason).HasMaxLength(ProductionOrder.CancellationReasonMaximumLength);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         // U2-a (URT-D1): one plan opens exactly one order — held by SQL too, so racing writers cannot open two.
-        entity.HasIndex(x => new { x.CompanyId, x.PlanId }).IsUnique();
+        // F-009 D5 (URT-D34): a cancelled order no longer holds its plan; the plan may open one live order again.
+        entity.HasIndex(x => new { x.CompanyId, x.PlanId }).IsUnique().HasFilter("[Status] <> 3");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<PlanRow>().WithMany()

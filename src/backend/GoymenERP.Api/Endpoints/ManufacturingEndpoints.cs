@@ -227,11 +227,33 @@ public static class ManufacturingEndpoints
 
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
     // URT-D70: and "the plan's termin is before the Istanbul business day".
+    // F-009 D5 (URT-D35): and "the plan's order was cancelled; re-approve the plan first".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.PlanOrderExists,
         ManufacturingRuleCodes.DueDateInPast,
+        ManufacturingRuleCodes.PlanReapprovalRequired,
+    ];
+
+    // F-009 D5 (URT-D33/D34): the order cancel's 422 set — the write set plus "the order still has a net effect".
+    private static readonly string[] CancelOrderUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.OrderCancelHasNetEffect,
+    ];
+
+    // F-009 D5 (URT-D35/D39): the re-approval's 422 set — the approval's gate refusals plus a cancelled plan, an order
+    // still open on the plan, no release waiting, the preparer and a changed Settings profile. Its 409 set is the
+    // approval's (the inputs are allocated again in Inventory).
+    private static readonly string[] ReapprovePlanUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanCancelled,
+        ManufacturingRuleCodes.PlanOrderExists,
+        ManufacturingRuleCodes.PlanSelfApproval,
+        ManufacturingRuleCodes.PlanReapprovalNotRequired,
+        ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
     ];
 
     // MFG-PLAN-EDIT: the revision's own 422 set — the plan save's, plus the three revision rules. Declared on the
@@ -364,6 +386,31 @@ public static class ManufacturingEndpoints
             .Accepts<ApprovePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithApprovePlanProblems();
+
+        // F-009 D5 (URT-D35/D39): the minimal Approved→Approved re-approval of a plan released by an order cancel, under the
+        // approval's grant. Settings must be unchanged since the first approval; the inputs are allocated again.
+        group.MapPost("/plans/{planId:guid}/reapproval", async (
+                Guid planId,
+                ReapprovePlanRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ReapprovePlanAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansApprove, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ReapproveManufacturingPlanV1")
+            .Accepts<ReapprovePlanRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ApprovePlanConflictCodes)
+            .ProducesErpUnprocessableEntity(ReapprovePlanUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
         // Üretim U2-a (URT-D2, API-10): instead of approving a Draft, its approver rejects it with a reason, under the
         // approval's own grant. The plan stays a Draft one version on, with the rejection recorded; ADR-011 as the approval.
@@ -659,6 +706,32 @@ public static class ManufacturingEndpoints
             .Accepts<CloseOrderRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
+
+        // F-009 D5 (URT-D33/D34): cancels an open order with no net effect, with a reason, under its own grant
+        // (`manufacturing.orders.cancel`, company-wide, granted to no role). The order is kept as Cancelled; its plan is
+        // released for re-approval and the plan's allocation is released in Inventory in the same transaction.
+        group.MapPost("/orders/{orderId:guid}/cancellation", async (
+                Guid orderId,
+                CancelOrderRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CancelOrderAsync(orderId, request, key,
+                ErpPermissions.ManufacturingOrdersCancel, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersCancel)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CancelManufacturingOrderV1")
+            .Accepts<CancelOrderRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity(CancelOrderUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
         // URT-D66 (3)-(5): changes the open order's termin on the order alone — the plan's termin does not move — under the
         // order edit grant (no termin permission of its own). The order's version does not move; its termin revision does
@@ -1261,6 +1334,8 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.PlanLabelNotUsable,
         ManufacturingRuleCodes.PlanWindingDoesNotFit,
         ManufacturingRuleCodes.OrderClosed,
+        // F-009 D5 (URT-D33): a cancelled order takes no new fact and no close.
+        ManufacturingRuleCodes.OrderCancelled,
         ManufacturingRuleCodes.UnexplainedDifference,
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyInvalid,
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyNotEffective,

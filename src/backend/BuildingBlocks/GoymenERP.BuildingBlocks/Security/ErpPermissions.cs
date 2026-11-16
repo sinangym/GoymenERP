@@ -479,6 +479,16 @@ public static class ErpPermissions
     public const string ManufacturingOrdersWrite = "manufacturing.orders.write";
 
     /// <summary>
+    /// F-009 D5 (URT-D33/D34): cancelling an open production order that left no net effect (every output reversed, every
+    /// issued kilogram returned, no WIP), with a reason; the order is kept as Cancelled, never deleted, and its plan is
+    /// released for re-approval. Its own name because cancelling an order is neither creating, editing nor closing one.
+    /// Registered, not granted: no role and no user receives it here; who cancels an order is a human gate. Company-wide
+    /// only (K-1: the route filters by no work center). Not Critical: no source names the cancel a segregated duty; if one
+    /// does, the flag is a human decision.
+    /// </summary>
+    public const string ManufacturingOrdersCancel = "manufacturing.orders.cancel";
+
+    /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
     /// order — with a reason; the plan is kept, never deleted. Its own name because cancelling a plan is neither writing
     /// nor approving one. Registered, not granted: no role and no user receives it here; the grant is a human gate.
@@ -1580,6 +1590,7 @@ public static class ErpPermissions
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
+            ManufacturingOrdersCancel,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
@@ -1833,6 +1844,7 @@ public static class ErpPermissions
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
+            ManufacturingOrdersCancel,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
