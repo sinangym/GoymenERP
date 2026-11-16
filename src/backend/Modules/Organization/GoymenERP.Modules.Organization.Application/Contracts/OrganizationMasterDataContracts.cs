@@ -81,6 +81,12 @@ public static class OrganizationProblemCodesV1
     /// <summary>422 — KIM-D40: the proposed VKN fails the official last-digit check (refused before approval).</summary>
     public const string CompanyTaxIdCheckDigitInvalid = "organization_company_tax_id_check_digit_invalid";
 
+    /// <summary>409 — KIM-D48: the staged VKN correction is no longer pending (already applied).</summary>
+    public const string CompanyTaxIdCorrectionNotPending = "organization_company_tax_id_correction_not_pending";
+
+    /// <summary>409 — KIM-D48: the company's VKN moved after the correction was staged; it cannot be applied.</summary>
+    public const string CompanyTaxIdCorrectionStale = "organization_company_tax_id_correction_stale";
+
     /// <summary>409 — KIM-S23: the company's version differs from <c>expectedVersion</c>; reload the tax-id view.</summary>
     public const string CompanyTaxIdVersionConflict = "organization_company_tax_id_version_conflict";
 

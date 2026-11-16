@@ -175,6 +175,95 @@ public static partial class OrganizationEndpoints
                 OrganizationProblemCodesV1.CompanyTaxIdIdempotencyConflict)
             .ProducesErpUnprocessableEntity(OrganizationProblemCodesV1.CompanyTaxIdInUse)
             .ProducesErpAuthenticatedProblems();
+
+        MapCompanyTaxIdCorrections(group);
+    }
+
+    /// <summary>
+    /// KIM-D41/KIM-D48: staged VKN corrections. A data fix stages the old and new value; the company's VKN moves only
+    /// when a holder of the existing approve permission applies the row (no new permission name).
+    /// </summary>
+    private static void MapCompanyTaxIdCorrections(RouteGroupBuilder group)
+    {
+        group.MapGet("/company/tax-id/corrections", async (
+                HttpContext httpContext,
+                IOrganizationCompanyTaxIdService service,
+                CancellationToken cancellationToken) =>
+        {
+            httpContext.Response.Headers.CacheControl = "private, no-store";
+            var view = await service.GetCompanyTaxIdCorrectionsAsync(cancellationToken);
+            return view is null
+                ? Results.Problem(statusCode: StatusCodes.Status403Forbidden)
+                : Results.Ok(view);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationContextRead)
+            .WithName("GetOrganizationCompanyTaxIdCorrectionsV1")
+            .Produces<CompanyTaxIdCorrectionsView>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/company/tax-id/corrections/{correctionId:guid}/apply", async (
+                Guid correctionId,
+                ApplyCompanyTaxIdCorrection command,
+                IOrganizationCompanyTaxIdService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (correctionId == Guid.Empty)
+            {
+                return InvalidMasterData("Düzeltme kimliği boş olamaz.");
+            }
+
+            if (command.ExpectedVersion < 1)
+            {
+                return Results.Problem(
+                    title: "Beklenen sürüm gerekli.",
+                    detail: "VKN düzeltmesi için şirket kaydının sıfırdan büyük beklenen sürümü zorunludur.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryReadCommandMetadata(
+                    httpContext,
+                    currentUser,
+                    companyContext,
+                    correlationContext,
+                    out var metadata))
+            {
+                return MissingCommandMetadata();
+            }
+
+            var execution = await service.ApplyCompanyTaxIdCorrectionAsync(
+                correctionId,
+                command,
+                metadata,
+                cancellationToken);
+            WriteReplayHeaders(httpContext, execution);
+            return ToCompanyTaxIdHttpResult(execution.Response);
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationCompanyTaxIdPermissionsV1.Approve)
+            .RequiresNonEmptyGuidPathParameter("correctionId")
+            .WithIdempotencyContract(
+                StatusCodes.Status204NoContent,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .WithName("ApplyOrganizationCompanyTaxIdCorrectionV1")
+            .Accepts<ApplyCompanyTaxIdCorrection>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(
+                OrganizationProblemCodesV1.CompanyTaxIdCorrectionNotPending,
+                OrganizationProblemCodesV1.CompanyTaxIdCorrectionStale,
+                OrganizationProblemCodesV1.CompanyTaxIdVersionConflict,
+                OrganizationProblemCodesV1.CompanyTaxIdIdempotencyConflict)
+            .ProducesErpUnprocessableEntity(OrganizationProblemCodesV1.CompanyTaxIdInUse)
+            .ProducesErpAuthenticatedProblems();
     }
 
     private static IResult MissingCommandMetadata()
@@ -243,6 +332,8 @@ public static partial class OrganizationEndpoints
         CommandResult.TaxIdSelfDecision => OrganizationProblemCodesV1.CompanyTaxIdSelfDecision,
         CommandResult.TaxIdUnchanged => OrganizationProblemCodesV1.CompanyTaxIdUnchanged,
         CommandResult.TaxIdCheckDigitInvalid => OrganizationProblemCodesV1.CompanyTaxIdCheckDigitInvalid,
+        CommandResult.TaxIdCorrectionNotPending => OrganizationProblemCodesV1.CompanyTaxIdCorrectionNotPending,
+        CommandResult.TaxIdCorrectionStale => OrganizationProblemCodesV1.CompanyTaxIdCorrectionStale,
         CommandResult.VersionConflict => OrganizationProblemCodesV1.CompanyTaxIdVersionConflict,
         CommandResult.IdempotencyConflict => OrganizationProblemCodesV1.CompanyTaxIdIdempotencyConflict,
         _ => null,

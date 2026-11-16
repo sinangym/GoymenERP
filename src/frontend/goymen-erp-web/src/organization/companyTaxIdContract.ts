@@ -53,6 +53,8 @@ export const COMPANY_TAX_ID_PROBLEM = {
   checkDigitInvalid: 'organization_company_tax_id_check_digit_invalid',
   versionConflict: 'organization_company_tax_id_version_conflict',
   idempotencyConflict: 'organization_company_tax_id_idempotency_conflict',
+  correctionNotPending: 'organization_company_tax_id_correction_not_pending',
+  correctionStale: 'organization_company_tax_id_correction_stale',
 } as const
 
 export type CompanyTaxIdProblemCode = (typeof COMPANY_TAX_ID_PROBLEM)[keyof typeof COMPANY_TAX_ID_PROBLEM]
@@ -252,4 +254,104 @@ export function decodeTaxIdVersionConflict(raw: unknown): VersionConflict | null
 /** The form's own check; the server refuses the same shapes with a 400. */
 export function isValidVknInput(value: string): boolean {
   return VKN_PATTERN.test(value.trim())
+}
+
+/** KIM-D41/KIM-D48 — the state of a staged VKN correction. */
+export const TAX_ID_CORRECTION_STATUS = { pending: 'pending', applied: 'applied' } as const
+
+export type TaxIdCorrectionStatus = (typeof TAX_ID_CORRECTION_STATUS)[keyof typeof TAX_ID_CORRECTION_STATUS]
+
+/** One staged VKN correction (a migration or another system source staged it; an approver applies it). */
+export interface TaxIdCorrection {
+  readonly id: string
+  /** The system source that staged it; it is the audit actor of the apply (KIM-D41). */
+  readonly source: string
+  readonly stagedVkn: string
+  /** Null clears a placeholder VKN. */
+  readonly correctedVkn: string | null
+  readonly reason: string
+  readonly status: TaxIdCorrectionStatus
+  readonly stagedAtUtc: string
+  readonly appliedBy: string | null
+  readonly appliedAtUtc: string | null
+  /** A pending correction whose staged VKN is still the company's current one; only then it can be applied. */
+  readonly isCurrent: boolean
+}
+
+export interface CompanyTaxIdCorrections {
+  readonly companyId: string
+  readonly companyVersion: number
+  readonly canApply: boolean
+  readonly items: readonly TaxIdCorrection[]
+}
+
+const CORRECTION_KEYS = [
+  'id',
+  'source',
+  'stagedVkn',
+  'correctedVkn',
+  'reason',
+  'status',
+  'stagedAtUtc',
+  'appliedBy',
+  'appliedAtUtc',
+  'isCurrent',
+] as const
+
+const CORRECTIONS_KEYS = ['companyId', 'companyVersion', 'canApply', 'items'] as const
+
+function isCorrectionStatus(value: unknown): value is TaxIdCorrectionStatus {
+  return (
+    typeof value === 'string' &&
+    (Object.values(TAX_ID_CORRECTION_STATUS) as readonly string[]).includes(value)
+  )
+}
+
+export function decodeTaxIdCorrection(raw: unknown): TaxIdCorrection | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, CORRECTION_KEYS)) return null
+  const { id, source, stagedVkn, correctedVkn, reason, status, stagedAtUtc, appliedBy, appliedAtUtc, isCurrent } = raw
+  if (typeof id !== 'string' || !UUID.test(id)) return null
+  if (!isNonEmptyText(source) || !isVkn(stagedVkn)) return null
+  if (correctedVkn !== null && (!isVkn(correctedVkn) || correctedVkn === stagedVkn)) return null
+  if (!isNonEmptyText(reason) || !isCorrectionStatus(status) || !isTimestamp(stagedAtUtc)) return null
+  if (typeof isCurrent !== 'boolean') return null
+  if (status === TAX_ID_CORRECTION_STATUS.pending) {
+    if (appliedBy !== null || appliedAtUtc !== null) return null
+  } else if (!isNonEmptyText(appliedBy) || !isTimestamp(appliedAtUtc) || isCurrent) {
+    // An applied correction carries who applied it and when, and is never "current" again.
+    return null
+  }
+  return {
+    id,
+    source,
+    stagedVkn,
+    correctedVkn,
+    reason,
+    status,
+    stagedAtUtc,
+    appliedBy: appliedBy as string | null,
+    appliedAtUtc: appliedAtUtc as string | null,
+    isCurrent,
+  }
+}
+
+/** The corrections GET answer; it must be the ACTIVE company's and carry at most one pending correction. */
+export function decodeCompanyTaxIdCorrections(
+  raw: unknown,
+  expectedCompanyId: string,
+): CompanyTaxIdCorrections | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, CORRECTIONS_KEYS)) return null
+  const { companyId, companyVersion, canApply, items } = raw
+  if (typeof companyId !== 'string' || !UUID.test(companyId)) return null
+  if (companyId.toLowerCase() !== expectedCompanyId.toLowerCase()) return null
+  if (!isPositiveVersion(companyVersion) || typeof canApply !== 'boolean' || !Array.isArray(items)) return null
+  const decoded: TaxIdCorrection[] = []
+  for (const item of items) {
+    const correction = decodeTaxIdCorrection(item)
+    if (correction === null) return null
+    decoded.push(correction)
+  }
+  if (new Set(decoded.map((x) => x.id.toLowerCase())).size !== decoded.length) return null
+  if (decoded.filter((x) => x.status === TAX_ID_CORRECTION_STATUS.pending).length > 1) return null
+  return { companyId, companyVersion, canApply, items: decoded }
 }

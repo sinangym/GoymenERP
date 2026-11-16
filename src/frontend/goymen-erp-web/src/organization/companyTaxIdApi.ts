@@ -37,6 +37,10 @@ export type TaxIdFailure =
   | { readonly kind: 'tax-id-change-stale' }
   /** 409 — the preparer tried to decide their own request (hazırlayan ≠ onaylayan). */
   | { readonly kind: 'tax-id-self-decision' }
+  /** 409 — KIM-D48: the staged correction was already applied. */
+  | { readonly kind: 'tax-id-correction-not-pending' }
+  /** 409 — KIM-D48: the company's VKN moved after the correction was staged; it can no longer be applied. */
+  | { readonly kind: 'tax-id-correction-stale' }
 
 export type CompanyTaxIdFailure = CommandFailure | TaxIdFailure
 
@@ -49,6 +53,17 @@ export type TaxIdDecisionOutcome =
   | { readonly type: 'decided'; readonly replayed: boolean }
   | { readonly type: 'failed'; readonly failure: CompanyTaxIdFailure; readonly replayed: boolean }
   | { readonly type: 'unknown'; readonly unknown: CommandUnknown }
+
+export type TaxIdCorrectionApplyOutcome =
+  | { readonly type: 'applied'; readonly replayed: boolean }
+  | { readonly type: 'failed'; readonly failure: CompanyTaxIdFailure; readonly replayed: boolean }
+  | { readonly type: 'unknown'; readonly unknown: CommandUnknown }
+
+export interface ApplyTaxIdCorrectionCommand {
+  readonly correctionId: string
+  /** The company version READ from the server. */
+  readonly expectedVersion: number
+}
 
 export interface RequestTaxIdChangeCommand {
   /** The company version READ from the server. Never a predicted one. */
@@ -71,6 +86,15 @@ export const TAX_ID_REQUEST_PATH = '/organization/company/tax-id/change-requests
 
 export function taxIdDecisionPath(requestId: string): string {
   return `${TAX_ID_REQUEST_PATH}/${encodeURIComponent(requestId)}/decision`
+}
+
+export function taxIdCorrectionApplyPath(correctionId: string): string {
+  return `/organization/company/tax-id/corrections/${encodeURIComponent(correctionId)}/apply`
+}
+
+/** The exact apply body: only the company version the approver saw. */
+export function taxIdCorrectionApplyWireBody(command: ApplyTaxIdCorrectionCommand): Record<string, unknown> {
+  return { expectedVersion: command.expectedVersion }
 }
 
 /** The exact request body: nothing the server does not take (no company, no current VKN, no next version). */
@@ -121,6 +145,10 @@ function classify(status: number, body: unknown, replayed: boolean): CompanyTaxI
       return { kind: 'tax-id-change-stale' }
     case COMPANY_TAX_ID_PROBLEM.selfDecision:
       return { kind: 'tax-id-self-decision' }
+    case COMPANY_TAX_ID_PROBLEM.correctionNotPending:
+      return { kind: 'tax-id-correction-not-pending' }
+    case COMPANY_TAX_ID_PROBLEM.correctionStale:
+      return { kind: 'tax-id-correction-stale' }
     default:
       return null
   }
@@ -227,5 +255,29 @@ export async function sendCompanyTaxIdDecision(
   if (sent.type === 'unknown') return sent
   const { response, replayed } = sent
   if (response.status === 204) return { type: 'decided', replayed }
+  return nonSuccess(response, replayed)
+}
+
+/**
+ * KIM-D41/KIM-D48 — applies a staged VKN correction with the caller's key:
+ *   POST /api/v1/organization/company/tax-id/corrections/{id}/apply   {expectedVersion} -> 204
+ * The approver is recorded; the audit actor is the system source that staged it.
+ */
+export async function sendCompanyTaxIdCorrectionApply(
+  companyId: string,
+  idempotencyKey: string,
+  command: ApplyTaxIdCorrectionCommand,
+  signal?: AbortSignal,
+): Promise<TaxIdCorrectionApplyOutcome> {
+  const sent = await post(
+    taxIdCorrectionApplyPath(command.correctionId),
+    companyId,
+    idempotencyKey,
+    taxIdCorrectionApplyWireBody(command),
+    signal,
+  )
+  if (sent.type === 'unknown') return sent
+  const { response, replayed } = sent
+  if (response.status === 204) return { type: 'applied', replayed }
   return nonSuccess(response, replayed)
 }

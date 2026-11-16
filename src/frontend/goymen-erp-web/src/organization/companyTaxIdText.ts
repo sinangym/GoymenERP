@@ -6,7 +6,7 @@
  */
 
 import type { CompanyTaxIdFailure } from './companyTaxIdApi'
-import type { TaxIdChangeStatus } from './companyTaxIdContract'
+import type { TaxIdChangeStatus, TaxIdCorrectionStatus } from './companyTaxIdContract'
 import { COMPANY_TAX_ID_LIMITS } from './companyTaxIdContract'
 import { failureText } from './organizationText'
 
@@ -72,6 +72,27 @@ export const COMPANY_TAX_ID_TEXT = {
   requestedDetail: 'VKN değişiklik talebi bekleyen talep olarak kaydedildi. Şirketin VKN’si onaylanana kadar değişmez.',
   decidedTitle: 'Karar kaydedildi',
   decidedDetail: 'Karar kaydedildi. Aşağıdaki görünüm güncel kayıttan yenilendi.',
+  correctionsHeading: 'Sistem tarafından hazırlanan VKN düzeltmeleri',
+  correctionsLead:
+    'Bir veri taşıma işlemi veya başka bir sistem kaynağı VKN düzeltmesi hazırlayabilir (ör. yer tutucu VKN ' +
+    'işaretlendi). Düzeltme, onay yetkisi olan biri uygulayana kadar şirketin VKN’sini değiştirmez; uygulama ' +
+    'denetim kaydına sistem kaynağı ve onaylayan kişiyle yazılır.',
+  correctionsSubject: 'VKN düzeltmeleri',
+  correctionsEmpty: 'Bu şirket için hazırlanmış VKN düzeltmesi yok.',
+  correctionSource: 'Hazırlayan sistem kaynağı',
+  correctionStagedVkn: 'Hazırlandığı andaki VKN',
+  correctionCorrectedVkn: 'Düzeltilmiş VKN',
+  correctionClears: 'VKN kaldırılır (geçici şirket kaydı)',
+  correctionStagedAt: 'Hazırlanma zamanı',
+  correctionAppliedBy: 'Uygulayan',
+  correctionAppliedAt: 'Uygulanma zamanı',
+  correctionNotCurrent:
+    'Şirketin VKN’si bu düzeltme hazırlandıktan sonra değişti; düzeltme artık uygulanamaz.',
+  correctionNoPermission: 'Düzeltmeyi yalnız VKN onay yetkisi olan bir kişi uygulayabilir.',
+  applyCorrection: 'Düzeltmeyi uygula',
+  correctionAppliedTitle: 'Düzeltme uygulandı',
+  correctionAppliedDetail: 'Düzeltme uygulandı. Aşağıdaki görünüm güncel kayıttan yenilendi.',
+
   replayedTitle: 'Aynı işlem zaten kaydedilmişti',
   replayedDetail:
     'Sunucu bu işlemi daha önce aldığı için tekrar uygulamadı ve önceki sonucunu döndürdü. Güncel durum aşağıdaki ' +
@@ -86,6 +107,17 @@ export function taxIdStatusLabel(status: TaxIdChangeStatus): string {
       return 'Onaylandı'
     case 'rejected':
       return 'Reddedildi'
+    default:
+      return status
+  }
+}
+
+export function taxIdCorrectionStatusLabel(status: TaxIdCorrectionStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'Uygulanmayı bekliyor'
+    case 'applied':
+      return 'Uygulandı'
     default:
       return status
   }
@@ -135,6 +167,18 @@ export function taxIdFailureText(failure: CompanyTaxIdFailure): { title: string;
         title: 'Kendi talebinize karar veremezsiniz',
         detail: 'Talebi hazırlayan kişi onu onaylayamaz veya reddedemez. Kararınız uygulanmadı.',
       }
+    case 'tax-id-correction-not-pending':
+      return {
+        title: 'Düzeltme artık beklemiyor',
+        detail: 'Bu düzeltme başka bir işlemle zaten uygulanmış. İşleminiz tekrar uygulanmadı; güncel kaydı yükleyin.',
+      }
+    case 'tax-id-correction-stale':
+      return {
+        title: 'Düzeltme güncelliğini yitirdi',
+        detail:
+          'Şirketin VKN’si düzeltme hazırlandıktan sonra değişti veya şirket artık VKN’siz olamaz. Düzeltme ' +
+          'uygulanmadı; gerekirse VKN değişiklik talebi hazırlayın.',
+      }
     case 'forbidden':
       return {
         title: 'Yetkiniz yok',
@@ -153,7 +197,7 @@ export function taxIdFailureText(failure: CompanyTaxIdFailure): { title: string;
 
 /** The notice after an accepted command: accepted, or an earlier identical command replayed — never a state. */
 export function taxIdDoneNotice(
-  kind: 'requested' | 'decided',
+  kind: 'requested' | 'decided' | 'corrected',
   replayed: boolean,
 ): { title: string; detail: string; outcome: string } {
   if (replayed) {
@@ -161,6 +205,13 @@ export function taxIdDoneNotice(
       title: COMPANY_TAX_ID_TEXT.replayedTitle,
       detail: COMPANY_TAX_ID_TEXT.replayedDetail,
       outcome: 'replayed',
+    }
+  }
+  if (kind === 'corrected') {
+    return {
+      title: COMPANY_TAX_ID_TEXT.correctionAppliedTitle,
+      detail: COMPANY_TAX_ID_TEXT.correctionAppliedDetail,
+      outcome: 'corrected',
     }
   }
   return kind === 'requested'

@@ -16,31 +16,39 @@
  *  - ONE KEY PER SUBMITTED SNAPSHOT. A definite refusal closes the attempt; an UNKNOWN outcome keeps the key and the
  *    frozen command, so the only ways forward are the same-key resend or re-reading the view.
  *  - Typed work is dirty work: the shell warns before a company switch discards it.
+ *  - KIM-D41/KIM-D48: corrections a system source staged (e.g. a migration marking a placeholder VKN) are listed from
+ *    `GET /organization/company/tax-id/corrections`; an approver applies one. Nothing is applied by just reading.
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchCompanyTaxId } from './api'
+import { fetchCompanyTaxId, fetchCompanyTaxIdCorrections } from './api'
 import type { CommandUnknown } from './commandApi'
 import { ORGANIZATION_CAPABILITY } from './capabilities'
 import {
   COMPANY_TAX_ID_LIMITS,
   TAX_ID_CHANGE_STATUS,
+  TAX_ID_CORRECTION_STATUS,
   TAX_ID_DECISION,
   isValidVknInput,
   type CompanyTaxId,
+  type CompanyTaxIdCorrections,
   type TaxIdChange,
+  type TaxIdCorrection,
   type TaxIdDecision,
 } from './companyTaxIdContract'
 import {
   sendCompanyTaxIdChangeRequest,
+  sendCompanyTaxIdCorrectionApply,
   sendCompanyTaxIdDecision,
+  type ApplyTaxIdCorrectionCommand,
   type CompanyTaxIdFailure,
   type DecideTaxIdChangeCommand,
   type RequestTaxIdChangeCommand,
 } from './companyTaxIdApi'
 import {
   COMPANY_TAX_ID_TEXT,
+  taxIdCorrectionStatusLabel,
   taxIdDoneNotice,
   taxIdFailureText,
   taxIdRetryRefusedText,
@@ -57,6 +65,7 @@ import styles from './CompanyTaxIdPage.module.css'
 
 const REQUEST_DIRTY_SCOPE = 'organization.company.tax-id.request'
 const DECISION_DIRTY_SCOPE = 'organization.company.tax-id.decision'
+const CORRECTION_DIRTY_SCOPE = 'organization.company.tax-id.correction'
 
 export function CompanyTaxIdPage() {
   const shell = useShellState()
@@ -67,7 +76,7 @@ export function CompanyTaxIdPage() {
   )
 }
 
-type Done = { readonly kind: 'requested' | 'decided'; readonly replayed: boolean }
+type Done = { readonly kind: 'requested' | 'decided' | 'corrected'; readonly replayed: boolean }
 
 function CompanyTaxIdScreen({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
@@ -165,6 +174,13 @@ function CompanyTaxIdScreen({ namespace }: { readonly namespace: string | null }
         />
       )}
       {view.lastDecided === null ? null : <LastDecided change={view.lastDecided} />}
+      <CorrectionsSection
+        namespace={namespace}
+        entryGeneration={entryGeneration}
+        companyId={companyId}
+        onCleared={() => setDone(null)}
+        onDone={(replayed) => settled({ kind: 'corrected', replayed })}
+      />
     </Frame>
   )
 }
@@ -753,5 +769,227 @@ function DecisionForm({
         </div>
       )}
     </section>
+  )
+}
+
+/* ---------------------------------------------------------------- staged corrections (KIM-D41/KIM-D48) ---------- */
+
+function CorrectionsSection({
+  namespace,
+  entryGeneration,
+  companyId,
+  onCleared,
+  onDone,
+}: {
+  readonly namespace: string
+  readonly entryGeneration: number
+  readonly companyId: string
+  readonly onCleared: () => void
+  readonly onDone: (replayed: boolean) => Promise<void>
+}) {
+  const headingId = useId()
+  const boundary = useAuthBoundary()
+  const query = useQuery({
+    queryKey: [namespace, entryGeneration, 'organization-company-tax-id-corrections'],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchCompanyTaxIdCorrections(companyId, signal)
+      // Same rule as the VKN card: only 401 is reported; a 403 is the expected answer without a tax-id name.
+      if (outcome.type === 'http' && outcome.status === 401) boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+  const refetch = query.refetch
+  const reload = useCallback(async () => {
+    await refetch()
+  }, [refetch])
+  const applied = useCallback(
+    async (replayed: boolean) => {
+      await refetch()
+      await onDone(replayed)
+    },
+    [onDone, refetch],
+  )
+
+  const state = (
+    query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })
+  ) as RemoteViewState<CompanyTaxIdCorrections>
+
+  return (
+    <section aria-labelledby={headingId} className={styles.page} data-section="tax-id-corrections">
+      <h2 id={headingId} className={styles.subheading}>
+        {COMPANY_TAX_ID_TEXT.correctionsHeading}
+      </h2>
+      <p className={styles.muted}>{COMPANY_TAX_ID_TEXT.correctionsLead}</p>
+      {state.kind !== 'ready' ? (
+        <StateBlock state={state} subject={COMPANY_TAX_ID_TEXT.correctionsSubject} onRetry={() => void reload()} />
+      ) : state.data.items.length === 0 ? (
+        <p className={styles.muted} data-statement="no-corrections">
+          {COMPANY_TAX_ID_TEXT.correctionsEmpty}
+        </p>
+      ) : (
+        state.data.items.map((correction) => (
+          <CorrectionItem
+            key={correction.id}
+            view={state.data}
+            correction={correction}
+            companyId={companyId}
+            onOpen={onCleared}
+            onDone={applied}
+            onReload={reload}
+          />
+        ))
+      )}
+    </section>
+  )
+}
+
+function CorrectionItem({
+  view,
+  correction,
+  companyId,
+  onOpen,
+  onDone,
+  onReload,
+}: {
+  readonly view: CompanyTaxIdCorrections
+  readonly correction: TaxIdCorrection
+  readonly companyId: string
+  readonly onOpen: () => void
+  readonly onDone: (replayed: boolean) => Promise<void>
+  readonly onReload: () => Promise<void>
+}) {
+  const pending = correction.status === TAX_ID_CORRECTION_STATUS.pending
+  return (
+    <div data-correction={correction.id} data-status={correction.status}>
+      <dl className={styles.card}>
+        <div className={styles.field}>
+          <dt>{COMPANY_TAX_ID_TEXT.status}</dt>
+          <dd>
+            {/* The word is the signal; the colour is redundant. */}
+            <span className={pending ? styles.badgePending : styles.badgeApproved}>
+              {taxIdCorrectionStatusLabel(correction.status)}
+            </span>
+          </dd>
+        </div>
+        <div className={styles.field}>
+          <dt>{COMPANY_TAX_ID_TEXT.correctionStagedVkn}</dt>
+          <dd className={styles.vkn}>{correction.stagedVkn}</dd>
+        </div>
+        <div className={styles.field}>
+          <dt>{COMPANY_TAX_ID_TEXT.correctionCorrectedVkn}</dt>
+          <dd className={styles.vkn}>
+            {correction.correctedVkn ?? <span className={styles.muted}>{COMPANY_TAX_ID_TEXT.correctionClears}</span>}
+          </dd>
+        </div>
+        <div className={styles.field}>
+          <dt>{COMPANY_TAX_ID_TEXT.reason}</dt>
+          <dd>{correction.reason}</dd>
+        </div>
+        <div className={styles.field}>
+          <dt>{COMPANY_TAX_ID_TEXT.correctionSource}</dt>
+          <dd>{correction.source}</dd>
+        </div>
+        <div className={styles.field}>
+          <dt>{COMPANY_TAX_ID_TEXT.correctionStagedAt}</dt>
+          <dd>
+            <time dateTime={correction.stagedAtUtc}>{correction.stagedAtUtc}</time>
+          </dd>
+        </div>
+        {pending ? null : (
+          <>
+            <div className={styles.field}>
+              <dt>{COMPANY_TAX_ID_TEXT.correctionAppliedBy}</dt>
+              <dd>{correction.appliedBy ?? COMPANY_TAX_ID_TEXT.none}</dd>
+            </div>
+            <div className={styles.field}>
+              <dt>{COMPANY_TAX_ID_TEXT.correctionAppliedAt}</dt>
+              <dd>
+                {correction.appliedAtUtc === null ? (
+                  COMPANY_TAX_ID_TEXT.none
+                ) : (
+                  <time dateTime={correction.appliedAtUtc}>{correction.appliedAtUtc}</time>
+                )}
+              </dd>
+            </div>
+          </>
+        )}
+      </dl>
+      {!pending ? null : !correction.isCurrent ? (
+        <p className={styles.muted} data-statement="correction-not-current">
+          {COMPANY_TAX_ID_TEXT.correctionNotCurrent}
+        </p>
+      ) : !view.canApply ? (
+        <p className={styles.muted} data-statement="correction-no-permission">
+          {COMPANY_TAX_ID_TEXT.correctionNoPermission}
+        </p>
+      ) : (
+        <CorrectionApply
+          correction={correction}
+          companyVersion={view.companyVersion}
+          companyId={companyId}
+          onOpen={onOpen}
+          onDone={onDone}
+          onReload={onReload}
+        />
+      )}
+    </div>
+  )
+}
+
+function CorrectionApply({
+  correction,
+  companyVersion,
+  companyId,
+  onOpen,
+  onDone,
+  onReload,
+}: {
+  readonly correction: TaxIdCorrection
+  readonly companyVersion: number
+  readonly companyId: string
+  readonly onOpen: () => void
+  readonly onDone: (replayed: boolean) => Promise<void>
+  readonly onReload: () => Promise<void>
+}) {
+  const sendCommand = useCallback(
+    async (key: string, command: ApplyTaxIdCorrectionCommand): Promise<SendResult> => {
+      const outcome = await sendCompanyTaxIdCorrectionApply(companyId, key, command)
+      return outcome.type === 'applied' ? { type: 'done', replayed: outcome.replayed } : outcome
+    },
+    [companyId],
+  )
+  const attempt = useCommandAttempt(CORRECTION_DIRTY_SCOPE, false, sendCommand, onDone)
+  const { phase, busy } = attempt
+  const reloadAfterRefusal = () => {
+    if (phase.kind === 'failed') attempt.closeRefusal()
+    void onReload()
+  }
+  return (
+    <div className={formStyles.section} data-section="tax-id-correction-apply">
+      {phase.kind === 'unknown' ? <p className={formStyles.help}>{COMPANY_TAX_ID_TEXT.frozenHelp}</p> : null}
+      <AttemptNotice
+        phase={phase}
+        noticeRef={attempt.noticeRef}
+        onResend={attempt.resend}
+        onReload={reloadAfterRefusal}
+      />
+      {phase.kind === 'unknown' ? null : (
+        <div className={formStyles.actions}>
+          <button
+            type="button"
+            className={formStyles.primary}
+            disabled={busy}
+            onClick={() => {
+              onOpen()
+              // The company version READ with the list, never a predicted one.
+              attempt.start({ correctionId: correction.id, expectedVersion: companyVersion })
+            }}
+          >
+            {COMPANY_TAX_ID_TEXT.applyCorrection}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
