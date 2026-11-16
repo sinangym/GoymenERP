@@ -41,6 +41,7 @@ export const AUDIT_TEXT = {
   },
   versionArrow: '→',
   noValue: '—',
+  systemWithoutPermission: 'Sistem kurtarma komutu',
 
   details: 'Ayrıntı',
   before: 'Önceki değer',

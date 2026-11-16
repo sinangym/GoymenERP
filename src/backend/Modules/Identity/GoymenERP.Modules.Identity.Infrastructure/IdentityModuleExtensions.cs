@@ -113,6 +113,7 @@ public static class IdentityModuleExtensions
             .Bind(configuration.GetSection(FounderRecoveryOptions.SectionName));
         services.AddScoped<IdentityUserManagementEvaluator>();
         services.AddScoped<IFounderRecoveryCompanyLock, SqlFounderRecoveryCompanyLock>();
+        services.AddScoped<IFounderRecoveryAuditParticipant, FounderRecoveryAuditParticipant>();
         services.AddScoped<IFounderRecoveryService, FounderRecoveryService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();

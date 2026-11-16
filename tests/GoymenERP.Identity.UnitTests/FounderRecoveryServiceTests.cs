@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Bootstrap;
 using GoymenERP.Modules.Identity.Domain.Credentials;
@@ -25,6 +26,49 @@ namespace GoymenERP.Identity.UnitTests;
 public sealed class FounderRecoveryServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 16, 9, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Missing_operator_declaration_refuses_before_reading_a_password_or_changing_the_founder()
+    {
+        using var harness = Harness.Create(founderIsActive: false, companyCount: 1);
+        harness.Console.Declaration = null;
+        var result = await harness.RunAsync(FounderRecoverySubcommand.Reactivate);
+        Assert.Equal(FounderRecoveryStatus.OperatorDeclarationMissing, result.Status);
+        Assert.Equal(0, harness.Console.Reads);
+        Assert.Empty(harness.Audit.Records);
+        harness.AssertOneRefusedEventAndNothingChanged();
+    }
+
+    [Fact]
+    public async Task Reactivation_audits_adminless_and_restored_assignment_companies_through_the_separate_owner_port()
+    {
+        using var harness = Harness.Create(founderIsActive: false, companyCount: 2);
+        harness.AddAssignment(harness.FounderUserId, harness.AdminRoleId, harness.CompanyIds[0]);
+        var result = await harness.RunAsync(FounderRecoverySubcommand.Reactivate);
+        Assert.Equal(FounderRecoveryStatus.Completed, result.Status);
+        Assert.Equal(harness.CompanyIds.Order(), harness.Audit.Records.Select(row => row.CompanyId).Order());
+        Assert.Single(harness.Audit.Records.Single(row => row.CompanyId == harness.CompanyIds[0]).RestoredAssignmentIds);
+        Assert.Empty(harness.Audit.Records.Single(row => row.CompanyId == harness.CompanyIds[1]).RestoredAssignmentIds);
+        Assert.All(harness.Audit.Records, row =>
+        {
+            Assert.Equal(FounderRecoverySystemAuditOperationV1.Reactivate, row.Operation);
+            Assert.Equal(harness.FounderUserId, row.FounderUserId);
+            Assert.Equal("SENTETIK-os-user", row.Operator.OperatingSystemUser);
+        });
+        Assert.Single(harness.Audit.Records.Select(row => row.IdempotencyKey).Distinct());
+    }
+
+    [Fact]
+    public async Task A_company_audit_failure_refuses_before_the_success_security_event()
+    {
+        using var harness = Harness.Create(founderIsActive: false, companyCount: 1);
+        harness.Audit.Fail = true;
+        var result = await harness.RunAsync(FounderRecoverySubcommand.Reactivate);
+        Assert.Equal(FounderRecoveryStatus.AuditRefused, result.Status);
+        Assert.Equal(SecurityEventTypesV1.FounderRecoveryRefused, Assert.Single(harness.Events.Written).EventType);
+        // InMemory cannot prove rollback; the same-transaction SQL fact owns that evidence.
+    }
+
 
     [Fact]
     public async Task A_missing_subcommand_refuses_with_one_refused_event_and_reads_nothing()
@@ -376,6 +420,7 @@ public sealed class FounderRecoveryServiceTests
         public FakePasswordHasher Hasher { get; } = new();
 
         public RecordingSecurityEventWriter Events { get; } = new();
+        public RecordingFounderAudit Audit { get; } = new();
 
         private string? StoredHash { get; set; }
 
@@ -493,7 +538,7 @@ public sealed class FounderRecoveryServiceTests
                 Options.Create(new IdentityBootstrapOptions { AdminRoleCode = adminRoleCode }),
                 Options.Create(new FounderRecoveryOptions { TemporaryPasswordLifetime = temporaryPasswordLifetime }),
                 Lock,
-                new IdentityUserManagementEvaluator(Context));
+                new IdentityUserManagementEvaluator(Context), Audit);
             return service.RunAsync(subcommand, Console, CancellationToken.None);
         }
 
@@ -531,6 +576,8 @@ public sealed class FounderRecoveryServiceTests
 internal sealed class FakeFounderRecoveryConsole : IFounderRecoveryConsole
 {
     public bool IsInteractive { get; set; } = true;
+    public FounderRecoveryOperatorDeclaration? Declaration { get; set; } = new("SENTETIK-os-user", "SENTETIK-machine");
+    public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration() => Declaration;
 
     public string? Password { get; set; }
 
@@ -572,5 +619,17 @@ internal sealed class FakeFounderRecoveryCompanyLock : IFounderRecoveryCompanyLo
     {
         Requested.Add(companyId);
         return Task.FromResult(companyId != BusyCompanyId);
+    }
+}
+
+internal sealed class RecordingFounderAudit : IFounderRecoveryAuditParticipant
+{
+    public List<FounderRecoveryCompanyAuditV1> Records { get; } = [];
+    public bool Fail { get; set; }
+    public Task AppendAsync(IReadOnlyList<FounderRecoveryCompanyAuditV1> records, CancellationToken cancellationToken)
+    {
+        if (Fail) throw new InvalidOperationException("SENTETIK owner failure");
+        Records.AddRange(records);
+        return Task.CompletedTask;
     }
 }

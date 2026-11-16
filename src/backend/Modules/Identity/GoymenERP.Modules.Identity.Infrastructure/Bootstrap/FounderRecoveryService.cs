@@ -3,6 +3,7 @@ using System.Data.Common;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
@@ -31,8 +32,8 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Bootstrap;
 /// The success security event (<c>identity.founder.recovered</c> / <c>identity.founder.password_reset</c>, Platform, no
 /// company) is written fail-closed before the commit. Every refusal, the missing sub-command included, writes exactly
 /// one <c>identity.founder.recovery_refused</c> Platform record after the account transaction is rolled back (fail-open
-/// with alarm). The company Audit rows need the platform Audit contract change (System actor + operator declaration,
-/// spec) and are not written here (reported, as in the bootstrap command).
+/// with alarm). The company Audit rows use the separate typed System contract, join this exact transaction, and
+/// contain the confirmed operator declaration. Audit failure rolls back account and credential changes.
 /// </summary>
 internal sealed class FounderRecoveryService(
     IdentityDbContext dbContext,
@@ -44,7 +45,8 @@ internal sealed class FounderRecoveryService(
     IOptions<IdentityBootstrapOptions> bootstrapOptions,
     IOptions<FounderRecoveryOptions> recoveryOptions,
     IFounderRecoveryCompanyLock companyLock,
-    IdentityUserManagementEvaluator userManagementEvaluator)
+    IdentityUserManagementEvaluator userManagementEvaluator,
+    IFounderRecoveryAuditParticipant recoveryAudit)
     : IFounderRecoveryService
 {
     /// <summary>The system actor token of the command (never an OS user or machine name).</summary>
@@ -127,6 +129,10 @@ internal sealed class FounderRecoveryService(
             return FounderRecoveryResult.Of(FounderRecoveryStatus.NotInteractive);
         }
 
+        var declaration = console.ReadOperatorDeclaration();
+        if (declaration is null || string.IsNullOrWhiteSpace(declaration.OperatingSystemUser) || declaration.OperatingSystemUser.Trim().Length > 256
+            || string.IsNullOrWhiteSpace(declaration.MachineName) || declaration.MachineName.Trim().Length > 256)
+            return FounderRecoveryResult.Of(FounderRecoveryStatus.OperatorDeclarationMissing);
         var password = console.ReadNewPassword() ?? string.Empty;
         var confirmation = console.ReadNewPasswordConfirmation() ?? string.Empty;
         if (!string.Equals(password, confirmation, StringComparison.Ordinal))
@@ -151,13 +157,13 @@ internal sealed class FounderRecoveryService(
                 founder.UserName,
                 databaseServer,
                 databaseCatalog,
-                preRead.Companies)))
+                preRead.Companies, declaration)))
         {
             return FounderRecoveryResult.Of(FounderRecoveryStatus.NotConfirmed);
         }
 
         var passwordHash = passwordHasher.Hash(password);
-        return await WriteAsync(chosen, founder, adminRoleCode, passwordHash, cancellationToken);
+        return await WriteAsync(chosen, founder, adminRoleCode, passwordHash, declaration, Guid.NewGuid().ToString("N"), cancellationToken);
     }
 
     private async Task<PreRead> PreReadAsync(CancellationToken cancellationToken)
@@ -278,6 +284,8 @@ internal sealed class FounderRecoveryService(
         FounderSnapshot confirmed,
         string? adminRoleCode,
         string passwordHash,
+        FounderRecoveryOperatorDeclaration declaration,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -376,6 +384,33 @@ internal sealed class FounderRecoveryService(
             return await RollbackAsync(transaction, FounderRecoveryStatus.ConcurrentChange, cancellationToken);
         }
 
+        try
+        {
+            var restored = subcommand == FounderRecoverySubcommand.Reactivate
+                ? await dbContext.RoleAssignments.AsNoTracking()
+                    .Where(assignment => assignment.UserId == user.Id && assignment.Status == RoleAssignmentStatus.Active
+                        && assignment.ValidFromUtc <= nowUtc && (assignment.ValidUntilUtc == null || assignment.ValidUntilUtc > nowUtc)
+                        && dbContext.Roles.Any(role => role.Id == assignment.RoleId && role.IsActive))
+                    .Select(assignment => new RestoredAssignment(assignment.CompanyId, assignment.Id)).ToArrayAsync(cancellationToken)
+                : [];
+            var auditCompanies = precondition.CompanyIds.Concat(restored.Select(assignment => assignment.CompanyId)).Distinct().Order().ToArray();
+            if (auditCompanies.Any(company => !companyIds.Contains(company))) throw new InvalidOperationException("An effective assignment has no known company.");
+            if (auditCompanies.Length > 0)
+            {
+                var auditRows = auditCompanies.Select(company => new FounderRecoveryCompanyAuditV1(company, user.Id,
+                    subcommand == FounderRecoverySubcommand.Reactivate ? FounderRecoverySystemAuditOperationV1.Reactivate : FounderRecoverySystemAuditOperationV1.ResetPassword,
+                    new(declaration.OperatingSystemUser, declaration.MachineName), precondition.CompanyIds.Order().ToArray(),
+                    restored.Where(assignment => assignment.CompanyId == company).Select(assignment => assignment.AssignmentId).Order().ToArray(),
+                    confirmed.UserVersion, user.Version, nowUtc, correlationContext.CorrelationId, correlationContext.CausationId, idempotencyKey)).ToArray();
+                await recoveryAudit.AppendAsync(auditRows, cancellationToken);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return await RollbackAsync(transaction, FounderRecoveryStatus.AuditRefused, cancellationToken);
+        }
+
         var written = await securityEventWriter.WriteAsync(NewSuccessEvent(successEventType, nowUtc), cancellationToken);
         if (!written.CallerMayContinue)
         {
@@ -463,6 +498,8 @@ internal sealed class FounderRecoveryService(
         await transaction.RollbackAsync(cancellationToken);
         return FounderRecoveryResult.Of(status);
     }
+
+    private sealed record RestoredAssignment(Guid CompanyId, Guid AssignmentId);
 
     private sealed record FounderSnapshot(
         Guid UserId,

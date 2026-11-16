@@ -6,7 +6,7 @@ public sealed partial class AuditEvent
     {
     }
 
-    private AuditEvent(AuditEventData data)
+    private AuditEvent(AuditEventData data, bool founderRecovery = false)
     {
         ArgumentNullException.ThrowIfNull(data.Envelope);
         var envelope = data.Envelope;
@@ -21,8 +21,8 @@ public sealed partial class AuditEvent
         EntityVersionAfter = envelope.EntityVersionAfter;
         ActorType = RequireText(envelope.ActorType, nameof(envelope.ActorType), 32);
         ActorId = RequireText(envelope.ActorId, nameof(envelope.ActorId), 128);
-        PermissionCode = RequireText(
-            envelope.PermissionCode,
+        PermissionCode = founderRecovery ? null : RequireText(
+            envelope.PermissionCode ?? throw new ArgumentException("A normal audit event requires its permission."),
             nameof(envelope.PermissionCode),
             160);
         RoleCodesJson = RequireText(envelope.RoleCodesJson, nameof(envelope.RoleCodesJson), 2000);
@@ -90,7 +90,7 @@ public sealed partial class AuditEvent
 
     public string ActorId { get; private set; } = string.Empty;
 
-    public string PermissionCode { get; private set; } = string.Empty;
+    public string? PermissionCode { get; private set; } = string.Empty;
 
     public string RoleCodesJson { get; private set; } = string.Empty;
 
@@ -228,7 +228,7 @@ public sealed record AuditEventEnvelope(
     long? EntityVersionAfter,
     string ActorType,
     string ActorId,
-    string PermissionCode,
+    string? PermissionCode,
     string RoleCodesJson,
     string BeforeJson,
     string AfterJson,
