@@ -97,6 +97,7 @@ public static partial class InventoryEndpoints
         endpoints.MapInventoryStockScrapEndpoints();
         endpoints.MapInventoryOpeningCostEndpoints();
         MapInventoryTransferEndpoints(endpoints);
+        MapInventoryTransferListEndpoint(endpoints);
         return endpoints;
     }
 
