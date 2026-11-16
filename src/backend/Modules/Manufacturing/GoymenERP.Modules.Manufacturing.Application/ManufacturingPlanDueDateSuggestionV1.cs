@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
 
@@ -22,6 +23,18 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 // working start day (URT-D88), and the work center's optional safety margin (hours and/or days, same profile as the
 // capacity) is added; no capacity is "unavailable", no margin is zero (URT-D89). The margin keys mirror the Settings
 // keys the KIM-SC33-b slice adds; until they exist no profile carries them and the margin is zero.
+//
+// URT-SC33 follow-up (W5):
+// - KIM-SC33-b: the capacity and the safety buffer come from the Settings work center capacity record
+//   (ISettingsWorkCenterCapacityProviderV1: the latest stored version, for a draft and an approved plan alike — the
+//   record is not captured at approval; reversible, reported). No record is capacity_not_configured; a Settings failure
+//   is capacity_source_unavailable. The parameter-profile keys below are no longer read for the suggestion.
+// - URT-D96: a "day" buffer counts WORKING days of the work center calendar. The work center's own buffer applies when
+//   it has one; otherwise the company default buffer — the two are never added. No company default source exists yet
+//   (no Settings port), so the default is zero until one is composed.
+// - URT-D97: the queue order is termin, then priority score, then creation (ProductionWorkCenterQueueOrderV1); a draft
+//   is placed where it would stand by the same key. The priority score is zero until it is stored.
+// - URT-D99: each plan ahead counts its REMAINING kg (ProductionQueueRemainingKgCalculatorV1).
 
 /// <summary>The plan's termin suggestion (contract version <see cref="ManufacturingDueDateSuggestionV1.ContractVersion"/>).
 /// <c>RequiredKg</c>/<c>RequiredWorkingMinutes</c> are this plan's own input kg and working time; the queue fields are the
@@ -57,12 +70,18 @@ public sealed record PlanDueDateSuggestionViewV1(
 /// <summary>Wire names and codes of the termin suggestion (URT-S10).</summary>
 public static class ManufacturingDueDateSuggestionV1
 {
-    /// <summary>Version 2 (URT-SC33): the queue and safety margin fields were added.</summary>
+    /// <summary>Version 2 (URT-SC33): the queue and safety margin fields were added. The W5 follow-up keeps the shape;
+    /// <c>QueuedKg</c> now carries the remaining kg of the plans ahead (URT-D99).</summary>
     public const int ContractVersion = 2;
 
-    /// <summary>The queued plans' input kg and then this plan's input kg over the profile's hourly INPUT capacity, plus
-    /// the safety margin, on the work center calendar, starting now (URT-D86..D89).</summary>
-    public const string MethodCode = "calendar_capacity_queue_from_now";
+    /// <summary>The REMAINING input kg of the plans ordered ahead (termin, priority, creation) and then this plan's input
+    /// kg over the work center's hourly INPUT capacity, plus the safety buffer, on the work center calendar, starting now
+    /// (URT-D86..D89, URT-D96, URT-D97, URT-D99).</summary>
+    public const string MethodCode = "calendar_capacity_remaining_queue_from_now";
+
+    /// <summary>The <see cref="PlanDueDateSuggestionViewV1.CapacitySource"/> of a capacity read from the Settings work
+    /// center capacity record (KIM-SC33-b).</summary>
+    public const string WorkCenterCapacitySource = "WorkCenterCapacity";
 
     /// <summary>
     /// The Settings parameter key of the work center's hourly input capacity. Manufacturing mirrors the Settings key
@@ -92,19 +111,19 @@ public static class ManufacturingDueDateSuggestionV1
     /// <summary>The plan is cancelled; no termin is suggested for it.</summary>
     public const string PlanCancelled = "plan_cancelled";
 
-    /// <summary>The profile (approved snapshot or today's) carries no capacity value, or there is no profile.</summary>
+    /// <summary>Settings holds no capacity record for the plan's work center.</summary>
     public const string CapacityNotConfigured = "capacity_not_configured";
 
-    /// <summary>The capacity value has another unit, is a choice, or is not positive.</summary>
+    /// <summary>The capacity answer is not positive or names another work center or company.</summary>
     public const string CapacityInvalid = "capacity_invalid";
 
-    /// <summary>A safety margin value has another unit, is a choice, is negative, or (days) is not a whole number.</summary>
+    /// <summary>The safety buffer has an unknown unit, is negative, or (days) is not a whole number of working days.</summary>
     public const string SafetyMarginInvalid = "safety_margin_invalid";
 
     /// <summary>No work center queue store is composed, or it could not answer (URT-D86 needs the queue).</summary>
     public const string QueueUnavailable = "queue_unavailable";
 
-    /// <summary>Settings could not be read for a draft's profile.</summary>
+    /// <summary>No capacity provider is composed, or Settings could not answer.</summary>
     public const string CapacitySourceUnavailable = "capacity_source_unavailable";
 
     /// <summary>No calendar port is composed, or Organization failed to answer.</summary>
@@ -211,19 +230,23 @@ public sealed partial class ManufacturingCommandService
             return view with { ReasonCode = ManufacturingDueDateSuggestionV1.PlanCancelled };
         }
 
-        var (capacity, capacityProfile, capacityRefusal) = await ReadDueDateCapacityAsync(plan, cancellationToken);
+        var (capacityRecord, capacityRefusal) = await ReadDueDateCapacityAsync(plan, companyId, cancellationToken);
         view = view with
         {
-            CapacityKgPerHour = capacity is { } value ? Text(value) : null,
-            CapacityProfileVersion = capacityProfile?.ProfileVersion,
-            CapacitySource = capacityProfile?.Source,
+            CapacityKgPerHour = capacityRecord is null ? null : Text(capacityRecord.InputCapacityKgPerHour),
+            CapacityProfileVersion = capacityRecord?.Profile.Version.ToString(CultureInfo.InvariantCulture),
+            CapacitySource = capacityRecord is null ? null : ManufacturingDueDateSuggestionV1.WorkCenterCapacitySource,
         };
-        if (capacityRefusal is not null)
+        if (capacityRefusal is not null || capacityRecord is null)
         {
-            return view with { ReasonCode = capacityRefusal };
+            return view with
+            {
+                ReasonCode = capacityRefusal ?? ManufacturingDueDateSuggestionV1.CapacityNotConfigured,
+            };
         }
 
-        var (margin, marginRefusal) = SafetyMarginOf(capacityProfile);
+        var (margin, marginRefusal) = SafetyBufferOf(capacityRecord.SafetyBufferValue, capacityRecord.SafetyBufferUnit,
+            CompanyDefaultSafetyBuffer());
         if (marginRefusal is not null || margin is null)
         {
             return view with { ReasonCode = marginRefusal ?? ManufacturingDueDateSuggestionV1.SafetyMarginInvalid };
@@ -241,7 +264,7 @@ public sealed partial class ManufacturingCommandService
             return view with { ReasonCode = ManufacturingDueDateSuggestionV1.QueueUnavailable };
         }
 
-        view = view with { QueuedPlanCount = queue.PlanCount, QueuedKg = Text(queue.PlannedInputKg.Value) };
+        view = view with { QueuedPlanCount = queue.PlanCount, QueuedKg = Text(queue.RemainingKg.Value) };
 
         var (calendar, zone, calendarRefusal) = await ReadDueDateCalendarAsync(companyId, plan.WorkCenterId,
             cancellationToken);
@@ -262,9 +285,9 @@ public sealed partial class ManufacturingCommandService
             zone,
             calendar.Shifts.Select(shift => new DueDateCalendarShiftV1(shift.Day, shift.Start, shift.End)).ToArray(),
             calendar.Holidays,
-            queue.PlannedInputKg,
+            queue.RemainingKg,
             required,
-            capacity!.Value,
+            capacityRecord.InputCapacityKgPerHour,
             margin);
         view = view with
         {
@@ -288,102 +311,100 @@ public sealed partial class ManufacturingCommandService
     }
 
     /// <summary>
-    /// The plan's hourly capacity: the approved plan's captured profile, or for a draft the profile in force today. A
-    /// missing value is <see cref="ManufacturingDueDateSuggestionV1.CapacityNotConfigured"/>; another unit, a choice or a
-    /// non-positive number is <see cref="ManufacturingDueDateSuggestionV1.CapacityInvalid"/>; a Settings failure on a
-    /// draft is <see cref="ManufacturingDueDateSuggestionV1.CapacitySourceUnavailable"/>. Nothing is defaulted.
+    /// KIM-SC33-b: the work center's capacity record in force (the latest Settings version). No provider, or a Settings
+    /// failure, is <see cref="ManufacturingDueDateSuggestionV1.CapacitySourceUnavailable"/>; no record is
+    /// <see cref="ManufacturingDueDateSuggestionV1.CapacityNotConfigured"/>; an answer for another company or work center,
+    /// or a non-positive capacity, is <see cref="ManufacturingDueDateSuggestionV1.CapacityInvalid"/>. Cancellation is not
+    /// swallowed. Nothing is defaulted.
     /// </summary>
-    private async Task<(decimal? Capacity, PlanParameterSnapshotV1? Profile, string? Refusal)>
-        ReadDueDateCapacityAsync(ProductionPlan plan, CancellationToken cancellationToken)
+    private async Task<(SettingsWorkCenterCapacityV1? Capacity, string? Refusal)> ReadDueDateCapacityAsync(
+        ProductionPlan plan, Guid companyId, CancellationToken cancellationToken)
     {
-        PlanParameterSnapshotV1? profile;
-        if (plan.ApprovedAtUtc is not null)
+        if (workCenterCapacities is null)
         {
-            profile = plan.ParameterSnapshot;
+            return (null, ManufacturingDueDateSuggestionV1.CapacitySourceUnavailable);
         }
-        else
+
+        SettingsWorkCenterCapacityV1? capacity;
+        try
         {
-            // The strict read (as for an approval): Settings being down is "source unavailable", not "not configured";
-            // a profile that does not exist stays "not configured". Nothing is approved or stored here.
-            var read = await ReadParameterProfileAsync(plan.Process, plan.WorkCenterId, approval: true,
+            capacity = await workCenterCapacities.GetWorkCenterCapacityAsync(companyId, plan.WorkCenterId,
                 cancellationToken);
-            if (read.Refusal is not null)
-            {
-                return (null, null, ManufacturingDueDateSuggestionV1.CapacitySourceUnavailable);
-            }
-
-            profile = read.Snapshot;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return (null, ManufacturingDueDateSuggestionV1.CapacitySourceUnavailable);
         }
 
-        var (capacity, refusal) = CapacityOf(profile);
-        return (capacity, profile, refusal);
-    }
-
-    internal static (decimal? Capacity, string? Refusal) CapacityOf(PlanParameterSnapshotV1? profile)
-    {
-        var value = profile?.Values.FirstOrDefault(candidate => string.Equals(candidate.Key,
-            ManufacturingDueDateSuggestionV1.CapacityParameterKey, StringComparison.Ordinal));
-        if (value is null)
+        if (capacity is null)
         {
             return (null, ManufacturingDueDateSuggestionV1.CapacityNotConfigured);
         }
 
-        return value.Number is { } number && number > 0m
-               && string.Equals(value.Unit, ManufacturingDueDateSuggestionV1.CapacityUnit, StringComparison.Ordinal)
-            ? (number, null)
-            : (null, ManufacturingDueDateSuggestionV1.CapacityInvalid);
+        return capacity.CompanyId != companyId || capacity.WorkCenterId != plan.WorkCenterId
+               || capacity.InputCapacityKgPerHour <= 0m || capacity.Profile is null
+               || capacity.Profile.Version <= 0
+            ? (null, ManufacturingDueDateSuggestionV1.CapacityInvalid)
+            : (capacity, null);
     }
 
     /// <summary>
-    /// URT-D89: the safety margin from the same profile as the capacity. A missing value is zero (the decision: no margin
-    /// is 0); another unit, a choice, a negative number, or a fractional day count is
-    /// <see cref="ManufacturingDueDateSuggestionV1.SafetyMarginInvalid"/>. Too many hours or days for the calculator's
-    /// search horizon is left to the calculator (no working time).
+    /// URT-D96: the company default safety buffer, used only when the work center records none. No Settings source for
+    /// it exists yet, so it is zero (no buffer) until one is composed; it is never added to a work center buffer.
     /// </summary>
-    internal static (DueDateSafetyMarginV1? Margin, string? Refusal) SafetyMarginOf(PlanParameterSnapshotV1? profile)
+    private static (decimal Value, string? Unit) CompanyDefaultSafetyBuffer() => (0m, null);
+
+    /// <summary>
+    /// URT-D89/URT-D96: the safety buffer from the work center record, or — only when the work center records none — the
+    /// company default. Never both. A zero value with no unit is no buffer. <see cref="WorkCenterSafetyBufferUnitsV1.Hours"/>
+    /// is working time; <see cref="WorkCenterSafetyBufferUnitsV1.Days"/> is whole WORKING days of the work center calendar
+    /// (URT-D96). A negative value, an unknown unit, a unit without a value, or a fractional day count is
+    /// <see cref="ManufacturingDueDateSuggestionV1.SafetyMarginInvalid"/> (no rounding is chosen here). Too many hours or
+    /// days for the calculator's search horizon is left to the calculator (no working time).
+    /// </summary>
+    internal static (DueDateSafetyMarginV1? Margin, string? Refusal) SafetyBufferOf(decimal workCenterValue,
+        string? workCenterUnit, (decimal Value, string? Unit) companyDefault)
     {
-        var hours = profile?.Values.FirstOrDefault(candidate => string.Equals(candidate.Key,
-            ManufacturingDueDateSuggestionV1.SafetyMarginHoursParameterKey, StringComparison.Ordinal));
-        var days = profile?.Values.FirstOrDefault(candidate => string.Equals(candidate.Key,
-            ManufacturingDueDateSuggestionV1.SafetyMarginDaysParameterKey, StringComparison.Ordinal));
-        var maximumHours = (decimal)TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerHour;
-
-        var workingTime = TimeSpan.Zero;
-        if (hours is not null)
+        var workCenterHasBuffer = workCenterUnit is not null || workCenterValue != 0m;
+        var (value, unit) = workCenterHasBuffer ? (workCenterValue, workCenterUnit) : companyDefault;
+        if (unit is null)
         {
-            if (hours.Number is not { } number || number < 0m || number > maximumHours
-                || !string.Equals(hours.Unit, ManufacturingDueDateSuggestionV1.SafetyMarginHoursUnit,
-                    StringComparison.Ordinal))
-            {
-                return (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid);
-            }
-
-            workingTime = TimeSpan.FromTicks((long)decimal.Ceiling(number * TimeSpan.TicksPerHour));
+            return value == 0m
+                ? (DueDateSafetyMarginV1.None, null)
+                : (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid);
         }
 
-        var workingDays = 0;
-        if (days is not null)
+        if (value < 0m)
         {
-            if (days.Number is not { } number || number < 0m || number != decimal.Truncate(number)
-                || number > int.MaxValue
-                || !string.Equals(days.Unit, ManufacturingDueDateSuggestionV1.SafetyMarginDaysUnit,
-                    StringComparison.Ordinal))
-            {
-                return (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid);
-            }
-
-            workingDays = (int)number;
+            return (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid);
         }
 
-        return (new DueDateSafetyMarginV1(workingTime, workingDays), null);
+        if (string.Equals(unit, WorkCenterSafetyBufferUnitsV1.Hours, StringComparison.Ordinal))
+        {
+            var maximumHours = (decimal)TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerHour;
+            return value > maximumHours
+                ? (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid)
+                : (new DueDateSafetyMarginV1(TimeSpan.FromTicks((long)decimal.Ceiling(value * TimeSpan.TicksPerHour)), 0),
+                    null);
+        }
+
+        if (string.Equals(unit, WorkCenterSafetyBufferUnitsV1.Days, StringComparison.Ordinal))
+        {
+            return value != decimal.Truncate(value) || value > int.MaxValue
+                ? (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid)
+                : (new DueDateSafetyMarginV1(TimeSpan.Zero, (int)value), null);
+        }
+
+        return (null, ManufacturingDueDateSuggestionV1.SafetyMarginInvalid);
     }
 
     /// <summary>
-    /// URT-D86: the work queued on the plan's work center ahead of it. An approved plan counts only the plans approved
-    /// before it (approvedAtUtc, id); a draft counts every queued plan. No store, or a store failure other than a
-    /// concurrent change (which stays the retryable 503), is null — the suggestion is then unavailable, never "free line".
+    /// URT-D86/URT-D97/URT-D99: the work ordered ahead of the plan on its work center — the queued plans whose
+    /// (termin, priority score, creation) key comes before the plan's own, and their remaining kg. A draft is placed by
+    /// the same key (where it would stand once approved). No store, or a store failure other than a concurrent change
+    /// (which stays the retryable 503), is null — the suggestion is then unavailable, never "free line".
     /// </summary>
-    private async Task<ManufacturingWorkCenterQueue?> ReadDueDateQueueAsync(ProductionPlan plan,
+    private async Task<ProductionQueueAheadV1?> ReadDueDateQueueAsync(ProductionPlan plan,
         CancellationToken cancellationToken)
     {
         if (workCenterQueues is null)
@@ -391,15 +412,19 @@ public sealed partial class ManufacturingCommandService
             return null;
         }
 
-        var key = plan.Status == PlanStatus.Approved && plan.ApprovedAtUtc is { } approvedAt
-            ? new ManufacturingWorkCenterQueueKey(approvedAt, plan.Id)
-            : null;
         try
         {
-            return await workCenterQueues.ReadWorkCenterQueueAsync(plan.WorkCenterId, plan.Id, key,
+            var queue = await workCenterQueues.ReadWorkCenterQueueAsync(plan.WorkCenterId, plan.Id,
                 cancellationToken);
+            return queue.Target.PlanId == plan.Id
+                ? ProductionWorkCenterQueueOrderV1.Ahead(queue.Queued, queue.Target)
+                : null;
         }
         catch (ManufacturingRuleException)
+        {
+            return null;
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code != ManufacturingStoreCodes.ConcurrentChange)
         {
             return null;
         }

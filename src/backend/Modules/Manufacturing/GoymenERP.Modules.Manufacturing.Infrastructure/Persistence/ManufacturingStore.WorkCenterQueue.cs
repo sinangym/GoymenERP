@@ -7,14 +7,15 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 
 /// <summary>
-/// URT-SC33 (URT-D86): the planned work queued on a work center ahead of a plan, for the termin suggestion. Read only,
-/// from this module's own plan, revision, input and order rows of the server-resolved company; nothing is written.
+/// URT-SC33 (URT-D86, URT-D97, URT-D99): the queue of a work center, for the termin suggestion. Read only, from this
+/// module's own plan, revision, input, order, fact and output reversal rows of the server-resolved company; nothing is
+/// written.
 /// The queue rule is <see cref="IManufacturingWorkCenterQueueStore"/>'s (reversible, reported in the slice).
 /// </summary>
 public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueStore
 {
-    public async Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid excludedPlanId,
-        ManufacturingWorkCenterQueueKey? queuedBefore, CancellationToken cancellationToken = default)
+    public async Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid targetPlanId,
+        CancellationToken cancellationToken = default)
     {
         var companyId = RequireResolvedCompany();
         if (workCenterId == Guid.Empty)
@@ -24,31 +25,35 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
 
         const int approved = (int)PlanStatus.Approved;
         const int closed = (int)OrderStatus.Closed;
+        var targetRow = await dbContext.Plans.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.Id == targetPlanId)
+            .Select(row => new { row.Id, row.RequestedDueDate, row.CreatedAtUtc })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var candidates = await dbContext.Plans.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.Status == approved && row.Id != excludedPlanId
+            .Where(row => row.CompanyId == companyId && row.Status == approved && row.Id != targetPlanId
                 && !dbContext.Orders.Any(order =>
                     order.CompanyId == companyId && order.PlanId == row.Id && order.Status == closed))
-            .Select(row => new { row.Id, row.WorkCenterId, row.ApprovedAtUtc, row.Version })
+            .Select(row => new { row.Id, row.WorkCenterId, row.RequestedDueDate, row.CreatedAtUtc, row.Version })
             .ToListAsync(cancellationToken);
-        if (candidates.Any(candidate => candidate.ApprovedAtUtc is null))
-        {
-            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
-                "Onaylı planın onay zamanı yok.");
-        }
 
-        // The queue order key is compared here, in .NET (approval moment, then the Guid's own ordering), so the rule
-        // does not depend on the database's uniqueidentifier sort order.
-        if (queuedBefore is { } key)
-        {
-            candidates = candidates
-                .Where(candidate => candidate.ApprovedAtUtc!.Value < key.ApprovedAtUtc
-                    || (candidate.ApprovedAtUtc.Value == key.ApprovedAtUtc && candidate.Id.CompareTo(key.PlanId) < 0))
-                .ToList();
-        }
+        // URT-D97 (reversible, reported): the termin that orders the queue is the order's termin once the plan has an
+        // order (URT-D66 lets it move there), otherwise the plan's requested termin.
+        var orderPlanIds = candidates.Select(candidate => candidate.Id).Append(targetPlanId).ToArray();
+        var orders = await dbContext.Orders.AsNoTracking()
+            .Where(order => order.CompanyId == companyId && orderPlanIds.Contains(order.PlanId))
+            .Select(order => new { order.Id, order.PlanId, order.DueDate })
+            .ToListAsync(cancellationToken);
+        var targetOrder = orders.SingleOrDefault(order => order.PlanId == targetPlanId);
+
+        // The priority score is zero until it is stored (URT-D103 follow-up): every plan then ties on it.
+        var target = new ProductionQueueEntryV1(targetRow.Id,
+            targetOrder is null ? targetRow.RequestedDueDate : targetOrder.DueDate, 0, targetRow.CreatedAtUtc,
+            Kilograms.Zero, Kilograms.Zero);
 
         if (candidates.Count == 0)
         {
-            return new ManufacturingWorkCenterQueue(0, Kilograms.Zero);
+            return new ManufacturingWorkCenterQueue([], target);
         }
 
         var ids = candidates.Select(candidate => candidate.Id).ToArray();
@@ -73,7 +78,7 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
 
         if (queued.Count == 0)
         {
-            return new ManufacturingWorkCenterQueue(0, Kilograms.Zero);
+            return new ManufacturingWorkCenterQueue([], target);
         }
 
         var created = queued.Where(entry => entry.RevisionNo == 0).Select(entry => entry.PlanId).ToArray();
@@ -94,7 +99,24 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
             })
             .ToListAsync(cancellationToken);
 
-        var total = 0m;
+        // URT-D99 (field choice reversible, reported): the processed kg of a queued plan is the kg declared as output on
+        // its order — every output class, process loss included — net of the output reversals.
+        var queuedIds = queued.Select(entry => entry.PlanId).ToHashSet();
+        var queuedOrderIds = orders.Where(order => queuedIds.Contains(order.PlanId)).Select(order => order.Id).ToArray();
+        const int outputDeclaration = (int)FactKind.OutputDeclaration;
+        var declared = await dbContext.Facts.AsNoTracking()
+            .Where(fact => fact.CompanyId == companyId && fact.Kind == outputDeclaration
+                && queuedOrderIds.Contains(fact.OrderId))
+            .GroupBy(fact => fact.OrderId)
+            .Select(group => new { OrderId = group.Key, MassKg = group.Sum(fact => fact.MassKg) })
+            .ToListAsync(cancellationToken);
+        var reversed = await dbContext.OutputReversals.AsNoTracking()
+            .Where(reversal => reversal.CompanyId == companyId && queuedOrderIds.Contains(reversal.OrderId))
+            .GroupBy(reversal => reversal.OrderId)
+            .Select(group => new { OrderId = group.Key, MassKg = group.Sum(reversal => reversal.MassKg) })
+            .ToListAsync(cancellationToken);
+
+        var entries = new List<ProductionQueueEntryV1>(queued.Count);
         foreach (var (planId, revisionNo) in queued)
         {
             // A plan always has at least one planned input; without one the queue is not answered.
@@ -102,10 +124,32 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
                 ? createdInputs.SingleOrDefault(input => input.PlanId == planId)?.PlannedKg
                 : revisionInputs.SingleOrDefault(input => input.PlanId == planId && input.RevisionNo == revisionNo)
                     ?.PlannedKg;
-            total += plannedKg ?? throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
-                "Kuyruktaki planın planlanan girdisi yok.");
+            if (plannedKg is null)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kuyruktaki planın planlanan girdisi yok.");
+            }
+
+            var candidate = candidates.Single(row => row.Id == planId);
+            var order = orders.SingleOrDefault(row => row.PlanId == planId);
+            var processed = 0m;
+            if (order is not null)
+            {
+                processed = (declared.SingleOrDefault(row => row.OrderId == order.Id)?.MassKg ?? 0m)
+                    - (reversed.SingleOrDefault(row => row.OrderId == order.Id)?.MassKg ?? 0m);
+                if (processed < 0m)
+                {
+                    // More reversed than declared is a damaged ledger, not "nothing processed".
+                    throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kuyruktaki emrin geri alınan çıktısı beyan edilenden fazla.");
+                }
+            }
+
+            entries.Add(new ProductionQueueEntryV1(planId,
+                order is null ? candidate.RequestedDueDate : order.DueDate, 0, candidate.CreatedAtUtc,
+                new Kilograms(plannedKg.Value), new Kilograms(processed)));
         }
 
-        return new ManufacturingWorkCenterQueue(queued.Count, new Kilograms(total));
+        return new ManufacturingWorkCenterQueue(entries, target);
     }
 }
