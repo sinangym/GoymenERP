@@ -13,7 +13,8 @@ public interface IManufacturingCostMovementReadPortV1
     Task<ManufacturingCostMovementSnapshotV1?> ReadAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken);
 }
 public sealed record ManufacturingCostIssueSnapshotV1(Guid FactId, Guid MovementId, Guid ParentLabelId, Kilograms Mass,
-    IssueCostReadStatus Status, decimal? StampedUnitCostTl, IssueCostCurrencyInput Currency, string StampVersion);
+    IssueCostReadStatus Status, decimal? StampedUnitCostTl, IssueCostCurrencyInput Currency, string StampVersion,
+    decimal? StampedUnitCostUsd = null, string? UsdStampVersion = null);
 public sealed record ManufacturingCostReturnSnapshotV1(Guid FactId, Guid MovementId, Guid ParentLabelId, Kilograms Mass,
     Guid? SourceIssueMovementId, string StampVersion);
 public sealed record ManufacturingCostOutputSnapshotV1(Guid FactId, Guid MovementId, Guid ParentLabelId, Guid LabelId,
@@ -31,6 +32,12 @@ public sealed record ManufacturingScrapCostPolicySnapshotV1(Guid CompanyId, bool
 public sealed record ManufacturingCostMonthlyPriceSnapshotV1(Guid ScrapPriceId, int Year, int Month, int Version, decimal TlPerKg);
 public sealed record ManufacturingCostInputProvenanceV1(long OrderVersion, string MovementSourceVersion, string ScrapPolicyVersion,
     IReadOnlyList<ManufacturingCostMonthlyPriceSnapshotV1> MonthlyPrices, string InputFingerprint);
+public interface IManufacturingScrapUsdRateReadPortV1
+{
+    Task<ManufacturingScrapUsdRateSnapshotV1?> ReadAsync(Guid companyId, DateOnly weighingDay, CancellationToken cancellationToken);
+}
+public sealed record ManufacturingScrapUsdRateSnapshotV1(Guid CompanyId, DateOnly WeighingDay, DateOnly BulletinDay,
+    decimal TryPerUsd, Guid RecordId, string RecordVersion, string Source);
 
 /// <summary>
 /// URT-SC32/SC36: join the actual order facts, immutable movement stamps, policy version and weighing-month prices.
@@ -39,7 +46,7 @@ public sealed record ManufacturingCostInputProvenanceV1(long OrderVersion, strin
 /// </summary>
 public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext companyContext, IManufacturingOrderStore orders,
     IManufacturingCostMovementReadPortV1 movements, IManufacturingScrapCostPolicyReadPortV1 policy,
-    IManufacturingMonthlyScrapPriceStore prices) : IManufacturingScrapCostDistributionSourceV1
+    IManufacturingMonthlyScrapPriceStore prices, IManufacturingScrapUsdRateReadPortV1? usdRates = null) : IManufacturingScrapCostDistributionSourceV1
 {
     public async Task<ManufacturingScrapCostDistributionSourceReadV1> ReadAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken)
     {
@@ -119,8 +126,35 @@ public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext company
             var orderedPrices = priceSnapshots.OrderBy(entry => entry.Year).ThenBy(entry => entry.Month).ToArray();
             var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
                 { companyId, orderId, version, stock.SourceVersion, policyVersion = selectedPolicy.SourceVersion, input, prices = orderedPrices }))).ToLowerInvariant();
+            // USD is an independent display dimension. Its absence never changes the TL input or its recognition fingerprint.
+            ProductionScrapCostDistributionInput? usdInput = null; var usdReasons = new List<string>();
+            var usdSnapshots = new List<ManufacturingScrapUsdRateSnapshotV1>();
+            var usdIssues = stock.Issues.Select(issue => new IssueCostInput(issue.MovementId, issue.Mass,
+                issue.StampedUnitCostUsd is not null && !string.IsNullOrWhiteSpace(issue.UsdStampVersion) ? IssueCostReadStatus.Value : IssueCostReadStatus.Unreadable,
+                issue.StampedUnitCostUsd, IssueCostCurrencyInput.FunctionalCurrency)).ToArray();
+            var usdWeighings = new List<ScrapWeighingInput>();
+            foreach (var weighing in scrapInputs)
+            {
+                if (weighing.Price.Status != ScrapPriceReadStatus.Value || weighing.Mass.Value == 0)
+                { usdWeighings.Add(weighing); continue; }
+                var physical = stock.Outputs.Single(label => label.LabelId == weighing.ScrapOutputId);
+                var fact = order.Outputs.Single(output => output.OutputId == physical.FactId);
+                var day = ManufacturingBusinessDay.DateOf(fact.DeclaredAtUtc);
+                ManufacturingScrapUsdRateSnapshotV1? fx = null;
+                try { if (usdRates is not null) fx = await usdRates.ReadAsync(companyId, day, cancellationToken); }
+                catch (OperationCanceledException) { throw; }
+                catch { /* A USD source failure leaves the independent display unavailable. */ }
+                if (!await FreshAsync(version)) return Unavailable();
+                if (fx is null || fx.CompanyId != companyId || fx.WeighingDay != day || fx.TryPerUsd <= 0
+                    || fx.RecordId == Guid.Empty || string.IsNullOrWhiteSpace(fx.RecordVersion))
+                { usdReasons.Add("scrap_usd_exchange_rate_unavailable"); continue; }
+                usdSnapshots.Add(fx);
+                usdWeighings.Add(weighing with { Price = new(ScrapPriceReadStatus.Value, weighing.Price.TlPerKg!.Value / fx.TryPerUsd) });
+            }
+            if (usdReasons.Count == 0) usdInput = new(cost with { Issues = usdIssues, ScrapWeighings = usdWeighings }, outputInputs);
             return new(ManufacturingScrapCostDistributionSourceStatusV1.Found, companyId, orderId, input)
-            { Provenance = new(version, stock.SourceVersion, selectedPolicy.SourceVersion, orderedPrices, fingerprint) };
+            { Provenance = new(version, stock.SourceVersion, selectedPolicy.SourceVersion, orderedPrices, fingerprint), MovementEvidence = stock,
+                UsdInput = usdInput, UsdRateEvidence = usdSnapshots, UsdUnavailableReason = usdReasons.FirstOrDefault() };
 
             Kilograms Total(OutputClass outputClass) => order.PlannedInputs.Aggregate(Kilograms.Zero,
                 (sum, input) => sum + order.BalanceOf(input.ParentRollId).OutputOf(outputClass));

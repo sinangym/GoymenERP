@@ -517,3 +517,10 @@ Migration `20261116214107_AddManufacturingOrderReopenings` was generated with `d
 append-only `OrderReopenings` and expands the closure-decision key by `OrderVersion`. Up is DDL only. Down's first
 operation refuses with **THROW 51951** if reopening history or multiple close generations would be lost; an empty
 history with a single legacy close per order remains reversible. Registration adds no grant, role or Critical flag.
+# Cost generation history — URT-S8 / URT-D36, URT-D56, URT-D58, URT-D67
+
+`20261116232039_AddManufacturingCostGenerations` adds company-scoped, append-only cost evidence for each physical close.
+Pending/unreadable results carry no fictional money; later recognition retains the generation identity and appends a revision.
+Reopening records the Inventory owner's exact reversal before a second close creates a new generation.
+Down guard **51960** refuses while any generation history exists (forward fix); an empty table may be dropped.
+

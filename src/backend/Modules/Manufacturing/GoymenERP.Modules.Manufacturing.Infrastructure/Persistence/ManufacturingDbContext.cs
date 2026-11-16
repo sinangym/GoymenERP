@@ -265,6 +265,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
         ConfigurePlanPriorityVersions(modelBuilder);
         ConfigureManualQueues(modelBuilder);
         ConfigureReopenings(modelBuilder);
+        ConfigureCostGenerations(modelBuilder);
         ConfigurePlanInputAllocations(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);

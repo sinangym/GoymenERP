@@ -37,7 +37,10 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                     : currency.Status == IssueCostCurrencyStatus.RateMissing && issue.Tl.UnitCostPerKg is null ? IssueCostReadStatus.Value
                     : issue.Tl.Status == InventoryMovementCostStampStatusV1.Known ? IssueCostReadStatus.Value : IssueCostReadStatus.Unreadable;
                 issues.Add(new(issue.FactId, issue.MovementId, issue.ParentLabelId, new(issue.QuantityKg), status,
-                    issue.Tl.UnitCostPerKg, currency, issue.Tl.StampVersion + "/" + issue.Currency.SourceVersion));
+                    issue.Tl.UnitCostPerKg, currency, issue.Tl.StampVersion + "/" + issue.Currency.SourceVersion,
+                    issue.Usd.Status == InventoryMovementCostStampStatusV1.Known && issue.Usd.CurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
+                        ? issue.Usd.UnitCostPerKg : null,
+                    issue.Usd.Status == InventoryMovementCostStampStatusV1.Known ? issue.Usd.StampVersion : null));
             }
             foreach (var entry in value.Returns)
             {

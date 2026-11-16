@@ -25,7 +25,7 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
-            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(OrderReopeningRow), typeof(FactRow), typeof(OutputReversalRow),
+            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(OrderReopeningRow), typeof(CostGenerationRow), typeof(FactRow), typeof(OutputReversalRow),
             typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(PlanPriorityVersionRow),
             typeof(WorkCenterQueueVersionRow), typeof(WorkCenterQueueEntryRow), typeof(CommandRow)];
 
@@ -149,6 +149,7 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingPlanPriorities", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingManualQueues", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingOrderReopenings", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingCostGenerations", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

@@ -982,6 +982,29 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/orders/{orderId:guid}/cost-generations", async (Guid orderId, ManufacturingCommandService service,
+                HttpContext http, CancellationToken token) =>
+            {
+                SetPrivateNoStore(http.Response.Headers);
+                return ToHttpResult(http, await service.GetCostGenerationsAsync(orderId, token), location: null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderCostGenerationsV1")
+            .Produces<ManufacturingCostGenerationHistoryV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/orders/{orderId:guid}/cost-recognition", async (Guid orderId, RecognizeManufacturingOrderCostRequestV1 request,
+                ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+                await WriteAsync(http, key => service.RecognizeCostAsync(orderId, request, key, token)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingOrdersClose)
+            .WithName("RecognizeManufacturingOrderCostV1")
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .Accepts<RecognizeManufacturingOrderCostRequestV1>("application/json")
+            .Produces<ManufacturingCostGenerationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes).ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         // URT-S17 (SAT-D317): the order's production cost as the production cost port version 2 records it — the kg cost,
         // the TL per line, the rounding remainder, the currency lines and the inputs that keep the cost from being computed.
         // An order that is not closed is pending (order_not_closed); no port source answers unavailable, never a zero. The

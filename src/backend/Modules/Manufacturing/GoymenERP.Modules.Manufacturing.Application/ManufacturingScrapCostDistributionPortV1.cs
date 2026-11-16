@@ -59,6 +59,10 @@ public sealed record ManufacturingScrapCostDistributionSourceReadV1(
     ProductionScrapCostDistributionInput? Input)
 {
     public ManufacturingCostInputProvenanceV1? Provenance { get; init; }
+    public ManufacturingCostMovementSnapshotV1? MovementEvidence { get; init; }
+    public ProductionScrapCostDistributionInput? UsdInput { get; init; }
+    public IReadOnlyList<ManufacturingScrapUsdRateSnapshotV1> UsdRateEvidence { get; init; } = [];
+    public string? UsdUnavailableReason { get; init; }
 }
 
 public enum ManufacturingScrapCostDistributionStatusV1

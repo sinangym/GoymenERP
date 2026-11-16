@@ -6,7 +6,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Orders;
 namespace GoymenERP.Modules.Manufacturing.Application;
 
 public sealed record ReopenManufacturingOrderRequestV1(long ExpectedVersion, string? Reason);
-public sealed record ManufacturingOrderReopeningCommandV1(Guid CompanyId, Guid OrderId, long ExpectedOrderVersion);
+public sealed record ManufacturingOrderReopeningCommandV1(Guid CompanyId, Guid OrderId, long ExpectedOrderVersion, string? Reason = null);
 
 /// <summary>Shared Inventory transaction: proves/reverses the prior posted cost generation and saves the reopen atomically.</summary>
 public interface IManufacturingOrderReopeningInventoryPortV1
@@ -72,11 +72,11 @@ public sealed partial class ManufacturingCommandService
                 if (await Fence(order.ClosedAtUtc!.Value, cancellationToken) is { } refused) return Refusal<OrderViewV1>(refused);
                 try
                 {
-                    var reopened = await reopeningInventory.ReopenAsync(new(companyId, orderId, request.ExpectedVersion),
+                    var reopened = await reopeningInventory.ReopenAsync(new(companyId, orderId, request.ExpectedVersion, reason),
                         token => orderReopenings.ReopenOrderAsync(orderId, request.ExpectedVersion, actor, timeProvider.GetUtcNow(), reason,
                             metadata, Fence, token), metadata, cancellationToken);
-                    var history = reopened.Reopenings.LastOrDefault();
-                    if (reopened.CompanyId != companyId || reopened.Id != orderId || reopened.Status != OrderStatus.Open
+                    var history = reopened?.Reopenings.LastOrDefault();
+                    if (reopened is null || reopened.CompanyId != companyId || reopened.Id != orderId || reopened.Status != OrderStatus.Open
                         || reopened.Version != request.ExpectedVersion + 1 || history is null
                         || history.ClosedOrderVersion != request.ExpectedVersion || history.ReopenedByUserId != actor
                         || history.Reason != reason)
