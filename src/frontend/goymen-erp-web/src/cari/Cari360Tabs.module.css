@@ -1,0 +1,91 @@
+.tabs {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.tabList {
+  display: flex;
+  gap: var(--goy-ds-space-1);
+  /* Wraps into a scrollable strip instead of a page-level horizontal scroll (WCAG 1.4.10). */
+  overflow-x: auto;
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  min-width: 0;
+}
+
+.tab {
+  flex: 0 0 auto;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--goy-ds-color-text-secondary);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  border-bottom-color: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-text);
+}
+
+.tab:focus-visible,
+.panel:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+.panel {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+}
+
+.scroll {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--goy-ds-font-size-md);
+}
+
+.table th,
+.table td {
+  padding: var(--goy-ds-space-2);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.caption {
+  padding-bottom: var(--goy-ds-space-2);
+  text-align: left;
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--goy-ds-color-text-secondary);
+  margin: 0;
+}
+
+.notice {
+  margin: 0;
+}
+
+.link {
+  align-self: flex-start;
+  color: var(--goy-ds-color-accent-text);
+}
