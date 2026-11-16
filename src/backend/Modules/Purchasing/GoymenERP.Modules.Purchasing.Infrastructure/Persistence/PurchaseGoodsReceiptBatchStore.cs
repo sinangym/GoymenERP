@@ -80,8 +80,9 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
     public Task<bool> BatchIdExistsAsync(Guid batchId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        // The batch id is the table's primary key: another company's row with the same id is a collision too.
-        return dbContext.GoodsReceiptBatches.IgnoreQueryFilters().AsNoTracking().AnyAsync(row => row.BatchId == batchId, cancellationToken);
+        // Existence is scoped to the caller's company. A cross-company primary-key collision is left to the unique
+        // constraint and the normal concurrent-change path; a probe must never disclose another company's record.
+        return dbContext.GoodsReceiptBatches.AsNoTracking().AnyAsync(row => row.BatchId == batchId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<StoredPurchaseGoodsReceiptBatch>> ListForOrderAsync(Guid orderId, int take, CancellationToken cancellationToken = default)
