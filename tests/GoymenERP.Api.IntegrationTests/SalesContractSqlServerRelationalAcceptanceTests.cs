@@ -17,7 +17,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// S-11 (SAT-D28, NS-13, SAT-D346) against a REAL SQL Server and the REAL host composition: a sales contract with a discount and no
 /// configured limit is recorded pending through the real Sales store in one save (row, attempt, audit) and approved once by another
-/// actor (version 2); it is open-ended (SAT-D362: NULL end date, still refused before its start). The database itself refuses a changed fact, a skipped version, a second decision and a delete (TR 51471), the
+/// actor (version 2); it is open-ended (SAT-D362: NULL end date, still refused before its start). The database itself refuses a changed fact, a skipped version, a second decision and a delete (TR 51474), the
 /// creator deciding their own discount (CK maker-checker) and any change of an attempt (TR 51472). Another company never sees the
 /// contract. The migration refuses to roll back over a recorded contract (THROW 51473, forward fix). No other module's table is
 /// written. SENTETIK / NOT_ENV.
@@ -52,19 +52,19 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
             "UPDATE [sales].[Contracts] SET [State] = 2, [DecidedBy] = [CreatedBy], [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
             + "[Version] = [Version] + 1" + where, ("@id", pending.Id)))).Number);
         // TR_Contracts_Guard: a decision never changes the contract's facts and never skips a version.
-        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        Assert.Equal(51474, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [State] = 2, [DecidedBy] = N'SENTETIK-raw', [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
             + "[Clauses] = N'SENTETIK degisti', [Version] = [Version] + 1" + where, ("@id", pending.Id)))).Number);
-        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        Assert.Equal(51474, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [State] = 2, [DecidedBy] = N'SENTETIK-raw', [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
             + "[Version] = [Version] + 2" + where, ("@id", pending.Id)))).Number);
-        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        Assert.Equal(51474, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [InstallmentsJson] = N'[]'" + where, ("@id", pending.Id)))).Number);
         // SAT-D362: CK_Contracts_Validity still refuses an end before the start (checked before the trigger), and the guard's
         // EXCEPT comparison sees NULL → a date as a changed fact (null-safe, never "unknown = equal").
         Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [ValidThrough] = DATEADD(DAY, -1, [ValidFrom])" + where, ("@id", pending.Id)))).Number);
-        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        Assert.Equal(51474, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [State] = 2, [DecidedBy] = N'SENTETIK-raw', [DecidedAtUtc] = SYSDATETIMEOFFSET(), "
             + "[ValidThrough] = [ValidFrom], [Version] = [Version] + 1" + where, ("@id", pending.Id)))).Number);
 
@@ -82,7 +82,7 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
             (approved.Contract.State, approved.Contract.Version, approved.Contract.Decision!.DecidedBy, approved.Contract.ValidThrough));
 
         // TR_Contracts_Guard: the decision is taken once; an active contract is never rejected afterwards.
-        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        Assert.Equal(51474, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "UPDATE [sales].[Contracts] SET [State] = 3, [RejectionReason] = N'SENTETIK sonradan', [Version] = [Version] + 1" + where,
             ("@id", pending.Id)))).Number);
         // FK_ContractAttempts_Contracts_CompanyId_ContractId is checked before the AFTER trigger; the trigger's own DELETE refusal is
@@ -90,7 +90,7 @@ public sealed class SalesContractSqlServerRelationalAcceptanceTests
         Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "DELETE FROM [sales].[Contracts]" + where, ("@id", pending.Id)))).Number);
         Assert.Equal(1, await run.ScalarAsync<int>(CopyOf, ("@id", pending.Id)));
-        Assert.Equal(51471, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+        Assert.Equal(51474, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
             "DELETE FROM [sales].[Contracts] WHERE [Id] <> @id; SELECT 1", ("@id", pending.Id)))).Number);
         // TR_ContractAttempts_Guard: the attempts are append-only.
         Assert.Equal(51472, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(

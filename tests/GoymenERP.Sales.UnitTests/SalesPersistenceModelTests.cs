@@ -367,7 +367,7 @@ public sealed class SalesPersistenceModelTests
     /// <summary>S-11 (SAT-D28, NS-13, SAT-D346): the sales contract and its attempts — company-filtered, the contract number unique per
     /// company, the version a concurrency token, the maker-checker, limit and validity (SAT-D362: optional end) checks declared, both
     /// guard triggers declared; Up adds
-    /// the one-decision guard (51471) and the append-only attempts guard (51472); Down is a forward fix (51473) first.</summary>
+    /// the one-decision guard (51474) and the append-only attempts guard (51472); Down is a forward fix (51473) first.</summary>
     [Fact]
     public void The_sales_contract_migration_adds_two_triggers_and_its_down_refuses_with_51473_first()
     {
@@ -405,7 +405,7 @@ public sealed class SalesPersistenceModelTests
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesContracts();
         var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
         Assert.Equal(2, up.Length);
-        Assert.Contains(up, op => op.Sql.Contains("TR_Contracts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51471,", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_Contracts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51474,", StringComparison.Ordinal));
         Assert.Contains(up, op => op.Sql.Contains("TR_ContractAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51472,", StringComparison.Ordinal));
         var table = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>()
             .Single(op => op.Name == "Contracts");

@@ -482,7 +482,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>
     /// TR_Contracts_Guard (S-11): the contract facts are immutable, the state takes the one discount decision (1 → 2 | 3), the
-    /// version moves by exactly one and no row is deleted (THROW 51471). Declared so EF Core does not use OUTPUT without INTO.
+    /// version moves by exactly one and no row is deleted (THROW 51474). Declared so EF Core does not use OUTPUT without INTO.
     /// </summary>
     internal const string ContractGuardTrigger = "TR_Contracts_Guard";
 
