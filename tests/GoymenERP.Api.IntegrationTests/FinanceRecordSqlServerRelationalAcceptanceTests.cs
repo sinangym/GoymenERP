@@ -1718,7 +1718,8 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                     new FinanceAuditEnvelope(ManualBankPaymentService.DraftCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ManualBankPaymentService.ApproveCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ManualBankPaymentService.RecordCommand, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System,
+                new SufficientBankBalance());
             return new PaymentServiceScope(dbContext, service,
                 new FinanceContext(company, actor, $"r47-refund-{Guid.NewGuid():N}", null));
         }
@@ -2069,6 +2070,15 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
     /// <summary>TEST INPUT: answers "open" for any date. Not a period policy — the product's rule (K1, #66 5748258299)
     /// is what the case below measures against real Accounting periods.</summary>
+    /// <summary>SENTETIK: the bank account covers every payment of this class (FNS-D87 balance answer).</summary>
+    private sealed class SufficientBankBalance : IFinanceTreasuryBalanceGuard
+    {
+        public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context,
+            ExpensePaymentSourceKind sourceKind, Guid treasuryAccountId, MoneyText money,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new TreasuryBalanceAnswer(TreasuryBalanceOutcome.Sufficient, null));
+    }
+
     private sealed class SyntheticOpenPeriodRule : IFinanceRecordPeriodRule
     {
         public Task<RecordPeriodAnswer> CheckAsync(FinanceContext context, DateOnly occurredOn, DateOnly? valueOn,

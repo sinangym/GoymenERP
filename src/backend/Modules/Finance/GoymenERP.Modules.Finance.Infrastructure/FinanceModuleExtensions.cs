@@ -353,7 +353,8 @@ public static class FinanceModuleExtensions
                     FinanceAction.ApproveManualBankPayment),
                 Envelope(provider, FinancePermissionNames.ManualBankPaymentRecord, permissions,
                     FinanceAction.RecordManualBankPayment)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>());
     }
 
     private static ExpensePaymentService CreateExpensePaymentService(IServiceProvider provider)
