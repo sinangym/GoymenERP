@@ -3,6 +3,7 @@ using GoymenERP.Modules.Inventory.Domain.Transfers;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 

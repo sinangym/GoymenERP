@@ -390,7 +390,7 @@ public sealed class LogisticsPersistenceModelTests
             ["CK_WeighingDifferences_Actors", "CK_WeighingDifferences_Bands", "CK_WeighingDifferences_Decision",
                 "CK_WeighingDifferences_Identity", "CK_WeighingDifferences_Quantities", "CK_WeighingDifferences_Rate",
                 "CK_WeighingDifferences_State"],
-            record.GetCheckConstraints().Select(check => check.Name).Order(StringComparer.Ordinal).ToArray());
+            record.GetCheckConstraints().Select(check => check.Name!).Order(StringComparer.Ordinal).ToArray());
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Quantities"
             && check.Sql.Contains("[DifferenceKg] = [ScaleKg] - [TheoreticalKg]", StringComparison.Ordinal));
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Decision"
