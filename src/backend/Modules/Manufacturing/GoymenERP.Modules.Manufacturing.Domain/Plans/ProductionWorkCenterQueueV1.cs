@@ -22,7 +22,8 @@ public sealed record ProductionQueueEntryV1(
     int PriorityScore,
     DateTimeOffset CreatedAtUtc,
     Kilograms PlannedInputKg,
-    Kilograms ProcessedKg);
+    Kilograms ProcessedKg,
+    long PriorityRevision = 0);
 
 /// <summary>The work queued ahead of a plan: how many plans and their remaining kg (URT-D97, URT-D99).</summary>
 public sealed record ProductionQueueAheadV1(int PlanCount, Kilograms RemainingKg);

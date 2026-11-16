@@ -438,7 +438,7 @@ public interface IManufacturingOrderStore
 /// approved). The order and the remaining kg are the domain's (<c>ProductionWorkCenterQueueOrderV1</c>).
 /// </summary>
 public sealed record ManufacturingWorkCenterQueue(IReadOnlyList<ProductionQueueEntryV1> Queued,
-    ProductionQueueEntryV1 Target);
+    ProductionQueueEntryV1 Target, bool TargetIsQueued = true);
 
 /// <summary>
 /// URT-SC33 (URT-D86): reads the queue of a work center for the termin suggestion. A port of its own, beside
@@ -447,10 +447,10 @@ public sealed record ManufacturingWorkCenterQueue(IReadOnlyList<ProductionQueueE
 /// company's APPROVED plans whose current work center is <c>workCenterId</c>, whose production order is not closed (no
 /// order yet, or an open one). Drafts and cancelled plans are not queued. Each entry carries (reversible, reported):
 /// the termin — the order's termin when the plan has an order, otherwise the plan's requested termin; the priority score
-/// — zero until the score is stored (URT-D103 follow-up); the plan's creation moment; the current planned input kg
+/// — zero until the first score is stored (URT-D103); the plan's creation moment; the current planned input kg
 /// (newest revision when revised); and the processed kg — the kg declared as output on the plan's order (every output
-/// class, process loss included) net of output reversals. The target entry is <c>targetPlanId</c>'s (the same fields;
-/// planned/processed kg are not needed for it and are zero). A target of another company or unknown id is
+/// class, process loss included) net of output reversals. The target entry carries the same real quantities, with
+/// <c>TargetIsQueued</c> distinguishing a draft preview from work actually queued. A target of another company or unknown id is
 /// <c>PlanNotFound</c>. Read only.
 /// </summary>
 public interface IManufacturingWorkCenterQueueStore

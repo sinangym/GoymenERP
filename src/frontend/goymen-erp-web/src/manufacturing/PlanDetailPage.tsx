@@ -32,6 +32,7 @@ import { currentRevision } from './planRevisionContract'
 import { PlanEditForm } from './PlanEditForm'
 import { PlanHistory } from './PlanHistory'
 import { PlanReapprovalSection } from './PlanReapprovalSection'
+import { PlanQueuePanel } from './PlanQueuePanel'
 import { PlanCalculationDetails } from './PlanPreviewPanel'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -666,6 +667,11 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                 </ul>
               </div>
             )}
+            {companyId !== null && namespace !== null ? <PlanQueuePanel
+              key={`${namespace}:${companyId}:${plan.planId}:${plan.version}`} companyId={companyId} planId={plan.planId}
+              planVersion={plan.version} namespace={namespace} canApprove={canApprove && !busy && plan.status !== 'Cancelled'}
+              onChanged={() => { void queryClient.invalidateQueries({ queryKey: [namespace, shell.routeEntryGeneration,
+                'manufacturing-plan-due-date-suggestion', plan.planId] }) }} /> : null}
             {plan.status === 'Approved' && companyId !== null && namespace !== null ? (
               <PlanReapprovalSection plan={plan} companyId={companyId} namespace={namespace}
                 canApprove={canApprove && !selfPrepared && !busy}

@@ -577,3 +577,14 @@ export const PLAN_INPUT_AVAILABILITY_TEXT = {
   readAt: 'Okuma zamanı', refresh: 'Miktarları yeniden oku', cancelledHistory: 'İptal edilen emir geçmişi',
   cancelledLine: (orderId: string, version: number) => `İptal edilen emir ${orderId}; iptal sonrası plan sürümü ${version}`,
 } as const
+export const PLAN_QUEUE_TEXT = {
+  heading: 'İş merkezi kuyruğu ve plan önceliği', subject: 'İş merkezi kuyruğu',
+  help: 'Sıra: önce termin, sonra yüksek öncelik puanı, sonra oluşturulma zamanı. Taslak satırı yalnız önizlemedir. Kalan miktar ve plan aşımı sunucudan gelir.',
+  caption: 'İş merkezinin kayıtlı kuyruğu', plan: 'Plan', due: 'Termin', priority: 'Öncelik', planned: 'Planlanan kg',
+  processed: 'İşlenen kg', remaining: 'Kalan kg', status: 'Durum', target: 'Bu plan', noDueDate: 'Termin yok',
+  queued: 'Kuyrukta', preview: 'Önizleme', overPlanned: 'Planı aştı', currentPriority: 'Güncel öncelik puanı', revision: 'Revizyon',
+  score: 'Yeni öncelik puanı', reason: 'Değişiklik gerekçesi', save: 'Önceliği kaydet', resend: 'Aynı denemenin sonucunu sor', refresh: 'Kuyruğu yenile',
+  invalid: 'Tam sayı öncelik puanı ve gerekçe girin.', unknown: 'Kaydın sonucu bilinmiyor. Yeni deneme açmadan aynı anahtarla sonucunu sorun.',
+  conflict: 'Plan veya öncelik değişti. Güncel kaydı okuyup yeni bir deneme hazırlayın.', refused: 'Öncelik kaydedilemedi.',
+  applied: 'Öncelik kaydedildi; güncel kuyruk yeniden okunuyor.',
+} as const

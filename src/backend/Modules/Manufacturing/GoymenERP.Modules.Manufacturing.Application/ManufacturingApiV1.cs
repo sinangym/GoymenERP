@@ -531,7 +531,8 @@ public sealed partial class ManufacturingCommandService(
     ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null,
     IInventoryFreeQuantityReadPortV1? freeQuantity = null,
     IInventoryLabelDispositionReadPortV1? inputDisposition = null,
-    ISettingsManufacturingDueDateBufferProviderV1? companyDueDateBuffer = null)
+    ISettingsManufacturingDueDateBufferProviderV1? companyDueDateBuffer = null,
+    IManufacturingPlanPriorityStore? planPriorities = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the

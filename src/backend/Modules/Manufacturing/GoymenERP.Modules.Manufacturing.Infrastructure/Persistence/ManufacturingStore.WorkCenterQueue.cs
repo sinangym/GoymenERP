@@ -27,7 +27,7 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
         const int closed = (int)OrderStatus.Closed;
         var targetRow = await dbContext.Plans.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.Id == targetPlanId)
-            .Select(row => new { row.Id, row.RequestedDueDate, row.CreatedAtUtc })
+            .Select(row => new { row.Id, row.RequestedDueDate, row.CreatedAtUtc, row.Version, row.Status })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var candidates = await dbContext.Plans.AsNoTracking()
@@ -47,14 +47,26 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
             .ToListAsync(cancellationToken);
         var targetOrder = orders.SingleOrDefault(order => order.PlanId == targetPlanId);
 
-        // The priority score is zero until it is stored (URT-D103 follow-up): every plan then ties on it.
+        var priorities = await dbContext.PlanPriorityVersions.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && orderPlanIds.Contains(row.PlanId)
+                && row.Revision == dbContext.PlanPriorityVersions.Where(other => other.CompanyId == companyId
+                    && other.PlanId == row.PlanId).Max(other => other.Revision))
+            .ToDictionaryAsync(row => row.PlanId, cancellationToken);
+        var targetPlan = await FindPlanAsync(targetPlanId, cancellationToken);
+        if (targetPlan is null || targetPlan.Version != targetRow.Version || targetPlan.WorkCenterId != workCenterId)
+            throw Refused(ManufacturingStoreCodes.ConcurrentChange, "Kuyruk okunurken hedef plan değişti.");
+        var targetProcessed = targetOrder is null ? 0m : await QueueProcessedKgAsync(targetOrder.Id, companyId, cancellationToken);
+        priorities.TryGetValue(targetPlanId, out var targetPriority);
         var target = new ProductionQueueEntryV1(targetRow.Id,
-            targetOrder is null ? targetRow.RequestedDueDate : targetOrder.DueDate, 0, targetRow.CreatedAtUtc,
-            Kilograms.Zero, Kilograms.Zero);
+            targetOrder is null ? targetRow.RequestedDueDate : targetOrder.DueDate, targetPriority?.Score ?? 0, targetRow.CreatedAtUtc,
+            new Kilograms(targetPlan.Inputs.Sum(input => input.PlannedMass.Value)), new Kilograms(targetProcessed),
+            targetPriority?.Revision ?? 0);
+        var targetIsQueued = targetRow.Status == approved && !await dbContext.Orders.AsNoTracking()
+            .AnyAsync(order => order.CompanyId == companyId && order.PlanId == targetPlanId && order.Status == closed, cancellationToken);
 
         if (candidates.Count == 0)
         {
-            return new ManufacturingWorkCenterQueue([], target);
+            return new ManufacturingWorkCenterQueue([], target, targetIsQueued);
         }
 
         var ids = candidates.Select(candidate => candidate.Id).ToArray();
@@ -79,7 +91,7 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
 
         if (queued.Count == 0)
         {
-            return new ManufacturingWorkCenterQueue([], target);
+            return new ManufacturingWorkCenterQueue([], target, targetIsQueued);
         }
 
         var created = queued.Where(entry => entry.RevisionNo == 0).Select(entry => entry.PlanId).ToArray();
@@ -146,11 +158,23 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
                 }
             }
 
+            priorities.TryGetValue(planId, out var priority);
             entries.Add(new ProductionQueueEntryV1(planId,
-                order is null ? candidate.RequestedDueDate : order.DueDate, 0, candidate.CreatedAtUtc,
-                new Kilograms(plannedKg.Value), new Kilograms(processed)));
+                order is null ? candidate.RequestedDueDate : order.DueDate, priority?.Score ?? 0, candidate.CreatedAtUtc,
+                new Kilograms(plannedKg.Value), new Kilograms(processed), priority?.Revision ?? 0));
         }
 
-        return new ManufacturingWorkCenterQueue(entries, target);
+        return new ManufacturingWorkCenterQueue(entries, target, targetIsQueued);
+    }
+
+    private async Task<decimal> QueueProcessedKgAsync(Guid orderId, Guid companyId, CancellationToken cancellationToken)
+    {
+        var output = await dbContext.Facts.AsNoTracking().Where(row => row.CompanyId == companyId && row.OrderId == orderId
+            && row.Kind == (int)FactKind.OutputDeclaration).SumAsync(row => (decimal?)row.MassKg, cancellationToken) ?? 0m;
+        var reversed = await dbContext.OutputReversals.AsNoTracking().Where(row => row.CompanyId == companyId && row.OrderId == orderId)
+            .SumAsync(row => (decimal?)row.MassKg, cancellationToken) ?? 0m;
+        if (reversed > output) throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+            "Kuyruktaki emrin geri alınan çıktısı beyan edilenden fazla.");
+        return output - reversed;
     }
 }

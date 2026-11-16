@@ -587,6 +587,40 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // URT-D97/D103: independent append-only priority revisions; the existing approval grant changes the score.
+        group.MapGet("/plans/{planId:guid}/priority", async (Guid planId, ManufacturingCommandService service,
+                HttpContext httpContext, CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanPriorityAsync(planId, cancellationToken), null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanPriorityV1").Produces<PlanPriorityViewV1>()
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/plans/{planId:guid}/priority", async (Guid planId, ChangePlanPriorityRequestV1 request,
+                ManufacturingCommandService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ChangePlanPriorityAsync(planId, request, key, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ChangeManufacturingPlanPriorityV1").Accepts<ChangePlanPriorityRequestV1>("application/json")
+            .Produces<PlanPriorityViewV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, ManufacturingRuleCodes.PlanCancelled,
+                "manufacturing_plan_priority_reason_required", "manufacturing_plan_priority_unchanged"])
+            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
+
+        // URT-D99/D107: the same server queue used by termin calculation, including its non-blocking over-plan flag.
+        group.MapGet("/plans/{planId:guid}/work-center-queue", async (Guid planId, ManufacturingCommandService service,
+                HttpContext httpContext, CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanWorkCenterQueueAsync(planId, cancellationToken), null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanWorkCenterQueueV1").Produces<PlanWorkCenterQueueViewV1>()
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         // MFG-PLAN-EDIT: the plan's history under the plan read's grant — revision 0 as created, then every recorded
         // Draft edit with its reason, actor and time. Another company's plan is the same code-less 404 as an unknown id.
         group.MapGet("/plans/{planId:guid}/revisions", async (

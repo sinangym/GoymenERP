@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbContext> options, ICompanyContext companyContext)
+public sealed partial class ManufacturingDbContext(DbContextOptions<ManufacturingDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "manufacturing";
@@ -262,6 +262,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanRevisions(modelBuilder);
         ConfigurePlanRejections(modelBuilder);
         ConfigurePlanReapprovals(modelBuilder);
+        ConfigurePlanPriorityVersions(modelBuilder);
         ConfigurePlanInputAllocations(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
