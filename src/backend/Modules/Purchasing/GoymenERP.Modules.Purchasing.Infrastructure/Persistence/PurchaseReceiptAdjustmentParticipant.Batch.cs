@@ -162,6 +162,8 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant
         try { change = order.AdjustReceipts(expected, inputs, envelope.ActorId, request.Reason, request.OccurredAtUtc); }
         catch (PurchasingRuleException exception) { throw new PurchasingServiceException(409, exception.Code); }
         catch (PurchasingVersionConflictException) { throw new PurchasingServiceException(409, PurchasingStoreCodes.ConcurrentChange); }
+        var notificationTargets = change.Supplies.Where(item => item.Revived).ToDictionary(item => item.GeneralLineId,
+            item => NotificationTargets(request.NotificationSnapshots, order.Id, item.GeneralLineId, beforeVersion));
         row.Status = (int)order.Status; row.Version = order.Version; row.UpdatedAtUtc = order.UpdatedAtUtc;
         row.CancelledBy = order.Cancellation?.CancelledBy; row.CancelledAtUtc = order.Cancellation?.CancelledAtUtc;
         row.CancellationReason = order.Cancellation?.Reason;
@@ -215,7 +217,8 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant
             RequestHash = request.RequestHash, ActorId = envelope.ActorId.Trim(), Outcome = 1, OrderId = order.Id,
             ReceiptAdjustmentBatchId = request.BatchId, CorrelationId = correlation, RecordedAtUtc = occurred });
         foreach (var supply in change.Supplies.Where(item => item.Revived))
-            database.OutboxMessages.Add(RevivedMessage(order, supply.GeneralLineId, supply.NetOpenedQuantity.Value, envelope, occurred, null, request.BatchId));
+            database.OutboxMessages.Add(RevivedMessage(order, supply.GeneralLineId, supply.NetOpenedQuantity.Value, envelope,
+                occurred, null, request.BatchId, notificationTargets[supply.GeneralLineId]));
         try
         {
             EnsureTransaction();
@@ -239,7 +242,8 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant
         CultureInfo.InvariantCulture, out var value) && value >= 0 && value < 1_000_000_000_000_000m && Text(value) == text;
 
     private static PurchasingOutboxRow RevivedMessage(PurchaseOrder order, Guid generalLineId, decimal netOpened,
-        PurchasingWriteEnvelope envelope, DateTimeOffset now, Guid? adjustmentId, Guid? batchId) => new()
+        PurchasingWriteEnvelope envelope, DateTimeOffset now, Guid? adjustmentId, Guid? batchId,
+        IReadOnlyList<PurchaseRevivalSalesTargetV1> salesTargets) => new()
     {
         Id = Guid.NewGuid(), CompanyId = order.CompanyId, EventType = PurchasingOrderLineRevivedEventV1.EventType,
         SchemaVersion = PurchasingOrderLineRevivedEventV1.SchemaVersion, SourceOperation = batchId is null ? "AdjustReceipt" : "AdjustReceipts",
@@ -247,6 +251,19 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant
         Sequence = checked((int)order.Version), OccurredAtUtc = now, RecordedAtUtc = now,
         CorrelationId = envelope.CorrelationId.Trim(), CausationId = envelope.CausationId?.Trim(),
         PayloadJson = JsonSerializer.Serialize(new PurchasingOrderLineRevivedPayloadV1(order.CompanyId, order.Id, generalLineId,
-            order.Version, Text(netOpened), adjustmentId, batchId), Json),
+            order.Version, Text(netOpened), adjustmentId, batchId, salesTargets), Json),
     };
+
+    private IReadOnlyList<PurchaseRevivalSalesTargetV1> NotificationTargets(
+        IReadOnlyList<PurchaseRevivalNotificationSnapshotV1>? snapshots, Guid orderId, Guid generalLineId, long beforeVersion)
+    {
+        var matches = snapshots?.Where(item => item is not null && item.GeneralLineId == generalLineId).ToArray();
+        if (matches is not { Length: 1 }) throw Unavailable();
+        var snapshot = matches[0];
+        if (snapshot.CompanyId != company.CompanyId || snapshot.PurchaseOrderId != orderId
+            || snapshot.ObservedOrderVersion != Text(beforeVersion) || snapshot.SalesTargets is null
+            || snapshot.SalesTargets.Any(item => item is null || item.SalesOrderId == Guid.Empty || item.SalesOrderLineId == Guid.Empty)
+            || snapshot.SalesTargets.Distinct().Count() != snapshot.SalesTargets.Count) throw Unavailable();
+        return snapshot.SalesTargets.OrderBy(item => item.SalesOrderId).ThenBy(item => item.SalesOrderLineId).ToArray();
+    }
 }

@@ -72,3 +72,26 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - Son batch kaynaklarında Purchasing.UnitTests ve Api.IntegrationTests (API dahil)
   derlemeleri exit 0, sıfır hata/uyarı. Unit/model/SQL kaynakları yazıldı;
   test koşumu yapılmadı. Pin/ilişkisel envanter son entegrasyonda üretilecektir.
+
+## Canlanma bildirimi kaynak bağlantısı
+
+- Kullanıcının "Satış ve satın alma sorumlularına" ve "Siparişi oluşturan ve
+  onaylayan kişi olabilir" yanıtı kapsamında, alış owner portu gerçek `CreatedBy`
+  ve `ApprovedBy` kimliklerini aynı şirket/sipariş/genel satır üzerinden okur.
+  Eksik eski onaylayan veya kullanıcı kimliğine çevrilemeyen aktör uydurulmaz;
+  eksik alıcı kümesi tamamlanmış teslimat sayılmaz. Grant/rol yapılmaz.
+- Geciken bildirim, olaydan sonra oluşan satış bağlantılarını almamalıdır.
+  Inventory geçmiş bağlantı okuyucusu artık hostun açık Serializable transaction'ına
+  katılabilir; host satış/sipariş kilitleri altında gerçek bağlantıları yakalar.
+  Purchasing canlanma olayı bu sıralı, tekilleştirilmiş kimlikleri değişmez taşır.
+  Eksik/yabancı/eski sürümlü görüntü canlanmada 503'tür; gerçek boş liste ayrı
+  tutulur. Net sıfır veya canlanmayan düzeltmede bu bildirim kanıtı aranmaz.
+- Yeni borrowed-context construction yalnız sahibi Inventory'nin kendi tablolarını
+  okur, commit yapmaz. Gerekçe **K3 review bekliyor**; guard izin listesine sessizce
+  eklenmedi. Eski `SalesTargets = null` olaylar güncel ilişkilerden tamamlanmaz.
+- Alıcı erişim çiti, kayıtlı aktörler/legacy durumu, immutable snapshot reddi,
+  borrowed transaction'daki henüz commit edilmemiş link okuması ve rollback için
+  unit/gerçek SQL test kaynakları yazıldı. Runtime testler **NOT_RUN**.
+- Purchasing.UnitTests ve Api.IntegrationTests (API dahil) kaynak derlemeleri
+  exit 0, sıfır hata/uyarı. Hostun snapshot
+  üretimi ile Work inbox/kişisel ekran zinciri birleşene kadar ALC-S6 **PARTIAL**.

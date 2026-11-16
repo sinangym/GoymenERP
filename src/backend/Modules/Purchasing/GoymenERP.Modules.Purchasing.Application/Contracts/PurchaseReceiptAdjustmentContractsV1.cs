@@ -35,7 +35,8 @@ public sealed record PurchaseReceiptAdjustmentTargetV1(Guid CompanyId, Guid Orde
 public sealed record PurchaseReceiptAdjustmentStageV1(Guid CompanyId, Guid AdjustmentId, Guid OrderId,
     Guid AcceptanceId, string ExpectedOrderVersion, string UndoQuantity, bool ReplacementExpected,
     bool IsSupplierReturn, string Reason, DateTimeOffset OccurredAtUtc, string CommandName, string RequestHash,
-    Guid? NewAcceptanceId = null, string? NewAcceptedQuantity = null);
+    Guid? NewAcceptanceId = null, string? NewAcceptedQuantity = null,
+    IReadOnlyList<PurchaseRevivalNotificationSnapshotV1>? NotificationSnapshots = null);
 
 public sealed record PurchaseReceiptAdjustmentResultV1(Guid CompanyId, Guid AdjustmentId, Guid OrderId,
     Guid AcceptanceId, Guid LineId, Guid GeneralLineId, string OrderVersion, string NetOpenedQuantity,
