@@ -172,3 +172,42 @@ export const finalizedInvoiceWithLines = (): Wire =>
       }),
     ],
   })
+
+/** SENTETIK open items of the original invoice (FNS-D81): nearest due first, as Finance answers them. */
+export const OPEN_ITEM_1 = 'f8000000-0000-4000-8000-000000000001'
+export const OPEN_ITEM_2 = 'f8000000-0000-4000-8000-000000000002'
+
+export const returnInstallment = (over: Wire = {}): Wire => ({
+  openItemId: OPEN_ITEM_1,
+  dueOn: '2026-12-01',
+  originalAmount: '600.00',
+  outstandingAmount: '600.00',
+  prefillAmount: '240.00',
+  ...over,
+})
+
+/**
+ * The installment read of the approved return: a partial return (`selectionAllowed`) over two open installments, Finance's
+ * prefill on the nearest-due one. `whole` gives the answer of a return that closes the whole outstanding amount.
+ */
+export function returnInstallments(over: Wire = {}): Wire {
+  return {
+    customerReturnId: RETURN_ID,
+    version: '3',
+    amount: '240.00',
+    selectionAllowed: true,
+    appliedAmount: '240.00',
+    advanceAmount: '0',
+    installments: [
+      returnInstallment(),
+      returnInstallment({ openItemId: OPEN_ITEM_2, dueOn: '2027-01-01', prefillAmount: '0' }),
+    ],
+    ...over,
+  }
+}
+
+export const wholeReturnInstallments = (): Wire =>
+  returnInstallments({
+    selectionAllowed: false,
+    installments: [returnInstallment({ originalAmount: '240.00', outstandingAmount: '240.00', prefillAmount: '240.00' })],
+  })
