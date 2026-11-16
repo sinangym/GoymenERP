@@ -22,7 +22,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// ID-3 (spec section ID-3; KIM-D1, KIM-D5, KIM-D15, KIM-D17, KIM-D19; BS-6) through the real host on a real SQL
-/// Server: one save per change (row + command record + audit + outbox), the stored answer replays with the original
+/// Server: one transaction per change (row + command record + owner audit + outbox), the stored answer replays with the original
 /// correlation, a Critical role needs a second person, two approvals of one request leave one assignment, the
 /// company's last effective Admin stays, and the migration Down refuses while workflow data would be lost.
 /// <para>
@@ -30,7 +30,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// or production grant, and none is seeded. SENTETIK / NOT_ENV.
 /// </para>
 /// </summary>
-public sealed class IdentityAccessAssignmentSqlServerRelationalAcceptanceTests
+public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanceTests
 {
     private const string AssignmentsRoute = "/api/v1/identity/access/assignments";
     private const string GrantRequestsRoute = "/api/v1/identity/access/grant-requests";
@@ -668,7 +668,8 @@ public sealed class IdentityAccessAssignmentSqlServerRelationalAcceptanceTests
         return assignment.Id;
     }
 
-    private static async Task WithDatabaseAsync(string adminRoleCode, Func<SqlServerRelationalApiFactory, Task> test)
+    private static async Task WithDatabaseAsync(string adminRoleCode, Func<SqlServerRelationalApiFactory, Task> test,
+        Action<IServiceCollection>? configureServices = null)
     {
         var connection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
         var databaseName = $"GoymenERP_Identity_AccessAssignment_{Guid.NewGuid():N}";
@@ -677,6 +678,7 @@ public sealed class IdentityAccessAssignmentSqlServerRelationalAcceptanceTests
             ["Identity:AdminRoleCode"] = adminRoleCode,
         };
         await using var factory = new SqlServerRelationalApiFactory(connection,
+            configureServices: configureServices,
             applyTestCompanyBTopologyTemplates: false, databaseName: databaseName, configurationOverrides: overrides);
         await using var cleanupScope = factory.Services.CreateAsyncScope();
         var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<IdentityDbContext>();

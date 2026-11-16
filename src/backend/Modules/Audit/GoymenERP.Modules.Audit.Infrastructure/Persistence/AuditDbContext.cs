@@ -56,6 +56,21 @@ public sealed class AuditDbContext(
         await base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    /// <summary>The Audit owner appends the company command's batch in the host's transaction.</summary>
+    internal async Task AppendCompanyBatchAsync(IReadOnlyList<AuditEvent> auditEvents,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(auditEvents);
+        if (auditEvents.Count == 0 || !companyContext.IsResolved || groupSharedProductId.HasValue
+            || !Database.IsRelational() || Database.CurrentTransaction is null
+            || ChangeTracker.Entries().Any()
+            || auditEvents.Any(auditEvent => auditEvent.CompanyId != companyContext.CompanyId
+                || auditEvent.SubjectKind != AuditEvent.CompanySubject))
+            throw new InvalidOperationException("A fresh enlisted company-bound Audit owner is required.");
+        AuditEvents.AddRange(auditEvents);
+        await base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     /// <summary>
     /// F-023 (F023-1) standalone refused attempt write: one company-bound <c>Refused</c> row on a fresh context of the
     /// same resolved company. The only caller is <c>RefusedAttemptRecorder</c> (architecture guard).

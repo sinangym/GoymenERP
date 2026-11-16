@@ -359,6 +359,14 @@ public sealed class IdentityAccessAssignmentServiceTests
 
     private sealed record QueueSeed(Guid Older, Guid Newer);
 
+    private sealed class UnexpectedTransactionAuditWriter : IAuditTransactionWriterV1
+    {
+        public Task WritePendingAsync(System.Data.IDbTransaction transaction, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("These in-memory gate tests must not enter a relational write.");
+
+        public void DiscardPending() { }
+    }
+
     private sealed class Harness
     {
         public const string CorrelationId = "korelasyon-ilk";
@@ -408,6 +416,7 @@ public sealed class IdentityAccessAssignmentServiceTests
             Authorization,
             Revalidation,
             Audits,
+            new UnexpectedTransactionAuditWriter(),
             RefusedAttempts,
             SecurityEvents,
             new ManualTimeProvider(Now),

@@ -225,11 +225,26 @@ internal sealed partial class IdentityAccessAssignmentService
 
     /// <summary>
     /// The locked body: the company applock (<see cref="IdentityAdminLock"/>), a second replay check under it, the
-    /// business decision, then one save of the change, its audit, its outbox and its terminal answer, the fail-closed
+    /// business decision, then the change, its outbox and terminal answer plus the Audit owner's append, the fail-closed
     /// security event, and the commit. A business refusal is stored as the key's terminal answer with its refused-attempt
-    /// audit row in the same save.
+    /// audit row in the same transaction. Identity never maps the Audit owner's table.
     /// </summary>
     private async Task<IdentityAccessCommandResultV1> RunLockedAsync(
+        Command command,
+        Func<DateTimeOffset, Task<Step>> body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunLockedCoreAsync(command, body, cancellationToken);
+        }
+        finally
+        {
+            auditWriter.DiscardPending();
+        }
+    }
+
+    private async Task<IdentityAccessCommandResultV1> RunLockedCoreAsync(
         Command command,
         Func<DateTimeOffset, Task<Step>> body,
         CancellationToken cancellationToken)
@@ -283,6 +298,8 @@ internal sealed partial class IdentityAccessAssignmentService
             return Done(command, await StoreStandaloneRefusalAsync(command, change.OnConflict, cancellationToken));
         }
 
+        await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+
         if (change.SecurityEvent is { } securityEvent)
         {
             var written = await securityEvents.WriteAsync(securityEvent, cancellationToken);
@@ -299,7 +316,7 @@ internal sealed partial class IdentityAccessAssignmentService
         return Done(command, new IdentityAccessCommandResultV1(change.Answer, false, command.Metadata.CorrelationId));
     }
 
-    /// <summary>A business refusal under the lock: the key's terminal answer and its refused-attempt row, one save.</summary>
+    /// <summary>A business refusal under the lock: the key's answer and its owner-written audit, one transaction.</summary>
     private async Task<IdentityAccessCommandResultV1> StoreRefusalAsync(
         Command command,
         IdentityAccessCommandAnswerV1 refusal,
@@ -327,6 +344,7 @@ internal sealed partial class IdentityAccessAssignmentService
             return await ReplayAsync(winner, command, cancellationToken);
         }
 
+        await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new IdentityAccessCommandResultV1(refusal, false, command.Metadata.CorrelationId);
     }
