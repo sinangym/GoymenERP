@@ -67,6 +67,8 @@ exact-head DOCS incelemesi, yazar ≠ inceleyen) değişmez.
 - SAT-D397 saklama süresi seçmez ve imhayı etkinleştirmez.
 - `NEEDS-SINAN`: URT-D99'da kalan kg negatif çıkarsa (kayıtlı çıktı ve tüketim planlanan girdiyi aşarsa) ne
   olacağı cevaplanmadı; sıfır alt sınırı veya başka bir kural tahminle yazılmaz.
+- `NEEDS-SINAN`: SAT-D396'da aynı kişinin hem alış iadesini girip hem istisnayı onaylayıp onaylayamayacağı sorulmadı.
+  Koddaki mevcut davranış değişmez; dört göz kuralı tahminle eklenmez veya kaldırılmaz.
 - URT-D101'deki elle sıra taşıma izni, sonraki cevapla güncellenir: SINAN-CEVAP 47.3 elle taşımayı yalnız Üretim
   Müdürü'ne ve ayrı bir yeni izne bağladı (`SINAN_KARARLARI_2026-11-16_DALGA4_EK22.md` URT-D106, #1188).
 - URT-D97'deki öncelik puanını girecek izin bu belgede cevaplanmadı; SINAN-CEVAP 42.13 ile cevaplandı (EK20 URT-D103,
