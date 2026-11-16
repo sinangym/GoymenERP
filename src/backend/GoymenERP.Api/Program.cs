@@ -452,9 +452,13 @@ builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineS
 // future supply source; both replace Inventory's fail-closed defaults. No route or permission (F017-b2).
 builder.Services.AddScoped<ISalesOrderLineSerializationLockBinderV1, SalesOrderLineSerializationLockHostBinder>();
 builder.Services.AddScoped<IInventoryFutureSupplySourceV1, InventoryFutureSupplyHostSource>();
+builder.Services.AddScoped<IInventoryFutureSupplyScheduleSourceV1, PurchasingOwnerInventoryFutureSupplyScheduleSource>();
 // X1 (KLN-D28 (9)): the approved sales order cancellation releases its lines' future supply allocations through Inventory's
 // release port in the cancellation's own transaction (sales line locks, then purchase line locks). No route or permission.
 builder.Services.AddScoped<ISalesOrderFutureAllocationReleaseParticipantV1, SalesFutureAllocationReleaseHostParticipant>();
+// SAT-S8 / KLN-D105: only the accepted reduced revision releases future demand, in the Sales command transaction.
+builder.Services.AddScoped<ISalesOrderFutureDemandReductionParticipantV1, SalesFutureDemandReductionHostParticipant>();
+builder.Services.AddScoped<ILogisticsSubcontractOrderReadPortV1, ManufacturingLogisticsSubcontractOrderReadPort>();
 // F-017 §3.5 F17-4 (ALS-D83/ALS-D85): Purchasing's link drop, drop-and-cancel and drop-and-close release through Inventory's
 // release port in Purchasing's own transaction (the order's purchase line locks are already held); the plain cancel/closure are
 // refused while an active allocation remains.
