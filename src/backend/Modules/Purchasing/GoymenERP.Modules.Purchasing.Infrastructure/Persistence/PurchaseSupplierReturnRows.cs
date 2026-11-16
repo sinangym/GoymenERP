@@ -23,6 +23,8 @@ internal sealed class PurchaseSupplierReturnRow : IPurchasingTenantRow
     public int CostBasis { get; set; }
     public decimal UnitCostTryPerKg { get; set; }
     public bool ReplacementExpected { get; set; }
+    public long? ExpectedPurchaseOrderVersion { get; set; }
+    public decimal? UndoQuantity { get; set; }
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; set; }
     public string RequestedBy { get; set; } = string.Empty;
@@ -47,6 +49,7 @@ internal sealed class PurchaseSupplierReturnAttemptRow : IPurchasingTenantRow
     public int Outcome { get; set; }
     public Guid? ReturnId { get; set; }
     public string? RefusalJson { get; set; }
+    public string? ResultJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }

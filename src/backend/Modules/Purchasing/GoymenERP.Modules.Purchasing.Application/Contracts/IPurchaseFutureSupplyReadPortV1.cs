@@ -4,9 +4,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// F-017 F17-1 (ALIS_F017 v1 §3.1, ALS-D82; STOK_F017 §10 F017-a): the Purchasing-owned read port Inventory asks before it
 /// records a future-supply allocation of a sales order line against a purchase line (A3-0's "v2" need; the v1
 /// <see cref="IPurchaseSupplyReferencePortV1"/> is unchanged). It answers how much of an APPROVED purchase GENERAL line is still
-/// allocatable — committed − accepted − cancelled − closed (§2: the INV-006 extension; the API-11 <c>closed</c> term entered with the
-/// line closure slice, ALS-D87; the <c>kesinRed/iadeEtkisi</c> term does not exist in code yet and enters this port with the slice
-/// that first writes it, API-44/API-60) — with the
+/// allocatable — committed − accepted − cancelled − closed − definitive returned (§2: INV-006; API-11 / ALS-D87 closure;
+/// ALC-S6 / API-44 / API-60 definitive supplier returns do not reopen supply) — with the
 /// technical slices of the line folded into it and never counted a second time (the existing "open" rule of
 /// <c>PurchaseSalesLinkedSupplyComposer</c>): allocation is made on the general line only.
 /// <para>
@@ -70,8 +69,9 @@ public sealed record PurchaseFutureSupplyAnswerV1(
 /// One Approved purchase general line as Purchasing answers it for future-supply allocation: the company, the order and the line,
 /// the supplier (party + company account), the product and its answered version, the Settings unit, the kind (always
 /// <c>General</c>), and the exact quantity texts (Ö2, the line's own unit, technical slices folded in): committed, accepted,
-/// cancelled, closed (API-11 short-delivery closure; zero while the line is open) and allocatable = committed − accepted − cancelled
-/// − closed. The sales intent (§2: the line's request line came from a Sales
+/// cancelled, historic closed shares (API-11), definitive returned and allocatable = committed − accepted − cancelled
+/// − closed − definitive returned. A receipt adjustment may revive only its net open share while preserving historic closure facts.
+/// The sales intent (§2: the line's request line came from a Sales
 /// order) is the Sales order and line identity or null — an intent, never an allocation. Identities and text only — no price.
 /// </summary>
 public sealed record PurchaseFutureSupplyLineV1(
@@ -92,7 +92,8 @@ public sealed record PurchaseFutureSupplyLineV1(
     string AllocatableText,
     Guid? SalesSourceOrderId,
     Guid? SalesSourceOrderLineId,
-    long ObservedOrderVersion);
+    long ObservedOrderVersion,
+    string DefinitiveReturnedText = "0");
 
 public sealed record PurchaseFutureSupplyPageV1(IReadOnlyList<PurchaseFutureSupplyLineV1> Items, string? NextCursor)
 {
