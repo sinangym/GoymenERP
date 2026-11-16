@@ -45,7 +45,7 @@ public sealed class ManufacturingProductionCostPortV2Tests
     private static ManufacturingScrapCostDistributionSourceReadV1 Found(ProductionScrapCostDistributionInput? input) =>
         new(ManufacturingScrapCostDistributionSourceStatusV1.Found, CompanyA, OrderA, input);
 
-    // 1000 kg x 40 TL, scrap in cost, 900 kg second quality in three 300 kg labels of 13333.333... TL: 0.01 TL is left
+    // Synthetic: scrap 100 kg x 9.9999 TL; 900 kg second quality in three 13000.00333... TL labels leaves 0.01 TL
     // and there is no good product line to carry it.
     private static ProductionScrapCostDistributionInput SecondQualityThirdsInput() =>
         new(new ProductionReceiptCostInput(
@@ -56,7 +56,7 @@ public sealed class ManufacturingProductionCostPortV2Tests
                 Kilograms.Zero,
                 new Kilograms(900m),
                 Kilograms.Zero,
-                [new ScrapWeighingInput(ScrapA, new Kilograms(100m), new ScrapPriceInput(ScrapPriceReadStatus.Value, 10m))],
+                [new ScrapWeighingInput(ScrapA, new Kilograms(100m), new ScrapPriceInput(ScrapPriceReadStatus.Value, 9.9999m))],
                 Kilograms.Zero,
                 ScrapCostSettingStatus.On,
                 NonKgInputUse.None),

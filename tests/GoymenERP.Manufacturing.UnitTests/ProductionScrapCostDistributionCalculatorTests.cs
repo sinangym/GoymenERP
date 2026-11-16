@@ -95,7 +95,7 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
     public void Golden_scrap_in_cost_takes_the_scrap_value_off_and_loads_the_rest_on_good_and_second_quality_labels()
     {
         // URT-D75 (1): with scrap in cost the 50 kg weighed scrap x 10 TL = 500 TL is taken off too; (40000 - 500) / 950
-        // per kg. The scrap line carries neither an amount (URT-D8 stays fail-closed) nor a separate expense.
+        // per kg. URT-D75 (3) gives the scrap label its own 500 TL, with no duplicate separate expense.
         var result = Distribute(Cost(scrap: ScrapCostSettingStatus.On), GoldenLabels());
 
         var costPerKg = 39500m / 950m;
@@ -103,9 +103,11 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
         Assert.Equal(costPerKg, result.Lines[0].UnitCostPerKg);
         Assert.Equal(600m * costPerKg, result.Lines[0].AllocatedCost);
         Assert.Equal(50m * costPerKg, result.Lines[2].AllocatedCost);
-        AssertScrap(result.Lines[3], ScrapA, 50m, null);
+        AssertAllocated(result.Lines[3], ScrapA, OutputClass.Scrap, 50m, 10m,
+            ProductionScrapCostDistributionCodesV1.AllocatedAtMonthlyScrapPrice);
+        Assert.Null(result.Lines[3].SeparateScrapExpense);
         Assert.Equal(0m, result.Cost!.WeighedScrapExpense);
-        Assert.Equal(39500m, decimal.Round(result.AllocatedTotal!.Value, 10));
+        Assert.Equal(40000m, decimal.Round(result.AllocatedTotal!.Value, 10));
     }
 
     [Fact]
@@ -157,7 +159,8 @@ public sealed class ProductionScrapCostDistributionCalculatorTests
         Assert.Equal(costPerKg, result.Lines[0].UnitCostPerKg);
         Assert.Equal(900m * costPerKg, result.Lines[0].AllocatedCost);
         Assert.Equal(2000m, result.Lines[1].AllocatedCost);
-        AssertScrap(result.Lines[2], ScrapA, 50m, null);
+        AssertAllocated(result.Lines[2], ScrapA, OutputClass.Scrap, 50m, 10m,
+            ProductionScrapCostDistributionCodesV1.AllocatedAtMonthlyScrapPrice);
     }
 
     [Fact]
