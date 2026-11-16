@@ -120,12 +120,27 @@ public sealed class IdentityPersistenceModelTests
             entity.GetProperties().Where(property => property.IsNullable).Select(property => property.Name).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal("Latin1_General_100_BIN2", entity.FindProperty(nameof(IdentityOutboxMessage.EventType))!.GetCollation());
         Assert.Equal("nvarchar(max)", entity.FindProperty(nameof(IdentityOutboxMessage.PayloadJson))!.GetColumnType());
-        var recorded = Assert.Single(entity.GetIndexes());
+        Assert.Equal(
+            ["IX_IdentityOutbox_Recorded", "IX_OutboxMessages_CompanyId_Position"],
+            entity.GetIndexes().Select(index => index.GetDatabaseName()).Order(StringComparer.Ordinal).ToArray());
+        var recorded = Assert.Single(entity.GetIndexes(), index => index.GetDatabaseName() == "IX_IdentityOutbox_Recorded");
         Assert.Equal("IX_IdentityOutbox_Recorded", recorded.GetDatabaseName());
         Assert.False(recorded.IsUnique);
         Assert.Equal(
             [nameof(IdentityOutboxMessage.RecordedAtUtc), nameof(IdentityOutboxMessage.Id)],
             recorded.Properties.Select(property => property.Name).ToArray());
+        var cursor = Assert.Single(entity.GetIndexes(), index => index.GetDatabaseName() == "IX_OutboxMessages_CompanyId_Position");
+        Assert.False(cursor.IsUnique);
+        Assert.Null(cursor.GetFilter());
+        Assert.Equal(
+            [nameof(IdentityOutboxMessage.CompanyId), nameof(IdentityOutboxMessage.Position)],
+            cursor.Properties.Select(property => property.Name).ToArray());
+        var position = entity.FindProperty(nameof(IdentityOutboxMessage.Position))!;
+        Assert.Equal(typeof(ulong), position.ClrType);
+        Assert.False(position.IsNullable);
+        Assert.True(position.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, position.ValueGenerated);
+        Assert.Equal("rowversion", position.GetColumnType());
         Assert.Empty(entity.GetForeignKeys());
     }
 
