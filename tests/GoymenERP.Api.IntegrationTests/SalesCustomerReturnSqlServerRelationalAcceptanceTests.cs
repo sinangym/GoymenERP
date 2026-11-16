@@ -88,7 +88,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
 
         // SAT-D294: without the Finance reversal port the finalisation fails closed and writes nothing.
         var closed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => run.Service(scope.Store, CompanyA, Finalizer, null)
-            .FinalizeCustomerReturnAsync(id, new SalesDraftStateCommandRequest("3"), Metadata("k-final-closed")));
+            .FinalizeCustomerReturnAsync(id, new FinalizeSalesCustomerReturnRequest("3"), Metadata("k-final-closed")));
         Assert.Equal((503, SalesCustomerReturnProblemCodesV1.FinancePortUnavailable), (closed.Status, closed.Code));
         Assert.Equal((3, 0), (
             await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)),
@@ -96,10 +96,13 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 + SalesCustomerReturnCommands.FinalizeV1 + "'")));
 
         var finalizer = run.Service(scope.Store, CompanyA, Finalizer, finance);
-        var finalized = await finalizer.FinalizeCustomerReturnAsync(id, new SalesDraftStateCommandRequest("3"), Metadata("k-final"));
+        var finalized = await finalizer.FinalizeCustomerReturnAsync(id, new FinalizeSalesCustomerReturnRequest("3"), Metadata("k-final"));
         Assert.Equal(("Finalized", "4", Finalizer, 1), (finalized.CustomerReturn.State, finalized.CustomerReturn.Version,
             finalized.CustomerReturn.FinalizedBy, finance.Calls));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT [FinalizationSequence] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)));
+        // SAT-S2: the finalisation writes exactly one sales.return-invoice.finalized.v1 outbox row for the return, in the same save.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[OutboxMessages] WHERE [EventType] = N'"
+            + SalesStore.CustomerReturnFinalizedEventType + "' AND [AggregateId] = @id", ("@id", id)));
 
         // A second return takes the rest of the line: the finalised first return is its prior and it is the line's last return.
         var second = await preparer.CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-2", Day,
@@ -109,7 +112,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         await preparer.SubmitCustomerReturnAsync(second.CustomerReturn.Id, new SalesDraftStateCommandRequest("1"), Metadata("k-submit-2"));
         await run.Service(scope.Store, CompanyA, Approver, null)
             .ApproveCustomerReturnAsync(second.CustomerReturn.Id, new SalesDraftStateCommandRequest("2"), Metadata("k-approve-2"));
-        await finalizer.FinalizeCustomerReturnAsync(second.CustomerReturn.Id, new SalesDraftStateCommandRequest("3"), Metadata("k-final-2"));
+        await finalizer.FinalizeCustomerReturnAsync(second.CustomerReturn.Id, new FinalizeSalesCustomerReturnRequest("3"), Metadata("k-final-2"));
         var over = await Assert.ThrowsAsync<SalesDraftServiceException>(() => preparer.CreateCustomerReturnAsync(
             new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-3", Day, [new CreateSalesCustomerReturnLineRequest(line.Id, "0.001")],
                 shipment), Metadata("k-create-3")));
@@ -380,7 +383,10 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 : PermissionScope.Denied);
     }
 
-    /// <summary>A SYNTHETIC Finance reversal port that admits every offer (the real port is not bound yet, SAT-D294).</summary>
+    /// <summary>
+    /// A SYNTHETIC Finance reversal port that admits every offer and answers every installment read as a whole return (no
+    /// selection, FNS-D81); the host adapter onto Finance's v2 ports is covered by its own tests.
+    /// </summary>
     private sealed class FinancePort : ISalesCustomerReturnFinancePortV1
     {
         public int Calls { get; private set; }
@@ -390,6 +396,11 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
             Calls++;
             return Task.FromResult(new SalesCustomerReturnFinanceAnswerV1(offer.CustomerReturnId, SalesCustomerReturnFinanceOutcomeV1.Admitted, null));
         }
+
+        public Task<SalesCustomerReturnInstallmentAnswerV1> ReadInstallmentsAsync(SalesCustomerReturnInstallmentQueryV1 query,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesCustomerReturnInstallmentAnswerV1(SalesCustomerReturnFinanceOutcomeV1.Admitted, null, false,
+                query.Amount, "0", []));
     }
 
     private sealed class FixedUser(string userId, Guid company) : ICurrentUser

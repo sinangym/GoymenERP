@@ -16,8 +16,10 @@ namespace GoymenERP.Api.Endpoints;
 /// invoice, the calculator, one save). The draft routes' wire rules apply unchanged: exactly one canonical <c>Idempotency-Key</c>
 /// (else 400 <c>command_metadata_invalid</c>), JSON only (415), the strict body (400 <c>validation_failed</c>), 201 +
 /// <c>Location</c>, the replay headers on the same key again (ADR-011 §4), another company's return 404, and every 401/403/404/503
-/// code-less — except the finalisation's coded 503 <c>sales_customer_return_finance_port_unavailable</c> (SAT-D294: no Finance
-/// reversal port is wired, so nothing is read, offered or written).
+/// code-less — except the finalisation's (and the installment read's) coded 503
+/// <c>sales_customer_return_finance_port_unavailable</c> (SAT-D294: in a host without the Finance acceptance composition nothing is
+/// read, offered or written). SAT-S2: the finalisation body may carry the user's installment selection (FNS-D81), and the
+/// installment read (<c>GET {id}/installments</c>) answers Finance's outstanding installments with the nearest-due prefill.
 /// </summary>
 public static partial class SalesEndpoints
 {
@@ -155,30 +157,72 @@ public static partial class SalesEndpoints
 
         // SAT-D290 (2): the preparer's submission under `sales.returns.write`.
         MapCustomerReturnStep(returns, "submission", "SubmitSalesCustomerReturnV1", finalizes: false, withReason: false,
+            SalesCustomerReturnJson.ReadStateCommand,
             (service, id, body, metadata, cancellationToken) => service.SubmitCustomerReturnAsync(id, body, metadata, cancellationToken));
 
         // SAT-D290 (3): the approval under `sales.returns.approve`, never by the preparer or the submitter (recorded 409).
         MapCustomerReturnStep(returns, "approval", "ApproveSalesCustomerReturnV1", finalizes: false, withReason: false,
+            SalesCustomerReturnJson.ReadStateCommand,
             (service, id, body, metadata, cancellationToken) => service.ApproveCustomerReturnAsync(id, body, metadata, cancellationToken));
 
         // SAT-D290 (2, 3): the rejection of a pending return under `sales.returns.approve`, never by the preparer or the submitter
         // (recorded 409), with an optional reason (422 when too long). Rejected is terminal.
         MapCustomerReturnStep(returns, "rejection", "RejectSalesCustomerReturnV1", finalizes: false, withReason: true,
+            SalesCustomerReturnJson.ReadDecisionCommand,
             (service, id, body, metadata, cancellationToken) => service.RejectCustomerReturnAsync(id, body, metadata, cancellationToken));
 
         // SAT-D290 (2): the cancellation of a draft or pending return under `sales.returns.write`, with an optional reason. An approved
         // return is not cancelled here (its reversal needs the Finance port, SAT-D294).
         MapCustomerReturnStep(returns, "cancellation", "CancelSalesCustomerReturnV1", finalizes: false, withReason: true,
+            SalesCustomerReturnJson.ReadDecisionCommand,
             (service, id, body, metadata, cancellationToken) => service.CancelCustomerReturnAsync(id, body, metadata, cancellationToken));
 
-        // SAT-D291, SAT-D294: the finalisation under `sales.returns.finalize`; Finance admits the reversal before the commit.
+        // SAT-D291, SAT-D294: the finalisation under `sales.returns.finalize`; Finance admits the reversal before the commit. A partial
+        // return carries the user's installment selection (FNS-D81; 422 `sales_customer_return_installments_required` without it).
         MapCustomerReturnStep(returns, "finalization", "FinalizeSalesCustomerReturnV1", finalizes: true, withReason: false,
+            SalesCustomerReturnJson.ReadFinalize,
             (service, id, body, metadata, cancellationToken) => service.FinalizeCustomerReturnAsync(id, body, metadata, cancellationToken));
+
+        // FNS-D81 / FNS-D44: the outstanding installments of an approved return's original invoice with Finance's nearest-due prefill,
+        // under `sales.returns.finalize`. Reads only; the screen lets the user change the prefill before the finalisation.
+        returns.MapGet("/{id:guid}/installments", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesCustomerReturnService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count > 0)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetCustomerReturnInstallmentsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return CustomerReturnProblem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetSalesCustomerReturnInstallmentsV1")
+            .Produces<SalesCustomerReturnInstallmentsResponse>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.StateConflict, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity(SalesCustomerReturnProblemCodesV1.FinanceRefused)
+            .ProducesErpServiceUnavailable(SalesCustomerReturnProblemCodesV1.FinancePortUnavailable)
+            .ProducesErpAuthenticatedProblems();
     }
 
-    private static void MapCustomerReturnStep(RouteGroupBuilder returns, string segment, string name, bool finalizes, bool withReason,
-        Func<ISalesCustomerReturnService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken,
+    private static void MapCustomerReturnStep<TBody>(RouteGroupBuilder returns, string segment, string name, bool finalizes,
+        bool withReason, Func<string, TBody> read,
+        Func<ISalesCustomerReturnService, Guid, TBody, SalesCommandMetadata, CancellationToken,
             Task<SalesCustomerReturnCommandResult>> command)
+        where TBody : class
     {
         var route = returns.MapPost($"/{{id:guid}}/{segment}", async (
             Guid id,
@@ -198,12 +242,11 @@ public static partial class SalesEndpoints
                 return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
             }
 
-            SalesDraftStateCommandRequest body;
+            TBody body;
             try
             {
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
-                var json = await reader.ReadToEndAsync(cancellationToken);
-                body = withReason ? SalesCustomerReturnJson.ReadDecisionCommand(json) : SalesCustomerReturnJson.ReadStateCommand(json);
+                body = read(await reader.ReadToEndAsync(cancellationToken));
             }
             catch (JsonException)
             {
@@ -229,7 +272,7 @@ public static partial class SalesEndpoints
         })
             .WithName(name)
             .WithIdempotencyContract(SalesCustomerReturnApiV1.CommandStatus, StatusCodes.Status409Conflict)
-            .Accepts<SalesDraftStateCommandRequest>("application/json")
+            .Accepts<TBody>("application/json")
             .Produces<SalesCustomerReturnView>(SalesCustomerReturnApiV1.CommandStatus)
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
             .AllowsEmptyErpBadRequestBody()
@@ -238,11 +281,13 @@ public static partial class SalesEndpoints
 
         if (finalizes)
         {
-            // SAT-D292 (6): the finalised returns of the invoice changed since approval (409, not recorded); Finance refused (422).
+            // SAT-D292 (6): the finalised returns of the invoice changed since approval (409, not recorded); Finance refused (422);
+            // a partial return without the user's installment selection (422, FNS-D81).
             route.ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                     SalesRuleCodes.CustomerReturnAmountsChanged, SalesDraftProblemCodesV1.SameKeyPayloadMismatch,
                     SalesDraftProblemCodesV1.ConcurrentChange)
                 .ProducesErpUnprocessableEntity(SalesCustomerReturnProblemCodesV1.FinanceRefused,
+                    SalesCustomerReturnProblemCodesV1.InstallmentsRequired,
                     SalesRuleCodes.CustomerReturnQuantityExceeded, SalesCustomerReturnProblemCodesV1.UnshippedBalanceExceeded,
                     SalesRuleCodes.CustomerReturnAmountOutOfRange)
                 .ProducesErpServiceUnavailable(SalesCustomerReturnProblemCodesV1.FinancePortUnavailable);
