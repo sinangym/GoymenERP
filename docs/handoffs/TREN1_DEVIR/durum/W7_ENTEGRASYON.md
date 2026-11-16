@@ -60,8 +60,8 @@ Kaynaklar ajan aktarımıdır; insanın GitHub'a bizzat yazdığı yorum olarak 
 [6926298700](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6926298700),
 [6926992238](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6926992238).
 
-Kur önceki iş günü/arife algoritması; fatura teorik kg oranı ve irsaliye eski ağır satır
-kuralı; alış siparişinde önek/yıl/sıra; bildirimin değiştirilebilir 90 gün başlangıcı;
+Kur önceki iş günü/arife algoritması; alış siparişinde önek/yıl/sıra; bildirimin
+değiştirilebilir 90 gün başlangıcı;
 açık ürün ticari mal/mamul sınıfı; satır SMM düzeltmesi; kalıcı elle üretim sırası ve
 C15→B20→A10 anchor; 7B yalnız sığanı yeniden açma; taslakta fiziksel toplam kg; açık
 ilk yönetici seçimi yanıtlandı. Karar engeli yerine eksik owner uygulaması izlenir.
@@ -74,8 +74,14 @@ muhasebe yetkilisi açık dönem/tarih seçer, dönem kendiliğinden açılmaz.
 
 #1194 EK26 head `2d0b5f40eb14e9107c4429f8ed812a9f04d11ef3` korunur.
 #1195 P2 hatalı EK22/FNS-D73 düzeltme satırı yalnız yeni belgede kaldırıldı;
-head `30d73d0e23eeab09d4a0832e87995547c17b80cd`, iki yeni DOCS incelemesi gerekir.
-#1196 EK27 head `f894221aa0db8fab8639141b7c09f3192933739b`, iki DOCS incelemesi bekler.
+head `30d73d0e23eeab09d4a0832e87995547c17b80cd`, birinci onay mevcut; ikinci bekler.
+#1196 EK27 head `1648d8073a48f221cb0345410456b61e51f08c17`, iki yeni DOCS incelemesi bekler.
+İrsaliye takip cevabı [6928456459](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6928456459):
+gerçekten kesilmiş/kesinleşmiş ETTN'li irsaliye veya fatura varsa dış belgenin kg
+dağılımı esas alınır; böyle belge yoksa teorik kg oranlı dağılım hesaplanır. Gelecekte
+sistemden belge kesimi bu dağılımı kullanır. İki dış belge çelişirse yeni öncelik kuralı
+çıkarılmadı; ETTN alanının doluluğu tek başına gerçek kesim kanıtı sayılmaz.
+#1197 EK28 head `f2af2a7ee3bc2d395acc7d6cdfddeef9386f2cc2`, birinci onay mevcut; ikinci bekler.
 Eski karar dosyaları yerinde değiştirilmedi; belge PR'ları kod kabulü değildir.
 
 ## Üretim ve K3 listesi
@@ -119,9 +125,32 @@ kaynağı final K3 gövdesine taşınacaktır; review durumu yükseltilmedi.
 
 ## Derleme ve hafif doğrulama
 
-Api/OpenAPI üretimi, Api.IntegrationTests ve 18 UnitTests projesi: **exit 0, 0 hata/uyarı**.
+Api/OpenAPI üretimi, Api.IntegrationTests, ArchitectureTests ve 18 UnitTests projesi:
+**exit 0, 0 hata/uyarı**.
 TSC `npx tsc -b` exit 0; frontend kaynakları bu ölçümden sonra değişmedi.
-Yeni guard kaynakları için ArchitectureTests derlemesi ve üretici/hafif Python kontrolleri
-henüz tamamlanmadı; sonuçları ayrı doğrulama kaydında tamamlanmadan trene push yapılmaz.
+Derleme bayrakları: `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false
+-p:OpenApiGenerateDocumentsOnBuild=false`; OpenAPI üretiminde ilgili üretim bayrağı açıktı.
+Recovery ve release üreticileri kaynak checkpoint'i
+`bb06a7d27d7ea3d115a46c9ba1f93f7a68225e71` temiz checkout'unda exit 0 verdi.
+Recovery 19 context / 258 migration / 56 durable store olarak doğrulandı.
+
+Hafif doğrulama komutları `python -I -S -B` ile çalıştırıldı; her satır exit 0:
+
+| Komut / paket | Sonuç | Skip |
+|---|---|---|
+| `tools/validate_delivery_backlog.py` | OK | 0 |
+| `unittest discover -s tests/delivery_backlog_validator -p "test_*.py"` | 64 test | 0 |
+| `tools/validate_dotnet_bootstrap_integrity.py` | OK | 0 |
+| `unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py"` | 56 test; 47 koştu | 9 Windows koşullu |
+| `unittest discover -s tests/recovery_surface_inventory -p "test_*.py"` | 36 test; 1607,101 saniye | 0 |
+| `unittest discover -s tests/release_manifest -p "test_*.py"` | 16 test; 551,234 saniye | 0 |
+| `unittest discover -s tests/backend_test_group_verifier -p "test_*.py"` | 28 test | 0 |
+| `unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py"` | 48 test | 0 |
+| `unittest discover -s tests/openapi_contract_drift -p "test_*.py"` | 16 test; 14 koştu | 2 Windows koşullu |
+| `git diff --check` | OK | 0 |
+
+Recovery/release paketleri bu kaynak checkpoint'inde koştu; sonraki değişiklik bu
+raporun sonuç kaydıdır. Kaynak/pin değişirse ilgili kanıt yeniden üretilir. Windows
+koşullu skip'ler koşulmuş test sayılmadı; Linux skip0 kanıtı alınmış sayılmaz.
 Tam uygulama/SQL/test/CI koşumları yapılmadı. Grant/rol, activation, OPEN ve Finance STOP
 değişmedi. Kalan 39 dilim KALAN_PLAN.json'da açık tutulur.
