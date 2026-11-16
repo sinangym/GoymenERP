@@ -51,7 +51,7 @@ const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
-  authenticationSessionBinding: null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
 }
 
 const DIRECTORY = [

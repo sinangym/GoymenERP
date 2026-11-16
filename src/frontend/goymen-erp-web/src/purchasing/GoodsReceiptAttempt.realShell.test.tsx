@@ -90,7 +90,7 @@ function installServer() {
     const method = init?.method ?? 'GET'
     if (url.endsWith('/identity/me')) {
       return json({ userId: ACTOR, displayName: 'SENTETIK Kullanıcı', email: null, allowedCompanyIds: [COMPANY],
-        authenticationSessionBinding: null })
+        mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null })
     }
     if (url.endsWith('/organization/companies')) {
       return json([{ id: COMPANY, code: 'GDC', legalName: 'SENTETIK Demir Çelik', isPlaceholder: false }])

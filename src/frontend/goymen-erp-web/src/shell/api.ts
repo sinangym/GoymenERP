@@ -30,6 +30,9 @@ export interface IdentitySummary {
    * client never derives, trims, reshapes or substitutes a value for it.
    */
   readonly authenticationSessionBinding: string | null
+  readonly mustChangePassword: boolean
+  /** Required-nullable decimal version of the local credential (ID-2). */
+  readonly localCredentialVersion: string | null
 }
 
 export interface CompanySummary {
@@ -111,7 +114,12 @@ function isIdentitySummary(value: unknown): value is IdentitySummary {
     (identity.email === null || typeof identity.email === 'string') &&
     Array.isArray(identity.allowedCompanyIds) &&
     identity.allowedCompanyIds.every((id) => typeof id === 'string') &&
-    isSessionBinding(identity)
+    isSessionBinding(identity) &&
+    typeof identity.mustChangePassword === 'boolean' &&
+    (identity.localCredentialVersion === null ||
+      (typeof identity.localCredentialVersion === 'string' && identity.localCredentialVersion.length <= 19 && /^[1-9]\d*$/.test(identity.localCredentialVersion) &&
+        BigInt(identity.localCredentialVersion) <= 9223372036854775807n)) &&
+    (!identity.mustChangePassword || identity.localCredentialVersion !== null)
   )
 }
 

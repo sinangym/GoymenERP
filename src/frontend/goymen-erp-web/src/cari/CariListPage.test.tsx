@@ -31,7 +31,7 @@ const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [A_ID, B_ID],
-  authenticationSessionBinding: null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
 }
 const DIRECTORY = [
   { id: A_ID, code: 'GDC', legalName: 'Göymen A', isPlaceholder: true },

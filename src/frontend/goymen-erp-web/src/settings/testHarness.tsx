@@ -29,7 +29,7 @@ export const IDENTITY = {
   displayName: 'Yönetim Kurulu Üyesi',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
-  authenticationSessionBinding: null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
 }
 
 export const DIRECTORY = [

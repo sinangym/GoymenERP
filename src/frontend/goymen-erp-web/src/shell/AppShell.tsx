@@ -21,6 +21,7 @@ import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { isLocalAccountMode } from './authMode'
 import { LoginPage } from '../identity/LoginPage'
+import { ChangePasswordPage } from '../identity/ChangePasswordPage'
 import { LogoutControl } from '../identity/LogoutControl'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
@@ -179,12 +180,29 @@ export function AppShell() {
       return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
 
+    // The forced-password flow precedes directory loading: those reads are forbidden for this session.
+    if (localAccount && identity?.mustChangePassword && identity.localCredentialVersion !== null) {
+      return (
+        <main id="main-content" tabIndex={-1}>
+          <ChangePasswordPage
+            key={`${identity.userId}:${identity.authenticationSessionBinding}:${identity.localCredentialVersion}`}
+            expectedVersion={identity.localCredentialVersion}
+            onChanged={completeLogin}
+            onSignedOut={completeLogout}
+          />
+        </main>
+      )
+    }
+
     // Directory / identity problems block the whole shell — fail closed.
-    if (identityState.kind === 'initial-loading' || directoryState.kind === 'initial-loading') {
+    if (identityState.kind === 'initial-loading') {
       return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
     if (identityState.kind !== 'ready') {
       return <StateBlock state={identityState} subject="kimlik" onRetry={retry} />
+    }
+    if (directoryState.kind === 'initial-loading') {
+      return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
     if (directoryState.kind === 'no-authorized-company' || directoryState.kind === 'empty-no-data') {
       return <StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />

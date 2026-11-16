@@ -910,7 +910,7 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
       const url = new URL(String(input), 'http://localhost')
       if (url.pathname.endsWith('/identity/me')) {
         return server.identityStatus === 200
-          ? json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY], authenticationSessionBinding: null })
+          ? json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY], mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null })
           : json({ code: 'unauthenticated' }, server.identityStatus)
       }
       if (url.pathname.endsWith('/organization/companies')) {

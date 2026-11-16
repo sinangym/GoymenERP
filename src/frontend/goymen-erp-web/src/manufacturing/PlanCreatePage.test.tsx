@@ -97,7 +97,7 @@ function installPlanApi(options: {
   const session = options.session ?? (() => SESSION_1)
   const recorded = installFetch({
     capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
-    identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
+    identity: () => ({ ...IDENTITY, userId: actor(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: session() }),
     respond: (url, init) => {
       if (url.includes('/organization/work-centers')) return json([workCenter(), cutWorkCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {

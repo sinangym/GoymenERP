@@ -111,7 +111,7 @@ describe('B-C01-003-STALE — a released GDC response cannot paint GSP', () => {
           (init?.headers as Record<string, string> | undefined)?.['X-Company-Id'] ?? null
 
         if (url.includes('/identity/me'))
-          return json({ userId: USER, displayName: 'Yönetici', email: null, allowedCompanyIds: [GDC, GSP], authenticationSessionBinding: null })
+          return json({ userId: USER, displayName: 'Yönetici', email: null, allowedCompanyIds: [GDC, GSP], mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null })
         if (url.includes('/organization/companies')) return json(DIRECTORY)
         if (url.includes('/shell/capabilities'))
           return json({

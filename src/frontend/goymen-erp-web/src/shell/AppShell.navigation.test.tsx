@@ -42,7 +42,7 @@ function installFetch(granted: readonly string[]) {
         displayName: 'Kullanici A',
         email: null,
         allowedCompanyIds: [COMPANY],
-        authenticationSessionBinding: null,
+        mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
       })
     }
     if (url.includes('/organization/companies')) {

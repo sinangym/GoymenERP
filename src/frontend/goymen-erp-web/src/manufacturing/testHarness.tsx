@@ -54,7 +54,7 @@ export const IDENTITY = {
   displayName: 'SENTETIK Kullanıcı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
-  authenticationSessionBinding: SESSION_1 as string | null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: SESSION_1 as string | null,
 }
 
 /** What the stubbed `/identity/me` answers with; a record lets a case send a deliberately malformed body. */

@@ -189,7 +189,8 @@ export function useShellOrchestrator(): ShellOrchestration {
   const directoryQuery = useQuery({
     queryKey: ['shell', 'directory'],
     queryFn: ({ signal }) => fetchCompanyDirectory(signal),
-    enabled: !sessionInvalid,
+    // ID-2F: a forced-password session may only change its own password or sign out.
+    enabled: !sessionInvalid && identityQuery.data?.type === 'ok-single' && !identityQuery.data.data.mustChangePassword,
   })
 
   const identityState = (
@@ -208,6 +209,7 @@ export function useShellOrchestrator(): ShellOrchestration {
   const identityId = identity?.userId ?? null
   // From the SAME decoded response as `identityId`: the pair is the server's answer about one authenticated session.
   const identityBinding = identity === null ? null : identity.authenticationSessionBinding
+  const passwordChangeRequired = identity?.mustChangePassword === true
   if (identityId !== null && !hadSession) setHadSession(true)
 
   // --- P1-1: actor change -> full reset --------------------------------------
@@ -241,7 +243,7 @@ export function useShellOrchestrator(): ShellOrchestration {
   const sessionEpoch = state.sessionEpoch
 
   useEffect(() => {
-    if (sessionInvalid || !neverBootstrapped || identityId === null || !directoryReady) return
+    if (sessionInvalid || passwordChangeRequired || !neverBootstrapped || identityId === null || !directoryReady) return
     const list = directoryOf(directoryQuery.data)
     const preferred = readCompanyPreference()
     const company = list.find((entry) => entry.id === preferred) ?? list[0]
@@ -291,6 +293,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     return () => controller.abort()
   }, [
     sessionInvalid,
+    passwordChangeRequired,
     neverBootstrapped,
     identityId,
     identityBinding,
@@ -309,7 +312,7 @@ export function useShellOrchestrator(): ShellOrchestration {
   const attemptGeneration = state.requestFenceGeneration
 
   useEffect(() => {
-    if (switchCompanyId === null || identityId === null) return
+    if (passwordChangeRequired || switchCompanyId === null || identityId === null) return
     const controller = new AbortController()
     const fail = () => {
       setSwitchFailure(true)
@@ -357,6 +360,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     return () => controller.abort()
   }, [
     switchCompanyId,
+    passwordChangeRequired,
     switchScopeMode,
     attemptGeneration,
     identityId,

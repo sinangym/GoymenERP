@@ -87,7 +87,7 @@ function installFetch(h: Harness) {
           displayName: 'Kullanıcı A',
           email: null,
           allowedCompanyIds: [COMPANY],
-          authenticationSessionBinding: null,
+          mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
         })
       if (url.includes('/organization/companies')) return json(DIRECTORY)
       if (url.includes('/shell/capabilities')) {
@@ -212,7 +212,7 @@ describe('#146 / #148 — a route entry re-authorizes before anything renders', 
             displayName: 'Kullanıcı A',
             email: null,
             allowedCompanyIds: [COMPANY],
-            authenticationSessionBinding: null,
+            mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
           })
         if (url.includes('/organization/companies')) return json(DIRECTORY)
         if (url.includes('/shell/capabilities')) {
@@ -280,7 +280,7 @@ describe('#148 — the same gate covers C-03', () => {
             displayName: 'Kullanıcı A',
             email: null,
             allowedCompanyIds: [COMPANY],
-            authenticationSessionBinding: null,
+            mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
           })
         if (url.includes('/organization/companies')) return json(DIRECTORY)
         if (url.includes('/shell/capabilities')) {

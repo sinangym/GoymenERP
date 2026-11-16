@@ -97,6 +97,23 @@ export const LOGOUT_TEXT = {
   unexpected: 'Sunucu yanıtı beklenen biçimde değil; çıkışın tamamlandığı doğrulanamadı. Yeniden deneyin.',
 } as const
 
+export const PASSWORD_TEXT = {
+  heading: 'Parolanızı değiştirin',
+  lead: 'Devam etmek için yeni bir parola belirlemeniz gerekiyor.',
+  current: 'Mevcut parola', next: 'Yeni parola', confirm: 'Yeni parola tekrar',
+  show: 'Parolaları göster', hide: 'Parolaları gizle', submit: 'Parolayı değiştir', pending: 'Değiştiriliyor…',
+  missing: 'Parola alanlarının tamamını doldurun.', mismatch: 'Yeni parolalar aynı olmalıdır.',
+  currentInvalid: 'Mevcut parola doğrulanamadı. Yeniden girin.',
+  refused: 'Yeni parola veya istek sunucu tarafından kabul edilmedi. Bilgileri yeniden girin.',
+  conflict: 'Hesap bilgileri değişti. Güncel bilgileri yükleyip yeniden deneyin.',
+  forbidden: 'Parola değiştirme isteği için yetkiniz yok.', notFound: 'Bu ortamda parola değiştirme kullanılamıyor.',
+  offline: 'Bağlantı yok. Sonuç doğrulanamadı; aynı isteği yeniden deneyin.',
+  'network-error': 'Sunucuya ulaşılamadı. Sonuç doğrulanamadı; aynı isteği yeniden deneyin.',
+  'service-unavailable': 'Servis geçici olarak kullanılamıyor. Sonuç doğrulanamadı; aynı isteği yeniden deneyin.',
+  malformed: 'Beklenmeyen yanıt alındı. Sonuç doğrulanamadı; aynı isteği yeniden deneyin.',
+  retry: 'Aynı isteği yeniden dene', reload: 'Güncel bilgileri yükle',
+} as const
+
 export function assignmentCountLabel(effective: number, total: number): string {
   return `${effective} geçerli / ${total} atama`
 }
