@@ -110,6 +110,11 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderRiskOutcomeSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
+        // LOJ-D19 (SAT-D285): the usage mirror of the Logistics definite-shipment events over the Sales store, and its inbox
+        // consumer. The consumer is NOT handed to the Work dispatcher (AddWorkInboxConsumer) yet: the Logistics outbox source
+        // does not exist until its owner registers it, and the dispatcher refuses an unknown source at start.
+        services.AddScoped<ISalesRiskExceptionUsageStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<SalesLogisticsShipmentInboxConsumer>();
         // F-018 / plan S2 (FNS-D30, SAT-D310): the shipment risk gate read for the Logistics gate — the same deterministic risk
         // evaluation as a company-scoped system read, with the shipment's risk exception embedded. Read-only; amount-free.
         services.AddScoped<ISalesShipmentRiskGateSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());

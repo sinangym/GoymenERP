@@ -172,7 +172,8 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         RequireResolvedCompany();
         var row = await dbContext.ShipmentRiskExceptions.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.OrderId == orderId && candidate.ExceptionNo == exceptionNo, cancellationToken);
-        return row is null ? null : SalesRiskExceptionRows.Restore(row);
+        // LOJ-D19: a mirrored drop (the using shipment was cancelled) applies on read.
+        return row is null ? null : (await RestoreRiskExceptionsAsync([row], cancellationToken))[0];
     }
 
     public async Task<IReadOnlyList<SalesShipmentRiskException>> ListRiskExceptionsAsync(Guid orderId, int limit,
@@ -186,7 +187,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
 
         var rows = await dbContext.ShipmentRiskExceptions.AsNoTracking().Where(row => row.OrderId == orderId)
             .OrderByDescending(row => row.ExceptionNo).Take(limit).ToListAsync(cancellationToken);
-        return [.. rows.Select(SalesRiskExceptionRows.Restore)];
+        return await RestoreRiskExceptionsAsync(rows, cancellationToken);
     }
 
     public async Task<IReadOnlyList<SalesShipmentRiskException>> ListShipmentRiskExceptionsAsync(Guid orderId, Guid loadingInstructionId,
@@ -196,7 +197,8 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         var rows = await dbContext.ShipmentRiskExceptions.AsNoTracking()
             .Where(row => row.OrderId == orderId && row.LoadingInstructionId == loadingInstructionId)
             .OrderByDescending(row => row.ExceptionNo).ToListAsync(cancellationToken);
-        return [.. rows.Select(SalesRiskExceptionRows.Restore)];
+        // LOJ-D19: the Logistics gate reads through here, so a dropped exception answers lapsed (SAT-D285 (2)).
+        return await RestoreRiskExceptionsAsync(rows, cancellationToken);
     }
 
     private Task<ShipmentRiskExceptionAttemptRow?> FindRiskExceptionAttemptAsync(string commandName, string keyHash,

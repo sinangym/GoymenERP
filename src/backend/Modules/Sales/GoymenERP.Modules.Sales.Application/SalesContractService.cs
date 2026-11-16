@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// contract discount limit is read through <see cref="ISalesContractDiscountLimitSourceV1"/>. Without that port, or when it
 /// answers null, no limit is configured: every discount goes to approval (SAT-D346) — never "unlimited". SAT-D358: the limit is a
 /// separate per-company Settings value whose provider the Settings owner implements; until it does, the unset limit holds.
-/// SAT-D362: the end date is optional (null = open-ended).</item>
+/// SAT-D362: the end date is optional (null = open-ended); SAT-D368 (SINAN-CEVAP 33) confirms it.</item>
 /// <item><b>Approve / reject the discount</b> (<c>sales.contracts.discount.approve</c>, NS-13): the expected version, only a
 /// pending contract, never by its creator; a rejection takes a reason.</item>
 /// <item><b>Read</b> (<c>sales.contracts.read</c>): the company's contracts, newest first, and one contract.</item>
@@ -49,7 +49,7 @@ public sealed class SalesContractService(
     private const string ApprovePermission = SalesPermissionManifestV1.ContractsDiscountApprove;
     private const string ReadPermission = SalesPermissionManifestV1.ContractsRead;
 
-    /// <summary>SAT-D361: the sales order price read (SALES-P2) also governs the contract's amounts.</summary>
+    /// <summary>SAT-D361, SAT-D369 (SINAN-CEVAP 33): the sales order price read (SALES-P2) also governs the contract's amounts.</summary>
     private const string PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead;
 
     private static readonly SalesDraftStateAudit CreatedAudit =

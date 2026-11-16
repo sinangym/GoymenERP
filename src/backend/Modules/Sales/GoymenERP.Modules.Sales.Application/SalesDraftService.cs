@@ -811,7 +811,9 @@ public sealed partial class SalesDraftService(
     /// appended schedule, the header's version, the attempt, the audit event with the dates before and after). A stale
     /// version or a withdrawn draft is the key's TERMINAL 409 (recorded, replayed); a line/slice mismatch or a no-change
     /// update is a 422 on <c>lines</c> / <c>lines[i].slices</c>; a lost race answers the winner (§8). Nothing is measured
-    /// after the commit (S03). The approval axis and the commercial revision do not move.
+    /// after the commit (S03). The approval axis and the commercial revision do not move. SAT-D370 (SINAN-CEVAP 33): the line termin
+    /// is edited under the existing order edit permission and audited; today that is this registered delivery-schedule name (which
+    /// edit permission SAT-D370 means is NEEDS-SINAN; no name, grant or binding is changed here).
     /// </summary>
     public async Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default)

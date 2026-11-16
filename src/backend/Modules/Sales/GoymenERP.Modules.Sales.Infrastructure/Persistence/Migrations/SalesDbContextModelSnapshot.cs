@@ -3744,6 +3744,73 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ShipmentRiskExceptionUsageRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("ExceptionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ExceptionNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("LoadingInstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "ShipmentId", "Kind");
+
+                    b.HasIndex("CompanyId", "ExceptionId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ShipmentRiskExceptionUsages_Exception");
+
+                    b.ToTable("ShipmentRiskExceptionUsages", "sales", t =>
+                        {
+                            t.HasTrigger("TR_ShipmentRiskExceptionUsages_Guard");
+
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [ExceptionId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' AND [SourceEventId] <> '00000000-0000-0000-0000-000000000000' AND [ExceptionNo] >= 1");
+
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Kind", "[Kind] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Text", "LEN([SourceName]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractServiceInvoiceAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -4546,6 +4613,22 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ShipmentRiskExceptionUsageRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.ShipmentRiskExceptionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ExceptionId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
