@@ -8,7 +8,7 @@ import { PLAN, WORK_CENTER } from './testHarness'
 export function suggestedDueDate(overrides: Record<string, unknown> = {}) {
   return {
     contractVersion: 2,
-    methodCode: 'calendar_capacity_queue_from_now',
+    methodCode: 'calendar_capacity_remaining_queue_from_now',
     planId: PLAN,
     planVersion: 1,
     dueDateRevision: 0,
@@ -26,7 +26,7 @@ export function suggestedDueDate(overrides: Record<string, unknown> = {}) {
     totalWorkingMinutes: 1232,
     capacityKgPerHour: '100',
     capacityProfileVersion: '3',
-    capacitySource: 'Settings',
+    capacitySource: 'WorkCenterCapacity',
     calendarVersion: 7,
     calendarSource: 'WorkCenter',
     timeZoneId: 'Europe/Istanbul',

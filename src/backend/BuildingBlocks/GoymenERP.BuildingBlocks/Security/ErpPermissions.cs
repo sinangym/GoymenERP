@@ -458,6 +458,15 @@ public static class ErpPermissions
     public const string ManufacturingOrdersRead = "manufacturing.orders.read";
 
     /// <summary>
+    /// F-009 D3 (API-25, URT-S2): correcting a recorded output declaration — an append-only output reversal plus
+    /// Inventory's <c>manufacturing.output-reversal</c> movement. Its own name because recording a fact is not
+    /// correcting one (URETIM_EMRI_DUZELTME_ANALIZ D3 names it). Registered, not granted: no role and no user receives
+    /// it here; who may correct is a human gate. Company-wide only (the route filters by no work center, so a narrow
+    /// grant would fail open). Not Critical: whether a correction is a segregated duty is the same human gate.
+    /// </summary>
+    public const string ManufacturingFactsCorrect = "manufacturing.facts.correct";
+
+    /// <summary>
     /// The order's close (MFG-ORD, #66 5743488059): its own name, because recording a fact is not
     /// closing an order — a holder of <see cref="ManufacturingFactsRecord"/> does not thereby end the
     /// order's WIP. Registered, not granted, and company-wide only for the reason above (K-1). Not
@@ -484,6 +493,16 @@ public static class ErpPermissions
     /// human gate, not a grant: this file still gives the name to no role and no user.
     /// </summary>
     public const string ManufacturingOrdersWrite = "manufacturing.orders.write";
+
+    /// <summary>
+    /// F-009 D5 (URT-D33/D34): cancelling an open production order that left no net effect (every output reversed, every
+    /// issued kilogram returned, no WIP), with a reason; the order is kept as Cancelled, never deleted, and its plan is
+    /// released for re-approval. Its own name because cancelling an order is neither creating, editing nor closing one.
+    /// Registered, not granted: no role and no user receives it here; who cancels an order is a human gate. Company-wide
+    /// only (K-1: the route filters by no work center). Not Critical: no source names the cancel a segregated duty; if one
+    /// does, the flag is a human decision.
+    /// </summary>
+    public const string ManufacturingOrdersCancel = "manufacturing.orders.cancel";
 
     /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
@@ -1601,9 +1620,11 @@ public static class ErpPermissions
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
+            ManufacturingFactsCorrect,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
+            ManufacturingOrdersCancel,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,
@@ -1857,9 +1878,11 @@ public static class ErpPermissions
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
+            ManufacturingFactsCorrect,
             ManufacturingOrdersClose,
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
+            ManufacturingOrdersCancel,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingScrapPricesRead,

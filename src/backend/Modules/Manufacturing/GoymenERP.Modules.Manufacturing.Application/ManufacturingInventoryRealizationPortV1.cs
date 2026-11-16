@@ -273,6 +273,9 @@ public enum ManufacturingPlanAllocationReleaseReasonV1
 {
     PlanCancelled = 1,
     OrderClosed = 2,
+
+    /// <summary>F-009 D5 (URT-D34): the plan's order was cancelled; its allocation generation is released.</summary>
+    OrderCancelled = 3,
 }
 
 /// <summary>One allocation Inventory wrote for a plan input (Manufacturing's own copy of the identity).</summary>
@@ -296,4 +299,57 @@ public static class ManufacturingPlanAllocationCodesV1
 
     /// <summary>The planned parent label now carries another product than the plan's technical snapshot (URT-D3).</summary>
     public const string LabelIdentityChanged = "manufacturing_plan_allocation_label_identity_changed";
+}
+
+/// <summary>
+/// F-009 D3 (API-25, URT-S2): Manufacturing-owned bridge for one output correction. The implementation records the
+/// append-only output reversal and Inventory's <c>manufacturing.output-reversal</c> movement in one transaction under
+/// the order's expected version and the output label's expected version. Inventory decides, under that label fence,
+/// whether the declared mass can still leave the stock; no caller-side read is the decision source.
+/// </summary>
+public interface IManufacturingInventoryOutputCorrectionPortV1
+{
+    Task<ManufacturingInventoryOutputCorrectionPortResultV1> CorrectOutputAsync(
+        ManufacturingInventoryOutputCorrectionPortCommandV1 command,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken);
+}
+
+public sealed record ManufacturingInventoryOutputCorrectionPortCommandV1(
+    Guid OrderId,
+    long ExpectedOrderVersion,
+    Guid OutputId,
+    Guid ReversalId,
+    Guid LabelId,
+    long ExpectedLabelVersion,
+    Guid MovementId,
+    Kilograms Quantity,
+    string Reason,
+    DateTimeOffset OccurredAtUtc);
+
+public sealed record ManufacturingInventoryOutputCorrectionPortResultV1(
+    long OrderVersion,
+    long LabelVersion,
+    bool IsReplay);
+
+/// <summary>
+/// Stable Manufacturing codes of an output correction that Inventory refused under its label fence. Each one names
+/// the physical reason the declared mass can no longer be taken back; the host maps Inventory's closed reversal code
+/// set onto these and never invents a reason Inventory did not give.
+/// </summary>
+public static class ManufacturingOutputCorrectionCodesV1
+{
+    public const string ExceedsProduced = "manufacturing_output_correction_exceeds_produced";
+    public const string Shipped = "manufacturing_output_correction_shipped";
+    public const string IssuedToManufacturing = "manufacturing_output_correction_issued_to_manufacturing";
+    public const string Transferred = "manufacturing_output_correction_transferred";
+    public const string Allocated = "manufacturing_output_correction_allocated";
+    public const string Blocked = "manufacturing_output_correction_blocked";
+    public const string NotFree = "manufacturing_output_correction_not_free";
+    public const string LabelUnreadable = "manufacturing_output_correction_label_unreadable";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        ExceedsProduced, Shipped, IssuedToManufacturing, Transferred, Allocated, Blocked, NotFree, LabelUnreadable,
+    ];
 }

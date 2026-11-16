@@ -73,6 +73,18 @@ public sealed class ProductionOrder
     /// <summary>The exact Settings profile selected for a policy-backed close; null for an open or legacy order.</summary>
     public ClosureTolerancePolicySnapshotV1? ClosurePolicy { get; private set; }
 
+    /// <summary>F-009 D5 (URT-D33): who cancelled the order; null unless <see cref="OrderStatus.Cancelled"/>.</summary>
+    public Guid? CancelledByUserId { get; private set; }
+
+    /// <summary>F-009 D5 (URT-D33): when the order was cancelled (UTC); null unless cancelled.</summary>
+    public DateTimeOffset? CancelledAtUtc { get; private set; }
+
+    /// <summary>F-009 D5 (URT-D33): the trimmed reason given for the cancel; null unless cancelled.</summary>
+    public string? CancellationReason { get; private set; }
+
+    /// <summary>F-009 D5: the longest cancellation reason (the plan decision reason bound).</summary>
+    public const int CancellationReasonMaximumLength = ProductionPlan.DecisionReasonMaximumLength;
+
     /// <summary>The dedicated exception approval used by an out-of-tolerance close, if one was required.</summary>
     public ClosureExceptionApprovalV1? ClosureExceptionApproval { get; private set; }
 
@@ -152,6 +164,9 @@ public sealed class ProductionOrder
                 "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
         }
 
+        // F-009 D5 (URT-D35): a plan released by a cancelled order is re-approved before it opens a new order.
+        plan.RequireNoPendingReapproval();
+
         if (businessToday is { } today)
         {
             plan.RequireDueDateNotPast(today);
@@ -201,7 +216,10 @@ public sealed class ProductionOrder
         IEnumerable<OutputReversal>? outputReversals = null,
         DateOnly? dueDate = null,
         long dueDateRevision = 0,
-        DateOnly? planDueDate = null)
+        DateOnly? planDueDate = null,
+        Guid? cancelledByUserId = null,
+        DateTimeOffset? cancelledAtUtc = null,
+        string? cancellationReason = null)
     {
         ArgumentNullException.ThrowIfNull(issues);
         ArgumentNullException.ThrowIfNull(returns);
@@ -262,7 +280,22 @@ public sealed class ProductionOrder
                 measurement.Mass, measurement.MeasuredAtUtc);
         }
 
-        if (closedByUserId is { } closedBy && closedAtUtc is { } closedAt)
+        var hasCancel = cancelledByUserId is not null || cancelledAtUtc is not null || cancellationReason is not null;
+        if (hasCancel)
+        {
+            // F-009 D5: a stored cancel carries all three fields, and excludes a close.
+            if (cancelledByUserId is not { } cancelledBy || cancelledAtUtc is not { } cancelledAt
+                || cancellationReason is null || closedByUserId is not null || closedAtUtc is not null
+                || closurePolicy is not null || closureExceptionApproval is not null)
+            {
+                throw new ManufacturingRuleException(
+                    ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı iptal izi iptal edeni, anı ve gerekçeyi birlikte taşımalı ve kapanışla birlikte bulunamaz.");
+            }
+
+            order.Cancel(order.Version, cancelledBy, cancelledAt, cancellationReason);
+        }
+        else if (closedByUserId is { } closedBy && closedAtUtc is { } closedAt)
         {
             if (closurePolicy is null)
             {
@@ -765,6 +798,52 @@ public sealed class ProductionOrder
         CompleteClose(closedByUserId, closedAt);
     }
 
+    /// <summary>
+    /// F-009 D5 (URT-D33/D34): cancels an open order that has no net effect left. Every output must be fully reversed
+    /// (net 0 kg — the reversal already checked the downstream lock), every planned roll must be returned in full
+    /// (issued − returned = 0) and its latest WIP reading, if any, must be 0 kg; otherwise
+    /// <see cref="ManufacturingRuleCodes.OrderCancelHasNetEffect"/>. A cancel is a terminal state: the order takes no
+    /// new fact. The plan's release for re-approval is recorded by
+    /// <see cref="ProductionPlan.ReleaseCancelledOrder(Guid)"/> in the same unit of work.
+    /// </summary>
+    public void Cancel(long expectedVersion, Guid cancelledByUserId, DateTimeOffset cancelledAt, string? reason)
+    {
+        RequireVersion(expectedVersion);
+        RequireOpen();
+        RequireId(cancelledByUserId, nameof(cancelledByUserId));
+        var text = RequireCancellationReason(reason);
+
+        var outputsLeft = _outputs.Any(output => NetMassOf(output).Value != 0m);
+        var rollsLeft = _plannedInputs.Any(input =>
+            IssuedOf(input.ParentRollId) - ReturnedOf(input.ParentRollId) != 0m
+            || (LatestWipOf(input.ParentRollId)?.Mass.Value ?? 0m) != 0m);
+        if (outputsLeft || rollsLeft)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.OrderCancelHasNetEffect,
+                "Net etkisi kalan emir iptal edilemez: çıktılar düzeltmeyle sıfırlanmalı, girdiler iade edilmeli ve WIP sıfır olmalı.");
+        }
+
+        CancelledByUserId = cancelledByUserId;
+        CancelledAtUtc = cancelledAt.ToUniversalTime();
+        CancellationReason = text;
+        Status = OrderStatus.Cancelled;
+        Version++;
+    }
+
+    private static string RequireCancellationReason(string? reason)
+    {
+        var text = reason?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length > CancellationReasonMaximumLength || text.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                $"İptal gerekçesi 1–{CancellationReasonMaximumLength} karakter olmalı ve kontrol karakteri taşımamalıdır.",
+                nameof(reason));
+        }
+
+        return text;
+    }
+
     /// <summary>Proves the stored order/version can enter a close decision without mutating it.</summary>
     public void RequireClosable(long expectedVersion)
     {
@@ -866,6 +945,11 @@ public sealed class ProductionOrder
 
     private void RequireOpen()
     {
+        if (Status == OrderStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderCancelled, "İptal edilmiş emre yeni gerçekleşme yazılamaz.");
+        }
+
         if (Status != OrderStatus.Open)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderClosed, "Kapanmış emre yeni gerçekleşme yazılamaz.");

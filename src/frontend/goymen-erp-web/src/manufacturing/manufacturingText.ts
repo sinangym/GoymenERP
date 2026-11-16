@@ -266,6 +266,79 @@ export const CLOSE_TEXT = {
   closedAt: 'Kapanış zamanı',
 } as const
 
+/**
+ * F-009 D6 (UI-14, API-25): the output correction form. A correction is an append-only reversal of one recorded output
+ * declaration: the declaration is never deleted, and Inventory records its own reversal movement in the same
+ * transaction. The text never promises a stock figure; the server decides under the label's fence.
+ */
+export const OUTPUT_CORRECTION_TEXT = {
+  heading: 'Çıktı düzeltme',
+  help:
+    'Kaydedilmiş bir çıktı beyanından kütle geri alınır. Beyan silinmez; ters kayıt beyana bağlı yeni bir olgu olarak ' +
+    'yazılır ve stok aynı işlemde düzeltilir. Sevk edilmiş, aktarılmış, ayrılmış veya başka üretime verilmiş kütle ' +
+    'geri alınamaz.',
+  outputsLoading: 'Emrin çıktıları okunuyor…',
+  outputsSubject: 'emrin çıktıları',
+  noOutputs: 'Bu emirde düzeltilecek bir çıktı beyanı yok.',
+  truncated: 'Çıktı listesi sunucunun okuma sınırına ulaştı; aradığınız çıktı listede olmayabilir.',
+  output: 'Düzeltilecek çıktı',
+  outputPlaceholder: 'Bir çıktı seçin',
+  outputOption: (outputId: string, labelId: string) => `Çıktı ${outputId} · etiket ${labelId}`,
+  outputRequired: 'Düzeltilecek çıktıyı seçin.',
+  labelSubject: 'çıktı etiketi',
+  labelLoading: 'Çıktı etiketi okunuyor…',
+  labelVersion: 'Etiket sürümü',
+  labelNotReady: 'Çıktı etiketi okunmadan düzeltme gönderilemez.',
+  labelPermission: 'Çıktı etiketini okuma yetkiniz yok; etiket sürümü olmadan düzeltme gönderilemez.',
+  kg: 'Geri alınacak kg',
+  reason: 'Düzeltme gerekçesi',
+  reasonRequired: 'Düzeltme gerekçesi zorunludur.',
+  occurredAt: 'Düzeltme zamanı',
+  closedOrder: 'Emir açık değil; kapalı emirde çıktı düzeltmesi yapılmaz.',
+  submit: 'Düzeltmeyi gönder',
+  confirmQuestion: 'Seçilen çıktıdan bu kütle geri alınsın mı? Ters kayıt silinemez; yalnız yeni bir olguyla dengelenir.',
+  confirm: 'Evet, düzeltmeyi kaydet',
+  cancel: 'Vazgeç',
+  sending: 'Gönderiliyor…',
+  resend: 'Aynı işlem anahtarıyla yeniden gönder',
+  appliedTitle: 'Düzeltme kaydedildi',
+  appliedDetail: 'Ters kayıt yazıldı; yukarıdaki değerler emrin yeniden okunmuş hâlidir.',
+  replayedTitle: 'Düzeltme zaten kayıtlıydı',
+  replayedDetail: 'Bu düzeltme sunucuda zaten kayıtlıydı; ikinci bir ters kayıt oluşmadı.',
+  refusedTitle: 'Düzeltme kaydedilmedi',
+  unknownTitle: 'Düzeltmenin sonucu bilinmiyor',
+  unknownHelp:
+    'Aynı düzeltmeyi aynı işlem anahtarıyla yeniden gönderin: kaydedildiyse ikinci bir ters kayıt oluşmaz. Yeni bir ' +
+    'düzeltme, bu çözülene kadar gönderilemez.',
+} as const
+
+/**
+ * F-009 D5/D6 (URT-D33): the order cancel. The order and its facts are not deleted; a cancelled order is a status, and
+ * the plan returns to Approved on the server. The text names the server's preconditions; it never checks them itself.
+ */
+export const ORDER_CANCEL_TEXT = {
+  heading: 'Emri iptal et',
+  help:
+    'İptal, yalnız emirde hiçbir şey kalmadığında yapılır: net çıktı ve net girdi çıkışı sıfır, yarı mamul yok, ' +
+    'kilitli kütle yok. Emir ve olguları silinmez; plan yeniden onaylı duruma döner. Koşulları sunucu denetler.',
+  action: 'Emri iptal et',
+  reason: 'İptal gerekçesi',
+  reasonRequired: 'İptal gerekçesi zorunludur.',
+  confirmQuestion: 'Emir iptal edilsin mi? İptal edilen emre yeni gerçekleşme yazılamaz.',
+  confirm: 'Evet, emri iptal et',
+  cancel: 'Vazgeç',
+  notOpen: 'Emir açık değil; iptal edilemez.',
+  sending: 'Gönderiliyor…',
+  resend: 'Aynı işlem anahtarıyla yeniden gönder',
+  appliedTitle: 'Emir iptal edildi',
+  appliedDetail: 'Emir iptal edildi; yukarıdaki değerler emrin yeniden okunmuş hâlidir.',
+  replayedTitle: 'Emir zaten iptal edilmişti',
+  replayedDetail: 'Bu iptal sunucuda zaten kayıtlıydı; ikinci bir iptal oluşmadı.',
+  refusedTitle: 'Emir iptal edilmedi',
+  unknownTitle: 'İptalin sonucu bilinmiyor',
+  unknownHelp: 'Aynı iptali aynı işlem anahtarıyla yeniden gönderin: iptal edildiyse ikinci bir iptal oluşmaz.',
+} as const
+
 export const APPLIED_TITLE = 'Kaydedildi'
 export const APPLIED_DETAIL = 'Olgu kaydedildi. Tablodaki değerler emrin yeniden okunmuş hâlidir.'
 export const REPLAYED_TITLE = 'Daha önce kaydedilmiş'
@@ -317,6 +390,22 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_output_reversal_exceeds_declared:
     'Düzeltme, bu çıktı beyanının kalan net kütlesini aşıyor; bir beyanın ters kayıtlarının toplamı beyan edilen ' +
     'kütleyi geçemez.',
+  // F-009 D3/D6 (API-25): the physical reason Inventory gave, under its label fence, for not taking the mass back.
+  manufacturing_output_correction_exceeds_produced:
+    'Düzeltme, bu çıktı etiketine üretimden giren kütleyi aşıyor; etiketteki üretim kaydından fazlası geri alınamaz.',
+  manufacturing_output_correction_shipped:
+    'Bu çıktı etiketinden sevkiyat yapılmış; sevk edilmiş kütle üretim düzeltmesiyle geri alınamaz.',
+  manufacturing_output_correction_issued_to_manufacturing:
+    'Bu çıktı etiketi başka bir üretime girdi olarak verilmiş; önce o çıkış iade edilmelidir.',
+  manufacturing_output_correction_transferred:
+    'Bu çıktı etiketinin stoğu başka bir konuma veya gözetime aktarılmış; düzeltme yapılamaz.',
+  manufacturing_output_correction_allocated:
+    'Bu çıktı etiketinde ayrılmış (rezerve) kütle var; ayırma kaldırılmadan düzeltme yapılamaz.',
+  manufacturing_output_correction_blocked: 'Bu çıktı etiketi blokeli; bloke kaldırılmadan düzeltme yapılamaz.',
+  manufacturing_output_correction_not_free:
+    'Bu çıktı etiketinde düzeltme kadar serbest stok yok; kütle başka bir işlemde kullanılıyor.',
+  manufacturing_output_correction_label_unreadable:
+    'Çıktı etiketinin durumu okunamadı; düzeltme kaydedilmedi. Biraz sonra yeniden deneyin.',
   manufacturing_wip_already_measured: 'Bu olgu kimliğiyle bir WIP ölçümü zaten var.',
   manufacturing_wip_measurement_not_latest: 'WIP ölçümü, rulonun son ölçümünden sonra olmalı.',
   manufacturing_mass_scale_exceeded: 'Kütle, şirketin kg profilinin izin verdiğinden fazla ondalık içeriyor; yuvarlanmadı.',
@@ -398,6 +487,40 @@ export function closeFailureText(failure: FactFailure): string {
       return 'Emir siz bakarken değişti. Güncel hâli yeniden okundu; kapanışı yeniden değerlendirin.'
     case 'concurrent-change':
       return 'Aynı anda başka bir kayıt işlendi; emir kapatılmadı. Emir yeniden okundu; yeniden deneyin.'
+    default:
+      return failureText(failure)
+  }
+}
+
+/** The same refusals, told as an OUTPUT CORRECTION; every rule code still comes from {@link failureText}. */
+export function correctionFailureText(failure: FactFailure): string {
+  switch (failure.kind) {
+    case 'forbidden':
+      return 'Bu emirde çıktı düzeltme yetkiniz yok.'
+    case 'not-found':
+      return 'Emir, çıktı beyanı veya çıktı etiketi bulunamadı.'
+    case 'version-conflict':
+      return 'Emir siz formu doldururken değişti. Güncel hâli yeniden okundu; çıktıyı ve kütleyi kontrol edip yeniden gönderin.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir kayıt işlendi; düzeltme kaydedilmedi. Emir yeniden okundu; yeniden gönderin.'
+    case 'label-version-conflict':
+      return 'Çıktı etiketi siz formu doldururken değişti. Etiket yeniden okundu; değerleri kontrol edip yeniden gönderin.'
+    case 'id-conflict':
+      return `Bu düzeltme kimliği başka bir içerikle kayıtlı (${failure.code}). Yeni bir gönderim olarak yeniden deneyin.`
+    default:
+      return failureText(failure)
+  }
+}
+
+/** The same refusals, told as an ORDER CANCEL; every rule code still comes from {@link failureText}. */
+export function cancelFailureText(failure: FactFailure): string {
+  switch (failure.kind) {
+    case 'forbidden':
+      return 'Bu emri iptal etme yetkiniz yok.'
+    case 'version-conflict':
+      return 'Emir siz bakarken değişti. Güncel hâli yeniden okundu; iptali yeniden değerlendirin.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir kayıt işlendi; emir iptal edilmedi. Emir yeniden okundu; yeniden deneyin.'
     default:
       return failureText(failure)
   }

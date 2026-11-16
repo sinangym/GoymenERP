@@ -31,10 +31,14 @@ import {
   closeBody,
   decodeStockShortfall,
   factBody,
+  orderCancelBody,
   orderDueDateBody,
+  outputCorrectionBody,
   type CloseSnapshot,
   type FactSnapshot,
+  type OrderCancelSnapshot,
   type OrderDueDateSnapshot,
+  type OutputCorrectionSnapshot,
   type StockShortfallExpectation,
   type StockShortfallView,
 } from './contract'
@@ -180,6 +184,9 @@ function classifyFailure(
     // URT-D66 (3): the order's termin moved since this screen read it; the screen reads the order again.
     if (code === ORDER_DUE_DATE_CHANGED) return { kind: 'rule', code }
     if (code === PHYSICAL_STOCK_INSUFFICIENT) return physicalStockRefusal(body, replayed, shortfallFor)
+    // F-009 D3 (API-25): the output correction's 409 set — the physical reason Inventory gave for not taking the mass
+    // back under its label fence (shipped, transferred, allocated, …), mapped to Manufacturing codes by the server.
+    if (/^manufacturing_output_correction_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     if (/^inventory_manufacturing_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     return null
   }
@@ -250,6 +257,48 @@ export function changeOrderDueDate(
     `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/due-date`,
     snapshot.idempotencyKey,
     orderDueDateBody(snapshot),
+    signal,
+  )
+}
+
+/**
+ * F-009 D3/D6 (API-25, UI-14): corrects one output declaration — `POST …/orders/{orderId}/facts/{outputId}/correction`
+ * under `manufacturing.facts.correct`. An append-only reversal: nothing is deleted, and Inventory records its
+ * `manufacturing.output-reversal` movement in the same transaction. The same command discipline as a fact: 200 is the
+ * order as the correction first saw it (a replay repeats it), 409 names a version, label-version or idempotency
+ * conflict or the physical reason the mass cannot be taken back, 422 names the domain rule, and a 5xx is UNKNOWN.
+ */
+export function correctOutput(
+  companyId: string,
+  orderId: string,
+  snapshot: OutputCorrectionSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/facts/${encodeURIComponent(snapshot.outputId)}/correction`,
+    snapshot.idempotencyKey,
+    outputCorrectionBody(snapshot),
+    signal,
+  )
+}
+
+/**
+ * F-009 D5/D6 (URT-D33): cancels an order with nothing left on it, through URT-S4's `POST …/orders/{orderId}/cancellation`
+ * with `{expectedVersion, reason}`. The screen draws no control for it until the shell provider publishes its capability.
+ * The same outcomes as the close.
+ */
+export function cancelOrder(
+  companyId: string,
+  orderId: string,
+  snapshot: OrderCancelSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/cancellation`,
+    snapshot.idempotencyKey,
+    orderCancelBody(snapshot),
     signal,
   )
 }

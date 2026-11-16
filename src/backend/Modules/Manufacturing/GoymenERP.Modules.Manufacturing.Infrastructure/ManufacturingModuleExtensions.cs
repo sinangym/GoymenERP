@@ -61,6 +61,9 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingOrderDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-SC33 (URT-D86): the work center queue of the termin suggestion, the same store and DbContext as the plan.
         services.AddScoped<IManufacturingWorkCenterQueueStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // F-009 D5 (URT-D33/D34/D35): the order cancel with its plan release and the plan's re-approval, the same store.
+        services.AddScoped<IManufacturingOrderCancellationStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingPlanReapprovalStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-D42 (3): the read-only list of closed orders for the output-above-input report, the same store and DbContext.
         services.AddScoped<IManufacturingClosedOrderListStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-S13 (URT-D47, URT-D65): the monthly scrap price entry and its read for a weighing, the same store and DbContext.

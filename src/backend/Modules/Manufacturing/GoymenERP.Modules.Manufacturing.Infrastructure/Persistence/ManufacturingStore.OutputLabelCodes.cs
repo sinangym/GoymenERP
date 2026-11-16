@@ -25,7 +25,9 @@ public sealed partial class ManufacturingStore
     /// <item>A replayed output with no code stored (declared before codes were recorded) takes the entered code and
     /// records nothing; without one it is refused (<see cref="ManufacturingStoreCodes.OutputLabelCodeRequired"/>): a
     /// label already opened is never given a new number afterwards.</item>
-    /// <item>A new output takes the entered code when one is given, refused when it is taken in the company
+    /// <item>A new output takes the entered code when one is given and no format is defined (URT-D98: a defined
+    /// <paramref name="format"/> refuses it, <see cref="ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed"/>),
+    /// refused when it is taken in the company
     /// (<see cref="ManufacturingStoreCodes.OutputLabelCodeConflict"/>). Without one it takes the next number of
     /// <paramref name="format"/>; no format is <see cref="ManufacturingStoreCodes.OutputLabelCodeRequired"/>, an unusable
     /// one <see cref="ManufacturingStoreCodes.OutputLabelCodeFormatInvalid"/>.</item>
@@ -89,6 +91,12 @@ public sealed partial class ManufacturingStore
         ManufacturingOutputLabelCodeV1 assigned;
         if (enteredCode is not null)
         {
+            if (!ProductionOutputLabelCodes.AcceptsEnteredCode(format))
+            {
+                throw Refused(ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed,
+                    "Ayarlar'da çıktı etiket numarası biçimi tanımlı; etiket kodu yalnız biçimden verilir, elle girilemez.");
+            }
+
             if (await IsLabelCodeTakenAsync(enteredCode, registered, cancellationToken))
             {
                 throw Refused(ManufacturingStoreCodes.OutputLabelCodeConflict,

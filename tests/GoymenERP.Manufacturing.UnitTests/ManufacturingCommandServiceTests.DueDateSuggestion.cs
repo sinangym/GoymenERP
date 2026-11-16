@@ -12,8 +12,11 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// read grant measured after the reads, for the resolved company's plan only. The calendar comes only from Organization,
 /// the hourly capacity only from the plan's Settings profile; a missing source is a 200 "unavailable" with its reason,
 /// never a guessed day, and nothing is written. URT-SC33: the queue of the work center is counted first (URT-D86), the
-/// capacity is input kg/h (URT-D87), and the profile's optional safety margin is added (URT-D89, absent is zero). The
-/// clock is 2026-09-18 10:00 UTC (Friday, 13:00 in Europe/Istanbul).
+/// capacity is input kg/h (URT-D87), and the optional safety buffer is added (URT-D89, absent is zero). W5 follow-up: the
+/// capacity and buffer come from the Settings work center capacity record (KIM-SC33-b); a day buffer is whole working
+/// days, the work center's buffer wins over the company default and they are never added (URT-D96); the plans ahead are
+/// ordered by termin, priority, creation (URT-D97) and count their remaining kg (URT-D99). The clock is 2026-09-18
+/// 10:00 UTC (Friday, 13:00 in Europe/Istanbul).
 /// Every shift, holiday, kg and kg/h value here is a synthetic test value.
 /// </summary>
 public sealed partial class ManufacturingCommandServiceTests
@@ -29,8 +32,9 @@ public sealed partial class ManufacturingCommandServiceTests
         var fixture = new Fixture();
         var service = new ManufacturingCommandService(fixture.Store, fixture.Store, fixture.Store,
             new ManufacturingMassVerifier(fixture.Settings), fixture.Authority, fixture.CompanyContext, fixture.User,
-            fixture.Correlation, new FixedTime(), manufacturingParameters: capacity, workCenterCalendars: calendar,
-            workCenterQueues: withoutQueue ? null : queue ?? new SuggestionQueuePort());
+            fixture.Correlation, new FixedTime(), workCenterCalendars: calendar,
+            workCenterQueues: withoutQueue ? null : queue ?? new SuggestionQueuePort(),
+            workCenterCapacities: capacity);
         return (fixture, service);
     }
 
@@ -57,7 +61,7 @@ public sealed partial class ManufacturingCommandServiceTests
             holidays ?? []);
 
     [Fact]
-    public async Task A_draft_gets_a_suggestion_from_the_calendar_and_todays_capacity_profile_under_the_plans_read_grant()
+    public async Task A_draft_gets_a_suggestion_from_the_calendar_and_the_work_center_capacity_under_the_plans_read_grant()
     {
         var calendar = new SuggestionCalendarPort { Answer = WeekdayCalendar() };
         var capacity = new SuggestionCapacityPort();
@@ -71,21 +75,22 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Equal((ManufacturingApiStatus.Ok, false, (string?)null), (result.Status, result.IsReplay, result.Code));
         var view = result.Resource!;
         // 500 kg at 100 kg/h is five working hours: 13:00-16:00 on Friday, then 08:00-10:00 on Monday.
-        Assert.Equal((2, "calendar_capacity_queue_from_now", plan.Id, plan.Version, plan.DueDateRevision, WorkCenter),
+        Assert.Equal((2, "calendar_capacity_remaining_queue_from_now", plan.Id, plan.Version, plan.DueDateRevision, WorkCenter),
             (view.ContractVersion, view.MethodCode, view.PlanId, view.PlanVersion, view.DueDateRevision,
                 view.WorkCenterId));
         Assert.Equal(("suggested", (DateOnly?)new DateOnly(2026, 9, 21), "2026-09-21T10:00", "500", (long?)300,
                 (string?)null),
             (view.Status, view.SuggestedDueDate, view.CompletesAtLocal, view.RequiredKg, view.RequiredWorkingMinutes,
                 view.ReasonCode));
-        Assert.Equal(("100", "3", "Settings"), (view.CapacityKgPerHour, view.CapacityProfileVersion, view.CapacitySource));
+        Assert.Equal(("100", "3", "WorkCenterCapacity"),
+            (view.CapacityKgPerHour, view.CapacityProfileVersion, view.CapacitySource));
         Assert.Equal(((long?)7, "WorkCenter", SuggestionZone), (view.CalendarVersion, view.CalendarSource, view.TimeZoneId));
         Assert.Equal(((int?)0, "0", (long?)0, "0", (int?)0, (long?)300),
             (view.QueuedPlanCount, view.QueuedKg, view.QueueWorkingMinutes, view.SafetyMarginHours, view.SafetyMarginDays,
                 view.TotalWorkingMinutes));
         Assert.Equal((new DateOnly(2026, 9, 18), At), (view.BusinessDate, view.CalculatedAtUtc));
         Assert.Equal([(Company, WorkCenter)], calendar.Calls);
-        Assert.Equal(("Slitting", (Guid?)WorkCenter), (capacity.Process, capacity.WorkCenter));
+        Assert.Equal([(Company, WorkCenter)], capacity.Calls);
         Assert.Equal([ErpPermissions.ManufacturingPlansRead], fixture.Authority.Permissions);
         Assert.Equal((ErpPermissions.ManufacturingPlansRead, Company), fixture.Authority.LastAsked);
         Assert.Equal(effects,
@@ -108,60 +113,65 @@ public sealed partial class ManufacturingCommandServiceTests
     }
 
     [Fact]
-    public async Task An_approved_plan_uses_its_captured_profile_and_not_todays_settings()
+    public async Task An_approved_plan_uses_the_work_center_capacity_record_in_force()
     {
         var calendar = new SuggestionCalendarPort { Answer = WeekdayCalendar() };
-        var capacity = new SuggestionCapacityPort { Refusal = ManufacturingProfileProblemCodesV1.ProviderUnavailable };
+        var capacity = new SuggestionCapacityPort { CapacityKgPerHour = 250m, Version = 4 };
         var (fixture, service) = SuggestionCase(calendar, capacity);
         var plan = SuggestionPlan(fixture);
-        plan.WithDueDate().Approve(plan.Version, Actor, At, null, CapturedProfile(
-            new PlanParameterValueV1(ManufacturingDueDateSuggestionV1.CapacityParameterKey, "kg/h", 250m, null)));
+        plan.WithDueDate().Approve(plan.Version, Actor, At, null, CapturedProfile());
 
         var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 
         // 500 kg at 250 kg/h is two hours: 13:00-15:00 on Friday.
-        Assert.Equal(("suggested", (DateOnly?)new DateOnly(2026, 9, 18), "2026-09-18T15:00", "250", "4", "Settings"),
+        Assert.Equal(("suggested", (DateOnly?)new DateOnly(2026, 9, 18), "2026-09-18T15:00", "250", "4",
+                "WorkCenterCapacity"),
             (view.Status, view.SuggestedDueDate, view.CompletesAtLocal, view.CapacityKgPerHour,
                 view.CapacityProfileVersion, view.CapacitySource));
-        Assert.Null(capacity.Process);
+        Assert.Equal([(Company, WorkCenter)], capacity.Calls);
     }
 
     [Fact]
-    public async Task An_approved_plan_without_a_capacity_value_is_capacity_not_configured()
+    public async Task No_capacity_record_is_capacity_not_configured_and_reads_no_calendar()
     {
-        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
-            new SuggestionCapacityPort());
+        var calendar = new SuggestionCalendarPort { Answer = WeekdayCalendar() };
+        var (fixture, service) = SuggestionCase(calendar, new SuggestionCapacityPort { Missing = true });
         var plan = SuggestionPlan(fixture);
-        plan.WithDueDate().Approve(plan.Version, Actor, At, null,
-            CapturedProfile(new PlanParameterValueV1("lineSpeedMetresPerMinute", "m/min", 20m, null)));
 
         var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 
-        Assert.Equal(("unavailable", (DateOnly?)null, "capacity_not_configured", (string?)null, "4"),
+        Assert.Equal(("unavailable", (DateOnly?)null, "capacity_not_configured", (string?)null, (string?)null),
             (view.Status, view.SuggestedDueDate, view.ReasonCode, view.CapacityKgPerHour, view.CapacityProfileVersion));
+        Assert.Empty(calendar.Calls);
     }
 
     [Theory]
-    [InlineData("kg/min", "100", null)]
-    [InlineData("kg/h", null, "fast")]
-    [InlineData("kg/h", "0.000", null)]
-    public void A_capacity_value_with_another_unit_a_choice_or_no_positive_number_is_capacity_invalid(string unit,
-        string? number, string? choice)
+    [InlineData("company")]
+    [InlineData("work-center")]
+    [InlineData("zero")]
+    public async Task A_capacity_answer_for_another_scope_or_without_a_positive_value_is_capacity_invalid(string fault)
     {
-        var profile = CapturedProfile(new PlanParameterValueV1(ManufacturingDueDateSuggestionV1.CapacityParameterKey,
-            unit, number is null ? null : decimal.Parse(number, System.Globalization.CultureInfo.InvariantCulture),
-            choice));
+        var capacity = fault switch
+        {
+            "company" => new SuggestionCapacityPort { AnswerCompany = OtherCompany },
+            "work-center" => new SuggestionCapacityPort { AnswerWorkCenter = Guid.NewGuid() },
+            _ => new SuggestionCapacityPort { CapacityKgPerHour = 0m },
+        };
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() }, capacity);
+        var plan = SuggestionPlan(fixture);
 
-        Assert.Equal(((decimal?)null, "capacity_invalid"), ManufacturingCommandService.CapacityOf(profile));
-        Assert.Equal(((decimal?)null, "capacity_not_configured"), ManufacturingCommandService.CapacityOf(null));
+        var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
+
+        Assert.Equal(("unavailable", "capacity_invalid", (string?)null),
+            (view.Status, view.ReasonCode, view.CapacityKgPerHour));
     }
 
     [Theory]
-    [InlineData("settings_provider_unavailable", "capacity_source_unavailable")]
-    [InlineData("settings_access_denied", "capacity_source_unavailable")]
-    [InlineData("settings_manufacturing_parameter_profile_not_found", "capacity_not_configured")]
-    public async Task A_drafts_settings_answer_without_a_profile_says_why_and_reads_no_calendar(string settingsCode,
-        string reason)
+    [InlineData("settings_provider_unavailable")]
+    [InlineData("settings_access_denied")]
+    [InlineData("settings_profile_invalid")]
+    public async Task A_settings_capacity_failure_is_capacity_source_unavailable_and_reads_no_calendar(
+        string settingsCode)
     {
         var calendar = new SuggestionCalendarPort { Answer = WeekdayCalendar() };
         var (fixture, service) = SuggestionCase(calendar, new SuggestionCapacityPort { Refusal = settingsCode });
@@ -169,20 +179,32 @@ public sealed partial class ManufacturingCommandServiceTests
 
         var result = await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None);
 
-        Assert.Equal((ManufacturingApiStatus.Ok, "unavailable", reason, (string?)null),
+        Assert.Equal((ManufacturingApiStatus.Ok, "unavailable", "capacity_source_unavailable", (string?)null),
             (result.Status, result.Resource!.Status, result.Resource.ReasonCode, result.Resource.CapacityKgPerHour));
         Assert.Empty(calendar.Calls);
     }
 
     [Fact]
-    public async Task Without_a_parameter_port_the_capacity_is_not_configured_and_nothing_is_defaulted()
+    public async Task A_cancelled_capacity_read_is_not_swallowed()
+    {
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
+            new SuggestionCapacityPort { Fault = new OperationCanceledException() });
+        var plan = SuggestionPlan(fixture);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Without_a_capacity_provider_the_source_is_unavailable_and_nothing_is_defaulted()
     {
         var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() }, null);
         var plan = SuggestionPlan(fixture);
 
         var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 
-        Assert.Equal(("unavailable", "capacity_not_configured"), (view.Status, view.ReasonCode));
+        Assert.Equal(("unavailable", "capacity_source_unavailable", (string?)null),
+            (view.Status, view.ReasonCode, view.CapacityKgPerHour));
     }
 
     [Fact]
@@ -266,7 +288,7 @@ public sealed partial class ManufacturingCommandServiceTests
 
         Assert.Equal(("unavailable", "plan_cancelled", "500"), (view.Status, view.ReasonCode, view.RequiredKg));
         Assert.Empty(calendar.Calls);
-        Assert.Null(capacity.Process);
+        Assert.Empty(capacity.Calls);
     }
 
     [Fact]
@@ -351,39 +373,57 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Authority.Permissions);
     }
 
+    private static ProductionQueueEntryV1 Queued(DateOnly? dueDate, int minutesAfterCreation, decimal plannedKg,
+        decimal processedKg = 0m, Guid? planId = null) =>
+        new(planId ?? Guid.NewGuid(), dueDate, 0, At.AddMinutes(minutesAfterCreation), new Kilograms(plannedKg),
+            new Kilograms(processedKg));
+
     [Fact]
-    public async Task The_queued_work_of_the_work_center_is_counted_before_a_drafts_own_work()
+    public async Task The_remaining_work_ordered_ahead_is_counted_before_the_plans_own_work()
     {
-        var queue = new SuggestionQueuePort { Answer = new ManufacturingWorkCenterQueue(2, new Kilograms(300m)) };
+        var queue = new SuggestionQueuePort
+        {
+            Answer = planId => new ManufacturingWorkCenterQueue(
+            [
+                // Ahead: an earlier termin (200 planned, 50 processed → 150 left) and the same termin created earlier.
+                Queued(new DateOnly(2026, 9, 25), 0, 200m, 50m),
+                Queued(new DateOnly(2026, 9, 30), -10, 150m),
+                // Not ahead: a later termin, the same termin created later, and no termin at all.
+                Queued(new DateOnly(2026, 10, 2), -20, 900m),
+                Queued(new DateOnly(2026, 9, 30), 10, 900m),
+                Queued(null, -30, 900m),
+            ], new ProductionQueueEntryV1(planId, new DateOnly(2026, 9, 30), 0, At, Kilograms.Zero, Kilograms.Zero)),
+        };
         var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
             new SuggestionCapacityPort(), queue);
         var plan = SuggestionPlan(fixture);
 
         var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 
-        // (300 queued + 500 plan) kg at 100 kg/h is eight working hours: Friday 13:00-16:00, then Monday 08:00-13:00.
+        // (150 + 150 remaining + 500 plan) kg at 100 kg/h is eight working hours: Friday 13:00-16:00, then Monday
+        // 08:00-13:00.
         Assert.Equal(("suggested", (DateOnly?)new DateOnly(2026, 9, 21), "2026-09-21T13:00", (int?)2, "300", (long?)180,
                 (long?)300, (long?)480),
             (view.Status, view.SuggestedDueDate, view.CompletesAtLocal, view.QueuedPlanCount, view.QueuedKg,
                 view.QueueWorkingMinutes, view.RequiredWorkingMinutes, view.TotalWorkingMinutes));
-        // A draft has no place in the queue yet: every queued plan counts, the plan itself is excluded.
-        Assert.Equal([(WorkCenter, plan.Id, (ManufacturingWorkCenterQueueKey?)null)], queue.Calls);
+        Assert.Equal([(WorkCenter, plan.Id)], queue.Calls);
     }
 
     [Fact]
-    public async Task An_approved_plan_counts_only_the_plans_approved_before_it()
+    public async Task A_store_answer_for_another_target_is_queue_unavailable()
     {
-        var queue = new SuggestionQueuePort();
+        var queue = new SuggestionQueuePort
+        {
+            Answer = _ => new ManufacturingWorkCenterQueue([],
+                new ProductionQueueEntryV1(Guid.NewGuid(), null, 0, At, Kilograms.Zero, Kilograms.Zero)),
+        };
         var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
             new SuggestionCapacityPort(), queue);
         var plan = SuggestionPlan(fixture);
-        plan.WithDueDate().Approve(plan.Version, Actor, At, null, CapturedProfile(
-            new PlanParameterValueV1(ManufacturingDueDateSuggestionV1.CapacityParameterKey, "kg/h", 250m, null)));
 
-        await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None);
+        var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 
-        Assert.Equal([(WorkCenter, plan.Id, (ManufacturingWorkCenterQueueKey?)new ManufacturingWorkCenterQueueKey(
-            plan.ApprovedAtUtc!.Value, plan.Id))], queue.Calls);
+        Assert.Equal(("unavailable", "queue_unavailable"), (view.Status, view.ReasonCode));
     }
 
     [Fact]
@@ -406,72 +446,82 @@ public sealed partial class ManufacturingCommandServiceTests
             (unreadable.Status, unreadable.ReasonCode, unreadable.SuggestedDueDate));
     }
 
-    [Fact]
-    public async Task The_profiles_safety_margin_hours_and_days_are_added_after_the_work()
+    [Theory]
+    [InlineData("Hours", "1", "2026-09-18", "2026-09-18T16:00", "1", 0, 180L)]
+    [InlineData("Days", "2", "2026-09-22", "2026-09-18T15:00", "0", 2, 120L)]
+    public async Task The_work_center_buffer_is_added_after_the_work_a_day_being_a_working_day(string unit,
+        string value, string suggested, string completesAt, string marginHours, int marginDays, long totalMinutes)
     {
-        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
-            new SuggestionCapacityPort());
+        var capacity = new SuggestionCapacityPort
+        {
+            CapacityKgPerHour = 250m,
+            BufferValue = decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            BufferUnit = unit,
+        };
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() }, capacity);
         var plan = SuggestionPlan(fixture);
-        plan.WithDueDate().Approve(plan.Version, Actor, At, null, CapturedProfile(
-            new PlanParameterValueV1(ManufacturingDueDateSuggestionV1.CapacityParameterKey, "kg/h", 250m, null),
-            new PlanParameterValueV1(ManufacturingDueDateSuggestionV1.SafetyMarginHoursParameterKey, "h", 1m, null),
-            new PlanParameterValueV1(ManufacturingDueDateSuggestionV1.SafetyMarginDaysParameterKey, "d", 2m, null)));
 
         var view = (await service.GetPlanDueDateSuggestionAsync(plan.Id, CancellationToken.None)).Resource!;
 
-        // 500 kg at 250 kg/h is two hours plus one margin hour: Friday 13:00-16:00; two working days later is Tuesday.
-        Assert.Equal(("suggested", (DateOnly?)new DateOnly(2026, 9, 22), "2026-09-18T16:00", "1", (int?)2, (long?)180),
+        // 500 kg at 250 kg/h is two hours from Friday 13:00; one buffer hour ends at 16:00; two working days after
+        // Friday skip the weekend and land on Tuesday.
+        Assert.Equal(("suggested", (DateOnly?)DateOnly.Parse(suggested, System.Globalization.CultureInfo.InvariantCulture),
+                completesAt, marginHours, (int?)marginDays, (long?)totalMinutes),
             (view.Status, view.SuggestedDueDate, view.CompletesAtLocal, view.SafetyMarginHours, view.SafetyMarginDays,
                 view.TotalWorkingMinutes));
     }
 
     [Theory]
-    [InlineData("dueDateSafetyMarginHours", "d", "1", null)]
-    [InlineData("dueDateSafetyMarginHours", "h", "-1", null)]
-    [InlineData("dueDateSafetyMarginHours", "h", null, "long")]
-    [InlineData("dueDateSafetyMarginDays", "h", "1", null)]
-    [InlineData("dueDateSafetyMarginDays", "d", "1.5", null)]
-    [InlineData("dueDateSafetyMarginDays", "d", "-1", null)]
-    public void A_safety_margin_with_another_unit_a_choice_a_negative_or_a_fractional_day_is_invalid(string key,
-        string unit, string? number, string? choice)
+    [InlineData("1", "Weeks")]
+    [InlineData("-1", "Hours")]
+    [InlineData("1.5", "Days")]
+    [InlineData("-1", "Days")]
+    [InlineData("1", null)]
+    public void A_buffer_with_an_unknown_unit_a_negative_value_a_fractional_day_or_no_unit_is_invalid(string value,
+        string? unit)
     {
-        var profile = CapturedProfile(new PlanParameterValueV1(key, unit,
-            number is null ? null : decimal.Parse(number, System.Globalization.CultureInfo.InvariantCulture), choice));
+        var number = decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 
         Assert.Equal(((DueDateSafetyMarginV1?)null, "safety_margin_invalid"),
-            ManufacturingCommandService.SafetyMarginOf(profile));
+            ManufacturingCommandService.SafetyBufferOf(number, unit, (0m, null)));
     }
 
     [Fact]
-    public void No_safety_margin_value_is_zero()
+    public void The_company_default_buffer_applies_only_without_a_work_center_buffer_and_is_never_added()
     {
+        var companyDefault = (1m, (string?)WorkCenterSafetyBufferUnitsV1.Days);
+
+        Assert.Equal(((DueDateSafetyMarginV1?)new DueDateSafetyMarginV1(TimeSpan.Zero, 1), (string?)null),
+            ManufacturingCommandService.SafetyBufferOf(0m, null, companyDefault));
+        Assert.Equal(((DueDateSafetyMarginV1?)new DueDateSafetyMarginV1(TimeSpan.FromHours(3), 0), (string?)null),
+            ManufacturingCommandService.SafetyBufferOf(3m, WorkCenterSafetyBufferUnitsV1.Hours, companyDefault));
         Assert.Equal(((DueDateSafetyMarginV1?)DueDateSafetyMarginV1.None, (string?)null),
-            ManufacturingCommandService.SafetyMarginOf(CapturedProfile()));
-        Assert.Equal(((DueDateSafetyMarginV1?)DueDateSafetyMarginV1.None, (string?)null),
-            ManufacturingCommandService.SafetyMarginOf(null));
+            ManufacturingCommandService.SafetyBufferOf(0m, null, (0m, null)));
     }
 
-    /// <summary>The work center queue store as a test double: one answer (empty by default), or a stored-record fault.</summary>
+    /// <summary>The work center queue store as a test double: an answer built for the asked target (empty queue by
+    /// default), or a stored-record fault.</summary>
     private sealed class SuggestionQueuePort : IManufacturingWorkCenterQueueStore
     {
-        public ManufacturingWorkCenterQueue Answer { get; init; } = new(0, Kilograms.Zero);
+        public Func<Guid, ManufacturingWorkCenterQueue> Answer { get; init; } = planId =>
+            new ManufacturingWorkCenterQueue([],
+                new ProductionQueueEntryV1(planId, null, 0, At, Kilograms.Zero, Kilograms.Zero));
 
         public bool FaultStoredRecord { get; init; }
 
-        public List<(Guid WorkCenterId, Guid ExcludedPlanId, ManufacturingWorkCenterQueueKey? QueuedBefore)> Calls { get; } =
-            [];
+        public List<(Guid WorkCenterId, Guid TargetPlanId)> Calls { get; } = [];
 
-        public Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid excludedPlanId,
-            ManufacturingWorkCenterQueueKey? queuedBefore, CancellationToken cancellationToken = default)
+        public Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid targetPlanId,
+            CancellationToken cancellationToken = default)
         {
-            Calls.Add((workCenterId, excludedPlanId, queuedBefore));
+            Calls.Add((workCenterId, targetPlanId));
             if (FaultStoredRecord)
             {
                 throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
                     "Kuyruktaki planın planlanan girdisi yok.");
             }
 
-            return Task.FromResult(Answer);
+            return Task.FromResult(Answer(targetPlanId));
         }
     }
 
@@ -498,34 +548,49 @@ public sealed partial class ManufacturingCommandServiceTests
     }
 
     /// <summary>
-    /// The Settings parameter profile in force today as a test double: a published version carrying the synthetic
-    /// capacity value, or a refusal code thrown as Settings does.
+    /// The Settings work center capacity record in force as a test double: a synthetic version (100 kg/h, version 3, no
+    /// buffer by default), no record, a refusal code thrown as Settings does, or another fault.
     /// </summary>
-    private sealed class SuggestionCapacityPort : ISettingsManufacturingParameterProviderV1
+    private sealed class SuggestionCapacityPort : ISettingsWorkCenterCapacityProviderV1
     {
-        public string? Process { get; private set; }
+        public List<(Guid CompanyId, Guid WorkCenterId)> Calls { get; } = [];
 
-        public Guid? WorkCenter { get; private set; }
+        public decimal CapacityKgPerHour { get; init; } = 100m;
+
+        public long Version { get; init; } = 3;
+
+        public decimal BufferValue { get; init; }
+
+        public string? BufferUnit { get; init; }
+
+        public bool Missing { get; init; }
+
+        public Guid? AnswerCompany { get; init; }
+
+        public Guid? AnswerWorkCenter { get; init; }
 
         public string? Refusal { get; init; }
 
-        public Task<ManufacturingParameterProfileSnapshotV1> GetManufacturingParametersAsync(string process,
-            Guid? workCenterId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+        public Exception? Fault { get; init; }
+
+        public Task<SettingsWorkCenterCapacityV1?> GetWorkCenterCapacityAsync(Guid companyId, Guid workCenterId,
+            CancellationToken cancellationToken = default)
         {
-            Process = process;
-            WorkCenter = workCenterId;
+            Calls.Add((companyId, workCenterId));
+            if (Fault is { } fault)
+            {
+                throw fault;
+            }
+
             if (Refusal is { } code)
             {
                 throw new SettingsPrerequisiteException(code);
             }
 
-            return Task.FromResult(new ManufacturingParameterProfileSnapshotV1(Company, process, workCenterId,
-                SuggestionProfile, "3", ManufacturingProfileSourcesV1.Settings, new DateOnly(2026, 9, 1), null,
-                [
-                    new ManufacturingParameterValueV1(ManufacturingDueDateSuggestionV1.CapacityParameterKey, "kg/h",
-                        100m, null),
-                    new ManufacturingParameterValueV1("lineSpeedMetresPerMinute", "m/min", 20m, null),
-                ]));
+            return Task.FromResult(Missing
+                ? null
+                : new SettingsWorkCenterCapacityV1(AnswerCompany ?? companyId, AnswerWorkCenter ?? workCenterId,
+                    new ProfileVersionV1(SuggestionProfile, Version), CapacityKgPerHour, BufferValue, BufferUnit));
         }
     }
 }

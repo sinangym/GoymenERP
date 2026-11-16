@@ -49,6 +49,13 @@ public static class ProductionOutputLabelCodes
                && format.IndexOf(NumberPlaceholder, first + NumberPlaceholder.Length, StringComparison.Ordinal) < 0;
     }
 
+    /// <summary>
+    /// URT-SC36 (URT-D98): true when an operator may enter an output label code himself — only while no output label
+    /// number format is defined in Ayarlar. Once a format is defined (even an unusable one) the code comes only from the
+    /// format and an entered code is refused; the uniqueness of every code is kept either way.
+    /// </summary>
+    public static bool AcceptsEnteredCode(string? format) => string.IsNullOrWhiteSpace(format);
+
     /// <summary>True when the text is a usable label code: not blank, no control character, within the stored bound.</summary>
     public static bool IsValidCode(string? code) =>
         !string.IsNullOrWhiteSpace(code) && code.Length <= MaximumCodeLength && !code.Any(char.IsControl);

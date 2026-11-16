@@ -175,6 +175,38 @@ public sealed record PlanParameterSnapshotV1
         Values.Where(value => value.Number is not null)
             .ToDictionary(value => value.Key, value => value.Number!.Value, StringComparer.Ordinal);
 
+    /// <summary>
+    /// F-009 D5 (URT-D39): whether <paramref name="current"/> — the profile Settings selects now — is the profile the
+    /// first approval captured in <paramref name="stored"/>: same profile id, version, source, process, line scope and
+    /// window, and the same profile values (key, unit, number, choice). The date the profile was selected for is not
+    /// compared, and a key the plan entered itself (source <see cref="PlanParameterValueV1.PlanSource"/>) is left out on
+    /// both sides. No snapshot on either side is never the same.
+    /// </summary>
+    public static bool SameSettingsAs(PlanParameterSnapshotV1? stored, PlanParameterSnapshotV1? current)
+    {
+        if (stored is null || current is null)
+        {
+            return false;
+        }
+
+        if (stored.ProfileId != current.ProfileId
+            || !string.Equals(stored.ProfileVersion, current.ProfileVersion, StringComparison.Ordinal)
+            || !string.Equals(stored.Source, current.Source, StringComparison.Ordinal)
+            || stored.Process != current.Process || stored.WorkCenterId != current.WorkCenterId
+            || stored.EffectiveFrom != current.EffectiveFrom || stored.EffectiveThrough != current.EffectiveThrough)
+        {
+            return false;
+        }
+
+        var planKeys = stored.Values.Where(value => value.Source is not null)
+            .Select(value => value.Key).ToHashSet(StringComparer.Ordinal);
+        static (string Key, string Unit, decimal? Number, string? Choice, string? Source) Shape(PlanParameterValueV1 value) =>
+            (value.Key, value.Unit, value.Number, value.Choice, value.Source);
+        var left = stored.Values.Where(value => !planKeys.Contains(value.Key)).Select(Shape).ToArray();
+        var right = current.Values.Where(value => !planKeys.Contains(value.Key)).Select(Shape).ToArray();
+        return left.SequenceEqual(right);
+    }
+
     public bool Equals(PlanParameterSnapshotV1? other) =>
         other is not null && ProfileId == other.ProfileId && ProfileVersion == other.ProfileVersion
         && Source == other.Source && Process == other.Process && WorkCenterId == other.WorkCenterId

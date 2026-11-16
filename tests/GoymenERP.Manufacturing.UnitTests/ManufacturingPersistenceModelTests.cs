@@ -141,7 +141,9 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingMonthlyScrapPriceVersions", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOutputLineageEdges", StringComparison.Ordinal));
-        Assert.EndsWith("_AddManufacturingOutputLabelCodes", context.Database.GetMigrations().Last(),
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOutputLabelCodes", StringComparison.Ordinal));
+        Assert.EndsWith("_AddManufacturingOrderCancellation", context.Database.GetMigrations().Last(),
             StringComparison.Ordinal);
         Assert.False(context.Database.HasPendingModelChanges());
     }
@@ -503,6 +505,24 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Contains("FROM [manufacturing].[PlanRevisions]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
             { Table: "Plans", Name: "CreatedBy" });
+    }
+
+    [Fact]
+    public void Order_cancellation_rollback_refuses_while_a_cancel_or_a_reapproval_exists_before_it_drops_anything()
+    {
+        // F-009 D5: Up is pure DDL; Down refuses (THROW 51870) first while a cancelled order, a re-approval or a second
+        // allocation generation of a plan exists, and only then drops the table and the cancel columns.
+        var migration = new AddManufacturingOrderCancellation();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains("THROW 51870", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] = 3", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[PlanReapprovals]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("COUNT(DISTINCT [PlanVersion]) > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains(migration.DownOperations, operation => operation is DropTableOperation { Name: "PlanReapprovals" });
+        Assert.Contains(migration.DownOperations, operation => operation is DropColumnOperation
+            { Table: "Orders", Name: "CancellationReason" });
     }
 
     [Fact]

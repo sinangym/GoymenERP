@@ -144,6 +144,12 @@ public static class ManufacturingStoreCodes
     /// format was found within the attempt bound. A code is never renamed silently; nothing of this write is stored.
     /// </summary>
     public const string OutputLabelCodeConflict = "manufacturing_output_label_code_conflict";
+
+    /// <summary>
+    /// URT-SC36 (URT-D98): an output label code was entered for a new output while Ayarlar defines an output label number
+    /// format; the code then comes only from the format and manual entry is refused. Nothing of this write is stored.
+    /// </summary>
+    public const string OutputLabelCodeEntryNotAllowed = "manufacturing_output_label_code_entry_not_allowed";
 }
 
 /// <summary>
@@ -427,26 +433,28 @@ public interface IManufacturingOrderStore
 }
 
 /// <summary>
-/// URT-SC33 (URT-D86): the planned work queued on one work center ahead of a plan — how many plans and their planned
-/// input kg (the current content of each, its newest revision when revised).
+/// URT-SC33 (URT-D86, URT-D97, URT-D99): the queue of one work center as stored — every queued plan's ordering key and
+/// kg — and the target plan's own entry, so the caller can place the target (a draft where it would stand once
+/// approved). The order and the remaining kg are the domain's (<c>ProductionWorkCenterQueueOrderV1</c>).
 /// </summary>
-public sealed record ManufacturingWorkCenterQueue(int PlanCount, Kilograms PlannedInputKg);
+public sealed record ManufacturingWorkCenterQueue(IReadOnlyList<ProductionQueueEntryV1> Queued,
+    ProductionQueueEntryV1 Target);
 
 /// <summary>
 /// URT-SC33 (URT-D86): reads the queue of a work center for the termin suggestion. A port of its own, beside
 /// <see cref="IManufacturingPlanStore"/>, so the plan store's existing implementations are not widened (the plan-list
 /// pattern); the one store implements it. The queue rule (reversible, reported in the slice): the server-resolved
-/// company's APPROVED plans whose current work center is <c>workCenterId</c>, other than <c>excludedPlanId</c>, whose
-/// production order is not closed (no order yet, or an open one). Drafts and cancelled plans are not queued. The queue
-/// order is (approvedAtUtc, id): with <c>queuedBefore</c> only the plans ahead of that key are counted; without it
-/// (the target is still a draft) every queued plan is counted. Each queued plan counts its whole planned input kg (no
-/// progress is netted). Read only.
+/// company's APPROVED plans whose current work center is <c>workCenterId</c>, whose production order is not closed (no
+/// order yet, or an open one). Drafts and cancelled plans are not queued. Each entry carries (reversible, reported):
+/// the termin — the order's termin when the plan has an order, otherwise the plan's requested termin; the priority score
+/// — zero until the score is stored (URT-D103 follow-up); the plan's creation moment; the current planned input kg
+/// (newest revision when revised); and the processed kg — the kg declared as output on the plan's order (every output
+/// class, process loss included) net of output reversals. The target entry is <c>targetPlanId</c>'s (the same fields;
+/// planned/processed kg are not needed for it and are zero). A target of another company or unknown id is
+/// <c>PlanNotFound</c>. Read only.
 /// </summary>
 public interface IManufacturingWorkCenterQueueStore
 {
-    Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid excludedPlanId,
-        ManufacturingWorkCenterQueueKey? queuedBefore, CancellationToken cancellationToken = default);
+    Task<ManufacturingWorkCenterQueue> ReadWorkCenterQueueAsync(Guid workCenterId, Guid targetPlanId,
+        CancellationToken cancellationToken = default);
 }
-
-/// <summary>The queue order key of an approved plan (URT-D86): its approval moment, then its id.</summary>
-public sealed record ManufacturingWorkCenterQueueKey(DateTimeOffset ApprovedAtUtc, Guid PlanId);

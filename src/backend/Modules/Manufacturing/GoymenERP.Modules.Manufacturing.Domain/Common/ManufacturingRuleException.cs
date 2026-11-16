@@ -258,6 +258,40 @@ public static class ManufacturingRuleCodes
     public const string ScrapPriceUnchanged = "manufacturing_scrap_price_unchanged";
 
     /// <summary>
+    /// F-009 D5 (URT-D33): the order still carries a net effect — a net output, a net issued input or a measured WIP —
+    /// so it is not cancelled. The user reverses each output (D2), returns every issued kg and clears the WIP first;
+    /// a cancellation undoes nothing by itself.
+    /// </summary>
+    public const string OrderCancelHasNetEffect = "manufacturing_order_cancel_has_net_effect";
+
+    /// <summary>F-009 D5: the order is cancelled; it is kept (never deleted) and takes no further fact or decision.</summary>
+    public const string OrderCancelled = "manufacturing_order_cancelled";
+
+    /// <summary>
+    /// F-009 D5 (URT-D34): the plan's order was cancelled and its allocation released; a new order opens only after the
+    /// plan's minimal re-approval allocates its inputs again.
+    /// </summary>
+    public const string PlanReapprovalRequired = "manufacturing_plan_reapproval_required";
+
+    /// <summary>
+    /// F-009 D5 (URT-D34): the re-approval applies only to an approved plan whose order was cancelled and that holds no
+    /// allocation of its own; any other approved plan is not re-approved.
+    /// </summary>
+    public const string PlanReapprovalNotRequired = "manufacturing_plan_reapproval_not_required";
+
+    /// <summary>
+    /// F-009 D5 (URT-D39): the Settings parameter profile in force now is not the one the plan's approval captured (or
+    /// the approval captured none); the minimal re-approval does not re-capture parameters.
+    /// </summary>
+    public const string PlanReapprovalSettingsChanged = "manufacturing_plan_reapproval_settings_changed";
+
+    /// <summary>
+    /// F-009 D5 (URT-D35): a re-approval names, per planned input, the label to allocate; until D5b only the plan's own
+    /// label is accepted, and a missing or another label is refused.
+    /// </summary>
+    public const string PlanReapprovalLabelMismatch = "manufacturing_plan_reapproval_label_mismatch";
+
+    /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace
     /// with only one of its two parts, a version that is not the one its facts add up to, or a
     /// stored cost the domain cannot have produced. The record is refused, never repaired.

@@ -45,7 +45,7 @@ describe('decodeDueDateSuggestion', () => {
     const suggestion = decodeDueDateSuggestion(unavailableDueDate('queue_unavailable', {
       capacityKgPerHour: '100',
       capacityProfileVersion: '3',
-      capacitySource: 'Settings',
+      capacitySource: 'WorkCenterCapacity',
       safetyMarginHours: '0',
       safetyMarginDays: 0,
     }), PLAN)
@@ -59,7 +59,7 @@ describe('decodeDueDateSuggestion', () => {
       requiredWorkingMinutes: 901,
       capacityKgPerHour: '100',
       capacityProfileVersion: '3',
-      capacitySource: 'Settings',
+      capacitySource: 'WorkCenterCapacity',
       calendarVersion: 7,
       calendarSource: 'WorkCenter',
       timeZoneId: 'Europe/Istanbul',
@@ -79,7 +79,7 @@ describe('decodeDueDateSuggestion', () => {
   it('accepts a profile named without a usable capacity value (capacity_invalid)', () => {
     expect(decodeDueDateSuggestion(unavailableDueDate('capacity_invalid', {
       capacityProfileVersion: '3',
-      capacitySource: 'Settings',
+      capacitySource: 'WorkCenterCapacity',
     }), PLAN)).not.toBeNull()
   })
 

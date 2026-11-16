@@ -64,7 +64,8 @@ public static class ManufacturingEndpoints
     ];
 
     // URT-S21 (URT-D62): the output declaration gives the output label its own code; a code already used in the company
-    // (entered, or no free number in the Ayarlar format) is its 409, a missing or unusable Ayarlar format its 422.
+    // (entered, or no free number in the Ayarlar format) is its 409, a missing or unusable Ayarlar format its 422, and
+    // (URT-D98) an entered code while an Ayarlar format is defined its 422.
     private static readonly string[] DeclareOutputConflictCodes =
     [
         .. ConflictCodes,
@@ -76,6 +77,25 @@ public static class ManufacturingEndpoints
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingStoreCodes.OutputLabelCodeRequired,
         ManufacturingStoreCodes.OutputLabelCodeFormatInvalid,
+        ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed,
+    ];
+
+    // F-009 D3 (API-25, URT-S2): the output correction meets Inventory's refusal to take the mass back from the output
+    // position (each named by its Manufacturing code) and an output label Inventory could not read as its 409; the
+    // domain's correction rules are its 422.
+    private static readonly string[] CorrectOutputConflictCodes =
+    [
+        .. ConflictCodes,
+        .. ManufacturingOutputCorrectionCodesV1.All,
+    ];
+
+    private static readonly string[] CorrectOutputUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.OutputNotDeclared,
+        ManufacturingRuleCodes.OutputLineMissing,
+        ManufacturingRuleCodes.OutputReversalAlreadyRecorded,
+        ManufacturingRuleCodes.OutputReversalExceedsDeclared,
     ];
 
     private static readonly string[] SavePlanConflictCodes =
@@ -227,11 +247,33 @@ public static class ManufacturingEndpoints
 
     // Üretim U2-a (URT-D1): the order creation's 422 set — the write set plus "the plan already opened its order".
     // URT-D70: and "the plan's termin is before the Istanbul business day".
+    // F-009 D5 (URT-D35): and "the plan's order was cancelled; re-approve the plan first".
     private static readonly string[] CreateOrderUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingRuleCodes.PlanOrderExists,
         ManufacturingRuleCodes.DueDateInPast,
+        ManufacturingRuleCodes.PlanReapprovalRequired,
+    ];
+
+    // F-009 D5 (URT-D33/D34): the order cancel's 422 set — the write set plus "the order still has a net effect".
+    private static readonly string[] CancelOrderUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.OrderCancelHasNetEffect,
+    ];
+
+    // F-009 D5 (URT-D35/D39): the re-approval's 422 set — the approval's gate refusals plus a cancelled plan, an order
+    // still open on the plan, no release waiting, the preparer and a changed Settings profile. Its 409 set is the
+    // approval's (the inputs are allocated again in Inventory).
+    private static readonly string[] ReapprovePlanUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.PlanCancelled,
+        ManufacturingRuleCodes.PlanOrderExists,
+        ManufacturingRuleCodes.PlanSelfApproval,
+        ManufacturingRuleCodes.PlanReapprovalNotRequired,
+        ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
     ];
 
     // MFG-PLAN-EDIT: the revision's own 422 set — the plan save's, plus the three revision rules. Declared on the
@@ -364,6 +406,31 @@ public static class ManufacturingEndpoints
             .Accepts<ApprovePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithApprovePlanProblems();
+
+        // F-009 D5 (URT-D35/D39): the minimal Approved→Approved re-approval of a plan released by an order cancel, under the
+        // approval's grant. Settings must be unchanged since the first approval; the inputs are allocated again.
+        group.MapPost("/plans/{planId:guid}/reapproval", async (
+                Guid planId,
+                ReapprovePlanRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ReapprovePlanAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansApprove, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ReapproveManufacturingPlanV1")
+            .Accepts<ReapprovePlanRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ApprovePlanConflictCodes)
+            .ProducesErpUnprocessableEntity(ReapprovePlanUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
         // Üretim U2-a (URT-D2, API-10): instead of approving a Draft, its approver rejects it with a reason, under the
         // approval's own grant. The plan stays a Draft one version on, with the rejection recorded; ADR-011 as the approval.
@@ -638,6 +705,26 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithDeclareOutputProblems();
 
+        // F-009 D3 (API-25, URT-S2): the correction of a declared output at the order version the caller read. It records
+        // an append-only reversal of the output fact and Inventory's manufacturing.output-reversal movement together;
+        // the original fact is never changed. Its own permission; one attempt per Idempotency-Key.
+        group.MapPost("/orders/{orderId:guid}/facts/{factId:guid}/correction", async (
+                Guid orderId,
+                Guid factId,
+                CorrectOutputRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CorrectOutputAsync(orderId, factId, request, key,
+                ErpPermissions.ManufacturingFactsCorrect, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsCorrect)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CorrectManufacturingOutputV1")
+            .Accepts<CorrectOutputRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithCorrectOutputProblems();
+
         // MFG-ORD: the close of an order at the version the caller read. The persisted Settings snapshot
         // supplies the exact company/process/date tolerance; a reasoned out-of-tolerance close additionally
         // requires the dedicated exception permission. Neither permission supplies a tolerance value.
@@ -659,6 +746,32 @@ public static class ManufacturingEndpoints
             .Accepts<CloseOrderRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
+
+        // F-009 D5 (URT-D33/D34): cancels an open order with no net effect, with a reason, under its own grant
+        // (`manufacturing.orders.cancel`, company-wide, granted to no role). The order is kept as Cancelled; its plan is
+        // released for re-approval and the plan's allocation is released in Inventory in the same transaction.
+        group.MapPost("/orders/{orderId:guid}/cancellation", async (
+                Guid orderId,
+                CancelOrderRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CancelOrderAsync(orderId, request, key,
+                ErpPermissions.ManufacturingOrdersCancel, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersCancel)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CancelManufacturingOrderV1")
+            .Accepts<CancelOrderRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity(CancelOrderUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
 
         // URT-D66 (3)-(5): changes the open order's termin on the order alone — the plan's termin does not move — under the
         // order edit grant (no termin permission of its own). The order's version does not move; its termin revision does
@@ -952,6 +1065,17 @@ public static class ManufacturingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(DeclareOutputConflictCodes)
             .ProducesErpUnprocessableEntity(DeclareOutputUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
+    private static RouteHandlerBuilder WithCorrectOutputProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CorrectOutputConflictCodes)
+            .ProducesErpUnprocessableEntity(CorrectOutputUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();
@@ -1261,6 +1385,8 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.PlanLabelNotUsable,
         ManufacturingRuleCodes.PlanWindingDoesNotFit,
         ManufacturingRuleCodes.OrderClosed,
+        // F-009 D5 (URT-D33): a cancelled order takes no new fact and no close.
+        ManufacturingRuleCodes.OrderCancelled,
         ManufacturingRuleCodes.UnexplainedDifference,
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyInvalid,
         GoymenERP.Modules.Manufacturing.Domain.Orders.ClosureAssessmentCodesV1.PolicyNotEffective,
