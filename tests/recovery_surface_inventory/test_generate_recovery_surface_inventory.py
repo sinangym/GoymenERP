@@ -543,7 +543,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 self.assertEqual(("organization", "CompanySetupOutboxMessages"), (record["schema"], record["table"]))
             else:
                 self.assertTrue(
-                    any(".Add" in token or "InsertAsync" in token
+                    any(re.search(r"\.(?:Add|AddAsync|AddRange|AddRangeAsync|InsertAsync)\s*\(", token)
                         for evidence in spec.evidence if evidence.live_code for token in evidence.required_tokens),
                     record["id"],
                 )
