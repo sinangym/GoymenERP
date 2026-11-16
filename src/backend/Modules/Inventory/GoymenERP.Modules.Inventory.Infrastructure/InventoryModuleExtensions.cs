@@ -78,6 +78,8 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();
         services.AddScoped<IInventoryLabelDispositionReadPortV1, InventoryLabelDispositionReadPort>();
         services.AddScoped<IInventoryFreeQuantityReadPortV1, InventoryFreeQuantityReadPort>();
+        // STK-S24: per-product physical kg for the Logistics weighing-difference record (read only; Api host adapter).
+        services.AddScoped<IInventoryProductPhysicalStockReadPortV1, InventoryProductPhysicalStockReadPort>();
         services.TryAddScoped<IInventoryLabelGenealogyReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.

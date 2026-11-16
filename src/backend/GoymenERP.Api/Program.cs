@@ -375,6 +375,10 @@ builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerRet
 builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
 builder.Services.AddScoped<ILogisticsTransferOutgoingDocumentScopeV1, LogisticsTransferOutgoingDocumentScope>();
 builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, InventoryTransferOutgoingDocumentProofAdapter>();
+// STK-S24: the weighing-difference fence and the read-only physical stock seam over Inventory. The Settings rate/band port
+// keeps Logistics's fail-closed default until Settings publishes those values.
+builder.Services.AddScoped<ILogisticsWeighingDifferenceScopeV1, LogisticsWeighingDifferenceScope>();
+builder.Services.AddScoped<ILogisticsWeighingDifferenceStockReadPortV1, InventoryWeighingDifferenceStockAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

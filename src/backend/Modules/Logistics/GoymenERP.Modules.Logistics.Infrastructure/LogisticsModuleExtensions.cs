@@ -96,6 +96,20 @@ public static class LogisticsModuleExtensions
             LogisticsPermissionManifestV1.DispatchNotesApprove,
             LogisticsPermissionManifestV1.DispatchNotesCancel));
         services.AddScoped<ILogisticsTransferOutgoingDocumentServiceV1, LogisticsTransferOutgoingDocumentService>();
+        // STK-S24: the sales weighing-difference record. The Settings rate/band port and the Inventory free-stock port are
+        // consumer-defined; until the host registers their adapters the fail-closed defaults answer "unreadable".
+        services.AddScoped<LogisticsWeighingDifferenceStore>();
+        services.AddScoped<ILogisticsWeighingDifferenceStoreV1>(provider =>
+            provider.GetRequiredService<LogisticsWeighingDifferenceStore>());
+        services.AddScoped<ILogisticsWeighingDifferenceReadPortV1>(provider =>
+            provider.GetRequiredService<LogisticsWeighingDifferenceStore>());
+        services.TryAddScoped<ILogisticsWeighingDifferencePolicyReadPortV1, UnavailableLogisticsWeighingDifferencePolicyReadPort>();
+        services.TryAddScoped<ILogisticsWeighingDifferenceStockReadPortV1, UnavailableLogisticsWeighingDifferenceStockReadPort>();
+        services.TryAddSingleton(new LogisticsWeighingDifferenceBindingsV1(
+            LogisticsPermissionManifestV1.WeighingDifferencesRecord,
+            LogisticsPermissionManifestV1.WeighingDifferencesApprove,
+            LogisticsPermissionManifestV1.WeighingDifferencesRead));
+        services.AddScoped<ILogisticsWeighingDifferenceServiceV1, LogisticsWeighingDifferenceService>();
         return services;
     }
 
