@@ -26,6 +26,7 @@ const quantity = (v: unknown): v is string => typeof v === 'string' && /^\d+(?:\
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const exact = (v: Record<string, unknown>, fields: readonly string[]) => Object.keys(v).length === fields.length && fields.every(f => Object.hasOwn(v, f))
 const statuses = ['Planned', 'InTransit', 'PartiallyAccepted', 'Accepted', 'DispatchCancelled', 'Closed']
+export { guid as isTransferGuid, version as isTransferVersion, instant as isTransferInstant }
 const summaryFields = ['transferId', 'companyId', 'version', 'status', 'sourceLocationId', 'destinationLocationId', 'plannedAtUtc', 'dispatchedAtUtc'] as const
 const validSummary = (v: Record<string, unknown>): boolean => guid(v.transferId) && guid(v.companyId) && version(v.version)
   && typeof v.status === 'string' && statuses.includes(v.status) && guid(v.sourceLocationId) && guid(v.destinationLocationId)

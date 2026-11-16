@@ -4,13 +4,15 @@ import { Link } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { Button } from '../ui/Button'
 import { fetchTransfer, fetchTransfers } from './transferApi'
 import type { TransferDetail, TransferList } from './transferContract'
 import { TRANSFER_TEXT as T } from './transferText'
-import { INVENTORY_STOCK_POSITIONS_ROUTE } from './capabilities'
+import { INVENTORY_STOCK_POSITIONS_ROUTE, INVENTORY_TRANSFER_CANCEL_CAPABILITY } from './capabilities'
+import { TransferCancelPanel } from './TransferCancelPanel'
+import { transferCancelBinding } from './transferCancelAttempt'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
 
@@ -55,12 +57,13 @@ function TransferView({ namespace }: { readonly namespace: string | null }) {
         <td>{T.statuses[item.transfer.status]}</td><td><Button type="button" onClick={() => setSelected(item.transfer.transferId)}>{T.inspect}</Button></td>
       </tr>)}</tbody></table>}
     {selected === null ? null : <section aria-labelledby="transfer-detail"><h2 id="transfer-detail">{T.detail}</h2>
-      {detailState.kind !== 'ready' ? <StateBlock state={detailState} subject={T.detail} onRetry={() => void detail.refetch()} /> : <table>
+      {detailState.kind !== 'ready' ? <StateBlock state={detailState} subject={T.detail} onRetry={() => void detail.refetch()} /> : <><table>
         <caption>{T.detail}</caption><thead><tr><th>{T.line}</th><th>{T.plannedKg}</th><th>{T.shippedKg}</th><th>{T.differenceKg}</th><th>{T.status}</th><th>{T.label}</th></tr></thead>
         <tbody>{detailState.data.lines.map((line, index) => <tr key={line.lineId}><td>{index + 1}</td><td>{line.plannedKg}</td>
           <td>{line.actualShippedKg ?? T.unknown}</td><td>{line.differenceKg ?? T.unknown}</td><td>{T.statuses[line.status]}</td>
           <td><Link to={inventoryLabelDetailPath(line.labelId)}>{T.openLabel}</Link></td></tr>)}</tbody>
-      </table>}
+      </table><TransferCancelPanel transfer={detailState.data} binding={transferCancelBinding(shell, selected)}
+        canCancel={hasCapability(shell, INVENTORY_TRANSFER_CANCEL_CAPABILITY)} onChanged={() => { void list.refetch(); void detail.refetch() }} /></>}
     </section>}
   </main>
 }

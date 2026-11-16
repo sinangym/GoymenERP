@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -242,6 +243,7 @@ public static partial class PurchasingEndpoints
         PurchaseAcceptanceParticipantCodes.IdempotencyConflict,
         PurchaseAcceptanceParticipantCodes.ConcurrentChange,
         PurchaseAcceptanceParticipantCodes.LineBusy,
+        SalesOrderLineSerializationLockContractV1.BusyCode,
         InventoryGoodsReceiptCodesV1.LotOrLabelConflict,
         InventoryGoodsReceiptCodesV1.IdempotencyConflict,
         InventoryGoodsReceiptCodesV1.ConcurrentChange,

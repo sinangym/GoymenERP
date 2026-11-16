@@ -8,11 +8,22 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public interface IPurchaseAcceptanceParticipantV1 : IAsyncDisposable
 {
+    /// <summary>
+    /// Read-only receipt lock target on the borrowed connection, before any stage. No order-state or expected-version
+    /// decision is made here: immutable receipt replays remain valid after a later order revision or cancellation.
+    /// </summary>
+    Task<PurchaseAcceptanceReceiptTargetV1?> ResolveReceiptTargetAsync(Guid purchaseOrderId, Guid purchaseOrderLineId,
+        CancellationToken cancellationToken = default);
+
     Task<PurchaseAcceptanceStageResultV1> StageAsync(
         PurchaseAcceptanceStageRequestV1 request,
         PurchasingWriteEnvelope envelope,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Purchasing-owned identities and current version; a technical receipt names its owning general line.</summary>
+public sealed record PurchaseAcceptanceReceiptTargetV1(Guid CompanyId, Guid PurchaseOrderId,
+    Guid PurchaseOrderLineId, Guid PurchaseOrderGeneralLineId, string ObservedOrderVersion);
 
 public sealed record PurchaseAcceptanceStageRequestV1(
     Guid CompanyId,

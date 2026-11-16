@@ -81,6 +81,27 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         }
     }
 
+    public async Task<PurchaseAcceptanceReceiptTargetV1?> ResolveReceiptTargetAsync(Guid purchaseOrderId,
+        Guid purchaseOrderLineId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        EnsureActiveTransaction();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (purchaseOrderId == Guid.Empty || purchaseOrderLineId == Guid.Empty)
+            throw Refused(PurchaseAcceptanceParticipantCodes.InvalidRequest, 400, "Kabul hedefi sipariş ve satır kimliği ister.");
+
+        var version = await _dbContext.Orders.AsNoTracking().Where(row => row.Id == purchaseOrderId)
+            .Select(row => (long?)row.Version).SingleOrDefaultAsync(cancellationToken);
+        var general = await GeneralLineOfAsync(purchaseOrderId, purchaseOrderLineId, cancellationToken);
+        if (version is null || general is null) return null;
+        if (version <= 0 || !await _dbContext.OrderLines.AsNoTracking().AnyAsync(row => row.OrderId == purchaseOrderId
+                && row.LineId == general.Value && row.Kind == (int)PurchaseOrderLineKind.General && row.ParentLineId == null,
+                cancellationToken))
+            throw Refused(PurchaseAcceptanceParticipantCodes.Unavailable, 503, "Kabul hedefi okunamadı.");
+        return new(_companyId, purchaseOrderId, purchaseOrderLineId, general.Value,
+            version.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     public async Task<PurchaseAcceptanceStageResultV1> StageAsync(
         PurchaseAcceptanceStageRequestV1 request,
         PurchasingWriteEnvelope envelope,

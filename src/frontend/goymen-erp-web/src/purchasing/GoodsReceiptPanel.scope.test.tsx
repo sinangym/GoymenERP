@@ -50,7 +50,9 @@ function options(source = detail) {
   return { source: { companyId: source.order.companyId, purchaseOrderId: source.order.id,
     purchaseOrderLineId: source.lines[0].lineId, purchaseOrderVersion: source.order.version,
     productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: source.order.effectiveOn },
-  locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Receipt', siteName: 'SITE' }], searchWindowFull: false }
+  locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Receipt', siteName: 'SITE' }], searchWindowFull: false,
+  futureSupply: { companyId: source.order.companyId, purchaseOrderId: source.order.id,
+    purchaseOrderGeneralLineId: source.lines[0].parentLineId ?? source.lines[0].lineId, unitId: UNIT, activeAllocatedQuantity: '0' } }
 }
 function request(): GoodsReceiptRequest {
   return { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,

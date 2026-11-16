@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -55,9 +56,21 @@ public sealed record PurchaseGoodsReceiptDetailV1(PurchaseGoodsReceiptViewV1 Rec
 public sealed record PurchaseGoodsReceiptPageV1(IReadOnlyList<PurchaseGoodsReceiptViewV1> Items, bool SearchWindowFull);
 public sealed record PurchaseReceiptLocationV1(Guid LocationId, string LocationCode, string LocationName, string SiteName);
 public sealed record PurchaseReceiptSourceV1(Guid CompanyId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
-    string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid UnitId, DateOnly EffectiveOn);
+    string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid UnitId, DateOnly EffectiveOn)
+{
+    /// <summary>Purchasing-owned internal routing fact; resolved from the order aggregate, never from browser input.</summary>
+    [JsonIgnore]
+    public Guid PurchaseOrderGeneralLineId { get; init; }
+}
 public sealed record PurchaseGoodsReceiptOptionsV1(PurchaseReceiptSourceV1 Source,
-    IReadOnlyList<PurchaseReceiptLocationV1> Locations, bool SearchWindowFull);
+    IReadOnlyList<PurchaseReceiptLocationV1> Locations, bool SearchWindowFull)
+{
+    /// <summary>STK-S18: advisory Inventory owner measurement, not a reservation or a promise of receipt conversion.</summary>
+    public PurchaseReceiptFutureSupplySummaryV1? FutureSupply { get; init; }
+}
+
+public sealed record PurchaseReceiptFutureSupplySummaryV1(Guid CompanyId, Guid PurchaseOrderId,
+    Guid PurchaseOrderGeneralLineId, Guid UnitId, string ActiveAllocatedQuantity);
 
 public interface IPurchaseGoodsReceiptServiceV1
 {
@@ -105,9 +118,19 @@ public static class PurchaseGoodsReceiptDocumentPolicyV1
 /// </summary>
 public interface IPurchaseGoodsReceiptTransactionV1
 {
-    Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
+    Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target, Guid acceptanceId,
+        PurchasingWriteEnvelope envelope, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Server-authorized receipt intent. The host resolves its general line from Purchasing's owner participant, pre-reads its
+/// active Inventory demand set, locks every Sales line ascending and then every purchase general line ascending, and re-reads
+/// the set before invoking the business callback ONCE. An expanding set retries only this read/lock preparation in a fresh
+/// transaction. The expected version is checked by the existing acceptance stage, never used to block an immutable replay.
+/// </summary>
+public sealed record PurchaseGoodsReceiptTargetV1(Guid PurchaseOrderId, Guid PurchaseOrderLineId,
+    string ExpectedPurchaseOrderVersion);
 
 public interface IPurchaseGoodsReceiptParticipantsV1
 {

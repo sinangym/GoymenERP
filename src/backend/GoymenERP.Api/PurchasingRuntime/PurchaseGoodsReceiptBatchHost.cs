@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -23,42 +24,69 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
     IServiceProvider services,
     TimeProvider clock) : IPurchaseGoodsReceiptBatchTransactionV1
 {
-    public async Task<T> ExecuteAsync<T>(Guid companyId,
+    public async Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target,
         Func<IPurchaseGoodsReceiptBatchParticipantsV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit,
         CancellationToken cancellationToken = default)
     {
-        if (companyId == Guid.Empty) throw new InvalidOperationException("Bulk goods receipt requires a company.");
+        PurchaseGoodsReceiptPrelock.ValidateIntent(companyId, target);
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(beforeCommit);
         try
         {
-            await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
-            var enlisted = new BatchParticipants(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
-                services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus,
-                services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
-                services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock);
-            try
+            for (var attempt = 0; attempt < PurchaseGoodsReceiptPrelock.MaximumPreparationAttempts; attempt++)
             {
-                var result = await operation(enlisted, cancellationToken);
-                await beforeCommit(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return result;
+                await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
+                await using var targetOwner = await PurchaseAcceptanceParticipant.EnlistAsync(
+                    purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId, cancellationToken);
+                var enlisted = new BatchParticipants(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
+                    services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus,
+                    services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
+                    services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock);
+                try
+                {
+                    await using var readSet = await services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>()
+                        .EnlistAsync(purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), cancellationToken);
+                    var ready = await PurchaseGoodsReceiptPrelock.PrepareAsync(companyId, target,
+                        token => targetOwner.ResolveReceiptTargetAsync(target.PurchaseOrderId, target.PurchaseOrderLineId, token), readSet,
+                        services.GetRequiredService<ISalesOrderLineSerializationLockBinderV1>()
+                            .Bind(purchasing.Database.GetDbConnection(), transaction.GetDbTransaction()),
+                        services.GetRequiredService<IPurchaseLineSerializationLockBinderV1>()
+                            .Bind(purchasing.Database.GetDbConnection(), transaction.GetDbTransaction()), cancellationToken);
+                    if (!ready)
+                    {
+                        await RollbackQuietlyAsync(transaction);
+                        purchasing.ChangeTracker.Clear();
+                        continue; // EnlistLabelAsync and the entire posting callback have not run.
+                    }
+                    var result = await operation(enlisted, cancellationToken);
+                    await beforeCommit(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return result;
+                }
+                catch
+                {
+                    await RollbackQuietlyAsync(transaction);
+                    purchasing.ChangeTracker.Clear();
+                    throw;
+                }
+                finally
+                {
+                    await enlisted.DisposeAsync();
+                }
             }
-            catch
-            {
-                await RollbackQuietlyAsync(transaction);
-                purchasing.ChangeTracker.Clear();
-                throw;
-            }
-            finally
-            {
-                await enlisted.DisposeAsync();
-            }
+            throw PurchaseGoodsReceiptPrelock.RetryExhausted();
         }
         catch (InventoryGoodsReceiptException exception)
         {
             throw new PurchasingServiceException(exception.Status, exception.Code);
+        }
+        catch (SalesOrderLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
+        catch (PurchaseLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
+        catch (InventoryAllocationException exception)
+        {
+            throw new PurchasingServiceException(exception.Status == 409 ? 409 : 503,
+                exception.Status == 409 ? PurchaseAcceptanceParticipantCodes.ConcurrentChange : PurchaseGoodsReceiptCodesV1.Unavailable);
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.FutureSupply;
 using GoymenERP.Modules.Inventory.Domain.Stock;
@@ -22,43 +23,84 @@ internal sealed class PurchaseGoodsReceiptHost(
     IServiceProvider services,
     TimeProvider clock) : IPurchaseGoodsReceiptTransactionV1, IPurchaseGoodsReceiptReadsV1
 {
-    public async Task<T> ExecuteAsync<T>(Guid companyId,
+    public async Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target, Guid acceptanceId,
+        PurchasingWriteEnvelope envelope,
         Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit,
         CancellationToken cancellationToken = default)
     {
-        if (companyId == Guid.Empty) throw new InvalidOperationException("Goods receipt requires a company.");
+        PurchaseGoodsReceiptPrelock.ValidateIntent(companyId, target);
+        if (acceptanceId == Guid.Empty) throw new PurchasingServiceException(400, PurchaseAcceptanceParticipantCodes.InvalidRequest);
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(beforeCommit);
         try
         {
-            await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
-            await using var purchase = await PurchaseAcceptanceParticipant.EnlistAsync(
-                purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId, cancellationToken);
-            await using var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(
-                purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
-                services.GetRequiredService<ISettingsPrerequisiteProvider>(), cancellationToken, clock);
-            var participants = new Participants(companyId, purchase, inventory, locationStatus,
-                services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
-                services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(),
-                purchasing.Database.GetDbConnection(), transaction.GetDbTransaction());
-            try
+            for (var attempt = 0; attempt < PurchaseGoodsReceiptPrelock.MaximumPreparationAttempts; attempt++)
             {
-                var result = await operation(participants, cancellationToken);
-                await beforeCommit(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return result;
+                await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
+                await using var purchase = await PurchaseAcceptanceParticipant.EnlistAsync(
+                    purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId, cancellationToken);
+                await using var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(
+                    purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
+                    services.GetRequiredService<ISettingsPrerequisiteProvider>(), cancellationToken, clock);
+                var participants = new Participants(companyId, purchase, inventory, locationStatus,
+                    services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
+                    services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(),
+                    purchasing.Database.GetDbConnection(), transaction.GetDbTransaction());
+                try
+                {
+                    // Owner replay comes FIRST: never require today's mutable order state or newly created allocation locks to
+                    // return yesterday's immutable receipt. The existing callback still checks the complete physical payload and
+                    // Purchasing actor/key/request hash; this lookup cannot turn a changed request into a successful replay.
+                    var original = await participants.ReadOriginalAsync(acceptanceId, envelope, cancellationToken);
+                    if (original is not null)
+                    {
+                        if (original.CompanyId != companyId || original.AcceptanceId != acceptanceId
+                            || original.PurchaseOrderId != target.PurchaseOrderId || original.PurchaseOrderLineId != target.PurchaseOrderLineId)
+                            throw InventoryGoodsReceiptException.Refused(409, InventoryGoodsReceiptCodesV1.IdempotencyConflict);
+                    }
+                    else
+                    {
+                        await using var readSet = await services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>()
+                            .EnlistAsync(purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), cancellationToken);
+                        var ready = await PurchaseGoodsReceiptPrelock.PrepareAsync(companyId, target,
+                            token => purchase.ResolveReceiptTargetAsync(target.PurchaseOrderId, target.PurchaseOrderLineId, token),
+                            readSet,
+                            services.GetRequiredService<ISalesOrderLineSerializationLockBinderV1>()
+                                .Bind(purchasing.Database.GetDbConnection(), transaction.GetDbTransaction()),
+                            services.GetRequiredService<IPurchaseLineSerializationLockBinderV1>()
+                                .Bind(purchasing.Database.GetDbConnection(), transaction.GetDbTransaction()), cancellationToken);
+                        if (!ready)
+                        {
+                            await RollbackQuietlyAsync(transaction);
+                            purchasing.ChangeTracker.Clear();
+                            continue; // No business callback, participant stage, key, audit or outbox has run.
+                        }
+                    }
+                    var result = await operation(participants, cancellationToken);
+                    await beforeCommit(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return result;
+                }
+                catch
+                {
+                    await RollbackQuietlyAsync(transaction);
+                    purchasing.ChangeTracker.Clear();
+                    throw;
+                }
             }
-            catch
-            {
-                await RollbackQuietlyAsync(transaction);
-                purchasing.ChangeTracker.Clear();
-                throw;
-            }
+            throw PurchaseGoodsReceiptPrelock.RetryExhausted();
         }
         catch (InventoryGoodsReceiptException exception)
         {
             throw new PurchasingServiceException(exception.Status, exception.Code);
+        }
+        catch (SalesOrderLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
+        catch (PurchaseLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
+        catch (InventoryAllocationException exception)
+        {
+            throw new PurchasingServiceException(exception.Status == 409 ? 409 : 503,
+                exception.Status == 409 ? PurchaseAcceptanceParticipantCodes.ConcurrentChange : PurchaseGoodsReceiptCodesV1.Unavailable);
         }
     }
 
@@ -67,9 +109,28 @@ internal sealed class PurchaseGoodsReceiptHost(
     {
         var answer = await locationCandidates.SearchAsync(source.CompanyId,
             new OrganizationLocationCandidateQueryV1(null, 100), cancellationToken);
+        if (source.PurchaseOrderGeneralLineId == Guid.Empty) throw PurchaseGoodsReceiptPrelock.Unavailable();
+        var allocated = await services.GetRequiredService<IInventoryFutureAllocationReadPortV1>()
+            .GetAllocatedOnPurchaseLineAsync(source.PurchaseOrderGeneralLineId, cancellationToken);
         return new PurchaseGoodsReceiptOptionsV1(source, answer.Items.Select(item =>
             new PurchaseReceiptLocationV1(item.LocationId, item.LocationCode, item.LocationName, item.SiteName)).ToArray(),
-            answer.SearchWindowFull);
+            answer.SearchWindowFull) { FutureSupply = FutureSupplySummary(source, allocated) };
+    }
+
+    internal static PurchaseReceiptFutureSupplySummaryV1 FutureSupplySummary(PurchaseReceiptSourceV1 source,
+        InventoryFutureAllocationSumV1? answer)
+    {
+        if (source.CompanyId == Guid.Empty || source.PurchaseOrderId == Guid.Empty || source.PurchaseOrderGeneralLineId == Guid.Empty
+            || source.UnitId == Guid.Empty) throw PurchaseGoodsReceiptPrelock.Unavailable();
+        var quantity = answer switch
+        {
+            { Outcome: InventoryFutureAllocationReadOutcomeV1.None, QuantityText: null, UnitId: null } => "0",
+            { Outcome: InventoryFutureAllocationReadOutcomeV1.Present, QuantityText: { } text, UnitId: { } unit }
+                when unit == source.UnitId && InventoryFutureAllocationTextV1.TryPositiveQuantity(text, out var parsed)
+                    && parsed.ToString() == text => text,
+            _ => throw PurchaseGoodsReceiptPrelock.Unavailable(),
+        };
+        return new(source.CompanyId, source.PurchaseOrderId, source.PurchaseOrderGeneralLineId, source.UnitId, quantity);
     }
 
     public async Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId,

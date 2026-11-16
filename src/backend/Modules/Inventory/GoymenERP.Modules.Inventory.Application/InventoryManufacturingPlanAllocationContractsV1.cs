@@ -1,5 +1,6 @@
 using System.Globalization;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Domain.Allocations;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
@@ -81,6 +82,51 @@ public sealed record InventoryManufacturingPlanAllocationResultV1(
     IReadOnlyList<InventoryManufacturingPlanAllocationV1> Allocations,
     bool IsReplay,
     string OriginalCorrelationId);
+
+/// <summary>
+/// URT-D21/22, SAT-D336: the allocation OWNER'S refusal-time measurement after label version and planned ownership were
+/// verified on exactly one Free position. This is advisory error detail, never an allocation or a durable attempt record.
+/// No detail is fabricated when that position/ownership cannot be established. The host decides disclosure under its own
+/// authorization; consumers display the canonical kg strings without recomputing availability or the missing quantity.
+/// </summary>
+public sealed record InventoryManufacturingPlanAllocationShortfallV1
+{
+    public InventoryManufacturingPlanAllocationShortfallV1(Guid companyId, Guid planId, Guid labelId, Guid productId,
+        string labelVersion, Kilograms requestedKg, Kilograms freePhysicalKg, Kilograms reservedKg, int freePositionCount)
+    {
+        if (companyId == Guid.Empty || planId == Guid.Empty || labelId == Guid.Empty || productId == Guid.Empty)
+            throw new ArgumentException("Allocation shortfall identities must be present.");
+        if (!long.TryParse(labelVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version) || version < 1
+            || version.ToString(CultureInfo.InvariantCulture) != labelVersion)
+            throw new ArgumentException("Allocation shortfall requires the observed label version.", nameof(labelVersion));
+        if (freePositionCount != 1) throw new ArgumentOutOfRangeException(nameof(freePositionCount));
+        var available = StockAllocation.Unreserved(freePhysicalKg, reservedKg);
+        if (requestedKg <= available) throw new ArgumentOutOfRangeException(nameof(requestedKg));
+        CompanyId = companyId;
+        PlanId = planId;
+        LabelId = labelId;
+        ProductId = productId;
+        LabelVersion = labelVersion;
+        RequestedKg = requestedKg.ToString();
+        FreePhysicalKg = freePhysicalKg.ToString();
+        ReservedKg = reservedKg.ToString();
+        AvailableKg = available.ToString();
+        MissingKg = Kilograms.Positive(requestedKg.Value - available.Value).ToString();
+        FreePositionCount = freePositionCount;
+    }
+
+    public Guid CompanyId { get; }
+    public Guid PlanId { get; }
+    public Guid LabelId { get; }
+    public Guid ProductId { get; }
+    public string LabelVersion { get; }
+    public string RequestedKg { get; }
+    public string FreePhysicalKg { get; }
+    public string ReservedKg { get; }
+    public string AvailableKg { get; }
+    public string MissingKg { get; }
+    public int FreePositionCount { get; }
+}
 
 public enum InventoryManufacturingPlanReleaseReasonV1
 {

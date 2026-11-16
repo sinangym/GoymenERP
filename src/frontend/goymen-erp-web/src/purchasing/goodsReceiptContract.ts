@@ -49,6 +49,8 @@ export interface GoodsReceiptOptions {
     readonly purchaseOrderVersion: string; readonly productId: string; readonly productVersion: string; readonly unitId: string; readonly effectiveOn: string }
   readonly locations: readonly ReceiptLocation[]
   readonly searchWindowFull: boolean
+  readonly futureSupply: { readonly companyId: string; readonly purchaseOrderId: string; readonly purchaseOrderGeneralLineId: string;
+    readonly unitId: string; readonly activeAllocatedQuantity: string }
 }
 /** KLN-D94 link failure codes Inventory reports for a released future supply allocation (F-017 STOK §3.5). */
 export const FUTURE_SUPPLY_RELEASE_CODES = ['label-blocked', 'unit-conversion-unavailable', 'demand-not-approved',
@@ -129,11 +131,16 @@ export function decodeGoodsReceiptDetail(value: unknown, detail: PurchaseOrderDe
 export function decodeGoodsReceiptOptions(value: unknown, detail: PurchaseOrderDetail, line: PurchaseOrderLine): GoodsReceiptOptions | null {
   const body = record(value)
   const source = record(body?.source)
+  const futureSupply = record(body?.futureSupply)
+  const generalLineId = line.kind === 'General' ? line.lineId : line.parentLineId
   if (body === null || source === null || source.companyId !== detail.order.companyId || source.purchaseOrderId !== detail.order.id
     || source.purchaseOrderLineId !== line.lineId || source.purchaseOrderVersion !== detail.order.version
     || source.productId !== line.productId || source.productVersion !== line.productVersion || source.unitId !== line.unitId
     || source.effectiveOn !== detail.order.effectiveOn || !Array.isArray(body.locations) || body.locations.length > 100
-    || typeof body.searchWindowFull !== 'boolean') return null
+    || typeof body.searchWindowFull !== 'boolean' || futureSupply === null || Object.keys(futureSupply).length !== 5
+    || !guid(generalLineId) || futureSupply.companyId !== detail.order.companyId || futureSupply.purchaseOrderId !== detail.order.id
+    || futureSupply.purchaseOrderGeneralLineId !== generalLineId || futureSupply.unitId !== line.unitId
+    || !quantity(futureSupply.activeAllocatedQuantity)) return null
   const locations: ReceiptLocation[] = []
   for (const raw of body.locations) {
     const location = record(raw)
@@ -141,7 +148,8 @@ export function decodeGoodsReceiptOptions(value: unknown, detail: PurchaseOrderD
       || !text(location.siteName) || locations.some((item) => item.locationId === location.locationId)) return null
     locations.push(location as unknown as ReceiptLocation)
   }
-  return { source: source as unknown as GoodsReceiptOptions['source'], locations, searchWindowFull: body.searchWindowFull }
+  return { source: source as unknown as GoodsReceiptOptions['source'], locations, searchWindowFull: body.searchWindowFull,
+    futureSupply: futureSupply as unknown as GoodsReceiptOptions['futureSupply'] }
 }
 
 export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrderDetail, lineId: string,
