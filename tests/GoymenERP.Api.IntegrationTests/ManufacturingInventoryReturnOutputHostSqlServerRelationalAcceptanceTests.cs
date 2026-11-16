@@ -475,7 +475,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             command.ExpectedProductVersion,
             command.LotId,
             command.LabelId,
-            command.LabelCode,
+            command.LabelCode ?? throw new InvalidOperationException("The orphan output carries an entered label code."),
             command.HeatNumber,
             command.CoilNumber,
             command.RequiredDocuments,
