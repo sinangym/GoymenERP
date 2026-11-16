@@ -1,4 +1,9 @@
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
+using GoymenERP.Api.ManufacturingRuntime;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
@@ -6,6 +11,24 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task A_legacy_cancelled_plan_without_allocation_provenance_cannot_start_a_new_allocation_generation()
+    {
+        await using var run = await Run.StartAsync();
+        var (plan, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var store = run.Store(CompanyA))
+            await store.Corrections.CancelOrderAsync(orderId, 1, run.Actor, At.AddHours(1), "SENTETIK legacy plan", Metadata(run));
+        await using var context = run.Context(CompanyA);
+        var company = new CompanyContext(); company.Set(CompanyA);
+        var storeOwner = new ManufacturingStore(context, company, new AuditEventCollector(), TimeProvider.System);
+        var host = new ManufacturingPlanAllocationHost(context, storeOwner, company, ManufacturingSettings(run), TimeProvider.System);
+        var called = false;
+        await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() => host.ApproveAndAllocateAsync(plan.Id,
+            new Dictionary<Guid, long>(), _ => { called = true; return Task.FromResult(true); }, Metadata(run), CancellationToken.None));
+        Assert.False(called);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanReapprovals WHERE PlanId = @id", ("@id", plan.Id)));
+    }
+
     [SqlServerFact]
     public async Task The_order_cancellation_Down_passes_with_open_orders_and_refuses_without_losing_a_cancelled_order()
     {

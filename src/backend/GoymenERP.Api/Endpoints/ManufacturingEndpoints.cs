@@ -274,6 +274,7 @@ public static class ManufacturingEndpoints
         ManufacturingRuleCodes.PlanSelfApproval,
         ManufacturingRuleCodes.PlanReapprovalNotRequired,
         ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
+        ManufacturingRuleCodes.PlanReapprovalLabelMismatch,
     ];
 
     // MFG-PLAN-EDIT: the revision's own 422 set — the plan save's, plus the three revision rules. Declared on the

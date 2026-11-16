@@ -551,3 +551,19 @@ export function unknownText(unknown: FactUnknown): string {
 
 export const UNKNOWN_ACTION_HELP =
   'Aynı olguyu aynı işlem anahtarıyla yeniden gönderin: kaydedildiyse ikinci bir kayıt oluşmaz. Yeni bir olgu, bu çözülene kadar gönderilemez.'
+
+
+export const PLAN_REAPPROVAL_TEXT = {
+  heading: 'İptal sonrası planı yeniden onayla',
+  help: 'Ayrılacak her etiketi açıkça seçin. Bu adım aynı girdilerle yeniden ayırır; farklı etiket için plan yeniden hesaplanmalıdır.',
+  chooseAll: 'Her plan girdisinin etiketi açıkça seçilmelidir.',
+  submit: 'Seçilen etiketlerle yeniden onayla',
+  resend: 'Aynı isteği tekrar gönder',
+  pending: 'Yeniden onay sonucu bilinmiyor. Aynı istek ve anahtarla tekrar deneyin.',
+  applied: 'Plan yeniden onaylandı; güncel plan okunuyor.',
+  refused: 'Yeniden onay reddedildi.',
+  changedSettings: 'Ayarlar ilk onaydan bu yana değişti; plan iptal edilip yeni plan hazırlanmalıdır.',
+  changedLabels: 'Bu yeniden onay adımı yalnız plandaki etiketleri kabul eder; farklı etiket planın yeniden hesabını gerektirir.',
+  history: 'Yeniden onay geçmişi',
+  historyLine: (number: number, at: string, version: number) => `${number}. yeniden onay: ${at}, plan sürümü ${version}`,
+} as const

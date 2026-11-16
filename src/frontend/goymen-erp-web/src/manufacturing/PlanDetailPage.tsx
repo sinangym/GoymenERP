@@ -31,6 +31,7 @@ import { lifecycleFailureText, lifecycleUnknownText, PLAN_DETAIL_TEXT, PLAN_FORM
 import { currentRevision } from './planRevisionContract'
 import { PlanEditForm } from './PlanEditForm'
 import { PlanHistory } from './PlanHistory'
+import { PlanReapprovalSection } from './PlanReapprovalSection'
 import { PlanCalculationDetails } from './PlanPreviewPanel'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -665,7 +666,12 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                 </ul>
               </div>
             )}
-            {plan.status === 'Approved' && canCreateOrder ? (
+            {plan.status === 'Approved' && companyId !== null && namespace !== null ? (
+              <PlanReapprovalSection plan={plan} companyId={companyId} namespace={namespace}
+                canApprove={canApprove && !selfPrepared && !busy}
+                onApplied={(approved) => refreshPlan({ kind: 'approved', approved })} />
+            ) : null}
+            {plan.status === 'Approved' && !plan.requiresReapproval && canCreateOrder ? (
               <div className={styles.actions}>
                 <Button
                   type="button"

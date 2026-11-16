@@ -233,6 +233,8 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// no time), or null, and <see cref="DueDateRevision"/> how many times it was set, changed or removed (the next termin
 /// request sends it back). Neither moves the plan's version.
 /// </summary>
+public sealed record PlanReapprovalViewV1(int Number, Guid ReapprovedByUserId, DateTimeOffset ReapprovedAtUtc, long PlanVersion);
+
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
@@ -242,7 +244,8 @@ public sealed record PlanViewV1(
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
     PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null,
     PlanSalesOrderLinkViewV1? SalesOrderLink = null, long SalesOrderLinkRevision = 0,
-    DateOnly? RequestedDueDate = null, long DueDateRevision = 0);
+    DateOnly? RequestedDueDate = null, long DueDateRevision = 0, bool RequiresReapproval = false,
+    IReadOnlyList<PlanReapprovalViewV1>? Reapprovals = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -3145,7 +3148,9 @@ public sealed partial class ManufacturingCommandService(
             : null,
         plan.SalesOrderLinkRevision,
         plan.RequestedDueDate,
-        plan.DueDateRevision);
+        plan.DueDateRevision, plan.RequiresReapproval,
+        [.. plan.Reapprovals.Select(reapproval => new PlanReapprovalViewV1(reapproval.Number,
+            reapproval.ReapprovedByUserId, reapproval.ReapprovedAtUtc, reapproval.PlanVersion))]);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null

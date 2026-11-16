@@ -229,7 +229,16 @@ export interface PlanParameterSnapshotView {
  * The same shape the create and approve answers return — by construction on the server, not by
  * two projections kept in step — so a reopened plan and a just-created one decode identically.
  */
+export interface PlanReapprovalView {
+  readonly number: number
+  readonly reapprovedByUserId: string
+  readonly reapprovedAtUtc: string
+  readonly planVersion: number
+}
+
 export interface ProductionPlanView {
+  readonly requiresReapproval?: boolean
+  readonly reapprovals?: readonly PlanReapprovalView[]
   readonly planId: string
   readonly companyId: string
   readonly workCenterId: string
@@ -867,6 +876,19 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   ) {
     return null
   }
+  const requiresReapproval = body.requiresReapproval === undefined ? false : body.requiresReapproval
+  const rawReapprovals = body.reapprovals === undefined || body.reapprovals === null ? [] : body.reapprovals
+  if (typeof requiresReapproval !== 'boolean' || !Array.isArray(rawReapprovals)) return null
+  const reapprovals: PlanReapprovalView[] = []
+  for (const raw of rawReapprovals) {
+    if (!isObject(raw) || !hasExactKeys(raw, ['number', 'reapprovedByUserId', 'reapprovedAtUtc', 'planVersion'])
+      || raw.number !== reapprovals.length + 1 || nonNilGuid(raw.reapprovedByUserId) === null
+      || typeof raw.reapprovedAtUtc !== 'string' || Number.isNaN(Date.parse(raw.reapprovedAtUtc))
+      || version(raw.planVersion) === null || (raw.planVersion as number) > planVersion
+      || (reapprovals.length > 0 && (raw.planVersion as number) <= reapprovals[reapprovals.length - 1].planVersion)) return null
+    reapprovals.push(raw as unknown as PlanReapprovalView)
+  }
+  if (requiresReapproval && (body.status !== 'Approved' || orderId !== null)) return null
   // CK_Plans_Approval: Draft has neither value; Approved has both; a Cancelled plan keeps both or neither.
   if ((approvedByUserId === null) !== (approvedAtUtc === null)) return null
   if (body.status === 'Draft' && approvedByUserId !== null) return null
@@ -925,6 +947,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     salesOrderLinkRevision,
     requestedDueDate,
     dueDateRevision,
+    requiresReapproval,
+    reapprovals,
   }
 }
 

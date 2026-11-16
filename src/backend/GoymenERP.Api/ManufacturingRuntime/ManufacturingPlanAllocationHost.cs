@@ -35,7 +35,20 @@ internal sealed class ManufacturingPlanAllocationHost(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(labelVersions);
-        return RunAsync(planId, approve, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
+        async Task<T> ApproveWithAllocationHistory(CancellationToken token)
+        {
+            var before = await plans.FindPlanAsync(planId, token);
+            if (before?.RequiresReapproval == true)
+            {
+                // D5: a legacy plan approved without allocation provenance must not gain a new generation silently.
+                // This runs inside RunAsync's host transaction; Inventory also rejects any still-active old generation.
+                foreach (var input in before.Inputs)
+                    if (await plans.FindPlanInputAllocationAsync(planId, input.ParentRollId, token) is null)
+                        throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+            }
+            return await approve(token);
+        }
+        return RunAsync(planId, ApproveWithAllocationHistory, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
         {
             if (plan.Status != Modules.Manufacturing.Domain.Plans.PlanStatus.Approved || plan.Inputs.Count == 0)
             {

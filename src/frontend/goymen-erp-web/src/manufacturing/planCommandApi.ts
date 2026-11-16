@@ -808,6 +808,27 @@ export async function approvePlan(
   return { type: 'applied', resource: plan, ...metadata }
 }
 
+export interface PlanReapprovalSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+  readonly selectedLabelIds: readonly string[]
+}
+
+export async function reapprovePlan(companyId: string, planId: string, snapshot: PlanReapprovalSnapshot,
+  signal?: AbortSignal): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(`${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/reapproval`,
+    companyId, snapshot.idempotencyKey,
+    { expectedVersion: snapshot.expectedVersion, selectedLabelIds: snapshot.selectedLabelIds }, 200, signal)
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  if (metadata === null || plan === null || plan.planId !== planId || plan.companyId !== companyId
+    || plan.status !== 'Approved' || plan.requiresReapproval !== false
+    || plan.version !== snapshot.expectedVersion + 1) return { type: 'unknown', reason: 'undecodable' }
+  return { type: 'applied', resource: plan, ...metadata }
+}
+
 /** The server's decision reason bound (`ProductionPlan.DecisionReasonMaximumLength`). */
 export const DECISION_REASON_MAXIMUM_LENGTH = 256
 

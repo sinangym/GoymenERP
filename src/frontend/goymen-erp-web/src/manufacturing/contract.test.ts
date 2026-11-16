@@ -871,3 +871,19 @@ describe('decodePlan', () => {
     expect(decodePlan(body)).toBeNull()
   })
 })
+
+
+describe('plan reapproval history', () => {
+  it('keeps the first approval and decodes pending reapproval and append-only approval history', () => {
+    const body = plan({ status: 'Approved', version: 5, orderId: null, requiresReapproval: true,
+      approvedByUserId: APPROVER, approvedAtUtc: '2026-11-01T08:00:00Z',
+      reapprovals: [{ number: 1, reapprovedByUserId: APPROVER, reapprovedAtUtc: '2026-11-05T08:00:00Z', planVersion: 4 }] })
+    const decoded = decodePlan(body)
+    expect(decoded?.requiresReapproval).toBe(true)
+    expect(decoded?.approvedAtUtc).toBe('2026-11-01T08:00:00Z')
+    expect(decoded?.reapprovals?.[0].planVersion).toBe(4)
+    expect(decodePlan({ ...body, status: 'Draft' })).toBeNull()
+    expect(decodePlan({ ...body, reapprovals: [{ number: 1, reapprovedByUserId: APPROVER,
+      reapprovedAtUtc: '2026-11-05T08:00:00Z', planVersion: 6 }] })).toBeNull()
+  })
+})
