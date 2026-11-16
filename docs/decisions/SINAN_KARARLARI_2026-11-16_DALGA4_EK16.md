@@ -18,8 +18,8 @@ geldi. "(Önerilen)" işaretleri soranındır. Serbest metin cevaplar aynen alı
 
 37.10'da soran, SAT-D383'ü yanlış anlattı. Soru SAT-D383'ü "teklif/onay dosyaları" diye tanıttı. SAT-D383 (EK15) ise
 **ambalaj standardı Excel içe aktarma dosyası ve sonuç raporudur** (36.26, STK-S12); "teklif/onay dosyası" adlı bir
-kayıt yoktur. Soru bu hatayla soruldu ve doğru metinle yeniden sorulmadı. Bu yüzden SAT-D397 aşağıda daraltılmıştır ve
-kapsamı `NEEDS-SINAN`'dır.
+kayıt yoktur. Soru bu hatayla soruldu ve doğru metinle yeniden sorulmadı. Bu yüzden SAT-D397 aşağıda daraltılmıştır; kapsamı
+SINAN-CEVAP 42.8 ile teyit edildi (EK20 SAT-D401, #1186).
 
 ## Soru ve cevaplar
 
@@ -53,7 +53,7 @@ exact-head DOCS incelemesi, yazar ≠ inceleyen) değişmez.
 | URT-D101 | Kuyrukta elle sıra taşıma izni (37.7; URT-D97'yi tamamlar) | İş merkezi kuyruğunda elle sıra taşıma mevcut **`manufacturing.plans.approve`** iznine bağlanır; her taşıma denetime yazılır (URT-D97). Rol/grant ataması yapılmaz. | Üretim kuyruk komutu |
 | SAT-D396 | Alış iadesi istisna onayı izni (37.8; SAT-D393'ü tamamlar) | Fark okunamadığında elle düzeltilmiş maliyetle devam için istisna onayı mevcut **`purchasing.orders.approve`** iznine bağlanır; onay denetime yazılır. Rol/grant ataması yapılmaz. Aynı kişinin hem iadeyi girip hem onaylaması bu soruda ayrıca sorulmadı; koddaki mevcut davranış değişmez. | Alış iadesi komutu |
 | URT-D102 | Üretimden iade sınırının ölçüldüğü yer (37.9; URT-D95'i tamamlar) | URT-D95 sınırı (çekilen − tüketilen) **rulo bazlı süreçlerde her ana rulo için ayrı**, **boyada (URT-D49) iş emrinin toplamında** ölçülür. Diğer süreçlerde koddaki mevcut ölçü değişmez. Aşan iade reddedilir. | Üretim iade komutu (URT-S6/S2) |
-| SAT-D397 | SAT-D383 dosyalarının saklanması (37.10; SAT-D383) | Cevap: "Açık kalsın, silme yok". Soru SAT-D383'ü yanlış tanıttığı için (bkz. Soru ve cevaplar notu) karar şuna daraltılır: SAT-D383'ün gerçek kapsamındaki dosyalar, yani **ambalaj standardı Excel içe aktarma dosyası ve sonuç raporu**, için saklama süresi seçilmez; bu dosyalar **silinmez** ve **imha işlevi kapalı kalır**. Bu, sunulan seçeneklerin en temkinlisidir ve SAT-D383'teki "saklama politikası açık kararına bağlı kalır" hükmünü değiştirmez. Cevabın SAT-D383'ün gerçek dosyalarına uygulanması yazar okumasıdır; Sinan'ın teyidi `NEEDS-SINAN`'dır. "Teklif/onay dosyası" adlı bir kayıt için karar yazılmaz. Saklama politikası ayrı bir kararla belirlenir; bu karar bir `OPEN-*` kaydını kapatmaz. | Stok ambalaj içe aktarımı, dosya deposu (SAT-D383 dosyaları) |
+| SAT-D397 | SAT-D383 dosyalarının saklanması (37.10; SAT-D383) | Cevap: "Açık kalsın, silme yok". Soru SAT-D383'ü yanlış tanıttığı için (bkz. Soru ve cevaplar notu) karar şuna daraltılır: SAT-D383'ün gerçek kapsamındaki dosyalar, yani **ambalaj standardı Excel içe aktarma dosyası ve sonuç raporu**, için saklama süresi seçilmez; bu dosyalar **silinmez** ve **imha işlevi kapalı kalır**. Bu, sunulan seçeneklerin en temkinlisidir ve SAT-D383'teki "saklama politikası açık kararına bağlı kalır" hükmünü değiştirmez. Cevabın SAT-D383'ün gerçek dosyalarına uygulanması SINAN-CEVAP 42.8 ile teyit edildi (EK20 SAT-D401, #1186). "Teklif/onay dosyası" adlı bir kayıt için karar yazılmaz. Saklama politikası ayrı bir kararla belirlenir; bu karar bir `OPEN-*` kaydını kapatmaz. | Stok ambalaj içe aktarımı, dosya deposu (SAT-D383 dosyaları) |
 
 ## Sınırlar
 
@@ -62,11 +62,10 @@ exact-head DOCS incelemesi, yazar ≠ inceleyen) değişmez.
 - SAT-D395 modüller arası bir izin bağıdır: Satış'taki fason sipariş satırı komutu ve Ayarlar'daki fason vergi
   varsayılanı, Alış modülünün `purchasing.orders.approve` izniyle korunur. Bu bağ K3 incelemesinde cross-module
   contract olarak ayrıca doğrulanır.
-- Yeni `NEEDS-SINAN` (Issue #66'ya ayrıca yazılır): SAT-D397'nin kapsamı. 37.10'daki cevabın ("Açık kalsın, silme
-  yok") SAT-D383'ün ambalaj standardı içe aktarma dosyası ve sonuç raporu için de geçerli olup olmadığı yeniden
-  sorulur. Karar gelene kadar bu dosyalar silinmez ve imha kapalı kalır.
+- SAT-D397'nin kapsamı SINAN-CEVAP 42.8 ile teyit edildi (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md` SAT-D401, #1186).
 - FNS-D78 ve URT-D99 hesapları tek deterministik backend calculator'da kalır ve formül golden'ıyla doğrulanır.
 - SAT-D397 saklama süresi seçmez ve imhayı etkinleştirmez.
-- URT-D97'deki öncelik puanını girecek izin (EK15 `NEEDS-SINAN`) bu belgede cevaplanmadı; açık kalır.
+- URT-D97'deki öncelik puanını girecek izin bu belgede cevaplanmadı; SINAN-CEVAP 42.13 ile cevaplandı (EK20 URT-D103,
+  #1186).
 - İnsan kapıları değişmez: deployment, environment, secret, Settings → Actions etkinleştirmesi, grant/rol/Critical,
   production aktivasyonu, `OPEN-*` kapatma ve `.claude/settings.json`.
