@@ -125,7 +125,11 @@ public sealed record IdentityAccessAssignment(
     DateTimeOffset? ValidUntilUtc,
     DateTimeOffset CreatedAtUtc,
     IdentityAccessPerson? ApprovedBy,
-    IReadOnlyList<IdentityAccessScope> Scopes);
+    IReadOnlyList<IdentityAccessScope> Scopes)
+{
+    /// <summary>ID-4: the persisted assignment version, required by revocation; never inferred from validity.</summary>
+    public string Version { get; init; } = string.Empty;
+}
 
 /// <summary>A permission the user holds NOW in this company, and which of their effective roles give it.</summary>
 public sealed record IdentityAccessEffectivePermission(
@@ -143,7 +147,11 @@ public sealed record IdentityAccessRoleSummary(
     bool IsActive,
     int PermissionCount,
     int HolderCount,
-    int EffectiveHolderCount);
+    int EffectiveHolderCount)
+{
+    /// <summary>ID-4: computed by the owner from registered permission classification, never role names.</summary>
+    public bool IsCritical { get; init; }
+}
 
 public sealed record IdentityAccessRoleDetail(
     Guid RoleId,

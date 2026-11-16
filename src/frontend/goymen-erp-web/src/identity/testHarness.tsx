@@ -49,6 +49,7 @@ export function userSummary(userId: string, displayName: string, overrides: Part
 export function assignment(roleId: string, roleCode: string, roleName: string, overrides: Record<string, unknown> = {}) {
   return {
     assignmentId: crypto.randomUUID(),
+    version: '1',
     roleId,
     roleCode,
     roleName,
@@ -86,6 +87,7 @@ export function roleSummary(roleId: string, code: string, name: string, override
     isSystem: true,
     isActive: true,
     permissionCount: 2,
+    isCritical: false,
     holderCount: 1,
     effectiveHolderCount: 1,
     ...overrides,
@@ -136,6 +138,7 @@ export interface RecordedRequest {
   readonly method: string
   readonly url: string
   readonly headers: Record<string, string>
+  readonly body: unknown
 }
 
 function resetCompanyPreference(): void {
@@ -168,13 +171,13 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
       const url = typeof input === 'string' ? input : input.toString()
       const headers: Record<string, string> = {}
       for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[k] = v
-      recorded.push({ method: init?.method ?? 'GET', url, headers })
+      recorded.push({ method: init?.method ?? 'GET', url, headers, body: typeof init?.body === 'string' ? JSON.parse(init.body) as unknown : null })
       if (url.endsWith('/identity/me')) return json(IDENTITY)
       if (url.endsWith('/organization/companies')) return json(DIRECTORY)
       if (url.endsWith('/shell/capabilities')) {
         return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'identity-gen-1', capabilities })
       }
-      return options.respond?.(url, init) ?? problem(404)
+      return options.respond?.(url, init) ?? (url.endsWith('/identity/access/grant-requests?status=pending') ? json([]) : problem(404))
     }),
   )
   return recorded

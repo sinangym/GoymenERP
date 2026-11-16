@@ -122,6 +122,10 @@ internal sealed class IdentityAccessReadService(
                 PermissionCount = dbContext.RolePermissions.Count(permission => permission.RoleId == role.Id),
             })
             .ToListAsync(cancellationToken);
+        var permissionRows = await dbContext.RolePermissions.AsNoTracking()
+            .Select(permission => new { permission.RoleId, permission.PermissionCode }).ToListAsync(cancellationToken);
+        var criticalRoles = permissionRows.Where(permission => ErpPermissions.IsCritical(permission.PermissionCode))
+            .Select(permission => permission.RoleId).ToHashSet();
         var rows = await ReadAssignmentsAsync(companyId.Value, userId: null, roleId: null, cancellationToken);
         var holders = rows
             .GroupBy(row => row.RoleId)
@@ -146,7 +150,7 @@ internal sealed class IdentityAccessReadService(
                     role.IsActive,
                     role.PermissionCount,
                     counts.All,
-                    counts.Effective);
+                    counts.Effective) { IsCritical = criticalRoles.Contains(role.Id) };
             })
             .OrderBy(role => role.Code, StringComparer.Ordinal)
             .ThenBy(role => role.RoleId)
@@ -303,7 +307,7 @@ internal sealed class IdentityAccessReadService(
                         .OrderBy(scope => scope.ScopeType)
                         .ThenBy(scope => scope.ScopeId)
                         .Select(scope => new IdentityAccessScope(scope.ScopeType.ToString(), scope.ScopeId))
-                        .ToArray());
+                        .ToArray(), assignment.Version);
             })
             .OrderBy(row => row.RoleCode, StringComparer.Ordinal)
             .ThenBy(row => row.ValidFromUtc)
@@ -354,7 +358,7 @@ internal sealed class IdentityAccessReadService(
         row.ValidUntilUtc,
         row.CreatedAtUtc,
         row.ApprovedBy,
-        row.Scopes);
+        row.Scopes) { Version = row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) };
 
     private sealed record AssignmentRow(
         Guid AssignmentId,
@@ -371,5 +375,6 @@ internal sealed class IdentityAccessReadService(
         DateTimeOffset? ValidUntilUtc,
         DateTimeOffset CreatedAtUtc,
         IdentityAccessPerson? ApprovedBy,
-        IReadOnlyList<IdentityAccessScope> Scopes);
+        IReadOnlyList<IdentityAccessScope> Scopes,
+        long Version);
 }

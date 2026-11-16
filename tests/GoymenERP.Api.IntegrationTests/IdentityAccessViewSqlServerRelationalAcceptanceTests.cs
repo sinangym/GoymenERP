@@ -44,6 +44,39 @@ public sealed class IdentityAccessViewSqlServerRelationalAcceptanceTests
         ["email", "issuer", "subject", "externalIdentities", "externalIdentity"];
 
     [SqlServerFact]
+    public async Task Access_reads_return_the_persisted_assignment_version_and_owner_classified_role_criticality()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await GrantAsync(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var database = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var assignment = await database.RoleAssignments.SingleAsync(row => row.Id == CompanyAOperatorAssignment);
+                database.Entry(assignment).Property(nameof(RoleAssignment.Version)).CurrentValue = 7L;
+                await database.SaveChangesAsync();
+            }
+
+            using var client = CreateClient(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            using var body = await ReadJsonAsync(client, $"{UsersRoute}/{CompanyAUser}");
+            var row = Assert.Single(body.RootElement.GetProperty("assignments").EnumerateArray(),
+                candidate => candidate.GetProperty("assignmentId").GetGuid() == CompanyAOperatorAssignment);
+            Assert.Equal("7", row.GetProperty("version").GetString());
+            using var roles = await ReadJsonAsync(client, RolesRoute);
+            await using var readScope = factory.Services.CreateAsyncScope();
+            var readDatabase = readScope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var permissions = await readDatabase.RolePermissions.AsNoTracking()
+                .Select(permission => new { permission.RoleId, permission.PermissionCode }).ToArrayAsync();
+            foreach (var role in roles.RootElement.EnumerateArray())
+            {
+                var id = role.GetProperty("roleId").GetGuid();
+                Assert.Equal(permissions.Any(permission => permission.RoleId == id && ErpPermissions.IsCritical(permission.PermissionCode)),
+                    role.GetProperty("isCritical").GetBoolean());
+            }
+        });
+    }
+
+    [SqlServerFact]
     public async Task Each_administrator_sees_only_the_assignments_of_the_company_they_hold_the_read_in()
     {
         await WithDatabaseAsync(async factory =>

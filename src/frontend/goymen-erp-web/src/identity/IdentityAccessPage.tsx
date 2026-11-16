@@ -1,5 +1,5 @@
 /**
- * "Kullanıcılar ve yetkiler" — AT-004 read-only access view (SY-01 read subset).
+ * "Kullanıcılar ve yetkiler" — AT-004 read view plus ID-4 commands on separate server capabilities.
  *
  * The user flow: pick a user → see their role assignments with validity, scopes and approver, and the permissions
  * that hold now → open a role → its card → back returns to the same user. The selected user lives in the URL
@@ -8,8 +8,7 @@
  *
  * THE RULES THAT SHAPE THIS FILE
  *
- *  - Read-only. There is no assign, revoke or edit control, and no disabled placeholder for one: those commands
- *    are blocked on a user decision (NEEDS-SINAN #66 5738113623, OPEN-013) and have no server.
+ *  - Existing ID-3 commands are drawn only on their own server control capabilities; no grant is installed by this UI.
  *  - Remounted per committed context and route entry: a stale render would put one company's grants under
  *    another company's label. Every query key carries the namespace.
  *  - The company is the shell's single active company; the server fences every answer to it. A group (multi-
@@ -43,6 +42,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './identity.module.css'
+import { AccessGrantPanel, AccessGrantQueue } from './AccessGrantPanel'
 
 export function IdentityAccessPage() {
   const shell = useShellState()
@@ -142,6 +142,8 @@ function AccessScreen({ namespace }: { readonly namespace: string | null }) {
               companyId={companyId ?? ''}
               userId={selectedUserId}
               canOpenRole={canOpenRole}
+              roles={rolesState.kind === 'ready' ? rolesState.data : []}
+              changed={() => { void users.refetch(); void roles.refetch() }}
             />
           )}
         </section>
@@ -154,6 +156,7 @@ function AccessScreen({ namespace }: { readonly namespace: string | null }) {
           <StateBlock state={rolesState} subject={ACCESS_TEXT.rolesSubject} onRetry={() => void roles.refetch()} />
         )}
       </section>
+      <AccessGrantQueue company={companyId!} namespace={namespace!} changed={() => { void users.refetch(); void roles.refetch() }} />
     </Frame>
   )
 }
@@ -208,11 +211,15 @@ function UserDetail({
   companyId,
   userId,
   canOpenRole,
+  roles,
+  changed,
 }: {
   readonly namespace: string | null
   readonly companyId: string
   readonly userId: string
   readonly canOpenRole: boolean
+  readonly roles: readonly AccessRoleSummary[]
+  readonly changed: () => void
 }) {
   const shell = useShellState()
   const query = useBoundaryRead(
@@ -299,6 +306,7 @@ function UserDetail({
         </ul>
       )}
       <p className={styles.muted}>{ACCESS_TEXT.readOnlyNote}</p>
+      <AccessGrantPanel company={companyId} user={user} roles={roles} changed={() => { void query.refetch(); changed() }} />
     </div>
   )
 }

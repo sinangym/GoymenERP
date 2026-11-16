@@ -11,8 +11,7 @@
  * `CapabilityRoute` then closes the route onto the neutral not-found block, and the nav entry is not drawn. Every
  * request is re-authorized server-side regardless (ERP-000K §10.2).
  *
- * THERE IS NO WRITE ID, deliberately. Assigning, revoking or editing a grant is blocked on a user decision
- * (NEEDS-SINAN #66 5738113623, OPEN-013); the screens must not offer a control whose server does not exist.
+ * ID-4 controls consume the decided ID-3 commands. Declaring a control grants nothing.
  */
 
 export const IDENTITY_CAPABILITY = {
@@ -23,6 +22,11 @@ export const IDENTITY_CAPABILITY = {
    * every detail separate, even though both stand on the same read today: that is a fact about who holds them.
    */
   roleDetail: 'identity.roles.detail',
+} as const
+
+export const IDENTITY_ACCESS_CONTROL = {
+  manage: 'identity.roles.manage',
+  decide: 'identity.access.approve',
 } as const
 
 export type IdentityCapabilityId = (typeof IDENTITY_CAPABILITY)[keyof typeof IDENTITY_CAPABILITY]

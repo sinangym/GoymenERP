@@ -8,8 +8,7 @@ import type { ScopeType, Validity } from './contract'
 export const ACCESS_TEXT = {
   heading: 'Kullanıcılar ve yetkiler',
   lead:
-    'Seçili şirketteki rol atamaları, yetkiler, kapsamlar, geçerlilik ve onaylayan. Yalnız görüntüleme: ' +
-    'yetki verme veya geri alma bu ekranda yok.',
+    'Seçili şirketteki rol atamaları, yetkiler, kapsamlar, geçerlilik ve onaylayan. Yetki işlemleri kendi izinleriyle açılır.',
   usersHeading: 'Kullanıcılar',
   usersSubject: 'kullanıcı listesi',
   rolesHeading: 'Roller',
@@ -36,7 +35,7 @@ export const ACCESS_TEXT = {
   openEnded: 'Süresiz',
   noApprover: 'Kayıtlı onaylayan yok',
   grantedBy: 'Veren rol',
-  readOnlyNote: 'Yetki verme, geri alma ve düzenleme kullanıcı kararı bekliyor; bu ekran yalnız mevcut durumu gösterir.',
+  readOnlyNote: 'Her yetki işlemi sunucuda yeniden denetlenir; görünür bir düğme tek başına yetki vermez.',
 } as const
 
 export const ROLE_TEXT = {
@@ -54,6 +53,20 @@ export const ROLE_TEXT = {
  * a wrong password, an unknown user, a passive and a locked account (KIM-D2/D4): it must never hint which it was, and
  * the lock note is general — it names no duration, because the lock values are Settings values (KIM-D5).
  */
+export const ACCESS_GRANT_TEXT = {
+  title: 'Yetki işlemleri', queue: 'Bekleyen Critical rol talepleri', queueSubject: 'yetki talepleri', empty: 'Bekleyen talep yok.',
+  assign: 'Rol ata', request: 'Onaya gönder', critical: 'Bu rol ikinci bir kişinin onayını gerektirir. Kararı sunucu doğrular.',
+  role: 'Atanacak rol', chooseRole: 'Rol seçin', reason: 'Gerekçe', from: 'Başlangıç zamanı (boş: şimdi)', until: 'Bitiş zamanı (boş: süresiz)',
+  approve: 'Onayla', reject: 'Reddet', withdraw: 'Geri çek', revoke: 'Atamayı geri al', reasonCode: 'Ret gerekçe kodu', reasonCodeHelp: 'Küçük ASCII harfle başlayın; harf, sayı, nokta, alt çizgi veya kısa çizgi kullanın. En fazla 64 karakter.',
+  secondPerson: 'Kendi açtığınız veya sizi hedefleyen talebi onaylayamaz ya da reddedemezsiniz.',
+  lastAdmin: 'Şirketin son etkin Admin ataması geri alınamaz. Önce başka bir etkin Admin bulunmalıdır.',
+  lastAssignment: 'Bu, kullanıcının şirketteki son etkin ataması. Geri alınırsa bu şirketten parola sıfırlama, kilit açma veya pasifleştirme yapılamaz.',
+  succeeded: 'İşlem kaydedildi.', replay: 'Önceki işlemin sonucu alındı.', cancel: 'Vazgeç', confirm: 'İşlemi uygula', pending: 'Kaydediliyor…', retry: 'Aynı işlemi yeniden dene',
+  unknown: 'İşlemin sonucu bilinmiyor. Aynı istek ve işlem anahtarıyla yeniden deneyin.', refused: 'İşlem reddedildi. Yetkiyi ve kaydın güncel durumunu kontrol edin.',
+  versionConflict: 'Kayıt değişti. Güncel liste yeniden okundu; işlemi yeniden başlatın.', secondApproval: 'Bu rol için ikinci kişi onayı gerekir. Atama yerine onaya gönderin.', selfApproval: 'Talebi açan veya hedef kişi karar veremez.',
+  operation: 'İşlem', target: 'Hedef kullanıcı', requester: 'Talebi açan', validity: 'Geçerlilik', preview: 'Atama önizlemesi', noRole: 'Atanabilir etkin rol yok.',
+} as const
+
 export const LOGIN_TEXT = {
   heading: 'Giriş yap',
   lead: 'Göymen ERP hesabınızla giriş yapın.',
