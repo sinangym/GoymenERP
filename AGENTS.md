@@ -11,6 +11,13 @@
 
 ## Çalışma orkestrasyonu
 
+**Issue #66 devamı (16 Kasım 2026 kullanıcı kararı):** Issue #66 GitHub'ın 2500 yorum sınırına
+ulaştı ve yeni yorum kabul etmiyor. Bu dosyada ve `docs/governance/**`, `docs/decisions/**`,
+`.claude/**` altında "Issue #66'ya yazılır" denen her satır (merge makbuzu, `NEEDS-SINAN`,
+`SINAN-CEVAP`, START-GO, yetki geri alma, `.claude/settings.json` onayı) bu tarihten itibaren
+**Issue #1189**'a yazılır. #66'daki eski kayıtlar geçerli kalır; Sinan'ın bir yetkiyi geri alan
+satırı #66'da veya #1189'da olabilir.
+
 Her yeni çalışma döngüsünde `docs/governance/CODEX_OTONOM_PROJE_ORKESTRATORU_v1.md`
 varsa okunur ve görev/branch/PR/doğrulama akışında uygulanır. Bu protokol yukarıdaki kaynak
 önceliğini veya iş kurallarını değiştirmez ve kendi başına dış yazma ya da merge yetkisi
