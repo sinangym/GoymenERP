@@ -2,7 +2,7 @@
 
 ## Kaynak durumu
 
-- **KIM-S5: PARTIAL — kaynak kullanıcı akışı tamam; son backend test/audit ilavelerinin derlemesi ve entegrasyon bekliyor.** Bu kayıt global DONE, gerçek kullanıcı kabulü,
+- **KIM-S5: SOURCE_READY — kaynak kullanıcı akışı ve derleme tamam; entegrasyon ve kabul koşumu bekliyor.** Bu kayıt global DONE, gerçek kullanıcı kabulü,
   gerçek SQL veya production kullanılabilirliği iddiası değildir.
 - Dilim commit başlığı: `KIM-S5: explicit company opening and first Admin (KIM-D56 KIM-D20 KIM-D21 KIM-D28 KIM-D40)`.
   Kaynak commit `ca8121d4f90aaccda23f33a594d076fc9cc74d8e`. Önceki dar model assertion hizalaması ayrı `fd90499c9` commit'idir.
@@ -68,7 +68,7 @@
   ayrı durumlar ve aynı seçilmiş hedef/body/key retry.
 - İlk checkpoint: API, Api.IntegrationTests, Identity.UnitTests ve Organization.UnitTests derlemeleri **exit 0, 0 hata/uyarı**.
   İlk Identity.UnitTests derlemesindeki nullable database-index assertion compile sorunu non-null DB adıyla düzeltildi;
-  tekrar derleme 0. Son test/audit/endpoint ilaveleri sonrası final compile bekliyor.
+  tekrar derleme 0. Son test/audit/endpoint ilaveleri sonrası Api.IntegrationTests, Identity.UnitTests ve Organization.UnitTests derlemeleri de exit 0 verdi.
 - Son frontend `npx tsc -b` **exit 0**. İlk geçiş yeni ekranın generic identity tek-kayıt/liste tip ayrımını buldu;
   tek-kayıt okuyucusu ve liste biçimini reddeden UI kaynak testi ile düzeltildi. Yeni paket/sürüm/lockfile yoktur.
   Unit/Vitest/SQL/host/browser/CI ve DB apply **NOT_RUN**; hiçbir test silinmedi/skip edilmedi.
@@ -94,7 +94,7 @@
 
 ## KIM-S20 / STK-S11 typed birim kaynağı takip işi
 
-- Kaynak durumu: SOURCE_READY adayı; build/test koşumu henüz NOT_RUN. Master §28.1 ağırlık kg/ton ve ALS-D43/D51
+- Kaynak durumu: SOURCE_READY; API ve Settings.UnitTests derlemeleri exit 0, test koşumu NOT_RUN. Kaynak commit `540ce04b6d91455120d03017789dcfed7b704002`. Master §28.1 ağırlık kg/ton ve ALS-D43/D51
   metre/adet kararları uygulanır. Yeni bir fiziksel veya ticari çevrim formülü seçilmedi.
 - Ayrı `ISettingsPhysicalUnitSemanticsV1.ReadAsync(UnitId)` portu: Found/NotFound/Unavailable, istenen UnitId,
   açık Kilogram/Tonne/Metre/Piece sınıfı, yalnız kütle birimlerinde exact KgPerUnit (1/1000), kaynak sürümü.
@@ -106,3 +106,18 @@
 - Unit/contract kaynakları dört exact identity ve source revision, kg/ton mass katsayıları, metre/adet null mass,
   kg adını taşıyan yabancı identity, bozuk owner cevabı, owner failure/cancellation ve unchanged company profillerini kapsar.
 - Migration/DB/rol/grant/seed/production/pin yoktur. STK-S11 kullanımı kendi consumer diliminde bağlanır.
+
+## KIM-S19 — numara serileri ve kayıtlı operasyonel politikalar
+
+- **PARTIAL — bu owner/UI checkpoint'i SOURCE_READY; bütün belge tüketicileri ve bildirim deposu bağlantısı ayrı takiptedir.** Dayanak KIM-D53/N-12, SAT-D305, KLN-D114/D115 ve satın almayı da kapsayan yeni kullanıcı cevabıdır. Yeni varsayılan şirket formatı veya seed yoktur.
+- Kontrat checkpoint'i `4e068eacac51347d85baba142a351e4d377787fe`: `ISettingsDocumentNumberSeriesV1`, `ISettingsOperationalPolicyAdministrationV1` ve typed politika reader'ları. Gerçek scoped provider/DI, endpoint ve üç Ayarlar ekranı bu checkpoint'te tamamlandı.
+- Numara rezervasyonu aynı açık Serializable owner transaction/connection'a katılır; port commit etmez. Şirket/yıl sayacı, SQL rowversion, format sürümü, aynı komut anahtarı replay'i, iptal defteri ve boşluk listesi vardır. Her exception'da caller tam rollback yapmalıdır. Seri ve owner command kapsamı farklı belge sahiplerinin aynı opaque anahtarını birbirine karıştırmaz. Kullanıcı numara biçimi girmeden işlem fail-closed kalır.
+- Hurda maliyete katılım başlangıcı yalnız sağlıklı boş-store okumasında true; bildirim etkinlik süresi başlangıcı aynı koşulda 90 gündür. Her değişim expectedVersion/idempotency/audit taşır. `settings.document-number-series.manage`, `settings.manufacturing-scrap-cost.manage`, `settings.notification-retention.manage` yalnız kayıt edildi; grant, rol veya Critical sınıfı seçilmedi.
+- EF CLI 10.0.8 gerçek üretimi: `20261116220424_AddDocumentNumberSeriesAndOperationalPolicies`. Up yalnız dört tablo ve iki policy CHECK genişlemesidir. Down ilk adım THROW **51954** ile format/sayaç/rezervasyon/iptal veya yeni politika geçmişinde veri kaybını reddeder. DB apply NOT_RUN.
+- Gerçek SQL kaynakları caller rollback/commit/replay, iptal sonrası numarayı tekrar kullanmama, yıl değişimi, şirket çiti, son owner lookup'ta yetki kaybı, aynı opaque key'in ayrı owner serileri, Down guard ve operasyonel politika tarihçesini kapsar. Model kaynakları filtre/FK/unique/rowversion/immutable ve şirket guard'larını; UI kaynakları açık giriş, tüm ekran durumları, strict DTO ve aynı key/body retry'ı kapsar. Runtime koşumu NOT_RUN.
+- API startup, Api.IntegrationTests, Settings.UnitTests, Identity.UnitTests, Audit.UnitTests ve son `npx tsc -b` derlemeleri exit 0, 0 hata/uyarı. Unit/Vitest/SQL/host/browser/CI koşulmadı. Paket, sürüm veya lockfile değişmedi.
+- **K3 review bekliyor:** Settings numara owner'ı yalnız kendisine ait yeni scoped context'i caller'ın açık SQL transaction'ına katıyor. Audit owner portu aynı transaction'ı kullanıyor; yeni context-construction yüzeyleri gerekçesi olmadan guard allowlist'ine eklenmedi. Merkezi pin/JSON üretimi kökte yapılacak.
+
+## Dar dependency merge kaydı
+
+- `af76b13e3848ac354ff82df50c91d96ca3260189` normal no-ff merge'i gerçek Sales satır sorumlusu owner reader'ını aldı. İki kaynak çatışmasında kök incelemesi ve açık talimatıyla `CompanyContextMiddleware.cs` ile `CompanyLifecycleScopeFenceTests.cs` mevcut HEAD içerikleri byte-exact korundu. Bunlar ordinary foreign-company/failure çitlerini ve daha yeni KIM-D56 group-operation/fresh-revision istisnasını taşır; eski opener otomatiği geri alınmadı. Diğer dependency değişiklikleri ve kirli Settings/Audit kaynakları korundu. Bu dar çözüm bağımsız K3 inceleme listesine dahildir; runtime test NOT_RUN.

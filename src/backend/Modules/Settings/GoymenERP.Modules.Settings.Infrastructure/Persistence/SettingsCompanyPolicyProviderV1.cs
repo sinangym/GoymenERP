@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <item>Credit account mapping: no row is <see cref="FinanceCreditAccountMappingStatusV1.MappingMissing"/>.</item>
 /// </list>
 /// </summary>
-public sealed class SettingsCompanyPolicyProviderV1 :
+public sealed partial class SettingsCompanyPolicyProviderV1 :
     ISettingsFinancePolicyProviderV1,
     ISettingsManufacturingDueDateBufferProviderV1,
     ISettingsSubcontractTaxDefaultProviderV1,

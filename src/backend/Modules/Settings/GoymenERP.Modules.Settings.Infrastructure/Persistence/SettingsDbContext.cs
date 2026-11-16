@@ -110,6 +110,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureReferenceLists(modelBuilder);
         ConfigureCollateralTypes(modelBuilder);
         ConfigureCompanyPolicies(modelBuilder);
+        ConfigureDocumentNumbers(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -664,9 +665,18 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
 
             if (entry.State == EntityState.Modified && entry.Entity is CompanyPolicyVersionRow
                 or FinanceCreditAccountMappingVersionRow or ReferenceListEntryRow or ReferenceListEntryVersionRow
-                or CollateralTypeRow or CollateralTypeVersionRow)
+                or CollateralTypeRow or CollateralTypeVersionRow
+                or DocumentNumberFormatRow or DocumentNumberReservationRow or DocumentNumberCancellationRow)
             {
                 throw new InvalidOperationException("Ayarlar kaydı değiştirilemez; yeni sürüm yazılır.");
+            }
+
+            if (entry.Entity is DocumentNumberCounterRow counter)
+            {
+                var original = entry.Property(nameof(DocumentNumberCounterRow.LastSequence)).OriginalValue;
+                if (entry.State == EntityState.Added ? counter.LastSequence != 1
+                    : entry.State == EntityState.Modified && (original is not long previous || previous == long.MaxValue || counter.LastSequence != previous + 1))
+                    throw new InvalidOperationException("Document counters advance exactly once; they never reset within a year.");
             }
 
             var companyId = entry.Entity switch
@@ -705,6 +715,10 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 ReferenceListEntryVersionRow row => row.CompanyId,
                 CollateralTypeRow row => row.CompanyId,
                 CollateralTypeVersionRow row => row.CompanyId,
+                DocumentNumberFormatRow row => row.CompanyId,
+                DocumentNumberCounterRow row => row.CompanyId,
+                DocumentNumberReservationRow row => row.CompanyId,
+                DocumentNumberCancellationRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

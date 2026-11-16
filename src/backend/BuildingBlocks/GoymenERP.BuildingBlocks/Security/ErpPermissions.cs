@@ -1498,6 +1498,11 @@ public static class ErpPermissions
     public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
 
     public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
+    /// <summary>SAT-D305 technical registry name only; real authorized manager grants remain human-owned.</summary>
+    public const string SettingsManufacturingScrapCostManage = "settings.manufacturing-scrap-cost.manage";
+    /// <summary>KLN-D114/D115: register notification passivation duration management, no grant or deletion authority.</summary>
+    public const string SettingsNotificationRetentionManage = "settings.notification-retention.manage";
+    public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
     /// KIM-S18 (KIM-D49/KIM-D51, API-98): read the company's purchasing reference lists (expense type, service type) and add,
@@ -1858,6 +1863,9 @@ public static class ErpPermissions
             SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
@@ -2132,6 +2140,9 @@ public static class ErpPermissions
             SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,

@@ -32,6 +32,9 @@ public static class SettingsModuleExtensions
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<SettingsDocumentNumberSeriesV1>();
+        services.AddScoped<ISettingsDocumentNumberSeriesV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
+        services.AddScoped<ISettingsDocumentNumberSeriesAdministrationV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
         services.TryAddSingleton<ISettingsPhysicalUnitSemanticsV1, ApprovedSettingsPhysicalUnitSemanticsV1>();
         // SAT-D61…D64: the Sales policy port keeps the approved catalog for every read and adds the company's limit-group
         // store for the discount limit (SettingsSalesPolicyProviderV1 states the precedence; a contradiction fails closed).
@@ -93,11 +96,14 @@ public static class SettingsModuleExtensions
         services.AddScoped<ISettingsCollateralTypeAdministrationV1, SettingsCollateralTypeAdministration>();
         services.AddScoped<ISettingsCollateralTypeCatalogV1, SettingsCollateralTypeCatalogV1>();
         // B-13 (ADR-SET-002): the company policy registry. One provider answers every read port of the registry; the number
-        // series port (ISettingsNumberSeriesProviderV1) stays unregistered until its policy is decided (NEEDS-SINAN N-12).
+        // N-12 typed document numbering above joins the document owner transaction (KIM-D53/D55).
         services.AddScoped<SettingsCompanyPolicyAdministration>();
         services.AddScoped<ISettingsCompanyPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<ISettingsSalesContractDiscountLimitAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        services.AddScoped<ISettingsOperationalPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<SettingsCompanyPolicyProviderV1>();
+        services.AddScoped<ISettingsManufacturingScrapCostPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsNotificationRetentionPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>
             provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsManufacturingDueDateBufferProviderV1>(provider =>
