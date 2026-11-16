@@ -90,6 +90,12 @@ public static class OrganizationCompanyTaxIdRules
     /// <summary>The VKN after trim is exactly <see cref="Company.VknLength"/> ASCII digits.</summary>
     public static bool IsValidVkn(string? vkn) => Company.IsCanonicalVkn(vkn?.Trim());
 
+    /// <summary>
+    /// KIM-D40: the VKN after trim satisfies the official last-digit check (<see cref="CompanyVknCheckDigit"/>). A
+    /// well-formed VKN that fails it is refused by the service with a recorded 422, not as a request-shape error.
+    /// </summary>
+    public static bool HasValidCheckDigit(string? vkn) => CompanyVknCheckDigit.IsSatisfiedBy(vkn?.Trim());
+
     public static bool IsDecision(string? decision) =>
         string.Equals(decision, ApproveDecision, StringComparison.Ordinal)
         || string.Equals(decision, RejectDecision, StringComparison.Ordinal);

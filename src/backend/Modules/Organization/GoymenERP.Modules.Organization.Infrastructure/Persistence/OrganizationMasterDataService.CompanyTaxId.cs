@@ -126,6 +126,17 @@ internal sealed partial class OrganizationMasterDataService
             return await CompleteAsync(request, metadata, CommandResponses.For(CommandResult.NotFound), cancellationToken);
         }
 
+        if (!OrganizationCompanyTaxIdRules.HasValidCheckDigit(proposedVkn))
+        {
+            // KIM-D40: a well-formed VKN that fails the official last-digit check is refused at entry, before any
+            // request exists to approve; the refusal is recorded with the key like every other terminal answer.
+            return await CompleteAsync(
+                request,
+                metadata,
+                CommandResponses.For(CommandResult.TaxIdCheckDigitInvalid),
+                cancellationToken);
+        }
+
         if (company.Version != command.ExpectedVersion)
         {
             return await CompleteAsync(

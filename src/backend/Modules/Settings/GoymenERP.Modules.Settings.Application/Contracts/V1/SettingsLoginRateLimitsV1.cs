@@ -50,6 +50,15 @@ public static class LoginRateLimitInputLimitsV1
     /// memory, not a business value.
     /// </summary>
     public const int MaximumWindowSeconds = 86_400;
+
+    /// <summary>
+    /// KIM-D42: the most entries the trusted proxy list may hold. A technical guard of the stored text and the per-attempt
+    /// membership scan, not a business value; the list itself is a Settings value (empty by default).
+    /// </summary>
+    public const int MaximumTrustedProxyCount = 64;
+
+    /// <summary>KIM-D42: the stored length of the canonical trusted proxy list (storage shape).</summary>
+    public const int TrustedProxiesStorageMaximumLength = 4000;
 }
 
 /// <summary>Published problem codes of the login attempt limit routes.</summary>
@@ -76,6 +85,10 @@ public static class LoginRateLimitProblemCodesV1
 /// <item><c>WindowSeconds</c>: the fixed window length in seconds
 /// (<see cref="LoginRateLimitInputLimitsV1.MinimumWindowSeconds"/>…<see cref="LoginRateLimitInputLimitsV1.MaximumWindowSeconds"/>);</item>
 /// <item><c>PartitionBy</c>: one of <see cref="LoginRateLimitPartitionsV1.All"/>;</item>
+/// <item><c>TrustedProxies</c> (KIM-D42): the direct peers whose <c>X-Forwarded-For</c> header the login rate limit reads for
+/// the client address — each an IPv4/IPv6 address or a CIDR block (<c>10.0.0.0/8</c>; no host bits past the prefix, no zone),
+/// at most <see cref="LoginRateLimitInputLimitsV1.MaximumTrustedProxyCount"/>. The list is mandatory and may be empty: an empty
+/// list (the default) means the header is never read. A change of the list is an audited version like any other;</item>
 /// <item><c>Reason</c>: the mandatory reason (≤ <see cref="LoginRateLimitInputLimitsV1.ReasonMaximumLength"/>).</item>
 /// </list>
 /// A version takes effect when it is saved (the login path reads it on its next refresh). <c>ExpectedVersion</c> is the latest
@@ -86,15 +99,20 @@ public sealed record RecordLoginRateLimitRequestV1(
     int? PermitLimit,
     int? WindowSeconds,
     string? PartitionBy,
+    IReadOnlyList<string>? TrustedProxies,
     string? Reason);
 
-/// <summary>One stored version; <c>IsCurrent</c> marks the latest one, which the login path uses.</summary>
+/// <summary>
+/// One stored version; <c>IsCurrent</c> marks the latest one, which the login path uses. <c>TrustedProxies</c> is the canonical
+/// trusted proxy list of the version (KIM-D42; empty: the forwarded header is never read).
+/// </summary>
 public sealed record LoginRateLimitVersionViewV1(
     Guid ProfileId,
     string Version,
     int PermitLimit,
     int WindowSeconds,
     string PartitionBy,
+    IReadOnlyList<string> TrustedProxies,
     bool IsCurrent,
     string RecordedBy,
     Guid RecordedInCompanyId,
@@ -133,12 +151,16 @@ public interface ISettingsLoginRateLimitAdministrationV1
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }
 
-/// <summary>The group-wide login attempt limit in force (the provider's answer): the latest stored version.</summary>
+/// <summary>
+/// The group-wide login attempt limit in force (the provider's answer): the latest stored version. <c>TrustedProxies</c> is its
+/// canonical trusted proxy list (KIM-D42; empty: the forwarded header is never read).
+/// </summary>
 public sealed record SettingsLoginRateLimitV1(
     ProfileVersionV1 Profile,
     int PermitLimit,
     TimeSpan Window,
-    string PartitionBy);
+    string PartitionBy,
+    IReadOnlyList<string> TrustedProxies);
 
 /// <summary>
 /// The read port the host's login rate limiter asks for the group-wide login attempt limit (KIM-D34). It runs on the anonymous

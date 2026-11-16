@@ -711,6 +711,12 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("RecordedInCompanyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("TrustedProxies")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(4000)");
+
                     b.Property<int>("WindowSeconds")
                         .HasColumnType("int");
 

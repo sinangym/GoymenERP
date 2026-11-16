@@ -15,15 +15,15 @@ namespace GoymenERP.Organization.UnitTests;
 /// <summary>
 /// KIM-S23 (KIM-D28, DEC-ORG-005): the company VKN change commands against the module's own DbContext (EF InMemory;
 /// the filtered unique indexes and the migration guards are SQL Server facts). Every company, VKN, grant and actor here
-/// is synthetic.
+/// is synthetic; every proposed VKN satisfies the official last-digit check (KIM-D40) and is not a real VKN.
 /// </summary>
 public sealed class CompanyTaxIdServiceTests
 {
     private static readonly Guid CompanyA = Guid.Parse("0f000000-0000-4000-8000-0000000023a1");
     private static readonly Guid CompanyB = Guid.Parse("0f000000-0000-4000-8000-0000000023b1");
-    private const string VknA = "9000000001";
-    private const string VknB = "9000000002";
-    private const string NewVkn = "9000000003";
+    private const string VknA = "9000000017";
+    private const string VknB = "9000000025";
+    private const string NewVkn = "9000000033";
     private const string Maker = "SENTETIK-tax-maker";
     private const string Checker = "SENTETIK-tax-checker";
 
@@ -183,6 +183,31 @@ public sealed class CompanyTaxIdServiceTests
     }
 
     [Fact]
+    public async Task A_proposed_vkn_failing_the_check_digit_is_refused_with_a_recorded_answer_and_opens_nothing()
+    {
+        var database = await SeedAsync();
+        var maker = new Run(database, CompanyA, Maker, canRequest: true);
+        // KIM-D40: synthetic, well-formed ten digits whose last digit is not the computed check digit.
+        var command = new RequestCompanyTaxIdChange(1, "9000000034", "Hatalı kontrol hanesi");
+
+        var refused = await maker.Service.RequestCompanyTaxIdChangeAsync(
+            command, maker.Metadata("check-digit"), CancellationToken.None);
+
+        Assert.Equal(CommandResult.TaxIdCheckDigitInvalid, refused.Result);
+        Assert.Equal(422, refused.Response.StatusCode);
+        Assert.Empty(await new Run(database, CompanyA, Maker, canRequest: true).Db.CompanyTaxIdChangeRequests.ToListAsync());
+        Assert.Empty(maker.Audit.Drafts);
+
+        // The refusal is a terminal answer stored with the key: the same key and body replay it.
+        var again = new Run(database, CompanyA, Maker, canRequest: true);
+        var replay = await again.Service.RequestCompanyTaxIdChangeAsync(
+            command, again.Metadata("check-digit", correlation: "second-correlation"), CancellationToken.None);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(refused.Response, replay.Response);
+        Assert.Equal(VknA, (await again.Db.Companies.AsNoTracking().SingleAsync(x => x.Id == CompanyA)).Vkn);
+    }
+
+    [Fact]
     public async Task A_second_request_while_one_is_pending_the_current_vkn_and_a_stale_version_are_refused()
     {
         var database = await SeedAsync();
@@ -201,7 +226,7 @@ public sealed class CompanyTaxIdServiceTests
         await OpenRequestAsync(database);
         var second = new Run(database, CompanyA, "SENTETIK-tax-second", canRequest: true);
         var pending = await second.Service.RequestCompanyTaxIdChangeAsync(
-            new RequestCompanyTaxIdChange(1, "9000000004", "İkinci talep"), second.Metadata("second"), CancellationToken.None);
+            new RequestCompanyTaxIdChange(1, "9000000040", "İkinci talep"), second.Metadata("second"), CancellationToken.None);
         Assert.Equal(CommandResult.TaxIdChangePending, pending.Result);
         Assert.Equal(409, pending.Response.StatusCode);
 
@@ -230,7 +255,7 @@ public sealed class CompanyTaxIdServiceTests
 
         // The same key with another payload is an idempotency conflict, never a second request.
         var reused = await again.Service.RequestCompanyTaxIdChangeAsync(
-            command with { ProposedVkn = "9000000004" }, again.Metadata("replay-key"), CancellationToken.None);
+            command with { ProposedVkn = "9000000040" }, again.Metadata("replay-key"), CancellationToken.None);
         Assert.Equal(CommandResult.IdempotencyConflict, reused.Result);
     }
 
@@ -243,7 +268,7 @@ public sealed class CompanyTaxIdServiceTests
         await using (var a = Context(database, Resolved(CompanyA)))
         {
             var company = await a.Companies.SingleAsync(x => x.Id == CompanyA);
-            company.ApplyApprovedVkn("9000000005", DateTimeOffset.UtcNow);
+            company.ApplyApprovedVkn("9000000058", DateTimeOffset.UtcNow);
             await a.SaveChangesAsync();
         }
 
@@ -257,7 +282,7 @@ public sealed class CompanyTaxIdServiceTests
         Assert.Equal(CommandResult.TaxIdChangeStale, approve.Result);
         Assert.Equal(409, approve.Response.StatusCode);
         var check = new Run(database, CompanyA, Checker, canApprove: true);
-        Assert.Equal("9000000005", (await check.Db.Companies.AsNoTracking().SingleAsync(x => x.Id == CompanyA)).Vkn);
+        Assert.Equal("9000000058", (await check.Db.Companies.AsNoTracking().SingleAsync(x => x.Id == CompanyA)).Vkn);
 
         // It can still be rejected.
         var reject = await check.Service.DecideCompanyTaxIdChangeAsync(

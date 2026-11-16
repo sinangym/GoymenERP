@@ -97,7 +97,9 @@ public static partial class OrganizationEndpoints
                 OrganizationProblemCodesV1.CompanyTaxIdUnchanged,
                 OrganizationProblemCodesV1.CompanyTaxIdVersionConflict,
                 OrganizationProblemCodesV1.CompanyTaxIdIdempotencyConflict)
-            .ProducesErpUnprocessableEntity(OrganizationProblemCodesV1.CompanyTaxIdInUse)
+            .ProducesErpUnprocessableEntity(
+                OrganizationProblemCodesV1.CompanyTaxIdInUse,
+                OrganizationProblemCodesV1.CompanyTaxIdCheckDigitInvalid)
             .ProducesErpAuthenticatedProblems();
 
         group.MapPost("/company/tax-id/change-requests/{requestId:guid}/decision", async (
@@ -240,6 +242,7 @@ public static partial class OrganizationEndpoints
         CommandResult.TaxIdChangeStale => OrganizationProblemCodesV1.CompanyTaxIdChangeStale,
         CommandResult.TaxIdSelfDecision => OrganizationProblemCodesV1.CompanyTaxIdSelfDecision,
         CommandResult.TaxIdUnchanged => OrganizationProblemCodesV1.CompanyTaxIdUnchanged,
+        CommandResult.TaxIdCheckDigitInvalid => OrganizationProblemCodesV1.CompanyTaxIdCheckDigitInvalid,
         CommandResult.VersionConflict => OrganizationProblemCodesV1.CompanyTaxIdVersionConflict,
         CommandResult.IdempotencyConflict => OrganizationProblemCodesV1.CompanyTaxIdIdempotencyConflict,
         _ => null,

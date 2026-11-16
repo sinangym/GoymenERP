@@ -831,8 +831,16 @@ the fallback while the record cannot be read.
 | Screen | Ayarlar → Giriş deneme sınırı (`/ayarlar/giris-deneme-siniri`): the decision value is a reminder text only and never pre-fills the form. |
 | Evidence | Unit: `LoginRateLimitRulesV1Tests`. Model: `SettingsLoginRateLimitPersistenceModelTests`. Names: `SettingsLoginRateLimitPermissionRegistrationTests`. Limiter: `LocalAccountLoginRateLimiterSettingsTests`. Screen: `LoginRateLimitPage.test.tsx`. |
 
-Open: the client IP behind a reverse proxy (forwarded headers) decides the partition key; it is NEEDS-SINAN and not changed
-here. The unit conversion policy screen (Ayarlar → Birim çevrim politikası, KIM-D37) is in this slice too: no value is
+**Trusted proxies (KIM-D42, `SINAN_KARARLARI_2026-11-15_DALGA2_EK13.md`):** each version also carries the trusted proxy
+list (IPv4/IPv6 addresses or CIDR blocks, canonical, at most 64 entries; mandatory in the command, may be empty). The login
+rate limiter reads `X-Forwarded-For` only when the direct peer is on the list; an empty list (the default, and every version
+recorded before the column) means the header is never read. In a multi-hop header the hops are walked from the right and the
+first address that is not a trusted proxy is the client; a malformed hop stops at the nearest trusted hop. A list change is
+an ordinary audited version; a change of the list alone keeps the open windows. Migration
+`AddLoginRateLimitTrustedProxies` (dotnet ef, pure DDL Up); `Down` refuses with `THROW 51734` while any version holds a
+non-empty list (forward fix).
+
+The unit conversion policy screen (Ayarlar → Birim çevrim politikası, KIM-D37) is in this slice too: no value is
 seeded, the decision values are reminder texts, and the coefficient rounding direction is shown as decided (KLN-D88, `AwayFromZero`) and is not selectable.
 
 ## Work center capacity and due-date safety buffer (URT-D87, URT-D89, URT-D91, URT-D92)

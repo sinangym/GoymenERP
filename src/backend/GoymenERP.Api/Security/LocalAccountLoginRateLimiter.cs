@@ -19,11 +19,17 @@ namespace GoymenERP.Api.Security;
 /// built from validated settings and the mode does not start without them). It applies until the first Settings version is
 /// recorded. When the record cannot be read, or holds a value this host cannot apply, the limit last applied stays in force
 /// (a read error never lifts the limit) and a warning is logged.</item>
-/// <item>A changed value replaces the limiter; the counters of the open windows start again from zero at that moment.</item>
+/// <item>A changed value replaces the limiter; the counters of the open windows start again from zero at that moment. A change
+/// of the trusted proxy list alone keeps the open windows.</item>
+/// <item><b>KIM-D42</b>: the client address a window counts is the direct peer, unless the peer is on the record's trusted proxy
+/// list (<see cref="LoginTrustedProxyList"/>); then <c>X-Forwarded-For</c> names it. The configured starting value has an empty
+/// list, so until a Settings version names a proxy the header is never read.</item>
 /// </list>
 /// </summary>
 internal sealed class LocalAccountLoginRateLimiter : IDisposable
 {
+    private const char ProxySeparator = ',';
+
     private readonly LimitValues configured;
     private readonly TimeSpan? refreshInterval;
     private readonly TimeProvider timeProvider;
@@ -59,11 +65,12 @@ internal sealed class LocalAccountLoginRateLimiter : IDisposable
                 "Yerel hesap giriş hız sınırı ayarları eksik veya geçersiz (Identity:LocalAccount:RateLimit:Login).");
         }
 
-        configured = new LimitValues(settings.PermitLimit.Value, window, partitionBy, SettingsVersion: null);
+        configured = new LimitValues(settings.PermitLimit.Value, window, partitionBy, TrustedProxies: string.Empty,
+            SettingsVersion: null);
         refreshInterval = settings.SettingsRefreshInterval;
         this.timeProvider = timeProvider;
         this.logger = logger;
-        state = Build(configured);
+        state = Build(configured, LoginTrustedProxyList.Empty);
     }
 
     /// <summary>The limit in force (for diagnostics and tests): attempts, window, partition and the Settings version.</summary>
@@ -161,7 +168,8 @@ internal sealed class LocalAccountLoginRateLimiter : IDisposable
 
             MarkRefreshed();
             var target = stored is null ? configured : FromSettings(stored);
-            if (target is null)
+            var proxies = target is null ? null : LoginTrustedProxyList.FromCanonical(SplitProxies(target.TrustedProxies));
+            if (target is null || proxies is null)
             {
                 logger.LogWarning(
                     "Login rate limit Settings record holds a value this host cannot apply; the limit in force stays. StoredVersion={StoredVersion}",
@@ -175,14 +183,14 @@ internal sealed class LocalAccountLoginRateLimiter : IDisposable
                 return;
             }
 
-            if (previous.Values with { SettingsVersion = target.SettingsVersion } == target)
+            if (previous.Values with { SettingsVersion = target.SettingsVersion, TrustedProxies = target.TrustedProxies } == target)
             {
-                // The same limit under another version (or back to the configured value): keep the open windows.
-                state = previous with { Values = target };
+                // The same limit under another version or proxy list (or back to the configured value): keep the open windows.
+                state = previous with { Values = target, Proxies = proxies };
                 return;
             }
 
-            state = Build(target);
+            state = Build(target, proxies);
             previous.Limiter.Dispose();
             logger.LogInformation(
                 "Login rate limit changed. PermitLimit={PermitLimit} Window={Window} PartitionBy={PartitionBy} SettingsVersion={SettingsVersion}",
@@ -221,10 +229,14 @@ internal sealed class LocalAccountLoginRateLimiter : IDisposable
             stored.PermitLimit,
             stored.Window,
             Enum.Parse<LocalAccountLoginRateLimitPartition>(stored.PartitionBy, ignoreCase: false),
+            string.Join(ProxySeparator, stored.TrustedProxies ?? []),
             stored.Profile.Version);
     }
 
-    private static LimiterState Build(LimitValues values)
+    private static IReadOnlyList<string> SplitProxies(string trustedProxies) =>
+        trustedProxies.Length == 0 ? [] : trustedProxies.Split(ProxySeparator);
+
+    private static LimiterState Build(LimitValues values, LoginTrustedProxyList proxies)
     {
         var permitLimit = values.PermitLimit;
         var window = values.Window;
@@ -237,19 +249,24 @@ internal sealed class LocalAccountLoginRateLimiter : IDisposable
                 QueueLimit = 0,
                 AutoReplenishment = true,
             }));
-        return new LimiterState(limiter, values);
+        return new LimiterState(limiter, values, proxies);
     }
 
     private static bool Attempt(LimiterState current, HttpContext httpContext, string? userName)
     {
-        using var lease = current.Limiter.AttemptAcquire(PartitionKey(current.Values.PartitionBy, httpContext, userName));
+        using var lease = current.Limiter.AttemptAcquire(
+            PartitionKey(current.Values.PartitionBy, current.Proxies, httpContext, userName));
         return lease.IsAcquired;
     }
 
-    private static string PartitionKey(LocalAccountLoginRateLimitPartition partition, HttpContext httpContext, string? userName)
+    private static string PartitionKey(
+        LocalAccountLoginRateLimitPartition partition,
+        LoginTrustedProxyList proxies,
+        HttpContext httpContext,
+        string? userName)
     {
-        // The direct peer address; behind a proxy the forwarded-header setup decides what this is (NEEDS-SINAN).
-        var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+        // KIM-D42: the direct peer, or — only when the peer is a trusted proxy — the client the forwarded header names.
+        var address = ClientAddress(proxies, httpContext)?.ToString() ?? string.Empty;
         if (partition == LocalAccountLoginRateLimitPartition.IpAddress)
         {
             return address;
@@ -259,12 +276,31 @@ internal sealed class LocalAccountLoginRateLimiter : IDisposable
         return string.Concat(address, "\u001f", LocalUserName.TryNormalize(userName) ?? string.Empty);
     }
 
-    /// <summary>The values a limiter is built from; <c>SettingsVersion</c> is null for the configured starting value.</summary>
+    /// <summary>
+    /// The client address the login rate limit counts (KIM-D42): the forwarded header is not even looked up while the list is
+    /// empty or the peer is not on it.
+    /// </summary>
+    internal static System.Net.IPAddress? ClientAddress(LoginTrustedProxyList proxies, HttpContext httpContext)
+    {
+        var peer = httpContext.Connection.RemoteIpAddress;
+        if (peer is null || proxies.IsEmpty || !proxies.Contains(peer))
+        {
+            return peer;
+        }
+
+        return proxies.ResolveClientAddress(peer, httpContext.Request.Headers[LoginTrustedProxyList.ForwardedForHeaderName]);
+    }
+
+    /// <summary>
+    /// The values a limiter is built from; <c>SettingsVersion</c> is null for the configured starting value and
+    /// <c>TrustedProxies</c> is the canonical list text (empty: the forwarded header is never read).
+    /// </summary>
     private sealed record LimitValues(
         int PermitLimit,
         TimeSpan Window,
         LocalAccountLoginRateLimitPartition PartitionBy,
+        string TrustedProxies,
         long? SettingsVersion);
 
-    private sealed record LimiterState(PartitionedRateLimiter<string> Limiter, LimitValues Values);
+    private sealed record LimiterState(PartitionedRateLimiter<string> Limiter, LimitValues Values, LoginTrustedProxyList Proxies);
 }

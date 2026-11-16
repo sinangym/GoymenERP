@@ -119,6 +119,9 @@ public enum CommandResult
 
     /// <summary>KIM-S23: the proposed VKN equals the company's current VKN.</summary>
     TaxIdUnchanged = 14,
+
+    /// <summary>KIM-D40: the proposed VKN fails the official last-digit check; it is refused before approval.</summary>
+    TaxIdCheckDigitInvalid = 15,
 }
 
 public sealed record CommandExecutionResult(
@@ -210,6 +213,11 @@ public static class CommandResponses
                 409,
                 "VKN değişmiyor.",
                 "Önerilen VKN şirketin mevcut VKN'si ile aynı."),
+            CommandResult.TaxIdCheckDigitInvalid => new CommandResponseSnapshot(
+                result,
+                422,
+                "VKN kontrol hanesi hatalı.",
+                "Önerilen VKN resmî kontrol hanesi kuralını sağlamıyor; VKN'yi kontrol edip yeniden girin."),
             CommandResult.Created => throw new ArgumentException(
                 "Created cevabı oluşturulan kaydın kimliğini ve sürümünü içermelidir.",
                 nameof(result)),
