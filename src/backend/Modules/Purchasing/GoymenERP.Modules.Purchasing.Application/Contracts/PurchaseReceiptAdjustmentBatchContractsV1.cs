@@ -24,7 +24,8 @@ public interface IPurchaseReceiptAdjustmentBatchParticipantV1 : IAsyncDisposable
 
 public sealed record PurchaseReceiptAdjustmentBatchStageV1(Guid CompanyId, Guid BatchId, Guid OrderId,
     string ExpectedOrderVersion, string Reason, DateTimeOffset OccurredAtUtc, string CommandName,
-    string RequestHash, IReadOnlyList<PurchaseReceiptAdjustmentBatchLineV1> Lines);
+    string RequestHash, IReadOnlyList<PurchaseReceiptAdjustmentBatchLineV1> Lines,
+    IReadOnlyList<PurchaseRevivalNotificationSnapshotV1>? NotificationSnapshots = null);
 
 /// <summary>Purchase-unit quantities; physical kg and Inventory movement identities remain Inventory's contract.</summary>
 public sealed record PurchaseReceiptAdjustmentBatchLineV1(Guid AdjustmentId, Guid AcceptanceId, string UndoQuantity,

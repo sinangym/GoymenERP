@@ -1,10 +1,41 @@
+using System.Data;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Historical_link_snapshot_reads_uncommitted_owner_links_on_the_borrowed_transaction_without_committing_it()
+    {
+        await using var run = await Run.StartAsync();
+        var ids = FutureSupplyIds.New();
+        await run.ExecuteAsync(InsertFutureSupplyLine, ids.Line(CompanyA, 100m, 0m));
+        await using var database = run.Context(CompanyA);
+        await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        var parameters = ids.Allocation(CompanyA, Guid.NewGuid(), 5m, 5m, 1)
+            .Select(item => new SqlParameter(item.Name, item.Value)).Cast<object>().ToArray();
+        await database.Database.ExecuteSqlRawAsync(InsertFutureSupplyAllocation, parameters);
+        InventoryHistoricalSalesLinksAnswerV1 snapshot;
+        await using (var reader = await InventoryHistoricalSalesLinksV1.EnlistAsync(database.Database.GetDbConnection(),
+            transaction.GetDbTransaction(), CompanyA))
+        {
+            snapshot = await reader.ReadAsync(ids.PurchaseOrder, ids.PurchaseLine);
+            Assert.Equal(InventoryHistoricalSalesLinksOutcomeV1.Available, snapshot.Outcome);
+            Assert.Equal(new InventoryHistoricalSalesLineV1(ids.DemandOrder, ids.DemandLine), Assert.Single(snapshot.Lines));
+        }
+        Assert.NotNull(transaction.GetDbTransaction().Connection);
+        await transaction.RollbackAsync();
+        await using var after = run.Context(CompanyA);
+        var current = await new InventoryHistoricalSalesLinksV1(after, Company(CompanyA)).ReadAsync(ids.PurchaseOrder, ids.PurchaseLine);
+        Assert.Empty(current.Lines);
+        Assert.Single(snapshot.Lines); // The captured notification evidence does not re-query mutable owner history.
+    }
+
     [SqlServerFact]
     public async Task Historical_sales_links_include_released_and_consumed_rows_without_inventing_or_reactivating_links_on_real_sql()
     {

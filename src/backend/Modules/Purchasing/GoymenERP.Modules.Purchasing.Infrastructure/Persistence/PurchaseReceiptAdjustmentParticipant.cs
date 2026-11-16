@@ -157,6 +157,8 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
         }
         catch (PurchasingRuleException exception) { throw new PurchasingServiceException(409, exception.Code); }
         catch (PurchasingVersionConflictException) { throw new PurchasingServiceException(409, PurchasingStoreCodes.ConcurrentChange); }
+        var notificationTargets = change.Revived ? NotificationTargets(request.NotificationSnapshots,
+            order.Id, target.GeneralLineId, beforeVersion) : null;
         row.Status = (int)order.Status; row.Version = order.Version; row.UpdatedAtUtc = order.UpdatedAtUtc;
         row.CancelledBy = order.Cancellation?.CancelledBy; row.CancelledAtUtc = order.Cancellation?.CancelledAtUtc;
         row.CancellationReason = order.Cancellation?.Reason;
@@ -198,7 +200,7 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
             OrderId = order.Id, ReceiptAdjustmentId = change.AdjustmentId, CorrelationId = envelope.CorrelationId.Trim(), RecordedAtUtc = change.OccurredAtUtc });
         if (change.Revived)
             database.OutboxMessages.Add(RevivedMessage(order, general.Id, change.NetOpenedQuantity.Value, envelope,
-                change.OccurredAtUtc, change.AdjustmentId, null));
+                change.OccurredAtUtc, change.AdjustmentId, null, notificationTargets!));
         try
         {
             EnsureTransaction();

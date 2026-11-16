@@ -35,7 +35,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         await using var firstOwner = await PurchaseReceiptAdjustmentParticipant.EnlistAsync(firstConnection, firstTransaction, CompanyA,
             firstScope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), firstScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
         await firstOwner.StageAsync(new(CompanyA, Guid.NewGuid(), first.OrderId, firstAcceptance, "5", "1", false, false,
-            "Earlier open transaction", AcceptanceTime.AddMinutes(10), PurchaseReceiptAdjustmentCodesV1.CommandName, AcceptanceHash("horizon-a")),
+            "Earlier open transaction", AcceptanceTime.AddMinutes(10), PurchaseReceiptAdjustmentCodesV1.CommandName, AcceptanceHash("horizon-a"),
+            NotificationSnapshots: [new(CompanyA, first.OrderId, first.LineId, "5", [])]),
             Envelope("horizon-a", "revival-a"));
         await using (var scope = run.Factory.Services.CreateAsyncScope())
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
@@ -46,7 +47,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             await using var owner = await PurchaseReceiptAdjustmentParticipant.EnlistAsync(connection, transaction, CompanyA,
                 scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
             await owner.StageAsync(new(CompanyA, Guid.NewGuid(), second.OrderId, secondAcceptance, "5", "1", false, false,
-                "Later committed transaction", AcceptanceTime.AddMinutes(11), PurchaseReceiptAdjustmentCodesV1.CommandName, AcceptanceHash("horizon-b")),
+                "Later committed transaction", AcceptanceTime.AddMinutes(11), PurchaseReceiptAdjustmentCodesV1.CommandName, AcceptanceHash("horizon-b"),
+                NotificationSnapshots: [new(CompanyA, second.OrderId, second.LineId, "5", [])]),
                 Envelope("horizon-b", "revival-b"));
             await transaction.CommitAsync();
         }

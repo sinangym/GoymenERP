@@ -67,6 +67,7 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
         // A4 / MOD-03: the open purchase lines serving a Sales order (the host adapts it to Sales's linked-supply read contract).
         services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
+        services.AddScoped<IPurchaseNotificationRecipientsV1, PurchaseNotificationRecipients>();
         // F-017 F17-1 (ALS-D82): the allocatable amount of an approved general line, read by Inventory's future allocation only.
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // F17-1b / KLN-D30: current unreceived schedule slices, on the same scoped owner context/transaction.

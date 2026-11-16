@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -64,6 +65,27 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal(4, rebuilt.Acceptances.Count);
         }
         Assert.Empty(await ReadPurchasingOutboxAsync(run, CompanyA));
+        var historicalSalesTarget = new PurchaseRevivalSalesTargetV1(Guid.NewGuid(), Guid.NewGuid());
+        // Missing, foreign, stale and duplicate link snapshots cannot be treated as an empty recipient list.
+        foreach (var snapshots in new IReadOnlyList<PurchaseRevivalNotificationSnapshotV1>?[] {
+                     null, [new(CompanyB, seed.OrderId, seed.LineId, "7", [])],
+                     [new(CompanyA, seed.OrderId, seed.LineId, "6", [])],
+                     [new(CompanyA, seed.OrderId, seed.LineId, "7", [historicalSalesTarget, historicalSalesTarget])] })
+        {
+            await using var scope = run.Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+            await using var owner = await PurchaseReceiptAdjustmentParticipant.EnlistAsync(connection, transaction, CompanyA,
+                scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
+            var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() => owner.StageAsync(new(CompanyA,
+                Guid.NewGuid(), seed.OrderId, first, "7", "0.5", false, false, "Missing immutable targets",
+                AcceptanceTime.AddMinutes(20), PurchaseReceiptAdjustmentCodesV1.CommandName, AcceptanceHash("snapshot-refused"),
+                NotificationSnapshots: snapshots), Envelope("snapshot-refused", "snapshot-refused")));
+            Assert.Equal(PurchaseReceiptAdjustmentCodesV1.Unavailable, refused.Code);
+            await transaction.RollbackAsync();
+        }
         // A different command genuinely revives the line later; replay must still return the original net-zero batch.
         await using (var scope = run.Factory.Services.CreateAsyncScope())
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
@@ -75,7 +97,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
                 scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
             var changed = await owner.StageAsync(new(CompanyA, Guid.NewGuid(), seed.OrderId, first, "7", "0.5", false, false,
                 "Later genuine revival", AcceptanceTime.AddMinutes(20), PurchaseReceiptAdjustmentCodesV1.CommandName,
-                AcceptanceHash("later-single-undo")), Envelope("later-single-undo", "later-single"));
+                AcceptanceHash("later-single-undo"), NotificationSnapshots:
+                [new(CompanyA, seed.OrderId, seed.LineId, "7", [historicalSalesTarget])]), Envelope("later-single-undo", "later-single"));
             Assert.Equal(("8", "0.5", true), (changed.OrderVersion, changed.AllocatableQuantity, changed.Revived));
             await transaction.CommitAsync();
         }
@@ -97,6 +120,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         }
         var notification = Assert.Single(await ReadPurchasingOutboxAsync(run, CompanyA));
         Assert.Equal(PurchasingOrderLineRevivedEventV1.EventType, notification.EventType);
+        var notificationPayload = JsonSerializer.Deserialize<PurchasingOrderLineRevivedPayloadV1>(notification.PayloadJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(historicalSalesTarget, Assert.Single(notificationPayload.SalesTargets!));
         Assert.Empty(await ReadPurchasingOutboxAsync(run, CompanyB));
         var company = new CompanyContext(); company.Set(CompanyA);
         await using var database = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
