@@ -44,7 +44,9 @@ public sealed partial class SalesInvoiceService(
     ISalesOfficialInvoiceReadPortV1? officialInvoices = null,
     SalesInvoiceMatchTolerancePolicy? matchTolerance = null,
     ISalesFinanceAdmissionPortV1? financeAdmission = null,
-    ISalesInvoiceDiagnosticsV1? diagnostics = null) : ISalesInvoiceService
+    ISalesInvoiceDiagnosticsV1? diagnostics = null,
+    ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null,
+    ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
