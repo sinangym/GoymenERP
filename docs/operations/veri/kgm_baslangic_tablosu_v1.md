@@ -28,8 +28,8 @@ ile yazılmaz**; yetkili kullanıcı ürün ağırlık tablosu içe aktarma ekra
 - Kaynak etiketleri:
   - EN 10219-2 satırları (689 satır): **"Formülle hesaplandı (EN 10219-2, 7,85)"** (URN-D17 (3)).
   - EN 10255 boruları (31 satır): **"Formülle hesaplandı (EN 10255, 7,85)"**. Bu borular EN 10219-2 kapsamında
-    değildir, bu yüzden etiket kendi standardını adlandırır. URN-D17 (3) etiketi tek biçimde yazar; bu farkın
-    onayı karar PR'ında `NEEDS-SINAN` olarak açıktır.
+    değildir, bu yüzden etiket kendi standardını adlandırır. Bu etiket SINAN-CEVAP 42.4 ile onaylandı
+    (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md` URN-D24, #1186).
   - L serisi (9 satır) ayrıca **"L serisi ölçüleri doğrulanacak"** notunu taşır. Bu satırların dış çap ve et
     kalınlığı henüz bir standart tabloyla doğrulanmadı. Doğrulanmış veri sayılmaz.
 - Yoğunluk 7,85 kg/dm³. Formüller (EN 10219-2 kesit özellikleri):
