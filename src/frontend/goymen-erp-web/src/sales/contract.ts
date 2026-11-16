@@ -640,6 +640,9 @@ export const SALES_PROBLEM_CODE = {
   // DEC-SAL-002 (contract delta): an owner links a record to the order (allocation, loading line) — the quantity revision is
   // refused fail-closed, like the cancellation; the errors name each blocking source.
   revisionBlocked: 'sales_revision_blocked',
+  // SAT-D373 (temporary, until the SAT-S8 transfer rule): an active future supply allocation refuses every header revision
+  // and the approval of a pending customer/currency change (409, not recorded; field `futureSupplyAllocations`).
+  revisionFutureAllocationPresent: 'sales_revision_future_allocation_present',
   // No 30 / SAT-D12: a blocking source (allocation, open loading, unreadable owner) refuses the force-close; the impact no
   // longer is the preview the command named.
   forceCloseBlocked: 'sales_force_close_blocked',

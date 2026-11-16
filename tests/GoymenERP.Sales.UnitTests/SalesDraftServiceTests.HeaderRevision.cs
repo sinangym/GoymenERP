@@ -334,6 +334,8 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         world.SalesOwners!.Eligible.Add(Owner);
+        // SAT-D373: the header revision of an approved order asks the kind-aware allocation owner (composed with the owners).
+        Owners(world);
         var approved = await ApprovedAsync(world);
         await world.Service().ReviseHeaderAsync(approved.Draft.Id, HeaderRevision("4", NetDays(30), Owner), Metadata("k-terms"));
 

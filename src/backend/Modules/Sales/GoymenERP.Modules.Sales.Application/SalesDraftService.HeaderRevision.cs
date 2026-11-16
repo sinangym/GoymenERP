@@ -26,6 +26,12 @@ namespace GoymenERP.Modules.Sales.Application;
 /// notes): SAT-D128 (EK18) — a started shipping locks the customer and the currency (any record present → 409
 /// <c>sales_revision_blocked</c> naming the sources, an unreadable owner → 503); a priced line locks them too (422). A wrong customer
 /// or currency means cancelling the order and opening a new one. Neither refusal is recorded (the owners move).</item>
+/// <item><b>Future supply allocation</b> (SAT-D373, SINAN-CEVAP 34.20; STK-S16): while the allocation owner holds an ACTIVE
+/// future supply allocation against a line of an order that was ever approved, EVERY header revision — in place or as the next
+/// revision — is refused with its own 409 <c>sales_revision_future_allocation_present</c> (field
+/// <c>futureSupplyAllocations</c>), asked after the owners of what changes; the kind-aware owner unreadable → 503. The approval
+/// of a pending customer or currency change asks it again. Not recorded. Temporary: removed in a separate change once the
+/// SAT-S8 transfer rule is merged.</item>
 /// <item><b>Ordering</b> (the quantity revision's): fence → version shape → due terms' shape and rules (asks no owner) → the
 /// key's replay → the store reads the draft → fence → the domain's own preconditions (version, state, reason, priced lines) →
 /// each owner (fence after each) → last fence → ONE save. Terminal 409s recorded and replayed: <c>version_conflict</c>,
@@ -311,7 +317,15 @@ public sealed partial class SalesDraftService
             await RequireSalesOwnerAsync(scope, permission, ownerId, cancellationToken);
         }
 
-        if ((customerChanged || currencyChanged) && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0))
+        var everApproved = draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0;
+        if (everApproved)
+        {
+            // SAT-D373 (temporary, until the SAT-S8 transfer rule): an active future supply allocation refuses EVERY header
+            // revision with its own code — asked after the owners of what changes, never recorded.
+            await RequireNoFutureAllocationAsync(scope, permission, draft, cancellationToken);
+        }
+
+        if ((customerChanged || currencyChanged) && everApproved)
         {
             // An order that was ever approved may carry owner records (a never-approved one cannot: the line port refused them).
             var impact = await ReadImpactAsync(scope, permission, draft, cancellationToken);
@@ -329,6 +343,33 @@ public sealed partial class SalesDraftService
 
         return new SalesHeaderRevisionInput(request.PartyId, request.CompanyAccountId, request.CurrencyId, money, deliveryAddress, contact,
             request.SalesOwnerUserId, dueTerms);
+    }
+
+    /// <summary>The field the SAT-D373 refusal is answered on.</summary>
+    private const string FutureSupplyAllocationsField = "futureSupplyAllocations";
+
+    /// <summary>
+    /// SAT-D373 (SINAN-CEVAP 34.20; STK-S16): while the allocation owner holds an ACTIVE future supply allocation against a line
+    /// of the order, a header revision is refused with its own code (409
+    /// <see cref="SalesDraftProblemCodesV1.RevisionFutureAllocationPresent"/> on <c>futureSupplyAllocations</c>), whatever the
+    /// revision changes. The kind-aware owner not composed, failing or answering a malformed value is
+    /// <see cref="SalesDraftProblemCodesV1.RevisionImpactUnavailable"/> (503, fail-closed). Neither is recorded. Temporary:
+    /// removed in a separate change once the SAT-S8 transfer rule is merged.
+    /// </summary>
+    private async Task RequireNoFutureAllocationAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken)
+    {
+        var futureCount = await ReadFutureAllocationCountAsync(scope, permission, draft, cancellationToken);
+        if (futureCount is null)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+        }
+
+        if (futureCount > 0)
+        {
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent,
+                [new SalesDraftFieldError(FutureSupplyAllocationsField, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent)]);
+        }
     }
 
     private static bool SameReference(SalesDraftOwnerReferenceV1? requested, OwnerReference? stored) =>
@@ -437,6 +478,8 @@ public sealed partial class SalesDraftService
             return;
         }
 
+        // SAT-D373: a future supply allocation committed after the revision was recorded is refused with its own code here too.
+        await RequireNoFutureAllocationAsync(scope, permission, current, cancellationToken);
         var impact = await ReadImpactAsync(scope, permission, current, cancellationToken);
         if (impact.Unreadable)
         {
