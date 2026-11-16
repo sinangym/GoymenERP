@@ -88,6 +88,8 @@ public static class SettingsModuleExtensions
         // Nothing is seeded: every list starts empty; the operation type list is not opened.
         services.AddScoped<ISettingsReferenceListAdministrationV1, SettingsReferenceListAdministration>();
         services.AddScoped<ISettingsReferenceListReaderV1, SettingsReferenceListReaderV1>();
+        services.AddScoped<ISettingsCollateralTypeAdministrationV1, SettingsCollateralTypeAdministration>();
+        services.AddScoped<ISettingsCollateralTypeCatalogV1, SettingsCollateralTypeCatalogV1>();
         // B-13 (ADR-SET-002): the company policy registry. One provider answers every read port of the registry; the number
         // series port (ISettingsNumberSeriesProviderV1) stays unregistered until its policy is decided (NEEDS-SINAN N-12).
         services.AddScoped<ISettingsCompanyPolicyAdministrationV1, SettingsCompanyPolicyAdministration>();

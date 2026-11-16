@@ -95,6 +95,7 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
       [CAPABILITY.settingsUnitConversionPolicy, SETTINGS_CAPABILITY.unitConversionPolicy],
       [CAPABILITY.settingsUnitProfiles, SETTINGS_CAPABILITY.unitProfiles],
       [CAPABILITY.settingsMoneyProfiles, SETTINGS_CAPABILITY.moneyProfiles],
+      [CAPABILITY.settingsCollateralTypes, SETTINGS_CAPABILITY.collateralTypes],
       [CAPABILITY.settingsFinanceOpeningPeriod, SETTINGS_CAPABILITY.financeOpeningPeriod],
       [CAPABILITY.settingsManufacturingParameters, SETTINGS_CAPABILITY.manufacturingParameters],
       [CAPABILITY.settingsManufacturingTolerances, SETTINGS_CAPABILITY.manufacturingTolerances],

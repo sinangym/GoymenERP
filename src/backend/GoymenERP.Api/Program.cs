@@ -252,6 +252,7 @@ builder.Services.AddSettingsModule(
 // KIM-S19 (B-13): Finance's opening period reader answers from the Settings company policy registry. Finance registers its
 // fail-closed default with TryAddScoped, so the host replaces it here; any failure still answers "not available".
 builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceOpeningPeriodReader, SettingsFinanceOpeningPeriodReader>());
+builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceCollateralTypeCatalogReader, SettingsFinanceCollateralTypeCatalogReader>());
 
 static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
     new SalesReferenceReadHandler(
@@ -610,6 +611,7 @@ app.MapSettingsCompanyPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
 app.MapSettingsWorkCenterCapacityEndpoints();
 app.MapSettingsReferenceListEndpoints();
+app.MapSettingsCollateralTypeEndpoints();
 app.MapSettingsBankCsvMappingEndpoints();
 app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();

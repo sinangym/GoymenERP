@@ -392,6 +392,106 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.CollateralTypeRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "EntryId");
+
+                    b.HasIndex("CompanyId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("CollateralTypes", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsCollateralTypes_Code", "LEN([Code]) BETWEEN 1 AND 32 AND [Code] NOT LIKE '%[^A-Z0-9._-]%' AND LEFT([Code], 1) LIKE '[A-Z0-9]'");
+
+                            t.HasCheckConstraint("CK_SettingsCollateralTypes_Created", "LEN(LTRIM(RTRIM([CreatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsCollateralTypes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsCollateralTypes_Kind", "[Kind] IN ('BankGuaranteedPayment','Dbs','GuaranteeLetter','CreditCard','Vinov','Mortgage')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.CollateralTypeVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RatePercent")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "EntryId", "Version");
+
+                    b.ToTable("CollateralTypeVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsCollateralTypeVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsCollateralTypeVersions_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsCollateralTypeVersions_RateText", "LEN([RatePercent]) BETWEEN 1 AND 64 AND [RatePercent] NOT LIKE '%[^0-9.]%' AND LEFT([RatePercent], 1) <> '.' AND RIGHT([RatePercent], 1) <> '.' AND LEN([RatePercent]) - LEN(REPLACE([RatePercent], '.', '')) <= 1 AND (TRY_CONVERT(int, LEFT([RatePercent], CHARINDEX('.', [RatePercent] + '.') - 1)) BETWEEN 0 AND 99 OR [RatePercent] = '100')");
+
+                            t.HasCheckConstraint("CK_SettingsCollateralTypeVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.CompanyPolicyVersionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3027,6 +3127,15 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_SafetyBuffer", "([SafetyBufferValue] IS NULL AND [SafetyBufferUnit] IS NULL) OR ([SafetyBufferValue] > 0 AND [SafetyBufferUnit] IN ('Hours','Days'))");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.CollateralTypeVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.CollateralTypeRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.EInvoiceScenarioCodeRow", b =>

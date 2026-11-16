@@ -1485,6 +1485,9 @@ public static class ErpPermissions
     /// (<c>SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage</c>). Registered, not granted: no role, seed or
     /// user receives it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
+    // FNS-D70/FNS-D68/KLN-D109: registration only, human grant gate.
+    public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
+
     public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
 
     /// <summary>
@@ -1841,6 +1844,7 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2112,6 +2116,7 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,

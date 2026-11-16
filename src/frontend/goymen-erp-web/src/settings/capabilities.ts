@@ -9,6 +9,7 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  collateralTypes: 'settings.collateral-types.manage',
   financeOpeningPeriod: 'settings.finance-opening-period.manage',
   manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
@@ -88,6 +89,7 @@ export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
 } as const
 
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.collateralTypes]: '/ayarlar/teminat-turleri',
   [SETTINGS_CAPABILITY.financeOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
   [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
@@ -106,6 +108,7 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.collateralTypes]: 'Teminat türleri ve oranları',
   [SETTINGS_CAPABILITY.financeOpeningPeriod]: 'Finans açılış dönemi',
   [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',

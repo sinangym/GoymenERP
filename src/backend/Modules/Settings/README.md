@@ -972,3 +972,18 @@ company fail-closed reads, authority, expected version, replay, audit, malformed
 case. The screen and decoder cases are `FinanceOpeningPeriodPage.test.tsx` and `financeOpeningPeriodContract.test.ts`.
 These are source evidence; all test execution remains reserved for final train acceptance. The other policy editors and
 the number-series provider remain unfinished.
+
+## Collateral type catalog (KIM-SC32-a)
+
+FNS-D31/D70, FNS-D68 and KLN-D109: `/ayarlar/teminat-turleri` maintains the company's explicit collateral classes and
+exact rate text. No row is seeded. Explicit type creation records the decided initial rate 100; later reasoned versions
+can rename, change rate or deactivate. Inactive types remain readable for existing collateral. Cheques and notes are
+excluded by the closed kind contract. `settings.collateral-types.manage` is registered only; no role or user receives it.
+The API host replaces Finance's unavailable catalog with the Settings owner's company-fenced reader. New commands append
+Audit through its owner port in the same transaction, before the Settings save; the legacy Settings interceptor receives
+no pending draft for these writes. Audit failure rolls back business rows and the terminal idempotency answer.
+
+EF-generated migration `20261116181354_AddCollateralTypeCatalog` creates the two company-keyed tables with no data/defaults.
+Down guard **51941** runs first and refuses while either table contains rows (forward fix); an empty catalog can roll back.
+`SettingsAppendOnlyWriteGuardTests` also covers the existing company-policy, finance-mapping and reference-list row fences.
+Unit, model, real-SQL, strict decoder and screen test sources accompany the change; execution remains **NOT_RUN**.
