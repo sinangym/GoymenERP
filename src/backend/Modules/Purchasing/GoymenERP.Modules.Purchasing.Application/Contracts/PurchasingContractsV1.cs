@@ -107,6 +107,20 @@ public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 public sealed record CancelPurchaseOrderRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
+/// ALC-SC33 (FNS-D79 / FNS-D80 / FNS-D83 / FNS-D91): POST …/orders/{id}/exchange-rate — the preparer changes a Draft foreign-currency
+/// order's rate before approval. <paramref name="Rate"/> is the exact decimal text (one order-currency unit in the functional
+/// currency; at most 10 decimals, never rounded); <paramref name="RateDate"/> is the rate day (when omitted, the order's creation
+/// business day, FNS-D83); <paramref name="Reason"/> is optional (at most 4000 characters, never cut) and goes to the audit with the
+/// old and the new rate (FNS-D91). The kind is the TCMB forex selling rate (DEC-FIN-010 admits no other kind yet). After approval
+/// the rate is locked (FNS-D80): a change needs a revision with a new approval, which is not built, so it is refused.
+/// </summary>
+public sealed record ChangePurchaseOrderExchangeRateRequest(
+    string ExpectedVersion,
+    string Rate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? RateDate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason = null);
+
+/// <summary>
 /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87): POST …/orders/{id}/lines/{lineId}/closure — closes the not-yet-accepted remainder of
 /// one GENERAL line of an APPROVED order (eksik teslim kapanışı, a separate axis from cancellation) at the expected version, its
 /// technical slices' remainders with it, with the reason (required, at most 4000 characters, never cut). Nothing physical or
@@ -384,6 +398,25 @@ public sealed record PurchaseOrderCancelImpactView(
 public sealed record PurchaseOrderCancelImpactLineView(
     Guid LineId, int LineNo, string Kind, Guid ProductId, Guid UnitId, string Committed, string Accepted, string ToCancel);
 
+/// <summary>
+/// ALC-SC33 (FNS-D79 / FNS-D80 / FNS-D83): GET …/orders/{id}/exchange-rate — the rate recorded on the order, as stored; the screen
+/// never recomputes it. <see cref="Applicable"/> is false for an order without a currency or in the functional currency;
+/// <see cref="Required"/> says approval waits for a rate (FNS-D80); <see cref="Changeable"/> is true only while the order is a Draft.
+/// <see cref="Current"/> is null when no rate is recorded (the Settings resolver had no answer when the order was opened).
+/// </summary>
+public sealed record PurchaseOrderExchangeRateView(
+    Guid OrderId, string Status, string Version, Guid? CurrencyId, Guid FunctionalCurrencyId, bool Applicable, bool Required,
+    bool Changeable, PurchaseOrderExchangeRateEntryView? Current);
+
+/// <summary>
+/// ALC-SC33: one recorded rate — the exact number text, the kind (<c>TcmbForexSelling</c>), the rate day, the source
+/// (<c>Automatic</c> = the SAT-D54/D170 default, <c>Manual</c> = typed by the preparer), the bulletin day of an automatic rate, and
+/// who recorded it, when and why (FNS-D91).
+/// </summary>
+public sealed record PurchaseOrderExchangeRateEntryView(
+    string Rate, string Kind, DateOnly RateDay, string Source, DateOnly? BulletinDate, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    string? Reason);
+
 /// <summary>One immutable goods-acceptance share in the persisted order sequence; quantity is exact text in the order line's unit.</summary>
 public sealed record PurchaseOrderAcceptanceHistoryView(
     Guid AcceptanceId, Guid LineId, string Quantity, DateTimeOffset RecordedAtUtc);
@@ -590,6 +623,27 @@ public static class PurchasingProblemCodesV1
 
     /// <summary>409, terminal (§7; A1-3 fail-closed): every line of the order is fully accepted; there is no remainder to cancel.</summary>
     public const string OrderNothingToCancel = "purchasing_order_nothing_to_cancel";
+
+    /// <summary>
+    /// 409, terminal (§7; ALC-SC33, FNS-D80): a foreign-currency order cannot be approved without a rate into the functional currency
+    /// (field <c>exchangeRate</c>).
+    /// </summary>
+    public const string OrderExchangeRateRequired = "purchasing_order_exchange_rate_required";
+
+    /// <summary>
+    /// 409, terminal (§7; ALC-SC33, FNS-D80): the rate is locked once the order is approved; a change needs a revision with a new
+    /// approval, which is not built (field <c>status</c>).
+    /// </summary>
+    public const string OrderExchangeRateLocked = "purchasing_order_exchange_rate_locked";
+
+    /// <summary>422 (ALC-SC33): the rate is not a positive decimal within 18 integer digits and 10 decimals (never rounded; field <c>rate</c>).</summary>
+    public const string OrderExchangeRateInvalid = "purchasing_order_exchange_rate_invalid";
+
+    /// <summary>422 (ALC-SC33): the order has no currency or is in the functional currency; no rate applies (field <c>rate</c>).</summary>
+    public const string OrderExchangeRateNotApplicable = "purchasing_order_exchange_rate_not_applicable";
+
+    /// <summary>422 (ALC-SC33, FNS-D91): the optional reason is longer than 4000 characters (refused, never cut; field <c>reason</c>).</summary>
+    public const string OrderExchangeRateReasonTooLong = "purchasing_order_exchange_rate_reason_too_long";
 
     /// <summary>422 (A1-3, No.161 §2): the cancellation reason is missing or blank.</summary>
     public const string OrderCancellationReasonRequired = "purchasing_order_cancellation_reason_required";
@@ -897,6 +951,20 @@ public static class PurchasingJson
         if (request.Reason is null)
         {
             throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>ALC-SC33: the rate is a required string (shape); whether it is a valid number, the rate day and the reason are the service's.</summary>
+    public static ChangePurchaseOrderExchangeRateRequest ReadChangeOrderExchangeRate(string json)
+    {
+        var request = JsonSerializer.Deserialize<ChangePurchaseOrderExchangeRateRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Rate is null)
+        {
+            throw new JsonException("Invalid rate.");
         }
 
         return request;

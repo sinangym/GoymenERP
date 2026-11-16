@@ -64,17 +64,24 @@ public static class PurchasingCommands
     /// <summary>API-11 reopening (ALS-D10): a closed general line reopens its closed share with a required reason.</summary>
     public const string OrderLineReopenV1 = "purchasing.purchase-order.line-reopen.v1";
 
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D91): a Draft foreign-currency order's exchange rate is changed by its preparer before approval, with an
+    /// optional reason; the order's version moves by one. Locked at approval (no revision with re-approval is built).
+    /// </summary>
+    public const string OrderExchangeRateChangeV1 = "purchasing.purchase-order.exchange-rate-change.v1";
+
     public static bool IsRequestCommand(string commandName) =>
         commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderCommand(string commandName) =>
-        commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1;
+        commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1
+            or OrderExchangeRateChangeV1;
 
     public static bool IsRequestMutation(string commandName) =>
         commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderMutation(string commandName) =>
-        commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1;
+        commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1 or OrderExchangeRateChangeV1;
 
     /// <summary>API-11: the two line closure commands (both take the §3.4 line lock and write a closure event + outbox message).</summary>
     public static bool IsLineClosure(string commandName) => commandName is OrderLineCloseV1 or OrderLineReopenV1;

@@ -161,6 +161,17 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "AND ([DiscountPercent] IS NULL OR ([DiscountPercent] >= 0 AND [DiscountPercent] <= 100)) "
         + "AND ([DiscountAmount] IS NULL OR ([DiscountAmount] >= 0 AND [DiscountAmount] <= [UnitPrice])))";
 
+    /// <summary>ALC-SC33 (FNS-D83): the one rate kind admitted today, the TCMB forex selling rate.</summary>
+    internal static readonly string ExchangeRateKindCheck = $"[Kind] IN ({(int)PurchaseOrderExchangeRateKind.TcmbForexSelling})";
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D91): an automatic rate names its bulletin day and has no reason; a manual rate names no bulletin day. A CHECK
+    /// passes on UNKNOWN, so each column is tested with IS [NOT] NULL.
+    /// </summary>
+    internal static readonly string ExchangeRateSourceCheck =
+        $"([Source] = {(int)PurchaseOrderExchangeRateSource.Automatic} AND [BulletinDate] IS NOT NULL AND [Reason] IS NULL) "
+        + $"OR ([Source] = {(int)PurchaseOrderExchangeRateSource.Manual} AND [BulletinDate] IS NULL)";
+
     /// <summary>One create attempt per stored order; the approve command's attempts share the order id.</summary>
     internal static readonly string OrderCreateAttemptFilter =
         "[OrderId] IS NOT NULL AND [CommandName] = N'" + PurchasingCommands.OrderCreateV1 + "'";
@@ -182,6 +193,9 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     /// <summary>API-11 (F-017 §3.6): every closure and reopening of a general order line (append only).</summary>
     internal DbSet<PurchaseOrderLineClosureEventRow> LineClosureEvents => Set<PurchaseOrderLineClosureEventRow>();
+
+    /// <summary>ALC-SC33 (FNS-D79/D91): every exchange rate recorded on an order — the opening default and each change (append only).</summary>
+    internal DbSet<PurchaseOrderExchangeRateChangeRow> ExchangeRateChanges => Set<PurchaseOrderExchangeRateChangeRow>();
 
     /// <summary>API-11 (ADR-009): Purchasing's transactional outbox (append only).</summary>
     internal DbSet<PurchasingOutboxRow> OutboxMessages => Set<PurchasingOutboxRow>();
@@ -207,6 +221,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureAcceptances(modelBuilder);
         ConfigureDeliverySlices(modelBuilder);
         ConfigureLineClosureEvents(modelBuilder);
+        ConfigureExchangeRateChanges(modelBuilder);
         ConfigureOutbox(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureGoodsReceiptBatches(modelBuilder);
@@ -529,6 +544,41 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.HasOne<PurchaseOrderLineRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
             .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D83/D91): one row per recorded order rate, keyed by the order version it produced (the opening default at
+    /// version 1, each change at its own version); bound to the order, never to another company's. The rate is positive with the
+    /// Settings bounds (decimal(28,10)), the target currency non-empty, the kind and source known; an automatic rate names its bulletin
+    /// day and carries no reason, a manual one names no bulletin day. That only a Draft order's rate changes and that the target
+    /// differs from the order's currency is the domain's rule, measured again on every rebuild.
+    /// </summary>
+    private void ConfigureExchangeRateChanges(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PurchaseOrderExchangeRateChangeRow>();
+        entity.ToTable("PurchaseOrderExchangeRateChanges", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseOrderExchangeRateChanges_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} AND [TargetCurrencyId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_PurchaseOrderExchangeRateChanges_Version", "[OrderVersionAfter] >= 1");
+            table.HasCheckConstraint("CK_PurchaseOrderExchangeRateChanges_Rate", "[Rate] > 0");
+            table.HasCheckConstraint("CK_PurchaseOrderExchangeRateChanges_Kind", ExchangeRateKindCheck);
+            table.HasCheckConstraint("CK_PurchaseOrderExchangeRateChanges_Source", ExchangeRateSourceCheck);
+            table.HasCheckConstraint("CK_PurchaseOrderExchangeRateChanges_Text",
+                "([Reason] IS NULL OR LEN([Reason]) > 0) AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.OrderId, x.OrderVersionAfter });
+        entity.Property(x => x.Rate).HasPrecision(28, PurchaseOrderExchangeRate.MaximumScale);
+        entity.Property(x => x.RateDay).HasColumnType("date");
+        entity.Property(x => x.BulletinDate).HasColumnType("date");
+        entity.Property(x => x.Reason).HasMaxLength(PurchaseOrder.MaximumReasonLength);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasOne<PurchaseOrderRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }

@@ -222,6 +222,18 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   line out. Migration `AddPurchaseOrderLineClosure` adds the `Closed` column (default 0), the shares and closed-or-cancelled checks
   and both tables; its Down refuses (`THROW 51174`) while a closure, a message or a closed share exists. Releasing Inventory future
   allocations at closure (F17-4) and the ALS-D10 in-tolerance suggestion (OPEN-004 / API-95) are not part of it.
+- **Order exchange rate (ALC-SC33; FNS-D73/D79/D80/D83/D91):** a foreign-currency order is opened with the automatic default
+  rate, which the Settings resolver gives as the TCMB forex selling rate (SAT-D54/D170) for the creation business day. It is
+  stored as a number with its kind and rate day, never recomputed from a later bulletin. If the resolver cannot answer, the
+  order is still created with no rate. Before approval the preparer can change the rate with
+  `POST /api/v1/purchasing/orders/{id}/exchange-rate`, giving the expected version, an optional reason and an idempotency key.
+  Approval of a foreign-currency order needs a rate (409 `purchasing_order_exchange_rate_required`, recorded as a terminal refusal) and locks it (409 after
+  approval). `GET …/{id}/exchange-rate` returns the recorded rate, and the screen never computes one. Each rate (the opening
+  default and every change) appends one `purchasing.PurchaseOrderExchangeRateChanges` row at the order version it produced, and
+  the audit record carries the old rate, the new rate and the reason. `IPurchaseOrderExchangeRateReadPortV1` answers `Rated`
+  for an approved order that has a rate, and a legacy approved order without one still answers `ExchangeRateNotSpecified`.
+  Migration `AddPurchaseOrderExchangeRate` adds the table; its Down refuses (`THROW 51833`) while any rate is recorded (forward
+  fix). Not built yet: a rate revision after approval with re-approval, and the frontend.
 - **Product purchase eligibility is wired:** the host registers `ProductPurchaseEligibilityPort`
   (`GoymenERP.Api/Endpoints/PurchasingProductSelectionHostPorts.cs`) over Product's `IProductPurchaseEligibilityV1`
   (`Program.cs`: `AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>()`). Owner failures stay

@@ -65,6 +65,16 @@ public interface IPurchasingService
     Task<PurchaseOrderResponse> ReopenOrderLineAsync(Guid orderId, Guid lineId, ReopenPurchaseOrderLineRequest request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D83/D91): changes a Draft foreign-currency order's rate before approval under the order preparer's
+    /// permission; refused once the order is approved (the rate is locked). The old rate, the new rate and the reason go to the audit.
+    /// </summary>
+    Task<PurchaseOrderResponse> ChangeOrderExchangeRateAsync(Guid orderId, ChangePurchaseOrderExchangeRateRequest request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>ALC-SC33: the rate recorded on the order under the order read; reads only, never recomputes.</summary>
+    Task<PurchaseOrderExchangeRateView> GetOrderExchangeRateAsync(Guid orderId, CancellationToken cancellationToken = default);
+
     /// <summary>A1-3 (plan API-10): the cancellation's impact preview under <c>purchasing.orders.cancel</c>; reads only.</summary>
     Task<PurchaseOrderCancelImpactView> GetOrderCancelImpactAsync(Guid orderId, CancellationToken cancellationToken = default);
 
