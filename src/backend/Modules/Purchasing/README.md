@@ -377,5 +377,10 @@ The stock exit is staged through Inventory's `InventorySupplierReturnExitPartici
 (default `false`; NEEDS-SINAN), not a CHECK. Replacement returns (ALS-D91) answer 422 in this version. The new permission
 `purchasing.supplier-returns.record` is registered without any grant.
 
+ALS-D116 and W5-5.1 register `purchasing.goods-receipts.approve-overdelivery` separately
+from order approval and receipt variance approval. It requires company-wide scope and is
+not Critical. This registers a name only; the overdelivery decision workflow and its
+acceptance remain separate work. No role, persona or user is granted the permission.
+
 Migration `20261116113129_AddPurchaseSupplierReturns` creates `PurchaseSupplierReturns` and `PurchaseSupplierReturnAttempts`;
 Down guard **51893** refuses while any return or attempt exists (forward fix). API-44 receipt reversal is not in this slice.

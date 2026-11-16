@@ -92,6 +92,12 @@ public static class PurchasingPermissionManifestV1
     public const string GoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
     /// <summary>
+    /// ALS-D116, W5-5.1: the separate overdelivery decision permission; neither OrdersApprove
+    /// nor GoodsReceiptsApproveVariance confers it. Company-wide, not Critical. Registration only.
+    /// </summary>
+    public const string GoodsReceiptsApproveOverdelivery = "purchasing.goods-receipts.approve-overdelivery";
+
+    /// <summary>
     /// ALC-S3 (F-017 F17-4, ALS-D83/D85): drop a sales line's future supply allocation (bağ) on one of this company's purchase lines
     /// from the Purchasing screen, without changing any purchase quantity; and, beside <see cref="OrdersCancel"/> or
     /// <see cref="OrdersClose"/>, release the linked allocations while the remainder is cancelled or the line is closed (both names
@@ -110,6 +116,6 @@ public static class PurchasingPermissionManifestV1
 
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
-            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance, FutureAllocationRelease,
+            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance, GoodsReceiptsApproveOverdelivery, FutureAllocationRelease,
             SupplierReturnsRecord];
 }
