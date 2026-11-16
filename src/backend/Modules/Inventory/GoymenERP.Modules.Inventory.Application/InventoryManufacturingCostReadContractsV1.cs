@@ -12,7 +12,8 @@ public enum InventoryIssueCostCurrencyStatusV1 { FunctionalCurrency = 1, Convert
 /// LedgerVersion names the source read at staging time. Missing legacy stamps are Unavailable, never today's average.
 /// </summary>
 public sealed record InventoryMovementCostStampV1(InventoryMovementCostStampStatusV1 Status, Guid CurrencyId,
-    decimal? UnitCostPerKg, decimal? Amount, long? LedgerVersion, string StampVersion, string? Reason);
+    decimal? UnitCostPerKg, decimal? Amount, long? LedgerVersion, string StampVersion, string? Reason,
+    InventoryExactCostRatioV1? UnitCostRatio = null);
 
 /// <summary>
 /// URT-D55/FNS-D73 entry-currency proof, captured at issue time. This is separate from the TL moving average;
@@ -20,7 +21,7 @@ public sealed record InventoryMovementCostStampV1(InventoryMovementCostStampStat
 /// </summary>
 public sealed record InventoryIssueCostCurrencyV1(InventoryIssueCostCurrencyStatusV1 Status,
     Guid? OriginalCurrencyId, decimal? ForeignUnitCostPerKg, decimal? ExchangeRate,
-    string SourceVersion, string? Reason);
+    string SourceVersion, string? Reason, InventoryExactCostRatioV1? ForeignUnitCostRatio = null);
 
 public sealed record InventoryManufacturingCostIssueV1(Guid FactId, Guid MovementId, string SourceKind,
     StockMovementKind MovementKind, Guid ParentLabelId, Guid ProductId, string ProductVersion, decimal QuantityKg,
