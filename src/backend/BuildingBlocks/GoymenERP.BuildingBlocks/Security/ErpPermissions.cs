@@ -1261,6 +1261,12 @@ public static class ErpPermissions
     public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
     /// <summary>
+    /// ALS-D116, W5-5.1: overdelivery approval is independent of order approval and variance approval.
+    /// Company-wide, not Critical. Registered only; no persona, role or user receives a grant here.
+    /// </summary>
+    public const string PurchasingGoodsReceiptsApproveOverdelivery = "purchasing.goods-receipts.approve-overdelivery";
+
+    /// <summary>
     /// ALC-S3 (F-017 F17-4, ALS-D83/D85): release a sales line's future supply allocation on a purchase line from the Purchasing
     /// screen (bağ düşürme), and — together with the cancel or close name — release the linked allocations while cancelling an
     /// order's remainder or closing a line. The Purchasing owner's name (PurchasingPermissionManifestV1.FutureAllocationRelease);
@@ -1720,6 +1726,7 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
             AccountingPeriodsRead,
@@ -1985,6 +1992,7 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
             AccountingPeriodsRead,

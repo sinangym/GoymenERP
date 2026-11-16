@@ -76,8 +76,9 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
     public Task<bool> ReturnIdExistsAsync(Guid returnId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        // The return id is the table's primary key: another company's row with the same id is a collision too.
-        return dbContext.SupplierReturns.IgnoreQueryFilters().AsNoTracking().AnyAsync(row => row.ReturnId == returnId, cancellationToken);
+        // Existence is scoped to the caller's company. A cross-company primary-key collision is handled by the
+        // unique constraint and the normal concurrent-change path, without disclosing the other company's row.
+        return dbContext.SupplierReturns.AsNoTracking().AnyAsync(row => row.ReturnId == returnId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<StoredPurchaseSupplierReturn>> ListForOrderAsync(Guid orderId, int take, CancellationToken cancellationToken = default)
