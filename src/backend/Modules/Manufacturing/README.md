@@ -457,7 +457,8 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 
 `manufacturing.plans.reorder` is registered company-wide, granted to no role, and its shell control is staged
 (`ImplementationAvailable: false`). URT-D106 supersedes URT-D101 for manual queue movement; priority-score entry
-remains under `manufacturing.plans.approve` (URT-D103). The queue write and its audit are still pending.
+remains under `manufacturing.plans.approve` (URT-D103). Manual queue movement and its audit remain pending.
+
 # W7 — URT-SC33 priority and queue
 
 URT-D97/D103 stores a signed Int32 priority score (technical default zero, higher first) in append-only
@@ -471,3 +472,8 @@ Migration `20261116184005_AddManufacturingPlanPriorities` was generated with `do
 refuses with **THROW 51943** while any priority history exists (forward fix), then drops the empty table. SQL guard,
 persistence-model, command, HTTP and UI acceptance sources are written; runtime acceptance is **NOT_RUN** in this wave.
 
+URT-D35's optional `planAllocationShortfall` problem extension contains only the refused owner snapshot's company,
+plan, label, product, observed label version, requested/available/missing kg and proven single free position. It is
+never persisted or replayed. The initial approval and reapproval screens display it separately from a fresh advisory
+read. Inventory's host mapping and central OpenAPI schema are integrated by the train owner after the Inventory owner
+commit; without that mapping the unchanged code-only refusal remains valid and no quantity is fabricated.

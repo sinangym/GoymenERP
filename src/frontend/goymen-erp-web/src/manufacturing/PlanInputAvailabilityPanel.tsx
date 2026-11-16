@@ -15,30 +15,32 @@ export function PlanInputAvailabilityPanel({ companyId, planId, planVersion, ref
 }) {
   const boundary = useAuthBoundary()
   const boundaryRef = useRef(boundary); boundaryRef.current = boundary
-  const [outcome, setOutcome] = useState<ViewOutcome<PlanInputAvailability>>({ type: 'loading' })
   const [retry, setRetry] = useState(0)
+  const key = `${companyId}:${planId}:${planVersion}:${refreshGeneration}:${retry}`
+  const [answer, setAnswer] = useState<{ key: string; outcome: ViewOutcome<PlanInputAvailability> }>({ key, outcome: { type: 'loading' } })
   useEffect(() => {
     const controller = new AbortController()
     const captured = boundaryRef.current.capture()
-    setOutcome({ type: 'loading' })
+    setAnswer({ key, outcome: { type: 'loading' } })
     void fetchPlanInputAvailability(companyId, planId, planVersion, controller.signal).then((result) => {
       if (controller.signal.aborted) return
       if (result.type === 'http' && (result.status === 401 || result.status === 403))
         boundaryRef.current.report(result.status, captured)
-      setOutcome(result)
+      setAnswer({ key, outcome: result })
     })
     return () => controller.abort()
-  }, [companyId, planId, planVersion, refreshGeneration, retry])
-  const state = classifyOutcome(outcome) as RemoteViewState<PlanInputAvailability>
+  }, [key, companyId, planId, planVersion, refreshGeneration, retry])
+  const state = classifyOutcome(answer.key === key ? answer.outcome : { type: 'loading' }) as RemoteViewState<PlanInputAvailability>
   return <section aria-label={T.heading}>
     <h3>{T.heading}</h3><p>{T.help}</p>
     {state.kind !== 'ready' ? <StateBlock state={state} subject={T.subject} onRetry={() => setRetry((n) => n + 1)} /> : <>
       <div className={styles.tableWrap}><table className={styles.table}>
         <caption>{T.caption}</caption>
-        <thead><tr>{[T.label, T.requested, T.physical, T.blocked, T.allocated, T.free, T.missing, T.positions]
+        <thead><tr>{[T.label, T.product, T.requested, T.physical, T.blocked, T.allocated, T.free, T.missing, T.positions]
           .map((text) => <th key={text} scope="col">{text}</th>)}</tr></thead>
         <tbody>{state.data.inputs.map((input) => <tr key={input.labelId}>
           <th scope="row">{input.labelId}<br />{T.version}: {input.labelVersion}</th>
+          <td>{input.productId}</td>
           <td>{input.requestedKg}</td><td>{input.physicalKg}</td><td>{input.blockedKg}</td>
           <td>{input.allocatedKg}</td><td>{input.freeKg}</td><td>{input.missingKg}</td>
           <td>{input.freePositionCount}{input.freePositionCount !== 1 ? ` — ${T.positionRefusal}` : ''}</td>

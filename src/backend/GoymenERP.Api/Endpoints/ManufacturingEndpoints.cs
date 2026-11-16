@@ -1272,7 +1272,7 @@ public static class ManufacturingEndpoints
                 detail: "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor.",
                 statusCode: StatusCodes.Status404NotFound),
             ManufacturingApiStatus.Conflict => Problem(StatusCodes.Status409Conflict, result.Code!, result.Field,
-                result.ExpectedVersion, result.CurrentVersion, result.StockShortfall),
+                result.ExpectedVersion, result.CurrentVersion, result.StockShortfall, result.PlanAllocationShortfall),
             ManufacturingApiStatus.Unprocessable => Problem(StatusCodes.Status422UnprocessableEntity, result.Code!,
                 result.Field),
             ManufacturingApiStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
@@ -1321,7 +1321,8 @@ public static class ManufacturingEndpoints
     };
 
     private static IResult Problem(int statusCode, string code, string? field, long? expectedVersion = null,
-        long? currentVersion = null, ManufacturingStockShortfallViewV1? stockShortfall = null)
+        long? currentVersion = null, ManufacturingStockShortfallViewV1? stockShortfall = null,
+        ManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null)
     {
         var extensions = new Dictionary<string, object?> { ["code"] = code };
         if (field is not null)
@@ -1340,6 +1341,7 @@ public static class ManufacturingEndpoints
         {
             extensions["stockShortfall"] = stockShortfall;
         }
+        if (planAllocationShortfall is not null) extensions["planAllocationShortfall"] = planAllocationShortfall;
 
         return Results.Problem(statusCode: statusCode, extensions: extensions);
     }

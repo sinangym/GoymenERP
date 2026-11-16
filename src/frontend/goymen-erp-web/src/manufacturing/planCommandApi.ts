@@ -16,6 +16,7 @@ import {
 } from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
+import { decodePlanAllocationShortfall, type PlanAllocationShortfall } from './planAllocationShortfall'
 
 export type PlanTargetBasis = 'InputMass' | 'GoodOutputMass'
 
@@ -370,6 +371,7 @@ export type PlanLifecycleOutcome<T> =
       readonly code: string | null
       readonly field: string | null
       readonly replayed: boolean
+      readonly planAllocationShortfall?: PlanAllocationShortfall
     }
   | {
       readonly type: 'unknown'
@@ -759,7 +761,7 @@ async function lifecycleRequest(
   return { type: 'response', response, body: parsed }
 }
 
-function lifecycleFailure<T>(response: Response, body: unknown): PlanLifecycleOutcome<T> {
+function lifecycleFailure<T>(response: Response, body: unknown, allocationContext?: { companyId: string; planId: string }): PlanLifecycleOutcome<T> {
   const metadata = replayMetadata(response.headers)
   if (metadata === null) return { type: 'unknown', reason: 'undecodable' }
   const code = text(body, 'code')
@@ -769,12 +771,17 @@ function lifecycleFailure<T>(response: Response, body: unknown): PlanLifecycleOu
   if (![400, 401, 403, 404, 409, 415, 422].includes(response.status)) {
     return { type: 'unknown', reason: 'unexpected-status' }
   }
+  const allocation = allocationContext !== undefined && response.status === 409 && !metadata.replayed
+    && code === 'inventory_manufacturing_allocation_insufficient_free_stock'
+    ? decodePlanAllocationShortfall(typeof body === 'object' && body !== null
+      ? (body as Record<string, unknown>).planAllocationShortfall : null, allocationContext.companyId, allocationContext.planId) : null
   return {
     type: 'failed',
     status: response.status,
     code,
     field: text(body, 'field'),
     replayed: metadata.replayed,
+    ...(allocation === null ? {} : { planAllocationShortfall: allocation }),
   }
 }
 
@@ -794,7 +801,7 @@ export async function approvePlan(
     signal,
   )
   if (result.type === 'unknown') return result
-  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body, { companyId, planId })
   const metadata = replayMetadata(result.response.headers)
   const plan = decodePlan(result.body)
   if (
@@ -822,7 +829,7 @@ export async function reapprovePlan(companyId: string, planId: string, snapshot:
     companyId, snapshot.idempotencyKey,
     { expectedVersion: snapshot.expectedVersion, selectedLabelIds: snapshot.selectedLabelIds }, 200, signal)
   if (result.type === 'unknown') return result
-  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body, { companyId, planId })
   const metadata = replayMetadata(result.response.headers)
   const plan = decodePlan(result.body)
   if (metadata === null || plan === null || plan.planId !== planId || plan.companyId !== companyId

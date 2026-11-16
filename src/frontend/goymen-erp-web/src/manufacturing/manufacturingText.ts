@@ -571,7 +571,7 @@ export const PLAN_REAPPROVAL_TEXT = {
 export const PLAN_INPUT_AVAILABILITY_TEXT = {
   heading: 'Girdi miktarları ve iptal geçmişi', subject: 'Plan girdilerinin güncel miktarları',
   help: 'Bu okuma stok ayırmaz. Serbest miktar başka işlemlerle değişebilir; yeniden onayda bütün girdiler birlikte tekrar kontrol edilir. Fiziksel bakiye serbest miktar değildir.',
-  caption: 'Stok kaynağından okunan miktarlar (kg)', label: 'Etiket', version: 'Güncel etiket sürümü',
+  caption: 'Stok kaynağından okunan miktarlar (kg)', label: 'Etiket', product: 'Ürün', version: 'Güncel etiket sürümü',
   requested: 'Planlanan', physical: 'Fiziksel', blocked: 'Blokeli', allocated: 'Ayrılmış', free: 'Serbest', missing: 'Eksik',
   positions: 'Serbest pozisyon sayısı', positionRefusal: 'Ayırma için tek serbest pozisyon gerekir',
   readAt: 'Okuma zamanı', refresh: 'Miktarları yeniden oku', cancelledHistory: 'İptal edilen emir geçmişi',
@@ -587,4 +587,10 @@ export const PLAN_QUEUE_TEXT = {
   invalid: 'Tam sayı öncelik puanı ve gerekçe girin.', unknown: 'Kaydın sonucu bilinmiyor. Yeni deneme açmadan aynı anahtarla sonucunu sorun.',
   conflict: 'Plan veya öncelik değişti. Güncel kaydı okuyup yeni bir deneme hazırlayın.', refused: 'Öncelik kaydedilemedi.',
   applied: 'Öncelik kaydedildi; güncel kuyruk yeniden okunuyor.',
+} as const
+
+export const PLAN_ALLOCATION_SHORTFALL_TEXT = {
+  heading: 'Stok ayırma reddedildi',
+  help: 'Bu miktarlar reddedilen işlemin anına aittir. Ayrılabilir ve eksik miktarı stok kaynağı bildirdi; güncel girdi okuması bu red anının yerine geçmez.',
+  product: 'Ürün', label: 'Etiket', version: 'Red anındaki etiket sürümü', requested: 'İstenen kg', available: 'Ayrılabilir kg', missing: 'Eksik kg',
 } as const

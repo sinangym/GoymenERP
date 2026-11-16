@@ -403,6 +403,10 @@ public sealed record ManufacturingApiResult<T>(
     /// </summary>
     [JsonIgnore]
     public ManufacturingStockShortfallViewV1? StockShortfall { get; init; }
+
+    /// <summary>URT-D35: fresh refusal only; never persisted or replayed as an old owner measurement.</summary>
+    [JsonIgnore]
+    public ManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; init; }
 }
 
 /// <summary>Codes the command surface adds; everything else is the domain's, the store's or Settings'.</summary>
@@ -2502,6 +2506,8 @@ public sealed partial class ManufacturingCommandService(
                     exception.Field, exception.ExpectedVersion, exception.CurrentVersion)
                 {
                     StockShortfall = StockShortfallView(exception.StockShortfall),
+                    PlanAllocationShortfall = commandName is ManufacturingCommandNames.ApprovePlan or ManufacturingCommandNames.ReapprovePlan
+                        && exception.PlanAllocationShortfall?.CompanyId == companyId ? exception.PlanAllocationShortfall : null,
                 };
         }
         catch (ManufacturingVersionConflictException exception)

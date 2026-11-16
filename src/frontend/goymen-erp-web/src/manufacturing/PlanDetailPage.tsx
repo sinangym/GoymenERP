@@ -33,6 +33,8 @@ import { PlanEditForm } from './PlanEditForm'
 import { PlanHistory } from './PlanHistory'
 import { PlanReapprovalSection } from './PlanReapprovalSection'
 import { PlanQueuePanel } from './PlanQueuePanel'
+import { PlanAllocationShortfallPanel } from './PlanAllocationShortfallPanel'
+import type { PlanAllocationShortfall } from './planAllocationShortfall'
 import { PlanCalculationDetails } from './PlanPreviewPanel'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -135,6 +137,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const [editing, setEditing] = useState(false)
   const [decision, setDecision] = useState<'reject' | 'cancel' | null>(null)
   const [reasonText, setReasonText] = useState('')
+  const [allocationShortfall, setAllocationShortfall] = useState<PlanAllocationShortfall | null>(null)
   const generation = useRef(0)
   const inFlight = useRef(false)
   const queryKey = useMemo(
@@ -268,6 +271,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       return
     }
     inFlight.current = true
+    setAllocationShortfall(null)
     const commandGeneration = ++generation.current
     setAttempt({ phase: 'sending', pending })
     const security = boundary.capture()
@@ -293,6 +297,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     }
     releasePendingPlanLifecycle(storeKey, pending.snapshot.idempotencyKey)
     if (outcome.type === 'failed') {
+      setAllocationShortfall(outcome.planAllocationShortfall ?? null)
       const message = failureText(pending.snapshot.kind, outcome, planProcess)
       if (outcome.status === 409) {
         // A stale edit is not continued on stale content: the form closes and reopens from the re-read plan.
@@ -522,6 +527,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
 
       <section className={styles.commandCard} aria-labelledby="manufacturing-plan-next-heading">
         <h2 id="manufacturing-plan-next-heading">{PLAN_DETAIL_TEXT.nextHeading}</h2>
+        {allocationShortfall !== null ? <PlanAllocationShortfallPanel value={allocationShortfall} /> : null}
         {blocked ? (
           <p role="alert" className={styles.error}>{attempt.message}</p>
         ) : unresolved ? (

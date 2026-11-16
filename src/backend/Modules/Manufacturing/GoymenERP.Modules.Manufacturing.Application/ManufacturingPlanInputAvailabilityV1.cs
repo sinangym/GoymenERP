@@ -35,7 +35,7 @@ public sealed partial class ManufacturingCommandService
         {
             var scope = await authority.RevalidatePermissionScopeAsync(ErpPermissions.ManufacturingPlansRead,
                 companyId, cancellationToken);
-            return scope.IsGranted && HasCapturedContext(companyId, actorId);
+            return scope.IsGranted && scope.IsCompanyWide && HasCapturedContext(companyId, actorId);
         }
         if (!await CanReadAsync()) return Denied<PlanInputAvailabilityViewV1>();
         if (planId == Guid.Empty) return NotFoundResult<PlanInputAvailabilityViewV1>();

@@ -128,7 +128,8 @@ public sealed class ManufacturingInventoryRealizationPortException(
     string? field = null,
     long? expectedVersion = null,
     long? currentVersion = null,
-    ManufacturingInventoryStockShortfallV1? stockShortfall = null)
+    ManufacturingInventoryStockShortfallV1? stockShortfall = null,
+    ManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null)
     : Exception(code)
 {
     public ManufacturingApiStatus Status { get; } = status;
@@ -143,6 +144,10 @@ public sealed class ManufacturingInventoryRealizationPortException(
     /// </summary>
     public ManufacturingInventoryStockShortfallV1? StockShortfall { get; } =
         RequirePhysicalStockConflict(status, code, stockShortfall);
+
+    public ManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; } = planAllocationShortfall is null
+        || status == ManufacturingApiStatus.Conflict && code == InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock
+        ? planAllocationShortfall : throw new ArgumentException("Plan allocation detail belongs only to its exact conflict.", nameof(planAllocationShortfall));
 
     private static ManufacturingInventoryStockShortfallV1? RequirePhysicalStockConflict(ManufacturingApiStatus status,
         string code, ManufacturingInventoryStockShortfallV1? stockShortfall) =>

@@ -39,4 +39,13 @@ describe('plan input availability', () => {
     expect(decodePlanInputAvailability({ ...view, inputs: [view.inputs[0], view.inputs[0]] })).toBeNull()
     expect(decodePlanInputAvailability({ ...view, inputs: [{ ...view.inputs[0], missingKg: '-1' }] })).toBeNull()
   })
+  it('hides the previous company quantities while a new scope read is pending', async () => {
+    vi.mocked(fetchPlanInputAvailability).mockResolvedValueOnce({ type: 'ok-single', data: view })
+      .mockImplementationOnce(() => new Promise(() => {}))
+    const mounted = render(<PlanInputAvailabilityPanel companyId={companyId} planId={planId} planVersion={3} />)
+    await screen.findByRole('table')
+    mounted.rerender(<PlanInputAvailabilityPanel companyId="90000000-0000-0000-0000-000000000009" planId={planId} planVersion={3} />)
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByText(view.inputs[0].productId)).toBeNull()
+  })
 })
