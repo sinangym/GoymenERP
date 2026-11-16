@@ -710,3 +710,21 @@ the F-005 D1 section above. This slice adds the read Sales' API-35 match uses. N
 Not decided, so not built (NEEDS-SINAN): whether a document claimed by an approved CSV v2 file import (FIN-S5,
 `finance.OfficialInvoiceIdentityClaims`) also answers the Sales read port, and which source wins when a D1 record and a
 file import name the same number / ETTN. The port answers approved D1 records only.
+
+## FIN-S9 / API-14: opening balance entry (açılış bakiyesi) — FNS-D23
+
+| Part | What |
+|---|---|
+| HTTP | `GET /api/v1/finance/opening-balances/period` (period state), `GET …/opening-balances` (list, only while the period is open; closed answers 404), `GET …/opening-balances/currency-candidates`, `POST …/opening-balances` (propose), `POST …/opening-balances/{openingBalanceId}/approve` and `…/reject` (`expectedVersion`; reject with a written reason). Company only from the server context (`X-Company-Id`), never from the body |
+| Permissions | `finance.opening-balances.read`, `finance.opening-balances.propose`, `finance.opening-balances.approve`: registered, company-wide, **not Critical, not granted**. Approve does not imply propose or read. Granting them to a role or persona stays a human step |
+| Opening period (FNS-D23) | Owned by Settings. Finance reads it through `IFinanceOpeningPeriodReader`; the default `UnavailableFinanceOpeningPeriodReader` answers Unavailable, so until the Settings adapter (KIM-S19) is registered every proposal and decision refuses (`opening_period_unavailable`) and the list answers 503. A closed period refuses commands (`opening_period_closed`) and the screen shows only the notice. The period version is stored on the proposal and written to every decision's audit |
+| Two people (FNS-D23) | A specialist proposes, a manager approves or rejects; never the proposer (`finance_approver_is_proposer`), checked in the service and in `CK_OpeningBalances_Decision` (BIN2 comparison) |
+| Record | `finance.OpeningBalances`: target kind CashAccount / BankAccount / PartyAccount, target id, party and direction only for a party opening, currency (the cash/bank account's own currency; a Settings money candidate for a party), exact positive decimal text amount, as-of date, status Proposed / Approved / Rejected. At most one live (proposed or approved) opening per (target, currency) (`UX_OpeningBalances_Live`, filtered) |
+| Idempotency / audit | `finance.OpeningBalanceCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event (`finance.opening-balance.proposed.v1` / `approved.v1` / `rejected.v1`, approval context `FNS-D23`); the same key replays the first answer with its original correlation id; another payload is an `IdempotencyConflict`; a stale version is a recorded `VersionConflict` |
+| Migration `20261116080924_AddOpeningBalances` | Pure DDL up (records and commands). `Down` refuses with `THROW 51809` while any opening balance or recorded attempt exists (forward fix); an empty store rolls back |
+| Shell (provider 1.13) | Route `finance.opening-balances.list` at `/finans/acilis-bakiyeleri` (screen `F-23-OPENING-BALANCES`) under `finance.opening-balances.read`; controls `finance.opening-balances.propose` (read + propose) and `finance.opening-balances.approve` (read + approve). The server checks every command on its own |
+
+Not in this slice (NEEDS-SINAN, not enabled by assumption): the money/ledger/open-item effect of an approved opening (it
+moves no money yet), an "opening" type marking and correction by reversal, a negative bank opening (overdraft; refused),
+the business date / time zone rule for the as-of date, and whether a decision must refuse when the period version changed
+since the proposal (today only Open is required). The Settings opening period adapter is KIM-S19.

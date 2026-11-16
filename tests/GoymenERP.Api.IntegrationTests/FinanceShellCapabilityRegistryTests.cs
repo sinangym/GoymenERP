@@ -57,6 +57,10 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.official-invoice-import.upload", "F-02-OFFICIAL-INVOICE-UPLOAD", null),
                 ("finance.open-items.detail", "F-03-OPEN-ITEM-DETAIL", null),
                 ("finance.open-items.list", "F-03-OPEN-ITEMS", null),
+                // FIN-S9 (Finance 1.13, FNS-D23): propose and approve are controls of the opening balance list.
+                ("finance.opening-balances.approve", "F-23-OPENING-BALANCES", "finance.opening-balances.list"),
+                ("finance.opening-balances.list", "F-23-OPENING-BALANCES", null),
+                ("finance.opening-balances.propose", "F-23-OPENING-BALANCES", "finance.opening-balances.list"),
                 ("finance.party-ledger.accounting", "M-03", null),
                 ("finance.party-ledger.cari", "C-04", null),
                 ("finance.receipts.detail", "F-02-DETAIL", null),
@@ -88,7 +92,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(36, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(39, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

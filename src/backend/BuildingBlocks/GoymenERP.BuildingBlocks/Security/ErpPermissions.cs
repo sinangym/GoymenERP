@@ -354,6 +354,17 @@ public static class ErpPermissions
     public const string FinanceCollateralsRecord = "finance.collaterals.record";
 
     /// <summary>
+    /// Finance opening balances (FIN-S9; FNS-D23): read (the cash, bank and party opening balances and the Settings
+    /// opening period state), propose (a Finance specialist enters an opening balance while the Settings opening period
+    /// is open) and approve (a Finance manager approves or rejects it; never its proposer, maker≠approver). Registering
+    /// them makes them KNOWN, not granted: no role and no user receives them here; who is the specialist or the manager
+    /// (persona → grant) is a human gate (FNS-D23 limits). Company-wide only. Not Critical.
+    /// </summary>
+    public const string FinanceOpeningBalancesRead = "finance.opening-balances.read";
+    public const string FinanceOpeningBalancesPropose = "finance.opening-balances.propose";
+    public const string FinanceOpeningBalancesApprove = "finance.opening-balances.approve";
+
+    /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
     /// measurable and grants nothing. Both are company-wide because the batch belongs to the
     /// server-resolved company and has no narrower scope dimension. They are not Critical; the
@@ -1581,6 +1592,9 @@ public static class ErpPermissions
             FinanceCreditLimitsApprove,
             FinanceCollateralsRead,
             FinanceCollateralsRecord,
+            FinanceOpeningBalancesRead,
+            FinanceOpeningBalancesPropose,
+            FinanceOpeningBalancesApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
@@ -1823,6 +1837,9 @@ public static class ErpPermissions
             FinanceCreditLimitsApprove,
             FinanceCollateralsRead,
             FinanceCollateralsRecord,
+            FinanceOpeningBalancesRead,
+            FinanceOpeningBalancesPropose,
+            FinanceOpeningBalancesApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,

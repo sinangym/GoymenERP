@@ -80,6 +80,12 @@ export const FINANCE_CAPABILITY = {
   collateralsList: 'finance.collaterals.list',
   /** FNS-D57: record, change or release a collateral in one step (control of the list; no approval). */
   collateralsRecord: 'finance.collaterals.record',
+  /** FIN-S9 (FNS-D23) Açılış Bakiyeleri — under `finance.opening-balances.read`; shown only while the period is open. */
+  openingBalancesList: 'finance.opening-balances.list',
+  /** FNS-D23: a specialist proposes an opening balance (control of the list). */
+  openingBalancesPropose: 'finance.opening-balances.propose',
+  /** FNS-D23: a manager approves or rejects a proposal, never their own (control of the list). */
+  openingBalancesApprove: 'finance.opening-balances.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -107,6 +113,7 @@ export const FINANCE_ROUTE = {
   partyLedgerCari: '/cari/hesap-takibi',
   creditLimitsList: '/finans/kredi-limitleri',
   collateralsList: '/finans/teminatlar',
+  openingBalancesList: '/finans/acilis-bakiyeleri',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`

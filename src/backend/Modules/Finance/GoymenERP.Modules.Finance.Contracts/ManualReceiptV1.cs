@@ -119,6 +119,8 @@ public enum FinanceAction
     ReadCashTransfers, CommitCashTransfer,
     // API-85b (FNS-D57): the customer collateral; read and a one-step record/change/release, its own names.
     ReadCollaterals, RecordCollateral,
+    // FIN-S9 (FNS-D23): the cash/bank/party opening balance; read, a specialist's proposal and a manager's decision.
+    ReadOpeningBalances, ProposeOpeningBalance, ApproveOpeningBalance,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
