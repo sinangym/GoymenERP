@@ -95,3 +95,18 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - Purchasing.UnitTests ve Api.IntegrationTests (API dahil) kaynak derlemeleri
   exit 0, sıfır hata/uyarı. Hostun snapshot
   üretimi ile Work inbox/kişisel ekran zinciri birleşene kadar ALC-S6 **PARTIAL**.
+
+## Mal kabul maliyeti owner kanıtı
+
+- `IPurchaseReceiptCostProofV1`, hostun kabul yazdığı transaction'a katılarak gerçek
+  kabul kimliği, miktarı, ilk sonuç sürümü/tarihi, ürün sürümü ve alış fiyatını okur.
+  İskontolu maliyet ile vade farkı içeren net fiyat ayrı kalır. Alış faturası yokken
+  fatura kuru eksikliği sipariş veya giriş günü kuruyla gizlenmez.
+- Yeni Purchasing context construction yalnız kendi tablolarını okur ve commit
+  yapmaz; **K3 review bekliyor**. Foreign şirket/satır ve bilinmeyen kabul bulunamaz.
+- Owner kaynağı API/Integration derlemesinde exit 0. İki yeni gerçek SQL fact'i
+  aynı transaction'daki henüz commit edilmemiş kabul, rollback, şirket ayrımı,
+  iskontolu fiyat ve eksik fatura kurunu kapsar; bu son test kaynaklarının
+  derlemesi sıradaki ortak derlemede, runtime koşumu **NOT_RUN**.
+- Inventory host bağlayıcısı ve gerçek gelen fatura sağlayıcısı tamamlanana kadar
+  uçtan uca maliyet kapsamı **PARTIAL**.
