@@ -5,6 +5,7 @@
 
 import type { RiskFigureKind, RiskFigureState, RiskReasonComponent, RiskResult, RiskTaxBasis } from './riskCheck'
 import type { RiskExceptionState } from './riskException'
+import type { RiskHoldCategory } from './riskExceptionHold'
 
 export const RISK_CHECK_TEXT = {
   heading: 'Müşteri riski',
@@ -134,8 +135,10 @@ export function riskReasonText(code: string): string {
 export const RISK_EXCEPTION_TEXT = {
   heading: 'Tek sevk risk istisnası',
   note:
-    'Risk limiti aşıldığında tek bir sevkiyat için istisna istenebilir. Onay, onaylandığı iş gününün (Türkiye saati) sonuna kadar ' +
-    'geçerlidir; sevkiyat iptal edilirse istisna düşer. İsteyen kişi kendi talebini onaylayamaz. İstisna sipariş revizyonu açmaz.',
+    'Risk limiti aşıldığında, cari hesabın geçerli bir kredi limiti olmadığında ya da risk okunamadığında sevkiyat durur ve tek bir ' +
+    'sevkiyat için istisna istenebilir. Onay, onaylandığı iş gününün (Türkiye saati) sonuna kadar geçerlidir; sevkiyat iptal ' +
+    'edilirse istisna düşer. İsteyen kişi kendi talebini onaylayamaz. İstisna sipariş revizyonu açmaz; limitsiz ya da sıfır limit ' +
+    'sayılmaz.',
   subject: 'Risk istisnaları',
   empty: 'Bu sipariş için risk istisnası yok.',
   forbidden: 'Risk istisnalarını görme yetkiniz yok.',
@@ -192,4 +195,34 @@ export const RISK_EXCEPTION_TEXT = {
   validToday: (day: string) => `Bugün geçerli (iş günü ${day}).`,
   lapsed: (day: string) => `Süresi doldu (iş günü ${day} sona erdi).`,
   supportCode: (id: string) => `Destek kodu: ${id}`,
+  /** FNS-D30 / SAT-D310: why the shipment is held, from the risk read; never an amount (SAT-D162). */
+  hold: {
+    heading: 'Sevkiyat risk durumu',
+    loading: 'Risk durumu okunuyor…',
+    within: 'Müşteri riski limit içinde; sevkiyat için risk istisnası gerekmez.',
+    category: {
+      OverLimit: 'Risk limiti aşıldı: sevkiyat durur. Onaylanan tek sevk istisnası yalnız o sevkiyatı bırakır.',
+      CreditLimitNotSet:
+        'Limit tanımlı değil: bu cari hesabın geçerli bir kredi limiti yok, sevkiyat durur. Bu durum limitsiz ya da sıfır limit ' +
+        'sayılmaz; onaylanan tek sevk istisnası yalnız o sevkiyatı bırakır.',
+      SourceUnavailable:
+        'Risk okunamadı: sevkiyat durur. Onaylanan tek sevk istisnası yalnız o sevkiyatı bırakır.',
+    } as Readonly<Record<RiskHoldCategory, string>>,
+    unreadable: 'Risk durumu okunamadı; istisna talebi yine açılabilir, kararı sunucu verir.',
+    forbidden: 'Risk durumunu görme yetkiniz yok; istisna talebi yine açılabilir, kararı sunucu verir.',
+    serviceUnavailable: 'Risk servisi şu an kullanılamıyor; istisna talebi yine açılabilir, kararı sunucu verir.',
+    stale: 'Risk durumu bu açılışa ait değil; sayfayı yenileyin.',
+    retry: 'Risk durumunu yeniden oku',
+    note: 'Bu ekran durdurma kararı vermez; sevkiyatı Lojistik kapısı ve sunucu durdurur.',
+  },
+  /** FNS-D30 (2): the approver's optional shortcut to define a limit on the Cari card (FNS-D27a). */
+  shortcut: {
+    defineLimit: 'Cari kartında kredi limitini tanımla',
+    defineLimitHint: 'Limit onay yetkinizle tek adımda yürürlüğe girer (Cari kartı → Finans paneli → Kredi Limitleri).',
+    proposeLimit: 'Cari kartında kredi limiti öner',
+    proposeLimitHint:
+      'Yalnız bir öneri açılır; limit, başka bir onaylayıcı karar verene kadar yürürlüğe girmez (Cari kartı → Finans paneli → ' +
+      'Kredi Limitleri).',
+    optional: 'Kısayolu kullanmak isteğe bağlıdır; istisna kararı limit tanımından bağımsızdır.',
+  },
 } as const

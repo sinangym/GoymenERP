@@ -19,6 +19,8 @@ import { REPLAY_HEADER } from './contract'
 import { RISK_EXCEPTION_TEXT as T } from './riskText'
 import { OrderRiskExceptions } from './SalesOrderRiskExceptions'
 import { ALL_SALES, COMPANY_A, HARNESS_USER_ID, installFetch, json, renderSalesApp } from './testHarness'
+import { FINANCE_CAPABILITY } from '../finance/capabilities'
+import { CAPABILITY } from '../shell/capabilities'
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const SHIPMENT = 'e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1'
@@ -394,5 +396,75 @@ describe('risk exceptions panel outcomes', () => {
     expect(screen.getByTestId('sales-risk-exception-unreadable').textContent).toBe(T.unreadable)
     expect(screen.queryByTestId('sales-risk-exception-request')).toBeNull()
     expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+  })
+})
+
+/**
+ * FNS-D30 / spec §S3: the section names the hold from the risk read the risk card already made (one GET per open) and offers the
+ * approver the Cari card shortcut only with a credit-limit control; the requester never sees it. The harness's default risk answer
+ * has no limit source ("limit tanımlı değil").
+ */
+describe('S-04 risk hold and the approver limit shortcut (FNS-D30)', () => {
+  const LIMIT_READER = [CAPABILITY.cariPartiesDetail, FINANCE_CAPABILITY.creditLimitsList]
+  const riskCalls = <C extends { readonly url: string }>(calls: readonly C[]) => calls.filter((call) => call.url.endsWith('/risk-check'))
+  const partyId = () => detail().draft.partyId as string
+  const hold = async () => within(await panel()).findByTestId('sales-risk-hold-category')
+
+  it('names a missing limit from the one shared risk read and gives the limit approver the one-step shortcut', async () => {
+    const harness = installFetch({
+      capabilities: [...APPROVER, ...LIMIT_READER, FINANCE_CAPABILITY.creditLimitsApprove],
+      onDetail: () => json(detail()),
+      onRiskExceptions: () => json({ items: [] }),
+    })
+    renderSalesApp(PATH)
+    const category = await hold()
+    expect(category.getAttribute('data-category')).toBe('CreditLimitNotSet')
+    expect(category.textContent).toBe(T.hold.category.CreditLimitNotSet)
+    const section = await panel()
+    const link = within(section).getByRole('link', { name: T.shortcut.defineLimit })
+    expect(link.getAttribute('href')).toBe(`/cari/${encodeURIComponent(partyId())}`)
+    expect(within(section).getByTestId('sales-risk-hold-shortcut').textContent).toContain(T.shortcut.defineLimitHint)
+    // The risk card and the exception section share the read: one GET for the open.
+    await waitFor(() => expect(riskCalls(harness.calls)).toHaveLength(1))
+  })
+
+  it('gives the approver holding only limit propose the proposal shortcut', async () => {
+    installFetch({
+      capabilities: [...APPROVER, ...LIMIT_READER, FINANCE_CAPABILITY.creditLimitsPropose],
+      onDetail: () => json(detail()),
+      onRiskExceptions: () => json({ items: [] }),
+    })
+    renderSalesApp(PATH)
+    await hold()
+    const section = await panel()
+    expect(within(section).getByRole('link', { name: T.shortcut.proposeLimit })).toBeTruthy()
+    expect(within(section).getByTestId('sales-risk-hold-shortcut').textContent).toContain(T.shortcut.proposeLimitHint)
+    expect(within(section).queryByRole('link', { name: T.shortcut.defineLimit })).toBeNull()
+  })
+
+  it.each([
+    ['an approver without propose or approve', [...APPROVER, ...LIMIT_READER]],
+    ['a requester holding limit approval', [...REQUESTER, ...LIMIT_READER, FINANCE_CAPABILITY.creditLimitsApprove]],
+    ['an approver without the Cari card', [...APPROVER, FINANCE_CAPABILITY.creditLimitsList, FINANCE_CAPABILITY.creditLimitsApprove]],
+    ['an approver without the credit-limit list', [...APPROVER, CAPABILITY.cariPartiesDetail, FINANCE_CAPABILITY.creditLimitsApprove]],
+  ])('hides the shortcut from %s, still naming the hold', async (_, capabilities) => {
+    installFetch({ capabilities, onDetail: () => json(detail()), onRiskExceptions: () => json({ items: [] }) })
+    renderSalesApp(PATH)
+    expect((await hold()).getAttribute('data-category')).toBe('CreditLimitNotSet')
+    expect(within(await panel()).queryByTestId('sales-risk-hold-shortcut')).toBeNull()
+  })
+
+  it('keeps a forbidden or unavailable risk read category-free while the exception request stays open', async () => {
+    installFetch({
+      capabilities: [...REQUESTER, ...LIMIT_READER, FINANCE_CAPABILITY.creditLimitsApprove],
+      onDetail: () => json(detail()),
+      onRiskExceptions: () => json({ items: [] }),
+      onRiskCheck: () => problem(503, null),
+    })
+    renderSalesApp(PATH)
+    const section = await panel()
+    expect((await within(section).findByTestId('sales-risk-hold-unreadable')).textContent).toBe(T.hold.serviceUnavailable)
+    expect(within(section).queryByTestId('sales-risk-hold-category')).toBeNull()
+    expect(await within(section).findByTestId('sales-risk-exception-request')).toBeTruthy()
   })
 })
