@@ -2,13 +2,15 @@
  "meta": {
   "tarih": "2026-11-16",
   "tren_dali": "claude/tren-1",
-  "kod_head": "24fd735d753ffae0c69f774785f71c7c6125c30d",
+  "kod_head": "65bc94e9691287eebdfd22975fe666578f087c04",
   "durum_sozlugu": {
-   "PARTIAL": "kodun bir kısmı trende; kalan kısım w5_raporu dosyasında",
+   "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
    "BLOCKED_PORT": "önce stok_lojistik IInventoryFutureAllocationReleasePortV1",
    "DOGRULA": "kodda var mı doğrula; yoksa yap",
-   "IN_PROGRESS": "W5 raporuna bak"
+   "IN_PROGRESS": "W5 raporuna bak",
+   "DONE": "kaynak kapsamı tamam; koşum/kabul kanıtı raporda ayrıca belirtilir",
+   "BLOCKED_SOURCE": "karar tahmin edilmez; gerçek owner veri/semantik kaynağı henüz eksik"
   },
   "kurallar": [
    "READY = iş kuralları kilitli; BLOCKED = NEEDS-SINAN veya insan kapısı",
@@ -43,8 +45,116 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 120,
-  "partial": 19
+  "done": 132,
+  "partial": 23,
+  "remaining_not_started": 19,
+  "last_wave": 6,
+  "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
+  "w6_source_done_ids": [
+   "KIM-S13",
+   "KIM-S18",
+   "KIM-S3",
+   "PLT-S13",
+   "SAT-S8",
+   "SAT-SC32",
+   "STK-S1",
+   "STK-S17",
+   "STK-S26",
+   "URT-S18",
+   "URT-S6",
+   "URT-S7"
+  ],
+  "w7_oneri": [
+   "KIM-SC32-a",
+   "KIM-SC32-b",
+   "ALC-S7",
+   "ALC-S8",
+   "ALC-S14",
+   "URT-S4/URT-S5 kalan kullanıcı akışı",
+   "STK-S19 + ALC-S6",
+   "SAT-S9",
+   "FIN-SC36 gerçek iç defter sağlayıcısı",
+   "W6 raporlarında kalan tüm PARTIAL/PLANNED/READY dilimler"
+  ],
+  "new_decision_followups": [
+   {
+    "work": "EK24 iç defter banka bakiyesi",
+    "slice": "FIN-SC36",
+    "status": "PARTIAL"
+   },
+   {
+    "work": "EK24 purchasing.invoice.finalized ve alış yevmiyesi",
+    "slice": "FIN-S13",
+    "status": "PLANNED"
+   },
+   {
+    "work": "EK24 plan üstü sevk uyarısı",
+    "slice": "STK-S3",
+    "status": "SOURCE_TRACE_PENDING"
+   },
+   {
+    "work": "EK24 satır bazlı iskonto",
+    "slice": "STK-SC36-a",
+    "status": "SOURCE_TRACE_PENDING"
+   },
+   {
+    "work": "EK24 N-12 önek/yıl/sıra ve yıllık sıfırlama",
+    "slice": "KIM-S19",
+    "status": "PARTIAL",
+    "note": "Purchasing kapsamı BELGE-Q3 cevabı bekler; tahminle açılmaz."
+   },
+   {
+    "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
+    "slice": "STK-SC36-a",
+    "status": "PARTIAL"
+   },
+   {
+    "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
+    "slice": "STK-SC36-b",
+    "status": "PARTIAL"
+   },
+   {
+    "work": "FNS-D106 kredi grubu alan taslağı",
+    "slice": "FIN-SC47-KREDI",
+    "status": "DRAFT_READY",
+    "note": "FINANCE_CREDIT_GROUP_FIELDS_DRAFT_v1.md hazır; Sinan onayı yok, alan/hareket aktivasyonu yok."
+   },
+   {
+    "work": "KLN-D114 bildirim deposu/90 gün sonra pasif",
+    "slice": "PLATFORM_FOLLOWUP",
+    "status": "PLANNED",
+    "note": "PLT-S13 belge işi DONE olması bunu bitirmez. 90 günün Ayarlar kapsamı BELGE-Q4 bekler."
+   },
+   {
+    "work": "URT-D109 boya emir toplamı",
+    "slice": "URT-SC36",
+    "status": "PARTIAL",
+    "note": "Emir toplamı golden kaynağı var; maliyet runtime bağı eksik."
+   },
+   {
+    "work": "FNS-D108 / W5-5 kredi kapalı dönem düzeltmesi",
+    "slice": "FIN-SC47-KREDI",
+    "status": "PLANNED"
+   },
+   {
+    "work": "ALS-D116 / W5-5 fazla teslim onayı ayrı izin",
+    "slice": "ALC-S5",
+    "status": "REGISTERED_ONLY",
+    "note": "Critical değil; grant/rol yok. İş akışı ayrı kaynak kabulü ister."
+   },
+   {
+    "work": "SAT-D419 / W5-5 Finans maliyet hesabı eşlemesi ve audit",
+    "slice": "STK-SC36-a",
+    "status": "PARTIAL",
+    "note": "Ticari mal/mamul sınıf kaynağı BELGE-Q5 bekler."
+   },
+   {
+    "work": "FNS-D109 kredi approve Critical / propose değil",
+    "slice": "FIN-SC47-KREDI",
+    "status": "REGISTERED_ONLY",
+    "note": "Kaynak kayıt düzeltildi; grant/rol/production yok."
+   }
+  ]
  },
  "teams": [
   {
@@ -55,7 +165,7 @@
     "Settings"
    ],
    "toplam": 28,
-   "done": 16,
+   "done": 19,
    "partial": 4,
    "kalan": [
     {
@@ -77,9 +187,10 @@
      "contracts": [
       "tüketir: ID-2 uçları (kimlik)"
      ],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S5",
@@ -108,7 +219,8 @@
      ],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S6",
@@ -129,9 +241,10 @@
      "contracts": [
       "tüketir: ID-3 uçları (kimlik)"
      ],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S7",
@@ -157,7 +270,8 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_kimlik.md"
+     "w5_raporu": "durum/W5_kimlik.md",
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S8",
@@ -181,7 +295,8 @@
      "contracts": [],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S9",
@@ -204,7 +319,8 @@
      "status": "PLANNED",
      "blocked_reason": "",
      "wave": 6,
-     "decision_note": "NS-04 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Tek seferlik kurtarma kodları (kurulumda) + ikinci yönetici önerisi; hepsi kaybolursa denetim kaydı bırakan sunucu CLI kurtarma aracı."
+     "decision_note": "NS-04 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Tek seferlik kurtarma kodları (kurulumda) + ikinci yönetici önerisi; hepsi kaybolursa denetim kaydı bırakan sunucu CLI kurtarma aracı.",
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S13",
@@ -227,9 +343,10 @@
      "contracts": [
       "sağlar: ISettingsPrerequisiteProvider para profili (kimlik; tüketen satis, alis_cari, finans)"
      ],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S15",
@@ -257,7 +374,8 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_kimlik.md"
+     "w5_raporu": "durum/W5_kimlik.md",
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S18",
@@ -282,10 +400,11 @@
      "contracts": [
       "sağlar: ISettingsReferenceListReaderV1 (ad taslak; kimlik; tüketen alis_cari, stok_lojistik, uretim, finans)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_kimlik.md"
+     "w5_raporu": "durum/W5_kimlik.md",
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-S19",
@@ -312,19 +431,25 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_kimlik.md"
+     "w5_raporu": "durum/W5_kimlik.md",
+     "w6_report": "durum/W6_kimlik.md"
     },
     {
      "id": "KIM-SC32-a",
      "title": "Settings teminat türü kataloğu + Finans okuma adapter'ı (FNS-D70)",
-     "status": "DOGRULA"
+     "status": "PLANNED",
+     "w6_report": "durum/W6_kimlik.md",
+     "w6_note": "DOGRULA: gerçek Settings teminat türü kataloğu ve Finance adapter kaydı yok; Unavailable provider başarı sayılmadı."
     },
     {
      "id": "KIM-SC32-b",
      "title": "Settings sözleşme iskonto sınırı değeri (SAT-D364)",
-     "status": "DOGRULA"
+     "status": "PLANNED",
+     "w6_report": "durum/W6_kimlik.md",
+     "w6_note": "DOGRULA: ayrı sözleşme iskonto sınırı Settings değeri ve Sales adapter kaydı yok; genel iskonto sınırı bunun yerine geçmez."
     }
-   ]
+   ],
+   "remaining_not_started": 5
   },
   {
    "key": "platform",
@@ -338,7 +463,7 @@
     "Observability"
    ],
    "toplam": 16,
-   "done": 15,
+   "done": 16,
    "partial": 0,
    "kalan": [
     {
@@ -356,11 +481,13 @@
       "docs/backlog/** (validator kanıtıyla)"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_platform.md"
     }
-   ]
+   ],
+   "remaining_not_started": 0
   },
   {
    "key": "satis",
@@ -368,7 +495,7 @@
     "Sales"
    ],
    "toplam": 17,
-   "done": 11,
+   "done": 13,
    "partial": 2,
    "kalan": [
     {
@@ -390,10 +517,12 @@
      "contracts": [
       "tüketir: IInventoryFutureAllocationReleasePortV1 (stok_lojistik)"
      ],
-     "status": "BLOCKED_PORT",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_satis.md"
+     "w5_raporu": "durum/W5_satis.md",
+     "w6_report": "durum/W6_satis.md",
+     "w6_note": "Gerçek Sales/Inventory aynı-transaction host bağlantısı, sabit kilit sırası, Purchasing termin yazma kilidi ve HTTP/replay metadata tamamlandı. Test kaynakları yazıldı; gerçek SQL koşumu NOT_RUN."
     },
     {
      "id": "SAT-S9",
@@ -416,7 +545,8 @@
      ],
      "status": "READY",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_satis.md"
     },
     {
      "id": "SAT-S12",
@@ -441,7 +571,8 @@
      "status": "READY",
      "blocked_reason": "",
      "wave": 3,
-     "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır."
+     "decision_note": "SAT-D347 okunamazsa marj yok. Marj formülü etkinleştirmesi golden gelene kadar kapalı (SAT-D265/5); kod + snapshot yazılır.",
+     "w6_report": "durum/W6_satis.md"
     },
     {
      "id": "SAT-S13",
@@ -465,12 +596,16 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_satis.md"
+     "w5_raporu": "durum/W5_satis.md",
+     "w6_report": "durum/W6_satis.md"
     },
     {
      "id": "SAT-SC32",
      "title": "Sipariş PDF (SAT-D365) + SAT-D363 iskonto gizleme",
-     "status": "DOGRULA"
+     "status": "DONE",
+     "blocked_reason": "",
+     "w6_report": "durum/W6_satis.md",
+     "w6_note": "PDF mevcut kaynakta doğrulandı; SAT-D363 sözleşme oranı/sınır redaksiyonu sunucu+strict decoder+Gizli UI ve test kaynaklarında düzeltildi. Koşum NOT_RUN."
     },
     {
      "id": "SAT-SC34",
@@ -488,9 +623,11 @@
      "status": "PARTIAL",
      "blocked_reason": null,
      "wave": 5,
-     "w5_raporu": "durum/W5_satis.md"
+     "w5_raporu": "durum/W5_satis.md",
+     "w6_report": "durum/W6_satis.md"
     }
-   ]
+   ],
+   "remaining_not_started": 2
   },
   {
    "key": "alis_cari",
@@ -530,7 +667,8 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_alis_cari.md"
+     "w5_raporu": "durum/W5_alis_cari.md",
+     "w6_report": "durum/W6_alis_cari.md"
     },
     {
      "id": "ALC-S6",
@@ -552,7 +690,8 @@
      "contracts": [],
      "status": "READY",
      "blocked_reason": "",
-     "wave": 7
+     "wave": 7,
+     "w6_report": "durum/W6_alis_cari.md"
     },
     {
      "id": "ALC-S7",
@@ -579,7 +718,8 @@
      ],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_alis_cari.md"
     },
     {
      "id": "ALC-S8",
@@ -602,7 +742,8 @@
      "contracts": [],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_alis_cari.md"
     },
     {
      "id": "ALC-S14",
@@ -623,7 +764,8 @@
      ],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_alis_cari.md"
     },
     {
      "id": "ALC-SC47",
@@ -647,9 +789,11 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_alis_cari.md"
+     "w5_raporu": "durum/W5_alis_cari.md",
+     "w6_report": "durum/W6_alis_cari.md"
     }
-   ]
+   ],
+   "remaining_not_started": 4
   },
   {
    "key": "stok_lojistik",
@@ -659,8 +803,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 31,
-   "partial": 4,
+   "done": 34,
+   "partial": 6,
    "kalan": [
     {
      "id": "STK-S1",
@@ -683,9 +827,11 @@
      "contracts": [
       "sağlar: LogisticsSalesOrderDeliveryReadPort ShippedBy alanı (stok_lojistik; tüketen satis)"
      ],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 1
+     "wave": 1,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w6_note": "Mevcut RecordedBy migration/owner projection/test kaynaklarında doğrulandı; mükerrer uygulama yazılmadı."
     },
     {
      "id": "STK-S3",
@@ -716,7 +862,8 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_stok_lojistik.md"
+     "w5_raporu": "durum/W5_stok_lojistik.md",
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-S8",
@@ -735,9 +882,11 @@
       "src/frontend/goymen-erp-web/src/inventory/transfer*.ts"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w6_note": "Transfer listesi ve detay okuma var; plan/sevk/iptal/teslim/fazla-kayıp onayı mutation ekranları eksik."
     },
     {
      "id": "STK-S11",
@@ -761,9 +910,11 @@
      "contracts": [
       "sağlar: IProductPurchaseUnitConversionV1 (stok_lojistik; tüketen alis_cari, satis, stok)"
      ],
-     "status": "PLANNED",
+     "status": "BLOCKED_SOURCE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w6_note": "Settings birim kaynağında kg dışı typed ton/metre/adet semantiği ve dönüşüm faktörü yok; koddan tahmin edilmedi."
     },
     {
      "id": "STK-S13",
@@ -789,7 +940,8 @@
      ],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-S17",
@@ -812,9 +964,11 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w6_note": "Kullanıcı uçları ve talep azaltma portu gerçek SAT-S8 hostuna bağlı; mevcut kabul çevirme/Alış iptal koruması kaynakta korunur. Test/SQL koşumu NOT_RUN."
     },
     {
      "id": "STK-S18",
@@ -831,9 +985,11 @@
       "src/frontend/goymen-erp-web/src/inventory/FutureAllocation*.tsx"
      ],
      "contracts": [],
-     "status": "READY",
+     "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w6_note": "Ayırma paneli ve Sales satır bağlantısı hazır; mal kabul ekranında çevrim/ayırma bilgisi eksik."
     },
     {
      "id": "STK-S19",
@@ -854,7 +1010,8 @@
      "contracts": [],
      "status": "READY",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-S21",
@@ -878,7 +1035,8 @@
      "contracts": [],
      "status": "PLANNED",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-S26",
@@ -899,9 +1057,10 @@
      "contracts": [
       "tüketir: IGeneratedDocumentStorePortV1 (platform)"
      ],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-S29",
@@ -920,7 +1079,8 @@
      "status": "PLANNED",
      "blocked_reason": "",
      "wave": 6,
-     "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz."
+     "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz.",
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-SC36-a",
@@ -944,7 +1104,8 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_stok_lojistik.md"
+     "w5_raporu": "durum/W5_stok_lojistik.md",
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-SC36-b",
@@ -967,7 +1128,8 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_stok_lojistik.md"
+     "w5_raporu": "durum/W5_stok_lojistik.md",
+     "w6_report": "durum/W6_stok_lojistik.md"
     },
     {
      "id": "STK-SC36-c",
@@ -989,9 +1151,11 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_stok_lojistik.md"
+     "w5_raporu": "durum/W5_stok_lojistik.md",
+     "w6_report": "durum/W6_stok_lojistik.md"
     }
-   ]
+   ],
+   "remaining_not_started": 5
   },
   {
    "key": "uretim",
@@ -999,8 +1163,8 @@
     "Manufacturing"
    ],
    "toplam": 27,
-   "done": 18,
-   "partial": 4,
+   "done": 21,
+   "partial": 5,
    "kalan": [
     {
      "id": "URT-S4",
@@ -1028,7 +1192,8 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_uretim.md"
+     "w5_raporu": "durum/W5_uretim.md",
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-S5",
@@ -1046,9 +1211,10 @@
       "src/backend/Modules/Manufacturing/**/Replan*"
      ],
      "contracts": [],
-     "status": "READY",
+     "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-S6",
@@ -1066,10 +1232,11 @@
       "src/frontend/goymen-erp-web/src/manufacturing/manufacturingText.ts"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_uretim.md"
+     "w5_raporu": "durum/W5_uretim.md",
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-S7",
@@ -1088,9 +1255,10 @@
      "contracts": [
       "değişir: Üretim satış bağı okuma portu durum alanı (uretim; tüketen satis)"
      ],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-S8",
@@ -1117,7 +1285,8 @@
      ],
      "status": "READY",
      "blocked_reason": "",
-     "wave": 7
+     "wave": 7,
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-S18",
@@ -1138,14 +1307,17 @@
      "contracts": [
       "sağlar: Üretim fason emri tamamlanma okuması (uretim; tüketen stok_lojistik)"
      ],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-SC32",
      "title": "USD değerleme hareketli ortalaması (URT-D82), URT-D83/D85",
-     "status": "DOGRULA"
+     "status": "PARTIAL",
+     "w6_report": "durum/W6_uretim.md",
+     "w6_note": "DOGRULA: calculator parçaları var; gerçek USD hareketli ortalama/maliyet runtime provider ve ekran bağı eksik."
     },
     {
      "id": "URT-SC33",
@@ -1164,7 +1336,8 @@
      "status": "PARTIAL",
      "blocked_reason": null,
      "wave": 5,
-     "w5_raporu": "durum/W5_uretim.md"
+     "w5_raporu": "durum/W5_uretim.md",
+     "w6_report": "durum/W6_uretim.md"
     },
     {
      "id": "URT-SC36",
@@ -1188,9 +1361,11 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_uretim.md"
+     "w5_raporu": "durum/W5_uretim.md",
+     "w6_report": "durum/W6_uretim.md"
     }
-   ]
+   ],
+   "remaining_not_started": 1
   },
   {
    "key": "finans",
@@ -1201,7 +1376,7 @@
    ],
    "toplam": 21,
    "done": 15,
-   "partial": 3,
+   "partial": 4,
    "kalan": [
     {
      "id": "FIN-S13",
@@ -1226,7 +1401,8 @@
      "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 5,
-     "w5_raporu": "durum/W5_finans.md"
+     "w5_raporu": "durum/W5_finans.md",
+     "w6_report": "durum/W6_finans.md"
     },
     {
      "id": "FIN-S14",
@@ -1245,7 +1421,8 @@
      "contracts": [],
      "status": "READY",
      "blocked_reason": "",
-     "wave": 6
+     "wave": 6,
+     "w6_report": "durum/W6_finans.md"
     },
     {
      "id": "FIN-S17",
@@ -1265,12 +1442,15 @@
      "status": "PLANNED",
      "blocked_reason": "",
      "wave": 6,
-     "decision_note": "NS-15 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Dönem kapanışı onaylanınca yeni dönem açılış/devir fişi üretilir; kapanış geri alınırsa ters kayıtla iptal. Finance STOP sınırları geçerli."
+     "decision_note": "NS-15 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Dönem kapanışı onaylanınca yeni dönem açılış/devir fişi üretilir; kapanış geri alınırsa ters kayıtla iptal. Finance STOP sınırları geçerli.",
+     "w6_report": "durum/W6_finans.md"
     },
     {
      "id": "FNS-SC32",
      "title": "Bakiye devir fişi portu (KLN-D76/D77), teminat as-of iş günü (FNS-D71), izinler (FNS-D72)",
-     "status": "DOGRULA"
+     "status": "PARTIAL",
+     "w6_report": "durum/W6_finans.md",
+     "w6_note": "DOGRULA: Türkiye iş günü ve teminat izin kayıtları kaynakta var; gerçek Settings teminat kataloğu ve bakiye devir fişinin port/komut/ekranı eksik."
     },
     {
      "id": "FIN-SC36",
@@ -1292,7 +1472,8 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_finans.md"
+     "w5_raporu": "durum/W5_finans.md",
+     "w6_report": "durum/W6_finans.md"
     },
     {
      "id": "FIN-SC47-KREDI",
@@ -1314,9 +1495,11 @@
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
      "wave": 5,
-     "w5_raporu": "durum/W5_finans.md"
+     "w5_raporu": "durum/W5_finans.md",
+     "w6_report": "durum/W6_finans.md"
     }
-   ]
+   ],
+   "remaining_not_started": 2
   }
  ]
 }

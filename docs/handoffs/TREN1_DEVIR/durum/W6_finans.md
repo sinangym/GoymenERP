@@ -18,8 +18,12 @@
 - FIN-S13 / FNS-D105 alış fatura üreticisi ve dispatcher köprüsü yoktur; sistem kabul
   aktivasyonu TK-31'e göre kapalı insan kapısında kalır.
 - FIN-S14 banka/kasa yevmiye kaynakları; FIN-S17 dönemler arası devir: tamamlanmadı.
-- FNS-SC32 DOGRULA: bakiye devir fişi portu ve teminat as-of bütünlüğü canlı kaynakta
-  uçtan uca doğrulanmadan DONE işaretlenmez.
+- FNS-SC32 DOGRULA incelemesi **PARTIAL**: FinanceBusinessDay ve Collateral/CreditPanel/Sales risk okumaları
+  Türkiye iş gününü kullanır; teminat izinleri yalnız kayıtlıdır. Gerçek Settings teminat kataloğu yoktur,
+  FinanceModuleExtensions hâlâ UnavailableFinanceCollateralTypeCatalogReader kullanır. Mevcut SQL fact'lerinde
+  sentetik katalog bulunması gerçek olumlu kullanıcı akışı değildir. KLN-D76/D77 bakiye devir fişi için gerçek
+  port/provider/DI/komut/kalıcılık/endpoint/ekran/ayrı izin/test kaynağı bulunamadı; Counterparty halef kaydı
+  bakiyeyi taşımaz. FIN-S9 başlangıç bakiyesi, tek adımlı devir fişinin yerine geçmez.
 - Kredi arayüzü, banka+tür limit kaynağı/uyarısı, gruba özgü alanlar/hareketler ve fiş
   önerisi eksiktir. TK-30 boş eşleme/MappingMissing davranışı ve FNS-D106 onay kapısı korunur.
 - FNS-D108 kapalı dönem sonrası açılış kredisi düzeltmesinin yeni akışı henüz kodlanmadı;
