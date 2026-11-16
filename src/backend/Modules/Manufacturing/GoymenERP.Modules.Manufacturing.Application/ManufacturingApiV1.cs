@@ -1791,10 +1791,10 @@ public sealed partial class ManufacturingCommandService(
             {
                 if (!Enum.TryParse<PlanOutputLineKind>(selectedLine.Kind, ignoreCase: false, out var kind)
                     || !Enum.IsDefined(kind) || kind.ToString() != selectedLine.Kind)
-                    return Invalid<OrderViewV1>("outputLine");
+                    return Task.FromResult(Invalid<OrderViewV1>("outputLine"));
                 outputLine = PlanOutputLineReference.FromStored(kind, selectedLine.SlitLineSequence, selectedLine.CutLineId);
             }
-            catch (ArgumentException) { return Invalid<OrderViewV1>("outputLine"); }
+            catch (ArgumentException) { return Task.FromResult(Invalid<OrderViewV1>("outputLine")); }
             // Omitted on old commands: their canonical request and replay hashes remain unchanged.
             canonicalRequest = new { declaration = canonicalRequest, outputLine = selectedLine };
         }
