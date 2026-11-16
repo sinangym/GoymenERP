@@ -9,8 +9,9 @@ import { COST_GENERATION_TEXT as T } from './costGenerationText'
 import { newCommandId } from './commandId'
 import styles from './OrderDetailPage.module.css'
 
-export function CostGenerationPanel({ namespace, companyId, orderId, orderVersion, closed, canRecognize, onRefresh }: {
+export function CostGenerationPanel({ namespace, routeEntryGeneration, companyId, orderId, orderVersion, closed, canRecognize, onRefresh }: {
   readonly namespace: string; readonly companyId: string; readonly orderId: string; readonly orderVersion: number
+  readonly routeEntryGeneration: number
   readonly closed: boolean; readonly canRecognize: boolean; readonly onRefresh: () => Promise<void>
 }) {
   const storageKey = `goymen.manufacturing.cost-recognition.v1:${namespace}:${companyId}:${orderId}`
@@ -18,7 +19,7 @@ export function CostGenerationPanel({ namespace, companyId, orderId, orderVersio
   const [reason, setReason] = useState(() => attempt !== null && attempt !== 'blocked' ? attempt.reason : '')
   const [message, setMessage] = useState<string | null>(null); const [sending, setSending] = useState(false); const flight = useRef(false)
   const mounted = useRef(false); useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  const query = useQuery({ queryKey: [namespace, 'manufacturing-cost-generations', orderId, orderVersion], queryFn: async ({ signal }) => {
+  const query = useQuery({ queryKey: [namespace, routeEntryGeneration, 'manufacturing-cost-generations', orderId, orderVersion], queryFn: async ({ signal }) => {
     const capture = boundary.capture(); const result = await fetchCostGenerations(companyId, orderId, signal)
     if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, capture)
     return result

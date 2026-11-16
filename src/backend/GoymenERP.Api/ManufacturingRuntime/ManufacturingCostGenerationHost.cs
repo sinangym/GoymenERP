@@ -39,14 +39,34 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
     {
         var companyId = Company(metadata);
         var transaction = db.Database.CurrentTransaction ?? throw new InvalidOperationException("Kapanış maliyeti ortak işlem gerektirir.");
+        var proposedGenerationId = Guid.NewGuid();
         try
         {
             await using var owner = await factory(db.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId, audit, auditWriter, token);
-            await StageAsync(orderId, null, null, "Üretim emri kapanışı", metadata with { Completion = null }, owner, token);
+            await StageAsync(orderId, null, null, "Üretim emri kapanışı", metadata with { Completion = null }, owner, token,
+                proposedGenerationId: proposedGenerationId);
+        }
+        catch (InventoryManufacturingCostGenerationException fault) when (MayDeferInitialRecognition(fault))
+        {
+            // Owner guarantee: this exact C# refusal occurs during the complete output-read/effect preparation loop,
+            // BEFORE every Save/audit/outbox write. Disposing that participant discards its tracker only; the physical
+            // Manufacturing callback remains exactly once in this still-uncommitted transaction. No SQL/audit/commit
+            // error or late recognition takes this path. URT-D67: money readiness is not a new physical-close rule.
+            await using var pending = await factory(db.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId, audit, auditWriter, token);
+            try
+            {
+                await StageAsync(orderId, null, null, "Üretim emri kapanışı; stok maliyet etkisi kaynağı bekleniyor",
+                    metadata with { Completion = null }, pending, token, forcePendingConsumptionProof: true, proposedGenerationId: proposedGenerationId);
+            }
+            catch (InventoryManufacturingCostGenerationException fallback) { throw Map(fallback); }
+            catch (DbException) { throw Unavailable(); }
         }
         catch (InventoryManufacturingCostGenerationException fault) { throw Map(fault); }
         catch (DbException) { throw Unavailable(); }
     }
+
+    internal static bool MayDeferInitialRecognition(InventoryManufacturingCostGenerationException fault) =>
+        fault.Status == 503 && fault.Code == "inventory_manufacturing_cost_consumption_source_unreadable";
 
     public async Task<ManufacturingCostGenerationV1> RecognizeAsync(Guid orderId, long expectedOrderVersion,
         long expectedGenerationRevision, string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken)
@@ -123,7 +143,8 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
 
     private async Task<ManufacturingCostGenerationV1> StageAsync(Guid orderId, long? expectedOrderVersion,
         long? expectedGenerationRevision, string reason, ManufacturingCommandMetadata metadata,
-        IInventoryManufacturingCostGenerationParticipantV1 owner, CancellationToken token)
+        IInventoryManufacturingCostGenerationParticipantV1 owner, CancellationToken token,
+        bool forcePendingConsumptionProof = false, Guid? proposedGenerationId = null)
     {
         var companyId = Company(metadata);
         var order = await store.FindOrderAsync(orderId, token) ?? throw Unavailable();
@@ -145,16 +166,23 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             || stock.Outputs is null || !stock.Outputs.Select(item => item.FactId).ToHashSet().SetEquals(
                 order.Outputs.Where(item => item.Class != OutputClass.ProcessLoss).Select(item => item.OutputId))) throw Unavailable();
         var cost = await new ManufacturingProductionCostPort(new FrozenSource(read)).ReadAsync(companyId, orderId, token);
+        var usdCost = read.UsdInput is null ? null : await new ManufacturingProductionCostPort(
+            new FrozenSource(read with { Input = read.UsdInput })).ReadAsync(companyId, orderId, token);
         var state = cost.Status switch
         {
             ManufacturingScrapCostDistributionStatusV1.Available => ManufacturingCostGenerationStateV1.Recognized,
             ManufacturingScrapCostDistributionStatusV1.Pending => ManufacturingCostGenerationStateV1.Pending,
             _ => ManufacturingCostGenerationStateV1.Unreadable,
         };
+        if (forcePendingConsumptionProof)
+        {
+            if (previous is not null || expectedOrderVersion is not null) throw Unavailable();
+            state = ManufacturingCostGenerationStateV1.Pending;
+        }
         // Only the calculator's exact input fingerprint represents a recognized cost. Owner outages carry no money.
         if (state == ManufacturingCostGenerationStateV1.Recognized && (read.Provenance is null
             || read.Provenance.OrderVersion != order.Version || read.Provenance.MovementSourceVersion != stock.SourceVersion)) throw Unavailable();
-        var evidence = JsonSerializer.Serialize(new { read, cost, physical = stock.Outputs }, Json);
+        var evidence = JsonSerializer.Serialize(new { read, cost, physical = stock.Outputs, consumptionProofPending = forcePendingConsumptionProof }, Json);
         var fingerprint = read.Provenance?.InputFingerprint ?? Convert.ToHexString(SHA256.HashData(
             JsonSerializer.SerializeToUtf8Bytes(new { companyId, orderId, order.Version, stock.SourceVersion, state, cost.ReasonCode }, Json))).ToLowerInvariant();
         if (previous is { State: ManufacturingCostGenerationStateV1.Recognized })
@@ -163,7 +191,7 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             return previous; // Exact same recognized source has no second Inventory monetary effect.
         }
         if (previous is not null && previous.InputFingerprint == fingerprint && previous.State == state) return previous;
-        var generationId = previous?.GenerationId ?? Guid.NewGuid();
+        var generationId = previous?.GenerationId ?? proposedGenerationId ?? Guid.NewGuid();
         var outputLines = new List<InventoryManufacturingCostGenerationOutputV1>();
         foreach (var output in order.Outputs.Where(item => item.Class != OutputClass.ProcessLoss))
         {
@@ -172,10 +200,13 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
                 || physical.LabelId == Guid.Empty || physical.MovementId == Guid.Empty) throw Unavailable();
             var net = order.NetMassOf(output.OutputId).Value;
             var line = cost.Lines.SingleOrDefault(item => item.OutputLabelId == physical.LabelId);
+            var usdLine = usdCost?.Status == ManufacturingScrapCostDistributionStatusV1.Available
+                ? usdCost.Lines.SingleOrDefault(item => item.OutputLabelId == physical.LabelId) : null;
             if (state == ManufacturingCostGenerationStateV1.Recognized && net > 0 && output.Class != OutputClass.Scrap
                 && (line is null || line.Kilograms != net || line.RecordedUnitCostPerKgTl is null || line.RecordedAmountTl is null)) throw Unavailable();
             outputLines.Add(new(output.OutputId, physical.MovementId, physical.LabelId, net,
-                state == ManufacturingCostGenerationStateV1.Recognized ? line?.RecordedUnitCostPerKgTl : null, null,
+                state == ManufacturingCostGenerationStateV1.Recognized ? line?.RecordedUnitCostPerKgTl : null,
+                state == ManufacturingCostGenerationStateV1.Recognized ? usdLine?.RecordedUnitCostPerKgTl : null,
                 state == ManufacturingCostGenerationStateV1.Recognized ? line?.RecordedAmountTl : null));
         }
         await FenceAsync(companyId, metadata, token);
