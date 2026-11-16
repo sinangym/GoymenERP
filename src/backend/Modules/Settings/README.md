@@ -898,7 +898,7 @@ permissive value. Nothing is seeded.
 | Due-date buffer | URT-D96: company-wide working days, start value 0 when nothing is recorded. The upper bound is NEEDS-SINAN. |
 | Subcontract tax default | SAT-D381 (sales) and ALS-D105 (purchasing) are separate keys with the tax master's item type default shape; codes must exist in the tax master. Only the sales side has a write route; the purchasing write authority is NEEDS-SINAN, so it reads "no default". |
 | Credit account mapping | FNS-D97: `ISettingsFinanceCreditAccountMappingProviderV1` answers `MappingMissing` ("eşleme eksik") until a mapping is recorded. |
-| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered (NEEDS-SINAN N-12: format, reset, gaps). |
+| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered. KIM-D53 fixes prefix + year + sequence, annual reset, no reuse of cancelled numbers and gap reporting. The durable implementation and company format editor are still pending. |
 | Names | `settings.finance-opening-period.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). The due-date buffer route uses `manufacturing.plans.approve`; the sales tax default route uses `purchasing.orders.approve` (to be confirmed, NEEDS-SINAN). |
 | Routes | `GET` and `POST .../versions` under `/api/v1/settings/company-policies/` for `finance-opening-period`, `manufacturing-due-date-buffer` and `sales-subcontract-tax-default`. POST returns 204. |
 | Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). One save with the execution row and one audit event. Terminal refusals (409, 422) are stored and replay. |
@@ -958,3 +958,17 @@ backend validates them. The screen calculates no formula, threshold or tolerance
 The existing reviewed catalog is displayed read-only. Version-0 transfer remains outside this slice (TK-38 human gate).
 No starting value, grant or activation is installed. Component and decoder evidence is in
 `ManufacturingProfilePage.test.tsx` and `manufacturingProfileContract.test.ts`; execution is reserved for train acceptance.
+
+## Finance opening period screen and relational source evidence (KIM-S19)
+
+The existing opening-period registry is mounted at Ayarlar → Finans açılış dönemi
+(`/ayarlar/finans-acilis-donemi`, AY-FAD-01) on the existing `settings.finance-opening-period.manage` permission alone.
+A missing record is displayed as not open. The editor starts without a selected value; the person explicitly chooses open
+or closed and enters a reason. The preview is scoped to the selected company, and an unknown outcome retries the same
+body and key. No grant, production activation or Finance STOP state is changed by this implementation.
+
+`SettingsCompanyPolicySqlServerRelationalAcceptanceTests` now contains the opening/closing lifecycle, missing/foreign
+company fail-closed reads, authority, expected version, replay, audit, malformed-row CHECK and `THROW 51853` Down source
+case. The screen and decoder cases are `FinanceOpeningPeriodPage.test.tsx` and `financeOpeningPeriodContract.test.ts`.
+These are source evidence; all test execution remains reserved for final train acceptance. The other policy editors and
+the number-series provider remain unfinished.

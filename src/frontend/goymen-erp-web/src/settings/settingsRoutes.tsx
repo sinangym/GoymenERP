@@ -19,8 +19,13 @@ import { UnitProfilePage } from './UnitProfilePage'
 import { MoneyProfilePage } from './MoneyProfilePage'
 import { WorkCenterCapacityPage } from './WorkCenterCapacityPage'
 import { ManufacturingProfilePage } from './ManufacturingProfilePage'
+import { FinanceOpeningPeriodPage } from './FinanceOpeningPeriodPage'
 
 export const settingsRoutes: RouteObject[] = [
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.financeOpeningPeriod].slice(1),
+    element: <CapabilityRoute capability={SETTINGS_CAPABILITY.financeOpeningPeriod}><FinanceOpeningPeriodPage /></CapabilityRoute>,
+  },
   {
     path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.manufacturingParameters].slice(1),
     element: <CapabilityRoute capability={SETTINGS_CAPABILITY.manufacturingParameters}><ManufacturingProfilePage kind="parameters" /></CapabilityRoute>,

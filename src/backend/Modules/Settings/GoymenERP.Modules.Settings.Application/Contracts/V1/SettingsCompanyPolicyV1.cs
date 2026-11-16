@@ -252,14 +252,15 @@ public interface ISettingsFinanceCreditAccountMappingProviderV1
         FinanceCreditAccountPurposeV1 purpose, CancellationToken cancellationToken = default);
 }
 
-/// <summary>A number series key (draft; the series catalog is NEEDS-SINAN N-12).</summary>
+/// <summary>A number series key (draft implementation; KIM-D53 fixes the number format and reset/gap behavior).</summary>
 public sealed record SettingsNumberSeriesKeyV1(string Value);
 
 public sealed record SettingsNumberSeriesNumberV1(Guid CompanyId, SettingsNumberSeriesKeyV1 SeriesKey, string Number);
 
 /// <summary>
-/// PANO row 64 draft contract only: no implementation is registered until the series format, reset and gap policy are
-/// decided (NEEDS-SINAN N-12). A consumer must not assume a number exists.
+/// PANO row 64 draft contract only: KIM-D53 decided prefix + year + sequence, annual reset, no reuse of cancelled numbers
+/// and gap reporting. The durable series implementation is still pending; no provider is registered and a consumer must
+/// not assume a number exists.
 /// </summary>
 public interface ISettingsNumberSeriesProviderV1
 {

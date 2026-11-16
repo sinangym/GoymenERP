@@ -330,6 +330,7 @@ export const CAPABILITY = {
    */
   settingsUnitProfiles: 'settings.unit-profiles.manage',
   settingsMoneyProfiles: 'settings.money-profiles.manage',
+  settingsFinanceOpeningPeriod: 'settings.finance-opening-period.manage',
   settingsManufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   settingsManufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /**
@@ -483,6 +484,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsUnitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [CAPABILITY.settingsUnitProfiles]: '/ayarlar/birim-profilleri',
   [CAPABILITY.settingsMoneyProfiles]: '/ayarlar/para-profilleri',
+  [CAPABILITY.settingsFinanceOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
   [CAPABILITY.settingsManufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [CAPABILITY.settingsManufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',

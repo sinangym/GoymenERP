@@ -170,6 +170,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   /** F-029 S1/S2 (URN-D2): the Settings unit profile screen, drawn only where the server granted its one name. */
   'settings.unit-profiles.manage',
   'settings.money-profiles.manage',
+  'settings.finance-opening-period.manage',
   'settings.manufacturing-parameter-profiles.read',
   'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
@@ -286,6 +287,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.unit-conversion-policies.manage': 'Birim çevrim politikası',
   'settings.unit-profiles.manage': 'Birim profilleri',
   'settings.money-profiles.manage': 'Para profilleri',
+  'settings.finance-opening-period.manage': 'Finans açılış dönemi',
   'settings.manufacturing-parameter-profiles.read': 'Üretim parametre profilleri',
   'settings.manufacturing-tolerance-profiles.read': 'Üretim tolerans profilleri',
   'settings.work-center-capacities.manage': 'İş merkezi kapasitesi',
@@ -438,6 +440,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       // F-029 S1/S2: the unit profiles follow the unit conversion policy, still before the rates.
       'settings.unit-profiles.manage',
       'settings.money-profiles.manage',
+      'settings.finance-opening-period.manage',
       'settings.manufacturing-parameter-profiles.read',
       'settings.manufacturing-tolerance-profiles.read',
       // API-98, B-14 (KIM-D49, KIM-D51): the company reference lists are master data, after the units and before the rates.
