@@ -348,6 +348,35 @@ DRAFT voucher in Accounting's own tables. The port is `IAccountingSourceDocument
 - NEEDS-SINAN: which permission measures this port, and the host adapter (Sales/host lane).
 - NEEDS-SINAN: "dönem bekliyor" is a null `PeriodId` in V1; whether it should be a stored queue flag is open.
 
+## FIN-S13: invoice journal inbox consumer (B-04, backend only)
+
+- `Application/Inbox/AccountingSalesInvoiceFinalizedInboxConsumer` reads `sales.invoice.finalized.v1` from the Work inbox
+  (consumer `accounting.invoice-journal`, source `sales`) and offers ONE admission per finalised invoice version to the
+  B-04b port. The key is `SalesInvoiceKey(invoiceId, version)`; a second delivery replays, no second voucher.
+- The company is the envelope's, the ambient scope's and the payload's at once; any disagreement is poison.
+- Amounts are the producer's frozen values as exact text (never recomputed or rounded). A foreign-currency invoice uses
+  the TL line amounts at its own rate; a TL invoice has no rate and no functional fields.
+- The voucher date is the official invoice date (KLN-D8) and the source actor is the finalising user (KLN-D10/D17). The
+  SAT-S1 payload carries neither yet: `invoiceDate` and `finalizedBy` are requested from Sales as appended keys, and an
+  event without them is poison (`invoice_date_missing`, `finalized_by_missing`). `businessDate` is not used.
+- The VAT-rate group is the line's VAT percent text. `IsExport` and `LinePurpose` stay null: `ExportRegistered`
+  (ihraç kayıtlı) is not an export sale and the event has no scenario field (KLN-D18).
+- `DueDate` is null (the instalment plan is not mapped in V1).
+- Unavailable, a waiting mapping and a missing authority are retried; a content refusal or an identity conflict is
+  poison with the port's reason code.
+- Host (`GoymenERP.Api/AccountingRuntime/AccountingInvoiceJournalHost`): registers the consumer and replaces the module's
+  fail-closed authority with one that allows only the consumer's caller for a sales invoice, and only while
+  `Accounting:InvoiceJournal:InboxAdmissionEnabled` is true (default false: same behaviour as before). No permission,
+  role or grant is added.
+- The consumer is not registered with the dispatcher: Sales does not register its outbox as a Work source yet.
+
+### Not decided yet (FIN-S13)
+
+- NEEDS-SINAN: which permission or policy measures the system (inbox) admission; turning the switch on is a human gate.
+- NEEDS-SINAN: the source of the official invoice date (KLN-D8) in the Sales event.
+- NEEDS-SINAN: the export-sale scenario field for the revenue selector (KLN-D18).
+- The purchase side (`purchasing.invoice.finalized.v1`, 320) has no event and no admission kind yet; not consumed.
+
 ## Rule codes and read-only views (ACC-2)
 
 - Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and
