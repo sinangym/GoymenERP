@@ -5,7 +5,9 @@
  * command sends the company, one Idempotency-Key and the exact body with only the kind's measures, keeps the key for a retry
  * after an unknown outcome, never rounds a measure, and the route and body are pinned to the canonical OpenAPI document.
  * URN-D16 (STK-S37R): the kg/m is no input; the panel shows the company table's value with its source and version, says when
- * the table holds none, and reads the refusal of a profile the table does not hold.
+ * the table holds none, and reads the refusal of a profile the table does not hold. KLN-D87 (STK-SC33-b): every KLN-D48 family
+ * is selectable; a structural profile sends its series and size designation only, a painted ERW kind its surface, a welded mesh
+ * its spacing, and the decoder refuses a text field the kind does not hold.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,8 +15,8 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProductDimensionPanel } from './ProductDimensionPanel'
-import { DIMENSION_PROBLEM, decodeDimension, dimensionPath, parseMeasure } from './dimensionApi'
-import { DIMENSION_TEXT, MEASURE_LABEL, SECTION_KIND_LABEL } from './dimensionText'
+import { DIMENSION_PROBLEM, PRODUCT_SECTION_KINDS, decodeDimension, dimensionPath, parseMeasure } from './dimensionApi'
+import { DIMENSION_TEXT, MEASURE_LABEL, SECTION_KIND_LABEL, TEXT_FIELD_LABEL } from './dimensionText'
 
 const COMPANY = 'aaaaaaaa-0000-4000-8000-000000000001'
 const OTHER_COMPANY = '00000000-0000-4000-8000-000000000009'
@@ -51,6 +53,7 @@ function install(respond: (method: string, attempt: number) => Response): Sent[]
 
 const EMPTY_MEASURES = {
   thicknessMm: null, widthMm: null, lengthMm: null, heightMm: null, outerDiameterMm: null, wallThicknessMm: null,
+  meshSpacingMm: null, profileSeries: null, profileSize: null, surfaceFinish: null,
 }
 
 /** No table value: the three kg/m members are null together. */
@@ -72,6 +75,8 @@ const UNSET = {
 }
 
 const PROFILE = { ...EMPTY_MEASURES, sectionKind: 'Profile', widthMm: 40, heightMm: 20, wallThicknessMm: 2 }
+
+const STRUCTURAL = { ...EMPTY_MEASURES, sectionKind: 'StructuralProfile', profileSeries: 'IPE', profileSize: '200' }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -227,6 +232,89 @@ describe('product dimension panel (BS-9)', () => {
     ])
   })
 
+  it('offers every KLN-D48 section family and sets a structural profile by its series and size only', async () => {
+    const user = userEvent.setup()
+    const sent = install((method) => (method === 'GET' ? json(UNSET) : new Response(null, { status: 204 })))
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: DIMENSION_TEXT.change }))
+    const kind = screen.getByRole('combobox', { name: DIMENSION_TEXT.kindLabel }) as HTMLSelectElement
+    expect(Array.from(kind.options).map((option) => option.value).filter((value) => value !== '')).toEqual([
+      ...PRODUCT_SECTION_KINDS,
+    ])
+    expect(PRODUCT_SECTION_KINDS).toHaveLength(23)
+
+    await user.selectOptions(kind, 'StructuralProfile')
+    // No millimetre measure but the optional length; the kg/m is never typed (the standard table rows only).
+    expect(screen.queryByRole('textbox', { name: MEASURE_LABEL.widthMm })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: DIMENSION_TEXT.kgPerMetreLabel })).toBeNull()
+    expect(screen.getByText(DIMENSION_TEXT.structuralWeightNote)).toBeTruthy()
+    await user.type(screen.getByRole('textbox', { name: DIMENSION_TEXT.reasonLabel }), 'SENTETIK')
+    await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
+    expect(await screen.findByText(DIMENSION_TEXT.measureMissing)).toBeTruthy()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: TEXT_FIELD_LABEL.profileSeries }), 'IPE')
+    // Never re-cased: a lower-case designation is refused here as the server refuses it.
+    await user.type(screen.getByRole('textbox', { name: TEXT_FIELD_LABEL.profileSize }), '200a')
+    await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
+    expect(await screen.findByText(DIMENSION_TEXT.textFormat)).toBeTruthy()
+    expect(sent.some((request) => request.method === 'PUT')).toBe(false)
+
+    await user.clear(screen.getByRole('textbox', { name: TEXT_FIELD_LABEL.profileSize }))
+    await user.type(screen.getByRole('textbox', { name: TEXT_FIELD_LABEL.profileSize }), '200')
+    await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
+    expect(await screen.findByText(DIMENSION_TEXT.saved)).toBeTruthy()
+    expect(sent.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
+      { expectedVersion: '0', sectionKind: 'StructuralProfile', ...EMPTY_MEASURES, profileSeries: 'IPE', profileSize: '200', reason: 'SENTETIK' },
+    ])
+  })
+
+  it('sends a painted ERW surface as typed and refuses a mesh wire not thinner than its spacing', async () => {
+    const user = userEvent.setup()
+    const sent = install((method) => (method === 'GET' ? json(UNSET) : new Response(null, { status: 204 })))
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: DIMENSION_TEXT.change }))
+    const kind = screen.getByRole('combobox', { name: DIMENSION_TEXT.kindLabel })
+    await user.type(screen.getByRole('textbox', { name: DIMENSION_TEXT.reasonLabel }), 'SENTETIK')
+    await user.selectOptions(kind, 'WeldedMesh')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.outerDiameterMm }), '8')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.meshSpacingMm }), '8')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.widthMm }), '2150')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.lengthMm }), '5000')
+    await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
+    expect(await screen.findByText(DIMENSION_TEXT.wireTooThick)).toBeTruthy()
+    expect(sent.some((request) => request.method === 'PUT')).toBe(false)
+
+    await user.selectOptions(kind, 'PaintedErwProfile')
+    expect(screen.getByText(DIMENSION_TEXT.profileWeightNote)).toBeTruthy()
+    // The mesh width typed before the kind changed is still in the draft: replace it.
+    await user.clear(screen.getByRole('textbox', { name: MEASURE_LABEL.widthMm }))
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.widthMm }), '40')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.heightMm }), '20')
+    await user.type(screen.getByRole('textbox', { name: MEASURE_LABEL.wallThicknessMm }), '2')
+    await user.type(screen.getByRole('textbox', { name: TEXT_FIELD_LABEL.surfaceFinish }), 'RAL 7016')
+    await user.click(screen.getByRole('button', { name: DIMENSION_TEXT.save }))
+    expect(await screen.findByText(DIMENSION_TEXT.saved)).toBeTruthy()
+    expect(sent.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
+      {
+        expectedVersion: '0', sectionKind: 'PaintedErwProfile', ...EMPTY_MEASURES, widthMm: 40, heightMm: 20, wallThicknessMm: 2,
+        surfaceFinish: 'RAL 7016', reason: 'SENTETIK',
+      },
+    ])
+  })
+
+  it('shows a structural profile with its series and size, and says when the standard table holds none', async () => {
+    install(() => json(payload(STRUCTURAL)))
+    renderPanel()
+    expect(await screen.findByText(SECTION_KIND_LABEL.StructuralProfile)).toBeTruthy()
+    expect(screen.getByText('IPE')).toBeTruthy()
+    expect(screen.getByText('200')).toBeTruthy()
+    expect((screen.getByTestId('product-dimension-kg-per-metre-missing')).textContent).toBe(
+      DIMENSION_TEXT.kgPerMetreStandardMissing,
+    )
+  })
+
   it('reloads after a version conflict', async () => {
     const user = userEvent.setup()
     let reads = 0
@@ -288,6 +376,34 @@ describe('product dimension decoder and input', () => {
     expect(decodeDimension({ ...UNSET, ...TABLE_WEIGHT }, COMPANY, PRODUCT)).toBeNull()
   })
 
+  it('decodes the KLN-D87 fields by the kind and fails closed on a field the kind does not hold', () => {
+    expect(decodeDimension(payload(STRUCTURAL), COMPANY, PRODUCT)?.texts).toEqual({
+      profileSeries: 'IPE', profileSize: '200', surfaceFinish: null,
+    })
+    expect(decodeDimension(payload({ ...STRUCTURAL, lengthMm: 12000 }), COMPANY, PRODUCT)).not.toBeNull()
+    expect(decodeDimension(payload({ ...STRUCTURAL, ...TABLE_WEIGHT, kgPerMetre: 22.4 }), COMPANY, PRODUCT)?.tableWeight)
+      .not.toBeNull()
+    expect(decodeDimension(payload({ ...STRUCTURAL, profileSeries: 'W' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...STRUCTURAL, profileSize: null }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...STRUCTURAL, profileSize: '200a' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...STRUCTURAL, widthMm: 100 }), COMPANY, PRODUCT)).toBeNull()
+    // A sheet holds no text field; a painted ERW tube needs its surface; a welded mesh its spacing.
+    expect(decodeDimension(payload({ surfaceFinish: 'RAL 7016' }), COMPANY, PRODUCT)).toBeNull()
+    const paintedTube = { ...EMPTY_MEASURES, sectionKind: 'PaintedErwTube', outerDiameterMm: 48.3, wallThicknessMm: 2.6 }
+    expect(decodeDimension(payload(paintedTube), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...paintedTube, surfaceFinish: 'RAL 7016' }), COMPANY, PRODUCT)?.texts.surfaceFinish)
+      .toBe('RAL 7016')
+    expect(decodeDimension(payload({ ...paintedTube, surfaceFinish: ' RAL 7016' }), COMPANY, PRODUCT)).toBeNull()
+    const mesh = { ...EMPTY_MEASURES, sectionKind: 'WeldedMesh', outerDiameterMm: 8, widthMm: 2150, lengthMm: 5000 }
+    expect(decodeDimension(payload(mesh), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension(payload({ ...mesh, meshSpacingMm: 150 }), COMPANY, PRODUCT)?.measures.meshSpacingMm).toBe(150)
+    // A kind without a table kg/m reads none (fail-closed: no kg/m is guessed for a long product).
+    const angle = { ...EMPTY_MEASURES, sectionKind: 'EqualAngle', thicknessMm: 5, widthMm: 50 }
+    expect(decodeDimension(payload(angle), COMPANY, PRODUCT)).not.toBeNull()
+    expect(decodeDimension(payload({ ...angle, ...TABLE_WEIGHT }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeDimension({ ...UNSET, profileSeries: 'IPE' }, COMPANY, PRODUCT)).toBeNull()
+  })
+
   it('reads a typed measure without rounding it', () => {
     expect(parseMeasure('thicknessMm', '')).toEqual({ ok: true, value: null })
     expect(parseMeasure('thicknessMm', ' 1,5 ')).toEqual({ ok: true, value: 1.5 })
@@ -333,8 +449,8 @@ describe('product dimension client ↔ canonical OpenAPI', () => {
     const reference = document.paths[route]?.put?.requestBody?.content?.['application/json']?.schema?.$ref ?? ''
     const schema = document.components.schemas[reference.replace('#/components/schemas/', '')]
     expect(Object.keys(schema?.properties ?? {}).sort()).toEqual([
-      'expectedVersion', 'heightMm', 'lengthMm', 'outerDiameterMm', 'reason', 'sectionKind', 'thicknessMm', 'wallThicknessMm',
-      'widthMm',
+      'expectedVersion', 'heightMm', 'lengthMm', 'meshSpacingMm', 'outerDiameterMm', 'profileSeries', 'profileSize', 'reason',
+      'sectionKind', 'surfaceFinish', 'thicknessMm', 'wallThicknessMm', 'widthMm',
     ])
   })
 
@@ -344,9 +460,9 @@ describe('product dimension client ↔ canonical OpenAPI', () => {
       '#/components/schemas/ProductDimensionViewV1',
     )
     expect(Object.keys(document.components.schemas.ProductDimensionViewV1?.properties ?? {}).sort()).toEqual([
-      'companyId', 'heightMm', 'kgPerMetre', 'kgPerMetreSourceLabel', 'kgPerMetreTableVersion', 'lengthMm', 'outerDiameterMm',
-      'productId', 'sectionKind', 'thicknessMm', 'updatedAtUtc', 'updatedBy', 'updatedInCompanyId', 'version', 'wallThicknessMm',
-      'widthMm',
+      'companyId', 'heightMm', 'kgPerMetre', 'kgPerMetreSourceLabel', 'kgPerMetreTableVersion', 'lengthMm', 'meshSpacingMm',
+      'outerDiameterMm', 'productId', 'profileSeries', 'profileSize', 'sectionKind', 'surfaceFinish', 'thicknessMm',
+      'updatedAtUtc', 'updatedBy', 'updatedInCompanyId', 'version', 'wallThicknessMm', 'widthMm',
     ])
     const declared = new Set(
       Object.values(operations)

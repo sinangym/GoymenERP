@@ -1,12 +1,31 @@
 /** BS-9: the texts of the product card's "Ebat/kalınlık" panel (localizable; never inline). */
 
-import type { DimensionMeasure, ProductSectionKind } from './dimensionApi'
+import type { DimensionMeasure, DimensionTextField, ProductSectionKind } from './dimensionApi'
 
 export const SECTION_KIND_LABEL: Record<ProductSectionKind, string> = {
   Sheet: 'Sac / levha',
   Coil: 'Rulo / bant',
   RoundTube: 'Yuvarlak boru',
   Profile: 'Kutu / dikdörtgen profil',
+  EqualAngle: 'Eşit kanatlı köşebent',
+  UnequalAngle: 'Eşit olmayan kanatlı köşebent',
+  FlatBar: 'Lama',
+  NarrowFlatBar: 'Silme',
+  RoundBar: 'Dolu yuvarlak (mil)',
+  SquareBar: 'Dolu kare',
+  HexBar: 'Altıgen',
+  TeeBar: 'T demiri',
+  StructuralProfile: 'Yapısal profil (UPN/NPI/IPE/HEA/HEB/HEM)',
+  Rebar: 'İnşaat demiri',
+  WireRod: 'Filmaşin',
+  WeldedMesh: 'Hasır çelik',
+  ChequeredSheet: 'Baklavalı sac',
+  PerforatedSheet: 'Delikli sac',
+  CorrugatedSheet: 'Trapez / oluklu sac',
+  ErwTube: 'ERW boru',
+  PaintedErwTube: 'Boyalı ERW boru',
+  ErwProfile: 'ERW profil',
+  PaintedErwProfile: 'Boyalı ERW profil',
 }
 
 export const MEASURE_LABEL: Record<DimensionMeasure, string> = {
@@ -16,6 +35,14 @@ export const MEASURE_LABEL: Record<DimensionMeasure, string> = {
   heightMm: 'Yükseklik (mm)',
   outerDiameterMm: 'Dış çap (mm)',
   wallThicknessMm: 'Et kalınlığı (mm)',
+  meshSpacingMm: 'Göz aralığı (mm)',
+}
+
+/** KLN-D87: the text fields (the series is chosen from the standard list; the size and the surface are typed). */
+export const TEXT_FIELD_LABEL: Record<DimensionTextField, string> = {
+  profileSeries: 'Profil serisi',
+  profileSize: 'Profil ölçü adı',
+  surfaceFinish: 'Yüzey (boya / renk)',
 }
 
 export const DIMENSION_TEXT = {
@@ -28,6 +55,10 @@ export const DIMENSION_TEXT = {
   kgPerMetreTableVersion: 'Tablo sürümü',
   kgPerMetreMissing: 'Şirketin güncel metre ağırlığı tablosunda bu ölçü yok ("kaynak yok").',
   kgPerMetreTubeMissing: 'Tabloda bu boru yok; birim çevrimi formülle hesaplar.',
+  kgPerMetreStandardMissing: 'Şirketin tablosunda bu standart profil yok ("kaynak yok"); metre ağırlığı elle girilmez.',
+  structuralWeightNote: 'Yapısal profilin metre ağırlığı elle girilmez; şirketin tablosundaki standart seri satırından okunur. Tabloda yoksa birim çevriminde tahmin yapılmaz.',
+  chooseSeries: 'Seri seçin',
+  textFormat: 'Profil ölçü adı büyük harf, rakam ve noktadan oluşur (en fazla 16 karakter); yüzey metni boşlukla başlayıp bitemez (en fazla 200 karakter).',
   weightNote: 'Metre ağırlığı kartta girilmez; şirketin kaynak etiketli dosyadan içe aktarılan tablosundan okunur.',
   profileWeightNote: 'Profil, şirketin metre ağırlığı tablosunda aynı en, yükseklik ve et kalınlığıyla bulunmalıdır; yoksa kaydedilmez.',
   tubeKgNote: 'Yuvarlak borunun metre ağırlığı tabloda varsa formülün önüne geçer; yoksa formülle hesaplanır.',
@@ -56,6 +87,7 @@ export const DIMENSION_TEXT = {
   measureFormat: 'Sıfırdan büyük bir sayı girin; milimetrede en fazla 3 ondalık.',
   measureMissing: 'Bu kesit türü için zorunlu ölçüler eksik.',
   wallTooThick: 'Et kalınlığının iki katı dış ölçüden büyük olamaz.',
+  wireTooThick: 'Tel çapı göz aralığından küçük olmalıdır.',
   refused: 'Ebat/kalınlık kaydedilemedi.',
   unknownOutcome: 'İşlemin sonucu bilinmiyor. Aynı işlemi yeniden deneyin; iki kez uygulanmaz.',
 } as const

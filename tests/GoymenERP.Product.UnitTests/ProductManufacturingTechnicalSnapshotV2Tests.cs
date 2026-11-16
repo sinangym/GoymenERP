@@ -76,6 +76,74 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
     }
 
     [Fact]
+    public async Task Structural_and_painted_rows_publish_their_KLN_D87_fields_exactly_and_no_estimated_unit_weight()
+    {
+        var structural = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.StructuralProfile, length: 12000m) with
+            {
+                ProfileSeries = ProductProfileSeriesV1.Ipe, ProfileSize = "200",
+            },
+        };
+        var structuralSnapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(
+            (await structural.Service().ReadAsync(Selection, default)).Snapshot);
+        Assert.Equal(new ProductManufacturingDimensionV2(ProductManufacturingDimensionSourceV2.Stored, "1",
+                ProductDimensionSectionKindsV1.StructuralProfile, null, null, 12000m, null, null, null, "IPE", "200"),
+            structuralSnapshot.Dimension);
+        Assert.Equal(new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.None, null),
+            structuralSnapshot.UnitWeight);
+
+        var painted = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.PaintedErwTube, outerDiameter: 48.3m, wall: 2.6m) with
+            {
+                SurfaceFinish = "RAL 7016",
+            },
+        };
+        var paintedSnapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(
+            (await painted.Service().ReadAsync(Selection, default)).Snapshot);
+        Assert.Equal(("RAL 7016", (string?)null, (string?)null, (decimal?)null), (paintedSnapshot.Dimension.SurfaceFinish,
+            paintedSnapshot.Dimension.ProfileSeries, paintedSnapshot.Dimension.ProfileSize, paintedSnapshot.Dimension.MeshSpacingMm));
+
+        var mesh = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.WeldedMesh, width: 2150m, length: 5000m, outerDiameter: 5m) with
+            {
+                MeshSpacingMm = 150m,
+            },
+        };
+        var meshSnapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(
+            (await mesh.Service().ReadAsync(Selection, default)).Snapshot);
+        Assert.Equal(150m, meshSnapshot.Dimension.MeshSpacingMm);
+        Assert.Null(meshSnapshot.UnitWeight.KgPerMetre);
+    }
+
+    [Theory]
+    [InlineData("structural-without-size")]
+    [InlineData("painted-without-surface")]
+    [InlineData("tube-with-series")]
+    [InlineData("mesh-wire-too-thick")]
+    public async Task Stored_KLN_D87_row_that_breaks_its_rule_is_an_integrity_fault(string fault)
+    {
+        var row = fault switch
+        {
+            "structural-without-size" => Found(ProductDimensionSectionKindsV1.StructuralProfile) with { ProfileSeries = "IPE" },
+            "painted-without-surface" => Found(ProductDimensionSectionKindsV1.PaintedErwProfile, width: 40m, height: 20m, wall: 2m),
+            "tube-with-series" => Found(ProductDimensionSectionKindsV1.ErwTube, outerDiameter: 48.3m, wall: 2.6m) with
+            {
+                ProfileSeries = "IPE", ProfileSize = "200",
+            },
+            _ => Found(ProductDimensionSectionKindsV1.WeldedMesh, width: 2150m, length: 5000m, outerDiameter: 150m) with
+            {
+                MeshSpacingMm = 150m,
+            },
+        };
+        var world = new World { Row = row };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => world.Service().ReadAsync(Selection, default));
+    }
+
+    [Fact]
     public async Task Product_without_a_row_is_no_source_with_version_zero_and_never_a_zero_measure()
     {
         var world = new World { Row = ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.NoSource) };

@@ -637,7 +637,10 @@ Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
   separate production status `UsableRemnant` (`inventory.Labels.ProductionStatus` = 1, null for every other label);
   the result echoes it as `ProductionStatus`. It is descriptive only (no movement, block, disposal or sellability
   effect; sellability stays with DEC-PRDCT-007), written once at label creation and not in the label's modifiable
-  columns, so a later manual reclassification keeps it. Split/merge children do not inherit it. A non-remnant output
+  columns, so a later manual reclassification keeps it. Split/merge outputs inherit it by KLN-D46 (in force per KLN-D63
+  and KLN-D86, which voids the SC21 "inheritance stays open" wording): every split child of a remnant label is
+  `UsableRemnant`; a merge result is `UsableRemnant` only when every source is, and null for mixed sources
+  (`InventoryLabelTransformation.InheritedProductionStatus`, read from the stored sources). A non-remnant output
   hashes its idempotency payload exactly as before; a remnant output also binds the effective classification. The
   field is not on the HTTP label reads yet.
 - **Migration:** `WidenInventoryLabelTransformationKindToManufacturing` widens `CK_LabelTransformations_Kind` to

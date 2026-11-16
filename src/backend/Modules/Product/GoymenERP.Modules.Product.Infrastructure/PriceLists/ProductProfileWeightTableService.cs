@@ -60,7 +60,7 @@ internal sealed class ProductProfileWeightTableService(
         return new ProductProfileWeightTableViewV1(scope.CompanyId, header.Version.ToString(CultureInfo.InvariantCulture),
             header.SourceLabel, header.FileName, header.FileSha256, header.DocumentId, header.ImportedAtUtc, header.ImportedBy,
             [.. lines.Select(line => new ProductProfileWeightRowV1(line.SectionKind, line.WidthMm, line.HeightMm,
-                line.OuterDiameterMm, line.WallThicknessMm, line.KgPerMetre))]);
+                line.OuterDiameterMm, line.WallThicknessMm, line.KgPerMetre, line.ProfileSeries, line.ProfileSize))]);
     }
 
     public async Task<ProductProfileWeightResultV1> ImportAsync(ImportProductProfileWeightTableRequestV1 request,
@@ -199,6 +199,8 @@ internal sealed class ProductProfileWeightTableService(
                 HeightMm = row.HeightMm,
                 OuterDiameterMm = row.OuterDiameterMm,
                 WallThicknessMm = row.WallThicknessMm,
+                ProfileSeries = row.ProfileSeries,
+                ProfileSize = row.ProfileSize,
                 KgPerMetre = row.KgPerMetre,
             });
         }
@@ -242,19 +244,22 @@ internal sealed class ProductProfileWeightTableService(
             .MaxAsync(cancellationToken) ?? 0;
 
     /// <summary>
-    /// URN-D16: the kg/m of the company's CURRENT table for a profile (width, height, wall — exact values, no tolerance) or a round
-    /// tube (outer diameter, wall); null for any other kind, without a table or without that row.
+    /// URN-D16 / KLN-D87: the kg/m of the company's CURRENT table for a card's measures — exact values, no tolerance. The card's
+    /// kind reads the rows of <see cref="ProductDimensionSectionKindsV1.WeightTableKind"/>: a profile / ERW profile by (width,
+    /// height, wall), a round tube / ERW tube by (outer diameter, wall), a structural profile by (series, size designation).
+    /// Null for any other kind, without a table or without that row.
     /// </summary>
     internal static async Task<ProfileWeightMatch?> FindAsync(ProductPriceListDbContext database, Guid companyId,
         string? sectionKind, decimal? widthMm, decimal? heightMm, decimal? outerDiameterMm, decimal? wallThicknessMm,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? profileSeries = null, string? profileSize = null)
     {
-        if (sectionKind is not (ProductDimensionSectionKindsV1.Profile or ProductDimensionSectionKindsV1.RoundTube)
-            || wallThicknessMm is not { } wall)
+        var tableKind = ProductDimensionSectionKindsV1.WeightTableKind(sectionKind);
+        if (tableKind is null)
         {
             return null;
         }
 
+        IQueryable<ProductProfileWeightLineRow>? lines = null;
         var header = await database.ProfileWeightImports.AsNoTracking()
             .Where(import => import.CompanyId == companyId)
             .OrderByDescending(import => import.Version)
@@ -265,25 +270,33 @@ internal sealed class ProductProfileWeightTableService(
             return null;
         }
 
-        var lines = database.ProfileWeightLines.AsNoTracking().Where(line => line.CompanyId == companyId
-            && line.ImportVersion == header.Version && line.SectionKind == sectionKind && line.WallThicknessMm == wall);
-        if (sectionKind == ProductDimensionSectionKindsV1.Profile)
+        var current = database.ProfileWeightLines.AsNoTracking().Where(line => line.CompanyId == companyId
+            && line.ImportVersion == header.Version && line.SectionKind == tableKind);
+        if (tableKind == ProductDimensionSectionKindsV1.StructuralProfile)
         {
-            if (widthMm is not { } width || heightMm is not { } height)
+            if (profileSeries is { } series && profileSize is { } size)
             {
-                return null;
+                lines = current.Where(line => line.ProfileSeries == series && line.ProfileSize == size);
             }
-
-            lines = lines.Where(line => line.WidthMm == width && line.HeightMm == height);
         }
-        else
+        else if (wallThicknessMm is { } wall)
         {
-            if (outerDiameterMm is not { } diameter)
+            if (tableKind == ProductDimensionSectionKindsV1.Profile)
             {
-                return null;
+                if (widthMm is { } width && heightMm is { } height)
+                {
+                    lines = current.Where(line => line.WallThicknessMm == wall && line.WidthMm == width && line.HeightMm == height);
+                }
             }
+            else if (outerDiameterMm is { } diameter)
+            {
+                lines = current.Where(line => line.WallThicknessMm == wall && line.OuterDiameterMm == diameter);
+            }
+        }
 
-            lines = lines.Where(line => line.OuterDiameterMm == diameter);
+        if (lines is null)
+        {
+            return null;
         }
 
         var kg = await lines.Select(line => (decimal?)line.KgPerMetre).SingleOrDefaultAsync(cancellationToken);
