@@ -350,6 +350,9 @@ builder.Services.AddSalesModule(
 // A Sales draft read may disclose only the code/name of the Cari record already linked to that
 // authorized Sales result. The adapter grants no generic Cari read and has no public lookup route.
 builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
+// F2 (SAT-D309, LOJ-D9): the subcontract service invoice reads the delivery weighing's net kg only through the Logistics
+// owner's F1 read; the adapter has no route, carries no authority and maps facts only.
+builder.Services.AddScoped<ISalesSubcontractDeliveryWeighingReadPortV1, SalesSubcontractDeliveryWeighingHost>();
 // MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
 // company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
 builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
@@ -413,6 +416,9 @@ builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineS
 // future supply source; both replace Inventory's fail-closed defaults. No route or permission (F017-b2).
 builder.Services.AddScoped<ISalesOrderLineSerializationLockBinderV1, SalesOrderLineSerializationLockHostBinder>();
 builder.Services.AddScoped<IInventoryFutureSupplySourceV1, InventoryFutureSupplyHostSource>();
+// X1 (KLN-D28 (9)): the approved sales order cancellation releases its lines' future supply allocations through Inventory's
+// release port in the cancellation's own transaction (sales line locks, then purchase line locks). No route or permission.
+builder.Services.AddScoped<ISalesOrderFutureAllocationReleaseParticipantV1, SalesFutureAllocationReleaseHostParticipant>();
 // KLN-D42 (STK-S31): the Purchasing adapter of Inventory's shortage warning supply source (replaces the fail-closed default).
 builder.Services.AddScoped<IInventoryShortageSupplySourceV1, InventoryShortageSupplyHostSource>();
 builder.Services.AddPurchasingModule(

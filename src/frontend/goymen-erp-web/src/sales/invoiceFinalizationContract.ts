@@ -116,7 +116,7 @@ export interface InvoiceAmounts {
 }
 const AMOUNTS_FIELDS = ['netAmount', 'vatAmount', 'withheldVatAmount', 'grossAmount', 'payableAmount'] as const
 
-function decodeAmounts(value: unknown): InvoiceAmounts | null {
+export function decodeAmounts(value: unknown): InvoiceAmounts | null {
   const o = exact(value, AMOUNTS_FIELDS)
   if (o === null || !AMOUNTS_FIELDS.every((field) => isAmount(o[field]))) return null
   return {

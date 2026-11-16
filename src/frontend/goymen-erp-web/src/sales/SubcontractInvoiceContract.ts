@@ -1,0 +1,191 @@
+/**
+ * F2 (SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1 §F2, SAT-D312, LOJ-D9/D12): the subcontract service ("fason hizmet")
+ * invoice draft — `POST /sales/subcontract-service-invoices` and `GET /sales/subcontract-service-invoices/{id}`
+ * (`SalesSubcontractServiceInvoiceDetailView`).
+ *
+ * Strict and fail-closed like ./invoiceFinalizationContract.ts: every object carries exactly the declared members (a nullable
+ * member is present as `null`), integers are JSON numbers, every quantity, price, percentage and amount stays the server's TEXT,
+ * and a value outside the shapes below makes the whole answer `null` — never a partial object. The net kilograms are the
+ * delivery weighing's (Logistics owner); nothing here adds, rounds or compares a kilogram or an amount.
+ */
+import { decodeAmounts, type InvoiceAmounts } from './invoiceFinalizationContract'
+import { LIMITS } from './contract'
+import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
+
+type Obj = Record<string, unknown>
+
+const record = (value: unknown): Obj | null =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Obj) : null
+
+function exact(value: unknown, fields: readonly string[]): Obj | null {
+  const object = record(value)
+  if (object === null) return null
+  const keys = Object.keys(object)
+  if (keys.length !== fields.length) return null
+  return fields.every((field) => Object.hasOwn(object, field)) ? object : null
+}
+
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const MAX_INSTANT_LENGTH = 64
+/** An unsigned decimal as the server writes it: digits, one optional fraction. */
+const DECIMAL_RE = /^\d+(?:\.\d+)?$/
+/** A positive decimal: at least one non-zero digit (a weighing is never billed at zero). */
+const POSITIVE_RE = /[1-9]/
+const REVISION_RE = /^Rev\.\d+$/
+const MAX_TEXT_LENGTH = 512
+
+const isInstant = (value: unknown): value is string =>
+  typeof value === 'string' && value.length <= MAX_INSTANT_LENGTH && INSTANT_RE.test(value) && !Number.isNaN(Date.parse(value))
+const isDecimal = (value: unknown): value is string =>
+  typeof value === 'string' && value.length <= LIMITS.decimalText && DECIMAL_RE.test(value)
+const isPositiveDecimal = (value: unknown): value is string => isDecimal(value) && POSITIVE_RE.test(value)
+const isText = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && value.length <= MAX_TEXT_LENGTH
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+const isPositiveCount = (value: unknown): value is number => isCount(value) && value >= 1
+
+/* ── Paths ────────────────────────────────────────────────────────────────── */
+
+export const SUBCONTRACT_SERVICE_INVOICES_PATH = '/sales/subcontract-service-invoices'
+export const subcontractServiceInvoicePath = (invoiceId: string) =>
+  `${SUBCONTRACT_SERVICE_INVOICES_PATH}/${encodeURIComponent(invoiceId)}`
+
+/* ── Reason codes (409 `invoice_not_ready`) ───────────────────────────────── */
+
+/** `SalesSubcontractServiceInvoiceReasonCodesV1` — beside the order and tax reasons of API-32. */
+export const SUBCONTRACT_INVOICE_REASON = {
+  notSubcontractOrder: 'not_subcontract_order',
+  weighingMissing: 'weighing_missing',
+  weighingOrderMismatch: 'weighing_order_mismatch',
+  sharePolicyPending: 'subcontract_share_policy_pending',
+  currencyPending: 'subcontract_currency_pending',
+  lineNotKilogram: 'subcontract_line_not_kilogram',
+  weighingAlreadyInvoiced: 'subcontract_weighing_already_invoiced',
+} as const
+
+/* ── Detail ───────────────────────────────────────────────────────────────── */
+
+export const SUBCONTRACT_INVOICE_STATES = ['Draft'] as const
+export type SubcontractInvoiceState = (typeof SUBCONTRACT_INVOICE_STATES)[number]
+const isState = (value: unknown): value is SubcontractInvoiceState =>
+  typeof value === 'string' && (SUBCONTRACT_INVOICE_STATES as readonly string[]).includes(value)
+
+export interface SubcontractInvoiceLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly salesOrderLineId: string
+  readonly priceBasisRevision: string
+  readonly productId: string
+  readonly unitId: string
+  /** The billed kilograms: the weighing's net kg, as the server wrote it. */
+  readonly quantity: string
+  readonly netUnitPrice: string
+  readonly vatPercent: string
+  readonly withholdingShare: string | null
+  readonly amounts: InvoiceAmounts
+}
+
+export const SUBCONTRACT_INVOICE_LINE_FIELDS = [
+  'lineId', 'lineNo', 'salesOrderLineId', 'priceBasisRevision', 'productId', 'unitId', 'quantity', 'netUnitPrice',
+  'vatPercent', 'withholdingShare', 'amounts',
+] as const
+
+function decodeLine(value: unknown): SubcontractInvoiceLine | null {
+  const o = exact(value, SUBCONTRACT_INVOICE_LINE_FIELDS)
+  if (
+    o === null || !isReferenceId(o.lineId) || !isPositiveCount(o.lineNo) || !isReferenceId(o.salesOrderLineId)
+    || typeof o.priceBasisRevision !== 'string' || !REVISION_RE.test(o.priceBasisRevision) || !isReferenceId(o.productId)
+    || !isReferenceId(o.unitId) || !isPositiveDecimal(o.quantity) || !isDecimal(o.netUnitPrice) || !isDecimal(o.vatPercent)
+    || !(o.withholdingShare === null || isDecimal(o.withholdingShare))
+  ) {
+    return null
+  }
+  const amounts = decodeAmounts(o.amounts)
+  if (amounts === null) return null
+  return {
+    lineId: o.lineId,
+    lineNo: o.lineNo,
+    salesOrderLineId: o.salesOrderLineId,
+    priceBasisRevision: o.priceBasisRevision,
+    productId: o.productId,
+    unitId: o.unitId,
+    quantity: o.quantity,
+    netUnitPrice: o.netUnitPrice,
+    vatPercent: o.vatPercent,
+    withholdingShare: o.withholdingShare,
+    amounts,
+  }
+}
+
+export interface SubcontractInvoiceDetail {
+  readonly id: string
+  readonly documentNo: string
+  readonly state: SubcontractInvoiceState
+  readonly version: string
+  readonly businessDate: string
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly currencyId: string
+  readonly amountScale: number
+  readonly salesOrderId: string
+  readonly loadingInstructionId: string
+  readonly weighingId: string
+  readonly weighingRevision: number
+  /** The delivery weighing's net kilograms (LOJ-D9: the fee kilograms; scrap is not billed), as the server wrote it. */
+  readonly netKg: string
+  readonly totals: InvoiceAmounts
+  readonly lines: readonly SubcontractInvoiceLine[]
+  readonly createdBy: string
+  readonly createdAtUtc: string
+  readonly isReplay: boolean
+}
+
+export const SUBCONTRACT_INVOICE_DETAIL_FIELDS = [
+  'id', 'documentNo', 'state', 'version', 'businessDate', 'partyId', 'companyAccountId', 'currencyId', 'amountScale',
+  'salesOrderId', 'loadingInstructionId', 'weighingId', 'weighingRevision', 'netKg', 'totals', 'lines', 'createdBy',
+  'createdAtUtc', 'isReplay',
+] as const
+
+/** The detail of `invoiceId` (or of the id the body names when `invoiceId` is null — a create answer); otherwise null. */
+export function decodeSubcontractInvoiceDetail(value: unknown, invoiceId: string | null): SubcontractInvoiceDetail | null {
+  const o = exact(value, SUBCONTRACT_INVOICE_DETAIL_FIELDS)
+  if (
+    o === null || !isReferenceId(o.id) || (invoiceId !== null && o.id.toLowerCase() !== invoiceId.toLowerCase())
+    || !isText(o.documentNo) || !isState(o.state) || !isVersionString(o.version) || !isDateOnly(o.businessDate)
+    || !isReferenceId(o.partyId) || !isReferenceId(o.companyAccountId) || !isReferenceId(o.currencyId) || !isCount(o.amountScale)
+    || !isReferenceId(o.salesOrderId) || !isReferenceId(o.loadingInstructionId) || !isReferenceId(o.weighingId)
+    || !isPositiveCount(o.weighingRevision) || !isPositiveDecimal(o.netKg) || !Array.isArray(o.lines) || o.lines.length === 0
+    || !isText(o.createdBy) || !isInstant(o.createdAtUtc) || typeof o.isReplay !== 'boolean'
+  ) {
+    return null
+  }
+  const totals = decodeAmounts(o.totals)
+  if (totals === null) return null
+  const lines: SubcontractInvoiceLine[] = []
+  for (const entry of o.lines) {
+    const line = decodeLine(entry)
+    if (line === null) return null
+    lines.push(line)
+  }
+  return {
+    id: o.id,
+    documentNo: o.documentNo,
+    state: o.state,
+    version: o.version,
+    businessDate: o.businessDate,
+    partyId: o.partyId,
+    companyAccountId: o.companyAccountId,
+    currencyId: o.currencyId,
+    amountScale: o.amountScale,
+    salesOrderId: o.salesOrderId,
+    loadingInstructionId: o.loadingInstructionId,
+    weighingId: o.weighingId,
+    weighingRevision: o.weighingRevision,
+    netKg: o.netKg,
+    totals,
+    lines,
+    createdBy: o.createdBy,
+    createdAtUtc: o.createdAtUtc,
+    isReplay: o.isReplay,
+  }
+}

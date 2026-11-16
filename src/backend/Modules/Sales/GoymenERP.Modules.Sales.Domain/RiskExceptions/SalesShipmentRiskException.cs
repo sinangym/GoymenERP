@@ -34,6 +34,10 @@ public sealed record SalesShipmentRiskExceptionDecision(string DecidedBy, DateTi
 /// fixed at approval as <see cref="ValidOn"/>; on any later date it has lapsed. Cancellation lapse (implementation detail,
 /// reversible) is the Logistics gate's concern: instruction ids are never reused, so an exception of a cancelled
 /// instruction releases nothing else.</item>
+/// <item><b>Consumption mirror (SAT-D285, LOJ-D19):</b> the Logistics gate enforces single use in its own transaction; Sales
+/// only mirrors the published "used" and "shipment cancelled" events through its inbox. When the shipment that used the
+/// exception is cancelled the exception drops (<see cref="DroppedByShipmentId"/>) and is never valid again: a new request and
+/// a new approval are needed (SAT-D285 (2)).</item>
 /// <item><b>Audit (SAT-D154):</b> who requested, who decided, which shipment, the reason and the times are facts of the
 /// record itself and of its audit events.</item>
 /// </list>
@@ -93,6 +97,12 @@ public sealed class SalesShipmentRiskException
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
+    /// <summary>
+    /// SAT-D285 (2), LOJ-D19: the cancelled Logistics shipment that had used this exception; null while no such cancellation
+    /// was mirrored. It is not a stored state of the exception row: the store sets it from the append-only usage mirror on read.
+    /// </summary>
+    public Guid? DroppedByShipmentId { get; private set; }
+
     /// <summary>Records a request: the reason is required and bounded (never cut).</summary>
     public static SalesShipmentRiskException Request(Guid id, Guid companyId, Guid orderId, int exceptionNo,
         Guid loadingInstructionId, string? reason, string requestedBy, DateTimeOffset now) =>
@@ -140,9 +150,32 @@ public sealed class SalesShipmentRiskException
         Version = checked(Version + 1);
     }
 
-    /// <summary>SAT-D160: an approved exception releases its shipment only on its approval's business date.</summary>
+    /// <summary>
+    /// SAT-D160: an approved exception releases its shipment only on its approval's business date; SAT-D285 (2): an exception
+    /// whose shipment was cancelled has dropped and releases nothing, on any date.
+    /// </summary>
     public bool IsValidOn(DateOnly businessDate) =>
-        State == SalesShipmentRiskExceptionState.Approved && ValidOn == businessDate;
+        State == SalesShipmentRiskExceptionState.Approved && ValidOn == businessDate && DroppedByShipmentId is null;
+
+    /// <summary>
+    /// SAT-D285 (2), LOJ-D19: applies the mirrored cancellation of the shipment that used this exception. Only an approved
+    /// exception is ever used; the same shipment again changes nothing, another shipment is a broken mirror and is refused.
+    /// </summary>
+    public void ApplyShipmentDropped(Guid shipmentId)
+    {
+        var shipment = Identity.Require(shipmentId, nameof(shipmentId));
+        if (State != SalesShipmentRiskExceptionState.Approved)
+        {
+            throw new InvalidOperationException("Yalnız onaylı risk istisnası bir sevkte kullanılır ve o sevkin iptaliyle düşer.");
+        }
+
+        if (DroppedByShipmentId is { } existing && existing != shipment)
+        {
+            throw new InvalidOperationException("Risk istisnası tek bir sevkte kullanılır; başka bir sevkin iptali ona yansımaz.");
+        }
+
+        DroppedByShipmentId = shipment;
+    }
 
     /// <summary>
     /// Restores the stored decision onto an exception rebuilt through <see cref="Request"/>: the facts must match the state

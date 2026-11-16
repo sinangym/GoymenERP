@@ -50,6 +50,35 @@ internal sealed class ShipmentRiskExceptionAttemptRow : ISalesTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
+/// <summary>
+/// LOJ-D19, SAT-D285: one mirrored Logistics usage of a single-shipment risk exception (<c>sales.ShipmentRiskExceptionUsages</c>),
+/// APPEND-ONLY. (CompanyId, ShipmentId, Kind) is the identity: one "used" and at most one "cancelled" fact per shipment;
+/// UX_ShipmentRiskExceptionUsages_Exception keeps one shipment per exception and kind (single use, SAT-D285 (1)). The shipment,
+/// instruction and event ids are opaque Logistics references (SAT-D209).
+/// </summary>
+internal sealed class ShipmentRiskExceptionUsageRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid ShipmentId { get; set; }
+
+    /// <summary><see cref="SalesRiskExceptionUsageKind"/>: 1 = consumed, 2 = dropped (the shipment was cancelled).</summary>
+    public int Kind { get; set; }
+    public Guid ExceptionId { get; set; }
+    public Guid OrderId { get; set; }
+    public int ExceptionNo { get; set; }
+    public Guid LoadingInstructionId { get; set; }
+    public string SourceName { get; set; } = string.Empty;
+    public Guid SourceEventId { get; set; }
+
+    /// <summary>When Logistics recorded the fact (the event envelope's instant).</summary>
+    public DateTimeOffset OccurredAtUtc { get; set; }
+
+    /// <summary>When Sales mirrored it.</summary>
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+}
+
 internal static class SalesRiskExceptionRows
 {
     public static ShipmentRiskExceptionRow ToRow(SalesShipmentRiskException item, string correlationId) => new()

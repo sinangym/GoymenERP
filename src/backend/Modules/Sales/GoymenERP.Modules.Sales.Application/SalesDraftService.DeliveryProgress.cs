@@ -165,11 +165,11 @@ public sealed partial class SalesDraftService
             throw DeliveryAnswerInvalid();
         }
 
-        var over = delivered.IsGreaterThan(line.Quantity);
-        var remaining = over ? Quantity.Zero(unit) : line.Quantity.Subtract(delivered);
-        var excess = over ? delivered.Subtract(line.Quantity) : Quantity.Zero(unit);
+        // KLN-D100: the one open-quantity rule (ordered − delivered, invoiced never deciding). This read does not ask the
+        // customer-return owner yet, so it passes no return correction and no invoiced figure; the AT-024 numbers are unchanged.
+        var open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, delivered, Quantity.Zero(unit), null);
         return new SalesDraftLineDeliveryProgressV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-            QuantityText(shipped), QuantityText(delivered), QuantityText(remaining), QuantityText(excess), shippedBy);
+            QuantityText(shipped), QuantityText(delivered), QuantityText(open.Open), QuantityText(open.Excess), shippedBy);
     }
 
     /// <summary>

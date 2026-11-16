@@ -96,6 +96,7 @@ import {
 import {
   SALES_CAPABILITY,
   SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY,
+  SALES_INVOICE_WRITE_CAPABILITY,
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
   salesPriceControlPath,
@@ -142,6 +143,7 @@ import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
 import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import { SalesOrderInvoices } from './SalesInvoiceFinalization'
+import { SubcontractInvoiceCreate } from './SubcontractInvoiceCreate'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
@@ -253,13 +255,22 @@ export function SalesDraftDetailPage() {
       }
       invoices={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
-          <SalesOrderInvoices
-            key={`invoices:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
-            draftId={outcome.data.draft.id}
-            companyId={companyId}
-            namespace={namespace}
-            entryGeneration={shell.routeEntryGeneration}
-          />
+          <>
+            <SalesOrderInvoices
+              key={`invoices:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+              draftId={outcome.data.draft.id}
+              companyId={companyId}
+              namespace={namespace}
+              entryGeneration={shell.routeEntryGeneration}
+            />
+            {/* F2: a subcontract service order is invoiced from its delivery weighing (the server decides readiness). */}
+            {outcome.data.draft.subcontractService === true && hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY) ? (
+              <SubcontractInvoiceCreate
+                key={`subcontract-invoice:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+                salesOrderId={outcome.data.draft.id}
+              />
+            ) : null}
+          </>
         ) : null
       }
       documents={

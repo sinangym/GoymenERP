@@ -139,7 +139,9 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddOrderRiskLimitWarnings", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
-        Assert.Equal("20261115160935_AddSalesContracts", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
+        Assert.Equal("20261116002458_AddSubcontractServiceInvoices", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -365,7 +367,7 @@ public sealed class SalesPersistenceModelTests
     /// <summary>S-11 (SAT-D28, NS-13, SAT-D346): the sales contract and its attempts — company-filtered, the contract number unique per
     /// company, the version a concurrency token, the maker-checker, limit and validity (SAT-D362: optional end) checks declared, both
     /// guard triggers declared; Up adds
-    /// the one-decision guard (51471) and the append-only attempts guard (51472); Down is a forward fix (51473) first.</summary>
+    /// the one-decision guard (51474) and the append-only attempts guard (51472); Down is a forward fix (51473) first.</summary>
     [Fact]
     public void The_sales_contract_migration_adds_two_triggers_and_its_down_refuses_with_51473_first()
     {
@@ -403,7 +405,7 @@ public sealed class SalesPersistenceModelTests
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesContracts();
         var up = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().ToArray();
         Assert.Equal(2, up.Length);
-        Assert.Contains(up, op => op.Sql.Contains("TR_Contracts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51471,", StringComparison.Ordinal));
+        Assert.Contains(up, op => op.Sql.Contains("TR_Contracts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51474,", StringComparison.Ordinal));
         Assert.Contains(up, op => op.Sql.Contains("TR_ContractAttempts_Guard", StringComparison.Ordinal) && op.Sql.Contains("THROW 51472,", StringComparison.Ordinal));
         var table = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>()
             .Single(op => op.Name == "Contracts");
@@ -417,6 +419,81 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains("[sales].[ContractAttempts]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Equal(2, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
+    }
+
+    /// <summary>F2 (SAT-D309/D312, LOJ-D12): the subcontract service invoice tables — one invoice per (company, loading instruction,
+    /// weighing, order), a draft-only state check, the command-name check on the attempts; Down is a forward fix (51732) first.</summary>
+    [Fact]
+    public void The_subcontract_service_invoice_model_keys_one_invoice_per_weighing_and_order_and_its_down_refuses_with_51732_first()
+    {
+        using var context = Context();
+        var invoice = context.Model.FindEntityType(typeof(SubcontractServiceInvoiceRow))!;
+        Assert.Equal(("sales", "SubcontractServiceInvoices"), (invoice.GetSchema(), invoice.GetTableName()));
+        Assert.Single(invoice.GetDeclaredQueryFilters());
+        Assert.True(UniqueIndex(invoice, "UX_SubcontractServiceInvoices_DocumentNo"));
+        Assert.True(UniqueIndex(invoice, "UX_SubcontractServiceInvoices_Weighing"));
+        Assert.Equal(["CompanyId", "LoadingInstructionId", "WeighingId", "SalesOrderId"], invoice.GetIndexes()
+            .Single(index => index.GetDatabaseName() == "UX_SubcontractServiceInvoices_Weighing").Properties.Select(property => property.Name));
+        var line = context.Model.FindEntityType(typeof(SubcontractServiceInvoiceLineRow))!;
+        Assert.Equal(("sales", "SubcontractServiceInvoiceLines"), (line.GetSchema(), line.GetTableName()));
+        Assert.Single(line.GetDeclaredQueryFilters());
+        var attempt = context.Model.FindEntityType(typeof(SubcontractServiceInvoiceAttemptRow))!;
+        Assert.Equal(("sales", "SubcontractServiceInvoiceAttempts"), (attempt.GetSchema(), attempt.GetTableName()));
+        Assert.Single(attempt.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempt.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Null(attempt.FindProperty("IdempotencyKey"));
+
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var checks = design.FindEntityType(typeof(SubcontractServiceInvoiceRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(checks, check => check.Name == "CK_SubcontractServiceInvoices_State"
+            && check.Sql == SalesDbContext.SubcontractServiceInvoiceStateConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_SubcontractServiceInvoices_Source"
+            && check.Sql == SalesDbContext.SubcontractServiceInvoiceSourceConstraint);
+        var attemptChecks = design.FindEntityType(typeof(SubcontractServiceInvoiceAttemptRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(attemptChecks, check => check.Name == "CK_SubcontractServiceInvoiceAttempts_Command"
+            && check.Sql == SalesDbContext.SubcontractServiceInvoiceAttemptCommandConstraint);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSubcontractServiceInvoices();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(3, migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>().Count());
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51732,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[sales].[SubcontractServiceInvoices]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(3, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
+    }
+
+    [Fact]
+    public void The_risk_exception_usage_mirror_keys_one_usage_per_shipment_and_exception_and_is_append_only()
+    {
+        // LOJ-D19, SAT-D285: one mirrored "used" and one mirrored "dropped" per shipment and per exception; the rows never change.
+        using var context = Context();
+        var usage = context.Model.FindEntityType(typeof(ShipmentRiskExceptionUsageRow))!;
+        Assert.Equal(("sales", "ShipmentRiskExceptionUsages"), (usage.GetSchema(), usage.GetTableName()));
+        Assert.Single(usage.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "ShipmentId", "Kind"], usage.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(UniqueIndex(usage, "UX_ShipmentRiskExceptionUsages_Exception"));
+        Assert.Contains(usage.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(ShipmentRiskExceptionRow));
+        Assert.True(usage.FindProperty(nameof(ShipmentRiskExceptionUsageRow.CausationId))!.IsNullable);
+        Assert.False(usage.FindProperty(nameof(ShipmentRiskExceptionUsageRow.CorrelationId))!.IsNullable);
+
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ShipmentRiskExceptionUsageRow))!;
+        Assert.Contains(design.GetCheckConstraints(),
+            check => check.Name == "CK_ShipmentRiskExceptionUsages_Kind" && check.Sql == SalesDbContext.ShipmentRiskExceptionUsageKindConstraint);
+        Assert.Equal([SalesDbContext.ShipmentRiskExceptionUsageGuardTrigger],
+            design.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddShipmentRiskExceptionUsages();
+        var up = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains(SalesDbContext.ShipmentRiskExceptionUsageGuardTrigger, up.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51487,", up.Sql, StringComparison.Ordinal);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51488,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[sales].[ShipmentRiskExceptionUsages]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>());
     }
 
     [Fact]

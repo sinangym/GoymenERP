@@ -90,8 +90,13 @@ public static class SalesModuleExtensions
         // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
+        // F2 (SAT-D309/D312, LOJ-D9/D12): the subcontract service invoice draft over the Sales store; the delivery weighing read is
+        // the host's adapter of the Logistics owner's net-weight port. Without it the create is 503, never an assumed quantity.
+        services.AddScoped<ISalesSubcontractServiceInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractServiceInvoiceService>(CreateInvoiceService);
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
-        // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
+        // invoice read port is the Finance owner's and Finance's AddFinanceServices registers it (FIN-S6, SAT-S1); Sales never registers a
+        // default, so a host without Finance answers the match with 503, never an assumed document.
         services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
         services.TryAddSingleton<ISalesInvoiceDiagnosticsV1>(serviceProvider => new SalesInvoiceDiagnostics(
             serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<SalesInvoiceDiagnostics>()));
@@ -105,6 +110,11 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderRiskOutcomeSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
+        // LOJ-D19 (SAT-D285): the usage mirror of the Logistics definite-shipment events over the Sales store, and its inbox
+        // consumer. The consumer is NOT handed to the Work dispatcher (AddWorkInboxConsumer) yet: the Logistics outbox source
+        // does not exist until its owner registers it, and the dispatcher refuses an unknown source at start.
+        services.AddScoped<ISalesRiskExceptionUsageStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<SalesLogisticsShipmentInboxConsumer>();
         // F-018 / plan S2 (FNS-D30, SAT-D310): the shipment risk gate read for the Logistics gate — the same deterministic risk
         // evaluation as a company-scoped system read, with the shipment's risk exception embedded. Read-only; amount-free.
         services.AddScoped<ISalesShipmentRiskGateSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
@@ -182,7 +192,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
         serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>(),
         serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
-        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>());
+        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>(),
+        serviceProvider.GetService<ISalesSubcontractServiceInvoiceStore>(),
+        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
@@ -287,7 +299,11 @@ public static class SalesModuleExtensions
         // purchase unit). Only the cancellation impact read asks it (the preview, the cancel, and the header revision's customer or
         // currency check); until it is registered that category is unreadable and the command is refused, never decided on an
         // assumed "no future allocation". Every other caller keeps V1 (physical).
-        serviceProvider.GetService<ISalesOrderAllocationReadPortV2>());
+        serviceProvider.GetService<ISalesOrderAllocationReadPortV2>(),
+        // X1 (KLN-D28): the host participant that releases a cancelled order's future supply allocations through Inventory's
+        // release port in the cancellation's own transaction. Until it is registered a future allocation keeps blocking the
+        // cancellation (fail-closed); it is never released outside the Sales transaction.
+        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

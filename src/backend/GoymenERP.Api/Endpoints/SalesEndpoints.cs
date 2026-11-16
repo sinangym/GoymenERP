@@ -255,6 +255,8 @@ public static partial class SalesEndpoints
         MapDispatchEndpoints(endpoints);
         // S5 API-32 (Fatura çekirdeği 1): the sales invoice draft routes.
         MapInvoiceEndpoints(endpoints);
+        // F2 (SAT-D309/D312, LOJ-D9): the subcontract service invoice draft from the delivery weighing's net kg.
+        MapSubcontractServiceInvoiceEndpoints(endpoints);
         // API-40 (SAT-D288…D294): the recorded customer return invoice — create, list, read, submission, approval, finalisation.
         MapCustomerReturnEndpoints(endpoints);
         // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract — create, list, read, discount approval and rejection.
@@ -472,8 +474,10 @@ public static partial class SalesEndpoints
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [],
-            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded).
-            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
+            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded);
+            // SAT-D373: an active future supply allocation is refused with its own code (not recorded).
+            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked,
+                SalesDraftProblemCodesV1.RevisionFutureAllocationPresent]);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);

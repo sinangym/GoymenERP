@@ -287,6 +287,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-07 (ADR-011 §2): the risk exception commands' own attempt records (append-only).</summary>
     internal DbSet<ShipmentRiskExceptionAttemptRow> ShipmentRiskExceptionAttempts => Set<ShipmentRiskExceptionAttemptRow>();
 
+    /// <summary>LOJ-D19, SAT-D285: the append-only mirror of the Logistics usages of the single-shipment risk exceptions.</summary>
+    internal DbSet<ShipmentRiskExceptionUsageRow> ShipmentRiskExceptionUsages => Set<ShipmentRiskExceptionUsageRow>();
+
     /// <summary>API-40 (SAT-D288…SAT-D294): the recorded customer return invoices (the approval axis is the only change).</summary>
     internal DbSet<CustomerReturnRow> CustomerReturns => Set<CustomerReturnRow>();
 
@@ -298,6 +301,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>S-11 (ADR-011 §2): the contract commands' own attempt records (append-only).</summary>
     internal DbSet<ContractAttemptRow> ContractAttempts => Set<ContractAttemptRow>();
+
+    /// <summary>F2 (SAT-D309/D312, LOJ-D9/D12): the subcontract service invoice drafts keyed by the delivery weighing.</summary>
+    internal DbSet<SubcontractServiceInvoiceRow> SubcontractServiceInvoices => Set<SubcontractServiceInvoiceRow>();
+
+    internal DbSet<SubcontractServiceInvoiceLineRow> SubcontractServiceInvoiceLines => Set<SubcontractServiceInvoiceLineRow>();
+
+    /// <summary>F2 (ADR-011 §2): the subcontract service invoice command's own attempt records (append-only).</summary>
+    internal DbSet<SubcontractServiceInvoiceAttemptRow> SubcontractServiceInvoiceAttempts => Set<SubcontractServiceInvoiceAttemptRow>();
 
     /// <summary>
     /// CK_DraftRiskWarnings_Facts (F-018 / plan S1, ASSUMPTION-SAT-RISK-1/-4): a warning is recorded by a submit or an approve
@@ -339,6 +350,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>TR_ShipmentRiskExceptionAttempts_Guard (API-07): an attempt row is append-only (THROW 51253).</summary>
     internal const string ShipmentRiskExceptionAttemptGuardTrigger = "TR_ShipmentRiskExceptionAttempts_Guard";
+
+    /// <summary>TR_ShipmentRiskExceptionUsages_Guard (LOJ-D19): a mirrored usage row is append-only (THROW 51487; Down guard 51488).</summary>
+    internal const string ShipmentRiskExceptionUsageGuardTrigger = "TR_ShipmentRiskExceptionUsages_Guard";
+
+    /// <summary>CK_ShipmentRiskExceptionUsages_Kind (SAT-D285): consumed (1) or dropped by the shipment's cancellation (2).</summary>
+    internal const string ShipmentRiskExceptionUsageKindConstraint = "[Kind] IN (1, 2)";
+
+    /// <summary>The longest Work outbox source name a mirrored usage keeps (the inbox source name's bound).</summary>
+    internal const int ShipmentRiskExceptionUsageSourceNameLength = 64;
 
     /// <summary>UX_ShipmentRiskExceptions_PendingShipment (SAT-D154): at most one pending exception per shipment of an order.</summary>
     internal const string PendingShipmentRiskExceptionFilter = "[State] = 1";
@@ -462,7 +482,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>
     /// TR_Contracts_Guard (S-11): the contract facts are immutable, the state takes the one discount decision (1 → 2 | 3), the
-    /// version moves by exactly one and no row is deleted (THROW 51471). Declared so EF Core does not use OUTPUT without INTO.
+    /// version moves by exactly one and no row is deleted (THROW 51474). Declared so EF Core does not use OUTPUT without INTO.
     /// </summary>
     internal const string ContractGuardTrigger = "TR_Contracts_Guard";
 
@@ -512,6 +532,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>CK_Invoices_State (API-33/36): Draft 1, PendingApproval 2, Approved 3, Rejected 4, Cancelled 5, Finalized 6.</summary>
     internal const string InvoiceStateConstraint = "[State] IN (1, 2, 3, 4, 5, 6)";
+
+    /// <summary>F2: a subcontract service invoice is recorded as a Draft (1) only in this slice; a later state is a declared widening.</summary>
+    internal const string SubcontractServiceInvoiceStateConstraint = "[State] = 1";
+
+    /// <summary>F2 (LOJ-D9): the billed weighing carries a positive revision and instruction version and its verbatim net kg text.</summary>
+    internal const string SubcontractServiceInvoiceSourceConstraint =
+        "[WeighingRevision] >= 1 AND [InstructionVersion] >= 1 AND LEN([NetKgText]) > 0";
+
+    /// <summary>F2: the attempt names the one create command it records.</summary>
+    internal const string SubcontractServiceInvoiceAttemptCommandConstraint =
+        "[CommandName] = N'" + SalesSubcontractServiceInvoiceCommands.CreateV1 + "'";
 
     /// <summary>
     /// CK_Invoices_Decision (API-33): the decision facts match the state — a draft carries none; a pending invoice its submission; an
@@ -712,6 +743,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureShipmentRiskExceptions(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureContracts(modelBuilder);
+        ConfigureSubcontractServiceInvoices(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1916,6 +1948,34 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // LOJ-D19, SAT-D285: the Logistics usage mirror; one row per shipment and kind, one shipment per exception and kind.
+        var usage = modelBuilder.Entity<ShipmentRiskExceptionUsageRow>();
+        usage.ToTable("ShipmentRiskExceptionUsages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ExceptionId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceEventId] <> '00000000-0000-0000-0000-000000000000' AND [ExceptionNo] >= 1");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Kind", ShipmentRiskExceptionUsageKindConstraint);
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Text", "LEN([SourceName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasTrigger(ShipmentRiskExceptionUsageGuardTrigger);
+        });
+        usage.HasKey(x => new { x.CompanyId, x.ShipmentId, x.Kind });
+        usage.Property(x => x.SourceName).HasMaxLength(ShipmentRiskExceptionUsageSourceNameLength).UseCollation(IdentityCollation)
+            .IsRequired();
+        usage.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        usage.Property(x => x.CausationId).HasMaxLength(128);
+        usage.HasIndex(x => new { x.CompanyId, x.ExceptionId, x.Kind }).IsUnique()
+            .HasDatabaseName("UX_ShipmentRiskExceptionUsages_Exception");
+        usage.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        usage.HasOne<ShipmentRiskExceptionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ExceptionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        usage.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // API-40 (SAT-D288…SAT-D294): the recorded customer return invoices and their attempts.
@@ -2080,6 +2140,107 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // F2 (SAT-D309/D312, LOJ-D4/D9/D12): the subcontract service invoice drafts, their service lines and their attempts.
+    private void ConfigureSubcontractServiceInvoices(ModelBuilder modelBuilder)
+    {
+        var invoice = modelBuilder.Entity<SubcontractServiceInvoiceRow>();
+        invoice.ToTable("SubcontractServiceInvoices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SubcontractServiceInvoices_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [WeighingId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoices_State", SubcontractServiceInvoiceStateConstraint);
+            table.HasCheckConstraint("CK_SubcontractServiceInvoices_Source", SubcontractServiceInvoiceSourceConstraint);
+            table.HasCheckConstraint("CK_SubcontractServiceInvoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoices_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoices_Text",
+                "LEN([DocumentNo]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        invoice.HasKey(x => x.Id);
+        invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.DocumentNo).HasMaxLength(SalesSubcontractServiceInvoice.MaximumDocumentNoLength).IsRequired();
+        invoice.Property(x => x.Version).IsConcurrencyToken();
+        invoice.Property(x => x.RowVersion).IsRowVersion();
+        invoice.Property(x => x.BusinessDate).HasColumnType("date");
+        invoice.Property(x => x.MoneyProfileVersion).HasMaxLength(SalesSubcontractServiceInvoice.MaximumMoneyProfileVersionLength)
+            .IsRequired();
+        invoice.Property(x => x.NetKgText).HasMaxLength(SalesSubcontractServiceInvoice.MaximumQuantityTextLength).IsUnicode(false)
+            .IsRequired();
+        invoice.Property(x => x.CreatedBy).HasMaxLength(SalesSubcontractServiceInvoice.MaximumActorLength).IsRequired();
+        invoice.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        invoice.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_SubcontractServiceInvoices_DocumentNo");
+        invoice.HasIndex(x => new { x.CompanyId, x.LoadingInstructionId, x.WeighingId, x.SalesOrderId }).IsUnique()
+            .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing");
+        invoice.HasIndex(x => new { x.CompanyId, x.SalesOrderId }).HasDatabaseName("IX_SubcontractServiceInvoices_Order");
+        invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<SubcontractServiceInvoiceLineRow>();
+        line.ToTable("SubcontractServiceInvoiceLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceLines_LineNo", "[LineNo] >= 1 AND [PriceBasisRevision] >= 0");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderLineId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceLines_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceLines_Amounts",
+                "LEN([NetUnitPrice]) > 0 AND [VatPercent] >= 0 AND [VatPercent] <= 100 AND ([WithholdingShare] IS NULL OR "
+                + "([WithholdingShare] > 0 AND [WithholdingShare] <= 1)) AND [NetAmount] >= 0 AND [VatAmount] >= 0 AND [WithholdingAmount] >= 0");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceLines_Json",
+                "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
+        });
+        line.HasKey(x => new { x.CompanyId, x.InvoiceId, x.LineNo });
+        line.HasIndex(x => new { x.CompanyId, x.LineId }).IsUnique().HasDatabaseName("UX_SubcontractServiceInvoiceLines_LineId");
+        line.Property(x => x.Quantity).HasPrecision(18, SalesSubcontractServiceInvoiceRows.QuantityStoredScale);
+        line.Property(x => x.QuantityText).HasMaxLength(SalesSubcontractServiceInvoice.MaximumQuantityTextLength).IsRequired();
+        line.Property(x => x.UnitPrice).HasMaxLength(64);
+        line.Property(x => x.DiscountPercent).HasMaxLength(64);
+        line.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
+        line.Property(x => x.TaxJson).HasColumnType("nvarchar(max)").IsRequired();
+        line.Property(x => x.NetUnitPrice).HasMaxLength(64).IsUnicode(false).IsRequired();
+        line.Property(x => x.VatPercent).HasPrecision(9, 4);
+        line.Property(x => x.WithholdingShare).HasPrecision(18, 10);
+        line.Property(x => x.NetAmount).HasPrecision(28, 8);
+        line.Property(x => x.VatAmount).HasPrecision(28, 8);
+        line.Property(x => x.WithholdingAmount).HasPrecision(28, 8);
+        line.HasOne<SubcontractServiceInvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<SubcontractServiceInvoiceAttemptRow>();
+        attempt.ToTable("SubcontractServiceInvoiceAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_SubcontractServiceInvoiceAttempts_Command", SubcontractServiceInvoiceAttemptCommandConstraint);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.HasIndex(x => new { x.CompanyId, x.InvoiceId }).IsUnique().HasDatabaseName("UX_SubcontractServiceInvoiceAttempts_InvoiceId");
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<SubcontractServiceInvoiceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InvoiceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         SalesAuditEventTenantGuard.Validate(this, companyContext);
@@ -2239,6 +2400,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(ShipmentRiskExceptionRow.ValidOn), nameof(ShipmentRiskExceptionRow.UpdatedAtUtc),
                     ],
                     ShipmentRiskExceptionAttemptRow => [],
+                    ShipmentRiskExceptionUsageRow => [],
                     // API-40 (SAT-D290): a customer return moves only along its approval axis, one allowed step (checked below);
                     // the header, the customer's document, the lines and the totals never change; its attempts are APPEND-ONLY.
                     CustomerReturnRow =>
@@ -2260,6 +2422,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(ContractRow.RejectionReason), nameof(ContractRow.UpdatedAtUtc),
                     ],
                     ContractAttemptRow => [],
+                    // F2 (SAT-D309/D312): a subcontract service invoice draft, its lines and its attempts are APPEND-ONLY in this
+                    // slice (the approval axis joins the invoice flow later, with its own declared widening).
+                    SubcontractServiceInvoiceRow => [],
+                    SubcontractServiceInvoiceLineRow => [],
+                    SubcontractServiceInvoiceAttemptRow => [],
                     _ => [],
                 };
                 if (entry.Entity is DraftLineRow)

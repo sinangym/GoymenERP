@@ -9,6 +9,7 @@ using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
@@ -1056,10 +1057,17 @@ public sealed partial class SalesStore(
     /// on the draft as read and answers the impact to keep; the domain decides (version, state, reason) and returns the facts.
     /// The cancellation row is APPENDED beside the header's lifecycle state and version, the attempt record and the audit event
     /// (the facts and the impact) — or nothing at all. No line, revision, schedule or approval column changes (checked).
+    /// X1 (KLN-D28): with <paramref name="withinTransaction"/> the store opens one ReadCommitted transaction on its own
+    /// connection after <paramref name="beforeWrite"/>; the owners' work (the future allocations' release) runs in it, then the
+    /// mutation and the single save, then the commit. A refusal anywhere disposes the transaction (rollback): no release stays
+    /// without its cancellation and no cancellation without its release. A non-relational provider or an already open
+    /// transaction refuses before anything runs (fail-closed).
     /// </summary>
     public async Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
-        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default)
+        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite,
+        Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -1115,6 +1123,12 @@ public sealed partial class SalesStore(
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
         var impact = await beforeWrite(draft, cancellationToken)
             ?? throw new InvalidOperationException("İptal, kullanıcının gördüğü etki önizlemesi olmadan kaydedilmez.");
+        await using var transaction = withinTransaction is null ? null : await BeginCancellationTransactionAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await withinTransaction!(draft, transaction.GetDbTransaction(), cancellationToken);
+        }
+
         var before = new { state = draft.State.ToString(), approvalState = draft.ApprovalState.ToString(), revision = draft.Revision, version = draft.Version };
         var versionBefore = draft.Version;
         var revisionBefore = draft.Revision;
@@ -1202,7 +1216,26 @@ public sealed partial class SalesStore(
             envelope.CausationId,
             envelope.IdempotencyKey));
         await SaveAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>
+    /// X1: the cancellation's own transaction on this context's connection — only on a relational provider and only when no
+    /// transaction is already open (the cancellation never joins a transaction it does not own).
+    /// </summary>
+    private async Task<IDbContextTransaction> BeginCancellationTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null)
+        {
+            throw new InvalidOperationException("İptal, sahibin aynı işlemdeki işi için kendi SQL işlemini açamıyor; hiçbir şey kaydedilmedi.");
+        }
+
+        return await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
     }
 
     /// <summary>

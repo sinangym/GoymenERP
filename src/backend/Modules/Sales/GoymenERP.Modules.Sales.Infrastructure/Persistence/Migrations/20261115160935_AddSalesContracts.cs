@@ -154,7 +154,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                                       i.[Clauses] COLLATE Latin1_General_100_BIN2, i.[DiscountLimitPercent], i.[DiscountApprovalRequired],
                                       i.[CreatedBy] COLLATE Latin1_General_100_BIN2, i.[CreatedAtUtc], i.[CorrelationId] COLLATE Latin1_General_100_BIN2))
                     BEGIN
-                        THROW 51471, 'A sales contract keeps its facts, payment plan and discount rules and takes its one discount decision only.', 1;
+                        THROW 51474, 'A sales contract keeps its facts, payment plan and discount rules and takes its one discount decision only.', 1;
                     END;
                 END;
                 """);
