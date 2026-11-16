@@ -1,5 +1,7 @@
 using System.Data.Common;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
@@ -19,8 +21,14 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
     IOrganizationLocationStatusReaderV1 locations, TimeProvider clock,
     PurchaseReceiptAdjustmentParticipantFactoryV1? ownerFactory = null) : IPurchaseReceiptReversalTransactionV1
 {
-    public async Task<PurchaseReceiptReversalResponseV1> ExecuteAsync(Guid companyId, PurchaseReceiptReversalWriteV1 write,
+    public Task<PurchaseReceiptReversalResponseV1> ExecuteAsync(Guid companyId, PurchaseReceiptReversalWriteV1 write,
         PurchasingWriteEnvelope envelope, Func<CancellationToken, Task> freshAuthority,
+        CancellationToken cancellationToken = default) => ExecuteWithWriteAsync(companyId, write, envelope,
+            (response, _) => Task.FromResult(response), freshAuthority, cancellationToken);
+
+    public async Task<T> ExecuteWithWriteAsync<T>(Guid companyId, PurchaseReceiptReversalWriteV1 write,
+        PurchasingWriteEnvelope envelope, Func<PurchaseReceiptReversalResponseV1, CancellationToken, Task<T>> writeReturn,
+        Func<CancellationToken, Task> freshAuthority,
         CancellationToken cancellationToken = default)
     {
         if (ownerFactory is null) throw Unavailable();
@@ -29,8 +37,12 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
         if (write.Request.ReplacementReceipt?.AcceptanceId == write.AcceptanceId
             || write.IsSupplierReturn && write.Request.ReplacementReceipt is not null)
             throw new PurchasingServiceException(400, "validation_failed");
-        var requestHash = PurchaseReceiptReversalHashV1.Compute(write);
-        var metadata = Metadata(envelope);
+        if (write.CommandName is not (PurchaseReceiptReversalApiV1.CommandName or PurchaseSupplierReturnCommandsV1.CreateV1
+            or PurchaseSupplierReturnCommandsV1.ApproveCostExceptionV1)
+            || !write.IsSupplierReturn && write.CommandName != PurchaseReceiptReversalApiV1.CommandName)
+            throw Unavailable();
+        var requestHash = write.RequestHash ?? PurchaseReceiptReversalHashV1.Compute(write);
+        var metadata = Metadata(envelope, write.CommandName);
         var stockRequest = new InventoryGoodsReceiptReversalRequestV1(companyId, write.Request.AdjustmentId,
             write.Request.ReversalLineId, write.AcceptanceId, write.Request.InventoryMovementId,
             write.IsSupplierReturn ? InventoryGoodsReceiptReversalKindV1.SupplierReturn : InventoryGoodsReceiptReversalKindV1.AcceptanceUndo,
@@ -54,7 +66,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     services.GetRequiredService<IAuditTransactionWriterV1>(), cancellationToken, clock);
                 try
                 {
-                    var replay = await Checked(() => purchase.FindReplayAsync(PurchaseReceiptReversalApiV1.CommandName,
+                    var replay = await Checked(() => purchase.FindReplayAsync(write.CommandName,
                         requestHash, envelope, cancellationToken));
                     if (replay is not null)
                     {
@@ -63,9 +75,10 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                             ?? throw Unavailable();
                         var corrected = await CorrectionAsync(connection, borrowed, purchase, companyId, write, replay, originalStock,
                             envelope, freshAuthority, cancellationToken);
+                        var replayWritten = await writeReturn(new(replay, View(originalStock), corrected), cancellationToken);
                         await freshAuthority(cancellationToken);
                         await transaction.CommitAsync(cancellationToken);
-                        return new(replay, View(originalStock), corrected);
+                        return replayWritten;
                     }
 
                     var ready = await PrepareAsync(companyId, write, purchase, inventory, connection, borrowed,
@@ -85,7 +98,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     var adjusted = await Checked(() => purchase.StageAsync(new(companyId, write.Request.AdjustmentId,
                         write.OrderId, write.AcceptanceId, write.Request.ExpectedPurchaseOrderVersion, write.Request.UndoQuantity,
                         write.ReplacementExpected, write.IsSupplierReturn, write.Request.Reason, write.Request.OccurredAtUtc,
-                        PurchaseReceiptReversalApiV1.CommandName, requestHash, next?.AcceptanceId, next?.AcceptedQuantity), envelope,
+                        write.CommandName, requestHash, next?.AcceptanceId, next?.AcceptedQuantity), envelope,
                         cancellationToken));
                     RequireResult(adjusted, companyId, write);
                     var actual = await Checked(() => purchase.ReadSupplyAsync(write.OrderId, target.GeneralLineId, cancellationToken))
@@ -96,9 +109,10 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                         adjusted.NewAcceptedQuantity), metadata, cancellationToken));
                     var correction = await CorrectionAsync(connection, borrowed, purchase, companyId, write, adjusted, reversed,
                         envelope, freshAuthority, cancellationToken);
+                    var written = await writeReturn(new(adjusted, View(reversed), correction), cancellationToken);
                     await freshAuthority(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
-                    return new(adjusted, View(reversed), correction);
+                    return written;
                 }
                 catch
                 {
@@ -123,7 +137,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
         catch (PurchaseLineBusyException exception) { throw new PurchasingServiceException(409, exception.Code); }
         catch (DbUpdateConcurrencyException) { throw PurchaseGoodsReceiptPrelock.RetryExhausted(); }
 
-        async Task<T> Checked<T>(Func<Task<T>> read)
+        async Task<TOwner> Checked<TOwner>(Func<Task<TOwner>> read)
         {
             var result = await read();
             await freshAuthority(cancellationToken);
@@ -193,9 +207,12 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
         && version.ToString(CultureInfo.InvariantCulture) == text
         ? version : throw Unavailable();
     private static PurchasingServiceException Unavailable() => new(503, PurchaseReceiptAdjustmentCodesV1.Unavailable);
-    private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope) => new(envelope.ActorId,
-        envelope.PermissionCode, envelope.RoleCodes, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey,
+    private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope, string commandName) => new(envelope.ActorId,
+        envelope.PermissionCode, envelope.RoleCodes, envelope.CorrelationId, envelope.CausationId,
+        InventoryChildKey(commandName, envelope.IdempotencyKey),
         envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent);
+    internal static string InventoryChildKey(string commandName, string key) => commandName == PurchaseReceiptReversalApiV1.CommandName
+        ? key : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(commandName + "\n" + key))).ToLowerInvariant();
     private static async Task RollbackQuietlyAsync(IDbContextTransaction transaction)
     { try { await transaction.RollbackAsync(CancellationToken.None); } catch { /* Preserve the original failure. */ } }
 }

@@ -18,7 +18,7 @@ internal sealed partial class PurchaseReceiptReversalHost
         if (adjusted.IsReplay != reversed.IsReplay || adjusted.OriginalCorrelationId != reversed.OriginalCorrelationId) throw Unavailable();
         var next = write.Request.ReplacementReceipt;
         if (next is null) return null;
-        var metadata = Metadata(envelope);
+        var metadata = Metadata(envelope, write.CommandName);
         await using var receipt = await InventoryGoodsReceiptParticipant.EnlistAsync(connection, transaction, companyId,
             services.GetRequiredService<ISettingsPrerequisiteProvider>(), token, clock);
         InventoryGoodsReceiptRequestV1 request;

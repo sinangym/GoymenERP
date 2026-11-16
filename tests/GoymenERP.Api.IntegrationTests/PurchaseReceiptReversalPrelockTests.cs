@@ -9,6 +9,17 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>Explicitly synthetic owner/read-set/lock protocol; not SQL exclusion or the complete Purchasing undo journey.</summary>
 public sealed class PurchaseReceiptReversalPrelockTests
 {
+    [Fact]
+    public void Supplier_return_child_keys_are_scoped_to_the_original_logical_command()
+    {
+        var create = PurchaseReceiptReversalHost.InventoryChildKey(PurchaseSupplierReturnCommandsV1.CreateV1, "same-key");
+        var approve = PurchaseReceiptReversalHost.InventoryChildKey(PurchaseSupplierReturnCommandsV1.ApproveCostExceptionV1, "same-key");
+        Assert.NotEqual(create, approve);
+        Assert.Equal(create, PurchaseReceiptReversalHost.InventoryChildKey(PurchaseSupplierReturnCommandsV1.CreateV1, "same-key"));
+        Assert.Equal(64, create.Length);
+        Assert.Equal("same-key", PurchaseReceiptReversalHost.InventoryChildKey(PurchaseReceiptReversalApiV1.CommandName, "same-key"));
+    }
+
     private static readonly Guid Company = Id(900);
     private static readonly Guid Order = Id(901);
     private static readonly Guid Acceptance = Id(902);

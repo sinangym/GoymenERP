@@ -331,7 +331,7 @@ public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsRe
         context.FutureSupplyConversionReversals.AddRange(reversalRows);
         audit.Enqueue(new AuditEventDraft(companyId, Codes.EventType, "Inventory.GoodsReceiptReversal", request.ReversalId.ToString("D"),
             "ReverseReceipt", 0, 1, AuditActorTypes.User, metadata.ActorId, metadata.PermissionCode, metadata.RoleCodes,
-            null, JsonSerializer.Serialize(answerResult, Engine.Json), request.Reason, ApprovalContextJson: null,
+            "{}", JsonSerializer.Serialize(answerResult, Engine.Json), request.Reason, ApprovalContextJson: null,
             AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         context.Commands.Add(new() { CompanyId = companyId, CommandName = Codes.CommandName, IdempotencyKeyHash = Engine.KeyHash(metadata.IdempotencyKey),

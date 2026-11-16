@@ -46,7 +46,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
 
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -70,6 +70,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string DetailCapabilityId = "purchasing.orders.detail";
     public const string ApproveCapabilityId = "purchasing.orders.approve";
     public const string GoodsReceiptCapabilityId = "purchasing.goods-receipts.record";
+    public const string SupplierReturnCapabilityId = "purchasing.supplier-returns.record";
     public const string CancelCapabilityId = "purchasing.orders.cancel";
     public const string LineScheduleCapabilityId = "purchasing.orders.line-schedule.write";
     public const string DetailRoutePath = "/satinalma/siparisler/:orderId";
@@ -134,6 +135,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = GoodsReceiptCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
+            },
+            detail with
+            {
+                CapabilityId = SupplierReturnCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
             },
             detail with
             {

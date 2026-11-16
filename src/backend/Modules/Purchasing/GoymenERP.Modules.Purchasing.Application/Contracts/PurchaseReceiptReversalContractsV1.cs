@@ -25,13 +25,20 @@ public sealed record PurchaseReceiptReversalResponseV1(PurchaseReceiptAdjustment
 
 /// <summary>The service has freshly authorized this owner operation. The host rechecks that SAME authority after awaited reads and before commit.</summary>
 public sealed record PurchaseReceiptReversalWriteV1(Guid OrderId, Guid AcceptanceId, ReversePurchaseReceiptV1 Request,
-    bool IsSupplierReturn = false, bool ReplacementExpected = false, string? OriginalUnitCostTryPerKg = null);
+    bool IsSupplierReturn = false, bool ReplacementExpected = false, string? OriginalUnitCostTryPerKg = null,
+    string CommandName = PurchaseReceiptReversalApiV1.CommandName, string? RequestHash = null);
 
 public interface IPurchaseReceiptReversalTransactionV1
 {
     Task<PurchaseReceiptReversalResponseV1> ExecuteAsync(Guid companyId, PurchaseReceiptReversalWriteV1 write,
         PurchasingWriteEnvelope envelope, Func<CancellationToken, Task> freshAuthority,
         CancellationToken cancellationToken = default);
+
+    /// <summary>The owner callback is invoked once after both adjustment stages, before the sole commit. Any failure rolls back all owners.</summary>
+    Task<T> ExecuteWithWriteAsync<T>(Guid companyId, PurchaseReceiptReversalWriteV1 write,
+        PurchasingWriteEnvelope envelope, Func<PurchaseReceiptReversalResponseV1, CancellationToken, Task<T>> writeReturn,
+        Func<CancellationToken, Task> freshAuthority, CancellationToken cancellationToken = default) =>
+        Task.FromException<T>(new PurchasingServiceException(503, PurchaseReceiptAdjustmentCodesV1.Unavailable));
 }
 
 public delegate Task<IPurchaseReceiptAdjustmentParticipantV1> PurchaseReceiptAdjustmentParticipantFactoryV1(

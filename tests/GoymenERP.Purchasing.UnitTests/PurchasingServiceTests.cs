@@ -523,11 +523,12 @@ public sealed partial class PurchasingServiceTests
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null,
-            IPurchaseReceiptReversalTransactionV1? reversals = null)
+            IPurchaseReceiptReversalTransactionV1? reversals = null, IPurchaseSupplierReturnStore? returns = null,
+            IPurchaseSupplierReturnInvoiceCostReadPortV1? returnCosts = null)
         {
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
                 new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources,
-                allocationLinks: AllocationLinks, receiptReversals: reversals);
+                allocationLinks: AllocationLinks, receiptReversals: reversals, returnStore: returns, returnInvoiceCosts: returnCosts);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
