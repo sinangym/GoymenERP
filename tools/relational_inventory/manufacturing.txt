@@ -3,7 +3,6 @@
 # SQL Server relational acceptance inventory: Manufacturing.
 # is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
 # Tren-1 W6: +7 source facts; execution NOT_RUN.
-
 GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.A_draft_plan_is_edited_reopened_with_its_history_and_the_next_steps_read_the_edit
 GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.A_draft_plan_is_linked_to_an_approved_sales_line_through_the_host_replayed_and_unlinked
 GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.A_half_link_and_every_sales_refusal_store_no_link_and_no_audit
