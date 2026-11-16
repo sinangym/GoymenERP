@@ -33,7 +33,7 @@ describe('reasoned order reopening', () => {
   })
   it('never submits when local persistence fails and explains a definite closed-period refusal', async () => {
     const first = render(ui()); const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('synthetic unavailable') })
-    submit(); expect(await screen.findByRole('alert')).toHaveTextContent(T.blocked); expect(reopenOrder).not.toHaveBeenCalled()
+    submit(); expect((await screen.findByRole('alert')).textContent).toContain(T.blocked); expect(reopenOrder).not.toHaveBeenCalled()
     first.unmount(); spy.mockRestore(); sessionStorage.clear()
     vi.mocked(reopenOrder).mockResolvedValue({ type: 'failed', status: 422, code: 'manufacturing_order_reopen_period_not_open' })
     const refresh = vi.fn(async () => {}); render(ui(true, refresh)); submit()

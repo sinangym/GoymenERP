@@ -33,6 +33,6 @@ describe('Batch correction journey, synthetic NOT_ENV', () => {
   })
   it('does not send without a chosen receipt and uses a separate company/actor scope for unresolved attempts', async () => {
     mount(); await userEvent.click(screen.getByRole('button', { name: T.save })); expect(reverseReceiptBatch).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert')).toHaveTextContent(T.invalid)
+    expect(screen.getByRole('alert').textContent).toContain(T.invalid)
   })
 })

@@ -42,7 +42,7 @@ describe('manual queue controls', () => {
   it('never sends when the exact attempt cannot be durably saved in session storage', async () => {
     render(controls())
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('synthetic unavailable') })
-    fill(); expect(await screen.findByRole('alert')).toHaveTextContent(T.blocked)
+    fill(); expect((await screen.findByRole('alert')).textContent).toContain(T.blocked)
     expect(moveQueuePlan).not.toHaveBeenCalled()
   })
   it('clears a known conflict and refreshes the current queue before another command', async () => {
