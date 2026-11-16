@@ -248,10 +248,10 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
         catch (DbUpdateException)
         {
             database.ChangeTracker.Clear();
-            var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
+            var winner = await ReadAsync(() => FindExecutionAsync(commandName, keyHash, cancellationToken));
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(MoneyProfileProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
@@ -276,7 +276,7 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
         catch (DbUpdateException)
         {
             database.ChangeTracker.Clear();
-            var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
+            var winner = await ReadAsync(() => FindExecutionAsync(commandName, keyHash, cancellationToken));
             if (winner is not null)
             {
                 return Replay(winner, requestHash, metadata);

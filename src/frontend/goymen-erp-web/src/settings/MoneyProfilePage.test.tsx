@@ -46,7 +46,7 @@ describe('F029-S3 money profiles', () => {
     expect(screen.queryByRole('button', { name: T.edit })).toBeNull()
   })
 
-  it('rejects malformed responses and keeps an empty company empty', async () => {
+  it('keeps an empty company empty', async () => {
     installFetch({ capabilities: [SETTINGS_CAPABILITY.moneyProfiles], respond: (url) => url.endsWith('/settings/money-profiles') ? json({ ...moneyProfileFixture(), profiles: [] }) : undefined })
     renderAt(path)
     expect(await screen.findByText(T.empty)).toBeTruthy()

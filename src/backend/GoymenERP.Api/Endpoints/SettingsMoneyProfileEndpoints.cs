@@ -148,7 +148,7 @@ public static class SettingsMoneyProfileEndpoints
         {
             StatusCodes.Status204NoContent => Results.NoContent(),
             _ when answer.Code is { } code => Problem(answer.StatusCode, code, answer.Title, answer.Detail),
-            _ => throw new InvalidOperationException("Birim profili komut sonucu HTTP durumuyla eşleşmiyor."),
+            _ => throw new InvalidOperationException("Para profili komut sonucu HTTP durumuyla eşleşmiyor."),
         };
     }
 
@@ -156,7 +156,7 @@ public static class SettingsMoneyProfileEndpoints
     {
         MoneyProfileProblemCodesV1.AccessDenied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
         _ => Problem(StatusCodes.Status503ServiceUnavailable, MoneyProfileProblemCodesV1.ProviderUnavailable,
-            "Ayarlar kullanılamıyor.", "Birim profilleri şu anda okunamıyor veya yazılamıyor; daha sonra yeniden deneyin."),
+            "Ayarlar kullanılamıyor.", "Para profilleri şu anda okunamıyor veya yazılamıyor; daha sonra yeniden deneyin."),
     };
 
     private static IResult Problem(int status, string code, string title, string detail) =>
