@@ -112,7 +112,17 @@ public sealed class FinanceBankAccountTests
         // (FNS-D25), the second-person credit limit check (FNS-D45, kept in the chain), the official invoice
         // identity claims (FIN-S5) and the transfer and currency exchange record (FNS-D24) follow it, and the
         // restored one-step credit limit check follows them; the customer collateral master follows it.
-        Assert.Equal(partyCollaterals, migrations.Last());
+        // W5 then adds approved openings, their immutable reversals/movements and the credit master.
+        const string openingBalances = "20261116080924_AddOpeningBalances";
+        const string openingReversals = "20261116104128_AddOpeningBalanceReversalsAndMovements";
+        const string creditAccounts = "20261116111738_AddCreditAccounts";
+        Assert.Contains(openingBalances, migrations);
+        Assert.Contains(openingReversals, migrations);
+        Assert.Contains(creditAccounts, migrations);
+        Assert.True(Array.IndexOf(migrations, partyCollaterals) < Array.IndexOf(migrations, openingBalances));
+        Assert.True(Array.IndexOf(migrations, openingBalances) < Array.IndexOf(migrations, openingReversals));
+        Assert.True(Array.IndexOf(migrations, openingReversals) < Array.IndexOf(migrations, creditAccounts));
+        Assert.Equal(creditAccounts, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
