@@ -270,6 +270,21 @@ public static class SalesInvoiceReasonCodesV1
 
     /// <summary>SAT-D157: the payable amount cannot be split into the due plan's instalments.</summary>
     public const string DueAmountNotSplittable = "due_amount_not_splittable";
+
+    /// <summary>SAT-D389 / SAT-D405: the share's dispatch note has no weighing-difference record — it cannot be invoiced.</summary>
+    public const string WeighingDifferenceNotRecorded = "weighing_difference_not_recorded";
+
+    /// <summary>SAT-D319 (6): the note's weighing difference is above the rate and waits for its approval.</summary>
+    public const string WeighingDifferencePendingApproval = "weighing_difference_pending_approval";
+
+    /// <summary>
+    /// SAT-D320 (3) / SAT-D322 (1): the sale passes at the scale kilograms, but the owner's per-line scale kilograms are not readable
+    /// yet (the Logistics V1 read carries the note totals only) — the share waits rather than guess a split.
+    /// </summary>
+    public const string WeighingKgTransferPending = "weighing_kg_transfer_pending";
+
+    /// <summary>The Logistics weighing-difference owner is not composed, failed or answered inconsistently — never invoiced unread.</summary>
+    public const string WeighingDifferenceUnavailable = "weighing_difference_unavailable";
 }
 
 /// <summary>The invoice routes' problem codes beside the draft's (<see cref="SalesDraftProblemCodesV1"/>).</summary>

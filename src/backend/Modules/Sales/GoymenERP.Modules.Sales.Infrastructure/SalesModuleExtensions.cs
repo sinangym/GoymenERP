@@ -87,6 +87,8 @@ public static class SalesModuleExtensions
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
+        // SAT-S13: the same read service answers one note's weighing difference (the Logistics owner's read through the host adapter).
+        services.AddScoped<ISalesDispatchWeighingDifferenceReadService>(CreateDispatchReadService);
         // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
@@ -194,7 +196,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
         serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>(),
         serviceProvider.GetService<ISalesSubcontractServiceInvoiceStore>(),
-        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>());
+        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>(),
+        // SAT-S13 (SAT-D389 / SAT-D319 (6)): absent, every share waits with weighing_difference_unavailable — never invoiced unread.
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
@@ -208,7 +212,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesDispatchNoteReadPortV1>(),
         serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
         // SAT-D90 / SAT-D101: the Settings rate-day port for the invoice-group rate (absent: unresolved, never a guess).
-        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        // SAT-S13: the weighing-difference seam (absent: 503, never a zero).
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>());
 
     // Built in a named factory so that no registration statement of this module names the company
     // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).

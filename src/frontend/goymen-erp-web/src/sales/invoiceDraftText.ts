@@ -57,6 +57,10 @@ export const INVOICE_NOT_READY_REASON_TEXT: Readonly<Record<string, string>> = {
   exemption_document_after_shipment: 'Alıcının istisna belgesi sevkten sonra tarihli.',
   amount_out_of_range: 'Tutar izin verilen aralığın dışında.',
   due_amount_not_splittable: 'Ödenecek tutar vade planının taksitlerine bölünemiyor.',
+  weighing_difference_not_recorded: 'İrsaliyenin kantar farkı kaydı yok; kayıt olmadan faturalanamaz.',
+  weighing_difference_pending_approval: 'İrsaliyenin kantar farkı oranı aştı ve onay bekliyor.',
+  weighing_kg_transfer_pending: 'Kantar kg değeri fatura satırlarına henüz aktarılamıyor; satır bazında kantar kg bilgisi bekleniyor.',
+  weighing_difference_unavailable: 'İrsaliyenin kantar farkı kaydı okunamadı.',
 }
 
 export const invoiceNotReadyReasonText = (code: string): string =>

@@ -27,6 +27,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>Waits, never guesses</b> — a tax blocker (SAT-D135/D147), an exemption document dated after the shipment (SAT-D186),
 /// a withholding line (the VUK 232 comparison is not decided), a missing price, rate or due date: 409 <c>invoice_not_ready</c>
 /// with every reason; nothing is recorded under the key, so the same key asks again once the cause is gone.</item>
+/// <item><b>Weighing difference</b> (SAT-S13) — each share's dispatch note must carry the Logistics weighing-difference record
+/// (SAT-D389), not pending approval (SAT-D319 (6)), and pass at the scale kilograms (SAT-D322 (1)); see
+/// <see cref="SalesDispatchWeighingInvoiceRule"/>.</item>
 /// </list>
 /// Amounts are <see cref="SalesInvoiceCalculator"/>'s only (SAT-D11/D75/D76, EK42 SAT-D223…D226).
 /// </summary>
@@ -46,7 +49,8 @@ public sealed partial class SalesInvoiceService(
     ISalesFinanceAdmissionPortV1? financeAdmission = null,
     ISalesInvoiceDiagnosticsV1? diagnostics = null,
     ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null,
-    ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null) : ISalesInvoiceService
+    ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null,
+    ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
@@ -102,6 +106,9 @@ public sealed partial class SalesInvoiceService(
                 prepared.Add(ready);
             }
         }
+
+        // SAT-S13 (SAT-D389 / SAT-D405, SAT-D319 (6), SAT-D322 (1)): every note of a ready share waits on its weighing difference.
+        await AddWeighingDifferenceWaitsAsync(scope, prepared, reasons, cancellationToken);
 
         if (reasons.Count == 0)
         {
