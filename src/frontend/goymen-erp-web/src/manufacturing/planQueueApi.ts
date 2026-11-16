@@ -1,5 +1,6 @@
 import { MANUFACTURING_BASE, devHeaders } from './api'
 import type { ViewOutcome } from '../shell/uiState'
+import { calendarDate } from './contract'
 
 export interface PlanPriority {
   readonly companyId: string; readonly planId: string; readonly planVersion: number
@@ -44,8 +45,7 @@ export function decodePlanQueue(v: unknown): PlanQueue | null {
   for (const line of v.items) {
     if (!obj(line) || !guid(line.planId) || ids.has(line.planId.toLowerCase()) || !score(line.priorityScore)
       || !revision(line.priorityRevision) || typeof line.isOverPlanned !== 'boolean' || typeof line.isQueued !== 'boolean'
-      || (line.dueDate !== null && (typeof line.dueDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(line.dueDate)
-        || !Number.isFinite(Date.parse(line.dueDate))))
+      || (line.dueDate !== null && (typeof line.dueDate !== 'string' || !calendarDate(line.dueDate)))
       || ['plannedKg', 'processedKg', 'remainingKg'].some((key) => typeof line[key] !== 'string' || !KG.test(line[key] as string))) return null
     ids.add(line.planId.toLowerCase())
   }
@@ -63,12 +63,16 @@ async function read<T>(companyId: string, path: string, decode: (v: unknown) => 
   const value = decode(body)
   return value !== null && matches(value) ? { type: 'ok-single', data: value } : { type: 'malformed' }
 }
-export const fetchPlanPriority = (company: string, plan: string, version: number, signal?: AbortSignal) =>
-  read(company, `/plans/${encodeURIComponent(plan)}/priority`, decodePlanPriority,
-    (v) => v.companyId.toLowerCase() === company.toLowerCase() && v.planId.toLowerCase() === plan.toLowerCase() && v.planVersion === version, signal)
-export const fetchPlanQueue = (company: string, plan: string, version: number, signal?: AbortSignal) =>
-  read(company, `/plans/${encodeURIComponent(plan)}/work-center-queue`, decodePlanQueue,
-    (v) => v.companyId.toLowerCase() === company.toLowerCase() && v.targetPlanId.toLowerCase() === plan.toLowerCase() && v.targetPlanVersion === version, signal)
+export async function fetchPlanPriority(company: string, plan: string, version: number, signal?: AbortSignal): Promise<ViewOutcome<PlanPriority>> {
+  const answer = await read(company, `/plans/${encodeURIComponent(plan)}/priority`, decodePlanPriority,
+    (v) => v.companyId.toLowerCase() === company.toLowerCase() && v.planId.toLowerCase() === plan.toLowerCase(), signal)
+  return answer.type === 'ok-single' && answer.data.planVersion !== version ? { type: 'http', status: 409 } : answer
+}
+export async function fetchPlanQueue(company: string, plan: string, version: number, signal?: AbortSignal): Promise<ViewOutcome<PlanQueue>> {
+  const answer = await read(company, `/plans/${encodeURIComponent(plan)}/work-center-queue`, decodePlanQueue,
+    (v) => v.companyId.toLowerCase() === company.toLowerCase() && v.targetPlanId.toLowerCase() === plan.toLowerCase(), signal)
+  return answer.type === 'ok-single' && answer.data.targetPlanVersion !== version ? { type: 'http', status: 409 } : answer
+}
 
 /** A lost, 503 or undecodable answer retains the exact frozen attempt; this function never retries. */
 export async function changePlanPriority(company: string, plan: string, attempt: PriorityAttempt): Promise<PriorityOutcome> {
@@ -82,13 +86,19 @@ export async function changePlanPriority(company: string, plan: string, attempt:
   let body: unknown = null
   try { body = await response.json() } catch { /* A write may already have committed. */ }
   if (response.status === 200) {
+    const replayHeader = response.headers.get('Idempotency-Replayed')?.trim().toLowerCase()
+    const original = response.headers.get('Idempotency-Original-Correlation-Id')?.trim()
+    if (replayHeader !== undefined && replayHeader !== 'true' && replayHeader !== 'false' || replayHeader === 'true' && !original)
+      return { type: 'unknown' }
     const value = decodePlanPriority(body)
     return value !== null && value.companyId.toLowerCase() === company.toLowerCase() && value.planId.toLowerCase() === plan.toLowerCase()
       && value.planVersion === attempt.expectedVersion && value.priorityRevision === attempt.expectedPriorityRevision + 1
       && value.priorityScore === attempt.priorityScore && value.reason === attempt.reason.trim()
-      ? { type: 'applied', resource: value, replayed: response.headers.get('Idempotency-Replayed') === 'true' } : { type: 'unknown' }
+      ? { type: 'applied', resource: value, replayed: replayHeader === 'true' } : { type: 'unknown' }
   }
-  return [400, 401, 403, 404, 409, 422].includes(response.status)
+  if ((response.status === 409 || response.status === 422) && (!obj(body) || typeof body.code !== 'string' || !body.code.trim()))
+    return { type: 'unknown' }
+  return [400, 401, 403, 404, 409, 415, 422].includes(response.status)
     ? { type: 'failed', status: response.status, code: obj(body) && typeof body.code === 'string' ? body.code : null }
     : { type: 'unknown' }
 }

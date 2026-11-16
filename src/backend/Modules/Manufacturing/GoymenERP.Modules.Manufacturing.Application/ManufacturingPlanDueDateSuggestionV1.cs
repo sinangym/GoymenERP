@@ -374,7 +374,8 @@ public sealed partial class ManufacturingCommandService
         try
         {
             var answer = await companyDueDateBuffer.GetDueDateBufferAsync(companyId, cancellationToken);
-            return answer.CompanyId == companyId && answer.WorkingDays >= 0 && answer.Version >= 0 ? answer : null;
+            return answer.CompanyId == companyId && answer.WorkingDays >= 0 && answer.Version >= 0
+                && (answer.Version > 0 || answer.WorkingDays == 0) ? answer : null;
         }
         catch (Exception exception) when (exception is not OperationCanceledException) { return null; }
     }

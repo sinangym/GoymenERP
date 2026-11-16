@@ -536,17 +536,31 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Null(result.Resource);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_foreign_company_buffer_or_a_nonzero_unrecorded_default_is_unavailable(bool foreign)
+    {
+        var source = new SuggestionCompanyBufferPort { Days = 2, Version = 0, AnswerCompany = foreign ? OtherCompany : Company };
+        var (fixture, service) = SuggestionCase(new SuggestionCalendarPort { Answer = WeekdayCalendar() },
+            new SuggestionCapacityPort(), companyBuffer: source);
+        var answer = await service.GetPlanDueDateSuggestionAsync(SuggestionPlan(fixture).Id, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Unavailable, answer.Status); Assert.Null(answer.Resource);
+    }
+
     private sealed class SuggestionCompanyBufferPort : ISettingsManufacturingDueDateBufferProviderV1
     {
         public int Days { get; init; }
         public bool Fail { get; init; }
+        public long? Version { get; init; }
+        public Guid? AnswerCompany { get; init; }
         public List<Guid> Calls { get; } = [];
         public Task<SettingsManufacturingDueDateBufferV1> GetDueDateBufferAsync(Guid companyId,
             CancellationToken cancellationToken = default)
         {
             Calls.Add(companyId);
             if (Fail) throw new InvalidOperationException("Synthetic company buffer read failure");
-            return Task.FromResult(new SettingsManufacturingDueDateBufferV1(companyId, Days, Days == 0 ? 0 : 1));
+            return Task.FromResult(new SettingsManufacturingDueDateBufferV1(AnswerCompany ?? companyId, Days, Version ?? (Days == 0 ? 0 : 1)));
         }
     }
 
