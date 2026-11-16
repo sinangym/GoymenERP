@@ -566,7 +566,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             IErpAuthorityRevalidationService authority,
             IManufacturingInventoryOutputAdmission admission,
             Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null,
-            IManufacturingOutputLabelCodePolicyReadPortV1? labelCodePolicy = null)
+            IManufacturingOutputLabelCodePolicyReadPortV1? labelCodePolicy = null,
+            IInventoryLabelDispositionReadPortV1? labelDispositions = null)
         {
             var company = new CompanyContext();
             company.Set(CompanyA);
@@ -579,7 +580,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             var context = new ManufacturingDbContext(options, company);
             var store = new ManufacturingStore(context, company, audit, TimeProvider.System);
             var host = new ManufacturingInventoryReturnOutputHost(
-                context, store, company, authority, ManufacturingSettings(run), admission, observer, labelCodePolicy);
+                context, store, company, authority, ManufacturingSettings(run), admission, observer, labelCodePolicy, labelDispositions: labelDispositions);
             return new ReturnOutputHostScope(context, store, host);
         }
 

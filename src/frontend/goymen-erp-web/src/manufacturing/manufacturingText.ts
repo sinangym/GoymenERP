@@ -101,6 +101,10 @@ export const OUTPUT_INVENTORY_TEXT = {
   productRequired: 'Sunucunun doğruladığı bir stok ürünü seçin.',
   locationRequired: 'Sunucunun doğruladığı aktif bir lokasyon seçin.',
   classRequired: 'Çıktı sınıfını seçin.',
+  outputLine: 'Plan çıktı satırı',
+  outputLineRequired: 'Beyanın bağlı olduğu plan çıktı satırını seçin.',
+  outputLineLabel: (kind: string, sequence: number | null, lineId: string | null) =>
+    kind === 'SlitLine' ? `Dilme satırı ${sequence}` : kind === 'CutLine' ? `Kesim satırı ${lineId}` : 'Çıktı sınıfı satırı',
   blockRequired: 'İlk stok durumunu açıkça seçin; ekran varsayılan seçmez.',
   productLoading: 'Ürün seçenekleri yükleniyor…',
   locationLoading: 'Lokasyon seçenekleri yükleniyor…',

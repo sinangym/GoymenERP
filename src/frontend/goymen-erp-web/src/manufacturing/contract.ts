@@ -290,6 +290,28 @@ export interface PlanSalesOrderLinkView {
   readonly linkedAtUtc: string
 }
 
+export interface ManufacturingOutputLineReference {
+  readonly kind: 'SlitLine' | 'CutLine' | 'ClassLine'
+  readonly slitLineSequence: number | null
+  readonly cutLineId: string | null
+}
+
+export function outputLineKey(line: ManufacturingOutputLineReference): string {
+  return `${line.kind}:${line.slitLineSequence ?? line.cutLineId ?? ''}`
+}
+
+function decodeOutputLine(value: unknown): ManufacturingOutputLineReference | null {
+  if (!isObject(value) || !hasExactKeys(value, ['kind', 'slitLineSequence', 'cutLineId'])) return null
+  if (value.kind === 'ClassLine' && value.slitLineSequence === null && value.cutLineId === null)
+    return { kind: 'ClassLine', slitLineSequence: null, cutLineId: null }
+  if (value.kind === 'SlitLine' && typeof value.slitLineSequence === 'number'
+    && Number.isSafeInteger(value.slitLineSequence) && value.slitLineSequence > 0 && value.cutLineId === null)
+    return { kind: 'SlitLine', slitLineSequence: value.slitLineSequence, cutLineId: null }
+  if (value.kind === 'CutLine' && value.slitLineSequence === null && nonNilGuid(value.cutLineId) !== null)
+    return { kind: 'CutLine', slitLineSequence: null, cutLineId: value.cutLineId as string }
+  return null
+}
+
 export interface ProductionOrderView {
   readonly orderId: string
   readonly companyId: string
@@ -317,6 +339,7 @@ export interface ProductionOrderView {
   readonly planDueDate: string | null
   /** URT-D66 (4): the server's "emir termini plandan farklı" flag; never computed here. False for legacy JSON. */
   readonly dueDateDiffersFromPlan: boolean
+  readonly outputLines?: readonly ManufacturingOutputLineReference[]
   readonly cancellationReason?: string | null
   readonly cancelledByUserId?: string | null
   readonly cancelledAtUtc?: string | null
@@ -1086,6 +1109,10 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
   ) {
     return null
   }
+  const outputLines = body.outputLines === undefined || body.outputLines === null ? []
+    : Array.isArray(body.outputLines) ? body.outputLines.map(decodeOutputLine) : null
+  if (outputLines === null || outputLines.some((line) => line === null)
+    || new Set(outputLines.map((line) => outputLineKey(line!))).size !== outputLines.length) return null
   // URT-D33: cancellation is retained and cannot be mistaken for an open order.
   const cancellationReason = body.cancellationReason === undefined || body.cancellationReason === null
     ? null : boundedSnapshotText(body.cancellationReason, 256) ? body.cancellationReason : undefined
@@ -1123,6 +1150,7 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     dueDateRevision,
     planDueDate,
     dueDateDiffersFromPlan,
+    outputLines: outputLines as ManufacturingOutputLineReference[],
     cancellationReason,
     cancelledByUserId,
     cancelledAtUtc,
@@ -1194,6 +1222,7 @@ export type FactSnapshot =
       readonly movementId: string
       readonly expectedParentLabelVersion: string
       readonly outputClass: InventoryOutputClass
+      readonly outputLine?: ManufacturingOutputLineReference | null
       /** Only for UsableRemnant (null otherwise); sent only with that class. */
       readonly remnantClassification: RemnantClassification | null
       readonly productId: string
@@ -1238,6 +1267,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       outputClass: snapshot.outputClass,
+      ...(snapshot.outputLine == null ? {} : { outputLine: snapshot.outputLine }),
       ...(snapshot.outputClass === 'UsableRemnant' && snapshot.remnantClassification !== null
         ? { remnantClassification: snapshot.remnantClassification }
         : {}),

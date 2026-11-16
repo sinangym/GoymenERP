@@ -133,7 +133,10 @@ public sealed record DeclareInventoryOutputRequestV1(
     string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
     string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
     string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
-    string? RemnantClassification = null);
+    string? RemnantClassification = null, ManufacturingOutputLineReferenceV1? OutputLine = null);
+
+/// <summary>URT-D30: the user's exact plan output line, or the class line for an unlined output class.</summary>
+public sealed record ManufacturingOutputLineReferenceV1(string Kind, int? SlitLineSequence, Guid? CutLineId);
 
 /// <summary><see cref="OutputClass"/> is one of the five <c>OutputClass</c> names.</summary>
 public sealed record DeclareOutputRequestV1(
@@ -285,7 +288,8 @@ public sealed record OrderViewV1(
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
     DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false,
-    string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null);
+    string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null,
+    IReadOnlyList<ManufacturingOutputLineReferenceV1>? OutputLines = null);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -1777,6 +1781,21 @@ public sealed partial class ManufacturingCommandService(
             ? new { declaration = canonical, remnantClassification = chosenRemnantClassification.ToString() }
             : canonical;
 
+        PlanOutputLineReference? outputLine = null;
+        if (request.OutputLine is { } selectedLine)
+        {
+            try
+            {
+                if (!Enum.TryParse<PlanOutputLineKind>(selectedLine.Kind, ignoreCase: false, out var kind)
+                    || !Enum.IsDefined(kind) || kind.ToString() != selectedLine.Kind)
+                    return Invalid<OrderViewV1>("outputLine");
+                outputLine = PlanOutputLineReference.FromStored(kind, selectedLine.SlitLineSequence, selectedLine.CutLineId);
+            }
+            catch (ArgumentException) { return Invalid<OrderViewV1>("outputLine"); }
+            // Omitted on old commands: their canonical request and replay hashes remain unchanged.
+            canonicalRequest = new { declaration = canonicalRequest, outputLine = selectedLine };
+        }
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
             canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
@@ -1804,7 +1823,7 @@ public sealed partial class ManufacturingCommandService(
                         request.LotId, request.LabelId, enteredLabelCode, request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
-                        request.MovementId, mass.Value, occurredAt, remnantClassification),
+                        request.MovementId, mass.Value, occurredAt, remnantClassification, outputLine),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -3213,7 +3232,9 @@ public sealed partial class ManufacturingCommandService(
             })],
             nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc,
             order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan,
-            order.CancellationReason, order.CancelledByUserId, order.CancelledAtUtc);
+            order.CancellationReason, order.CancelledByUserId, order.CancelledAtUtc,
+            [.. order.PlannedOutputLines.Append(PlanOutputLineReference.ClassLine).Select(line =>
+                new ManufacturingOutputLineReferenceV1(line.Kind.ToString(), line.SlitLineSequence, line.CutLineId))]);
     }
 
     /// <summary>

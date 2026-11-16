@@ -87,7 +87,8 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     Guid MovementId,
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc,
-    InventoryLabelClassificationV1? RemnantClassification = null);
+    InventoryLabelClassificationV1? RemnantClassification = null,
+    PlanOutputLineReference? OutputLine = null);
 
 public sealed record ManufacturingInventoryInputIssuePortResultV1(
     long OrderVersion,

@@ -41,6 +41,15 @@ import {
 } from './testHarness'
 
 describe('decodeOrder', () => {
+  it('keeps exact plan output line choices and rejects malformed or duplicate references', () => {
+    const line = { kind: 'SlitLine', slitLineSequence: 2, cutLineId: null }
+    expect(decodeOrder(order({ outputLines: [line] }))?.outputLines).toEqual([line])
+    expect(decodeOrder(order({ outputLines: [line, line] }))).toBeNull()
+    expect(decodeOrder(order({ outputLines: [{ ...line, cutLineId: ORDER }] }))).toBeNull()
+    expect(decodeOrder(order({ outputLines: [{ kind: 'ClassLine', slitLineSequence: null, cutLineId: null }] })))
+      .not.toBeNull()
+  })
+
   it('accepts retained cancellation metadata and rejects an incomplete cancellation', () => {
     const cancelled = order({ status: 'Cancelled', cancellationReason: 'SENTETIK iptal',
       cancelledByUserId: APPROVER, cancelledAtUtc: '2026-11-16T10:00:00Z' })
@@ -228,6 +237,7 @@ describe('factBody', () => {
       kind: 'outputs',
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      outputLine: { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
       remnantClassification: null,
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
@@ -249,6 +259,7 @@ describe('factBody', () => {
       parentRollId: ROLL_1,
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      outputLine: { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
       lotId: 'a0000000-0000-4000-8000-000000000002',

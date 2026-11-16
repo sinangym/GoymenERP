@@ -141,7 +141,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.MovementId,
                 command.Quantity,
                 command.OccurredAtUtc,
-                command.RemnantClassification), metadata, cancellationToken);
+                command.RemnantClassification, command.OutputLine), metadata, cancellationToken);
             return new ManufacturingInventoryOutputPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.LabelVersion, result.IsReplay);
         }
@@ -484,7 +484,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         {
             var manufacturingOutcome = await orders.DeclareOutputAsync(
                 command.OrderId, command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
-                command.OutputClass, command.Quantity, command.OccurredAtUtc, metadata, cancellationToken);
+                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine, metadata, cancellationToken);
             var stored = await RequireStoredOrderAsync(command.OrderId, command.ParentLabelId, cancellationToken);
             var realizationOrderVersion = checked(command.ExpectedOrderVersion + 1);
             RequireRecordedVersion(manufacturingOutcome, stored.Version, realizationOrderVersion);
@@ -958,7 +958,8 @@ internal sealed record ManufacturingInventoryOutputCommand(
     Guid MovementId,
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc,
-    InventoryLabelClassificationV1? RemnantClassification = null);
+    InventoryLabelClassificationV1? RemnantClassification = null,
+    PlanOutputLineReference? OutputLine = null);
 
 internal sealed record ManufacturingInventoryInputReturnResult(
     Guid OrderId,
