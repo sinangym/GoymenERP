@@ -157,10 +157,32 @@ export interface AllocationSuggestions {
   readonly aiSuggestions: 'disabled' | 'enabled'
   readonly truncated: boolean
   readonly items: readonly AllocationSuggestion[]
+  /**
+   * KLN-D99: the requested kilograms the server ordered the line's labels by (closest first, ties by label code), in
+   * its normalized form; `null` when no quantity was sent. The list stays a suggestion: the user picks by hand.
+   */
+  readonly requestedKg: string | null
 }
 
-const SUGGESTIONS_KEYS = ['aiSuggestions', 'companyId', 'items', 'productId', 'productVersion', 'salesOrderId',
-  'salesOrderLineId', 'similarProductMode', 'truncated']
+const REQUESTED_KG = /^[0-9]+(?:\.[0-9]{1,3})?$/
+const REQUESTED_KG_MAX_LENGTH = 32
+
+/**
+ * KLN-D99: the allocation form's kilograms as the suggestion query's `requestedKg`, normalized exactly like the server
+ * echoes it (no leading zeros, no trailing fraction zeros). Empty, zero, a comma, more than three decimals or any other
+ * text gives `null`: the list is then read without a proximity order, never with a rounded quantity.
+ */
+export function normalizeRequestedKg(value: string): string | null {
+  if (value.length > REQUESTED_KG_MAX_LENGTH || !REQUESTED_KG.test(value)) return null
+  const [whole, fraction = ''] = value.split('.')
+  const integer = whole.replace(/^0+(?=[0-9])/, '')
+  const decimals = fraction.replace(/0+$/, '')
+  if (integer === '0' && decimals === '') return null
+  return decimals === '' ? integer : `${integer}.${decimals}`
+}
+
+const SUGGESTIONS_KEYS = ['aiSuggestions', 'companyId', 'items', 'productId', 'productVersion', 'requestedKg',
+  'salesOrderId', 'salesOrderLineId', 'similarProductMode', 'truncated']
 const SUGGESTION_KEYS = ['isSubstitute', 'kind', 'labelCode', 'labelId', 'labelVersion', 'maximumDeviationPercent',
   'productCode', 'productId', 'productName', 'productVersion', 'unreservedKg']
 const POSITIVE_DECIMAL = (value: unknown): value is string => decimal(value) && !/^0(?:\.0+)?$/.test(value)
@@ -195,9 +217,15 @@ function decodeSuggestion(value: unknown, expected: AllocationScope, mode: Simil
  * Strict decoder of `GET /inventory/physical-allocations/suggestions` (KLN-D34/D39/D40). The answer must be for the
  * requested company, order line and the line's exact product version; one torn item rejects the whole list.
  */
-export function decodeAllocationSuggestions(value: unknown, expected: AllocationScope): AllocationSuggestions | null {
+export function decodeAllocationSuggestions(
+  value: unknown,
+  expected: AllocationScope,
+  expectedRequestedKg: string | null = null,
+): AllocationSuggestions | null {
   const source = record(value)
-  if (source === null || !exactKeys(source, SUGGESTIONS_KEYS) || source.companyId !== expected.companyId
+  // KLN-D99: the answer must echo the quantity it was ordered by; another quantity means another ordering.
+  if (source === null || !exactKeys(source, SUGGESTIONS_KEYS) || source.requestedKg !== expectedRequestedKg
+    || source.companyId !== expected.companyId
     || source.salesOrderId !== expected.salesOrderId || source.salesOrderLineId !== expected.salesOrderLineId
     || source.productId !== expected.productId || source.productVersion !== expected.productVersion
     || (source.similarProductMode !== 'same-product-only' && source.similarProductMode !== 'dimension-tolerance')
@@ -215,5 +243,12 @@ export function decodeAllocationSuggestions(value: unknown, expected: Allocation
   // KLN-D39: similar products are offered only when the line's own product has no label.
   const kinds = new Set(items.map((item) => item.kind))
   if (kinds.size > 1) return null
-  return { similarProductMode: mode, aiSuggestions: source.aiSuggestions, truncated: source.truncated, items }
+  // The server's order is kept as sent: the proximity order (KLN-D99) is the backend's, never re-sorted here.
+  return {
+    similarProductMode: mode,
+    aiSuggestions: source.aiSuggestions,
+    truncated: source.truncated,
+    items,
+    requestedKg: expectedRequestedKg,
+  }
 }

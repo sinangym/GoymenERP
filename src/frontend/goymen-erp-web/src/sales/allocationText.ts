@@ -80,6 +80,10 @@ export const ALLOCATION_TEXT = {
   suggestionSimilarNote: 'Bu satırın ürününde ayrılabilir etiket yok. Aşağıdakiler farklı ama benzer ürünlerin etiketleridir; seçerseniz tahsis “Muadil” olarak işaretlenir.',
   suggestionEmptySameOnly: 'Bu satırın ürünü için ayrılabilir serbest miktarı olan etiket yok.',
   suggestionEmpty: 'Bu satırın ürünü ve tolerans içindeki benzer ürünler için ayrılabilir serbest miktarı olan etiket yok.',
+  suggestionOrderByQuantity: (kg: string) =>
+    `Etiketler tahsis miktarına (${kg} kg) en yakın ayrılabilir miktardan başlayarak sıralandı. Sıra yalnız yardımdır; etiketi siz seçersiniz.`,
+  suggestionOrderNoQuantity: 'Tahsis kg girilmediği için etiketler kod sırasıyla listelendi. Miktara en yakın sıra için önce tahsis kg girip önerileri yenileyin.',
+  suggestionOrderStale: 'Tahsis kg öneriler okunduktan sonra değişti; miktara yakınlık sırası için önerileri yenileyin.',
   suggestionTruncated: 'Önerilerin yalnız bir kısmı gösteriliyor; liste eksik olabilir. Etiket aramasıyla daraltın.',
   suggestionForbidden: 'Etiket önerisi yetkisi yok ya da artık geçerli değil.',
   suggestionLineNotFound: 'Sipariş satırı onaylı değil ya da bulunamadı; öneri gösterilmedi.',
