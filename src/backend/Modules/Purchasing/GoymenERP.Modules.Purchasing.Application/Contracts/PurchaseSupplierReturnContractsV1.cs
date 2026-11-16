@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using GoymenERP.Modules.Purchasing.Domain.Returns;
 
@@ -19,7 +20,9 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public sealed record CreatePurchaseSupplierReturnV1(
     Guid ReturnId, Guid ReturnLineId, Guid GoodsAcceptanceId, Guid InventoryMovementId, string SourceBlock, string QuantityKg,
-    string? ManualUnitCostTryPerKg, bool ReplacementExpected, string Reason, DateTimeOffset OccurredAtUtc);
+    string? ManualUnitCostTryPerKg, bool ReplacementExpected, string Reason, DateTimeOffset OccurredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UndoQuantity = null);
 
 /// <summary>An approval or a rejection of a pending cost exception; a rejection needs a reason.</summary>
 public sealed record DecidePurchaseSupplierReturnV1(string ExpectedVersion, string? Reason);
@@ -28,7 +31,9 @@ public sealed record PurchaseSupplierReturnViewV1(
     Guid CompanyId, Guid ReturnId, Guid ReturnLineId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, Guid GoodsAcceptanceId,
     Guid InventoryMovementId, string Status, string Version, string SourceBlock, string QuantityKg, string CostBasis,
     string UnitCostTryPerKg, bool ReplacementExpected, string Reason, DateTimeOffset OccurredAtUtc, string RequestedBy,
-    DateTimeOffset RequestedAtUtc, string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason);
+    DateTimeOffset RequestedAtUtc, string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? UndoQuantity = null);
 
 public sealed record PurchaseSupplierReturnResponseV1(PurchaseSupplierReturnViewV1 Return, bool IsReplay, string OriginalCorrelationId);
 public sealed record PurchaseSupplierReturnDetailV1(PurchaseSupplierReturnViewV1 Return);
@@ -138,7 +143,9 @@ public interface IPurchaseSupplierReturnTransactionV1
 public sealed record PurchaseSupplierReturnDraft(
     Guid ReturnId, Guid ReturnLineId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, Guid GoodsAcceptanceId, Guid InventoryMovementId,
     PurchaseSupplierReturnStatus Status, string SourceBlock, decimal QuantityKg, PurchaseSupplierReturnCostBasis CostBasis,
-    decimal UnitCostTryPerKg, bool ReplacementExpected, string Reason, DateTimeOffset OccurredAtUtc);
+    decimal UnitCostTryPerKg, bool ReplacementExpected, string Reason, DateTimeOffset OccurredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ExpectedPurchaseOrderVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? UndoQuantity = null);
 
 public sealed record StoredPurchaseSupplierReturn(
     Guid CompanyId, PurchaseSupplierReturnDraft Return, long Version, string RequestedBy, DateTimeOffset RequestedAtUtc,
@@ -201,6 +208,9 @@ public static class PurchaseSupplierReturnJsonV1
             || request.InventoryMovementId == Guid.Empty || request.SourceBlock is null
             || !SourceBlocks.Contains(request.SourceBlock, StringComparer.Ordinal) || !IsPositiveQuantity(request.QuantityKg)
             || request.ManualUnitCostTryPerKg is not null && !IsPositiveUnitCost(request.ManualUnitCostTryPerKg)
+            || (request.ExpectedPurchaseOrderVersion is null) != (request.UndoQuantity is null)
+            || request.ExpectedPurchaseOrderVersion is not null && !Version(request.ExpectedPurchaseOrderVersion)
+            || request.UndoQuantity is not null && !IsPositiveQuantity(request.UndoQuantity)
             || !BoundedReason(request.Reason, required: true)
             || request.OccurredAtUtc == default || request.OccurredAtUtc.Offset != TimeSpan.Zero)
         {
