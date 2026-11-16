@@ -280,13 +280,13 @@ internal sealed partial class ProductPackageStandardService
     {
         await MeasureAsync(cancellationToken);
         database.ChangeTracker.Clear();
-        AddKeptFile(scope.CompanyId, file, ProductPackageStandardImportOutcomesV3.Refused, answer.ProblemCode, null, answer.Detail,
+        AddKeptFile(scope.CompanyId, file, ProductPackageStandardImportOutcomesV3.Refused, answer.Code, null, answer.Detail,
             metadata);
         AddAttempt(ImportCommandName, answer, keyHash, requestHash, metadata);
         var after = new
         {
             file.ImportId, file.FileName, file.FileSha256, FileSizeBytes = file.Content.Length, file.SourceLabel, file.Reason,
-            Outcome = ProductPackageStandardImportOutcomesV3.Refused, answer.ProblemCode, file.RowCount,
+            Outcome = ProductPackageStandardImportOutcomesV3.Refused, ProblemCode = answer.Code, file.RowCount,
             ErrorCount = file.Errors.Count,
         };
         auditEvents.Enqueue(new AuditEventDraft(scope.CompanyId, "product.package-standards.import-file-kept.v3",
