@@ -20,7 +20,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Re-fingerprinted for tren-1 wave 2 (trial integration): + the Counterparty outbox set (alis_cari wave 2);
         // CommandExecution tenant filter unchanged.
         // Re-fingerprinted for tren-1 wave 3 (integration): the Counterparty outbox and the deactivation/merge slices combined; token counts checked by the guard (f8ae21fd… -> 55069c28…).
-        "55069c287f6fd6b1c2c5ad97dd9fc6259ac809b08cd02577f88760137f6a35bb";
+        // Re-fingerprinted for tren-1 W5 (integration): ALC-SC47 legal-name change requests; values from the guard output (55069c28… -> 6d51033c…).
+        "6d51033c5536f43ea7a7fc21c408f24e7a49deab4ad3710225a34a323816d7ae";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"

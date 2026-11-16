@@ -153,7 +153,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // the network-isolation surface needs the K3 review of AI-3 (5653c485... -> 6c36f610...).
         // Re-fingerprinted for tren-1 wave 3 (integration): AddErpSecretStore (E8 secret store reader, no value configured), the ALC-S16 batch host registration and the two Settings policy endpoint maps (KIM-F1) combined; no generation or hosted-service change (6c36f610… -> f11de9cd…).
         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the Product similarity facts host and the Purchasing shortage supply host registrations and the kg/m table endpoint map; no generation or hosted-service change (f11de9cd… -> f66beec7…).
-        "f66beec7248729ada3b1375a38404bdda1c64e138c53a2cb5f19936ed5b735e1";
+        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (f66beec7… -> 65d7e684…).
+        "65d7e684388c2d7d0950f030ede50529d2a45374d36373c5593bb414b945b34d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -700,7 +701,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for ORG-LOCATION-OPERATOR-CRUD-01A: one nullable OperatorPartyId and two
                 // fail-closed check constraints; the CompanyId query filters and tenant write guard are unchanged.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "6881862da0dee794ec39dc6fd6444e1a28744f714af943dbc0423771de40409f",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (6881862d… -> 440ed323…).
+                "440ed323a030acf0e04251a383aed448886afe1d61356b0d9d1723f000d978f6",
             ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
              + "Persistence/SettingsDbContext.cs"] =
                 // Re-fingerprinted for SAT-D61…D70: the company-filtered discount limit group, limit record and binding
@@ -728,7 +730,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                 // Re-fingerprinted for tren-1 wave 2 trial integration: the Settings team slice (1.3) combined; reviewed tokens unchanged (1505fc34... -> 1338eb2e...).
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (1338eb2e… -> c7b896e7…).
-                "c7b896e7e86abb53494ec2a47052826aebd69d19a28c5146846aefb33daf01c3",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (c7b896e7… -> a0575b35…).
+                "a0575b3520a25ba92dc581312eb4b6fca3722f231b28d19058b201a6b5981a5e",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -808,7 +811,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // return with its decision facts; no query-filter bypass or direct database surface (28dc8473... -> e838b21d...).
                 // Tren-1 wave 2 trial integration: satis wave 2 (F018 limit warnings) and SAT-S14 contracts, contract attempts, payment plan and
                 // discount rule rows on the same company filter; no query-filter bypass or direct database surface (e838b21d... -> cedf03b1...).
-                "cedf03b126df3e02cf6b1482ec08532d57201fd3ac3bbfbd011ee9c28a01b6d6",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (cedf03b1… -> f8d28845…).
+                "f8d2884580cd2914f5e9f39d4a74100af4a05d0fcb5e859ab7af6f1df303e8d5",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -828,7 +832,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-measured for the F-020 write guard: the instruction's allow-list admits the three cancel marks and each is written
             // from empty exactly once; no query-filter bypass or direct database surface (0a6d41e6... -> 13659996...).
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK unload weighings (AddUnloadWeighings) mapped on the company-filtered context (13659996… -> d4a4b458…).
-                "d4a4b458cf5a29255d337d3c38e698beda0c7eb3b03389e12623b281c2fca01f",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (d4a4b458… -> c4c0fbbc…).
+                "c4c0fbbcac8687b331eb93bc3e6d3bac81d920ed9079112611d0268bf8398fb6",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
@@ -858,7 +863,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (c8164526… -> fb48d6ed…).
-                "fb48d6eddd5f020ad052ddc7b3dbaa41f4c11a3f7fc3adc527e0990cc407480d",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (fb48d6ed… -> e4ca95ad…).
+                "e4ca95ad0d0afbdcd1be9fe0e10b23592b7bfe6e7c9a9555dac7bb306bd58b33",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -890,7 +896,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // all-or-nothing check (no new table, filter, key or bypass).
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (74bc9c39… -> 77a98ea3…).
-                "77a98ea317654f49089b76188f36001719d409098df85804a576dceb0a5a4002",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (77a98ea3… -> 848771df…).
+                "848771df79c25197f529f1d625ca2d5237b43e092c65374919c37bbd3f993ec5",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -928,7 +935,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
             // Re-fingerprinted for tren-1 wave 2 trial integration: the Finance team slice (FIN-S1..S5) combined; reviewed tokens unchanged (659f985f... -> 9aa2e8a8...).
             // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (9aa2e8a8… -> 17ccb0c9…).
-            "17ccb0c9177e86a45ec300eabb0b670b0d473404dae9a804dd0417a828f27e87",
+            // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (17ccb0c9… -> 22cd5638…).
+            "22cd56380e2dd08811840c63e21c12717f0d76e46a95d1467d9a8faafe382eee",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -961,7 +969,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for B-03: CK_LabelTransformations_Kind widened to (1, 2, 3) through a named constant; no filter, key or table change.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK transfer receipts/overage/loss, future supply conversions, substitute allocations and supplier return exit mapped on the company-filtered context (8a04bad7… -> d88129d1…).
-                "d88129d15ab68e97089fa3e6eb4bf928ee1204cbd584d8a10657db450b7fbf58",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (d88129d1… -> 550ed6dc…).
+                "550ed6dc0b75cd513e6f7d62c2a182df1a903b95c076bd2f8f35652ef8831850",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "abcde128e9ef58607fd88106a45e5640689c71e6e6a9ea227eac6b4da7a8025e",
@@ -976,7 +985,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // The command answers stay company-filtered.
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK kg/m table imports (AddProductProfileWeightImports) mapped on the company-filtered context (7559b730… -> 99a56c77…).
-                "99a56c77557d9fee009063caacf1b58e821f39d93d92462a7a19a979408765b0",
+                // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (99a56c77… -> 5d363ce3…).
+                "5d363ce3de63cfaf8797e9d9f5d7d82d5439952788fefd2484fe57f59dc12f01",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             // Re-fingerprinted for B-24: dispatcher cursor/delivery tables are company-filtered, company-keyed and write-guarded.
@@ -1140,7 +1150,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
                  + "Bootstrap/FounderBootstrapService.cs"] = ("IdentityDbContext", 3),
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
-                 + "Persistence/PurchasingStore.cs"] = ("PurchasingDbContext", 1),
+                 // tren-1 W5 (integration, alis_cari): guard count 1 -> 3 (lines 1246/1251/1460 of the merged store). Exact source
+                 // count; pending the owning team's K3 review.
+                 + "Persistence/PurchasingStore.cs"] = ("PurchasingDbContext", 3),
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SalesQuoteAndEInvoicePolicyReads.cs"] = ("SettingsDbContext", 1),
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
@@ -1216,7 +1228,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for MOD-03: the named product tax classification service factory and its two port registrations (DI-only, the Settings category reader optional); the database surface and its counts are unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the kg/m table import service and the dimension weight source registered; no new provider branch (14f385e3… -> e1edccf5…).
-                        "e1edccf5672076cb9e11ccc12192c6740614e18607add3b0e5efb5b6ca909293",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (e1edccf5… -> 67464188…).
+                        "67464188778299ffff11d785058ca1c770d7898f510bf0b6a5c4ca727c4f2531",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1319,7 +1332,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // store, login service and session validator registrations (355ade3a… -> 935e8a44…); the database
                     // startup surface and its counts are unchanged.
                     new(
-                        "7b8efa688b79139760fefc338678b2c79e9b9a76fe51198aceedc564d12795f4",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (7b8efa68… -> ce4693e5…).
+                        "ce4693e57e118dfeab6218f5a34d667c29b87a2b25c284b4ffe5b792130e1a4b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1384,7 +1398,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for B-01: one scoped registration of the plan-input allocation read port; provider tokens unchanged.
                         // Re-fingerprinted for SAT-D262: one scoped registration of the versioned average-cost read port; provider tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the stok wave-3 slices (transfer receipts, future supply conversion, supplier return exit, shortage warnings, substitute allocation) registered (1fa2b806… -> b9269aed…).
-                        "b9269aed95fc8d0cf4e0be61bc8f68111aa3f5a1ec64bbfecedab96d0b8114cd",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (b9269aed… -> ae06f965…).
+                        "ae06f96532b78970876eac54721547f446791c27c606dbef016519acc8738882",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1435,7 +1450,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for TAKIP-U3a (#1004): an ArgumentException inside the Inventory stage becomes a 503 host fault; same token count (b8fe85c2 -> 80c8184c).
                 [ReviewedManufacturingPlanAllocationHostPath] =
                     new(
-                        "80c8184c64d4e025c3374570cb8fbf7303e4298354ccdd78f61c85dc1b38f3af",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (80c8184c… -> 57a638d8…).
+                        "57a638d8b7f7a5e017fb5990050c47daaae906b87c3fc222a5fc020efc35f6e7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1448,11 +1464,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 2 trial integration (URT-S16): output-class mapping refusal before any read and the remnant classification
                         // passed through; reviewed tokens and the one context construction unchanged (91e00eeb... -> 0e650b11...).
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (0e650b11… -> b745df6e…).
-                        "b745df6e1eca52088cce92605675e1281c848c117bbddbf254317e0a3f778b73",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (b745df6e… -> 656d12ae…).
+                        // tren-1 W5 (integration, uretim): a third GetDbConnection (guard count 2 -> 3, URT order cancellation/output
+                        // correction on the same borrowed boundary). Exact source count; pending the owning team's K3 review.
+                        "656d12ae99bc636b457d29baa047782a5f99b6ce29cf9489c3093fac1c573c75",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
-                            ["GetDbConnection"] = 2
+                            ["GetDbConnection"] = 3
                         }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
@@ -1578,7 +1597,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (32243ecc… -> 145799ea…).
-                        "145799ea669f2ec8bd4d37e35e50c941599b47f2eacfc0a4d9c0d74527180f9b",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (145799ea… -> 3cd51383…).
+                        "3cd51383d85770e60e7ab91f830d2a3a7ec09f7c6931af39e5d010ee81a96182",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1618,7 +1638,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // authorizing a connection, command, raw SQL or a DbContext construction.
                 [ReviewedManualBankPaymentServicePath] =
                     new(
-                        "b9b6ee9afb8083ccbbe5098ac020481f20df7a9a515d2f2dbf4a892a8ff3c1ff",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (b9b6ee9a… -> b4276752…).
+                        "b4276752b3cc0e04cf6e2561ec3d6981e751d7c125b08e5d3f0d57a8e2fe9f7a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1639,7 +1660,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs"] =
                     new(
-                        "9f8f89946ad6697004a6049041a274dab13838d9014c2549f6b5ed8993827e30",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (9f8f8994… -> 8949362f…).
+                        "8949362fef136f4fb3d386603649c42f5acb5c8d20d19efdcdcc8e5b28d3d45f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1703,7 +1725,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // under the server-resolved company only (sp_getapplock lock path). Pending K3 review.
                 ["src/backend/GoymenERP.Api/Endpoints/InventoryFutureAllocationHostPorts.cs"] =
                     new(
-                        "45cfb07732e7e47e5fc7f6912642eeec0c1d50158cd5a9c03cfa8bf391043f1d",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (45cfb077… -> eb6a30d7…).
+                        "eb6a30d781afc5a05d0d025fb3eb33654f1ba2b49da8c7d147c8901d0fcd8d57",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -1731,7 +1754,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // tren-1 wave 2 trial integration (kimlik local credential): SqlClient classifies 2601/2627 races only. Pending K3 review.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/LocalAccount/SqlLocalCredentialCommandStore.cs"] =
                     new(
-                        "4dcb30ade9c68298ceed3390be0368e75ff90ce9426b481ff799ff849ac9b85e",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (4dcb30ad… -> cc4ff8c8…).
+                        "cc4ff8c85374abce5c76d8594014c1565828900d0cb1ec6fb3295d9f298cf2c9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1799,10 +1823,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // tren-1 wave 2 trial integration (SAT-D262 average cost ledger): one tracked-entity .Local lookup in the same save. Pending K3 review.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryAverageCostLedgerWriter.cs"] =
                     new(
-                        "39fa1418136229e24784a21d6a900efdb7865f6e22f8b846fedc8ade15db74dc",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (39fa1418… -> 15227b1f…).
+                        // tren-1 W5 (integration, stok_lojistik): a second '.Local' read (guard count 1 -> 2). Exact source count;
+                        // pending the owning team's K3 review.
+                        "15227b1ff6f2bbb2c961a9b27e3b388d872156ebfaa1db8bee38bedfb0412737",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            [".Local"] = 1
+                            [".Local"] = 2
                         }),
                 // tren-1 wave 2 trial integration (URT monthly scrap prices): System.Data.Common is used for the DbException catch only. Pending K3 review.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.ScrapPrices.cs"] =
@@ -1832,7 +1859,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
                  + "Persistence/InventoryAllocationSuggestionReader.cs"] =
                     new(
-                        "a02d01af717dfd5a06e82095b7992aea972580c6e82f484a25d419104c58170e",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (a02d01af… -> b53e0794…).
+                        "b53e07945ae6245aa65dd5b1729a39273d333ccef9187fa04212d3ef6e25eaf7",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // tren-1 wave 3 integration (stok_lojistik, F017-c future supply conversion): the Application port only names the owner's
                 // borrowed connection/transaction types (EnlistAsync); no provider call. Pending the owning team's K3 review.
@@ -1873,7 +1901,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
                  + "Persistence/InventorySupplierReturnExitParticipant.cs"] =
                     new(
-                        "36116eed61c020bcb11b7ed0cdfc7c64105267ada848518de7d108883b638385",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (36116eed… -> 95e9ff7c…).
+                        "95e9ff7c7ab8b33e8d25977172136b74a58f866301b47c87245af1ae29effe52",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -1885,7 +1914,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductDimensionService.cs"] =
                     new(
-                        "1a96c566b9eb8dff8446ecf675ab98d07346911ed12496a4b1f715603cd78119",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (1a96c566… -> 917f76d5…).
+                        "917f76d56262c646943d23540c306f9eecbf035fe77fbeae18c7ef309cb2e115",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 2
@@ -1896,7 +1926,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseGoodsReceiptBatchHost.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the batch host also passes Inventory's future supply port to each label's participants (conflict resolution, K3 review pending) (3f16d9b2… -> 47d40498…).
-                        "47d404985852650258137247e1f4c1e88e49dbe95fea43b29ae2a745e7854c8b",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (47d40498… -> f64f8304…).
+                        "f64f830459574a3da2b060868c72a3241ef3d8c81b110f207d826ba52a5388fc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["GetDbConnection"] = 1,
@@ -1908,7 +1939,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinancePartyCollateralService.cs"] =
                     new(
-                        "a23d1eeda143e01d42be5eba767a0466ab575aad1dfb738faa709b5c9ff8ae79",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (a23d1eed… -> 68315d3a…).
+                        "68315d3af1fabe73947cf5d7f2b029d3f6835128f84fab3e0426427a64b490c6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
@@ -1931,7 +1963,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/"
                  + "PurchasingService.GoodsReceiptBatch.cs"] =
                     new(
-                        "00ee578791245d1a4a4230c8cfafe3d8c183e9dffda54e4ef7dd0b23d9c2d92b",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (00ee5787… -> 5c81176d…).
+                        "5c81176de25b4d365c70bf1e744de774c3d0bb00480d7de3b29a3b0d81a110c3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         [".FindAsync"] = 3
@@ -1955,7 +1988,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinancePartyCreditPanelService.cs"] =
                     new(
-                        "ff17932e7d24e6a02b14fc194dedd10fef05a18a38d56375ccad3de41b7424f8",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (ff17932e… -> 6a44e4bb…).
+                        "6a44e4bbe4cb5a7d7aaa17ef89d4d0d6922378970c522f89a5348042095b3ba5",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // tren-1 wave 2 trial integration: construction-only surfaces (target-typed sites); no provider token. Pending K3 review.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceImportDocumentsV2.cs"] =
@@ -2042,7 +2076,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 2 trial integration (FIN-S5 D5): one more target-typed issue list; same SqlClient use (cb022616... -> 8df7bc91...).
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
                     new(
-                        "8df7bc91a2a3a404e2f43e7b3833e126e8925eb9a2512fa2ec82ab9e23ba2f80",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (8df7bc91… -> e7d0d213…).
+                        "e7d0d213ed3f7641252da4e6d6abe38ee020a6f6e7c4ff0b3de9a8584e59bf6b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2172,7 +2207,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (1ea7b3bf… -> 1655138f…).
-                        "1655138f6b9b4ebb541aa199609cf9d0dd524399b6ba16e4f835abfaaf3ac28e",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (1655138f… -> dcbeabc2…).
+                        "dcbeabc2efc3f8f5a1a439de53a8d908b0f1b79e482983e2cf76d310e463a7bb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2212,7 +2248,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (165dbfdd… -> aa1e4254…).
-                        "aa1e425472f7a32275ade59984e06562c022bcfa840b7183a8ee763236313fdf",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (aa1e4254… -> 14691ba6…).
+                        "14691ba6091cb4058d0d05974cb42ca497e7278f2f0f2a73d0d396fb6dda8083",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2232,7 +2269,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // dispatch reads and its two port registrations (DI-only); provider branch and token counts are unchanged.
                     new(
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the unload weighing slice registered (c695b524… -> 1069a748…).
-                        "1069a74858d2dd287f78cbdbcaa65d28bfb34e59cbc30f695936bc01ff6c2993",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (1069a748… -> 0e7a30b4…).
+                        "0e7a30b4e8cb8520a99bf54bb46c5bfb017bc0fa19a44b0e8da86d175ed94925",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2330,7 +2368,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for the read-phase deadlock closure: a SQL 1205 raised by an aggregate SUM read inside
                         // the Serializable section maps to ConcurrentChange; no new database API and SqlClient count unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the unload weighing record over the same filtered context (7045422a… -> e0254929…).
-                        "e025492973c6b74836d766f43da183b37f7c2ff3d6b59fcf042e06b9865ff666",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (e0254929… -> ea2ff89e…).
+                        "ea2ff89e8adf1f4d69a2b32a2388d66e42b0abafe8d09076c778c040bbbf17ac",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2347,7 +2386,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // A2a-2: and the existing Settings line tax port (ISettingsLineTaxResolverV1, optional); counts unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (c786a176… -> d849429f…).
-                        "d849429fbd747ee20f50896d2cd65da7550c73c6e2cb60084709957759c0389d",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (d849429f… -> 8bb1a10c…).
+                        "8bb1a10cc98f0f6c1dc17d5e2a562a0de73aadd846a2e21c83cc9d63cbfa9845",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2372,7 +2412,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the Participants record also carries Inventory's future supply port and the owner connection/transaction (conflict resolution, K3 review pending) (724126ed… -> f5285ea4…).
                         // stok merge: the enlisted Participants record takes the owner's connection/transaction (System.Data.Common,
                         // DbConnection) and the future supply conversion enlists on a third GetDbConnection. K3 review pending.
-                        "f5285ea43b22a38df77a7638b2e4fdd88b44e800ff6cb2732b70ebaec30f71fe",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (f5285ea4… -> e1ba5d1d…).
+                        "e1ba5d1d41052189d624a3a122a399613dc7dc7195a16538b367710cba440691",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 3,
@@ -2423,7 +2464,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 2 trial integration (API-11): the restore also reads the order's line closure events (AsNoTracking, same
                         // company-filtered context); reviewed tokens and the three construction sites unchanged (23106d16... -> 60aab061...).
-                        "60aab06159b2e01a6efd52b0a38a27c5cb77c1248877b2a185e1d1086af913bf",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (60aab061… -> 4f423055…).
+                        "4f423055903481c538b1720377f4379c1fddab0cc2b2a9e0e7e7a1edf43190cf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -2458,7 +2500,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // tren-1 wave 1 (F-017 F17-1): +1 GetDbConnection, handed with the current EF transaction to the reviewed
                         // PurchaseLineSerializationLock (sp_getapplock only); no command is created here. K3 review.
-                        "31b03aa51c8c6c42f07c9676e4fdbd0892923aec190f4e8143b11f3fec0012b2",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (31b03aa5… -> 35f883d4…).
+                        "35f883d41de940ca17d18e6d3edc4c83682e9ce97e075ff5d2c826cd1ad83d24",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -2559,7 +2602,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 wave 2 trial integration: SAT-S14 contract service/store and the shipment risk gate read port are
                         // DI-only registrations; reviewed tokens unchanged (146d4145... -> bf9e0937...).
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): STK-S16: the optional allocation read port V2 passed to the cancellation impact read; reviewed tokens unchanged (bf9e0937… -> dbb50d2c…).
-                        "dbb50d2c2112e8356785d379b7147f2b24f98cfa38b156e5d1ea8df269504d3c",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (dbb50d2c… -> 1944e0bd…).
+                        "1944e0bd58b1d5b5b29805f57a6f8395e14189aecd56204b9bfdf1994a706d7e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2624,7 +2668,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // partial SalesStore.SourcePlan.cs over the same filtered context); SqlClient count unchanged.
                         // Re-fingerprinted for tren-1 wave 2 trial integration (F-018 S1): the draft transition may append its limit warning in the same save;
                         // reviewed tokens unchanged (44b86f83... -> 07051578...).
-                        "07051578f2cab23c27a1db4cd6899f91558570dd2513b9fac27ee2df14d90e35",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (07051578… -> 35298087…).
+                        "3529808759c2ae714ab3116ec1757e0084bf36a03fc9c6edb2edd63f47cc662c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2690,7 +2735,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // official sources (disabled unless configuration names an https TCMB address; DI-only); counts unchanged.
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (a9ccced8… -> df39cc97…).
-                        "df39cc977184bb5d4ca912c8df7e9cd9ed248e4f6c352b34b7b93365fe2ce1f3",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (df39cc97… -> f985bf2f…).
+                        "f985bf2fa61b4d5da64a4145f5d26dc723a9a68bd8edd9df4ce67194b26839eb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -2912,15 +2958,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
-                // tren-1 wave 3 — KIM placeholder company: Up clears the placeholder VKN only on the non-invoice-capable placeholder company and bumps its version. One Sql; K3 review pending.
-                ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/"
-                 + "Persistence/Migrations/20261115200655_ClearPlaceholderCompanyVkn.cs"] =
-                    new(
-                        "02131419a214e5ae37bc50b0b2b0095c7dba34badd5ea0d038c6d6bac20fc2ec",
-                        new Dictionary<string, int>(StringComparer.Ordinal)
-                        {
-                            ["Sql"] = 1
-                        }),
+                // tren-1 W5 (integration): the KIM placeholder-company migration (20261115200655_ClearPlaceholderCompanyVkn) left this list; KIM-D41/D48 emptied its Up and Down (no Sql), the VKN fix now goes through StageCompanyTaxIdCorrections.
                 // tren-1 wave 3 — ALC-S16 goods-receipt batches: Down refuses (51616) while batches or batch attempts exist (forward fix). One Sql; K3 review pending.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261115184944_AddPurchaseGoodsReceiptBatches.cs"] =
@@ -2961,7 +2999,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
                  + "Persistence/Migrations/20261115160935_AddSalesContracts.cs"] =
                     new(
-                        "f77825b7b47abec848f79d09da125dbece0d9da5950fed6795d3ad3234ae7449",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (f77825b7… -> 50d8bf05…).
+                        "50d8bf0548549a8c735c7cd7d687bbc7d56d3e303f8d6768907aa9a9b5e5f4b0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
@@ -3105,7 +3144,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
                  + "Persistence/Migrations/20261115151824_AddInventoryTransferDispatchCancellation.cs"] =
                     new(
-                        "ec316c9db8a2a7ee7969cf17d1fdd3328b4fe08c8da95a73e072c78cccb69550",
+                        // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (ec316c9d… -> a1a0ba7e…).
+                        "a1a0ba7e1a65cff5e9f2a29694ae5f13333680aef7046ca1a85d4d4834ec1414",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
@@ -4309,7 +4349,250 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
-                        })
+                        }),
+                // tren-1 W5 (integration, finans) — 20261116080924_AddOpeningBalances: Down refuses (51809) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "Persistence/Migrations/20261116080924_AddOpeningBalances.cs"] =
+                    new(
+                        "1d600c87b4adc71f3f457a2abfe30d3d444cd7d73008fdc7824d34d96c417940",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, finans) — 20261116104128_AddOpeningBalanceReversalsAndMovements: Down refuses (51841) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "Persistence/Migrations/20261116104128_AddOpeningBalanceReversalsAndMovements.cs"] =
+                    new(
+                        "c18a436267b7956e4254fc8fe99f9ea77d0be7aad0421c6d6dfca05dc1ec79a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, finans) — 20261116111738_AddCreditAccounts: Down refuses (51851) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "Persistence/Migrations/20261116111738_AddCreditAccounts.cs"] =
+                    new(
+                        "0d690342626c72c8959460bf4db2bd05ec814d9b43b66c5f82f804b7bedae218",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261115235658_AddInventoryTransferReversals: Down refuses (51722) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261115235658_AddInventoryTransferReversals.cs"] =
+                    new(
+                        "9fed5c19c807b7839ea4c2b3775e956d1947e909af4a0f9c69bb5392980bb47b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116000110_AllowInventoryZeroBookStockCounts: Down refuses (51748) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261116000110_AllowInventoryZeroBookStockCounts.cs"] =
+                    new(
+                        "1cc44f324c812558d2933f3426ecc3388c6da62db9b5b1c5aefa9f0b52d0dcf0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116022005_AddInventoryTransferLossRequestNumbers: Down refuses (51811) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261116022005_AddInventoryTransferLossRequestNumbers.cs"] =
+                    new(
+                        "a5011ee3c7e513b9d5ab00b37398cae9e63c8defef11d640037a128407867984",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116064346_AddInventoryOpeningCosts: Down refuses (51712) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261116064346_AddInventoryOpeningCosts.cs"] =
+                    new(
+                        "dac68386439bbec37826490bc9d4fb8bb1b8071966f471e427fbe2a812c75c4b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116081500_AddInventoryTransferOverageRenewalsAndLossWithdrawals: Down refuses (51836) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "Persistence/Migrations/20261116081500_AddInventoryTransferOverageRenewalsAndLossWithdrawals.cs"] =
+                    new(
+                        "916045b0625ccd9b2e014778275d6778c7b93e8a21bd438286df3759884c1e62",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116003008_AddWeighingDifferences: Down refuses (51761) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                 + "Persistence/Migrations/20261116003008_AddWeighingDifferences.cs"] =
+                    new(
+                        "80c87d21cb575bbfc39ef893aa7030af0c42fe45398f9f4e9fbfa035dafc1fcc",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116010428_AddShipmentRiskGateOutbox: Down refuses (51787) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                 + "Persistence/Migrations/20261116010428_AddShipmentRiskGateOutbox.cs"] =
+                    new(
+                        "b79f2003556ae7cd03886832c0677a399b7785570578c54e9268b7a62b49059b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, uretim) — 20261115232234_AddManufacturingOutputLabelCodes: Down refuses (51731) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
+                 + "Persistence/Migrations/20261115232234_AddManufacturingOutputLabelCodes.cs"] =
+                    new(
+                        "e59c01aca3596f841f1155165a8ad82104456308d39a06f6a622bba8ea98f9d7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, uretim) — 20261116104108_AddManufacturingOrderCancellation: Down refuses (51870) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
+                 + "Persistence/Migrations/20261116104108_AddManufacturingOrderCancellation.cs"] =
+                    new(
+                        "738533a362038cb4533cc0068c83138c763ecfe132ae127f5c348295fc5a7747",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116111056_StageCompanyTaxIdCorrections: Up stages one Pending tax-id correction per placeholder company still holding the stand-in VKN (no company row is rewritten); Down refuses (51877) once a correction was applied (forward fix). Two Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/"
+                 + "Persistence/Migrations/20261116111056_StageCompanyTaxIdCorrections.cs"] =
+                    new(
+                        "f8822d51cdb39d832f42f80d525b21cfbe526fb421f480461e31d49c2da6a192",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261115234445_AddProductPackageStandards: Down refuses (51492) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/Migrations/20261115234445_AddProductPackageStandards.cs"] =
+                    new(
+                        "5818371e1366a6425b08543a3860aa02043fadc269e0e926341b11ea25283097",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116015957_AddProductSectionFamilies: Down refuses (51737) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/Migrations/20261116015957_AddProductSectionFamilies.cs"] =
+                    new(
+                        "4ee5e65acb4cfabf662ad65a4f8d1c17303e9fb3f88a5b3f0aae48e84645feb0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, stok_lojistik) — 20261116111051_AddProductPackageStandardApprovalAndFiles: Up creates the append-only guard trigger on ProductPackageStandardImportFiles (51871); Down refuses (51872) while import files or approval rows exist, then drops the trigger (forward fix). Three Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "PriceLists/Migrations/20261116111051_AddProductPackageStandardApprovalAndFiles.cs"] =
+                    new(
+                        "16a1641b586d48cadd456c2492c48d816cf29ff9dd428800a423313682e5ed17",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 3
+                        }),
+                // tren-1 W5 (integration, alis_cari) — 20261116104436_AddPurchaseOrderExchangeRate: Down refuses (51833) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261116104436_AddPurchaseOrderExchangeRate.cs"] =
+                    new(
+                        "ce95efcbd5657838b2d6dc555fe71823dd2ddbf4f297bb657f2937c0540ba6d8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, alis_cari) — 20261116113129_AddPurchaseSupplierReturns: Down refuses (51893) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261116113129_AddPurchaseSupplierReturns.cs"] =
+                    new(
+                        "b5ee6dfc1f18267a7ae4cf666ab76f8a44fadc8cbf29fe4cabe660cf613bda76",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, satis) — 20261116001237_AddShipmentRiskExceptionUsages: Up creates the append-only guard trigger on ShipmentRiskExceptionUsages (51487); Down refuses (51488) while mirrored usages exist (forward fix). Two Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
+                 + "Persistence/Migrations/20261116001237_AddShipmentRiskExceptionUsages.cs"] =
+                    new(
+                        "ff7f1d3303fc0d5328bdd0b813c4ed1319efa669342fbd43a7b1ee6b335ee909",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
+                // tren-1 W5 (integration, satis) — 20261116002458_AddSubcontractServiceInvoices: Down refuses (51732) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
+                 + "Persistence/Migrations/20261116002458_AddSubcontractServiceInvoices.cs"] =
+                    new(
+                        "2b683bd5c70d7272be4b5198ae8e39d71f4fc7e9e633f50ade0a69109884ebd2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116100000_AddFounderRecoverySecurityEvents: Down refuses (51851) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/SecurityEvents/GoymenERP.Modules.SecurityEvents.Infrastructure/"
+                 + "Persistence/Migrations/20261116100000_AddFounderRecoverySecurityEvents.cs"] =
+                    new(
+                        "05c6d20a803a45261997de2e1c635bd0514ab4dc724d2ca03fd73b3659cc2935",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116002246_AddUnitProfileVersions: Down refuses (51341) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261116002246_AddUnitProfileVersions.cs"] =
+                    new(
+                        "10d8d47a5fe2cae54746803679e73f58a0631c0246bcaecaeae9818a665de817",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116002821_AddWorkCenterCapacityVersions: Down refuses (51333) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261116002821_AddWorkCenterCapacityVersions.cs"] =
+                    new(
+                        "6552d97c07409d08f2de125aa09a5f0ea73246f7e8783f31929a1dce4443ba4b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116004451_AddLoginRateLimitTrustedProxies: Down refuses (51734) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261116004451_AddLoginRateLimitTrustedProxies.cs"] =
+                    new(
+                        "a5aaa9ceb82fb316bedc25c2277fe4ff79a2f0bb91601fae575a58d8ae4b5404",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116103621_AddCompanyPolicyVersions: Down refuses (51853) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261116103621_AddCompanyPolicyVersions.cs"] =
+                    new(
+                        "25830290ee317d9ca0e1a5f4fd0c40b84336467d0a8617acb7b9c1944f5d4466",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116120112_AddReferenceListEntries: Down refuses (51886) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261116120112_AddReferenceListEntries.cs"] =
+                    new(
+                        "2e8e32e2939dbec73f1c64a5b84c348ce68eccd8392d2daed31af627d2bd77c2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // tren-1 W5 (integration, kimlik) — 20261116120328_AdoptManufacturingProfileSingleFlow: Down refuses (51345) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/Migrations/20261116120328_AdoptManufacturingProfileSingleFlow.cs"] =
+                    new(
+                        "9512f80fbcf4763df0b75bd7125f137699ffd0456e5418fb02e59a1be869eee2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =
