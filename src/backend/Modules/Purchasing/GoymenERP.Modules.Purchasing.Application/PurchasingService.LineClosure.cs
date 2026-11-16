@@ -41,12 +41,20 @@ public sealed partial class PurchasingService
     }
 
     private async Task<PurchaseOrderResponse> LineClosureAsync(Guid orderId, Guid lineId, string commandName, string expectedVersionText,
-        string reason, object hashedRequest, PurchasingCommandMetadata metadata, CancellationToken cancellationToken)
+        string reason, object hashedRequest, PurchasingCommandMetadata metadata, CancellationToken cancellationToken,
+        IReadOnlyList<PurchaseFutureAllocationSeenV1>? seen = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var closing = commandName == PurchasingCommands.OrderLineCloseV1;
+        var releasing = commandName == PurchasingCommands.OrderLineCloseWithAllocationReleaseV1;
+        var closing = releasing || commandName == PurchasingCommands.OrderLineCloseV1;
         var permission = bindings.OrderClosePermission;
+        var releasePermission = releasing ? bindings.FutureAllocationReleasePermission : null;
         var scope = await RequireAsync(permission, cancellationToken);
+        if (releasing)
+        {
+            await RequireStillAsync(scope, releasePermission, cancellationToken);
+        }
+
         var disclosure = await DiscloseAsync(scope, cancellationToken);
         var expectedVersion = ParseVersion(expectedVersionText);
         // The line is a second path identity: it is part of the replay identity beside the order's.
@@ -63,30 +71,56 @@ public sealed partial class PurchasingService
             throw new PurchasingServiceException(404, "not_found");
         }
 
+        if (releasing && (allocationLinks is null || seen is null))
+        {
+            throw new PurchasingServiceException(503, "service_unavailable");
+        }
+
         // The last fence that can still prevent the write; none after the commit.
         await RequireStillAsync(scope, permission, cancellationToken);
+        if (releasing)
+        {
+            await RequireStillAsync(scope, releasePermission, cancellationToken);
+        }
+
         var actor = scope.ActorId.Trim();
         var audit = closing
             ? new PurchasingMutationAudit("purchasing.purchase-order.line-closed.v1", "CloseLine",
                 "Satınalma sipariş satırının teslim alınmamış kalanı kapatıldı")
             : new PurchasingMutationAudit("purchasing.purchase-order.line-reopened.v1", "ReopenLine",
                 "Satınalma sipariş satırının kapanışı geri alındı");
+        void Mutate(Domain.Orders.PurchaseOrder order, DateTimeOffset now)
+        {
+            if (closing)
+            {
+                order.CloseLine(expectedVersion, lineId, actor, reason, now);
+            }
+            else
+            {
+                order.ReopenLine(expectedVersion, lineId, actor, reason, now);
+            }
+        }
+
         PurchasingOrderStoreResult? result;
         try
         {
-            result = await store.MutateOrderAsync(envelope, requestHash, commandName, orderId,
-                (order, now) =>
-                {
-                    if (closing)
-                    {
-                        order.CloseLine(expectedVersion, lineId, actor, reason, now);
-                    }
-                    else
-                    {
-                        order.ReopenLine(expectedVersion, lineId, actor, reason, now);
-                    }
-                },
-                audit, cancellationToken);
+            // ALS-D85 / F-017 §3.6: a closure is guarded by the line's active future allocations once the owner's port is wired; the
+            // reopening never is (released allocations do not come back).
+            result = closing && allocationLinks is not null
+                ? await store.MutateOrderAsync(envelope, requestHash, commandName, orderId, Mutate,
+                    (order, transaction, token) => GuardFutureAllocationsAsync(transaction, order.Id, [lineId], seen,
+                        PurchaseFutureAllocationLinkReasonsV1.LineClosed, reason, envelope, token),
+                    audit, cancellationToken)
+                : await store.MutateOrderAsync(envelope, requestHash, commandName, orderId, Mutate, audit, cancellationToken);
+        }
+        catch (PurchaseFutureAllocationLinkException exception) when (exception.Terminal)
+        {
+            return await LineClosureTerminalAsync(scope, permission, envelope, requestHash, commandName, exception.Code,
+                "futureAllocations", exception.Code, disclosure, cancellationToken);
+        }
+        catch (PurchaseFutureAllocationLinkException exception)
+        {
+            throw LinkRefusal(exception);
         }
         catch (PurchasingVersionConflictException)
         {

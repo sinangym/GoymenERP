@@ -24,6 +24,7 @@ import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
+import { AllocationLinkPanel } from './AllocationLinkPanel'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
 import { LineSchedulePanel } from './LineSchedulePanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
@@ -308,6 +309,11 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     /> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.approvalUnknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.approvalSending : attempt.phase === 'unknown' ? T.approvalRetry : T.approve}</Button></section> : null}
+    {isCurrentDetail && namespace !== null && actorId !== null
+      ? <div className={styles.section}><AllocationLinkPanel fenceKey={`${namespace}::${shell.routeEntryGeneration}`}
+          actorId={actorId} companyId={companyId} order={order} lines={lines} canCancel={canCancel}
+          onSettled={() => query.refetch()} /></div>
+      : null}
     {canCancel && isCurrentDetail && namespace !== null && actorId !== null
       ? <div className={styles.section}><PurchaseOrderCancellationPanel sessionEpoch={shell.sessionEpoch}
           fenceKey={`${namespace}::${shell.routeEntryGeneration}`} actorId={actorId} companyId={companyId} order={order}

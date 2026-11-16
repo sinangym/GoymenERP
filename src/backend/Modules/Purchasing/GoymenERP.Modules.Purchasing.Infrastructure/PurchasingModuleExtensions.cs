@@ -100,7 +100,10 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<IPurchaseGoodsReceiptBatchStore>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptBatchTransactionV1>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptPolicyReadPortV1>(),
-        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>());
+        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>(),
+        // ALC-S3 (F-017 §3.5 F17-4): the host's bridge to the Inventory release port; unwired, the link list, the link drop and the
+        // release-with-cancel/close are 503 and the plain cancel/close keep their earlier behavior (no allocation guard).
+        serviceProvider.GetService<IPurchaseFutureAllocationLinkParticipantV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

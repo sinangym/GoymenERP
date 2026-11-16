@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -354,8 +355,30 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
-    public async Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+    public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default) =>
+        MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant: null, audit, cancellationToken);
+
+    public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task> participant,
+        PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        if (!TakesOrderLineLocks(commandName))
+        {
+            throw new ArgumentException("Yalnız kalan iptali ve satır kapanışı komutları bir katılımcı taşır.", nameof(commandName));
+        }
+
+        return MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant, audit, cancellationToken);
+    }
+
+    /// <summary>A1-3 / API-11 / ALS-D85: the commands that take every general line lock of the order before the read.</summary>
+    private static bool TakesOrderLineLocks(string commandName) =>
+        PurchasingCommands.IsOrderCancellation(commandName) || PurchasingCommands.IsLineClosure(commandName);
+
+    private async Task<PurchasingOrderStoreResult?> MutateOrderCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task>? participant,
+        PurchasingMutationAudit audit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
@@ -395,7 +418,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         // API-11 (§3.4): a line closure or reopening moves one general line's remainder (and its allocatable amount), so it takes the
         // same locks — every general line of the order, the canonical order, rather than a second lock path for the one line; the
         // command is rare and the order's lines are few.
-        await using var lockTransaction = commandName == PurchasingCommands.OrderCancelV1 || PurchasingCommands.IsLineClosure(commandName)
+        await using var lockTransaction = TakesOrderLineLocks(commandName)
             ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken)
             : null;
 
@@ -450,6 +473,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             && order.Status == PurchaseOrderStatus.Approved && order.SourceRequestId is { } sourceRequestId)
         {
             await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken);
+        }
+
+        if (participant is not null)
+        {
+            // F-017 F17-4 (ALS-D85, §3.6): the Inventory owner's releases join this transaction while every general line lock is held;
+            // a participant failure leaves the tracked rows unchanged and the transaction rolls back on dispose.
+            var transaction = dbContext.Database.CurrentTransaction
+                ?? throw new InvalidOperationException("Katılımcı için etkin işlem bulunamadı.");
+            await participant(order, transaction.GetDbTransaction(), cancellationToken);
         }
 
         row.Status = (int)order.Status;
@@ -525,6 +557,110 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         return new PurchasingOrderStoreResult(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)),
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    public async Task<PurchasingOrderStoreResult?> ReleaseOrderFutureAllocationAsync(PurchasingWriteEnvelope envelope, string requestHash, Guid orderId,
+        Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<PurchasingLinkAuditSnapshots>> participant, PurchasingMutationAudit audit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireAudit(audit);
+        const string commandName = PurchasingCommands.OrderFutureAllocationReleaseV1;
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await FindAttemptAsync(commandName, keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            RequireSameContent(attempt, actorId, requestHash);
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.OrderId is not { } recordedId)
+            {
+                throw Refused(PurchasingStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var replayed = await FindOrderAsync(recordedId, cancellationToken) ?? throw new InvalidOperationException("Kayıtlı denemenin siparişi bulunamadı.");
+            return new PurchasingOrderStoreResult(replayed, PurchasingWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (orderId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // F-017 §3.5 F17-4 (ALS-D83): the same locks as a cancellation (every general line, ascending) before the order is read; the
+        // Inventory owner re-takes the allocation's purchase line lock re-entrantly in this transaction.
+        await using var lockTransaction = await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken);
+        var row = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var stored = (await RestoreOrdersAsync([row], cancellationToken)).Single();
+        var transaction = dbContext.Database.CurrentTransaction
+            ?? throw new InvalidOperationException("Katılımcı için etkin işlem bulunamadı.");
+        var snapshots = await participant(stored.Order, transaction.GetDbTransaction(), cancellationToken);
+        if (snapshots is null || string.IsNullOrWhiteSpace(snapshots.Before) || string.IsNullOrWhiteSpace(snapshots.After))
+        {
+            throw new InvalidOperationException("Bağ düşürme audit kaydı önce/sonra görüntüsü ister.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var version = stored.Order.Version;
+        dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, stored.Order.Id, now));
+        // The order is not changed (ALS-D83: the purchase quantities stay); its audit record names the released link.
+        Audit(envelope, companyId, OrderEntityType, stored.Order.Id, audit.EventType, audit.Operation, version, version, snapshots.Before,
+            snapshots.After, audit.Reason);
+        await SaveAsync(cancellationToken);
+        if (lockTransaction is not null)
+        {
+            await lockTransaction.CommitAsync(cancellationToken);
+        }
+
+        return new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    public async Task<PurchasingOrderLinkRead<T>?> ReadOrderFutureAllocationsAsync<T>(Guid orderId,
+        Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<T>> read, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        RequireResolvedCompany();
+        if (orderId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var owned = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            var stored = await FindOrderAsync(orderId, cancellationToken);
+            if (stored is null)
+            {
+                return null;
+            }
+
+            var transaction = dbContext.Database.CurrentTransaction
+                ?? throw new InvalidOperationException("Okuma için etkin işlem bulunamadı.");
+            var value = await read(stored.Order, transaction.GetDbTransaction(), cancellationToken);
+            if (owned is not null)
+            {
+                // Nothing was written; the commit only ends the read transaction.
+                await owned.CommitAsync(cancellationToken);
+            }
+
+            return new PurchasingOrderLinkRead<T>(stored, value);
+        }
+        finally
+        {
+            if (owned is not null)
+            {
+                await owned.DisposeAsync();
+            }
+        }
     }
 
     /// <summary>
