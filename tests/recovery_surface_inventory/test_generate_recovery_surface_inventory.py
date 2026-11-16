@@ -563,7 +563,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(30, len(replay_tables))
+        self.assertEqual(41, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
