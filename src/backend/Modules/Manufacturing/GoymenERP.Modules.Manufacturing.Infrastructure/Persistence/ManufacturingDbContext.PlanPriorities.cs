@@ -5,6 +5,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 
 public sealed partial class ManufacturingDbContext
 {
+    internal const string PlanPriorityIdentityCheck = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] > 0";
+    internal const string PlanPriorityTextCheck = "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0";
     internal DbSet<PlanPriorityVersionRow> PlanPriorityVersions => Set<PlanPriorityVersionRow>();
 
     private void ConfigurePlanPriorityVersions(ModelBuilder modelBuilder)
@@ -12,8 +14,8 @@ public sealed partial class ManufacturingDbContext
         var entity = modelBuilder.Entity<PlanPriorityVersionRow>();
         entity.ToTable("PlanPriorityVersions", Schema, table =>
         {
-            table.HasCheckConstraint("CK_PlanPriorityVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] > 0");
-            table.HasCheckConstraint("CK_PlanPriorityVersions_Text", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0");
+            table.HasCheckConstraint("CK_PlanPriorityVersions_Identity", PlanPriorityIdentityCheck);
+            table.HasCheckConstraint("CK_PlanPriorityVersions_Text", PlanPriorityTextCheck);
         });
         entity.HasKey(row => new { row.CompanyId, row.PlanId, row.Revision });
         entity.Property(row => row.RecordedBy).HasMaxLength(128).IsRequired();

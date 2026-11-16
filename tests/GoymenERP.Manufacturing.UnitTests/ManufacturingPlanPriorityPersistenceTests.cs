@@ -1,8 +1,10 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -18,6 +20,15 @@ public sealed class ManufacturingPlanPriorityPersistenceTests
         Assert.Equal(("manufacturing", "PlanPriorityVersions"), (entity.GetSchema(), entity.GetTableName()));
         Assert.Equal(["CompanyId", "PlanId", "Revision"], entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Single(entity.GetDeclaredQueryFilters());
+        Assert.Equal(ManufacturingDbContext.PlanPriorityIdentityCheck,
+            entity.GetCheckConstraints().Single(check => check.Name == "CK_PlanPriorityVersions_Identity").Sql);
+        Assert.Equal(ManufacturingDbContext.PlanPriorityTextCheck,
+            entity.GetCheckConstraints().Single(check => check.Name == "CK_PlanPriorityVersions_Text").Sql);
+        Assert.Equal(4000, entity.FindProperty("Reason")!.GetMaxLength());
+        var migration = new AddManufacturingPlanPriorities();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 51943", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
         Assert.Contains(entity.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PlanRow)
             && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PlanId"])
             && key.DeleteBehavior == DeleteBehavior.Restrict);

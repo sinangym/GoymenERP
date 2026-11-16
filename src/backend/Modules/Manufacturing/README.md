@@ -458,3 +458,16 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 `manufacturing.plans.reorder` is registered company-wide, granted to no role, and its shell control is staged
 (`ImplementationAvailable: false`). URT-D106 supersedes URT-D101 for manual queue movement; priority-score entry
 remains under `manufacturing.plans.approve` (URT-D103). The queue write and its audit are still pending.
+# W7 — URT-SC33 priority and queue
+
+URT-D97/D103 stores a signed Int32 priority score (technical default zero, higher first) in append-only
+`manufacturing.PlanPriorityVersions`, under the existing `manufacturing.plans.approve` permission. Every write carries
+the plan version and the independent priority revision, a reason, audit context and ADR-011 idempotency. It does not
+change plan content or invalidate approval. The parent update participates in the plan's optimistic concurrency fence.
+The real work-center queue and termin suggestion read this stored score and the remaining input kg; URT-D107 exposes
+over-plan output as a non-blocking flag with zero remaining kg. Manual queue ordering is still pending a separate answer.
+
+Migration `20261116184005_AddManufacturingPlanPriorities` was generated with `dotnet ef`. Up is DDL only. Down first
+refuses with **THROW 51943** while any priority history exists (forward fix), then drops the empty table. SQL guard,
+persistence-model, command, HTTP and UI acceptance sources are written; runtime acceptance is **NOT_RUN** in this wave.
+

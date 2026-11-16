@@ -2,8 +2,8 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -40,10 +40,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     public async Task The_priority_Down_guard_refuses_without_losing_recorded_priority_history()
     {
         await using var run = await Run.StartAsync();
-        var type = typeof(ManufacturingDbContext).Assembly.GetTypes().Single(type => typeof(Migration).IsAssignableFrom(type)
-            && type.Name == "AddManufacturingPlanPriorities");
-        var migration = (Migration)Activator.CreateInstance(type)!;
-        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        var guard = Assert.IsType<SqlOperation>(new AddManufacturingPlanPriorities().DownOperations[0]).Sql;
         Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
         var (plan, _) = await run.ApprovedOrderAsync(CompanyA);
         await using (var scope = run.Store(CompanyA))
