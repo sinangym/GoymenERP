@@ -4377,11 +4377,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
-                // tren-1 W5 (integration, finans) — 20261116111738_AddCreditAccounts: Down refuses (51851) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
+                // tren-1 W5 (integration, finans) — 20261116111738_AddCreditAccounts: Down refuses (51861) instead of losing data (forward fix). One Sql (guard count); K3 review pending.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "Persistence/Migrations/20261116111738_AddCreditAccounts.cs"] =
                     new(
-                        "0d690342626c72c8959460bf4db2bd05ec814d9b43b66c5f82f804b7bedae218",
+                        "ebfe50d03c15ce3d48fa4fa1c718860eeaa3369802748b7a8107b957b7b47851",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

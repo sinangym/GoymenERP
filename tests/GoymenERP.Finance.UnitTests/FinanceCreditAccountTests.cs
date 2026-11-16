@@ -135,7 +135,7 @@ public sealed class FinanceCreditAccountTests
         // Forward fix: the first Down operation is the one guard; only an empty store rolls back.
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
-        Assert.Contains("THROW 51851", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51861", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[finance].[CreditAccounts]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[finance].[CreditAccountCommands]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("AddCreditAccounts is not rolled back (forward fix).", guard.Sql, StringComparison.Ordinal);

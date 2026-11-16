@@ -755,7 +755,7 @@ Settings opening period adapter is KIM-S19.
 | Plan (FNS-D93, FNS-D94) | The bank's installment, principal, interest, BSMV and KKDF are stored AS GIVEN (exact decimal text). `FinanceCreditPlanCalculator` checks each line (installment = principal + interest + BSMV + KKDF) and the plan (sum of principals = credit amount), exactly; interest is never calculated. A failing plan cannot be proposed, and the approval re-checks the stored plan |
 | Two people (FNS-D88) | The holder of `propose` proposes, a different holder of `approve` approves or rejects; never the proposer (`finance_approver_is_proposer`), checked in the service, the save guard and `CK_CreditAccounts_Decision` (BIN2 collation). One live (proposed or approved) account per lender and contract reference (`UX_CreditAccounts_Live`) |
 | Idempotency / audit | `finance.CreditAccountCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event (`finance.credit-account.proposed.v1` / `approved.v1` / `rejected.v1`). An approval moves no money and writes no voucher |
-| Migration `20261116111738_AddCreditAccounts` | Pure DDL up (accounts, installments, commands). `Down` refuses with `THROW 51851` while any credit account or recorded attempt exists (forward fix); an empty store rolls back |
+| Migration `20261116111738_AddCreditAccounts` | Pure DDL up (accounts, installments, commands). `Down` refuses with `THROW 51861` while any credit account or recorded attempt exists (forward fix); an empty store rolls back |
 
 Not in this slice (W6): the screen and shell capability; the per bank + type limit warning (FNS-D95: a warning only,
 never a block; the limit's owner and form are NEEDS-SINAN); the voucher proposal (FNS-D97: Settings mapping, "eşleme

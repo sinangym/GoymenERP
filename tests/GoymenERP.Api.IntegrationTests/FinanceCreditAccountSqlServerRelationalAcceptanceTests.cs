@@ -28,7 +28,7 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
     private const string Checker = "SENTETIK-credit-checker";
     private const string Lender = "SENTETIK Banka";
     private const string Contract = "SENTETIK-KRD-0001";
-    private const int DownGuardNumber = 51851;
+    private const int DownGuardNumber = 51861;
     private const int CheckViolation = 547;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

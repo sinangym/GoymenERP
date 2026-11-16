@@ -155,7 +155,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                 IF EXISTS (SELECT 1 FROM [finance].[CreditAccounts])
                     OR EXISTS (SELECT 1 FROM [finance].[CreditAccountCommands])
                 BEGIN
-                    THROW 51851, 'Credit accounts or their command records exist; AddCreditAccounts is not rolled back (forward fix).', 1;
+                    THROW 51861, 'Credit accounts or their command records exist; AddCreditAccounts is not rolled back (forward fix).', 1;
                 END;
                 """);
 
