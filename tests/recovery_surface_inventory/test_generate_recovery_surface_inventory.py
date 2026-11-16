@@ -118,6 +118,22 @@ EXPECTED_STORES = {
     ("sales", "ShipmentRiskExceptionAttempts"): (
         "ShipmentRiskExceptionAttemptRow", "idempotency", "SalesDbContext"
     ),
+    # tren-1 wave 5 integration: K3 review pending (owning team).
+    ("finance", "CreditAccountCommands"): ("CreditAccountCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "OpeningBalanceCommands"): ("OpeningBalanceCommandRow", "idempotency", "FinanceDbContext"),
+    ("logistics", "OutboxMessages"): ("LogisticsOutboxMessageRow", "outbox", "LogisticsDbContext"),
+    ("logistics", "WeighingDifferenceAttempts"): (
+        "WeighingDifferenceAttemptRow", "idempotency", "LogisticsDbContext"
+    ),
+    ("product", "ProductPackageStandardAttempts"): (
+        "ProductPackageStandardAttemptRow", "idempotency", "ProductPriceListDbContext"
+    ),
+    ("purchasing", "PurchaseSupplierReturnAttempts"): (
+        "PurchaseSupplierReturnAttemptRow", "idempotency", "PurchasingDbContext"
+    ),
+    ("sales", "SubcontractServiceInvoiceAttempts"): (
+        "SubcontractServiceInvoiceAttemptRow", "idempotency", "SalesDbContext"
+    ),
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
     ("work", "OutboxDeliveries"): ("WorkOutboxDeliveryRow", "inbox", "WorkDbContext"),
     ("work", "OutboxMessages"): ("WorkOutboxRow", "outbox", "WorkDbContext"),
@@ -472,7 +488,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 223, "durableStores": 46},
+            {"dbContexts": 19, "migrations": 251, "durableStores": 53},
             self.inventory["counts"],
         )
         actual = {
@@ -482,13 +498,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(46, len(actual))
+        self.assertEqual(53, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(46, len(specs_by_id))
+        self.assertEqual(53, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -1963,7 +1979,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(19, len(contexts))
-        self.assertEqual(223, len(migrations))
+        self.assertEqual(251, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",

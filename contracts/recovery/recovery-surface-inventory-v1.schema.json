@@ -41,10 +41,10 @@
           "const": 19
         },
         "migrations": {
-          "const": 223
+          "const": 251
         },
         "durableStores": {
-          "const": 46
+          "const": 53
         }
       }
     },
@@ -79,8 +79,8 @@
     },
     "migrations": {
       "type": "array",
-      "minItems": 223,
-      "maxItems": 223,
+      "minItems": 251,
+      "maxItems": 251,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -220,8 +220,8 @@
     },
     "durableStores": {
       "type": "array",
-      "minItems": 46,
-      "maxItems": 46,
+      "minItems": 53,
+      "maxItems": 53,
       "uniqueItems": true,
       "items": {
         "type": "object",
