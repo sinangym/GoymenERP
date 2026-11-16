@@ -10,6 +10,9 @@
  * - A cash or bank opening names no party and no direction; a party (cari) opening names both.
  * - `version` is the row's concurrency token (a positive long as text) that a decision must name.
  * - The screen learns no actor id.
+ * - FNS-D84/D85: an approval writes the one opening movement; its correction is a reversal (proposed, then decided by
+ *   another person) that marks the opening `Reversed` and lets a new proposal be entered. `reversal` is the opening's
+ *   latest reversal: only an approved opening may carry a pending or rejected one, and only a reversed one an approved one.
  */
 
 import { decodeCurrencyCandidates, type CurrencyCandidates } from './bankAccountContract'
@@ -26,7 +29,20 @@ import { isPositiveDecimalText } from './decimalText'
 
 export type OpeningBalanceTargetKind = 'CashAccount' | 'BankAccount' | 'PartyAccount'
 export type OpeningBalanceDirection = 'Debit' | 'Credit'
-export type OpeningBalanceStatus = 'Proposed' | 'Approved' | 'Rejected'
+export type OpeningBalanceStatus = 'Proposed' | 'Approved' | 'Rejected' | 'Reversed'
+export type OpeningBalanceReversalStatus = 'Proposed' | 'Approved' | 'Rejected'
+
+export interface OpeningBalanceReversalView {
+  readonly id: string
+  readonly status: OpeningBalanceReversalStatus
+  readonly reason: string
+  readonly openingPeriodVersion: string
+  readonly isOwnProposal: boolean
+  readonly proposedAtUtc: string
+  readonly decidedAtUtc: string | null
+  readonly rejectionReason: string | null
+  readonly version: string
+}
 export type OpeningPeriodState = 'Unavailable' | 'Open' | 'Closed'
 
 export interface OpeningBalanceView {
@@ -46,6 +62,7 @@ export interface OpeningBalanceView {
   readonly decidedAtUtc: string | null
   readonly rejectionReason: string | null
   readonly version: string
+  readonly reversal: OpeningBalanceReversalView | null
 }
 
 export interface OpeningBalanceListPage {
@@ -96,6 +113,12 @@ export interface OpeningBalanceRejectBody {
   readonly reason: string
 }
 
+/** The reversal proposal names the opening's version; its approval and rejection name the reversal's version. */
+export interface OpeningBalanceReversalProposeBody {
+  readonly expectedVersion: string
+  readonly reason: string
+}
+
 const FAIL = { ok: false } as const
 const ok = <T,>(value: T): Decoded<T> => ({ ok: true, value })
 
@@ -114,16 +137,56 @@ const isCanonicalText = (value: unknown): value is string =>
 
 const VIEW_FIELDS = [
   'id', 'companyId', 'targetKind', 'targetId', 'partyId', 'currencyId', 'direction', 'amount', 'asOfDate', 'status',
-  'openingPeriodVersion', 'isOwnProposal', 'proposedAtUtc', 'decidedAtUtc', 'rejectionReason', 'version',
+  'openingPeriodVersion', 'isOwnProposal', 'proposedAtUtc', 'decidedAtUtc', 'rejectionReason', 'version', 'reversal',
+] as const
+
+const REVERSAL_FIELDS = [
+  'id', 'status', 'reason', 'openingPeriodVersion', 'isOwnProposal', 'proposedAtUtc', 'decidedAtUtc', 'rejectionReason',
+  'version',
 ] as const
 
 const TARGET_KINDS: readonly string[] = ['CashAccount', 'BankAccount', 'PartyAccount']
 const DIRECTIONS: readonly string[] = ['Debit', 'Credit']
-const STATUSES: readonly string[] = ['Proposed', 'Approved', 'Rejected']
+const STATUSES: readonly string[] = ['Proposed', 'Approved', 'Rejected', 'Reversed']
+const REVERSAL_STATUSES: readonly string[] = ['Proposed', 'Approved', 'Rejected']
 const PERIOD_STATES: readonly string[] = ['Unavailable', 'Open', 'Closed']
 const COMMAND_OUTCOMES: readonly string[] = [
   'Unavailable', 'Denied', 'ValidationFailed', 'VersionConflict', 'IdempotencyConflict', 'Succeeded',
 ]
+
+function decodeReversal(value: unknown): OpeningBalanceReversalView | null {
+  if (!isRecord(value) || !hasExactKeys(value, REVERSAL_FIELDS)) return null
+  if (
+    !isBoundUuid(value.id) ||
+    typeof value.status !== 'string' || !REVERSAL_STATUSES.includes(value.status) ||
+    !isCanonicalText(value.reason) ||
+    !isCanonicalText(value.openingPeriodVersion) ||
+    typeof value.isOwnProposal !== 'boolean' ||
+    !isInstant(value.proposedAtUtc) ||
+    !isPositiveInt64Text(value.version)
+  ) {
+    return null
+  }
+  if (value.status === 'Proposed') {
+    if (value.decidedAtUtc !== null || value.rejectionReason !== null) return null
+  } else {
+    if (!isInstant(value.decidedAtUtc)) return null
+    if (value.status === 'Approved' ? value.rejectionReason !== null : !isCanonicalText(value.rejectionReason)) {
+      return null
+    }
+  }
+  return {
+    id: value.id,
+    status: value.status as OpeningBalanceReversalStatus,
+    reason: value.reason,
+    openingPeriodVersion: value.openingPeriodVersion,
+    isOwnProposal: value.isOwnProposal,
+    proposedAtUtc: value.proposedAtUtc as string,
+    decidedAtUtc: value.decidedAtUtc as string | null,
+    rejectionReason: value.rejectionReason as string | null,
+    version: value.version,
+  }
+}
 
 function decodeView(value: unknown, companyId: string): OpeningBalanceView | null {
   if (!isRecord(value) || !hasExactKeys(value, VIEW_FIELDS)) return null
@@ -157,9 +220,19 @@ function decodeView(value: unknown, companyId: string): OpeningBalanceView | nul
     if (value.decidedAtUtc !== null || value.rejectionReason !== null) return null
   } else {
     if (!isInstant(value.decidedAtUtc)) return null
-    if (value.status === 'Approved' ? value.rejectionReason !== null : !isCanonicalText(value.rejectionReason)) {
+    if (value.status === 'Rejected' ? !isCanonicalText(value.rejectionReason) : value.rejectionReason !== null) {
       return null
     }
+  }
+  // Only an approved opening carries a pending or rejected reversal; a reversed one carries its approved reversal.
+  let reversal: OpeningBalanceReversalView | null = null
+  if (value.reversal !== null) {
+    reversal = decodeReversal(value.reversal)
+    if (reversal === null) return null
+  }
+  if (value.status === 'Reversed' ? reversal?.status !== 'Approved'
+    : value.status === 'Approved' ? reversal?.status === 'Approved' : reversal !== null) {
+    return null
   }
   return {
     id: value.id,
@@ -178,6 +251,7 @@ function decodeView(value: unknown, companyId: string): OpeningBalanceView | nul
     decidedAtUtc: value.decidedAtUtc as string | null,
     rejectionReason: value.rejectionReason as string | null,
     version: value.version,
+    reversal,
   }
 }
 

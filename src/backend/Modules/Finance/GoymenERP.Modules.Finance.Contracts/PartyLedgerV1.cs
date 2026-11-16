@@ -50,6 +50,24 @@ public enum PartyLedgerEntryKind
     /// payment (credit); the payment's row stays as recorded.
     /// </summary>
     ManualBankPaymentReversal = 9,
+
+    /// <summary>
+    /// FIN-S9 (FNS-D84): an approved party opening balance whose direction is Debit (the party owes the company) — its
+    /// "opening" (Açılış) row on the opening's AsOfDate, debit.
+    /// </summary>
+    OpeningBalanceDebit = 10,
+
+    /// <summary>FIN-S9 (FNS-D84): an approved party opening balance whose direction is Credit — credit.</summary>
+    OpeningBalanceCredit = 11,
+
+    /// <summary>
+    /// FIN-S9 (FNS-D85): the reversal of a Debit opening — its own row on the opening's AsOfDate, credit; the opening's row
+    /// stays as recorded.
+    /// </summary>
+    OpeningBalanceDebitReversal = 12,
+
+    /// <summary>FIN-S9 (FNS-D85): the reversal of a Credit opening — debit.</summary>
+    OpeningBalanceCreditReversal = 13,
 }
 
 /// <summary>The column a row is written in, from the company's view of the party's account: borç / alacak.</summary>

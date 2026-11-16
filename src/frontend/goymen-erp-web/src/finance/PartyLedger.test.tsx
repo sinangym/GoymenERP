@@ -192,6 +192,39 @@ describe('party ledger payment reversal row (API-23)', () => {
   })
 })
 
+describe('party ledger opening balance rows (FIN-S9)', () => {
+  const openingId = 'e8000000-0000-4000-8000-0000000000a8'
+  /** The USD block's credit receipt turned into an opening row of the given credit-column kind. */
+  const opening = (kind: string, reversesSourceId: string | null) => {
+    const body = ledger({ withUsd: true })
+    const usd = currencies(body)[1].entries as Record<string, unknown>[]
+    Object.assign(usd[0], { kind, sourceId: openingId, reversesSourceId })
+    return { body, usd }
+  }
+
+  it('accepts a credit opening and a debit opening\'s reversal in the credit column, the reversal naming the opening', () => {
+    expect(decodePartyLedgerAnswer(opening('OpeningBalanceCredit', null).body, COMPANY_A).ok).toBe(true)
+    expect(decodePartyLedgerAnswer(opening('OpeningBalanceDebitReversal', openingId).body, COMPANY_A).ok).toBe(true)
+  })
+
+  it('refuses a crossed column, a linked opening and a reversal of another source', () => {
+    const crossed = opening('OpeningBalanceDebit', null)
+    expect(decodePartyLedgerAnswer(crossed.body, COMPANY_A).ok).toBe(false)
+    expect(decodePartyLedgerAnswer(opening('OpeningBalanceCredit', openingId).body, COMPANY_A).ok).toBe(false)
+    expect(decodePartyLedgerAnswer(opening('OpeningBalanceDebitReversal', null).body, COMPANY_A).ok).toBe(false)
+    expect(decodePartyLedgerAnswer(opening('OpeningBalanceDebitReversal', IDS.payment).body, COMPANY_A).ok).toBe(false)
+  })
+
+  it('shows the opening as its own row by reference without a link', async () => {
+    const { container } = renderLedger(found(opening('OpeningBalanceCredit', null).body))
+    await waitFor(() => expect(container.querySelectorAll('table[data-ledger-currency]')).toHaveLength(2))
+    const shown = row(container, 'OpeningBalanceCredit')
+    expect(within(shown).getByRole('rowheader').textContent).toBe('Açılış bakiyesi (alacak)')
+    expect(shown.textContent).toContain('…000000a8')
+    expect(within(shown).queryAllByRole('link')).toEqual([])
+  })
+})
+
 function renderLedger(reply: ReturnType<typeof found>, onRange = vi.fn()) {
   const { port, reads } = recordingPort(() => reply)
   const view = renderFinance(

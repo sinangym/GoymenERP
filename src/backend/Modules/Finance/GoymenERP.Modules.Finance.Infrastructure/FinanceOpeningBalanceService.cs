@@ -24,10 +24,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// One live (proposed or approved) opening per (target kind, target, currency).</item>
 /// <item><b>Amount:</b> exact decimal text greater than zero, stored as given, never rounded or converted. A negative bank
 /// opening (overdraft) is refused: not decided.</item>
+/// <item><b>AsOfDate (FNS-D86):</b> a Europe/Istanbul business date, not after today's (ASSUMPTION-FIN-S9-ASOF); an
+/// unresolvable business day fails closed. The period version is written on the proposal (and on a reversal proposal);
+/// a decision under a changed period version is refused.</item>
+/// <item><b>Movement (FNS-D84):</b> the approval writes exactly one opening movement in the same save; the unique
+/// (company, opening, kind) key and the idempotency record keep it single.</item>
+/// <item><b>Correction (FNS-D85):</b> a reversal of an approved opening, proposed and decided by two people
+/// (ASSUMPTION-FIN-S9-REVERSAL); its approval writes the reversal movement and marks the opening reversed, freeing the slot
+/// for a new proposal.</item>
 /// <item><b>Authority, idempotency (ADR-011) and audit (ADR-009):</b> as the collateral master.</item>
 /// </list>
-/// Not built (FNS-D23 limits, not confirmed): the money/ledger effect of an approved opening, an "opening" type mark,
-/// correction by reversal, cheque/note, loan and DBS openings. An approved opening moves no money.
+/// Not built (not confirmed): an open item for a party opening, the treasury balance effect of a cash/bank opening
+/// movement, cheque/note, loan and DBS openings.
 /// </summary>
 public sealed class FinanceOpeningBalanceService(
     FinanceDbContext dbContext,
@@ -44,6 +52,9 @@ public sealed class FinanceOpeningBalanceService(
     public const string ProposeCommand = "finance.opening-balance.propose";
     public const string ApproveCommand = "finance.opening-balance.approve";
     public const string RejectCommand = "finance.opening-balance.reject";
+    public const string ProposeReversalCommand = "finance.opening-balance.reversal.propose";
+    public const string ApproveReversalCommand = "finance.opening-balance.reversal.approve";
+    public const string RejectReversalCommand = "finance.opening-balance.reversal.reject";
     private const string EntityType = "Finance.OpeningBalance";
     internal const int CashAccountKind = 1;
     internal const int BankAccountKind = 2;
@@ -53,6 +64,9 @@ public sealed class FinanceOpeningBalanceService(
     internal const int Proposed = 1;
     internal const int Approved = 2;
     internal const int Rejected = 3;
+    internal const int Reversed = 4;
+    internal const int OpeningMovement = 1;
+    internal const int ReversalMovement = 2;
     private const int AccountApproved = 2;
     private const int IdentityMaximumLength = 128;
     private const int PeriodVersionMaximumLength = 64;
@@ -89,6 +103,18 @@ public sealed class FinanceOpeningBalanceService(
         if (PayloadRefusal(context, request) is { } invalid)
         {
             return invalid;
+        }
+
+        // FNS-D86: AsOfDate is a Europe/Istanbul business date; never after today's (ASSUMPTION-FIN-S9-ASOF).
+        if (!FinanceBusinessDay.TryToday(timeProvider, out var today))
+        {
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("asOfDate", FinanceBusinessDay.BusinessDayUnavailable));
+        }
+
+        if (request.AsOfDate > today)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("asOfDate", "opening_as_of_date_in_future"));
         }
 
         var (period, periodRefused) = await PeriodAsync(context, action, cancellationToken);
@@ -147,7 +173,7 @@ public sealed class FinanceOpeningBalanceService(
         }, AuditJson);
         Audit(context, metadata, envelopes.Propose, row.Id, "finance.opening-balance.proposed.v1", "Propose",
             versionBefore: null, row.Version, "{}", BalanceAudit(row), approval,
-            "Finans açılış bakiyesi önerisi (açılış dönemi açık; onay bekler; para etkisi yok)");
+            "Finans açılış bakiyesi önerisi (açılış dönemi açık; onay bekler; onaya kadar hareket yok)");
         return await SaveAsync(context, metadata, action, ProposeCommand, payloadHash, result, cancellationToken);
     }
 
@@ -182,7 +208,7 @@ public sealed class FinanceOpeningBalanceService(
 
         return await DecideAsync(context, metadata, action, ApproveCommand, payloadHash, request.OpeningBalanceId,
             request.ExpectedVersion, Approved, reason: null, "finance.opening-balance.approved.v1", "Approve",
-            "Finans açılış bakiyesi onayı (önerenden farklı müdür; para etkisi yok)", cancellationToken);
+            "Finans açılış bakiyesi onayı (önerenden farklı müdür; tek açılış hareketi yazıldı)", cancellationToken);
     }
 
     public async Task<OpeningBalanceCommandResult> RejectAsync(FinanceContext context, CommandMetadata metadata,
@@ -203,14 +229,9 @@ public sealed class FinanceOpeningBalanceService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
         }
 
-        if (!IsCanonical(request.Reason))
+        if (ReasonRefusal(context, request.Reason) is { } badReason)
         {
-            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_invalid"));
-        }
-
-        if (request.Reason.Length > ReasonMaximumLength)
-        {
-            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"));
+            return badReason;
         }
 
         var payloadHash = PayloadHash(RejectCommand, request);
@@ -226,7 +247,189 @@ public sealed class FinanceOpeningBalanceService(
 
         return await DecideAsync(context, metadata, action, RejectCommand, payloadHash, request.OpeningBalanceId,
             request.ExpectedVersion, Rejected, request.Reason, "finance.opening-balance.rejected.v1", "Reject",
-            "Finans açılış bakiyesi reddi (önerenden farklı müdür; para etkisi yok)", cancellationToken);
+            "Finans açılış bakiyesi reddi (önerenden farklı müdür; hareket yok)", cancellationToken);
+    }
+
+    /// <summary>FNS-D85: the reversal proposal of an approved opening, under the propose authority.</summary>
+    public async Task<OpeningBalanceCommandResult> ProposeReversalAsync(FinanceContext context, CommandMetadata metadata,
+        OpeningBalanceReversalProposeRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        const FinanceAction action = FinanceAction.ProposeOpeningBalance;
+        if (await StartAsync(context, metadata, action, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.ExpectedVersion is null)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
+        if (ReasonRefusal(context, request.Reason) is { } badReason)
+        {
+            return badReason;
+        }
+
+        var payloadHash = PayloadHash(ProposeReversalCommand, request);
+        if (await PriorAsync(context, metadata, action, ProposeReversalCommand, payloadHash, cancellationToken)
+            is { } prior)
+        {
+            return prior;
+        }
+
+        if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
+        {
+            return malformed;
+        }
+
+        var (period, periodRefused) = await PeriodAsync(context, action, cancellationToken);
+        if (periodRefused is not null)
+        {
+            return periodRefused;
+        }
+
+        var row = await dbContext.OpeningBalances.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == request.OpeningBalanceId, cancellationToken);
+        var live = row is not null && await dbContext.OpeningBalanceReversals.AsNoTracking()
+            .AnyAsync(reversal => reversal.OpeningBalanceId == row.Id
+                && (reversal.Status == Proposed || reversal.Status == Approved), cancellationToken);
+        if (await FenceAsync(context, action, cancellationToken) is { } fenced)
+        {
+            return fenced;
+        }
+
+        if (row is null)
+        {
+            return await TerminalAsync(context, metadata, action, ProposeReversalCommand, payloadHash, targetId: null,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("openingBalanceId", "opening_balance_not_found")),
+                cancellationToken);
+        }
+
+        if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
+        {
+            return await TerminalAsync(context, metadata, action, ProposeReversalCommand, payloadHash, row.Id,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
+        }
+
+        if (row.Status != Approved)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("openingBalanceId", "opening_balance_not_approved"));
+        }
+
+        if (live)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("openingBalanceId", "opening_balance_reversal_exists"));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var reversal = new OpeningBalanceReversalRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = context.CompanyId,
+            OpeningBalanceId = row.Id,
+            Status = Proposed,
+            Reason = request.Reason,
+            OpeningPeriodVersion = period!.Version!,
+            ProposedBy = context.ActorId,
+            ProposedAtUtc = now,
+            Version = 1,
+            UpdatedAtUtc = now,
+        };
+        dbContext.OpeningBalanceReversals.Add(reversal);
+        var result = Succeeded(context, row, reversal);
+        AddCommand(context, metadata, ProposeReversalCommand, payloadHash, row.Id, result, now);
+        var approval = JsonSerializer.Serialize(new
+        {
+            rule = "FNS-D85",
+            proposedBy = context.ActorId,
+            openingPeriodVersion = period.Version,
+        }, AuditJson);
+        Audit(context, metadata, envelopes.Propose, row.Id, "finance.opening-balance.reversal-proposed.v1",
+            "ProposeReversal", row.Version, row.Version, BalanceAudit(row), ReversalAudit(reversal), approval,
+            "Finans açılış bakiyesi ters kayıt önerisi: " + request.Reason);
+        return await SaveAsync(context, metadata, action, ProposeReversalCommand, payloadHash, result,
+            cancellationToken);
+    }
+
+    /// <summary>FNS-D85: the approval of a pending reversal; writes the reversal movement and marks the opening reversed.</summary>
+    public async Task<OpeningBalanceCommandResult> ApproveReversalAsync(FinanceContext context,
+        CommandMetadata metadata, OpeningBalanceReversalApproveRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        const FinanceAction action = FinanceAction.ApproveOpeningBalance;
+        if (await StartAsync(context, metadata, action, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.ExpectedVersion is null)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
+        var payloadHash = PayloadHash(ApproveReversalCommand, request);
+        if (await PriorAsync(context, metadata, action, ApproveReversalCommand, payloadHash, cancellationToken)
+            is { } prior)
+        {
+            return prior;
+        }
+
+        if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
+        {
+            return malformed;
+        }
+
+        return await DecideReversalAsync(context, metadata, action, ApproveReversalCommand, payloadHash,
+            request.OpeningBalanceId, request.ExpectedVersion, Approved, reason: null, cancellationToken);
+    }
+
+    public async Task<OpeningBalanceCommandResult> RejectReversalAsync(FinanceContext context,
+        CommandMetadata metadata, OpeningBalanceReversalRejectRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        const FinanceAction action = FinanceAction.ApproveOpeningBalance;
+        if (await StartAsync(context, metadata, action, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.ExpectedVersion is null)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
+        if (ReasonRefusal(context, request.Reason) is { } badReason)
+        {
+            return badReason;
+        }
+
+        var payloadHash = PayloadHash(RejectReversalCommand, request);
+        if (await PriorAsync(context, metadata, action, RejectReversalCommand, payloadHash, cancellationToken)
+            is { } prior)
+        {
+            return prior;
+        }
+
+        if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
+        {
+            return malformed;
+        }
+
+        return await DecideReversalAsync(context, metadata, action, RejectReversalCommand, payloadHash,
+            request.OpeningBalanceId, request.ExpectedVersion, Rejected, request.Reason, cancellationToken);
     }
 
     /// <summary>The Settings opening period under the read authority; answered whatever its state.</summary>
@@ -279,13 +482,23 @@ public sealed class FinanceOpeningBalanceService(
         var rows = await dbContext.OpeningBalances.AsNoTracking()
             .OrderByDescending(row => row.ProposedAtUtc).ThenBy(row => row.Id)
             .ToListAsync(cancellationToken);
+        var reversals = await dbContext.OpeningBalanceReversals.AsNoTracking()
+            .ToListAsync(cancellationToken);
         if (await ReadOutcomeFenceAsync(context, FinanceAction.ReadOpeningBalances, cancellationToken) is { } again)
         {
             return new ReadResult<OpeningBalanceListPage>(again, null);
         }
 
+        // Each opening shows its latest reversal (a pending or approved one, else the newest rejected one).
+        var latest = reversals
+            .GroupBy(reversal => reversal.OpeningBalanceId)
+            .ToDictionary(group => group.Key, group => group
+                .OrderByDescending(reversal => reversal.Status is Proposed or Approved)
+                .ThenByDescending(reversal => reversal.ProposedAtUtc).ThenBy(reversal => reversal.Id)
+                .First());
         return new ReadResult<OpeningBalanceListPage>(ReadOutcome.Found,
-            new OpeningBalanceListPage(context.CompanyId, [.. rows.Select(row => View(row, context.ActorId))]));
+            new OpeningBalanceListPage(context.CompanyId, [.. rows.Select(row => View(row, context.ActorId,
+                latest.TryGetValue(row.Id, out var reversal) ? reversal : null))]));
     }
 
     /// <summary>Settings' money currency candidates under the propose authority, passed through as given.</summary>
@@ -390,6 +603,14 @@ public sealed class FinanceOpeningBalanceService(
             return Refused(context, CommandOutcome.Denied, Issue("approval", "finance_approver_is_proposer"));
         }
 
+        // FNS-D86: the period setting changed since the proposal (closed and opened again): decided by neither side.
+        if (!string.Equals(row.OpeningPeriodVersion, period!.Version, StringComparison.Ordinal))
+        {
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("openingPeriod", "opening_period_version_changed"));
+        }
+
         var now = timeProvider.GetUtcNow();
         var versionBefore = row.Version;
         var before = BalanceAudit(row);
@@ -399,18 +620,156 @@ public sealed class FinanceOpeningBalanceService(
         row.RejectionReason = reason;
         row.UpdatedAtUtc = now;
         row.Version = checked(row.Version + 1);
+        if (status == Approved)
+        {
+            // FNS-D84: the one opening movement, in the same save as the approval.
+            dbContext.OpeningBalanceMovements.Add(Movement(row, OpeningMovement, context.ActorId, now));
+        }
+
         var result = Succeeded(context, row);
         AddCommand(context, metadata, command, payloadHash, row.Id, result, now);
         // The decider is named for what they did: a rejection is not recorded as an approval.
         object decision = status == Rejected
             ? new { rule = "FNS-D23", proposedBy = row.ProposedBy, rejectedBy = context.ActorId,
-                openingPeriodVersion = period!.Version }
+                openingPeriodVersion = period.Version }
             : new { rule = "FNS-D23", proposedBy = row.ProposedBy, approvedBy = context.ActorId,
-                openingPeriodVersion = period!.Version };
+                openingPeriodVersion = period.Version, movement = "opening" };
         Audit(context, metadata, envelopes.Approve, row.Id, eventType, operation, versionBefore, row.Version, before,
             BalanceAudit(row), JsonSerializer.Serialize(decision, AuditJson),
             reason is null ? auditReason : auditReason + ": " + reason);
         return await SaveAsync(context, metadata, action, command, payloadHash, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// FNS-D85: the decision on the opening's pending reversal — the period still open at the reversal's version, the
+    /// reversal at its expected version, not the caller's own; an approval marks the opening reversed and writes the one
+    /// reversal movement. One save.
+    /// </summary>
+    private async Task<OpeningBalanceCommandResult> DecideReversalAsync(FinanceContext context,
+        CommandMetadata metadata, FinanceAction action, string command, string payloadHash, Guid openingBalanceId,
+        string expectedVersion, int status, string? reason, CancellationToken cancellationToken)
+    {
+        var (period, periodRefused) = await PeriodAsync(context, action, cancellationToken);
+        if (periodRefused is not null)
+        {
+            return periodRefused;
+        }
+
+        var row = await dbContext.OpeningBalances
+            .SingleOrDefaultAsync(row => row.Id == openingBalanceId, cancellationToken);
+        var reversal = row is null
+            ? null
+            : await dbContext.OpeningBalanceReversals
+                .SingleOrDefaultAsync(reversal => reversal.OpeningBalanceId == row.Id && reversal.Status == Proposed,
+                    cancellationToken);
+        if (await FenceAsync(context, action, cancellationToken) is { } fenced)
+        {
+            dbContext.ChangeTracker.Clear();
+            return fenced;
+        }
+
+        if (row is null)
+        {
+            return await TerminalAsync(context, metadata, action, command, payloadHash, targetId: null,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("openingBalanceId", "opening_balance_not_found")),
+                cancellationToken);
+        }
+
+        if (reversal is null || row.Status != Approved)
+        {
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("openingBalanceId", "opening_balance_reversal_not_proposed"));
+        }
+
+        if (!string.Equals(VersionText(reversal.Version), expectedVersion, StringComparison.Ordinal))
+        {
+            return await TerminalAsync(context, metadata, action, command, payloadHash, row.Id,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
+        }
+
+        if (string.Equals(reversal.ProposedBy, context.ActorId, StringComparison.Ordinal))
+        {
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.Denied, Issue("approval", "finance_approver_is_proposer"));
+        }
+
+        if (!string.Equals(reversal.OpeningPeriodVersion, period!.Version, StringComparison.Ordinal))
+        {
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("openingPeriod", "opening_period_version_changed"));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var openingVersionBefore = row.Version;
+        var before = ReversalAudit(reversal);
+        reversal.Status = status;
+        reversal.DecidedBy = context.ActorId;
+        reversal.DecidedAtUtc = now;
+        reversal.RejectionReason = reason;
+        reversal.UpdatedAtUtc = now;
+        reversal.Version = checked(reversal.Version + 1);
+        if (status == Approved)
+        {
+            row.Status = Reversed;
+            row.UpdatedAtUtc = now;
+            row.Version = checked(row.Version + 1);
+            dbContext.OpeningBalanceMovements.Add(Movement(row, ReversalMovement, context.ActorId, now));
+        }
+
+        var result = Succeeded(context, row, reversal);
+        AddCommand(context, metadata, command, payloadHash, row.Id, result, now);
+        object decision = status == Rejected
+            ? new { rule = "FNS-D85", proposedBy = reversal.ProposedBy, rejectedBy = context.ActorId,
+                openingPeriodVersion = period.Version }
+            : new { rule = "FNS-D85", proposedBy = reversal.ProposedBy, approvedBy = context.ActorId,
+                openingPeriodVersion = period.Version, movement = "reversal" };
+        Audit(context, metadata, envelopes.Approve, row.Id,
+            status == Rejected
+                ? "finance.opening-balance.reversal-rejected.v1"
+                : "finance.opening-balance.reversal-approved.v1",
+            status == Rejected ? "RejectReversal" : "ApproveReversal", openingVersionBefore, row.Version, before,
+            ReversalAudit(reversal), JsonSerializer.Serialize(decision, AuditJson),
+            status == Rejected
+                ? "Finans açılış bakiyesi ters kaydı reddi: " + reason
+                : "Finans açılış bakiyesi ters kaydı onayı (ters hareket yazıldı; yeni öneri girilebilir)");
+        return await SaveAsync(context, metadata, action, command, payloadHash, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// The one movement of an opening (FNS-D84) or of its reversal (FNS-D85): the opening's target, currency, direction
+    /// and exact amount on its AsOfDate; the kind carries the side.
+    /// </summary>
+    private static OpeningBalanceMovementRow Movement(OpeningBalanceRow row, int kind, string actorId,
+        DateTimeOffset now) => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = row.CompanyId,
+        OpeningBalanceId = row.Id,
+        Kind = kind,
+        TargetKind = row.TargetKind,
+        TargetId = row.TargetId,
+        PartyId = row.PartyId,
+        CurrencyId = row.CurrencyId,
+        Direction = row.Direction,
+        AmountText = row.AmountText,
+        OccurredOn = row.AsOfDate,
+        RecordedBy = actorId,
+        RecordedAtUtc = now,
+    };
+
+    private static OpeningBalanceCommandResult? ReasonRefusal(FinanceContext context, string reason)
+    {
+        if (!IsCanonical(reason))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_invalid"));
+        }
+
+        return reason.Length > ReasonMaximumLength
+            ? Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"))
+            : null;
     }
 
     /// <summary>FNS-D23: the Settings opening period, fenced again after it; only Open lets a command through.</summary>
@@ -806,12 +1165,32 @@ public sealed class FinanceOpeningBalanceService(
         row.RejectionReason,
     }, AuditJson);
 
-    private static OpeningBalanceView View(OpeningBalanceRow row, string actorId) =>
+    private static string ReversalAudit(OpeningBalanceReversalRow row) => JsonSerializer.Serialize(new
+    {
+        row.Id,
+        row.OpeningBalanceId,
+        version = VersionText(row.Version),
+        status = ReversalStatusOf(row.Status).ToString(),
+        row.Reason,
+        row.OpeningPeriodVersion,
+        row.ProposedBy,
+        row.ProposedAtUtc,
+        row.DecidedBy,
+        row.DecidedAtUtc,
+        row.RejectionReason,
+    }, AuditJson);
+
+    private static OpeningBalanceView View(OpeningBalanceRow row, string actorId,
+        OpeningBalanceReversalRow? reversal = null) =>
         new(row.Id, row.CompanyId, KindOf(row.TargetKind), row.TargetId, row.PartyId, row.CurrencyId,
             row.Direction is { } direction ? DirectionOf(direction) : null, row.AmountText, row.AsOfDate,
             StatusOf(row.Status), row.OpeningPeriodVersion,
             string.Equals(row.ProposedBy, actorId, StringComparison.Ordinal), row.ProposedAtUtc, row.DecidedAtUtc,
-            row.RejectionReason, VersionText(row.Version));
+            row.RejectionReason, VersionText(row.Version),
+            reversal is null ? null : new OpeningBalanceReversalView(reversal.Id, ReversalStatusOf(reversal.Status),
+                reversal.Reason, reversal.OpeningPeriodVersion,
+                string.Equals(reversal.ProposedBy, actorId, StringComparison.Ordinal), reversal.ProposedAtUtc,
+                reversal.DecidedAtUtc, reversal.RejectionReason, VersionText(reversal.Version)));
 
     internal static int KindCode(OpeningBalanceTargetKind kind) => kind switch
     {
@@ -848,13 +1227,23 @@ public sealed class FinanceOpeningBalanceService(
         Proposed => OpeningBalanceStatus.Proposed,
         Approved => OpeningBalanceStatus.Approved,
         Rejected => OpeningBalanceStatus.Rejected,
+        Reversed => OpeningBalanceStatus.Reversed,
         _ => throw new InvalidOperationException("Açılış bakiyesi durumu tanınmıyor."),
+    };
+
+    private static OpeningBalanceReversalStatus ReversalStatusOf(int status) => status switch
+    {
+        Proposed => OpeningBalanceReversalStatus.Proposed,
+        Approved => OpeningBalanceReversalStatus.Approved,
+        Rejected => OpeningBalanceReversalStatus.Rejected,
+        _ => throw new InvalidOperationException("Açılış bakiyesi ters kayıt durumu tanınmıyor."),
     };
 
     private static string VersionText(long version) => FinancePartyCreditLimitService.VersionText(version);
 
-    private static OpeningBalanceCommandResult Succeeded(FinanceContext context, OpeningBalanceRow row) =>
-        new(CommandOutcome.Succeeded, View(row, context.ActorId), IsReplay: false, context.CorrelationId, []);
+    private static OpeningBalanceCommandResult Succeeded(FinanceContext context, OpeningBalanceRow row,
+        OpeningBalanceReversalRow? reversal = null) =>
+        new(CommandOutcome.Succeeded, View(row, context.ActorId, reversal), IsReplay: false, context.CorrelationId, []);
 
     private static bool IsCanonical(string? value) =>
         !string.IsNullOrWhiteSpace(value) && string.Equals(value, value.Trim(), StringComparison.Ordinal);

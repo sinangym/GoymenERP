@@ -8,6 +8,7 @@ import {
 } from './OpeningBalanceContract'
 import {
   approved,
+  approvedWithReversal,
   currencyCandidates,
   listPage,
   OB_COMPANY,
@@ -18,6 +19,8 @@ import {
   proposed,
   refusal,
   rejected,
+  reversalProposed,
+  reversed,
   succeeded,
 } from './openingBalanceFixtures'
 
@@ -66,6 +69,39 @@ describe('decodeOpeningBalance', () => {
     expect(decodeOpeningBalance(approved({ rejectionReason: 'x' }), OB_COMPANY).ok).toBe(false)
     expect(decodeOpeningBalance(rejected({ rejectionReason: null }), OB_COMPANY).ok).toBe(false)
     expect(decodeOpeningBalance(rejected({ rejectionReason: ' padded ' }), OB_COMPANY).ok).toBe(false)
+  })
+})
+
+describe('decodeOpeningBalance reversal (FNS-D85)', () => {
+  it('decodes a pending and a rejected reversal on an approved opening and an approved one on a reversed opening', () => {
+    const pending = decodeOpeningBalance(approvedWithReversal(), OB_COMPANY)
+    expect(pending.ok && pending.value.reversal?.status).toBe('Proposed')
+    const rejectedReversal = decodeOpeningBalance(approvedWithReversal({
+      status: 'Rejected', decidedAtUtc: '2026-11-15T11:00:00+00:00', rejectionReason: 'SENTETIK red', version: '2',
+    }), OB_COMPANY)
+    expect(rejectedReversal.ok && rejectedReversal.value.reversal?.rejectionReason).toBe('SENTETIK red')
+    const done = decodeOpeningBalance(reversed(), OB_COMPANY)
+    expect(done.ok && done.value.status).toBe('Reversed')
+  })
+
+  it('ties the reversal to the opening status', () => {
+    expect(decodeOpeningBalance(reversed({ reversal: null }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(reversed({ reversal: reversalProposed() }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(approved({ reversal: reversed().reversal }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(proposed({ reversal: reversalProposed() }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(rejected({ reversal: reversalProposed() }), OB_COMPANY).ok).toBe(false)
+  })
+
+  it('refuses a reversal with an extra member, an unknown status or decision members off its status', () => {
+    expect(decodeOpeningBalance(approved({ reversal: { ...reversalProposed(), extra: 1 } }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(approvedWithReversal({ status: 'Withdrawn' }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(approvedWithReversal({ decidedAtUtc: '2026-11-15T11:00:00+00:00' }), OB_COMPANY).ok)
+      .toBe(false)
+    expect(decodeOpeningBalance(approvedWithReversal({ reason: '' }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(approvedWithReversal({ version: '0' }), OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(approvedWithReversal({
+      status: 'Rejected', decidedAtUtc: '2026-11-15T11:00:00+00:00', rejectionReason: null,
+    }), OB_COMPANY).ok).toBe(false)
   })
 })
 

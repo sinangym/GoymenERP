@@ -9,6 +9,8 @@
  *   offered on the caller's own proposal (`isOwnProposal`); the server refuses a proposer's decision on its own and a
  *   database check backs it.
  * - A decision names the version the person looked at; a change in between is a server-side conflict.
+ * - FNS-D85: an approved opening is corrected by a reversal — proposed by a proposer (`canPropose`), approved or rejected
+ *   by an approver (`canApprove`) other than the reversal's proposer; its approval frees the target for a new proposal.
  * - The capabilities are the route owner's answer; the server checks every command on its own.
  *
  * Cash accounts, bank accounts and company accounts are named by identity as typed. A company, actor or session change
@@ -47,6 +49,7 @@ import {
 } from './OpeningBalanceHttp'
 import {
   OPENING_BALANCE_DIRECTION,
+  OPENING_BALANCE_REVERSAL_STATUS,
   OPENING_BALANCE_STATUS,
   OPENING_BALANCE_SUCCESS,
   OPENING_BALANCE_TARGET,
@@ -185,7 +188,7 @@ function OpeningBalanceScreen({ canPropose, canApprove }: OpeningBalancePageProp
 
   return frame(<>
     <OpeningList outcome={list.data} currencyNames={currencyNames} binding={attemptBinding} scope={scope}
-      canApprove={canApprove} onRetry={() => void list.refetch()} />
+      canPropose={canPropose} canApprove={canApprove} onRetry={() => void list.refetch()} />
     {canPropose
       ? <ProposeForm binding={attemptBinding} scope={scope} currencies={currencies.data}
           onRetryCurrencies={() => void currencies.refetch()} />
@@ -193,23 +196,53 @@ function OpeningBalanceScreen({ canPropose, canApprove }: OpeningBalancePageProp
   </>)
 }
 
-function OpeningList({ outcome, currencyNames, binding, scope, canApprove, onRetry }: {
+type ReasonOperation = Extract<OpeningBalanceOperation, 'reject' | 'reversal-propose' | 'reversal-reject'>
+
+interface OpenReasonForm {
+  readonly id: string
+  readonly operation: ReasonOperation
+}
+
+/** What the row offers: a decision on a proposal, a reversal of an approved opening or a decision on that reversal. */
+function rowActions(item: OpeningBalanceView, canPropose: boolean, canApprove: boolean) {
+  const reversal = item.reversal
+  const pendingReversal = item.status === 'Approved' && reversal?.status === 'Proposed'
+  return {
+    decide: canApprove && item.status === 'Proposed' && !item.isOwnProposal,
+    ownProposal: item.status === 'Proposed' && item.isOwnProposal,
+    proposeReversal: canPropose && item.status === 'Approved' && !pendingReversal,
+    decideReversal: canApprove && pendingReversal && reversal?.isOwnProposal === false,
+    ownReversal: pendingReversal && reversal?.isOwnProposal === true,
+  }
+}
+
+function OpeningList({ outcome, currencyNames, binding, scope, canPropose, canApprove, onRetry }: {
   readonly outcome: ViewOutcome<{ readonly items: readonly OpeningBalanceView[] }> | undefined
   readonly currencyNames: Names
   readonly binding: OpeningBalanceAttemptBinding
   readonly scope: QueryScope
+  readonly canPropose: boolean
   readonly canApprove: boolean
   readonly onRetry: () => void
 }) {
-  const [rejecting, setRejecting] = useState<string | null>(null)
+  const [reasonForm, setReasonForm] = useState<OpenReasonForm | null>(null)
   const page = outcome?.type === 'ok-single' ? outcome.data : null
   if (page === null) {
     const state = outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)
     return <StateBlock state={state as RemoteViewState<unknown>} subject={T.listSubject} onRetry={onRetry} />
   }
   if (page.items.length === 0) return <p className={styles.hint}>{T.listEmpty}</p>
-  const target = rejecting === null ? null : page.items.find((item) => item.id === rejecting) ?? null
-  const decidable = (item: OpeningBalanceView) => canApprove && item.status === 'Proposed' && !item.isOwnProposal
+  const target = reasonForm === null ? null : page.items.find((item) => item.id === reasonForm.id) ?? null
+  const acting = canPropose || canApprove
+  const toggle = (id: string, operation: ReasonOperation) =>
+    setReasonForm(reasonForm?.id === id && reasonForm.operation === operation ? null : { id, operation })
+  const expanded = (id: string, operation: ReasonOperation) =>
+    reasonForm?.id === id && reasonForm.operation === operation
+  const formAllowed = (item: OpeningBalanceView, operation: ReasonOperation) => {
+    const actions = rowActions(item, canPropose, canApprove)
+    return operation === 'reject' ? actions.decide
+      : operation === 'reversal-propose' ? actions.proposeReversal : actions.decideReversal
+  }
   return <>
     <table>
       <caption>{T.listCaption}</caption>
@@ -225,41 +258,80 @@ function OpeningList({ outcome, currencyNames, binding, scope, canApprove, onRet
         <th scope="col">{T.column.proposedAt}</th>
         <th scope="col">{T.column.decidedAt}</th>
         <th scope="col">{T.column.rejectionReason}</th>
-        {canApprove ? <th scope="col">{T.column.action}</th> : null}
+        <th scope="col">{T.column.reversal}</th>
+        {acting ? <th scope="col">{T.column.action}</th> : null}
       </tr></thead>
       <tbody>
-        {page.items.map((item) => <tr key={item.id} data-opening={item.id} data-status={item.status}>
-          <td>{shortOpeningReference(item.id)}</td>
-          <td>{OPENING_BALANCE_TARGET[item.targetKind]}</td>
-          <td>{shortOpeningReference(item.targetId)}</td>
-          <td>{item.partyId === null ? T.none : shortOpeningReference(item.partyId)}</td>
-          <td>{item.direction === null ? T.none : OPENING_BALANCE_DIRECTION[item.direction]}</td>
-          <td>{`${formatDecimalTextTr(item.amount) ?? item.amount} ${currencyNames.get(item.currencyId) ??
-            shortOpeningReference(item.currencyId)}`}</td>
-          <td>{item.asOfDate}</td>
-          <td>{OPENING_BALANCE_STATUS[item.status]}</td>
-          <td><Instant value={item.proposedAtUtc} /></td>
-          <td>{item.decidedAtUtc === null ? T.none : <Instant value={item.decidedAtUtc} />}</td>
-          <td>{item.rejectionReason ?? T.none}</td>
-          {canApprove
-            ? <td>
-                {decidable(item)
-                  ? <>
-                      <ApproveControl binding={binding} scope={scope} item={item} />
-                      <Button type="button" variant="ghost" size="sm" aria-expanded={rejecting === item.id}
-                        onClick={() => setRejecting(rejecting === item.id ? null : item.id)}>{T.rejectOpen}</Button>
-                    </>
-                  : item.status === 'Proposed' && item.isOwnProposal
+        {page.items.map((item) => {
+          const actions = rowActions(item, canPropose, canApprove)
+          const reversal = item.reversal
+          return <tr key={item.id} data-opening={item.id} data-status={item.status}
+            data-reversal={reversal?.status ?? 'none'}>
+            <td>{shortOpeningReference(item.id)}</td>
+            <td>{OPENING_BALANCE_TARGET[item.targetKind]}</td>
+            <td>{shortOpeningReference(item.targetId)}</td>
+            <td>{item.partyId === null ? T.none : shortOpeningReference(item.partyId)}</td>
+            <td>{item.direction === null ? T.none : OPENING_BALANCE_DIRECTION[item.direction]}</td>
+            <td>{`${formatDecimalTextTr(item.amount) ?? item.amount} ${currencyNames.get(item.currencyId) ??
+              shortOpeningReference(item.currencyId)}`}</td>
+            <td>{item.asOfDate}</td>
+            <td>{OPENING_BALANCE_STATUS[item.status]}</td>
+            <td><Instant value={item.proposedAtUtc} /></td>
+            <td>{item.decidedAtUtc === null ? T.none : <Instant value={item.decidedAtUtc} />}</td>
+            <td>{item.rejectionReason ?? T.none}</td>
+            <td>
+              {reversal === null
+                ? T.none
+                : <>
+                    <span>{OPENING_BALANCE_REVERSAL_STATUS[reversal.status]}</span>
+                    <span className={styles.hint}>{` — ${reversal.reason}`}</span>
+                    {reversal.rejectionReason === null
+                      ? null
+                      : <span className={styles.hint}>{` (${T.column.rejectionReason}: ${reversal.rejectionReason})`}</span>}
+                  </>}
+            </td>
+            {acting
+              ? <td>
+                  {actions.decide
+                    ? <>
+                        <ApproveControl binding={binding} scope={scope} item={item} operation="approve" />
+                        <Button type="button" variant="ghost" size="sm" aria-expanded={expanded(item.id, 'reject')}
+                          onClick={() => toggle(item.id, 'reject')}>{T.rejectOpen}</Button>
+                      </>
+                    : null}
+                  {actions.ownProposal && canApprove
                     ? <span className={styles.hint} data-own-proposal="true">{T.ownProposal}</span>
-                    : T.none}
-              </td>
-            : null}
-        </tr>)}
+                    : null}
+                  {actions.proposeReversal
+                    ? <Button type="button" variant="secondary" size="sm"
+                        aria-expanded={expanded(item.id, 'reversal-propose')}
+                        onClick={() => toggle(item.id, 'reversal-propose')}>{T.reversalOpen}</Button>
+                    : null}
+                  {actions.decideReversal
+                    ? <>
+                        <ApproveControl binding={binding} scope={scope} item={item} operation="reversal-approve" />
+                        <Button type="button" variant="ghost" size="sm"
+                          aria-expanded={expanded(item.id, 'reversal-reject')}
+                          onClick={() => toggle(item.id, 'reversal-reject')}>{T.reversalRejectOpen}</Button>
+                      </>
+                    : null}
+                  {actions.ownReversal && canApprove
+                    ? <span className={styles.hint} data-own-reversal="true">{T.reversalOwnProposal}</span>
+                    : null}
+                  {!actions.decide && !(actions.ownProposal && canApprove) && !actions.proposeReversal &&
+                    !actions.decideReversal && !(actions.ownReversal && canApprove)
+                    ? T.none
+                    : null}
+                </td>
+              : null}
+          </tr>
+        })}
       </tbody>
     </table>
-    {target !== null && decidable(target)
-      ? <RejectForm key={`reject:${target.id}:${target.version}`} binding={binding} scope={scope} item={target}
-          onClose={() => setRejecting(null)} />
+    {reasonForm !== null && target !== null && formAllowed(target, reasonForm.operation)
+      ? <ReasonForm key={`${reasonForm.operation}:${target.id}:${target.version}:${target.reversal?.version ?? '-'}`}
+          binding={binding} scope={scope} item={target} operation={reasonForm.operation}
+          onClose={() => setReasonForm(null)} />
       : null}
   </>
 }
@@ -316,69 +388,100 @@ function AttemptPanel({ attempt, operation, onReload }: {
   }
 }
 
-function ApproveControl({ binding, scope, item }: {
+/** The approval of a proposal names the opening's version; the approval of a reversal names the reversal's. */
+function ApproveControl({ binding, scope, item, operation }: {
   readonly binding: OpeningBalanceAttemptBinding
   readonly scope: QueryScope
   readonly item: OpeningBalanceView
+  readonly operation: 'approve' | 'reversal-approve'
 }) {
-  const attempt = useOpeningBalanceAttempt(binding, 'approve', item.id, useSettled(scope))
+  const attempt = useOpeningBalanceAttempt(binding, operation, item.id, useSettled(scope))
   const reload = useReload(scope)
   const [blocked, setBlocked] = useState(false)
   const busy = attempt.state.phase === 'submitting'
+  const expectedVersion = operation === 'approve' ? item.version : item.reversal?.version ?? null
   const approve = async () => {
+    if (expectedVersion === null) return
     setBlocked(false)
-    const result = await attempt.submit({ operation: 'approve', openingBalanceId: item.id,
-      body: { expectedVersion: item.version } })
+    const result = await attempt.submit({ operation, openingBalanceId: item.id, body: { expectedVersion } })
     if (result === 'blocked') setBlocked(true)
   }
-  return <div data-control="approve">
-    <Button type="button" variant="primary" size="sm" disabled={busy} aria-busy={busy}
-      onClick={() => void approve()}>{T.approve}</Button>
+  return <div data-control={operation}>
+    <Button type="button" variant="primary" size="sm" disabled={busy || expectedVersion === null} aria-busy={busy}
+      onClick={() => void approve()}>{operation === 'approve' ? T.approve : T.reversalApprove}</Button>
     {blocked ? <p className={styles.error} role="alert">{T.blocked}</p> : null}
-    <AttemptPanel attempt={attempt} operation="approve" onReload={reload} />
+    <AttemptPanel attempt={attempt} operation={operation} onReload={reload} />
   </div>
 }
 
-function RejectForm({ binding, scope, item, onClose }: {
+const REASON_FORM_TEXT: Readonly<Record<ReasonOperation, {
+  readonly heading: string
+  readonly label: string
+  readonly required: string
+  readonly submit: string
+  readonly variant: 'danger' | 'primary'
+}>> = {
+  reject: {
+    heading: T.rejectHeading, label: T.rejectReason, required: T.rejectReasonRequired, submit: T.rejectSubmit,
+    variant: 'danger',
+  },
+  'reversal-propose': {
+    heading: T.reversalHeading, label: T.reversalReason, required: T.reversalReasonRequired, submit: T.reversalSubmit,
+    variant: 'primary',
+  },
+  'reversal-reject': {
+    heading: T.reversalRejectHeading, label: T.rejectReason, required: T.rejectReasonRequired, submit: T.rejectSubmit,
+    variant: 'danger',
+  },
+}
+
+/**
+ * A command with a reason: the rejection of a proposal and the reversal proposal name the opening's version; the
+ * rejection of a reversal names the reversal's version.
+ */
+function ReasonForm({ binding, scope, item, operation, onClose }: {
   readonly binding: OpeningBalanceAttemptBinding
   readonly scope: QueryScope
   readonly item: OpeningBalanceView
+  readonly operation: ReasonOperation
   readonly onClose: () => void
 }) {
-  const attempt = useOpeningBalanceAttempt(binding, 'reject', item.id, useSettled(scope))
+  const attempt = useOpeningBalanceAttempt(binding, operation, item.id, useSettled(scope))
   const reload = useReload(scope)
   const [reason, setReason] = useState('')
   const [reasonError, setReasonError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState(false)
   const busy = attempt.state.phase === 'submitting'
-  const base = 'opening-balance-reject'
+  const base = `opening-balance-${operation}`
+  const text = REASON_FORM_TEXT[operation]
+  const expectedVersion = operation === 'reversal-reject' ? item.reversal?.version ?? null : item.version
 
-  const reject = async (event: FormEvent) => {
+  const send = async (event: FormEvent) => {
     event.preventDefault()
     setBlocked(false)
     const trimmed = reason.trim()
-    setReasonError(trimmed.length === 0 ? T.rejectReasonRequired : null)
-    if (trimmed.length === 0) return
-    const result = await attempt.submit({ operation: 'reject', openingBalanceId: item.id,
-      body: { expectedVersion: item.version, reason: trimmed } })
+    setReasonError(trimmed.length === 0 ? text.required : null)
+    if (trimmed.length === 0 || expectedVersion === null) return
+    const result = await attempt.submit({ operation, openingBalanceId: item.id,
+      body: { expectedVersion, reason: trimmed } })
     if (result === 'blocked') setBlocked(true)
   }
 
-  return <form className={styles.form} onSubmit={(event) => void reject(event)} noValidate
-    aria-labelledby={`${base}-heading`} data-form="reject">
-    <h2 id={`${base}-heading`}>{`${T.rejectHeading} — ${shortOpeningReference(item.id)}`}</h2>
+  return <form className={styles.form} onSubmit={(event) => void send(event)} noValidate
+    aria-labelledby={`${base}-heading`} data-form={operation}>
+    <h2 id={`${base}-heading`}>{`${text.heading} — ${shortOpeningReference(item.id)}`}</h2>
     <div className={styles.field}>
-      <label htmlFor={`${base}-reason`}>{T.rejectReason}</label>
+      <label htmlFor={`${base}-reason`}>{text.label}</label>
       <textarea id={`${base}-reason`} value={reason} onChange={(event) => setReason(event.target.value)}
         aria-invalid={reasonError !== null} aria-describedby={reasonError === null ? undefined : `${base}-reason-error`} />
       {reasonError === null ? null : <p id={`${base}-reason-error`} className={styles.error}>{reasonError}</p>}
     </div>
     <div className={styles.actions}>
-      <Button type="submit" variant="danger" disabled={busy} aria-busy={busy}>{T.rejectSubmit}</Button>
+      <Button type="submit" variant={text.variant} disabled={busy} aria-busy={busy}>{text.submit}</Button>
       <Button type="button" variant="ghost" onClick={onClose}>{T.close}</Button>
     </div>
     {blocked ? <p className={styles.error} role="alert">{T.blocked}</p> : null}
-    <AttemptPanel attempt={attempt} operation="reject" onReload={reload} />
+    <AttemptPanel attempt={attempt} operation={operation} onReload={reload} />
   </form>
 }
 

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openingBalanceAttemptStoreKey, PROPOSAL_TARGET } from './OpeningBalanceCommand'
 import { OpeningBalancePage } from './OpeningBalancePage'
 import {
+  OPENING_BALANCE_REVERSAL_STATUS,
   OPENING_BALANCE_SUCCESS,
   OPENING_BALANCE_TEXT as T,
   OPENING_PERIOD_NOTICE,
@@ -12,6 +13,7 @@ import {
 } from './OpeningBalanceText'
 import {
   approved,
+  approvedWithReversal,
   currencyCandidates,
   jsonResponse,
   listPage,
@@ -25,6 +27,7 @@ import {
   proposed,
   refusal,
   rejected,
+  reversed,
   succeeded,
 } from './openingBalanceFixtures'
 
@@ -160,7 +163,7 @@ describe('OpeningBalancePage period gate', () => {
   it('shows a malformed period as malformed, never as open', async () => {
     serve({ period: () => jsonResponse(period('Open', null)) })
     renderPage(true, true)
-    await waitFor(() => expect(root().querySelector('[data-state="malformed"]')).not.toBeNull())
+    await waitFor(() => expect(root().querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(root().querySelector('form')).toBeNull()
   })
 })
@@ -261,6 +264,86 @@ describe('OpeningBalancePage decisions', () => {
     expect(second.key).toBe(first.key)
     expect(second.body).toEqual(first.body)
     expect(sessionStorage.getItem(storeKey as string)).toBeNull()
+  })
+})
+
+describe('OpeningBalancePage reversal (FNS-D85)', () => {
+  it('offers a proposer the reversal of an approved opening only and sends it with the opening version', async () => {
+    const user = userEvent.setup()
+    const calls = serve({ list: () => jsonResponse(listPage([proposed(), approved(), approvedWithReversal({}, {
+      id: 'aaaaaaaa-0000-4000-8000-000000000006' }), reversed()])) },
+    () => jsonResponse(succeeded(approvedWithReversal())))
+    renderPage(true, false)
+    expect(within(await row(proposed().id)).queryByRole('button', { name: T.reversalOpen })).toBeNull()
+    expect(within(await row('aaaaaaaa-0000-4000-8000-000000000006')).queryByRole('button', { name: T.reversalOpen }))
+      .toBeNull()
+    const done = await row(reversed().id)
+    expect(within(done).queryByRole('button', { name: T.reversalOpen })).toBeNull()
+    expect(done.textContent).toContain(OPENING_BALANCE_REVERSAL_STATUS.Approved)
+    await user.click(within(await row(approved().id)).getByRole('button', { name: T.reversalOpen }))
+    const reversal = form('reversal-propose')
+    await user.click(within(reversal).getByRole('button', { name: T.reversalSubmit }))
+    expect(await within(reversal).findByText(T.reversalReasonRequired)).not.toBeNull()
+    expect(posts(calls)).toHaveLength(0)
+    await user.type(within(reversal).getByLabelText(T.reversalReason), '  SENTETIK ters kayıt gerekçesi  ')
+    await user.click(within(reversal).getByRole('button', { name: T.reversalSubmit }))
+    expect(await screen.findByText(OPENING_BALANCE_SUCCESS['reversal-propose'])).not.toBeNull()
+    const [post] = posts(calls)
+    expect(post.url).toMatch(new RegExp(`/finance/opening-balances/${approved().id}/reversal$`))
+    expect(post.body).toEqual({ expectedVersion: '2', reason: 'SENTETIK ters kayıt gerekçesi' })
+    expect(post.key).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('approves another person\'s reversal with the reversal version', async () => {
+    const user = userEvent.setup()
+    const calls = serve({ list: () => jsonResponse(listPage([approvedWithReversal()])) },
+      () => jsonResponse(succeeded(reversed({ id: approved().id }))))
+    renderPage(false, true)
+    const target = await row(approved().id)
+    expect(target.getAttribute('data-reversal')).toBe('Proposed')
+    await user.click(within(target).getByRole('button', { name: T.reversalApprove }))
+    expect(await screen.findByText(OPENING_BALANCE_SUCCESS['reversal-approve'])).not.toBeNull()
+    const [post] = posts(calls)
+    expect(post.url).toMatch(new RegExp(`/finance/opening-balances/${approved().id}/reversal/approve$`))
+    expect(post.body).toEqual({ expectedVersion: '1' })
+  })
+
+  it('rejects a reversal with a reason and the reversal version', async () => {
+    const user = userEvent.setup()
+    const calls = serve({ list: () => jsonResponse(listPage([approvedWithReversal({ version: '4' })])) },
+      () => jsonResponse(succeeded(approvedWithReversal({
+        status: 'Rejected', decidedAtUtc: '2026-11-15T11:00:00+00:00', rejectionReason: 'SENTETIK red', version: '5',
+      }))))
+    renderPage(false, true)
+    await user.click(within(await row(approved().id)).getByRole('button', { name: T.reversalRejectOpen }))
+    const reject = form('reversal-reject')
+    await user.type(within(reject).getByLabelText(T.rejectReason), 'SENTETIK red')
+    await user.click(within(reject).getByRole('button', { name: T.rejectSubmit }))
+    expect(await screen.findByText(OPENING_BALANCE_SUCCESS['reversal-reject'])).not.toBeNull()
+    const [post] = posts(calls)
+    expect(post.url).toMatch(new RegExp(`/finance/opening-balances/${approved().id}/reversal/reject$`))
+    expect(post.body).toEqual({ expectedVersion: '4', reason: 'SENTETIK red' })
+  })
+
+  it('offers no decision on the caller\'s own reversal', async () => {
+    serve({ list: () => jsonResponse(listPage([approvedWithReversal({ isOwnProposal: true })])) })
+    renderPage(false, true)
+    const own = await row(approved().id)
+    expect(own.querySelector('[data-own-reversal="true"]')).not.toBeNull()
+    expect(within(own).queryByRole('button', { name: T.reversalApprove })).toBeNull()
+    expect(within(own).queryByRole('button', { name: T.reversalRejectOpen })).toBeNull()
+  })
+
+  it('shows the server refusing a second live reversal by its code', async () => {
+    const user = userEvent.setup()
+    serve({ list: () => jsonResponse(listPage([approved()])) },
+      () => jsonResponse(refusal('ValidationFailed', [{ field: '', code: 'opening_balance_reversal_exists' }]), 422))
+    renderPage(true, false)
+    await user.click(within(await row(approved().id)).getByRole('button', { name: T.reversalOpen }))
+    const reversal = form('reversal-propose')
+    await user.type(within(reversal).getByLabelText(T.reversalReason), 'SENTETIK gerekçe')
+    await user.click(within(reversal).getByRole('button', { name: T.reversalSubmit }))
+    expect(await screen.findByText(openingBalanceIssueText('opening_balance_reversal_exists'))).not.toBeNull()
   })
 })
 

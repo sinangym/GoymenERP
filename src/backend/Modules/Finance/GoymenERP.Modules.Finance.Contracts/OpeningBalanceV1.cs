@@ -15,11 +15,25 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // direction (Debit: the party owes the company; Credit: the company owes the party). The amount is exact decimal text
 // greater than zero, never rounded, never converted.
 //
-// NOT built (FNS-D23 limits; not confirmed, so not enabled by assumption): the money/ledger effect of an approved opening
-// (a treasury balance, a party ledger line or an open item), marking a record with an "opening" type, correcting an
-// opening by a reversal, and the openings of portfolio cheques/notes, loans and DBS/collateral limits. An approved opening
-// balance is recorded and audited here and moves no money yet. A negative bank opening (overdraft) is refused: whether it
-// is allowed is not decided.
+// FNS-D86: AsOfDate is a Europe/Istanbul business date; a date after today's Istanbul business date is refused
+// (ASSUMPTION-FIN-S9-ASOF: a future opening date is not entered), and when the business day cannot be resolved the
+// proposal fails closed. The Settings period version a proposal (or a reversal proposal) is accepted under is written on
+// the record; a decision taken when the period's version has changed since is refused (opening_period_version_changed).
+//
+// FNS-D84: approving an opening writes exactly ONE opening movement (finance.OpeningBalanceMovements, kind Opening) with
+// the opening's target, currency, direction and exact amount on AsOfDate; a unique (company, opening, kind) key and the
+// command's idempotency record keep it single. A party opening's movement appears in the party ledger with the "opening"
+// (Açılış) entry kinds and counts in the party balance.
+//
+// FNS-D85: an approved opening is corrected by a reversal and a new proposal. A reversal is proposed under the propose
+// authority and decided by another person under the approve authority (ASSUMPTION-FIN-S9-REVERSAL: the same two-person
+// flow as the opening). Its approval writes one reversal movement (the reverse side, same amount and AsOfDate) and marks
+// the opening Reversed, which frees the (target, currency) slot for the corrected proposal. Only while the period is open.
+//
+// NOT built (not confirmed, so not enabled by assumption): an open item for a party opening (allocation and risk against
+// an opening), the treasury (cash/bank) balance effect of an opening movement, and the openings of portfolio
+// cheques/notes, loans and DBS/collateral limits. A negative bank opening (overdraft) is refused: whether it is allowed is
+// not decided.
 
 [JsonConverter(typeof(JsonStringEnumConverter<OpeningBalanceTargetKind>))]
 public enum OpeningBalanceTargetKind { CashAccount, BankAccount, PartyAccount }
@@ -28,7 +42,10 @@ public enum OpeningBalanceTargetKind { CashAccount, BankAccount, PartyAccount }
 public enum OpeningBalanceDirection { Debit, Credit }
 
 [JsonConverter(typeof(JsonStringEnumConverter<OpeningBalanceStatus>))]
-public enum OpeningBalanceStatus { Proposed, Approved, Rejected }
+public enum OpeningBalanceStatus { Proposed, Approved, Rejected, Reversed }
+
+[JsonConverter(typeof(JsonStringEnumConverter<OpeningBalanceReversalStatus>))]
+public enum OpeningBalanceReversalStatus { Proposed, Approved, Rejected }
 
 // Open: entry allowed. Closed: the opening screen is not shown and every command is refused. Unavailable: the Settings key
 // cannot be read (fail closed, as Closed for commands).
@@ -49,6 +66,30 @@ public sealed record OpeningBalanceApproveBody(string ExpectedVersion);
 
 public sealed record OpeningBalanceRejectBody(string ExpectedVersion, string Reason);
 
+// FNS-D85: a reversal proposal of an APPROVED opening. ExpectedVersion: the opening's version.
+public sealed record OpeningBalanceReversalProposeRequest(Guid OpeningBalanceId, string ExpectedVersion, string Reason);
+
+// The decision on the opening's pending reversal. ExpectedVersion: the reversal's version.
+public sealed record OpeningBalanceReversalApproveRequest(Guid OpeningBalanceId, string ExpectedVersion);
+
+public sealed record OpeningBalanceReversalRejectRequest(Guid OpeningBalanceId, string ExpectedVersion, string Reason);
+
+// HTTP body of a reversal proposal: the opening balance is the route's. The decisions reuse the approve/reject bodies.
+public sealed record OpeningBalanceReversalProposeBody(string ExpectedVersion, string Reason);
+
+// The opening's latest reversal (pending, approved or rejected). OpeningPeriodVersion: the period version the reversal was
+// proposed under. IsOwnProposal: the caller proposed the reversal. No actor id is disclosed.
+public sealed record OpeningBalanceReversalView(
+    Guid Id,
+    OpeningBalanceReversalStatus Status,
+    string Reason,
+    string OpeningPeriodVersion,
+    bool IsOwnProposal,
+    DateTimeOffset ProposedAtUtc,
+    DateTimeOffset? DecidedAtUtc,
+    string? RejectionReason,
+    string Version);
+
 // One opening balance. OpeningPeriodVersion: the Settings period version the proposal was accepted under (the decision's
 // own period version is in its audit record). IsOwnProposal: the caller proposed it (the approve control is not offered on it). No actor id is
 // disclosed.
@@ -68,7 +109,8 @@ public sealed record OpeningBalanceView(
     DateTimeOffset ProposedAtUtc,
     DateTimeOffset? DecidedAtUtc,
     string? RejectionReason,
-    string Version);
+    string Version,
+    OpeningBalanceReversalView? Reversal);
 
 public sealed record OpeningBalanceListPage(Guid CompanyId, IReadOnlyList<OpeningBalanceView> Items);
 
@@ -95,6 +137,17 @@ public interface IFinanceOpeningBalanceService
 
     Task<OpeningBalanceCommandResult> RejectAsync(FinanceContext context, CommandMetadata metadata,
         OpeningBalanceRejectRequest request, CancellationToken cancellationToken);
+
+    // FNS-D85: the reversal proposal of an approved opening (propose authority).
+    Task<OpeningBalanceCommandResult> ProposeReversalAsync(FinanceContext context, CommandMetadata metadata,
+        OpeningBalanceReversalProposeRequest request, CancellationToken cancellationToken);
+
+    // FNS-D85: the decision on a pending reversal (approve authority; never the reversal's proposer).
+    Task<OpeningBalanceCommandResult> ApproveReversalAsync(FinanceContext context, CommandMetadata metadata,
+        OpeningBalanceReversalApproveRequest request, CancellationToken cancellationToken);
+
+    Task<OpeningBalanceCommandResult> RejectReversalAsync(FinanceContext context, CommandMetadata metadata,
+        OpeningBalanceReversalRejectRequest request, CancellationToken cancellationToken);
 
     // Under the read authority. The period state is answered even when it is closed (the screen shows only the notice).
     Task<ReadResult<OpeningPeriodView>> GetPeriodAsync(FinanceContext context, CancellationToken cancellationToken);

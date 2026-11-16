@@ -71,6 +71,7 @@ import {
   OPEN_COLLECTION_RECEIPT,
   OPEN_INSTRUMENT,
   OPEN_ITEM_NO_SCREEN,
+  OPENING_BALANCE_SOURCE,
   OPEN_ORIGINAL,
   OPEN_PAYMENT,
   OPEN_REVERSED_PAYMENT,
@@ -153,6 +154,11 @@ function SourceLinks({ entry }: { readonly entry: PartyLedgerEntry }) {
     case 'OpenItemCancellation':
     case 'PayableOpenItemCancellation':
       return <span>{`${OPEN_ITEM_NO_SCREEN} · ${reference(entry.documentId ?? entry.sourceId)}`}</span>
+    case 'OpeningBalanceDebit':
+    case 'OpeningBalanceCredit':
+    case 'OpeningBalanceDebitReversal':
+    case 'OpeningBalanceCreditReversal':
+      return <span>{`${OPENING_BALANCE_SOURCE} · ${reference(entry.sourceId)}`}</span>
   }
 }
 
