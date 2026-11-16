@@ -350,7 +350,12 @@ builder.Services.AddManufacturingModule(
 // MFG realization v1: the host composes the approved Manufacturing ports with their API-owned adapters.
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
-builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1, ManufacturingInventoryReturnOutputHost>();
+// F-009 D3 (URT-S2): the output correction shares the return/output host and its one transaction per command.
+builder.Services.AddScoped<ManufacturingInventoryReturnOutputHost>();
+builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1>(services =>
+    services.GetRequiredService<ManufacturingInventoryReturnOutputHost>());
+builder.Services.AddScoped<IManufacturingInventoryOutputCorrectionPortV1>(services =>
+    services.GetRequiredService<ManufacturingInventoryReturnOutputHost>());
 // Üretim U3-a (URT-D21, B-01): the plan approval / cancellation and the order closure commit with Inventory's
 // plan-input allocation or its release in one transaction.
 builder.Services.AddScoped<IManufacturingPlanAllocationPortV1, ManufacturingPlanAllocationHost>();

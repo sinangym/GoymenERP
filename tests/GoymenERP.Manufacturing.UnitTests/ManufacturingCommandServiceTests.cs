@@ -3218,7 +3218,7 @@ public sealed partial class ManufacturingCommandServiceTests
 
     private sealed class Fixture
     {
-        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true)
+        public Fixture(bool withWorkCenters = true, bool withPlanAllocations = true, bool withOutputCorrections = true)
         {
             CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
@@ -3231,13 +3231,15 @@ public sealed partial class ManufacturingCommandServiceTests
             PartyAccounts = new PartyAccountPort(Calls);
             InputIssues = new InputIssuePort(Store);
             ReturnOutputs = new ReturnOutputPort(Store);
+            OutputCorrections = new OutputCorrectionPort(Store);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
                 CompanyContext, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
                 InputIssues, ReturnOutputs, manufacturingTolerances: Settings,
                 planRevisions: Store,
                 productTechnicalSnapshots: ProductSnapshots, partyAccounts: PartyAccounts,
-                contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null);
+                contextualParentRolls: ParentRolls, planAllocations: withPlanAllocations ? PlanAllocations : null,
+                outputCorrections: withOutputCorrections ? OutputCorrections : null);
         }
 
         public List<string> Calls { get; } = [];
@@ -3265,6 +3267,8 @@ public sealed partial class ManufacturingCommandServiceTests
         public InputIssuePort InputIssues { get; }
 
         public ReturnOutputPort ReturnOutputs { get; }
+
+        public OutputCorrectionPort OutputCorrections { get; }
 
         public User User { get; } = new();
 

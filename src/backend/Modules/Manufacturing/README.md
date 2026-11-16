@@ -100,6 +100,7 @@ Deliberate limits of this slice:
 | `GET /plans/{planId}/revisions` (MFG-PLAN-EDIT) | `manufacturing.plans.read` | 200 `PlanRevisionListViewV1` (the plan's history) |
 | `POST /orders` | `manufacturing.orders.create` | 201 `OrderViewV1` |
 | `POST /orders/{orderId}/input-issues` · `input-returns` · `wip-measurements` · `outputs` | `manufacturing.facts.record` | 200 `OrderViewV1` |
+| `POST /orders/{orderId}/facts/{factId}/correction` (F-009 D3, URT-S2) | `manufacturing.facts.correct` (registered, not granted) | 200 `OrderViewV1`: an append-only output reversal plus Inventory's `manufacturing.output-reversal` movement in one transaction |
 | `GET /orders/{orderId}` | `manufacturing.orders.read` | 200 `OrderViewV1`: each roll's issued − returned = outputs by class + WIP + unexplained (signed), cost `NotCalculated` |
 | `GET /orders` (MFG-ORD) | `manufacturing.orders.read` | 200 `OrderListViewV1`: one page of this company's orders, newest first |
 | `POST /orders/{orderId}/close` (MFG-ORD) | `manufacturing.orders.close` | 200 `OrderViewV1` (closed), or the domain's refusal |

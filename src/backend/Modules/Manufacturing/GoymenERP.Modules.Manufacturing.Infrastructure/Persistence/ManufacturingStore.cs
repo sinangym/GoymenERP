@@ -1017,7 +1017,8 @@ public sealed partial class ManufacturingStore(
     /// version unchanged); the same id with other content is <see cref="ManufacturingStoreCodes.FactIdConflict"/>. The
     /// domain decides the rest (closed order, unknown output, a declaration without a plan output line, the declared
     /// mass bound). The order row's version moves with the reversal, so racing corrections of one order meet its
-    /// concurrency token. No endpoint uses this yet (D3), and the stock movement of a correction is Inventory's.
+    /// concurrency token. F-009 D3 (URT-S2): the correction endpoint calls this through the return/output host, in
+    /// the same transaction as Inventory's output reversal movement; the stock movement of a correction is Inventory's.
     /// </summary>
     public async Task<ManufacturingWriteOutcome> ReverseOutputAsync(Guid orderId, long expectedVersion, Guid reversalId,
         Guid outputId, Kilograms mass, string reason, DateTimeOffset reversedAt, ManufacturingCommandMetadata metadata,
