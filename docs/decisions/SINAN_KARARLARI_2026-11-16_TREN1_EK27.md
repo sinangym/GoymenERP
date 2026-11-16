@@ -106,7 +106,8 @@ vergi belgesini değiştirme yetkisi bu araştırmadan çıkarılmaz.
 - Kapalı dönemdeki muhasebe kaydı yerinde değiştirilmez. FNS-D108/FNS-D110'daki kredi
   düzeltmesinin izinleri başka bir fatura düzeltme komutuna otomatik taşınmaz. Fatura
   düzeltmesi için cevaplanmamış ek kapalı dönem politikası **NEEDS-SINAN** kalır.
-- Şirket açma/ilk yönetici seçimi için gerçek grup yetkisi ve üretim sıralama yetkisi
+- **Uygulama okuması (karar alıntısı değildir):** Şirket açma/ilk yönetici seçimi için
+  gerçek grup yetkisi ve üretim sıralama yetkisi
   kodda kaydedilebilir; kullanıcıya gerçek grant/rol ataması yapılmaz. Sırf mevcut bir
   şirkette yetkili olmak bütün şirketlerde kurulum yetkisi sayılmaz.
 - İzin adı ve veri yapısı geri alınabilir uygulama ayrıntısıdır; Critical sınıfı için
