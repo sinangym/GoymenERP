@@ -25,7 +25,7 @@ namespace GoymenERP.Finance.UnitTests;
 /// replay, authority fences and company isolation. What SQL Server enforces is proven by the relational acceptance tests.
 /// SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class FinanceCreditAccountTests
+public sealed partial class FinanceCreditAccountTests
 {
     private static readonly Guid CompanyA = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid CompanyB = Guid.Parse("12121212-1212-1212-1212-121212121212");
@@ -92,7 +92,10 @@ public sealed class FinanceCreditAccountTests
         Assert.Equal([nameof(CreditAccountRow.CompanyId), nameof(CreditAccountRow.LenderName),
                 nameof(CreditAccountRow.ContractReference)],
             live.Properties.Select(property => property.Name));
-        Assert.Equal(FinanceDbContext.CreditAccountLiveFilter, live.GetFilter());
+        Assert.Equal(FinanceDbContext.CreditAccountLiveFilter + " AND [LenderPartyId] IS NULL", live.GetFilter());
+        var identityLive = Assert.Single(designAccounts.GetIndexes(), x => x.GetDatabaseName() == "UX_CreditAccounts_LenderIdentity_Live");
+        Assert.True(identityLive.IsUnique);
+        Assert.Contains(identityLive.Properties, x => x.Name == nameof(CreditAccountRow.LenderCompanyPartyAccountId));
         Assert.Equal("[Status] IN (1, 2)", FinanceDbContext.CreditAccountLiveFilter);
 
         var installments = design.FindEntityType(typeof(CreditAccountInstallmentRow))!;
@@ -314,7 +317,8 @@ public sealed class FinanceCreditAccountTests
     {
         await using var run = new Run();
 
-        var proposed = await run.ProposeAsync(Maker, Request() with { Group = group });
+        var proposed = await run.ProposeAsync(Maker, Request() with { Group = group, Profile = Profile(group),
+            Installments = group == CreditAccountGroup.NonCash ? [] : Plan() });
 
         Assert.Equal(group, proposed.Resource!.Group);
         Assert.Equal(code, (await run.RowAsync(proposed.Resource.Id)).CreditGroup);
@@ -409,7 +413,7 @@ public sealed class FinanceCreditAccountTests
         var plan = Plan();
         var request = fault switch
         {
-            "installment-sum" => Request() with { Installments = [plan[0], plan[1] with { Installment = "530.918" }] },
+            "installment-sum" => Request() with { Installments = [plan[0], plan[1] with { Installment = "530.928" }] },
             "principal-total" => Request() with { PrincipalAmount = "1000.01" },
             "sequence" => Request() with { Installments = [plan[0], plan[1] with { Sequence = 3 }] },
             "amount-text" => Request() with { Installments = [plan[0] with { Bsmv = "1,65" }, plan[1]] },
@@ -602,7 +606,7 @@ public sealed class FinanceCreditAccountTests
         Assert.Equal(new CreditPlanTotalsView("1072.1515", "1000.00", "58.0000", "2.9000", "11.2515"),
             valid.Resource.Totals);
 
-        var invalid = await run.ValidatePlanAsync(Maker, request: new CreditPlanValidationRequest("1000.01", Plan()));
+        var invalid = await run.ValidatePlanAsync(Maker, request: new CreditPlanValidationRequest("1000.01", Plan(), Currency, Start));
         Assert.False(invalid.Resource!.IsValid);
         var issue = Assert.Single(invalid.Resource.Issues);
         Assert.Equal(("installments", FinanceCreditPlanCalculator.PrincipalTotalMismatch), (issue.Field, issue.Code));
@@ -652,7 +656,15 @@ public sealed class FinanceCreditAccountTests
     ];
 
     private static CreditAccountProposeRequest Request() =>
-        new(CreditAccountGroup.Cash, Lender, Contract, Currency, "1000.00", Start, Plan());
+        new(CreditAccountGroup.Cash, Lender, Contract, Currency, "1000.00", Start, Plan(), Profile(CreditAccountGroup.Cash));
+
+    private static CreditAccountProfileV1 Profile(CreditAccountGroup group) => new(
+        Guid.Parse("f4710000-0000-4000-8000-000000000001"), Guid.Parse("f4710000-0000-4000-8000-000000000002"),
+        new("SENTETIK banka planı", Start, "1"), group == CreditAccountGroup.NonCash ? CreditPlanNatureV1.SourceMovements : CreditPlanNatureV1.Installments,
+        Cash: group == CreditAccountGroup.Cash ? new(CreditCashKindV1.Installment, Start.AddYears(1)) : null,
+        NonCash: group == CreditAccountGroup.NonCash ? new(CreditNonCashKindV1.Guarantee, "SENTETIK lehtar", true, null) : null,
+        InstrumentAndFactoring: group == CreditAccountGroup.InstrumentAndFactoring ? new(CreditInstrumentKindV1.Factoring, true, [], ["SENTETIK-FAT-1"]) : null,
+        Leasing: group == CreditAccountGroup.Leasing ? new("SENTETIK varlık", Start, Start.AddYears(2)) : null);
 
     private static FinanceDbContext Context()
     {
@@ -685,6 +697,8 @@ public sealed class FinanceCreditAccountTests
     private sealed class Run : IAsyncDisposable
     {
         private readonly string databaseName = $"finance-credit-accounts-{Guid.NewGuid():N}";
+        public Func<Guid, ISettingsPrerequisiteProvider?> Settings { get; set; } = company => new SyntheticCreditSources(company);
+        public Func<Guid, IFinanceCreditLenderPortV1?> Lenders { get; set; } = company => new SyntheticCreditSources(company);
 
         public FinanceDbContext Memory(Guid company)
         {
@@ -741,7 +755,7 @@ public sealed class FinanceCreditAccountTests
             IFinancePermissionPort? permissions = null, CreditPlanValidationRequest? request = null) =>
             CallAsync(actor, CompanyA, permissions, null,
                 (service, finance) => service.ValidatePlanAsync(finance,
-                    request ?? new CreditPlanValidationRequest("1000.00", Plan()), CancellationToken.None));
+                    request ?? new CreditPlanValidationRequest("1000.00", Plan(), Currency, Start), CancellationToken.None));
 
         public Task<ReadResult<CreditAccountCurrencyCandidates>> CurrencyCandidatesAsync(string actor,
             IFinancePermissionPort permissions) =>
@@ -798,7 +812,7 @@ public sealed class FinanceCreditAccountTests
             var service = new FinanceCreditAccountService(context, company, new FixedUser(actor, companyId),
                 permissions ?? new RecordingPermission(PermissionDecision.Allowed),
                 new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira")]),
-                collector, Envelopes(), new FixedClock());
+                collector, Envelopes(), new FixedClock(), Settings(companyId), Lenders(companyId));
             return await call(service, new FinanceContext(companyId, actor, correlation ?? "SENTETIK-correlation", null));
         }
     }
@@ -806,6 +820,18 @@ public sealed class FinanceCreditAccountTests
     private sealed class FixedClock : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => At;
+    }
+
+    private sealed class SyntheticCreditSources(Guid company) : ISettingsPrerequisiteProvider, IFinanceCreditLenderPortV1
+    {
+        public long ProfileVersion { get; set; } = 1;
+        public FinanceCreditLenderStatusV1 LenderStatus { get; set; } = FinanceCreditLenderStatusV1.Available;
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MoneyProfileV1(company, currencyId, "TRY", operation, new(Guid.Parse("f4710000-0000-4000-8000-000000000003"), ProfileVersion), 2, true, Start, null));
+        public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCreditLenderAnswerV1> ReadAsync(Guid companyId, Guid partyId, Guid companyPartyAccountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new FinanceCreditLenderAnswerV1(companyId, partyId, companyPartyAccountId, LenderStatus, Lender, 1, 1));
     }
 
     private sealed class RecordingPermission(PermissionDecision decision) : IFinancePermissionPort
@@ -840,10 +866,10 @@ public sealed class FinanceCreditAccountTests
                 : PermissionDecision.Denied);
     }
 
-    private sealed class Candidates(IReadOnlyList<MoneyCurrencyCandidateV1> candidates) : ISettingsMoneyCandidateReader
+    private sealed class Candidates(IReadOnlyList<MoneyCurrencyCandidateV1> candidates) : ISettingsMoneyCandidateReaderV2
     {
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
-            CancellationToken cancellationToken = default) =>
+            string operation, CancellationToken cancellationToken = default) =>
             Task.FromResult(candidates);
     }
 

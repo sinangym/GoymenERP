@@ -13,10 +13,11 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <summary>
 /// FIN-SC47 (FNS-D87, FNS-D88, FNS-D93, FNS-D94): the credit account skeleton with its imported bank repayment plan.
 /// <list type="bullet">
-/// <item><b>Group (FNS-D87):</b> one of cash, non-cash, instrument and factoring, leasing, as a type field. Group-specific
-/// fields are not decided and not built.</item>
+/// <item><b>Group (FNS-D87):</b> cash, non-cash, instrument/factoring or leasing with the source-backed profile and the
+/// lender's actual Counterparty identities. No lender master, role, or zero-filled source amount is invented.</item>
 /// <item><b>Plan (FNS-D93/FNS-D94):</b> the bank's lines are stored as given; <see cref="FinanceCreditPlanCalculator"/>
-/// checks each installment = principal + interest + BSMV + KKDF and the principal total = the credit amount. A failing plan
+/// checks source-included charges and installment sums with the currency profile's smallest-unit tolerance; the principal total
+/// equals the credit amount exactly. A failing plan
 /// is refused (not stored, so it never reaches approval); the approval checks the stored plan again. Interest is never
 /// calculated.</item>
 /// <item><b>Two people (FNS-D88):</b> a holder of <c>finance.credits.propose</c> proposes; a holder of
@@ -25,17 +26,19 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item><b>Currency:</b> one of Settings' money currency candidates now; an unavailable source refuses.</item>
 /// <item><b>Authority, idempotency (ADR-011) and audit (ADR-009):</b> as the opening balance.</item>
 /// </list>
-/// Not built (W6): the screen, the FNS-D95 limit warning per (bank, group) and the FNS-D97 voucher proposal.
+/// Contract approval is distinct from actual use, repayment, accrual and the resulting accounting proposal.
 /// </summary>
-public sealed class FinanceCreditAccountService(
+public sealed partial class FinanceCreditAccountService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IFinancePermissionPort permissions,
-    ISettingsMoneyCandidateReader currencies,
+    ISettingsMoneyCandidateReaderV2 currencies,
     IAuditEventCollector auditEvents,
     FinanceCreditAccountEnvelopes envelopes,
-    TimeProvider timeProvider) : IFinanceCreditAccountService
+    TimeProvider timeProvider,
+    ISettingsPrerequisiteProvider? settings = null,
+    IFinanceCreditLenderPortV1? lenders = null) : IFinanceCreditAccountService
 {
     public const string ProposeCommand = "finance.credit-account.propose";
     public const string ApproveCommand = "finance.credit-account.approve";
@@ -100,6 +103,9 @@ public sealed class FinanceCreditAccountService(
                 Issue("installments", FinanceCreditPlanCalculator.PlanEmpty));
         }
 
+        if (!FinanceCreditAccountProfilePolicy.DefinedEnums(request))
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("profile", "credit_source_profile_invalid"));
+
         var payloadHash = PayloadHash(ProposeCommand, request);
         if (await PriorAsync(context, metadata, action, ProposeCommand, payloadHash, cancellationToken) is { } prior)
         {
@@ -116,8 +122,19 @@ public sealed class FinanceCreditAccountService(
             return currencyRefused;
         }
 
+        var source = await SourcesAsync(context, action, request, cancellationToken);
+        if (source.Refusal is not null) return source.Refusal;
+        var moneyProfile = source.MoneyProfile!;
+        if (request.Profile!.PlanNature == CreditPlanNatureV1.Installments)
+        {
+            var plan = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, moneyProfile.Scale);
+            if (!plan.IsValid) return Refused(context, CommandOutcome.ValidationFailed, [.. plan.Issues]);
+        }
+
         var live = await dbContext.CreditAccounts.AsNoTracking()
-            .AnyAsync(row => row.LenderName == request.LenderName && row.ContractReference == request.ContractReference
+            .AnyAsync(row => row.LenderPartyId == request.Profile.LenderPartyId
+                && row.LenderCompanyPartyAccountId == request.Profile.LenderCompanyPartyAccountId
+                && row.ContractReference == request.ContractReference
                 && (row.Status == Proposed || row.Status == Approved), cancellationToken);
         if (await FenceAsync(context, action, cancellationToken) is { } afterRead)
         {
@@ -141,6 +158,14 @@ public sealed class FinanceCreditAccountService(
             CurrencyId = request.CurrencyId,
             PrincipalAmountText = request.PrincipalAmount,
             StartDate = request.StartDate,
+            LenderPartyId = request.Profile.LenderPartyId,
+            LenderCompanyPartyAccountId = request.Profile.LenderCompanyPartyAccountId,
+            LenderPartyVersion = source.Lender!.PartyVersion,
+            LenderCompanyAccountVersion = source.Lender!.CompanyAccountVersion,
+            SourceProfileJson = JsonSerializer.Serialize(request.Profile, Json),
+            MoneyProfileId = moneyProfile.Profile.ProfileId,
+            MoneyProfileVersion = moneyProfile.Profile.Version,
+            CurrencyScale = moneyProfile.Scale,
             Status = Proposed,
             ProposedBy = context.ActorId,
             ProposedAtUtc = now,
@@ -158,6 +183,7 @@ public sealed class FinanceCreditAccountService(
             InterestText = line.Interest,
             BsmvText = line.Bsmv,
             KkdfText = line.Kkdf,
+            ChargesJson = line.Charges is null ? null : JsonSerializer.Serialize(line.Charges, Json),
         }).ToList();
         dbContext.CreditAccounts.Add(row);
         dbContext.CreditAccountInstallments.AddRange(lines);
@@ -166,7 +192,7 @@ public sealed class FinanceCreditAccountService(
         var approval = JsonSerializer.Serialize(new { rule = "FNS-D88", proposedBy = context.ActorId }, AuditJson);
         Audit(context, metadata, envelopes.Propose, row.Id, "finance.credit-account.proposed.v1", "Propose",
             versionBefore: null, row.Version, "{}", AccountAudit(row, lines), approval,
-            "Finans kredi hesabı önerisi (banka ödeme planı olduğu gibi alındı; toplamlar tutuyor; onay bekler)");
+            "Finans kredi hesabı önerisi (kaynak belgesi ve plan türü kaydedildi; onay bekler)");
         return await SaveAsync(context, metadata, action, ProposeCommand, payloadHash, result, cancellationToken);
     }
 
@@ -314,9 +340,16 @@ public sealed class FinanceCreditAccountService(
             return new ReadResult<CreditPlanValidationView>(refused, null);
         }
 
-        var verdict = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments);
+        if (request.CurrencyId is not { } currencyId || currencyId == Guid.Empty || request.EffectiveOn is not { } effectiveOn
+            || effectiveOn == default)
+            return new(ReadOutcome.Found, new(context.CompanyId, false, null, [Issue("currencyId", "credit_plan_profile_required")]));
+        var profileRead = await MoneyProfileAsync(context, FinanceAction.ProposeCredit, currencyId, effectiveOn, cancellationToken);
+        if (profileRead.Refusal is { } failure)
+            return new(failure.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
+        var verdict = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, profileRead.Profile!.Scale);
         return new ReadResult<CreditPlanValidationView>(ReadOutcome.Found,
-            new CreditPlanValidationView(context.CompanyId, verdict.IsValid, verdict.Totals, verdict.Issues));
+            new CreditPlanValidationView(context.CompanyId, verdict.IsValid, verdict.Totals, verdict.Issues,
+                Snapshot(profileRead.Profile!)));
     }
 
     /// <summary>Settings' money currency candidates under the propose authority, passed through as given.</summary>
@@ -335,7 +368,7 @@ public sealed class FinanceCreditAccountService(
         try
         {
             candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(
-                await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+                await currencies.GetMoneyCurrencyCandidatesAsync(PlanMoneyOperation, cancellationToken));
         }
         catch (SettingsPrerequisiteException exception)
         {
@@ -413,8 +446,22 @@ public sealed class FinanceCreditAccountService(
         }
 
         // FNS-D94: a plan that does not hold never reaches an approval (the stored lines are checked again).
-        var verdict = FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(lines));
-        if (status == Approved && !verdict.IsValid)
+        var storedProfile = Profile(row);
+        if (status == Approved && storedProfile is not null)
+        {
+            var source = await SourcesAsync(context, action, new(GroupOf(row.CreditGroup), row.LenderName,
+                row.ContractReference, row.CurrencyId, row.PrincipalAmountText, row.StartDate, Inputs(lines), storedProfile), cancellationToken);
+            if (source.Refusal is not null) { dbContext.ChangeTracker.Clear(); return source.Refusal; }
+            if (source.MoneyProfile!.Profile.ProfileId != row.MoneyProfileId
+                || source.MoneyProfile.Profile.Version != row.MoneyProfileVersion || source.MoneyProfile.Scale != row.CurrencyScale)
+            {
+                dbContext.ChangeTracker.Clear();
+                return Refused(context, CommandOutcome.VersionConflict, Issue("profile", "credit_plan_profile_changed"));
+            }
+        }
+        var verdict = storedProfile?.PlanNature == CreditPlanNatureV1.SourceMovements ? null
+            : FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(lines), row.CurrencyScale);
+        if (status == Approved && verdict is { IsValid: false })
         {
             dbContext.ChangeTracker.Clear();
             return Refused(context, CommandOutcome.ValidationFailed, [.. verdict.Issues]);
@@ -466,7 +513,10 @@ public sealed class FinanceCreditAccountService(
             issues.Add(Issue("currencyId", "identity_required"));
         }
 
-        issues.AddRange(FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments).Issues);
+        if (!FinanceExactDecimalText.TryParsePositive(request.PrincipalAmount, out _)
+            || request.PrincipalAmount.Length > FinanceCreditPlanCalculator.AmountMaximumLength)
+            issues.Add(Issue("principalAmount", FinanceCreditPlanCalculator.PrincipalAmountInvalid));
+        issues.AddRange(FinanceCreditAccountProfilePolicy.Validate(request));
         return issues.Count == 0 ? null : Refused(context, CommandOutcome.ValidationFailed, [.. issues]);
     }
 
@@ -490,7 +540,7 @@ public sealed class FinanceCreditAccountService(
         try
         {
             candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(
-                await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+                await currencies.GetMoneyCurrencyCandidatesAsync(PlanMoneyOperation, cancellationToken));
         }
         catch (SettingsPrerequisiteException exception)
         {
@@ -720,6 +770,10 @@ public sealed class FinanceCreditAccountService(
             row.CurrencyId,
             principalAmount = row.PrincipalAmountText,
             row.StartDate,
+            profile = Profile(row),
+            tolerance = Snapshot(row),
+            row.LenderPartyVersion,
+            row.LenderCompanyAccountVersion,
             status = StatusOf(row.Status).ToString(),
             row.ProposedBy,
             row.ProposedAtUtc,
@@ -735,6 +789,7 @@ public sealed class FinanceCreditAccountService(
                 interest = line.InterestText,
                 bsmv = line.BsmvText,
                 kkdf = line.KkdfText,
+                charges = Charges(line),
             }),
         }, AuditJson);
 
@@ -743,14 +798,16 @@ public sealed class FinanceCreditAccountService(
     {
         var ordered = Ordered(lines);
         // The stored plan always reads (the database checks and the proposal's calculator); an unreadable one fails closed.
-        var totals = FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(ordered)).Totals
-            ?? throw new InvalidOperationException("Kredi hesabının kayıtlı ödeme planı okunamadı.");
+        var profile = Profile(row);
+        var totals = profile?.PlanNature == CreditPlanNatureV1.SourceMovements ? null
+            : FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(ordered), row.CurrencyScale).Totals
+                ?? throw new InvalidOperationException("Kredi hesabının kayıtlı ödeme planı okunamadı.");
         return new CreditAccountView(row.Id, row.CompanyId, GroupOf(row.CreditGroup), row.LenderName,
             row.ContractReference, row.CurrencyId, row.PrincipalAmountText, row.StartDate, StatusOf(row.Status),
             string.Equals(row.ProposedBy, actorId, StringComparison.Ordinal), row.ProposedAtUtc, row.DecidedAtUtc,
             row.RejectionReason, VersionText(row.Version), totals,
             [.. ordered.Select(line => new CreditPlanInstallmentView(line.Sequence, line.DueDate, line.InstallmentText,
-                line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText))]);
+                line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText, Charges(line)))], profile, Snapshot(row));
     }
 
     private static List<CreditAccountInstallmentRow> Ordered(IEnumerable<CreditAccountInstallmentRow> lines) =>
@@ -758,7 +815,7 @@ public sealed class FinanceCreditAccountService(
 
     private static List<CreditPlanInstallmentInput> Inputs(IEnumerable<CreditAccountInstallmentRow> lines) =>
         [.. Ordered(lines).Select(line => new CreditPlanInstallmentInput(line.Sequence, line.DueDate, line.InstallmentText,
-            line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText))];
+            line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText, Charges(line)))];
 
     internal static int GroupCode(CreditAccountGroup group) => group switch
     {

@@ -299,13 +299,15 @@ public static class FinanceModuleExtensions
             companyContext,
             currentUser,
             permissions,
-            provider.GetService<ISettingsMoneyCandidateReader>()
+            provider.GetService<ISettingsMoneyCandidateReaderV2>()
                 ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
             provider.GetRequiredService<IAuditEventCollector>(),
             new FinanceCreditAccountEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<ISettingsPrerequisiteProvider>(),
+            provider.GetService<IFinanceCreditLenderPortV1>());
     }
 
     private static ReceiptDraftService CreateReceiptDraftService(IServiceProvider provider)

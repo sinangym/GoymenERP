@@ -122,7 +122,10 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, partyCollaterals) < Array.IndexOf(migrations, openingBalances));
         Assert.True(Array.IndexOf(migrations, openingBalances) < Array.IndexOf(migrations, openingReversals));
         Assert.True(Array.IndexOf(migrations, openingReversals) < Array.IndexOf(migrations, creditAccounts));
-        Assert.Equal(creditAccounts, migrations.Last());
+        const string creditSourceProfiles = "20261116233417_AddCreditSourceProfiles";
+        Assert.Contains(creditSourceProfiles, migrations);
+        Assert.True(Array.IndexOf(migrations, creditAccounts) < Array.IndexOf(migrations, creditSourceProfiles));
+        Assert.Equal(creditSourceProfiles, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

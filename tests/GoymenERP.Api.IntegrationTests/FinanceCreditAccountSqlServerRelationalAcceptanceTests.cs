@@ -47,7 +47,7 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
             Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
             proposed = result.Resource!;
             Assert.Equal((CreditAccountStatus.Proposed, "1", "1000.00", "1072.1515"),
-                (proposed.Status, proposed.Version, proposed.PrincipalAmount, proposed.PlanTotals.Installment));
+                (proposed.Status, proposed.Version, proposed.PrincipalAmount, proposed.PlanTotals!.Installment));
 
             var own = await maker.Credits.ApproveAsync(maker.Context, Key("a-own"),
                 new CreditAccountApproveRequest(proposed.Id, "1"), CancellationToken.None);
@@ -97,13 +97,17 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
             + "Version = Version + 1 WHERE Id = @id", ("@id", proposed.Id)));
         Assert.Equal(CheckViolation, own.Number);
 
-        // UX_CreditAccounts_Live: one proposed or approved account per lender and contract reference.
+        // The source-backed lender identity, not an alias of its displayed name, owns the live contract slot.
         var live = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "INSERT INTO finance.CreditAccounts (Id, CompanyId, CreditGroup, LenderName, ContractReference, CurrencyId, "
             + "PrincipalAmountText, StartDate, [Status], ProposedBy, ProposedAtUtc, DecidedBy, DecidedAtUtc, "
-            + "RejectionReason, Version, UpdatedAtUtc) SELECT NEWID(), CompanyId, CreditGroup, LenderName, "
+            + "RejectionReason, Version, UpdatedAtUtc, LenderPartyId, LenderCompanyPartyAccountId, LenderPartyVersion, "
+            + "LenderCompanyAccountVersion, SourceProfileJson, MoneyProfileId, MoneyProfileVersion, CurrencyScale) "
+            + "SELECT NEWID(), CompanyId, CreditGroup, LenderName, "
             + "ContractReference, CurrencyId, PrincipalAmountText, StartDate, 1, ProposedBy, ProposedAtUtc, NULL, NULL, "
-            + "NULL, 1, UpdatedAtUtc FROM finance.CreditAccounts WHERE Id = @id", ("@id", proposed.Id)));
+            + "NULL, 1, UpdatedAtUtc, LenderPartyId, LenderCompanyPartyAccountId, LenderPartyVersion, "
+            + "LenderCompanyAccountVersion, SourceProfileJson, MoneyProfileId, MoneyProfileVersion, CurrencyScale "
+            + "FROM finance.CreditAccounts WHERE Id = @id", ("@id", proposed.Id)));
         Assert.Contains(live.Number, new[] { 2601, 2627 });
 
         // CK_CreditAccounts_Group: only the four FNS-D87 groups.
@@ -174,6 +178,38 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>A bank plan as given: each line holds and the principals sum to the credit amount.</summary>
+    [SqlServerFact]
+    public async Task Credit_source_profile_Down_refuses_protected_rows_and_database_checks_keep_lender_proof_and_charge_json_complete()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddCreditSourceProfiles().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        CreditAccountView proposed;
+        await using (var maker = run.Open(CompanyA, Maker))
+        {
+            var request = Request();
+            var lines = request.Installments.ToArray();
+            lines[0] = lines[0] with { Installment = "546.2345", Charges = [new("SENTETIK ücret", "5",
+                CreditChargeTreatmentV1.IncludedInInstallment, "SENTETIK-BANK-1")] };
+            proposed = (await maker.Credits.ProposeAsync(maker.Context, Key("source-p-1"), request with { Installments = lines },
+                CancellationToken.None)).Resource!;
+        }
+        Assert.Equal("5", proposed.PlanTotals!.Charges!.IncludedInInstallment);
+        Assert.Equal(51961, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard))).Number);
+        Assert.Equal(CheckViolation, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.CreditAccounts SET MoneyProfileVersion = NULL WHERE Id = @id", ("@id", proposed.Id)))).Number);
+        Assert.Equal(CheckViolation, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.CreditAccounts SET SourceProfileJson = NULL WHERE Id = @id", ("@id", proposed.Id)))).Number);
+        Assert.Equal(CheckViolation, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.CreditAccountInstallments SET ChargesJson = N'bozuk' WHERE CreditAccountId = @id AND [Sequence] = 1",
+            ("@id", proposed.Id)))).Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CreditAccounts WHERE Id = @id", ("@id", proposed.Id)));
+        Assert.Equal(1L, await run.ScalarAsync<long>("SELECT MoneyProfileVersion FROM finance.CreditAccounts WHERE Id = @id", ("@id", proposed.Id)));
+        Assert.Contains("SENTETIK-BANK-1", await run.ScalarAsync<string>(
+            "SELECT ChargesJson FROM finance.CreditAccountInstallments WHERE CreditAccountId = @id AND [Sequence] = 1", ("@id", proposed.Id)), StringComparison.Ordinal);
+    }
+
+    /// <summary>A bank plan as given: each line holds and the principals sum to the credit amount.</summary>
     private static CreditAccountProposeRequest Request() => new(CreditAccountGroup.Cash, Lender, Contract, Currency,
         "1000.00", new DateOnly(2026, 11, 15),
         [
@@ -181,7 +217,9 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
                 "6.5845"),
             new CreditPlanInstallmentInput(2, new DateOnly(2027, 1, 15), "530.917", "500.00", "25.000", "1.250",
                 "4.667"),
-        ]);
+        ], new(Guid.Parse("f4720000-0000-4000-8000-000000000001"), Guid.Parse("f4720000-0000-4000-8000-000000000002"),
+            new("SENTETIK plan", new DateOnly(2026, 11, 15), "1"), CreditPlanNatureV1.Installments,
+            Cash: new(CreditCashKindV1.Installment, null)));
 
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
@@ -231,7 +269,7 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
                 new FinanceCreditAccountEnvelopes(
                     new FinanceAuditEnvelope(ErpPermissions.FinanceCreditsPropose, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ErpPermissions.FinanceCreditsApprove, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, new SyntheticCreditSources(company), new SyntheticCreditSources(company));
             return new Scope(dbContext, credits, new FinanceContext(company, actor, Correlation, null));
         }
 
@@ -302,10 +340,10 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>SENTETIK: one currency candidate. Not a Settings source.</summary>
-    private sealed class SyntheticCandidates : ISettingsMoneyCandidateReader
+    private sealed class SyntheticCandidates : ISettingsMoneyCandidateReaderV2
     {
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
-            CancellationToken cancellationToken = default) =>
+            string operation, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<MoneyCurrencyCandidateV1>>(
                 [new MoneyCurrencyCandidateV1(Currency, "SENTETIK", "SENTETIK para")]);
     }
@@ -316,5 +354,15 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
         public string? UserId => userId;
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class SyntheticCreditSources(Guid company) : ISettingsPrerequisiteProvider, IFinanceCreditLenderPortV1
+    {
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MoneyProfileV1(company, currencyId, "TRY", operation, new(Guid.Parse("f4720000-0000-4000-8000-000000000003"), 1), 2, true, new DateOnly(2026, 11, 15), null));
+        public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCreditLenderAnswerV1> ReadAsync(Guid companyId, Guid partyId, Guid companyPartyAccountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new FinanceCreditLenderAnswerV1(companyId, partyId, companyPartyAccountId, FinanceCreditLenderStatusV1.Available, Lender, 1, 1));
     }
 }

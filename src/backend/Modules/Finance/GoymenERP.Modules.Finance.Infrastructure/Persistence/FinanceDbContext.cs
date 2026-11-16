@@ -2042,6 +2042,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_CreditAccounts_Group", CreditAccountGroupCheck);
             table.HasCheckConstraint("CK_CreditAccounts_Amount", CreditAccountAmountCheck);
             table.HasCheckConstraint("CK_CreditAccounts_Decision", CreditAccountDecisionCheck);
+            table.HasCheckConstraint("CK_CreditAccounts_SourceProfile", CreditAccountSourceProfileCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -2052,11 +2053,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.PrincipalAmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
         entity.Property(x => x.StartDate).HasColumnType("date");
+        entity.Property(x => x.SourceProfileJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.Property(x => x.RejectionReason).HasMaxLength(500);
         entity.HasIndex(x => new { x.CompanyId, x.LenderName, x.ContractReference }, CreditAccountLiveIndex)
-            .HasFilter(CreditAccountLiveFilter).IsUnique();
+            .HasFilter(CreditAccountLiveFilter + " AND [LenderPartyId] IS NULL").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.LenderPartyId, x.LenderCompanyPartyAccountId, x.ContractReference },
+                "UX_CreditAccounts_LenderIdentity_Live")
+            .HasFilter(CreditAccountLiveFilter + " AND [LenderPartyId] IS NOT NULL").IsUnique();
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.ProposedAtUtc }, "IX_CreditAccounts_Status");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
@@ -2070,8 +2075,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_CreditAccountInstallments_Amounts", CreditAccountInstallmentAmountsCheck);
+            table.HasCheckConstraint("CK_CreditAccountInstallments_Charges", CreditAccountInstallmentChargesCheck);
         });
         installment.HasKey(x => new { x.CompanyId, x.CreditAccountId, x.Sequence });
+        installment.Property(x => x.ChargesJson).HasColumnType("nvarchar(max)");
         installment.Property(x => x.DueDate).HasColumnType("date");
         installment.Property(x => x.InstallmentText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
@@ -2129,6 +2136,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     /// <summary>FNS-D87: the four groups (1 cash, 2 non-cash, 3 instrument and factoring, 4 leasing).</summary>
     internal const string CreditAccountGroupCheck = "[CreditGroup] IN (1, 2, 3, 4)";
+
+    internal const string CreditAccountSourceProfileCheck = "([SourceProfileJson] IS NULL AND [LenderPartyId] IS NULL "
+        + "AND [LenderCompanyPartyAccountId] IS NULL AND [LenderPartyVersion] IS NULL AND [LenderCompanyAccountVersion] IS NULL "
+        + "AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [CurrencyScale] IS NULL) "
+        + "OR ([SourceProfileJson] IS NOT NULL AND ISJSON([SourceProfileJson]) = 1 "
+        + "AND [LenderPartyId] IS NOT NULL AND [LenderPartyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LenderCompanyPartyAccountId] IS NOT NULL AND [LenderCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LenderPartyVersion] IS NOT NULL AND [LenderPartyVersion] > 0 "
+        + "AND [LenderCompanyAccountVersion] IS NOT NULL AND [LenderCompanyAccountVersion] > 0 "
+        + "AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] > 0 "
+        + "AND [CurrencyScale] IS NOT NULL AND [CurrencyScale] BETWEEN 0 AND 28)";
+
+    internal const string CreditAccountInstallmentChargesCheck = "[ChargesJson] IS NULL OR ISJSON([ChargesJson]) = 1";
 
     /// <summary>The credit amount: an unsigned decimal text with at least one non-zero digit (the service parses it exactly).</summary>
     internal const string CreditAccountAmountCheck =

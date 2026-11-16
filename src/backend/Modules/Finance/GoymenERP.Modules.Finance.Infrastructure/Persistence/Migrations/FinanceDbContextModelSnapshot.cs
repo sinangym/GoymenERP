@@ -713,6 +713,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<string>("ChargesJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateOnly>("DueDate")
                         .HasColumnType("date");
 
@@ -750,6 +753,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Amounts", "LEN([InstallmentText]) > 0 AND [InstallmentText] NOT LIKE '%[^0-9.]%' AND [InstallmentText] NOT LIKE '%.%.%' AND [InstallmentText] NOT LIKE '.%' AND [InstallmentText] NOT LIKE '%.' AND LEN([PrincipalText]) > 0 AND [PrincipalText] NOT LIKE '%[^0-9.]%' AND [PrincipalText] NOT LIKE '%.%.%' AND [PrincipalText] NOT LIKE '.%' AND [PrincipalText] NOT LIKE '%.' AND LEN([InterestText]) > 0 AND [InterestText] NOT LIKE '%[^0-9.]%' AND [InterestText] NOT LIKE '%.%.%' AND [InterestText] NOT LIKE '.%' AND [InterestText] NOT LIKE '%.' AND LEN([BsmvText]) > 0 AND [BsmvText] NOT LIKE '%[^0-9.]%' AND [BsmvText] NOT LIKE '%.%.%' AND [BsmvText] NOT LIKE '.%' AND [BsmvText] NOT LIKE '%.' AND LEN([KkdfText]) > 0 AND [KkdfText] NOT LIKE '%[^0-9.]%' AND [KkdfText] NOT LIKE '%.%.%' AND [KkdfText] NOT LIKE '.%' AND [KkdfText] NOT LIKE '%.'");
 
+                            t.HasCheckConstraint("CK_CreditAccountInstallments_Charges", "[ChargesJson] IS NULL OR ISJSON([ChargesJson]) = 1");
+
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
@@ -775,6 +780,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CurrencyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("CurrencyScale")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset?>("DecidedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -783,10 +791,28 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(128)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<long?>("LenderCompanyAccountVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("LenderCompanyPartyAccountId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("LenderName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("LenderPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("LenderPartyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("MoneyProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("MoneyProfileVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("PrincipalAmountText")
                         .IsRequired()
@@ -808,6 +834,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("SourceProfileJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateOnly>("StartDate")
                         .HasColumnType("date");
 
@@ -825,9 +854,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
                     b.HasIndex(new[] { "CompanyId", "Status", "ProposedAtUtc" }, "IX_CreditAccounts_Status");
 
+                    b.HasIndex(new[] { "CompanyId", "LenderPartyId", "LenderCompanyPartyAccountId", "ContractReference" }, "UX_CreditAccounts_LenderIdentity_Live")
+                        .IsUnique()
+                        .HasFilter("[Status] IN (1, 2) AND [LenderPartyId] IS NOT NULL");
+
                     b.HasIndex(new[] { "CompanyId", "LenderName", "ContractReference" }, "UX_CreditAccounts_Live")
                         .IsUnique()
-                        .HasFilter("[Status] IN (1, 2)");
+                        .HasFilter("[Status] IN (1, 2) AND [LenderPartyId] IS NULL");
 
                     b.ToTable("CreditAccounts", "finance", t =>
                         {
@@ -838,6 +871,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CreditAccounts_Group", "[CreditGroup] IN (1, 2, 3, 4)");
 
                             t.HasCheckConstraint("CK_CreditAccounts_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0 AND LEN([LenderName]) > 0 AND LEN([ContractReference]) > 0");
+
+                            t.HasCheckConstraint("CK_CreditAccounts_SourceProfile", "([SourceProfileJson] IS NULL AND [LenderPartyId] IS NULL AND [LenderCompanyPartyAccountId] IS NULL AND [LenderPartyVersion] IS NULL AND [LenderCompanyAccountVersion] IS NULL AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [CurrencyScale] IS NULL) OR ([SourceProfileJson] IS NOT NULL AND ISJSON([SourceProfileJson]) = 1 AND [LenderPartyId] IS NOT NULL AND [LenderPartyId] <> '00000000-0000-0000-0000-000000000000' AND [LenderCompanyPartyAccountId] IS NOT NULL AND [LenderCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [LenderPartyVersion] IS NOT NULL AND [LenderPartyVersion] > 0 AND [LenderCompanyAccountVersion] IS NOT NULL AND [LenderCompanyAccountVersion] > 0 AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] > 0 AND [CurrencyScale] IS NOT NULL AND [CurrencyScale] BETWEEN 0 AND 28)");
 
                             t.HasCheckConstraint("CK_CreditAccounts_Version", "[Version] >= 1");
                         });
