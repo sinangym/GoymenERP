@@ -2,17 +2,38 @@
 
 Bu belge önceki karar dosyalarını silmez; FNS-D70…FNS-D72, KLN-D76…KLN-D82, ALS-D102…ALS-D103, URT-D82…URT-D85 ve
 SAT-D364…SAT-D366 kararlarını ekler. FNS-D31, FNS-D57, FNS-D58, FNS-D68 (teminat), KLN-D33 (şablon yayımlama ayrı izin,
-hazırlayan yayımlayamaz), KLN-D38 ve KLN-D71/KLN-D72 (bakiye yalnız onaylı devir fişiyle, tam bakiye, para birimi başına
+hazırlayan yayımlayamaz), KLN-D38 ve KLN-D71/KLN-D72 (bakiye yalnız devir fişiyle, tam bakiye, para birimi başına
 satır, kur farkı yok, tek adım + denetim), ALS-D99 (pasif cariye yeni belge yok), URT-D32 ve URT-D77 (yeniden açma),
 URT-D52, URT-D53, URT-D55, URT-D75, URT-D78…URT-D81, SAT-D2, SAT-D295/BS-1 (giriş maliyetinde kur = fatura kuru) ve
-SAT-D357 aynen geçerlidir; bu belge onların açık bıraktığı noktaları tamamlar. Bazı kaynak kararlar henüz merge edilmemiş
-karar PR'larındadır; bu belge onlara o PR'lardaki metinle atıf yapar.
+SAT-D357 aynen geçerlidir; bu belge onların açık bıraktığı noktaları tamamlar.
+
+**Güncellenen noktalar (SINAN-CEVAP 41.1):** 32.15 ve 32.14'teki toplu cevap, daha önce açıkça seçilmiş beş kararla
+çelişiyordu. Sinan 41.1'de önceki açık seçimlerin geçerli kaldığını, SC32'deki çelişen beş maddenin düşürüldüğünü ve kalan
+SC32 kararlarının geçerli olduğunu söyledi. Bu yüzden şu beş madde düşürüldü ve önceki karar aynen geçerlidir:
+- KLN-D80 → KLN-D73;
+- KLN-D82 → KLN-D74;
+- SAT-D364'ün Admin girişi ve ret kısmı → SAT-D358 (3) / SAT-D346;
+- FNS-D72'nin kayıt personaları → FNS-D68;
+- ALS-D103 → ALS-D99 (1).
+
+**Yeniden sorulan sorular:** Altı soru, 29. turda (EK8) cevaplanmış dokuz soruyu tekrar ediyor. Çelişen noktalar yukarıda düşürüldü; kalanlarda cevaplar aynı yöndedir ve
+önceki kararları teyit eder:
+- 32.3 ↔ 29.3 (KLN-D72; KLN-D76 KLN-D72'nin açık bıraktığı persona noktasını tamamlar);
+- 32.11 ↔ 29.1 (SAT-D358);
+- 32.12 ↔ 29.4 (SAT-D359);
+- 32.15 ↔ 29.5–29.8 (KLN-D73, KLN-D74, URT-D77);
+- 32.16 ↔ 29.9 (KLN-D75);
+- 32.17 ↔ 29.10 (SAT-D360).
+
+Kaynak kararların PR'ları: EK2 (ALS-D99, #1166), EK5 (FNS-D68, #1169) ve EK8 (KLN-D71…KLN-D75, SAT-D358…SAT-D360,
+URT-D77, #1172) main'dedir. Henüz merge edilmemiş olanlar: FNS-D57, FNS-D58 ve URT-D75 #1168'de (EK4), SAT-D357 #1165'te
+(EK), URT-D78…URT-D81 #1174'te (EK10); bu belge onlara o PR'lardaki metinle atıf yapar.
 
 **Kaynak:** Sinan, 15 Kasım 2026, bu Claude Code oturumunda soru penceresiyle cevapladı (SINAN-CEVAP 32). Sorular,
 tren-1 dalga 2/3 takım raporlarındaki (Finans FIN-S2, Alış-Cari ALC-S12/ALC-S15/ALC-S16/ALC-F1, Üretim URT-S14/URT-S19,
 Stok STK-S14, Satış SAT-S14) ve dalga 4–7 ön taramasındaki `NEEDS-SINAN` maddelerinden geldi. "(Önerilen)" işaretleri
-soranındır. On sekiz sorunun on altısında önerilen seçenek seçildi; döviz kaynağı sorusunda önerilmeyen bir seçenek
-seçildi, fazla teslim sorusuna serbest metinle cevap verildi (aşağıda kelimesi kelimesine).
+soranındır. Beş çelişkili madde için ayrıca SINAN-CEVAP 41.1 (16 Kasım 2026, Issue #66 yorumu 6911095960). On sekiz sorunun on altısında önerilen seçenek seçildi; döviz kaynağı sorusunda önerilmeyen bir seçenek
+seçildi, fazla teslim sorusuna serbest metinle cevap verildi (aşağıda kelimesi kelimesine). Kayıt: Issue #66 yorumu 6911316410 ("SINAN-CEVAP 32 (kayıt)"; sorular, seçenekler ve cevaplar pencerede gösterildiği gibi).
 
 ## Soru ve cevaplar
 
@@ -43,23 +64,23 @@ seçildi, fazla teslim sorusuna serbest metinle cevap verildi (aşağıda kelime
 |---|---|---|---|
 | FNS-D70 | Teminat türü listesinin yeri | Teminat türü listesi (tür ve teminat oranı; FNS-D31/FNS-D57'ye göre çek ve senet teminat değildir) Ayarlar modülünde şirket bazında tutulur; Admin Ayarlar ekranından girer, değişiklik denetime yazılır. Okuma sözleşmesini Finans tanımlar, Ayarlar uygular. Liste girilene veya okunamadığı sürece teminat kaydı ve teminatlı limit hesabı mevcut davranışla kapalı kalır (fail-closed). Uygulama ayrıntısı (geri alınabilir): sözleşme ve kayıt adları, sürümleme biçimi. | Ayarlar modülü (yeni şirket ayarı, migration, ekran), Finans teminat okuyucusu (FIN-S2, FIN-S3) |
 | FNS-D71 | Teminat ve limit için tarih tabanı | Teminatın ve kredi limitinin "yürürlükte" ve oran okumaları şirket iş gününe (Türkiye saatine göre takvim günü) göre yapılır; sunucu UTC günü kullanılmaz. | Finans teminat ve kredi limiti okumaları, Satış risk portu (FIN-S2, FIN-S3, FIN-S20) |
-| FNS-D72 | Teminat izinlerinin persona dağılımı | `finance.collaterals.read`: Finans Müdürü, Muhasebe Müdürü, Satış Müdürü, Genel Müdür. `finance.collaterals.record`: Finans Müdürü, Genel Müdür. İzinler Critical değildir (FNS-D46 kapsamı değişmez). | Finans izin kataloğu, persona grant matrisi |
+| FNS-D72 | Teminat izinlerinin persona dağılımı (32.15) | (1) `finance.collaterals.read`: Finans Müdürü, Muhasebe Müdürü, Satış Müdürü, Genel Müdür. (2) Kayıt personaları **düşürüldü** (SINAN-CEVAP 41.1): teminat kaydı, değiştirme/iade ve oran değiştirme için FNS-D68 aynen geçerlidir (Muhasebe Müdürü, Finans Uzmanı, Finans Müdürü, Genel Müdür, Admin). (3) Critical sınıflandırması bu belgeyle seçilmez; insan kapısındadır (FNS-D68 (3) değişmez). | Finans izin kataloğu, persona grant matrisi |
 | KLN-D76 | Bakiye devir fişinin persona dağılımı | KLN-D72'deki bakiye devir fişini Finans Müdürü ve Genel Müdür yapar; Admin bu dağılımda yoktur. Tek adım + denetim kuralı (KLN-D72) aynen geçerlidir. | Finans devir fişi komut portu, Cari paneli (ALC-S15) |
-| KLN-D77 | Mükerrer cari birleştirmede bakiye ve belgeler | Birleştirilen kartın geçmiş belgeleri kendi kartında kalır; belgelerin carisi değiştirilmez. Açık bakiye sağ kalan cariye yalnız KLN-D72'deki onaylı devir fişiyle taşınır; birleştirme kendisi bakiye taşımaz. Farklı VKN/TCKN taşıyan kartlar birleştirilemez; deneme açık bir hata koduyla reddedilir. | Cari birleştirme komutu (ALC-S12) |
-| KLN-D78 | Halefi olan pasif cariye yeni belge | Birleşme veya devir sonrası pasifleşmiş, halefi olan bir cariye satış faturası (ve ALS-D99 kapsamındaki diğer yeni belgeler) kesilmek istenirse istek reddedilir; ret yanıtında halef cari gösterilir. Otomatik yönlendirme yapılmaz. | Satış faturası (SAT-S1 identity-as-of kontrolü), Cari kimlik geçmişi okuma portu |
+| KLN-D77 | Mükerrer cari birleştirmede bakiye ve belgeler | Birleştirilen kartın geçmiş belgeleri kendi kartında kalır; belgelerin carisi değiştirilmez. Açık bakiye sağ kalan cariye yalnız KLN-D72'deki devir fişiyle (tek adım + denetim) taşınır; seçenek metnindeki "onaylı" ifadesi KLN-D72'yi değiştirmez; birleştirme kendisi bakiye taşımaz. Farklı VKN/TCKN taşıyan kartlar birleştirilemez; deneme açık bir hata koduyla reddedilir. | Cari birleştirme komutu (ALC-S12) |
+| KLN-D78 | Halefi olan pasif cariye yeni belge | Birleşme veya devir sonrası pasifleşmiş, halefi olan bir cariye satış faturası (ve ALS-D99 kapsamındaki diğer yeni belgeler) kesilmek istenirse istek reddedilir; ret yanıtında halef cari gösterilir. Otomatik yönlendirme yapılmaz. SAT-D359'u (29.4) teyit eder; yeni kural açmaz. | Satış faturası (SAT-S1 identity-as-of kontrolü), Cari kimlik geçmişi okuma portu |
 | KLN-D79 | Cari birleştirme ve halef kaydı persona dağılımı | `counterparty.parties.merge.approve` ve `counterparty.parties.succession.record`: Muhasebe Müdürü, Finans Müdürü, Genel Müdür. | Cari izin kataloğu, persona grant matrisi |
-| KLN-D80 | Şablon yayımlama persona dağılımı | KLN-D33'teki şablon yayımlama izni: Genel Müdür ve Admin. Hazırlayan yayımlayamaz kuralı (KLN-D33) aynen geçerlidir. | Belge şablonu yayımlama (STK-S29) |
+| KLN-D80 | Şablon yayımlama persona dağılımı (32.15) | **Düşürüldü** (SINAN-CEVAP 41.1). 32.15'teki "GM + Admin" dağılımı uygulanmaz; KLN-D73 aynen geçerlidir: her modülün müdürü kendi modülünün şablonlarını yayımlar, hazırlayan yayımlayamaz (KLN-D33). Kimlik yeniden kullanılmaz. | Belge şablonu yayımlama (STK-S29) |
 | KLN-D81 | Fiziksel ve gelecek tahsisin tavanı | Bir satış satırı için fiziksel stok tahsisi ile gelecek tarihli tahsisin toplamı, satırın açık miktarını aşamaz. Açık miktar = sipariş miktarı − sevk edilen miktar; iptal edilmiş satırın açık miktarı 0'dır. Aşan istek reddedilir. | Stok tahsis ve gelecek tahsis komutları (STK-S14, STK-S17) |
-| KLN-D82 | Gelecek tahsis persona dağılımı | Gelecek tarihli tahsis oluşturma ve bırakma: Satış Müdürü, Satın Alma Müdürü ve üstü (Genel Müdür). | Stok gelecek tahsis izinleri (STK-S17), persona grant matrisi |
+| KLN-D82 | Gelecek tahsis persona dağılımı (32.15) | **Düşürüldü** (SINAN-CEVAP 41.1). 32.15'teki "Satış ve Satın Alma müdürleri ve üstü" dağılımı uygulanmaz; KLN-D74 aynen geçerlidir: Stok, Sevkiyat/Lojistik ve Satış personaları; Satınalma ve Finans bu izni almaz. Kimlik yeniden kullanılmaz. | Stok gelecek tahsis izinleri (STK-S17), persona grant matrisi |
 | ALS-D102 | Mal kabulde fazla teslim | Gelen parti kg'ı siparişin kalan kg'ı + kg toleransı içindeyse kabul edilir. Toleransı aşan parti reddedilmez; uyarı gönderilir ve onaya düşer. Onayı Satın Alma Müdürü ve üstü verir; mal kabulünü giren kendi fazlasını onaylayamaz (hazırlayan ≠ onaylayan). Onaylanana kadar toleransı aşan kısım stoka girmez. Tolerans onay anındaki güncel Ayarlar değerinden okunur; değer yoksa mevcut davranışla reddedilir (fail-closed). Uygulama ayrıntısı (geri alınabilir): uyarının bildirim kanalı ve metni, sapmanın kalan kg'a göre hesaplanması. | Alış mal kabulü (ALC-S16), bildirim |
-| ALS-D103 | Pasifleştirmeyi engelleyen açık belgeler | Cari pasifleştirilirken taslak dışı her satış/alış siparişi, sevki veya mal kabulü bitmemiş irsaliye ve kesilmemiş fatura "açık" sayılır ve pasifleştirmeyi engeller. Taslaklar engellemez; cari pasifleşince o cariye ait taslaklar iptal edilir (silinmez). | Cari pasifleştirme (ALC-F1), Satış ve Alış açık belge kaynakları |
-| URT-D82 | Üretimde döviz değerleme | URT-D55'te açık kalan döviz kaynağı: stok, TL hareketli ortalamaya ek olarak ayrı bir döviz (USD) hareketli ortalaması tutar. Her girişin döviz maliyeti o girişin fatura kuruyla (SAT-D295/BS-1) bulunur; faturası TL olan girişler giriş gününün TCMB kuruyla USD'ye çevrilir. Çıkışta o anki USD ortalaması damgalanır. Kapsam: şimdilik yalnız üretim maliyetinde kullanılır ve gösterilir; satış maliyeti (SMM) ve stok değerleme raporları ayrı kararla açılır. Kur okunamazsa ilgili döviz değeri "hesaplanamadı" olur, TL maliyeti etkilenmez. Uygulama ayrıntısı (geri alınabilir): defter tablosunun adı ve yapısı. | Stok değerleme defteri (STK-S35), üretim çıkış maliyeti portu (URT-S14) |
+| ALS-D103 | Pasifleştirmeyi engelleyen açık belgeler (32.14) | **Düşürüldü** (SINAN-CEVAP 41.1). 32.14'ün sorusu ALS-D99'u "açık belge pasifleştirmeyi engeller" diye anıyordu; ALS-D99 (1) bunun tersini söyler: açık bakiye ve açık belge pasife almayı **engellemez**, sistem uyarır ve gerekçe ister. ALS-D99 aynen geçerlidir; taslakların pasifleşmede iptali de uygulanmaz. Uyarıda hangi belge türlerinin sayılacağı ALS-D99'daki gibi uygulama ayrıntısıdır; 32.14 cevabındaki listenin bu uyarı için kullanılması sorulmadı (`NEEDS-SINAN`). Kimlik yeniden kullanılmaz. | Cari pasifleştirme (ALC-F1), Satış ve Alış açık belge kaynakları |
+| URT-D82 | Üretimde döviz değerleme | URT-D55'te açık kalan döviz kaynağı: stok, TL hareketli ortalamaya ek olarak ayrı bir döviz (USD) hareketli ortalaması tutar. Her girişin döviz maliyeti o girişin fatura kuruyla (SAT-D295/BS-1) bulunur; faturası TL olan girişler giriş gününün TCMB kuruyla USD'ye çevrilir. Çıkışta o anki USD ortalaması damgalanır. Kapsam: şimdilik yalnız üretim maliyetinde kullanılır ve gösterilir; satış maliyeti (SMM) ve stok değerleme raporları ayrı kararla açılır. Kur okunamazsa ilgili döviz değeri "hesaplanamadı" olur, TL maliyeti etkilenmez. TL ana maliyet olarak kalır; USD ortalaması üretim maliyetinde gösterim içindir ve URT-D55 (3)'te seçilmeyen "maliyetin dövizde tutulması" bu kararla seçilmiş olmaz. OPEN-008 (değerleme ve üretim maliyet yöntemi) açık kalır. Uygulama ayrıntısı (geri alınabilir): defter tablosunun adı ve yapısı. | Stok değerleme defteri (STK-S35), üretim çıkış maliyeti portu (URT-S14) |
 | URT-D83 | Yukarı yönlü tartım düzeltmesi | URT-D53'te açık kalan nokta: eksik tartılmış üretim etiketinin kilosu yukarı yönlü de düzeltilebilir. Aşağı yönlü düzeltmeyle aynı onaylı yol kullanılır: hazırlayan ≠ onaylayan, aynı kurallar, denetim kaydı. URT-D81 (kapalı emirde önce yeniden açma) yukarı yönlü düzeltme için de geçerlidir. | Üretim tartım düzeltme komutu (URT-S19) |
-| URT-D84 | Maliyet böleninde ikinci kalite | URT-D75'teki kg başı maliyet böleni iyi kg + ikinci kalite kg'dır; ikinci kalite ürün maliyetten pay alır. Mevcut kod ve golden bu kuralla hesaplar ve değişmez. URT-D75 metnindeki "iyi kg" ifadesi bu anlamda okunur. | Üretim maliyet hesaplayıcısı, golden |
-| URT-D85 | Üretim izinlerinin persona dağılımı | Üretim emri iptal ve yeniden açma (URT-D32, URT-D77): Üretim Müdürü, Genel Müdür, Admin. `manufacturing.reports.read`: Üretim Müdürü, Finans Müdürü, Genel Müdür. | Üretim izin kataloğu, persona grant matrisi |
-| SAT-D364 | Sözleşme iskonto sınırı | Satış sözleşmesinde verilebilecek en yüksek iskonto, SAT-D2'deki genel sınırdan ayrı bir Ayarlar değeridir ve şirket bazında tutulur. Değer girilene kadar sözleşme iskontosu mevcut davranışla reddedilir (fail-closed). Değerin kendisini Admin Ayarlar ekranından girer; bu belge sayı seçmez. | Ayarlar (yeni şirket ayarı), Satış sözleşmesi (SAT-S14) |
-| SAT-D365 | Satış siparişi PDF izni | Satış siparişinin PDF çıktısını siparişi okuma yetkisi olan herkes alabilir; ayrı yazdırma izni yoktur. | Satış siparişi PDF (SAT-PDF) |
-| SAT-D366 | Genel audit saklama süresi | SAT-D357'de açık kalan genel audit saklama süresi 10 yıldır; Ayarlar'dan değiştirilebilir. İmha işi ayrıca onaylıdır ve bu belgeyle etkinleşmez. | Platform audit saklama ayarı |
+| URT-D84 | Maliyet böleninde ikinci kalite | URT-D75'teki kg başı maliyet böleni sağlam ürün kg + ikinci kalite kg'dır; ikinci kalite ürün maliyetten pay alır. Mevcut kod ve golden bu kuralla hesaplar ve değişmez. URT-D75 metnindeki "sağlam ürün kg" ifadesi bu anlamda okunur (#1168'deki URT-D75 (1) paydası da SAT-D307 (1)'e göre sağlam + 2. kalite kg'dır; bu karar onu teyit eder). | Üretim maliyet hesaplayıcısı, golden |
+| URT-D85 | Üretim izinlerinin persona dağılımı | Üretim emri iptal ve yeniden açma (URT-D32, URT-D77): Üretim Müdürü, Genel Müdür, Admin. `manufacturing.reports.read`: Üretim Müdürü, Finans Müdürü, Genel Müdür. İptal/yeniden açma dağılımı URT-D77'yi (29.8) teyit eder. | Üretim izin kataloğu, persona grant matrisi |
+| SAT-D364 | Sözleşme iskonto sınırı (32.11) | (1) Satış sözleşmesinde verilebilecek en yüksek iskonto, SAT-D2'deki genel sınırdan ayrı bir Ayarlar değeridir ve şirket bazında tutulur; SAT-D358 (1)(2)'yi teyit eder. (2) Değeri kimin gireceği ve değer yokken davranış **düşürüldü** (SINAN-CEVAP 41.1): SAT-D358 (3) ve SAT-D346 aynen geçerlidir; değeri Sinan girer, girilmemişse her sözleşme iskontosu onaya düşer ve ekranda "sınır tanımlı değil" görünür. Bu belge sayı seçmez. | Ayarlar (yeni şirket ayarı), Satış sözleşmesi (SAT-S14) |
+| SAT-D365 | Satış siparişi PDF izni | Satış siparişinin PDF çıktısını siparişi okuma yetkisi olan herkes alabilir; ayrı yazdırma izni yoktur. SAT-D360'ı (29.10) teyit eder; SAT-D360'taki PDF'in ekranda görülmeyen bilgiyi içermemesi kuralı aynen geçerlidir. | Satış siparişi PDF (SAT-PDF) |
+| SAT-D366 | Genel audit saklama süresi | SAT-D357'de açık kalan genel audit saklama süresi 10 yıldır; Ayarlar'dan değiştirilebilir. İmha işi ayrıca onaylıdır ve bu belgeyle etkinleşmez. KLN-D75'i (29.9) teyit eder. OPEN-021'in genel audit süresi kısmına cevap verir; OPEN-021'in durumu bu belgeyle değişmez (diğer kısımları açık kalır). | Platform audit saklama ayarı |
 
 ## Sınırlar
 
