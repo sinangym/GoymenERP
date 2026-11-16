@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -2546,6 +2549,117 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Rounding", "[CoefficientRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity') AND [DocumentTotalRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity') AND [WholeUnitRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity')");
 
                             t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Tolerance", "[WeighbridgeTolerancePercent] >= 0 AND [WeighbridgeTolerancePercent] <= 100 AND [ToleranceBoundary] IN ('Inclusive','Exclusive') AND [ToleranceBase] IN ('TheoreticalKg','WeighedKg')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.UnitProfileBaselineTransferRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("TransferredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TransferredBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("UnitProfileBaselineTransfers", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsUnitProfileBaselineTransfers_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsUnitProfileBaselineTransfers_EntryCount", "[EntryCount] >= 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitProfileBaselineTransfers_Recorded", "LEN(LTRIM(RTRIM([TransferredBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.UnitProfileVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DecisionReference")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("DimensionCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsKilogram")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Scale")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("CompanyId", "UnitId", "Version");
+
+                    b.HasIndex("CompanyId", "ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("UnitProfileVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Codes", "LEN(LTRIM(RTRIM([UnitCode]))) > 0 AND LEN(LTRIM(RTRIM([DimensionCode]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Scale", "[Scale] BETWEEN 0 AND 28 AND ([IsKilogram] = 0 OR [Scale] <= 3)");
+
+                            t.HasCheckConstraint("CK_SettingsUnitProfileVersions_Source", "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')");
                         });
                 });
 

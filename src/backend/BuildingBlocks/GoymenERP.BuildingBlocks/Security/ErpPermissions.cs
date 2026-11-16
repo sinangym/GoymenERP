@@ -1294,6 +1294,14 @@ public static class ErpPermissions
     public const string SettingsUnitConversionPoliciesManage = "settings.unit-conversion-policies.manage";
 
     /// <summary>
+    /// F-029 S1/S2 (URUN_F029 spec §5.4(4); URN-D2…D5): read the company's unit profile timeline (which unit the company may
+    /// use, from when, at what quantity scale), transfer the approved baseline once and record new versions
+    /// (<c>SettingsUnitProfilePermissionManifestV1.Manage</c>). Registered, not granted: no role, seed or user receives it here
+    /// (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsUnitProfilesManage = "settings.unit-profiles.manage";
+
+    /// <summary>
     /// KIM-D34: read the group-wide login attempt limit timeline (attempts per window, window length, what a window counts per)
     /// and record new versions (<c>SettingsLoginRateLimitPermissionManifestV1.Manage</c>). Registered, not granted: no role,
     /// seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
@@ -1625,6 +1633,7 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsUnitProfilesManage,
             SettingsLoginRateLimitManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
@@ -1867,6 +1876,7 @@ public static class ErpPermissions
             SettingsSalesQuotePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
+            SettingsUnitProfilesManage,
             SettingsLoginRateLimitManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,

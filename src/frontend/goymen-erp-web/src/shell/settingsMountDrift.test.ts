@@ -25,8 +25,8 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(settings?.entries).toContain(CAPABILITY.settingsSalesDiscountLimits)
   })
 
-  it('mounts the seven static routes', () => {
-    expect(settingsRoutes).toHaveLength(7)
+  it('mounts the eight static routes', () => {
+    expect(settingsRoutes).toHaveLength(8)
     expect(matchRoutes(settingsRoutes, '/ayarlar/iskonto-limitleri')?.at(-1)?.route.path).toBe('ayarlar/iskonto-limitleri')
     expect(matchRoutes(settingsRoutes, '/ayarlar/vergi')?.at(-1)?.route.path).toBe('ayarlar/vergi')
     expect(matchRoutes(settingsRoutes, '/ayarlar/kurlar')?.at(-1)?.route.path).toBe('ayarlar/kurlar')
@@ -38,6 +38,7 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(matchRoutes(settingsRoutes, '/ayarlar/birim-cevrim-politikasi')?.at(-1)?.route.path).toBe(
       'ayarlar/birim-cevrim-politikasi',
     )
+    expect(matchRoutes(settingsRoutes, '/ayarlar/birim-profilleri')?.at(-1)?.route.path).toBe('ayarlar/birim-profilleri')
   })
 
   it('mirrors the MOD-03 tax master id, route and label, with one navigation entry under Ayarlar', () => {
@@ -81,10 +82,11 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(SETTINGS_CAPABILITY.salesApprovalThresholds).toBe('settings.sales-approval-thresholds.manage')
   })
 
-  it('mirrors the KIM-D34 login attempt limit and KIM-D37 unit conversion ids, routes and labels, one entry each', () => {
+  it('mirrors the KIM-D34 login attempt limit, KIM-D37 unit conversion and F-029 unit profile ids, routes and labels, one entry each', () => {
     const pairs = [
       [CAPABILITY.settingsLoginRateLimit, SETTINGS_CAPABILITY.loginRateLimit],
       [CAPABILITY.settingsUnitConversionPolicy, SETTINGS_CAPABILITY.unitConversionPolicy],
+      [CAPABILITY.settingsUnitProfiles, SETTINGS_CAPABILITY.unitProfiles],
     ] as const
     const entries = NAV_GROUPS.find((group) => group.id === 'settings')?.entries ?? []
     for (const [shellId, settingsId] of pairs) {
@@ -98,11 +100,16 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(entries.indexOf(CAPABILITY.settingsUnitConversionPolicy)).toBeLessThan(
       entries.indexOf(CAPABILITY.settingsExchangeRates),
     )
+    expect(entries.indexOf(CAPABILITY.settingsUnitProfiles)).toBeGreaterThan(
+      entries.indexOf(CAPABILITY.settingsUnitConversionPolicy),
+    )
+    expect(entries.indexOf(CAPABILITY.settingsUnitProfiles)).toBeLessThan(entries.indexOf(CAPABILITY.settingsExchangeRates))
     expect(entries.indexOf(CAPABILITY.settingsLoginRateLimit)).toBeGreaterThan(
       entries.indexOf(CAPABILITY.identityAssignmentsList),
     )
     expect(entries.at(-1)).toBe('inventory.opening-stock.record')
     expect(SETTINGS_CAPABILITY.loginRateLimit).toBe('settings.login-rate-limit.manage')
     expect(SETTINGS_CAPABILITY.unitConversionPolicy).toBe('settings.unit-conversion-policies.manage')
+    expect(SETTINGS_CAPABILITY.unitProfiles).toBe('settings.unit-profiles.manage')
   })
 })

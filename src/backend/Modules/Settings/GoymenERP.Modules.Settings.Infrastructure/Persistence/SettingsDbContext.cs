@@ -101,6 +101,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureSalesQuoteAndEInvoicePolicies(modelBuilder);
         ConfigureTaxRateLists(modelBuilder);
         ConfigureUnitConversionPolicies(modelBuilder);
+        ConfigureUnitProfiles(modelBuilder);
         ConfigureBankCsvMappings(modelBuilder);
         ConfigureSegregationOfDutiesPolicies(modelBuilder);
         ConfigureLoginRateLimits(modelBuilder);

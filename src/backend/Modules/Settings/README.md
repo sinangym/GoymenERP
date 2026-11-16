@@ -746,6 +746,28 @@ authorized person through the route below; until then the port refuses.
 Not in this slice: the frontend screen and its shell capability, product-level overrides (URN-D8: none), the consumers'
 switch from their own settings record to this port.
 
+## Unit profiles (F-029 S1/S2; URN-D2…D5)
+
+Sources: `docs/delivery/URUN_F029_POLITIKA_KATALOGLARI_ENVANTER_VE_SPEC_v1.md` §5.4(4) and
+`docs/decisions/SINAN_KARARLARI_2026-11-12_URUN.md` URN-D2…D5. The approved unit profiles (T02-a,
+`ApprovedUnitProfileCatalog`) become a persistent, versioned Settings record managed on a screen (URN-D2) by one authorized
+manager with a mandatory reason and audit, no second approver (URN-D3), effective only from today forward (URN-D4), after a
+one-time transfer of the reviewed entries with their values unchanged (URN-D5).
+
+| Part | What |
+|---|---|
+| Tables | `UnitProfileVersions`: PK `(CompanyId, UnitId, Version)`, unique `(CompanyId, ProfileId)`; unit code, dimension and kilogram flag copied from the unit identity, scale (0…28; a kilogram profile at most 3, Ö2), active flag, start date, source kind (`CompiledBaselineV0` for transferred rows), decision reference, recorder, time and reason. Insert-only; windows are derived (`SalesPolicyTimelineV1`), a later version on the same date supersedes the earlier one. `UnitProfileBaselineTransfers`: one marker row per company (PK `CompanyId`) with the transferred entry count. Both carry `CompanyId` under the company query filter. |
+| Migration | `AddUnitProfileVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51341` while any version or a baseline transfer marker exists (forward fix); an empty store rolls back freely. |
+| Port | `ISettingsPrerequisiteProvider` keeps its signature (spec P2). `SettingsUnitProfilePrerequisiteProvider` answers `GetUnitProfileAsync` from the reviewed catalog, byte-identical, until the company's transfer; from then on the table is the only unit profile source (none in force → not found; no fallback to the catalog). Money and period reads delegate unchanged to the approved provider. The unit identity catalog (`ISettingsUnitIdentityCatalogV1`) is unchanged. Consumers: Product and stock/logistics through the same port. |
+| Name | `settings.unit-profiles.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/unit-profiles` (per-unit timeline, the identity options with their maximum scale), `POST /api/v1/settings/unit-profiles/baseline-transfer` (204), `POST /api/v1/settings/unit-profiles/versions` (204). |
+| Commands | Idempotency-Key, the unit's expected version ("0" for a unit with no stored row), reason (≤ 4000), one save with the execution row and one audit event (`settings.unit-profile.baseline-transferred.v1`, `settings.unit-profile.recorded.v1`). Recording before the transfer is 409 `settings_unit_profile_baseline_required`; a second transfer is 409 `settings_unit_profile_already_transferred`; a start date before today (Europe/Istanbul) is 422; an unchanged in-force profile is a stored no-op without audit. Terminal refusals are stored and replay. |
+| Shell | Capability `AY-BRP-01`, route `/ayarlar/birim-profilleri` (Settings provider 1.5). |
+| Evidence | Model: `SettingsUnitProfilePersistenceModelTests`. Names: `SettingsUnitProfilePermissionRegistrationTests`. Real SQL: `SettingsUnitProfileSqlServerRelationalAcceptanceTests`. Screen: `UnitProfilePage.test.tsx`. |
+
+Not in this slice: profile data for units other than kilogram (the identity catalog holds only kg), a group-wide persistent
+unit identity table, the ton↔kg coefficient (unit conversion policy).
+
 ## Bank CSV column mapping (F-014; FNS-D52)
 
 Source: `docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA1_EK.md` FNS-D52 (bank statement import: XLSX, MT940, CSV; the CSV
