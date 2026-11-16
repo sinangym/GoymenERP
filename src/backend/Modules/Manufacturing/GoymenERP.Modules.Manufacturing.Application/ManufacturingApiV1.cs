@@ -442,6 +442,12 @@ public static class ManufacturingCommandNames
     public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
     public const string CloseOrder = "manufacturing.order.close.v1";
+
+    /// <summary>F-009 D5 (URT-D33/D34): cancels an order with no net effect and releases its plan.</summary>
+    public const string CancelOrder = "manufacturing.order.cancel.v1";
+
+    /// <summary>F-009 D5 (URT-D35/D39): the minimal re-approval of a plan released by an order cancel.</summary>
+    public const string ReapprovePlan = "manufacturing.plan.reapprove.v1";
     public const string RecordScrapPrice = "manufacturing.scrap-price.record.v1";
 
     /// <summary>URT-D72: corrects a month's scrap price with a new version and a reason.</summary>
@@ -511,7 +517,9 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingProductionCostPortV2? productionCost = null,
     IManufacturingLabelLineageReadPortV1? labelLineage = null,
     IManufacturingWorkCenterQueueStore? workCenterQueues = null,
-    IManufacturingInventoryOutputCorrectionPortV1? outputCorrections = null)
+    IManufacturingInventoryOutputCorrectionPortV1? outputCorrections = null,
+    IManufacturingOrderCancellationStore? orderCancellations = null,
+    IManufacturingPlanReapprovalStore? planReapprovals = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the

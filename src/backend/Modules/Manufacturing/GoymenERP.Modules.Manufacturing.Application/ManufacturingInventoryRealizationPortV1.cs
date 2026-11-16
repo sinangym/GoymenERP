@@ -273,6 +273,9 @@ public enum ManufacturingPlanAllocationReleaseReasonV1
 {
     PlanCancelled = 1,
     OrderClosed = 2,
+
+    /// <summary>F-009 D5 (URT-D34): the plan's order was cancelled; its allocation generation is released.</summary>
+    OrderCancelled = 3,
 }
 
 /// <summary>One allocation Inventory wrote for a plan input (Manufacturing's own copy of the identity).</summary>

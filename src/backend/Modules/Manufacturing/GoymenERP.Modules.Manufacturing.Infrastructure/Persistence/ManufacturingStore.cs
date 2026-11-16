@@ -838,8 +838,9 @@ public sealed partial class ManufacturingStore(
 
         // U3-a (URT-D21, B-01): an input allocated at the plan's approval enters the order at the label version Inventory
         // returned with the allocation, so the order's first input issue revalidates the label Inventory last moved.
-        var allocatedVersions = await dbContext.PlanInputAllocations.AsNoTracking()
-            .Where(allocation => allocation.PlanId == planId)
+        // F-009 D5: a plan re-approved after an order cancel holds one allocation generation per approval; only the latest
+        // (the highest plan version) is the one the new order uses.
+        var allocatedVersions = await LatestPlanAllocations(planId)
             .ToDictionaryAsync(allocation => allocation.ParentRollId, allocation => allocation.LabelVersionAfter,
                 cancellationToken);
         if (allocatedVersions.Count > 0)
@@ -952,13 +953,24 @@ public sealed partial class ManufacturingStore(
         await SaveAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// F-009 D5 (URT-D34/D35): the plan's latest allocation generation — the rows written with the plan's highest
+    /// approval or re-approval version. A plan approved once has one generation, as before.
+    /// </summary>
+    private IQueryable<PlanInputAllocationRow> LatestPlanAllocations(Guid planId) =>
+        dbContext.PlanInputAllocations.AsNoTracking()
+            .Where(allocation => allocation.PlanId == planId
+                && allocation.PlanVersion == dbContext.PlanInputAllocations
+                    .Where(candidate => candidate.PlanId == planId)
+                    .Max(candidate => candidate.PlanVersion));
+
     /// <summary>Üretim U3-a: the allocation Manufacturing recorded for one plan input, or null when none was written.</summary>
     public async Task<ManufacturingPlanInputAllocationV1?> FindPlanInputAllocationAsync(Guid planId, Guid parentRollId,
         CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.PlanInputAllocations.AsNoTracking().SingleOrDefaultAsync(
-            allocation => allocation.PlanId == planId && allocation.ParentRollId == parentRollId, cancellationToken);
+        var row = await LatestPlanAllocations(planId).SingleOrDefaultAsync(
+            allocation => allocation.ParentRollId == parentRollId, cancellationToken);
         return row is null
             ? null
             : new ManufacturingPlanInputAllocationV1(row.ParentRollId, row.AllocationId, row.LabelVersionAfter,
@@ -1561,10 +1573,21 @@ public sealed partial class ManufacturingStore(
             .Where(rejection => rejection.PlanId == row.Id && rejection.PlanVersion <= row.Version)
             .OrderBy(rejection => rejection.RejectionNo)
             .ToListAsync(cancellationToken);
+        // F-009 D5: a cancelled order no longer belongs to the plan; it released the plan at the version it names.
+        const int cancelledOrder = (int)OrderStatus.Cancelled;
         var orderIds = await dbContext.Orders.AsNoTracking()
-            .Where(order => order.PlanId == row.Id)
+            .Where(order => order.PlanId == row.Id && order.Status != cancelledOrder)
             .Select(order => order.Id)
             .Take(2)
+            .ToListAsync(cancellationToken);
+        var releases = await dbContext.Orders.AsNoTracking()
+            .Where(order => order.PlanId == row.Id && order.Status == cancelledOrder
+                && order.PlanVersionAfterCancel <= row.Version)
+            .Select(order => new { order.Id, order.PlanVersionAfterCancel })
+            .ToListAsync(cancellationToken);
+        var reapprovals = await dbContext.PlanReapprovals.AsNoTracking()
+            .Where(reapproval => reapproval.PlanId == row.Id && reapproval.PlanVersion <= row.Version)
+            .OrderBy(reapproval => reapproval.ReapprovalNo)
             .ToListAsync(cancellationToken);
         if (orderIds.Count > 1)
         {
@@ -1609,7 +1632,10 @@ public sealed partial class ManufacturingStore(
             RestoreSalesOrderLink(row),
             row.SalesOrderLinkRevision,
             row.RequestedDueDate,
-            row.DueDateRevision);
+            row.DueDateRevision,
+            releases.Select(release => new PlanOrderRelease(release.Id, release.PlanVersionAfterCancel ?? 0)),
+            reapprovals.Select(reapproval => new PlanReapproval(reapproval.ReapprovalNo, reapproval.ReapprovedByUserId,
+                reapproval.ReapprovedAtUtc, reapproval.PlanVersion)));
         if ((PlanStatus)row.Status != plan.Status)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
@@ -1804,7 +1830,8 @@ public sealed partial class ManufacturingStore(
             plannedOutputLines,
             reversals.Select(reversal => new OutputReversal(reversal.Id, reversal.OutputId, new Kilograms(reversal.MassKg),
                 reversal.Reason, reversal.OccurredAtUtc)),
-            row.DueDate, row.DueDateRevision, planDueDate);
+            row.DueDate, row.DueDateRevision, planDueDate,
+            row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason);
     }
 
     /// <summary>

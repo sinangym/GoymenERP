@@ -108,13 +108,18 @@ internal sealed class ManufacturingPlanAllocationHost(
             var result = await InventoryFaultAsync(() => inventory.StagePlanRemainderReleaseAsync(
                 new InventoryManufacturingPlanReleaseRequestV1(companyId, plan.Id,
                     plan.Version.ToString(CultureInfo.InvariantCulture),
-                    reason == ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled
-                        ? InventoryManufacturingPlanReleaseReasonV1.PlanCancelled
-                        : InventoryManufacturingPlanReleaseReasonV1.OrderClosed,
+                    reason switch
+                    {
+                        ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled =>
+                            InventoryManufacturingPlanReleaseReasonV1.PlanCancelled,
+                        ManufacturingPlanAllocationReleaseReasonV1.OrderCancelled =>
+                            InventoryManufacturingPlanReleaseReasonV1.OrderCancelled,
+                        _ => InventoryManufacturingPlanReleaseReasonV1.OrderClosed,
+                    },
                     timeProvider.GetUtcNow().ToUniversalTime()),
                 inventoryMetadata with
                 {
-                    IdempotencyKey = $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}",
+                    IdempotencyKey = ReleaseIdempotencyKey(companyId, plan, reason),
                 },
                 token));
             if (result.IsReplay || result.CompanyId != companyId || result.PlanId != plan.Id)
@@ -123,6 +128,17 @@ internal sealed class ManufacturingPlanAllocationHost(
             }
         }, cancellationToken);
     }
+
+    /// <summary>
+    /// The Inventory release key. A plan is cancelled or its order closed at most once, so those keys name the plan and
+    /// the reason only (unchanged since U3-a). F-009 D5: a plan may release one generation per cancelled order, so an
+    /// order cancel also names the plan version the release produced — every release bumps it, a retry replays it.
+    /// </summary>
+    internal static string ReleaseIdempotencyKey(Guid companyId, Modules.Manufacturing.Domain.Plans.ProductionPlan plan,
+        ManufacturingPlanAllocationReleaseReasonV1 reason) =>
+        reason == ManufacturingPlanAllocationReleaseReasonV1.OrderCancelled
+            ? $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}:{plan.Version.ToString(CultureInfo.InvariantCulture)}"
+            : $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}";
 
     /// <summary>
     /// TAKIP-U3a (#1004): an <see cref="ArgumentException"/> raised by an Inventory participant call is this host's
