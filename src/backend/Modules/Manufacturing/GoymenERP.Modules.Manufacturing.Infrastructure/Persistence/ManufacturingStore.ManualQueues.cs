@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
@@ -46,13 +47,13 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueOr
         }
         catch (SqlException exception) when (exception.Number is 1205 or 1222)
         {
-            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            await RollBackQueueTransactionAsync(transaction);
             dbContext.ChangeTracker.Clear();
             throw Refused(ManufacturingStoreCodes.ConcurrentChange, "Kuyruk eşzamanlı değişti; güncel sırayı yeniden okuyun.", exception);
         }
         catch
         {
-            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            await RollBackQueueTransactionAsync(transaction);
             dbContext.ChangeTracker.Clear();
             throw;
         }
@@ -158,16 +159,25 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueOr
         }
         catch (SqlException exception) when (exception.Number is 1205 or 1222)
         {
-            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            await RollBackQueueTransactionAsync(transaction);
             dbContext.ChangeTracker.Clear();
             throw Refused(ManufacturingStoreCodes.ConcurrentChange, "Kuyruk eşzamanlı değişti; işlem kaydedilmedi.", exception);
         }
         catch
         {
-            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            await RollBackQueueTransactionAsync(transaction);
             dbContext.ChangeTracker.Clear();
             throw;
         }
         finally { queueMutationMetadata = null; }
+    }
+
+    private static async Task RollBackQueueTransactionAsync(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction)
+    {
+        if (transaction is null) return; // A borrowed host transaction is rolled back by its owner after this refusal.
+        try { await transaction.RollbackAsync(CancellationToken.None); }
+        // SQL Server may already have rolled back a deadlock victim. Preserve the original refusal; no commit follows.
+        catch (InvalidOperationException) { }
+        catch (DbException) { }
     }
 }

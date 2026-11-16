@@ -44,6 +44,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync(); var (a, _) = await run.ApprovedOrderAsync(CompanyA); var (b, _) = await run.ApprovedOrderAsync(CompanyA);
         await using (var scope = run.Store(CompanyA))
         {
+            await ((IManufacturingPlanPriorityStore)scope.Corrections).ChangePlanPriorityAsync(a.Id, a.Version, 0, 10,
+                "Synthetic deterministic initial key", Metadata(run));
             await Assert.ThrowsAsync<ManufacturingQueueVersionException>(() => scope.Corrections.MoveQueuePlanAsync(a.Id, a.Version, 1,
                 b.Id, a.Id, "Synthetic stale queue", Metadata(run), _ => Task.FromResult<ManufacturingApiResult<object>?>(null)));
             await Assert.ThrowsAsync<ManufacturingQueueFenceException>(() => scope.Corrections.MoveQueuePlanAsync(a.Id, a.Version, 0,
@@ -61,8 +63,12 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync(); var (a, _) = await run.ApprovedOrderAsync(CompanyA); var (b, _) = await run.ApprovedOrderAsync(CompanyA);
         await using (var scope = run.Store(CompanyA))
+        {
+            await ((IManufacturingPlanPriorityStore)scope.Corrections).ChangePlanPriorityAsync(a.Id, a.Version, 0, 10,
+                "Synthetic deterministic initial key", Metadata(run));
             await scope.Corrections.MoveQueuePlanAsync(a.Id, a.Version, 0, b.Id, a.Id, "Synthetic initial queue", Metadata(run),
                 _ => Task.FromResult<ManufacturingApiResult<object>?>(null));
+        }
         var c = NewPlan(CompanyA, a.WorkCenterId);
         await using (var scope = run.Store(CompanyA))
         {
@@ -81,5 +87,36 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal((int)PlanStatus.Draft, (await context.Plans.SingleAsync(row => row.Id == c.Id)).Status);
         Assert.Equal(1, await context.WorkCenterQueueVersions.CountAsync());
         Assert.Equal(auditBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+    }
+
+    [SqlServerFact]
+    public async Task Two_manual_moves_of_one_queue_revision_commit_one_snapshot_and_the_loser_records_no_business_write()
+    {
+        await using var run = await Run.StartAsync(); var (a, _) = await run.ApprovedOrderAsync(CompanyA); var (b, _) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var scope = run.Store(CompanyA))
+            await ((IManufacturingPlanPriorityStore)scope.Corrections).ChangePlanPriorityAsync(a.Id, a.Version, 0, 10,
+                "Synthetic deterministic initial key", Metadata(run));
+        var arrived = 0; var bothRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<PlanWorkCenterQueueViewV1?> Attempt()
+        {
+            await using var scope = run.Store(CompanyA);
+            try
+            {
+                return await scope.Corrections.MoveQueuePlanAsync(a.Id, a.Version, 0, b.Id, a.Id,
+                    "Synthetic competing manager order", Metadata(run), async token =>
+                    {
+                        if (Interlocked.Increment(ref arrived) == 2) bothRead.TrySetResult();
+                        await bothRead.Task.WaitAsync(TimeSpan.FromSeconds(30), token); return null;
+                    });
+            }
+            catch (ManufacturingQueueVersionException) { return null; }
+            catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange) { return null; }
+        }
+        var attempts = await Task.WhenAll(Task.Run(Attempt), Task.Run(Attempt));
+        Assert.Single(attempts, result => result is not null);
+        await using var context = run.Context(CompanyA);
+        Assert.Single(await context.WorkCenterQueueVersions.ToListAsync());
+        Assert.Equal(2, await context.WorkCenterQueueEntries.CountAsync());
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = 'manufacturing.queue.moved.v1'"));
     }
 }
