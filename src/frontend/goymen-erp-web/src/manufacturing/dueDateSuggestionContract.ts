@@ -95,7 +95,7 @@ const LOCAL_MOMENT = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):[0-5]\d$/
 /** A stable machine code: lower-case words joined by `_`, `-` or `.`. */
 const CODE = /^[a-z][a-z0-9]*([._-][a-z0-9]+)*$/
 const CODE_MAXIMUM_LENGTH = 128
-/** A source name as the server writes it (`Settings`, `Catalog`, `WorkCenter`, `Default`). */
+/** A source name as the server writes it (`WorkCenterCapacity`, `Settings`, `Catalog`, `WorkCenter`, `Default`). */
 const ENUM_NAME = /^[A-Z][A-Za-z0-9]*$/
 const ENUM_NAME_MAXIMUM_LENGTH = 64
 /** A profile version as text (`0` for the catalog, a revision number for Settings). */
