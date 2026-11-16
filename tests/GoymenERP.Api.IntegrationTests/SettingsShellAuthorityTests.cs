@@ -25,7 +25,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// (Settings 1.3, URN-D2/D3) adds the delivery tolerance and the approval amount threshold screens, each on its own
 /// non-Critical, company-wide name; KIM-D34/KIM-D37 (Settings 1.4) add the group-wide login attempt limit and the unit
 /// conversion policy screens, each on its own non-Critical, company-wide name; F-029 S1/S2 and URT-D89 (Settings 1.5) add the
-/// unit profile and the work center capacity screens, each on its own non-Critical, company-wide name.
+/// unit profile and the work center capacity screens, each on its own non-Critical, company-wide name; API-98/B-14 (Settings
+/// 1.6, KIM-D49/KIM-D51) add the purchasing and the production reference list screens, each on its own non-Critical,
+/// company-wide name granted to no role.
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
@@ -75,8 +77,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(12, declarations.Count);
-        Assert.Equal("1.5", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(14, declarations.Count);
+        Assert.Equal("1.6", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -142,6 +144,10 @@ public sealed class SettingsShellAuthorityTests
                 SettingsUnitProfilePermissionManifestV1.Manage),
             ("settings.work-center-capacities.manage", "/ayarlar/is-merkezi-kapasitesi", "AY-IMK-01",
                 SettingsWorkCenterCapacityPermissionManifestV1.Manage),
+            ("settings.reference-lists.manage", "/ayarlar/referans-listeleri", "AY-RFL-01",
+                SettingsReferenceListPermissionManifestV1.PurchasingListsManage),
+            ("settings.production-reference-lists.manage", "/ayarlar/uretim-referans-listeleri", "AY-URL-01",
+                SettingsReferenceListPermissionManifestV1.ProductionListsManage),
         ];
 
         foreach (var expected in screens)

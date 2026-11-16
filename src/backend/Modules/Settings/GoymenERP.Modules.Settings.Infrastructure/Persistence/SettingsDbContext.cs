@@ -106,6 +106,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureSegregationOfDutiesPolicies(modelBuilder);
         ConfigureLoginRateLimits(modelBuilder);
         ConfigureWorkCenterCapacities(modelBuilder);
+        ConfigureReferenceLists(modelBuilder);
         ConfigureCompanyPolicies(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings

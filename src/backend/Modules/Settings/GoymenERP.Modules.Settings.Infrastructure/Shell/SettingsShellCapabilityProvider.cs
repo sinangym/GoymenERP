@@ -28,12 +28,18 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 /// 1.5 (URT-D89): the work center capacity screen (<c>/ayarlar/is-merkezi-kapasitesi</c>) on
 /// <see cref="SettingsWorkCenterCapacityPermissionManifestV1.Manage"/>, company-wide, in one company, on its one name. The
 /// name is granted to no role here (the production manager is a persona note only) and is not Critical.
+/// 1.6 (API-98/B-14, KIM-D49/KIM-D51): the expense and service type lists screen (<c>/ayarlar/referans-listeleri</c>) on
+/// <see cref="SettingsReferenceListPermissionManifestV1.PurchasingListsManage"/> and the paint color and scrap kind lists
+/// screen (<c>/ayarlar/uretim-referans-listeleri</c>) on
+/// <see cref="SettingsReferenceListPermissionManifestV1.ProductionListsManage"/>, each company-wide, in one company, on its
+/// one name. Neither name is granted to a role here (the purchasing manager and the administrator are persona notes only)
+/// and neither is Critical.
 /// </para>
 /// </summary>
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.5";
+    public const string OwnerContractVersion = "1.6";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -99,6 +105,20 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string WorkCenterCapacityRouteId = SettingsWorkCenterCapacityPermissionManifestV1.Manage;
     public const string WorkCenterCapacityRoutePath = "/ayarlar/is-merkezi-kapasitesi";
     public const string WorkCenterCapacityScreenId = "AY-IMK-01";
+
+    // API-98, KIM-D49/KIM-D51 (provider 1.6): the company's expense type and service type lists (no seed; entries with
+    // versions) on settings.reference-lists.manage alone, company-wide, in one company; granted to no role here.
+    public const string PurchasingReferenceListsCapabilityId = SettingsReferenceListPermissionManifestV1.PurchasingListsManage;
+    public const string PurchasingReferenceListsRouteId = SettingsReferenceListPermissionManifestV1.PurchasingListsManage;
+    public const string PurchasingReferenceListsRoutePath = "/ayarlar/referans-listeleri";
+    public const string PurchasingReferenceListsScreenId = "AY-RFL-01";
+
+    // B-14 (provider 1.6): the company's paint color and scrap kind lists (no seed; entries with versions) on
+    // settings.production-reference-lists.manage alone, company-wide, in one company; granted to no role here.
+    public const string ProductionReferenceListsCapabilityId = SettingsReferenceListPermissionManifestV1.ProductionListsManage;
+    public const string ProductionReferenceListsRouteId = SettingsReferenceListPermissionManifestV1.ProductionListsManage;
+    public const string ProductionReferenceListsRoutePath = "/ayarlar/uretim-referans-listeleri";
+    public const string ProductionReferenceListsScreenId = "AY-URL-01";
 
     public string Owner => OwnerId;
 
@@ -222,6 +242,26 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsWorkCenterCapacityPermissionManifestV1.Manage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                PurchasingReferenceListsCapabilityId,
+                PurchasingReferenceListsRouteId,
+                PurchasingReferenceListsRoutePath,
+                PurchasingReferenceListsScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsReferenceListPermissionManifestV1.PurchasingListsManage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                ProductionReferenceListsCapabilityId,
+                ProductionReferenceListsRouteId,
+                ProductionReferenceListsRoutePath,
+                ProductionReferenceListsScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsReferenceListPermissionManifestV1.ProductionListsManage],
                 ImplementationAvailable: true),
         ];
     }

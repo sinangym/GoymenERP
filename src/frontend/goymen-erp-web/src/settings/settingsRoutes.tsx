@@ -9,6 +9,7 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { SETTINGS_CAPABILITY, SETTINGS_ROUTE } from './capabilities'
 import { ExchangeRatesPage } from './ExchangeRatesPage'
 import { LoginRateLimitPage } from './LoginRateLimitPage'
+import { ReferenceListPage } from './ReferenceListPage'
 import { SalesDiscountLimitsPage } from './SalesDiscountLimitsPage'
 import { SalesPolicyApprovalThresholdsPage } from './SalesPolicyApprovalThresholdsPage'
 import { SalesPolicyDeliveryTolerancePage } from './SalesPolicyDeliveryTolerancePage'
@@ -87,6 +88,22 @@ export const settingsRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={SETTINGS_CAPABILITY.workCenterCapacity}>
         <WorkCenterCapacityPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.purchasingReferenceLists].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.purchasingReferenceLists}>
+        <ReferenceListPage group="purchasing" />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.productionReferenceLists].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.productionReferenceLists}>
+        <ReferenceListPage group="production" />
       </CapabilityRoute>
     ),
   },
