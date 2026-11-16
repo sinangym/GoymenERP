@@ -1,9 +1,9 @@
 ﻿AcceptanceId,Aciklama,Modul,Oncelik,TestKatmani,Durum,Kanıt
 AT-001,"Kullanıcı yalnız yetkili şirket, şube ve depo kayıtlarını görür.",TBD,P0/P1,E2E+Contract,Taslak,
 AT-002,"Global arama yetkisiz kaydı sonuç, öneri, toplam veya sayı olarak sızdırmaz.",TBD,P0/P1,E2E+Contract,Taslak,
-AT-003,"Kritik değişiklik önce/sonra, neden, kullanıcı, rol ve korelasyonla audit üretir.",Platform.Audit,P0/P1,Unit+HTTP+SQL Server,Otomatik,"AuditAcceptanceTests; SqlServerRelationalAcceptanceTests"
+AT-003,"Kritik değişiklik önce/sonra, neden, kullanıcı, rol ve korelasyonla audit üretir.",Platform.Audit,P0/P1,Unit+HTTP+SQL Server,Otomatik,"Test kaynakları: AuditAcceptanceTests; SqlServerRelationalAcceptanceTests; IdentityAccessAssignmentSqlServerRelationalAcceptanceTests.AuditOwnership. Otomatik test türünü belirtir; tren-1 güncel head için PASS değildir. W6 gerçek SQL ve tam test koşumu kapanışta NOT_RUN; durum/W6_*.md kanıtlarıyla okunur."
 AT-004,Oluşturan kişi yüksek riskli kendi işlemini görev ayrılığına aykırı onaylayamaz.,TBD,P0/P1,E2E+Contract,Taslak,
-AT-005,Eşzamanlı değişiklikte ikinci kullanıcıya çatışma ve fark gösterilir.,Platform.Idempotency,P0/P1,E2E+Contract,Taslak,"Backend contract otomatik: IdempotencyAcceptanceTests; SqlServerRelationalAcceptanceTests. Kullanıcı arayüzü ve E2E kanıtı bekliyor."
+AT-005,Eşzamanlı değişiklikte ikinci kullanıcıya çatışma ve fark gösterilir.,Platform.Idempotency,P0/P1,E2E+Contract,Taslak,"Backend test kaynakları: IdempotencyAcceptanceTests; SqlServerRelationalAcceptanceTests. Tren-1 güncel head için tam test/gerçek SQL/CI kabulü kapanışta NOT_RUN. Kullanıcı arayüzü ve E2E kanıtı bekliyor."
 AT-006,Başarısız kaydetme kullanıcının form verisini kaybettirmez.,TBD,P0/P1,E2E+Contract,Taslak,
 AT-007,İptal ve ters işlem geçmişi silmez.,TBD,P0/P1,E2E+Contract,Taslak,
 AT-008,Şirket kapsamı değişikliği açık formu sessizce başka şirkete taşımaz.,TBD,P0/P1,E2E+Contract,Taslak,
