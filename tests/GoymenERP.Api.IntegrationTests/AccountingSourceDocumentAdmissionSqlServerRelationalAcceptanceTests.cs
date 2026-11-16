@@ -37,6 +37,11 @@ public sealed class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptan
     private static readonly Guid Revenue600 = Guid.Parse("e0420000-0000-4000-8000-000000000600");
     private static readonly Guid Export601 = Guid.Parse("e0420000-0000-4000-8000-000000000601");
     private static readonly Guid VatOutput391 = Guid.Parse("e0420000-0000-4000-8000-000000000391");
+    private static readonly Guid Payable320 = Guid.Parse("e0420000-0000-4000-8000-000000000320");
+    private static readonly Guid Inventory150 = Guid.Parse("e0420000-0000-4000-8000-000000000150");
+    private static readonly Guid Expense770 = Guid.Parse("e0420000-0000-4000-8000-000000000770");
+    private static readonly Guid VatInput191 = Guid.Parse("e0420000-0000-4000-8000-000000000191");
+    private static readonly Guid Withholding360 = Guid.Parse("e0420000-0000-4000-8000-000000000360");
     private static readonly Guid Invoice = Guid.Parse("e0420000-0000-4000-8000-000000000001");
     private static readonly Guid SourceDocument = Guid.Parse("e0420000-0000-4000-8000-000000000002");
     private static readonly DateOnly DocumentDate = new(2026, 11, 8);
@@ -127,6 +132,38 @@ public sealed class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptan
         Assert.Equal(51240, refused.Number);
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM accounting.SourceDocumentAdmissions WHERE CompanyId = @c", ("@c", CompanyA)));
+    }
+
+    [SqlServerFact]
+    public async Task Purchase_invoice_waits_for_its_own_mapping_then_commits_one_balanced_draft_and_replays_without_duplicate()
+    {
+        await using var run = await Run.StartAsync(withMapping: false);
+        var request = Request(CompanyA) with
+        {
+            DocumentKind = AccountingSourceDocumentKindsV1.PurchaseInvoice,
+            IdempotencyKey = AccountingSourceDocumentKindsV1.PurchaseInvoiceKey(Invoice, 1),
+            DocumentTotals = new("1200", "240", "60", "1380"),
+            FunctionalTotals = new("1200", "240", "60", "1380"),
+            Lines = [new(1, "Goods", "production-input", null, "20", "1000", "200", "60"),
+                new(2, "Service", "service", null, "20", "200", "40", "0")],
+        };
+        var waiting = await run.AdmitAsync(CompanyA, request);
+        Assert.Equal(AccountingSourceDocumentAdmissionReasonsV1.MappingPending, waiting.Reason);
+        Assert.Equal(new Counts(1, 0, 0, 1), await run.CountsAsync(CompanyA));
+        await run.ConfigureMappingAsync(purchase: true);
+        var admitted = await run.AdmitAsync(CompanyA, request);
+        Assert.Equal(AccountingSourceDocumentAdmissionOutcomeV1.Admitted, admitted.Outcome);
+        var replay = await run.AdmitAsync(CompanyA, request);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(admitted.VoucherDraftId, replay.VoucherDraftId);
+        Assert.Equal(new Counts(1, 1, 5, 2), await run.CountsAsync(CompanyA));
+        Assert.Equal(new Counts(0, 0, 0, 0), await run.CountsAsync(CompanyB));
+        Assert.Equal(0m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(CASE WHEN Side = 1 THEN Amount ELSE -Amount END) FROM accounting.SourceDocumentVoucherDraftLines WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(240m, await run.ScalarAsync<decimal>(
+            "SELECT Amount FROM accounting.SourceDocumentVoucherDraftLines WHERE CompanyId = @c AND MappingKey = 'vat-input'", ("@c", CompanyA)));
+        Assert.Equal(60m, await run.ScalarAsync<decimal>(
+            "SELECT Amount FROM accounting.SourceDocumentVoucherDraftLines WHERE CompanyId = @c AND MappingKey = 'withholding-payable'", ("@c", CompanyA)));
     }
 
     private static AccountingSourceDocumentAdmissionRequestV1 Request(Guid company) =>
@@ -278,7 +315,7 @@ public sealed class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptan
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @c AND EntityType = N'Accounting.SourceDocumentAdmission'",
                 ("@c", company)));
 
-        public async Task ConfigureMappingAsync()
+        public async Task ConfigureMappingAsync(bool purchase = false)
         {
             await GrantAsync(Preparer, AccountingPostingAccountMappingPermissionNamesV1.Prepare);
             await GrantAsync(Checker, AccountingPostingAccountMappingPermissionNamesV1.Activate);
@@ -289,7 +326,14 @@ public sealed class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptan
             {
                 expectedLatestMappingVersion = 0,
                 effectiveFrom = "2026-11-01",
-                rows = new object[]
+                rows = purchase ? new object[]
+                {
+                    new { purpose = "purchase-invoice", mappingKey = "payable", accountId = Payable320 },
+                    new { purpose = "purchase-invoice", mappingKey = "inventory", accountId = Inventory150, linePurpose = "production-input" },
+                    new { purpose = "purchase-invoice", mappingKey = "expense", accountId = Expense770, linePurpose = "service" },
+                    new { purpose = "purchase-invoice", mappingKey = "vat-input", accountId = VatInput191 },
+                    new { purpose = "purchase-invoice", mappingKey = "withholding-payable", accountId = Withholding360 },
+                } : new object[]
                 {
                     new { purpose = "sales-invoice", mappingKey = "receivable", accountId = Receivable120 },
                     new { purpose = "sales-invoice", mappingKey = "revenue", accountId = Revenue600 },
@@ -355,7 +399,12 @@ public sealed class AccountingSourceDocumentAdmissionSqlServerRelationalAcceptan
                 + $"{Receivable120:D},120.01,SENTETIK alicilar\n"
                 + $"{Revenue600:D},600.01,SENTETIK yurt ici satislar\n"
                 + $"{Export601:D},601.01,SENTETIK yurt disi satislar\n"
-                + $"{VatOutput391:D},391.01,SENTETIK hesaplanan kdv\n");
+                + $"{VatOutput391:D},391.01,SENTETIK hesaplanan kdv\n"
+                + $"{Payable320:D},320.01,SENTETIK saticilar\n"
+                + $"{Inventory150:D},150.01,SENTETIK stok\n"
+                + $"{Expense770:D},770.01,SENTETIK hizmet\n"
+                + $"{VatInput191:D},191.01,SENTETIK indirilecek kdv\n"
+                + $"{Withholding360:D},360.01,SENTETIK tevkifat\n");
             var mappings = Encoding.UTF8.GetBytes(
                 ApprovedAccountingSourcePackageTemplateV1.MappingsHeader + "\n"
                 + $"30000000-0000-4000-8000-000000000001,{NormalJournalSourceKindsV1.RecordedManualReceipt},v1,profile,"

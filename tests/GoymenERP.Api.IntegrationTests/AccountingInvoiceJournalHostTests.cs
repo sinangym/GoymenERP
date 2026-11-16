@@ -75,6 +75,21 @@ public sealed class AccountingInvoiceJournalHostTests
         Assert.Equal(ServiceLifetime.Scoped, consumer.Lifetime);
     }
 
+    [Fact]
+    public async Task Purchase_inbox_identity_is_allowed_only_for_purchase_kind_and_only_when_the_existing_switch_is_enabled()
+    {
+        var allowed = await Authority("true").CheckAsync(CompanyA, AccountingPurchaseInvoiceFinalizedInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.PurchaseInvoice, SourceDocumentId, CancellationToken.None);
+        Assert.Equal(AccountingSourceDocumentAuthorityDecisionV1.Allowed, allowed.Decision);
+        Assert.Equal(AccountingPurchaseInvoiceFinalizedInboxV1.AuditPermissionCode, allowed.PermissionCode);
+        var off = await Authority(null).CheckAsync(CompanyA, AccountingPurchaseInvoiceFinalizedInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.PurchaseInvoice, SourceDocumentId, CancellationToken.None);
+        var swapped = await Authority("true").CheckAsync(CompanyA, AccountingPurchaseInvoiceFinalizedInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId, CancellationToken.None);
+        Assert.Equal(AccountingSourceDocumentAuthorityAnswerV1.Unavailable, off);
+        Assert.Equal(AccountingSourceDocumentAuthorityAnswerV1.Unavailable, swapped);
+    }
+
     private static AccountingInvoiceJournalInboxAuthorityV1 Authority(string? enabled)
     {
         var values = new Dictionary<string, string?>();
