@@ -234,6 +234,8 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
             || value.ClosedOrderVersion != Text(closedVersion) || (int)value.State != (int)state || value.InputFingerprint != fingerprint
             || string.IsNullOrWhiteSpace(value.GenerationVersion) || value.GenerationVersion.Length > 128 || value.Outputs is null
             || value.Outputs.Count != outputs.Count || value.Outputs.Any(item => item is null)
+            || state is ManufacturingCostGenerationStateV1.Pending or ManufacturingCostGenerationStateV1.Unreadable
+                && value.CostDifferenceEventId is not null
             || value.Outputs.Select(item => item.OutputId).Distinct().Count() != outputs.Count
             || value.Outputs.Any(item => !outputs.Any(expected => expected.OutputId == item.OutputId && expected.ReceiptMovementId == item.ReceiptMovementId
                 && expected.LabelId == item.LabelId && expected.NetQuantityKg == item.NetQuantityKg)
@@ -242,7 +244,8 @@ internal sealed class ManufacturingCostGenerationHost(ManufacturingDbContext db,
                 || state == ManufacturingCostGenerationStateV1.Recognized && !outputs.Any(expected => expected.OutputId == item.OutputId
                     && expected.TlUnitCostPerKg == item.TlUnitCostPerKg && expected.UsdUnitCostPerKg == item.UsdUnitCostPerKg && expected.OriginalTlAmount == item.OriginalTlAmount)
                 || state is ManufacturingCostGenerationStateV1.Pending or ManufacturingCostGenerationStateV1.Unreadable
-                    && (item.TlUnitCostPerKg is not null || item.RemainingTlValue is not null || item.ConsumedTlDifference is not null || item.UsdUnitCostPerKg is not null)))
+                    && (item.TlUnitCostPerKg is not null || item.RemainingTlValue is not null || item.ConsumedTlDifference is not null
+                        || item.UsdUnitCostPerKg is not null || item.OriginalTlAmount is not null || item.Positions.Count != 0)))
             throw Unavailable();
     }
 

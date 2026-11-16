@@ -34,6 +34,8 @@ public sealed class ManufacturingCostGenerationHostContractTests
             result with { Outputs = [output with { ReceiptMovementId = Guid.NewGuid() }] },
             result with { Outputs = [output with { RemainingQuantityKg = 69m }] },
             result with { Outputs = [output with { RemainingTlValue = 0m }] },
+            result with { Outputs = [output with { OriginalTlAmount = 0m }] },
+            result with { CostDifferenceEventId = Guid.NewGuid() },
             result with { Outputs = [output, output] },
         })
             Assert.Throws<ManufacturingInventoryRealizationPortException>(() => ManufacturingCostGenerationHost.RequireResult(invalid,
