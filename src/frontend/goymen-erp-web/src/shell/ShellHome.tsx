@@ -11,6 +11,7 @@ import { capabilityFailClosed } from './shellState'
 import { useShellState } from './shellContext'
 import { useCompanyDirectory } from './useShellOrchestrator'
 import { ApprovalsHomeEntry } from '../work/ApprovalsHomeEntry'
+import { NotificationsHomeEntry } from '../work/NotificationsPage'
 
 export function ShellHome() {
   const state = useShellState()
@@ -32,6 +33,7 @@ export function ShellHome() {
           : 'Uygulanmış iş modülü eklendikçe bu şirket bağlamında burada görünecek. Sahte gösterge yok.'}
       </p>
       <ApprovalsHomeEntry />
+      <NotificationsHomeEntry />
     </section>
   )
 }

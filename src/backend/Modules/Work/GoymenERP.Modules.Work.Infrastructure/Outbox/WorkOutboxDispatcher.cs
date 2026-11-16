@@ -108,6 +108,20 @@ public sealed class WorkOutboxDispatcher
             var db = scope.ServiceProvider.GetRequiredService<WorkDbContext>();
             var consumers = scope.ServiceProvider.GetServices<IOutboxConsumerV1>().ToArray();
             var sources = scope.ServiceProvider.GetServices<IOutboxSourceV1>().ToArray();
+            // Optional derived notification maintenance runs only in the existing human-enabled dispatcher.
+            // It never activates a host or deletes source/audit history; no notification store means no extra work.
+            try
+            {
+                var maintenance = scope.ServiceProvider.GetService<GoymenERP.Modules.Work.Domain.IWorkNotificationMaintenanceV1>();
+                if (maintenance is not null)
+                {
+                    var lifecycle = await scope.ServiceProvider.GetRequiredService<ICompanyLifecycleReadPortV1>().ReadAsync(companyId, cancellationToken);
+                    if (lifecycle is { State: CompanyLifecycleStateV1.Active } && lifecycle.CompanyId == companyId && lifecycle.Version > 0)
+                        await maintenance.PassivateExpiredAsync(cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { logger.LogWarning(exception, "Notification passivation failed for company {CompanyId}; retained for retry.", companyId); }
             var duplicateSourceNames = DuplicateNames(sources.Select(s => s.SourceName));
             foreach (var source in sources)
             {
