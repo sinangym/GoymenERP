@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Application.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
@@ -62,6 +63,9 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
     internal DbSet<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy => Set<WeighingDifferenceEnteredByRow>();
 
     internal DbSet<WeighingDifferenceAttemptRow> WeighingDifferenceAttempts => Set<WeighingDifferenceAttemptRow>();
+    internal DbSet<ShipmentRiskExceptionUseRow> ShipmentRiskExceptionUses => Set<ShipmentRiskExceptionUseRow>();
+
+    internal DbSet<LogisticsOutboxMessageRow> OutboxMessages => Set<LogisticsOutboxMessageRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,6 +85,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
         ConfigureWeighingDifferences(modelBuilder);
+        ConfigureShipmentRiskGate(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -618,6 +623,59 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
     /// <summary>The decimals a stored weighing-difference percentage (rate, band) keeps; a setting with more is not stored rounded.</summary>
     public const int WeighingDifferencePercentScale =
         GoymenERP.Modules.Logistics.Domain.WeighingDifferences.WeighingDifferenceCalculator.PercentDecimals;
+
+    /// <summary>STK-S27: a consumed exception names a real order, shipment, instruction, a number from 1 and its recorder.</summary>
+    internal const string ShipmentRiskExceptionUseCheck =
+        "[ExceptionNo] >= 1 AND [SalesOrderId] <> " + EmptyGuid + " AND [ShipmentId] <> " + EmptyGuid
+        + " AND [InstructionId] <> " + EmptyGuid + " AND LEN([RecordedBy]) > 0";
+
+    /// <summary>STK-S27: an outbox row has identities, a schema version from 1, a correlation id and a JSON payload.</summary>
+    internal const string OutboxEnvelopeCheck =
+        "[EventId] <> " + EmptyGuid + " AND [SubjectId] <> " + EmptyGuid + " AND [SchemaVersion] >= 1 "
+        + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1";
+
+    /// <summary>STK-S27 (LOJ-D19): only the declared definite-shipment events are stored.</summary>
+    internal const string OutboxEventTypeCheck =
+        "[EventType] IN ('" + LogisticsDefiniteShipmentOutboxV1.RecordedEventType + "', '"
+        + LogisticsDefiniteShipmentOutboxV1.CancelledEventType + "')";
+
+    /// <summary>
+    /// STK-S27 (L-4, LOJ-D19): the single-use record of a consumed risk exception and the Logistics outbox, both append only
+    /// and written in the shipment's save. A consumed exception is unique per (company, order, number) and a shipment
+    /// consumes at most one; an outbox row is unique per (company, event type, subject) and ordered by its rowversion.
+    /// </summary>
+    private void ConfigureShipmentRiskGate(ModelBuilder modelBuilder)
+    {
+        var use = modelBuilder.Entity<ShipmentRiskExceptionUseRow>();
+        use.ToTable("ShipmentRiskExceptionUses", Schema, table =>
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUses_Identity", ShipmentRiskExceptionUseCheck));
+        use.HasKey(x => new { x.CompanyId, x.SalesOrderId, x.ExceptionNo });
+        use.HasIndex(x => new { x.CompanyId, x.ShipmentId }).IsUnique().HasDatabaseName("UX_ShipmentRiskExceptionUses_ShipmentId");
+        use.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        use.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        use.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var outbox = modelBuilder.Entity<LogisticsOutboxMessageRow>();
+        outbox.ToTable("OutboxMessages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope", OutboxEnvelopeCheck);
+            table.HasCheckConstraint("CK_OutboxMessages_EventType", OutboxEventTypeCheck);
+        });
+        outbox.HasKey(x => x.EventId);
+        outbox.Property(x => x.EventId).ValueGeneratedNever();
+        outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        outbox.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        outbox.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        outbox.Property(x => x.CausationId).HasMaxLength(128);
+        outbox.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        outbox.HasIndex(x => new { x.CompanyId, x.EventType, x.SubjectId }).IsUnique().HasDatabaseName("UX_OutboxMessages_Subject");
+        outbox.HasIndex(x => new { x.CompanyId, x.Position }).HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
+        outbox.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        outbox.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
 
     private void ApplyWriteGuards()
     {

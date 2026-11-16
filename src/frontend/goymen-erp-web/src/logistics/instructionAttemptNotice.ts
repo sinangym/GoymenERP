@@ -60,7 +60,8 @@ function failureMessage(words: NoticeWords, failure: AttemptFailure): string {
  * Both are shown — a code never replaces the verdict. Every 409 the routes answer has its own text:
  * `version_conflict` (the record moved; the detail is re-read), `logistics_instruction_state`,
  * `logistics_load_exceeds_instructed`, `logistics_line_blocked`, `logistics_duplicate_share_id`,
- * `account_state`, `order_line_state`, `same_key_payload_mismatch`, `concurrent_change`.
+ * `account_state`, `order_line_state`, `same_key_payload_mismatch`, `concurrent_change`, and the definite shipment's
+ * customer risk gate stops (`logistics_shipment_risk_*`, STK-S27), which leave the instruction unchanged.
  */
 function refusalNotice(words: NoticeWords, failure: AttemptFailure, code: string | null, unresolved: boolean): AttemptNotice {
   const reason = problemCodeText(code)

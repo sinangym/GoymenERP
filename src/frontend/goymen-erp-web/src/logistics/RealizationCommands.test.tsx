@@ -3,7 +3,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { decodeInstructionDetail, type LoadingShare } from './contract'
 import { decodeShipmentAllocations, REALIZATION_CAPABILITY as C, shipmentRemainder } from './realizationContract'
-import { INSTRUCTION_DETAIL_TEXT as D, REALIZATION_TEXT as T } from './logisticsText'
+import { INSTRUCTION_DETAIL_TEXT as D, PROBLEM_CODE_TEXT, REALIZATION_TEXT as T } from './logisticsText'
 import { resetPendingInstructionAttempts } from './pendingInstructionAttempts'
 import { ALL_LOGISTICS, COMPANY_A, COMPANY_B, DRAFT, DRAFT_LINE, INSTRUCTION, LINE, PRODUCT,
   installFetch, instructionDetail, instructionLine, json, mutation, renderLogisticsApp, type RecordedCall } from './testHarness'
@@ -86,6 +86,27 @@ describe('LOG5 owner UI, synthetic NOT_ENV', () => {
     expect(posts).toHaveLength(2)
     expect(posts[1].body).toBe(posts[0].body)
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
+  })
+
+  it.each([
+    'logistics_shipment_risk_over_limit',
+    'logistics_shipment_risk_credit_limit_not_set',
+    'logistics_shipment_risk_unavailable',
+    'logistics_shipment_risk_exception_used',
+  ])('a shipment the customer risk gate stops (%s) is explained as not saved and offers no retry', async (code) => {
+    installFetch({ capabilities: [...ALL_LOGISTICS, C.shipment, C.allocation], onDetail: () => json(loaded()),
+      onAllocations: () => json(allocations()),
+      onShipment: () => json({ status: 409, title: 'Conflict', code, correlationId: 'c',
+        errors: [{ field: 'riskException', code: 'pending' }] }, 409) })
+    renderLogisticsApp(path)
+    const form = await screen.findByTestId('shipment-1')
+    await screen.findByRole('option', { name: /Etiket ref/ })
+    await userEvent.selectOptions(within(form).getByLabelText(T.allocation), ALLOCATION)
+    await userEvent.type(within(form).getByLabelText(T.quantity), '2')
+    await userEvent.click(within(form).getByTestId('shipment-1-submit'))
+    await waitFor(() => expect(screen.getByTestId('shipment-1-notice').textContent).toBe(
+      `${D.command.conflict} ${PROBLEM_CODE_TEXT[code as keyof typeof PROBLEM_CODE_TEXT]}`))
+    expect(within(form).queryByRole('button', { name: D.command.retry })).toBeNull()
   })
 
   it('delivery selects the exact source shipment without any Inventory capability/read/write', async () => {

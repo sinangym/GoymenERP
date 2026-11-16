@@ -736,7 +736,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         HostedAllocationReads reads,
         string bootstrapSubject,
         ILogisticsRealizationStageObserver? observer = null,
-        Action<IServiceCollection>? configure = null) =>
+        Action<IServiceCollection>? configure = null,
+        HostedRiskGate? riskGate = null) =>
         run.Factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("BootstrapIdentity:Users:7:UserId", bootstrapSubject);
@@ -751,6 +752,9 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 {
                     services.AddSingleton(observer);
                 }
+                // STK-S27: the Sales owner's customer risk gate; within the limit unless a test sets another answer.
+                services.RemoveAll<ISalesShipmentRiskGateReadPortV1>();
+                services.AddSingleton<ISalesShipmentRiskGateReadPortV1>(riskGate ?? new HostedRiskGate());
                 configure?.Invoke(services);
             });
         });
