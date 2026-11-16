@@ -112,6 +112,12 @@ kaynak cevaptan bulunamazsa soru gerekir. Çözüm diye başka bir izni zorunlu 
 Kaynak kapsamıyla S1 + S17 + S26 DONE kabul edilirse ekip **34/45 (%75,6)**; **6 PARTIAL, 5 kalan**.
 Kesin plan sayımını diğer ekiplerin entegrasyonu ve KALAN_PLAN sahibi yapacaktır.
 
+Son entegrasyon düzeltmesi: S17, receipt future-to-physical çevrimi ile başka purchase
+satırındaki yeni ayırmanın toplam sınırını aşma yarışı nedeniyle PARTIAL'dır.
+Kesin W6 ekip sayımı **33/45 (%73,3); 7 PARTIAL; 5 kalan**. Ortak Sales ardından
+purchase prelock protokolü W7'nin ilk teknik işidir; migration veya işletme kararı
+gerektirmez. Ayrı sorgularda RCSI olması transaction boyunca aynı snapshot'ı kanıtlamaz.
+
 ## Dalga 6 host bütünleştirme eki
 
 Birleşik kaynak tabanı `ad3867393`; dal `codex/tren-1-host-w6`.

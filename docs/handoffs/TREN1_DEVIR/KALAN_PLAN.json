@@ -45,8 +45,8 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 132,
-  "partial": 23,
+  "done": 131,
+  "partial": 24,
   "remaining_not_started": 19,
   "last_wave": 6,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
@@ -58,7 +58,6 @@
    "SAT-S8",
    "SAT-SC32",
    "STK-S1",
-   "STK-S17",
    "STK-S26",
    "URT-S18",
    "URT-S6",
@@ -154,7 +153,8 @@
     "status": "REGISTERED_ONLY",
     "note": "Kaynak kayıt düzeltildi; grant/rol/production yok."
    }
-  ]
+  ],
+  "w6_verification_head": "7529fe1e8c2a40d2b050d9e97082b79fc716affd"
  },
  "teams": [
   {
@@ -803,8 +803,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 34,
-   "partial": 6,
+   "done": 33,
+   "partial": 7,
    "kalan": [
     {
      "id": "STK-S1",
@@ -964,11 +964,11 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "DONE",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Kullanıcı uçları ve talep azaltma portu gerçek SAT-S8 hostuna bağlı; mevcut kabul çevirme/Alış iptal koruması kaynakta korunur. Test/SQL koşumu NOT_RUN."
+     "w6_note": "Uçlar ve gerçek SAT-S8 host bağı kaynakta; receipt future-to-physical çevriminin başka purchase satırında yeni ayırmayla toplam sınırını aşma yarışı bulundu. W7 ilk teknik işi ortak Sales-then-purchase prelock protokolü; test/SQL koşumu NOT_RUN."
     },
     {
      "id": "STK-S18",
