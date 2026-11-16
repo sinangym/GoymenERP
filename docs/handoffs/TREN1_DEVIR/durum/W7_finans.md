@@ -36,6 +36,10 @@ Legacy Save yardımcıları concurrency/unique hatasını sonuca çevirip kısme
 komutlarını commit edemez: korumalı deneme işareti provider transaction'ı sonlandırsa da
 kalır, hata dış transaction sahibine yeniden fırlatılır ve bütün işlem geri alınır.
 Bu koruma MARS açıkken EF savepoint bulunmaması ihtimalini de kapsar; ortam ayarı değişmez.
+Dar kaynak incelemesinin P2 bulgusu da düzeltildi: daha zayıf borrowed transaction girişte
+reddedildiğinde callback başlamadıysa caller'ın tracker'ı veya ortak pending Audit'i
+temizlenmez. Gerçek SQL kaynak fact'i caller transaction'ının çalışmaya devam ettiğini,
+tracked kaydın ve pending Audit'in korunduğunu arar; koşumu NOT_RUN.
 Şirket/aktör/yetki her mevcut çitte, hatadan sonra ve save öncesinde yeniden ölçülür.
 Yeni raw SQL, bypass, migration, THROW, izin, grant veya rol ataması yoktur.
 
@@ -54,6 +58,7 @@ taslakları iptal edilen denemeden temizlemek için üretim factory'lerine bağl
   `FinanceExpensePaymentSqlServerRelationalAcceptanceTests.Reversing_a_spent_bank_opening_is_refused_without_changing_the_opening_or_consuming_the_approval_key`.
   Ek iki kaynak: `Partial_SQL_save_failure_rolls_back_the_ledger_audit_and_key_before_retry`
   ve `Partial_SQL_save_failure_rolls_back_the_ledger_audit_and_key_even_with_MARS`.
+  Beşinci kaynak `Refusing_a_weaker_borrowed_transaction_preserves_the_callers_tracking_and_pending_audit`.
   İkisi de gerçek canonical debit UPDATE çalıştıktan sonra sentetik EF hatası üretir;
   kayıt/anahtar/audit rollback'ini ve aynı anahtarın sonraki başarı/replay'ini arar.
   Gerçek bakiye/transaction kullanılır; yetki, hassasiyet profili ve dönem portları açıkça

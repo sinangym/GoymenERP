@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
@@ -16,6 +17,43 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Refusing_a_weaker_borrowed_transaction_preserves_the_callers_tracking_and_pending_audit()
+    {
+        await using var run = await Run.StartAsync();
+        var bank = await run.ApprovedBankAccountAsync(CompanyA, "SENTETIK borrowed bank");
+        await using var scope = run.OpenLedger(CompanyA, Recorder);
+        var db = scope.Db;
+        var tracked = await db.BankAccounts.SingleAsync(row => row.Id == bank);
+        await using var caller = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+        var audit = new UntouchedCallerAudit();
+        var operationCalled = false;
+
+        var answer = await FinanceTreasuryTransaction.ExecuteAsync(db, () =>
+        {
+            operationCalled = true;
+            return Task.FromResult("unexpected");
+        }, () => Task.FromResult("unavailable"), audit, CancellationToken.None);
+
+        Assert.Equal("unavailable", answer);
+        Assert.False(operationCalled);
+        Assert.Same(caller, db.Database.CurrentTransaction);
+        Assert.Contains(db.ChangeTracker.Entries<BankAccountRow>(), entry => ReferenceEquals(entry.Entity, tracked));
+        Assert.True(audit.HasPending);
+        Assert.Equal(0, audit.DiscardCalls);
+        Assert.Equal(42, await db.Database.SqlQuery<int>($"SELECT CAST(42 AS int) AS [Value]").SingleAsync());
+        await caller.CommitAsync();
+    }
+
+    private sealed class UntouchedCallerAudit : IAuditTransactionWriterV1
+    {
+        public bool HasPending { get; private set; } = true;
+        public int DiscardCalls { get; private set; }
+        public Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("The refused Finance attempt must not write the caller's audit.");
+        public void DiscardPending() { DiscardCalls++; HasPending = false; }
+    }
+
     /// <summary>Real internal ledger and real SQL transaction; permission, profile and period remain explicit synthetic seams.</summary>
     [SqlServerFact]
     public async Task Internal_ledger_serializes_two_outgoing_records_and_same_key_retry_never_overdraws_the_approved_opening()
@@ -123,7 +161,8 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             Assert.Equal(CommandOutcome.Unavailable, failed.Outcome);
         }
         Assert.Equal(ExpensePaymentStatuses.Approved, await run.ScalarAsync<int>("SELECT Status FROM finance.ExpensePayments WHERE Id=@id", ("@id", expense.Id)));
-        Assert.Equal(expense.Version, await run.ScalarAsync<long>("SELECT Version FROM finance.ExpensePayments WHERE Id=@id", ("@id", expense.Id)));
+        Assert.Equal(expense.Version, (await run.ScalarAsync<long>("SELECT Version FROM finance.ExpensePayments WHERE Id=@id", ("@id", expense.Id)))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ExpensePaymentCommands WHERE CommandName=@command AND IdempotencyKeyHash=@hash",
             ("@command", ExpensePaymentService.RecordCommand), ("@hash", FinanceCommandKeys.Hash("partial-save-record"))));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'finance.expense-payment.recorded.v1' AND EntityId=@id",

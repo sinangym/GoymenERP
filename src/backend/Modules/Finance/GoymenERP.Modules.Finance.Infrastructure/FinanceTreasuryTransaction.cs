@@ -34,6 +34,7 @@ internal static class FinanceTreasuryTransaction
         var ownsTransaction = false;
         var completed = false;
         var rolledBack = false;
+        var operationStarted = false;
         try
         {
             if (dbContext.Database.IsRelational())
@@ -53,6 +54,7 @@ internal static class FinanceTreasuryTransaction
                 }
             }
 
+            operationStarted = true;
             var result = await operation();
             if (ownsTransaction) await transaction!.CommitAsync(cancellationToken);
             completed = true;
@@ -61,8 +63,11 @@ internal static class FinanceTreasuryTransaction
         catch (Exception exception) when (exception is DbException or DbUpdateException)
         {
             await RollbackAsync();
-            dbContext.ChangeTracker.Clear();
-            auditOwner?.DiscardPending();
+            if (operationStarted)
+            {
+                dbContext.ChangeTracker.Clear();
+                auditOwner?.DiscardPending();
+            }
             return await unavailable();
         }
         finally
@@ -72,10 +77,13 @@ internal static class FinanceTreasuryTransaction
             {
                 await RollbackAsync();
             }
-            // Refusals can leave an in-memory draft staged before a final authority fence.
-            // No later command on the same scoped context may accidentally save that draft.
-            dbContext.ChangeTracker.Clear();
-            auditOwner?.DiscardPending();
+            // Only an accepted attempt owns its staged drafts. Rejecting a weaker borrowed
+            // transaction must preserve the caller's tracker and shared pending Audit batch.
+            if (operationStarted)
+            {
+                dbContext.ChangeTracker.Clear();
+                auditOwner?.DiscardPending();
+            }
             if (ownsTransaction) await transaction!.DisposeAsync();
         }
 

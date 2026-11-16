@@ -468,6 +468,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
     private sealed class Scope(FinanceDbContext dbContext, ExpensePaymentService payments, FinanceContext context)
         : IAsyncDisposable
     {
+        public FinanceDbContext Db => dbContext;
         public ExpensePaymentService Payments => payments;
         public FinanceContext Context => context;
 
