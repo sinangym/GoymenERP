@@ -39,7 +39,12 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.9";
+
+    public const string ManufacturingParametersCapabilityId = ManufacturingParameterProfileActionsV1.Read;
+    public const string ManufacturingParametersRoutePath = "/ayarlar/uretim-parametre-profilleri";
+    public const string ManufacturingTolerancesCapabilityId = ManufacturingToleranceProfileReadActionV1.Read;
+    public const string ManufacturingTolerancesRoutePath = "/ayarlar/uretim-tolerans-profilleri";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -98,6 +103,11 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string UnitProfilesRouteId = SettingsUnitProfilePermissionManifestV1.Manage;
     public const string UnitProfilesRoutePath = "/ayarlar/birim-profilleri";
     public const string UnitProfilesScreenId = "AY-BRP-01";
+
+    public const string MoneyProfilesCapabilityId = SettingsMoneyProfilePermissionManifestV1.Manage;
+    public const string MoneyProfilesRouteId = SettingsMoneyProfilePermissionManifestV1.Manage;
+    public const string MoneyProfilesRoutePath = "/ayarlar/para-profilleri";
+    public const string MoneyProfilesScreenId = "AY-PRP-01";
     // URT-D89 (provider 1.5): the company's work center capacities (input kg/hour and the optional safety buffer; no seed;
     // versions per work center, a new version) on settings.work-center-capacities.manage alone, company-wide, in one
     // company; granted to no role here.
@@ -126,6 +136,16 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
     {
+        var parameters = new ShellCapabilityDeclaration(ManufacturingParametersCapabilityId,
+            ManufacturingParametersCapabilityId, ManufacturingParametersRoutePath, "AY-UPP-01",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ManufacturingParameterProfileActionsV1.Read],
+            ImplementationAvailable: true);
+        var tolerances = new ShellCapabilityDeclaration(ManufacturingTolerancesCapabilityId,
+            ManufacturingTolerancesCapabilityId, ManufacturingTolerancesRoutePath, "AY-UTP-01",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ManufacturingToleranceProfileReadActionV1.Read],
+            ImplementationAvailable: true);
         var exchangeRates = new ShellCapabilityDeclaration(
             ExchangeRatesCapabilityId,
             ExchangeRatesRouteId,
@@ -139,6 +159,25 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage,
+                SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage,
+                "/ayarlar/finans-acilis-donemi", "AY-FAD-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage], ImplementationAvailable: true),
+            parameters,
+            parameters with { CapabilityId = ManufacturingParameterProfileActionsV1.Prepare,
+                ParentCapabilityId = ManufacturingParametersCapabilityId,
+                RequiredPermissions = [ManufacturingParameterProfileActionsV1.Read, ManufacturingParameterProfileActionsV1.Prepare] },
+            parameters with { CapabilityId = ManufacturingParameterProfileActionsV1.Publish,
+                ParentCapabilityId = ManufacturingParametersCapabilityId,
+                RequiredPermissions = [ManufacturingParameterProfileActionsV1.Read, ManufacturingParameterProfileActionsV1.Publish] },
+            tolerances,
+            tolerances with { CapabilityId = ManufacturingToleranceProfileActionsV1.Prepare,
+                ParentCapabilityId = ManufacturingTolerancesCapabilityId,
+                RequiredPermissions = [ManufacturingToleranceProfileReadActionV1.Read, ManufacturingToleranceProfileActionsV1.Prepare] },
+            tolerances with { CapabilityId = ManufacturingToleranceProfileActionsV1.Publish,
+                ParentCapabilityId = ManufacturingTolerancesCapabilityId,
+                RequiredPermissions = [ManufacturingToleranceProfileReadActionV1.Read, ManufacturingToleranceProfileActionsV1.Publish] },
             new ShellCapabilityDeclaration(
                 SalesDiscountLimitsCapabilityId,
                 SalesDiscountLimitsRouteId,
@@ -222,6 +261,16 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsUnitConversionPolicyPermissionManifestV1.Manage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                MoneyProfilesCapabilityId,
+                MoneyProfilesRouteId,
+                MoneyProfilesRoutePath,
+                MoneyProfilesScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsMoneyProfilePermissionManifestV1.Manage],
                 ImplementationAvailable: true),
             new ShellCapabilityDeclaration(
                 UnitProfilesCapabilityId,

@@ -29,7 +29,7 @@ function identity(binding: string) {
     displayName: 'Sentetik Kullanıcı',
     email: 'sentetik@example.invalid',
     allowedCompanyIds: [COMPANY_ID],
-    authenticationSessionBinding: binding,
+    mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: binding,
   }
 }
 

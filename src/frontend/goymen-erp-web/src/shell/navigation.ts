@@ -169,6 +169,10 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.unit-conversion-policies.manage',
   /** F-029 S1/S2 (URN-D2): the Settings unit profile screen, drawn only where the server granted its one name. */
   'settings.unit-profiles.manage',
+  'settings.money-profiles.manage',
+  'settings.finance-opening-period.manage',
+  'settings.manufacturing-parameter-profiles.read',
+  'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
   'settings.work-center-capacities.manage',
   /** API-98, KIM-D49: the Settings expense and service type lists, drawn only where the server granted its one name. */
@@ -282,6 +286,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.login-rate-limit.manage': 'Giriş deneme sınırı',
   'settings.unit-conversion-policies.manage': 'Birim çevrim politikası',
   'settings.unit-profiles.manage': 'Birim profilleri',
+  'settings.money-profiles.manage': 'Para profilleri',
+  'settings.finance-opening-period.manage': 'Finans açılış dönemi',
+  'settings.manufacturing-parameter-profiles.read': 'Üretim parametre profilleri',
+  'settings.manufacturing-tolerance-profiles.read': 'Üretim tolerans profilleri',
   'settings.work-center-capacities.manage': 'İş merkezi kapasitesi',
   'settings.reference-lists.manage': 'Masraf ve hizmet tipleri',
   'settings.production-reference-lists.manage': 'Boya rengi ve hurda türü',
@@ -431,6 +439,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.unit-conversion-policies.manage',
       // F-029 S1/S2: the unit profiles follow the unit conversion policy, still before the rates.
       'settings.unit-profiles.manage',
+      'settings.money-profiles.manage',
+      'settings.finance-opening-period.manage',
+      'settings.manufacturing-parameter-profiles.read',
+      'settings.manufacturing-tolerance-profiles.read',
       // API-98, B-14 (KIM-D49, KIM-D51): the company reference lists are master data, after the units and before the rates.
       'settings.reference-lists.manage',
       'settings.production-reference-lists.manage',

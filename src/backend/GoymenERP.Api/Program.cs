@@ -600,6 +600,7 @@ app.MapSettingsTaxMasterEndpoints();
 app.MapSettingsSalesPolicyEndpoints();
 app.MapSettingsUnitConversionPolicyEndpoints();
 app.MapSettingsUnitProfileEndpoints();
+app.MapSettingsMoneyProfileEndpoints();
 app.MapSettingsSegregationOfDutiesPolicyEndpoints();
 app.MapSettingsCompanyPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();

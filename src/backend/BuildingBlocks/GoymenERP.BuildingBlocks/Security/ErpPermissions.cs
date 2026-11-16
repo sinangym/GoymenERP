@@ -1435,6 +1435,9 @@ public static class ErpPermissions
     /// </summary>
     public const string SettingsUnitProfilesManage = "settings.unit-profiles.manage";
 
+    /// <summary>URN-D2/D3 and KIM-D9: money profile administration; registration only, no grant.</summary>
+    public const string SettingsMoneyProfilesManage = "settings.money-profiles.manage";
+
     /// <summary>
     /// KIM-D34: read the group-wide login attempt limit timeline (attempts per window, window length, what a window counts per)
     /// and record new versions (<c>SettingsLoginRateLimitPermissionManifestV1.Manage</c>). Registered, not granted: no role,
@@ -1819,6 +1822,7 @@ public static class ErpPermissions
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
+            SettingsMoneyProfilesManage,
             SettingsLoginRateLimitManage,
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
@@ -2087,6 +2091,7 @@ public static class ErpPermissions
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
+            SettingsMoneyProfilesManage,
             SettingsLoginRateLimitManage,
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,

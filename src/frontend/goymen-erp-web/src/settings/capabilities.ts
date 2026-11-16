@@ -9,6 +9,9 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  financeOpeningPeriod: 'settings.finance-opening-period.manage',
+  manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
+  manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /** Route `/ayarlar/iskonto-limitleri`; it carries its sidebar label. */
   salesDiscountLimits: 'settings.sales-discount-limits.manage',
   /**
@@ -46,6 +49,7 @@ export const SETTINGS_CAPABILITY = {
    * `settings.unit-profiles.manage` (company-wide, not Critical, granted to no role here).
    */
   unitProfiles: 'settings.unit-profiles.manage',
+  moneyProfiles: 'settings.money-profiles.manage',
   /**
    * URT-D89 (provider 1.5): route `/ayarlar/is-merkezi-kapasitesi`, the company's work center capacities (input kg/hour and
    * the optional safety buffer) on its own name `settings.work-center-capacities.manage` (company-wide, not Critical,
@@ -78,7 +82,15 @@ export const SETTINGS_EXCHANGE_RATE_CONTROL = {
 
 export type SettingsCapabilityId = (typeof SETTINGS_CAPABILITY)[keyof typeof SETTINGS_CAPABILITY]
 
+export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
+  parameters: { prepare: 'settings.manufacturing-parameter-profiles.prepare', publish: 'settings.manufacturing-parameter-profiles.publish' },
+  tolerances: { prepare: 'settings.manufacturing-tolerance-profiles.prepare', publish: 'settings.manufacturing-tolerance-profiles.publish' },
+} as const
+
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.financeOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
+  [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
+  [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [SETTINGS_CAPABILITY.salesDiscountLimits]: '/ayarlar/iskonto-limitleri',
   [SETTINGS_CAPABILITY.taxMaster]: '/ayarlar/vergi',
   [SETTINGS_CAPABILITY.exchangeRates]: '/ayarlar/kurlar',
@@ -87,12 +99,16 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.loginRateLimit]: '/ayarlar/giris-deneme-siniri',
   [SETTINGS_CAPABILITY.unitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [SETTINGS_CAPABILITY.unitProfiles]: '/ayarlar/birim-profilleri',
+  [SETTINGS_CAPABILITY.moneyProfiles]: '/ayarlar/para-profilleri',
   [SETTINGS_CAPABILITY.workCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
   [SETTINGS_CAPABILITY.purchasingReferenceLists]: '/ayarlar/referans-listeleri',
   [SETTINGS_CAPABILITY.productionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.financeOpeningPeriod]: 'Finans açılış dönemi',
+  [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
+  [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',
   [SETTINGS_CAPABILITY.salesDiscountLimits]: 'İskonto limitleri',
   [SETTINGS_CAPABILITY.taxMaster]: 'Vergi (KDV / tevkifat)',
   [SETTINGS_CAPABILITY.exchangeRates]: 'Kurlar',
@@ -101,6 +117,7 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.loginRateLimit]: 'Giriş deneme sınırı',
   [SETTINGS_CAPABILITY.unitConversionPolicy]: 'Birim çevrim politikası',
   [SETTINGS_CAPABILITY.unitProfiles]: 'Birim profilleri',
+  [SETTINGS_CAPABILITY.moneyProfiles]: 'Para profilleri',
   [SETTINGS_CAPABILITY.workCenterCapacity]: 'İş merkezi kapasitesi',
   [SETTINGS_CAPABILITY.purchasingReferenceLists]: 'Masraf ve hizmet tipleri',
   [SETTINGS_CAPABILITY.productionReferenceLists]: 'Boya rengi ve hurda türü',

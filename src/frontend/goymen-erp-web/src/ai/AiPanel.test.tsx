@@ -38,7 +38,7 @@ function installFetch(
         displayName: 'Kullanıcı A',
         email: 'test@example.com',
         allowedCompanyIds: [A_ID, B_ID],
-        authenticationSessionBinding: `v1.${'a1'.repeat(32)}`,
+        mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: `v1.${'a1'.repeat(32)}`,
       })
     }
     if (url.includes('/organization/companies')) {

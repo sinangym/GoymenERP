@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Shell;
 /// <see cref="IdentityPermissionManifestV1.AssignmentsRead"/> alone, company-wide, in one company: the view is
 /// fenced to the server-resolved company, and a group-wide view is not decided.
 /// <para>
-/// No control is declared: there is no assign, revoke or edit surface (NEEDS-SINAN #66 5738113623, OPEN-013).
+/// ID-4 adds controls for the decided ID-3 assign/revoke/request and approve/reject commands.
 /// A declaration grants nothing; the grant of the read is a human gate. The central registry requires registered
 /// names, so the host registers this provider only after the central catalogue knows the name, together with its
 /// accepted revision. The ids and routes are the frontend lane's (<c>src/identity/capabilities.ts</c>).
@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Shell;
 public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "IDENTITY";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
 
     public const string AccessListCapabilityId = "identity.assignments.list";
     public const string AccessListRouteId = "identity.assignments.list";
@@ -46,6 +46,24 @@ public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
+        new ShellCapabilityDeclaration(
+            IdentityPermissionManifestV1.RolesManage,
+            AccessListRouteId, AccessListRoutePath, AccessListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [IdentityPermissionManifestV1.AssignmentsRead, IdentityPermissionManifestV1.RolesManage],
+            ImplementationAvailable: true,
+            ParentCapabilityId: AccessListCapabilityId),
+        new ShellCapabilityDeclaration(
+            IdentityPermissionManifestV1.AccessApprove,
+            AccessListRouteId, AccessListRoutePath, AccessListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [IdentityPermissionManifestV1.AssignmentsRead, IdentityPermissionManifestV1.AccessApprove],
+            ImplementationAvailable: true,
+            ParentCapabilityId: AccessListCapabilityId),
         new ShellCapabilityDeclaration(
             AccessListCapabilityId,
             AccessListRouteId,

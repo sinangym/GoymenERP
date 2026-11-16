@@ -898,7 +898,7 @@ permissive value. Nothing is seeded.
 | Due-date buffer | URT-D96: company-wide working days, start value 0 when nothing is recorded. The upper bound is NEEDS-SINAN. |
 | Subcontract tax default | SAT-D381 (sales) and ALS-D105 (purchasing) are separate keys with the tax master's item type default shape; codes must exist in the tax master. Only the sales side has a write route; the purchasing write authority is NEEDS-SINAN, so it reads "no default". |
 | Credit account mapping | FNS-D97: `ISettingsFinanceCreditAccountMappingProviderV1` answers `MappingMissing` ("eşleme eksik") until a mapping is recorded. |
-| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered (NEEDS-SINAN N-12: format, reset, gaps). |
+| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered. KIM-D53 fixes prefix + year + sequence, annual reset, no reuse of cancelled numbers and gap reporting. The durable implementation and company format editor are still pending. |
 | Names | `settings.finance-opening-period.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). The due-date buffer route uses `manufacturing.plans.approve`; the sales tax default route uses `purchasing.orders.approve` (to be confirmed, NEEDS-SINAN). |
 | Routes | `GET` and `POST .../versions` under `/api/v1/settings/company-policies/` for `finance-opening-period`, `manufacturing-due-date-buffer` and `sales-subcontract-tax-default`. POST returns 204. |
 | Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). One save with the execution row and one audit event. Terminal refusals (409, 422) are stored and replay. |
@@ -925,3 +925,50 @@ subcontract ("satış fasonu", an operation type value) is outside it by constru
 
 Open: who edits the paint color and scrap kind lists (NEEDS-SINAN), the operation type list (not opened), and any further
 expense structure beyond code and name (NEEDS-SINAN).
+
+## Prospective money profile versions (KIM-D9, URN-D2, URN-D3, URN-D4; F-029 S3)
+
+Only the currency and operation identities already present in the approved money profile catalog are editable. A first
+real change copies that series' exact approved baseline identities, scales and dates and atomically records a new version.
+This copy is not a new default or a document rewrite. Historical document snapshots remain unchanged. No amount, unit price,
+tax or rate is recalculated by the screen. A series without a stored transfer still uses the existing approved catalog;
+after transfer, a missing or unreadable series fails closed and never returns to the catalog.
+
+| Part | What |
+|---|---|
+| Tables | `MoneyProfileBaselineTransfers` is a permanent marker keyed by company, currency and operation. `MoneyProfileVersions` adds the version to that key and holds profile identity, scales, active flag, effective date, source and recording metadata. Both are company filtered, insert only, without seed or SQL defaults. The version table has a restricted foreign key to its marker. |
+| Migration | `AddMoneyProfileVersions` is generated with `dotnet ef` and contains only DDL in Up. Down begins with `THROW 51940` while either table contains a row; use a reviewed forward fix. An empty store can roll back. |
+| Port | `ISettingsPrerequisiteProvider.GetMoneyProfileAsync` keeps the existing contract and all approved unit and period behavior. Stored company/currency/operation timelines determine money profiles prospectively. Unit-price scale remains nullable; a missing scale is never replaced with zero. |
+| Name | `settings.money-profiles.manage` is registered only, company-wide, not Critical; no grant or role assignment is added. |
+| Routes | `GET /api/v1/settings/money-profiles` and `POST /api/v1/settings/money-profiles/versions`. Commands require fresh authority, expected version, idempotency key, correlation and reason. A change, its terminal execution and audit event commit together. Same-value commands are durable no-ops without audit; version and key conflicts are durable terminal answers. |
+| Screen | Ayarlar → Para profilleri (`/ayarlar/para-profilleri`, AY-PRP-01). It shows the company, operation, current and proposed scales and state, plus the historical/future timeline. Today or a future date may be selected. An unknown response keeps the same request and key for retry. |
+| Source evidence | `SettingsMoneyProfilePersistenceModelTests`, `SettingsMoneyProfileSqlServerRelationalAcceptanceTests`, `moneyProfileContract.test.ts`, `MoneyProfilePage.test.tsx`. The SQL fact includes company and operation isolation, unchanged baseline history, replay, stale version, authority, audit and Down refusal. Test execution is reserved for the final train acceptance run. |
+
+## Manufacturing profile screens (KIM-S15, URN-D6)
+
+The existing parameter and tolerance profile services are reachable at Ayarlar → Üretim parametre profilleri and
+Üretim tolerans profilleri. Each route needs its existing read permission; prepare and publish buttons need separate
+read-plus-command capabilities. No approval button or new permission is added. A draft is published directly, and its
+preparer may publish it under URN-D6. Previously approved versions remain visible and can be published. All commands carry
+the server's expected state/profile version, a reason and a caller-owned idempotency key. An unknown outcome freezes the
+request for same-key retry. Work center selection uses the Organization owner's company-fenced read and requires that
+read's own authority; an unavailable list does not become an invented scope. Values are entered as text and the existing
+backend validates them. The screen calculates no formula, threshold or tolerance.
+
+The existing reviewed catalog is displayed read-only. Version-0 transfer remains outside this slice (TK-38 human gate).
+No starting value, grant or activation is installed. Component and decoder evidence is in
+`ManufacturingProfilePage.test.tsx` and `manufacturingProfileContract.test.ts`; execution is reserved for train acceptance.
+
+## Finance opening period screen and relational source evidence (KIM-S19)
+
+The existing opening-period registry is mounted at Ayarlar → Finans açılış dönemi
+(`/ayarlar/finans-acilis-donemi`, AY-FAD-01) on the existing `settings.finance-opening-period.manage` permission alone.
+A missing record is displayed as not open. The editor starts without a selected value; the person explicitly chooses open
+or closed and enters a reason. The preview is scoped to the selected company, and an unknown outcome retries the same
+body and key. No grant, production activation or Finance STOP state is changed by this implementation.
+
+`SettingsCompanyPolicySqlServerRelationalAcceptanceTests` now contains the opening/closing lifecycle, missing/foreign
+company fail-closed reads, authority, expected version, replay, audit, malformed-row CHECK and `THROW 51853` Down source
+case. The screen and decoder cases are `FinanceOpeningPeriodPage.test.tsx` and `financeOpeningPeriodContract.test.ts`.
+These are source evidence; all test execution remains reserved for final train acceptance. The other policy editors and
+the number-series provider remain unfinished.
