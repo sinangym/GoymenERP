@@ -79,9 +79,9 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         var progressPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress";
         var loadingPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/loading-progress";
 
-        // Shipped but nothing delivered yet: the whole order line remains.
+        // KLN-D106: delivered counts at the stock-out approval, so the shipped 4 already leaves 2 open (no POD awaited).
         var shippedOnly = await run.ProgressAsync(client, progressPath);
-        Assert.Equal(("4", "0", "6", "0"), Line(shippedOnly, orderLine.Id));
+        Assert.Equal(("4", "0", "2", "0"), Line(shippedOnly, orderLine.Id));
         // SAT-S11 (F-006, B-33): the real Logistics owner names who recorded the shipment, and the order shows it on the wire.
         Assert.Equal(new[] { run.Actor }, ShippedBy(shippedOnly));
         // The same real Logistics instruction is readable as loading facts: no Sales copy and no dispatch-note fiction.
@@ -92,7 +92,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         await run.ProgressAsync(client, progressPath);
         Assert.Equal(before, await run.EffectsAsync(draft.Id, instructionId));
 
-        // A partial delivery through the REAL Logistics route; the order, opened again, shows it and keeps the exact remainder.
+        // A partial delivery through the REAL Logistics route; the order, opened again, shows it; the remainder stays the shipped one.
         var deliveryId = Guid.NewGuid();
         using (var delivered = await client.SendAsync(Delivery(instructionId, lineId, "SENTETIK-delivery-1", version, deliveryId, shipmentId, "2.5")))
         {
@@ -100,7 +100,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.False(delivered.Headers.Contains("Idempotency-Replayed"));
         }
 
-        Assert.Equal(("4", "2.5", "3.5", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        Assert.Equal(("4", "2.5", "2", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
         Assert.Equal((1, "6", "6", "4", "2.5"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
 
         // The same delivery again under its key: the stored answer, replayed — no second share, nothing counted twice.
@@ -110,7 +110,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
         }
 
-        Assert.Equal(("4", "2.5", "3.5", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        Assert.Equal(("4", "2.5", "2", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
         Assert.Equal((1, "6", "6", "4", "2.5"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [logistics].[LoadingShares] WHERE [InstructionId] = @id AND [SourceShipmentId] = @s",

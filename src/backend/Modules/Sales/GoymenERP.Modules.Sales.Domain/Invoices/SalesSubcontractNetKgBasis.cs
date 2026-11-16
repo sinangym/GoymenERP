@@ -25,9 +25,9 @@ public sealed record SalesSubcontractNetKgShare(Guid OrderLineId, Guid WeighingI
 /// <para>
 /// Fail closed: KLN-D89 chose no rule for a line without its own weighing, so the calculation stops with an explicit code
 /// instead of borrowing another kilogram. A line has its own weighing only when the weighing is available, its net kg is
-/// positive and the weighed instruction serves that order line alone; a weighing shared by several order lines carries no
-/// per-line net kg (the split of one weighing across lines is still an open policy point), so each of its lines is "not
-/// weighed" here.
+/// positive and the weighed instruction serves that order line alone. A weighing shared by several order lines is split by
+/// <see cref="SalesSubcontractWeighingSplit"/> (SAT-D376/D377/D402, theoretical kg, whole kg, residue on the last line); this
+/// multi-weighing basis does not split it, so each of its lines is "not weighed" here.
 /// </para>
 /// <para>
 /// No money is split here: the residue rule of a money split is not chosen. The basis is exact (kilograms at

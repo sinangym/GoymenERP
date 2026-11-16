@@ -14,11 +14,14 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <list type="bullet">
 /// <item><b>Key</b> — the subcontract order + the loading instruction + its delivery weighing (the F2 "separate key"); a second
 /// invoice of the same key is refused (the store's unique index decides a race).</item>
-/// <item><b>Quantity</b> — the Logistics owner's delivery weighing net kg (SAT-D309, LOJ-D9), billed whole; scrap is not
-/// deducted. No weighing, no invoice (LOJ-D12).</item>
+/// <item><b>Quantity</b> — the Logistics owner's delivery weighing net kg (SAT-D309, LOJ-D9); scrap is not deducted. No weighing,
+/// no invoice (LOJ-D12). A weighing serving several order lines (of this or other orders) is split by
+/// <see cref="SalesSubcontractWeighingSplit"/> by theoretical kg, each line rounded to whole kg AwayFromZero and the residue on
+/// the weighing's last line (SAT-D376/D377/D402); this order's invoice bills only its own lines' shares.</item>
 /// <item><b>Price</b> — the order's invoicing gate must be <c>Open</c>; the kg price and tax snapshot are the basis revision's.</item>
-/// <item><b>Waits, never guesses</b> — a weighed instruction serving another order or more than one line (the SAT-D312 split's
-/// denominator and residue are an open F2 point), a foreign-currency order (its rate day is open), a missing price or tax: 409
+/// <item><b>Waits, never guesses</b> — a shared weighing line without a readable theoretical kg (SAT-D376 fail closed), a share
+/// that would round to zero, a foreign-currency order (SAT-D380's rate snapshot is not carried by the draft yet), a missing
+/// price or tax: 409
 /// <c>invoice_not_ready</c> with every reason, nothing recorded under the key.</item>
 /// </list>
 /// Amounts are <see cref="SalesInvoiceCalculator"/>'s only. The due plan, approval and finalisation of a service invoice join the
@@ -72,13 +75,6 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
             throw NotReady([new("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.WeighingOrderMismatch)]);
         }
 
-        // SAT-D312: the share by declared kilograms is decided, but which line quantity is the denominator and where the residue
-        // goes is an open F2 point with a money effect. Only the unsplit case (one order, one line) is billed now.
-        if (served.Count != weighing.Lines.Count || served.Select(line => line.SourceOrderLineId).Distinct().Count() != 1)
-        {
-            throw NotReady([new("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.SharePolicyPending)]);
-        }
-
         var existing = await StoreAsync(scope, () => store.FindSubcontractServiceInvoiceByWeighingAsync(request.SalesOrderId,
             request.LoadingInstructionId, request.WeighingId, cancellationToken), cancellationToken);
         if (existing is not null)
@@ -98,40 +94,65 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
         }
 
         var basis = Basis(order);
-        var servedLine = served[0];
-        if (!basis.Lines.TryGetValue(servedLine.SourceOrderLineId, out var line))
+
+        // SAT-D376/D377/D402: the one calculator splits the weighing's net kg over EVERY order line it served (this and other
+        // orders), so each order's invoice takes its own lines' whole-kg shares and the residue lands on the weighing's last line.
+        var shares = SplitWeighing(netKg, weighing);
+        var ownShares = shares.Where(share => share.SalesOrderId == order.Id).ToList();
+        if (ownShares.Count == 0)
         {
-            throw NotReady([new("loadingInstructionId", SalesInvoiceReasonCodesV1.OrderLineNotInBasis)]);
+            throw NotReady([new("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.WeighingOrderMismatch)]);
         }
 
-        if (line.OrderUnitId != servedLine.UnitId)
-        {
-            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
-        }
-
-        const string lineField = "lines[0]";
         if (basis.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira)
         {
+            // SAT-D380 decided the rate day (the invoice date's approved source); the draft carries no rate snapshot yet, so a
+            // foreign-currency subcontract invoice still waits instead of being priced without a rate.
             reasons.Add(new("salesOrderId", SalesSubcontractServiceInvoiceReasonCodesV1.CurrencyPending));
         }
 
-        if (line.OrderUnitId != SettingsUnitIdentitiesV1.Kilogram)
+        var prepared = new List<(SalesSubcontractDeliveryWeighingLineV1 Served, BasisLine Line, decimal BilledKg)>();
+        for (var index = 0; index < ownShares.Count; index++)
         {
-            reasons.Add(new(lineField, SalesSubcontractServiceInvoiceReasonCodesV1.LineNotKilogram));
-        }
+            var share = ownShares[index];
+            var lineField = $"lines[{index.ToString(CultureInfo.InvariantCulture)}]";
+            var instructionLines = served.Where(candidate => candidate.SourceOrderLineId == share.SalesOrderLineId).ToList();
+            var servedLine = instructionLines[0];
+            if (instructionLines.Any(candidate => candidate.ProductId != servedLine.ProductId || candidate.UnitId != servedLine.UnitId))
+            {
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+            }
 
-        if (line.Commercial.UnitPrice is null || line.Commercial.PriceUnitId != line.OrderUnitId)
-        {
-            reasons.Add(new(lineField, SalesInvoiceReasonCodesV1.LineUnpriced));
-        }
+            if (!basis.Lines.TryGetValue(share.SalesOrderLineId, out var line))
+            {
+                throw NotReady([new("loadingInstructionId", SalesInvoiceReasonCodesV1.OrderLineNotInBasis)]);
+            }
 
-        if (line.Tax is not { } tax)
-        {
-            reasons.Add(new(lineField, SalesInvoiceReasonCodesV1.TaxUnavailable));
-        }
-        else
-        {
-            reasons.AddRange(tax.InvoiceBlockers(basis.BuyerTax).Select(blocker => new SalesDraftFieldError(lineField, blocker)));
+            if (line.OrderUnitId != servedLine.UnitId)
+            {
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+            }
+
+            if (line.OrderUnitId != SettingsUnitIdentitiesV1.Kilogram)
+            {
+                reasons.Add(new(lineField, SalesSubcontractServiceInvoiceReasonCodesV1.LineNotKilogram));
+            }
+
+            if (line.Commercial.UnitPrice is null || line.Commercial.PriceUnitId != line.OrderUnitId)
+            {
+                reasons.Add(new(lineField, SalesInvoiceReasonCodesV1.LineUnpriced));
+            }
+
+            if (line.Tax is not { } tax)
+            {
+                reasons.Add(new(lineField, SalesInvoiceReasonCodesV1.TaxUnavailable));
+            }
+            else
+            {
+                reasons.AddRange(tax.InvoiceBlockers(basis.BuyerTax).Select(blocker => new SalesDraftFieldError(lineField, blocker)));
+            }
+
+            prepared.Add((servedLine, line, share.BilledKg.Value));
         }
 
         if (reasons.Count > 0)
@@ -147,9 +168,11 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
             weighing.WeighingRevision, weighing.InstructionVersion, netKgText);
         SalesSubcontractServiceLineInput[] inputs =
         [
-            new(Guid.NewGuid(), servedLine.SourceOrderLineId, basis.Revision, servedLine.ProductId, line.OrderUnitId, netKg, netKgText,
-                line.Commercial, line.Tax!),
+            .. prepared.Select(item => new SalesSubcontractServiceLineInput(Guid.NewGuid(), item.Served.SourceOrderLineId,
+                basis.Revision, item.Served.ProductId, item.Line.OrderUnitId, item.BilledKg,
+                item.BilledKg.ToString("0", CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!)),
         ];
+        var billedKg = inputs.Sum(input => input.Quantity);
         var invoiceId = Guid.NewGuid();
 
         await RequireStillAsync(scope, WritePermission, cancellationToken);
@@ -158,11 +181,14 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
         try
         {
             stored = await store.StoreSubcontractServiceInvoiceAsync(envelope, requestHash, documentNo =>
-                SalesSubcontractServiceInvoice.Create(invoiceId, scope.CompanyId, documentNo, header, source, inputs, netKg,
+                SalesSubcontractServiceInvoice.Create(invoiceId, scope.CompanyId, documentNo, header, source, inputs, billedKg,
                     scope.ActorId, now), cancellationToken);
         }
         catch (SalesRuleException exception)
         {
+            var failed = Array.FindIndex(inputs, input => input.LineId == exception.LineId
+                || input.SalesOrderLineId == exception.LineId);
+            var lineField = $"lines[{Math.Max(failed, 0).ToString(CultureInfo.InvariantCulture)}]";
             throw NotReady([new(lineField, exception.Code switch
             {
                 SalesRuleCodes.InvoiceTaxUnavailable => SalesInvoiceReasonCodesV1.TaxUnavailable,
@@ -276,6 +302,40 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractServiceInvoic
         decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) && value > 0m
             ? value
             : throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+
+    /// <summary>
+    /// SAT-D376/D377/D402 through <see cref="SalesSubcontractWeighingSplit"/>: a line without a readable theoretical kg, or a
+    /// share that would round to zero, is a 409 reason (nothing recorded); a net kg the calculator cannot read is the owner's
+    /// broken contract (503).
+    /// </summary>
+    private static IReadOnlyList<SalesSubcontractWeighingSplitShare> SplitWeighing(decimal netKg,
+        SalesSubcontractDeliveryWeighingV1 weighing)
+    {
+        try
+        {
+            return SalesSubcontractWeighingSplit.Split(netKg, [.. weighing.Lines.Select(line =>
+                new SalesSubcontractWeighingSplitLine(line.SourceOrderId, line.SourceOrderLineId, ParseTheoreticalKg(line.TheoreticalKg)))]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.SubcontractTheoreticalKgUnavailable)
+        {
+            throw NotReady([new("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.TheoreticalKgUnavailable)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.SubcontractShareNotPositive)
+        {
+            throw NotReady([new("loadingInstructionId", SalesSubcontractServiceInvoiceReasonCodesV1.ShareNotPositive)]);
+        }
+        catch (SalesRuleException)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+        }
+    }
+
+    /// <summary>The owner's theoretical kg text; missing or unreadable is null (the split then fails closed), never zero.</summary>
+    private static decimal? ParseTheoreticalKg(string? text) =>
+        text is not null && text.Trim().Length <= SalesSubcontractServiceInvoice.MaximumQuantityTextLength
+        && decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
 
     private static SalesSubcontractServiceInvoiceDetailView SubcontractView(SalesSubcontractServiceInvoice invoice, bool isReplay)
     {

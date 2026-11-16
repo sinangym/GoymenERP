@@ -165,9 +165,11 @@ public sealed partial class SalesDraftService
             throw DeliveryAnswerInvalid();
         }
 
-        // KLN-D100: the one open-quantity rule (ordered − delivered, invoiced never deciding). This read does not ask the
-        // customer-return owner yet, so it passes no return correction and no invoiced figure; the AT-024 numbers are unchanged.
-        var open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, delivered, Quantity.Zero(unit), null);
+        // KLN-D100 + KLN-D106: the one open-quantity rule (ordered − delivered, invoiced never deciding), where "delivered"
+        // counts at the shipment's stock-out approval — shipment and delivery are one counter and no customer POD is awaited. The
+        // owner's definite shipped total is therefore the delivered figure of the rule; its separate delivery record stays a
+        // displayed fact. This read does not ask the customer-return owner yet, so it passes no return correction.
+        var open = SalesOrderLineOpenQuantity.Calculate(line.Quantity, shipped, Quantity.Zero(unit), null);
         return new SalesDraftLineDeliveryProgressV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
             QuantityText(shipped), QuantityText(delivered), QuantityText(open.Open), QuantityText(open.Excess), shippedBy);
     }

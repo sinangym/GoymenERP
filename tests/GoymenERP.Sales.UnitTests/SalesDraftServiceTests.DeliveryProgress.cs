@@ -29,7 +29,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(created.Draft.Version, progress.DraftVersion);
         Assert.Equal(
             [
-                (first.LineId, 1, KgUnit, "1.25", "1", "0.75", "0.5", "0"),
+                (first.LineId, 1, KgUnit, "1.25", "1", "0.75", "0.25", "0"),
                 (second.LineId, 2, KgUnit, "2.25", "0", "0", "2.25", "0"),
             ],
             progress.Lines.Select(Facts));
@@ -48,7 +48,7 @@ public sealed partial class SalesDraftServiceTests
         owner.Answer = order => new(Company, order, [new(first.LineId, KgUnit, 1.25m, 1.25m), new(second.LineId, KgUnit, 1m, 0.001m)]);
         var reopened = await world.Service().GetDraftDeliveryProgressAsync(created.Draft.Id);
         Assert.Equal(("1.25", "0", "0"), (reopened.Lines[0].Delivered, reopened.Lines[0].Remaining, reopened.Lines[0].Excess));
-        Assert.Equal(("1", "0.001", "2.249"), (reopened.Lines[1].Shipped, reopened.Lines[1].Delivered, reopened.Lines[1].Remaining));
+        Assert.Equal(("1", "0.001", "1.25"), (reopened.Lines[1].Shipped, reopened.Lines[1].Delivered, reopened.Lines[1].Remaining));
     }
 
     [Fact]

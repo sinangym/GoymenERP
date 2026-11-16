@@ -43,7 +43,8 @@ public sealed class SalesSubcontractDeliveryWeighingHost(
                             line.SourceOrderId,
                             line.SourceOrderLineId,
                             line.ProductId,
-                            line.UnitId))])),
+                            line.UnitId,
+                            line.LoadedKgAtWeighing))])),
             LogisticsSubcontractDeliveryNetWeightStatusV1.NoSource =>
                 Closed(SalesSubcontractDeliveryWeighingStatusV1.NoSource, companyId, loadingInstructionId, weighingId),
             _ => Closed(SalesSubcontractDeliveryWeighingStatusV1.Unavailable, companyId, loadingInstructionId, weighingId),

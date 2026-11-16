@@ -141,8 +141,8 @@ public sealed class SalesSubcontractServiceInvoice
     /// <summary>
     /// Records a draft. The lines are checked here (unique line and order line ids, positive quantities, kg-priced); the amounts
     /// are the calculator's (a line without a price, a price in another unit or a tax without a source is refused, never a zero
-    /// amount). The billed quantities must add up to the weighing's net kg exactly: the delivery weighing is billed whole, never
-    /// partly and never twice (SAT-D309).
+    /// amount). The billed quantities must add up to <paramref name="netKg"/> exactly: this order's whole-kg share of the delivery
+    /// weighing (SAT-D309, SAT-D376/D377/D402), so the weighing is billed whole across its orders, never partly and never twice.
     /// </summary>
     public static SalesSubcontractServiceInvoice Create(Guid id, Guid companyId, string documentNo,
         SalesSubcontractServiceInvoiceHeader header, SalesSubcontractServiceInvoiceSource source,
@@ -177,7 +177,7 @@ public sealed class SalesSubcontractServiceInvoice
 
         if (netKg <= 0m || inputs.Sum(input => input.Quantity) != netKg)
         {
-            throw new ArgumentException("Fason hizmet satırlarının kg toplamı teslim tartımının net kg'ına eşit olmalıdır.", nameof(inputs));
+            throw new ArgumentException("Fason hizmet satırlarının kg toplamı siparişin teslim tartımındaki kg payına eşit olmalıdır.", nameof(inputs));
         }
 
         var calculatorInputs = inputs.Select((input, index) => new SalesInvoiceLineInput(input.LineId, index + 1, input.UnitId,

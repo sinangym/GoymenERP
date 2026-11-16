@@ -71,6 +71,10 @@ export const SUBCONTRACT_INVOICE_REASON_TEXT: Readonly<Record<string, string>> =
   [R.sharePolicyPending]:
     'Tartılan yükleme talimatı birden fazla siparişe ya da sipariş satırına hizmet ediyor; net kilogramın paylaştırma kuralı ' +
     'henüz karara bağlanmadı.',
+  [R.theoreticalKgUnavailable]:
+    'Ortak teslim tartısındaki bir satırın teorik kilogramı okunamadı; net kilogram paylaştırılmadı ve fatura hazırlanmadı.',
+  [R.shareNotPositive]:
+    'Ortak teslim tartısının tam kilograma yuvarlanmış payı bu satır için sıfır çıkıyor; sıfır kilogramlık fatura hazırlanmaz.',
   [R.currencyPending]: 'Döviz cinsinden fason hizmet siparişinin kur günü henüz karara bağlanmadı.',
   [R.lineNotKilogram]: 'Sipariş satırının birimi kilogram değil; teslim tartısının net kilogramı yalnız kg satırına faturalanır.',
   [R.weighingAlreadyInvoiced]: 'Bu teslim tartısı bu sipariş için zaten faturalandı; düzeltme fark faturasıyla yapılır.',
