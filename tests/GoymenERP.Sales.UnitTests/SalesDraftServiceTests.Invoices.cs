@@ -371,6 +371,10 @@ public sealed partial class SalesDraftServiceTests
         public ISalesFinanceAdmissionPortV1? Finance { get; set; }
         public ISalesInvoiceDiagnosticsV1? Diagnostics { get; set; }
 
+        /// <summary>SAT-S13: the weighing-difference seam; by default every note is recorded with no difference (passes).</summary>
+        public FakeWeighingDifferences Weighings { get; } = new();
+        public bool NoWeighings { get; set; }
+
         /// <summary>An invoice world around an order the caller has put in the state under test.</summary>
         public static InvoiceWorld Around(World world, SalesOrderDraftDetailView order) => new(world, order);
 
@@ -404,7 +408,8 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesInvoiceService(company, World.User, World.Authority, new FixedCorrelation(), Invoices, World.Store, World.Settings,
-                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Diagnostics);
+                World.Clock, NoShipments ? null : Shipments, Rates, NoOfficial ? null : Official, Tolerance, Finance, Diagnostics,
+                weighingDifferences: NoWeighings ? null : Weighings);
         }
     }
 

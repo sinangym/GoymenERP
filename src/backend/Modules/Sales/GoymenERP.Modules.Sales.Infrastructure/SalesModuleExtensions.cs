@@ -87,6 +87,8 @@ public static class SalesModuleExtensions
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
+        // SAT-S13: the same read service answers one note's weighing difference (the Logistics owner's read through the host adapter).
+        services.AddScoped<ISalesDispatchWeighingDifferenceReadService>(CreateDispatchReadService);
         // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
@@ -111,8 +113,8 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
         // LOJ-D19 (SAT-D285): the usage mirror of the Logistics definite-shipment events over the Sales store, and its inbox
-        // consumer. The consumer is NOT handed to the Work dispatcher (AddWorkInboxConsumer) yet: the Logistics outbox source
-        // does not exist until its owner registers it, and the dispatcher refuses an unknown source at start.
+        // consumer. The host hands the consumer to the Work dispatcher (SAT-S10, AddSalesRiskExceptionUsageInbox) after the Logistics
+        // outbox source; this module does not reference Work's infrastructure. The dispatcher itself stays off (a human gate).
         services.AddScoped<ISalesRiskExceptionUsageStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<SalesLogisticsShipmentInboxConsumer>();
         // F-018 / plan S2 (FNS-D30, SAT-D310): the shipment risk gate read for the Logistics gate — the same deterministic risk
@@ -194,7 +196,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
         serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>(),
         serviceProvider.GetService<ISalesSubcontractServiceInvoiceStore>(),
-        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>());
+        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>(),
+        // SAT-S13 (SAT-D389 / SAT-D319 (6)): absent, every share waits with weighing_difference_unavailable — never invoiced unread.
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
@@ -208,7 +212,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesDispatchNoteReadPortV1>(),
         serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>(),
         // SAT-D90 / SAT-D101: the Settings rate-day port for the invoice-group rate (absent: unresolved, never a guess).
-        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        // SAT-S13: the weighing-difference seam (absent: 503, never a zero).
+        serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>());
 
     // Built in a named factory so that no registration statement of this module names the company
     // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).
@@ -303,7 +309,10 @@ public static class SalesModuleExtensions
         // X1 (KLN-D28): the host participant that releases a cancelled order's future supply allocations through Inventory's
         // release port in the cancellation's own transaction. Until it is registered a future allocation keeps blocking the
         // cancellation (fail-closed); it is never released outside the Sales transaction.
-        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>());
+        serviceProvider.GetService<ISalesOrderFutureAllocationReleaseParticipantV1>(),
+        // SAT-D406 / SAT-D367: the risk remainder's plan quantity (issued, not yet shipped loading instructions), bound by the host to
+        // the Logistics owner's read; until it is, the "approved, not shipped" remainder is "Unavailable", never an assumed zero.
+        serviceProvider.GetService<ISalesOrderPlannedQuantityReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

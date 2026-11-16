@@ -72,9 +72,10 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal([(Party, Account)], partyRisk.Asked);
         Assert.Equal([approved.Draft.Id], deliveries.Asked);
         Assert.Equal([(Party, Account, SalesDraftService.MaximumRiskOrders + 1)], world.Store.OpenApprovedOrderReads);
-        // The draft read before, after the draft, after the finance owner, after the order list, after the delivery owner and
-        // after the Settings TL money profile (SAT-D53); then the price read, last.
-        Assert.Equal([ReadPermission, ReadPermission, ReadPermission, ReadPermission, ReadPermission, ReadPermission, PriceReadPermission],
+        // The draft read before, after the draft, after the finance owner, after the order list, after the delivery owner, after the
+        // shipment-plan owner (SAT-D406) and after the Settings TL money profile (SAT-D53); then the price read, last.
+        Assert.Equal([ReadPermission, ReadPermission, ReadPermission, ReadPermission, ReadPermission, ReadPermission, ReadPermission,
+                PriceReadPermission],
             world.Authority.Measured);
         Assert.Equal(Lira, world.Settings.MoneyAsked!.Value.Currency);
         // Read-only.

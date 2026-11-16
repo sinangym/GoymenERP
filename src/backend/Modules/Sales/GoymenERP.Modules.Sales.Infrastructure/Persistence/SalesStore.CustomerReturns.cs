@@ -13,11 +13,18 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// the return (or its step), the attempt and the audit event. UX_CustomerReturns_CustomerDocument makes a racing duplicate of the
 /// customer's document the save's concurrent change, and UX_CustomerReturns_FinalizationSequence two finalisations computed against
 /// the same finalised priors (SAT-D292 (6)). Sales writes only its own tables: no stock movement (SAT-D293 (2)), the shipment id is
-/// an opaque reference, and the finance effect goes through the Finance port before this save (SAT-D294).
+/// an opaque reference, and the finance effect goes through the Finance port before this save (SAT-D294). SAT-S2: the finalisation's
+/// save also writes the <c>sales.return-invoice.finalized.v1</c> outbox row (the Sales outbox; consumers dedupe by its id), so the
+/// finalised return is announced exactly once with the state change.
 /// </summary>
 public sealed partial class SalesStore : ISalesCustomerReturnStore
 {
     private const string CustomerReturnEntityType = "Sales.CustomerReturn";
+
+    /// <summary>The versioned outbox event of a finalised customer return invoice (consumed by Finance).</summary>
+    internal const string CustomerReturnFinalizedEventType = "sales.return-invoice.finalized.v1";
+
+    private const int CustomerReturnFinalizedSchemaVersion = 1;
 
     public async Task<SalesCustomerReturnReplay?> FindCustomerReturnReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, CancellationToken cancellationToken = default)
@@ -237,6 +244,23 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
             }
 
             row.FinalizationSequence = checked(count + 1);
+            dbContext.OutboxMessages.Add(new SalesOutboxRow
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = companyId,
+                EventType = CustomerReturnFinalizedEventType,
+                SchemaVersion = CustomerReturnFinalizedSchemaVersion,
+                SourceOperation = audit.Operation,
+                AggregateType = CustomerReturnEntityType,
+                AggregateId = item.Id,
+                AggregateVersion = item.Version,
+                Sequence = 1,
+                PayloadJson = CustomerReturnFinalizedPayload(item),
+                OccurredAtUtc = now,
+                CorrelationId = envelope.CorrelationId.Trim(),
+                CausationId = envelope.CausationId?.Trim(),
+                RecordedAtUtc = now,
+            });
         }
 
         dbContext.CustomerReturnAttempts.Add(NewCustomerReturnAttempt(companyId, commandName, keyHash, requestHash, actorId,
@@ -381,4 +405,47 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         currencyId = item.Header.CurrencyId,
         item.NeedsReview,
     }, Json);
+
+    /// <summary>
+    /// The <c>sales.return-invoice.finalized.v1</c> outbox payload (versioned contract; see the contract test): the finalised return,
+    /// its original invoice link, the customer's document, the party / account / currency, the locked rate and functional currency,
+    /// the calculator's frozen totals in the invoice currency and in TL (null for a TL return), who finalised it and when, and the
+    /// Finance acceptance identity (the return's own id, SAT-D294). Every amount is the ONE return calculator's frozen value; the
+    /// consumer never recomputes it.
+    /// </summary>
+    internal static string CustomerReturnFinalizedPayload(SalesCustomerReturn item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        var totals = item.Totals;
+        var functionalTotals = item.FunctionalTotals;
+        return JsonSerializer.Serialize(new
+        {
+            customerReturnId = item.Id,
+            item.CompanyId,
+            version = item.Version,
+            item.Header.OriginalInvoiceId,
+            item.Header.OriginalDocumentNo,
+            item.ShipmentId,
+            item.CustomerDocumentNo,
+            item.CustomerDocumentDate,
+            item.Header.PartyId,
+            item.Header.CompanyAccountId,
+            item.Header.CurrencyId,
+            item.Header.AmountScale,
+            rate = item.Header.Rate,
+            item.Header.FunctionalCurrencyId,
+            item.Header.FunctionalScale,
+            net = totals.Net.Amount,
+            vat = totals.Vat.Amount,
+            withholding = totals.Withholding.Amount,
+            lineTotal = totals.LineTotal.Amount,
+            functionalNet = functionalTotals?.Net.Amount,
+            functionalVat = functionalTotals?.Vat.Amount,
+            functionalWithholding = functionalTotals?.Withholding.Amount,
+            functionalLineTotal = functionalTotals?.LineTotal.Amount,
+            item.Facts.FinalizedBy,
+            finalizedAtUtc = item.Facts.FinalizedAtUtc,
+            financeAcceptanceId = item.Id,
+        }, Json);
+    }
 }

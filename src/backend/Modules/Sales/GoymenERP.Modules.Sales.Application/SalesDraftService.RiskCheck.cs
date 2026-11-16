@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// STK-S38). Posted shares beyond the definite shipments of a line, an owner not composed, failing or malformed, or more shares
 /// than one read takes are "Unavailable" with their reason.
 /// SAT-D352: a definite shipment whose dispatch note is not approved is counted here (from the delivery owner's shipped total),
-/// once. SAT-D351: the remainder below stays approved − definitely shipped; no plan-quantity read is needed.</item>
+/// once. SAT-D406 (SINAN-CEVAP 33) replaces SAT-D351: the remainder below is the shipment plan, not approved − definitely shipped.</item>
 /// <item><b>Approved, not shipped</b> (SAT-D50: every internally approved order, customer acceptance or not): for every open
 /// approved order of the same customer account (the store's <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per
 /// line the approved quantity − the delivery owner's shipped total, not below zero. The approved basis is the current lines while
@@ -399,7 +399,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
         IReadOnlyList<SalesOrderDraft> orders, Dictionary<Guid, Dictionary<Guid, (decimal Shipped, decimal Delivered)>> recordedByOrder,
         CancellationToken cancellationToken)
     {
-        var amounts = new List<SalesRiskAmount>();
+        var bases = new List<(SalesOrderDraft Order, RiskOrderBasis Basis)>(orders.Count);
         foreach (var order in orders)
         {
             if (order.CompanyId != scope.CompanyId || order.Header.PartyId != draft.Header.PartyId
@@ -420,8 +420,35 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
                 return SalesRiskInput.Unavailable(unread!);
             }
 
+            // The definite shipments are still read: the unbilled stage counts them (plan S0 (c)).
             recordedByOrder[order.Id] = recorded;
-            if (OrderRemains(basis, recorded) is not { } remains)
+            bases.Add((order, basis));
+        }
+
+        var amounts = new List<SalesRiskAmount>();
+        if (bases.Count == 0)
+        {
+            return SalesRiskInput.Available(amounts, SalesRiskTaxBasis.IncludingTax);
+        }
+
+        // SAT-D406 (1) / SAT-D367: the remainder is the shipment plan — per line the quantity on issued, not yet shipped loading
+        // instructions (draft and cancelled ones do not count), read once for every open approved order; it replaces SAT-D351's
+        // approved − definitely shipped. A plan that cannot be read is "Unavailable", never zero.
+        var (planned, planUnread) = await PlannedForRiskAsync(scope, permission, orders, cancellationToken);
+        if (planned is null)
+        {
+            return SalesRiskInput.Unavailable(planUnread!);
+        }
+
+        foreach (var (order, basis) in bases)
+        {
+            var orderPlan = planned.GetValueOrDefault(order.Id) ?? new Dictionary<Guid, (Guid UnitId, decimal Quantity)>();
+            if (PlannedQuantities(basis, orderPlan) is not { } quantities)
+            {
+                return SalesRiskInput.Unavailable(basis.Reason!);
+            }
+
+            if (PlanRemains(basis, quantities) is not { } remains)
             {
                 return SalesRiskInput.Unavailable(basis.Reason!);
             }
@@ -434,7 +461,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
             // SAT-D46 / SAT-D183: what remains enters as the payable amount (VAT included, withheld VAT deducted), from the one
             // totals calculator with the basis lines' own tax snapshots — never the VAT-excluded net; a line without a usable tax
             // makes the remainder unavailable.
-            if (RemainingPayable(basis, recorded) is not { } payable)
+            if (QuantityPayable(basis, quantities) is not { } payable)
             {
                 return SalesRiskInput.Unavailable(basis.Reason!);
             }
@@ -719,6 +746,150 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
     }
 
     /// <summary>
+    /// SAT-D406 / SAT-D367: the shipment plan of every given order — per order and line, the unit and the open (issued, not yet
+    /// shipped) instruction quantity — read through the plan owner's port in pages of at most
+    /// <see cref="SalesOrderPlannedQuantityContractV1.MaximumOrderIds"/> orders, asking again while an answer leaves orders
+    /// unanswered. An answered order without a line has nothing planned. Null with the reason when the owner is not composed,
+    /// fails or refuses (<c>plan_provider_unavailable</c>), or answers anything it was not asked, a line twice, another company or
+    /// a non-positive quantity, or makes no progress (<c>plan_answer_invalid</c>).
+    /// </summary>
+    private async Task<(Dictionary<Guid, Dictionary<Guid, (Guid UnitId, decimal Quantity)>>? Planned, string? Reason)> PlannedForRiskAsync(
+        Scope scope, string? permission, IReadOnlyList<SalesOrderDraft> orders, CancellationToken cancellationToken)
+    {
+        if (plannedQuantities is null)
+        {
+            return (null, SalesDraftRiskReasonCodesV1.PlanProviderUnavailable);
+        }
+
+        var planned = new Dictionary<Guid, Dictionary<Guid, (Guid UnitId, decimal Quantity)>>();
+        var ids = orders.Select(order => order.Id).Distinct().ToArray();
+        foreach (var chunk in ids.Chunk(SalesOrderPlannedQuantityContractV1.MaximumOrderIds))
+        {
+            var pending = new HashSet<Guid>(chunk);
+            while (pending.Count > 0)
+            {
+                Guid[] asked = [.. pending];
+                SalesOrderPlannedQuantityReadV1? answer;
+                try
+                {
+                    answer = await GuardedAsync(scope, permission,
+                        () => plannedQuantities.ReadOpenInstructionQuantitiesAsync(scope.CompanyId, asked, cancellationToken),
+                        cancellationToken);
+                }
+                catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+                {
+                    return (null, SalesDraftRiskReasonCodesV1.PlanProviderUnavailable);
+                }
+
+                if (answer is null || answer.Outcome != SalesOrderPlannedQuantityOutcomeV1.Found)
+                {
+                    return (null, SalesDraftRiskReasonCodesV1.PlanProviderUnavailable);
+                }
+
+                if (answer.CompanyId != scope.CompanyId || answer.Lines is null || answer.AnsweredOrderIds is null)
+                {
+                    return (null, SalesDraftRiskReasonCodesV1.PlanAnswerInvalid);
+                }
+
+                var answered = new HashSet<Guid>();
+                foreach (var orderId in answer.AnsweredOrderIds)
+                {
+                    if (!pending.Contains(orderId) || !answered.Add(orderId))
+                    {
+                        return (null, SalesDraftRiskReasonCodesV1.PlanAnswerInvalid);
+                    }
+                }
+
+                if (answered.Count == 0 || (!answer.HasMore && answered.Count != pending.Count))
+                {
+                    // No progress, or a final answer that leaves an asked order out: a missing line would read as zero.
+                    return (null, SalesDraftRiskReasonCodesV1.PlanAnswerInvalid);
+                }
+
+                foreach (var orderId in answered)
+                {
+                    planned[orderId] = new Dictionary<Guid, (Guid UnitId, decimal Quantity)>();
+                }
+
+                foreach (var line in answer.Lines)
+                {
+                    if (line is null || !answered.Contains(line.OrderId) || line.OpenInstructionQuantity <= 0m
+                        || !planned[line.OrderId].TryAdd(line.OrderLineId, (line.UnitId, line.OpenInstructionQuantity)))
+                    {
+                        return (null, SalesDraftRiskReasonCodesV1.PlanAnswerInvalid);
+                    }
+                }
+
+                pending.ExceptWith(answered);
+            }
+        }
+
+        return (planned, null);
+    }
+
+    /// <summary>
+    /// SAT-D406: the order's planned quantity per basis line, in the line's order unit. A planned line in another unit than its
+    /// basis line is <c>plan_answer_invalid</c> (no conversion); a planned line the basis does not have is
+    /// <c>order_basis_unreadable</c> (no approved price). Null with the reason set on refusal.
+    /// </summary>
+    private static Dictionary<Guid, decimal>? PlannedQuantities(RiskOrderBasis basis,
+        IReadOnlyDictionary<Guid, (Guid UnitId, decimal Quantity)> plan)
+    {
+        var lines = basis.Lines.ToDictionary(line => line.LineId);
+        var quantities = new Dictionary<Guid, decimal>();
+        foreach (var (lineId, (unitId, quantity)) in plan)
+        {
+            if (!lines.TryGetValue(lineId, out var line))
+            {
+                basis.Reason = SalesDraftRiskReasonCodesV1.OrderBasisUnreadable;
+                return null;
+            }
+
+            if (line.OrderUnitId != unitId)
+            {
+                basis.Reason = SalesDraftRiskReasonCodesV1.PlanAnswerInvalid;
+                return null;
+            }
+
+            quantities[lineId] = quantity;
+        }
+
+        return quantities;
+    }
+
+    /// <summary>
+    /// Whether anything of the order is planned (a positive planned quantity); a planned line must be priced in its order unit, or the
+    /// order's remainder cannot be valued at all. Null with the reason set on refusal.
+    /// </summary>
+    private static bool? PlanRemains(RiskOrderBasis basis, IReadOnlyDictionary<Guid, decimal> quantities)
+    {
+        var remains = false;
+        foreach (var line in basis.Lines)
+        {
+            if (!quantities.TryGetValue(line.LineId, out var quantity) || quantity <= 0m)
+            {
+                continue;
+            }
+
+            if (line.Commercial.UnitPrice is null)
+            {
+                basis.Reason = SalesDraftRiskReasonCodesV1.OrderLineUnpriced;
+                return null;
+            }
+
+            if (line.Commercial.PriceUnitId != line.OrderUnitId)
+            {
+                basis.Reason = SalesDraftRiskReasonCodesV1.PriceUnitConversionUnavailable;
+                return null;
+            }
+
+            remains = true;
+        }
+
+        return remains;
+    }
+
+    /// <summary>
     /// SAT-D46 / SAT-D183: the PAYABLE amount (VAT included, the withheld VAT deducted — what the customer owes us) of what of
     /// <paramref name="basis"/> is left to ship — each line's approved
     /// quantity − shipped, above zero — from <see cref="SalesOrderTotalsCalculator.CalculateWithLineTax(IReadOnlyList{SalesTotalsLineInput}, Guid, int)"/>
@@ -870,7 +1041,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
 
     /// <summary>
     /// The approved commitment's lines with the currency and money scale they are valued in; <see cref="Reason"/> is set by
-    /// <see cref="OrderRemains"/> / <see cref="RemainingPayable"/> on refusal.
+    /// <see cref="PlannedQuantities"/> / <see cref="PlanRemains"/> / <see cref="QuantityPayable"/> on refusal.
     /// </summary>
     private sealed class RiskOrderBasis(IReadOnlyList<RiskBasisLine> lines, Guid currencyId, int moneyScale)
     {
@@ -923,40 +1094,6 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
 
         // The archived revision is valued in the currency and money scale it was approved with.
         return new RiskOrderBasis(lines, approved.Header?.CurrencyId ?? order.Header.CurrencyId, approved.MoneyScale);
-    }
-
-    /// <summary>
-    /// Whether anything of the order's approved lines is left to ship (approved − shipped above zero); a line with something left
-    /// must be priced in its order unit, or the order's remainder cannot be valued at all. Null with the reason set on refusal.
-    /// </summary>
-    private static bool? OrderRemains(RiskOrderBasis basis, IReadOnlyDictionary<Guid, (decimal Shipped, decimal Delivered)> recorded)
-    {
-        var remains = false;
-        foreach (var line in basis.Lines)
-        {
-            var shipped = recorded.TryGetValue(line.LineId, out var entry) ? entry.Shipped : 0m;
-            if (line.Quantity <= shipped)
-            {
-                // Nothing of this line is left to ship: it adds nothing, priced or not (its shipped part is the next stage's).
-                continue;
-            }
-
-            if (line.Commercial.UnitPrice is null)
-            {
-                basis.Reason = SalesDraftRiskReasonCodesV1.OrderLineUnpriced;
-                return null;
-            }
-
-            if (line.Commercial.PriceUnitId != line.OrderUnitId)
-            {
-                basis.Reason = SalesDraftRiskReasonCodesV1.PriceUnitConversionUnavailable;
-                return null;
-            }
-
-            remains = true;
-        }
-
-        return remains;
     }
 
     // ---- wire helpers -----------------------------------------------------------------------------------------------------

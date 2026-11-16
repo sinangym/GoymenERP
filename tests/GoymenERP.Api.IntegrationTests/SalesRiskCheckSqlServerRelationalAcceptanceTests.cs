@@ -183,24 +183,25 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
             Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
         }
 
-        // Company A: B's 5000.00 is invisible — a recorded zero; the order's 2 kg is unshipped (VAT-included amount: API-03's).
+        // Company A: B's 5000.00 is invisible — a recorded zero; SAT-D406: the order's 2 kg is on no issued loading instruction, so
+        // nothing of it is planned — the remainder is a recorded zero too.
         var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersPriceRead);
         using var clientOfA = run.Client(readerOfA, CompanyA);
         var check = await run.RiskCheckAsync(clientOfA, path);
         var components = check.GetProperty("components").EnumerateArray().Select(Figure).ToArray();
         Assert.Equal(("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "", null), components[0]);
-        Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
+        Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Available", "IncludingTax", "", null),
             components[2]);
         Assert.Equal("Unavailable", check.GetProperty("result").GetString());
     }
 
     /// <summary>
     /// K3-REVIEW-B P2-1, SAT-D115 / SAT-D166 (EK23): Rev.0 (1.25 kg) approved and accepted, partly shipped through the real
-    /// Logistics store; Rev.1 changes the quantity, is approved, and the customer rejects it. The risk's approved unshipped
-    /// remainder is the ACCEPTED Rev.0's, rebuilt from SQL: 1 of 1.25 kg shipped leaves 0.25 kg priced — unavailable (its VAT has
-    /// no source), never a recorded zero (the rejected 1 kg would leave nothing); 1.25 kg shipped leaves nothing of Rev.0 — a
-    /// recorded zero (the rejected 2 kg would leave 0.75 kg).
+    /// Logistics store; Rev.1 changes the quantity, is approved, and the customer rejects it. SAT-D406: the remainder's quantity is
+    /// the issued instruction's open plan, valued by the ACCEPTED Rev.0's basis rebuilt from SQL: 1 of an instructed 1.25 kg
+    /// shipped leaves 0.25 kg planned and priced — unavailable (its VAT has no source), never a recorded zero; 1.25 kg instructed
+    /// and shipped leaves nothing planned — a recorded zero.
     /// </summary>
     [SqlServerFact]
     public async Task SAT_D166_after_a_customer_rejection_the_remainder_is_the_accepted_revisions_on_real_sql()
@@ -209,15 +210,15 @@ public sealed partial class SalesRiskCheckSqlServerRelationalAcceptanceTests
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersPriceRead);
         using var client = run.Client(reader, CompanyA);
-        foreach (var (prefix, rejectedQuantity, shipped, state, reason) in new (string, string, decimal, string, string?)[]
+        foreach (var (prefix, rejectedQuantity, instructed, shipped, state, reason) in new (string, string, decimal, decimal, string, string?)[]
                  {
-                     ("rj-down", "1", 1m, "Unavailable", "vat_inclusive_amount_unavailable"),
-                     ("rj-up", "2", 1.25m, "Available", null),
+                     ("rj-down", "1", 1.25m, 1m, "Unavailable", "vat_inclusive_amount_unavailable"),
+                     ("rj-up", "2", 1.25m, 1.25m, "Available", null),
                  })
         {
             var customer = new Customer(Guid.NewGuid(), Guid.NewGuid());
             var approved = await run.ApprovedDraftAsync(CompanyA, customer, prefix, "1.25", acceptanceRequired: true);
-            await run.ShippedInstructionAsync(CompanyA, approved, prefix, instructed: shipped, shipped: shipped);
+            await run.ShippedInstructionAsync(CompanyA, approved, prefix, instructed: instructed, shipped: shipped);
             var rejected = await run.CustomerRejectedAsync(CompanyA, approved, prefix, rejectedQuantity);
             Assert.Equal((10L, 1, 0, rejectedQuantity), (rejected.Version, rejected.Revision, rejected.CustomerAcceptedFallback!.Revision,
                 Assert.Single(rejected.Lines).QuantityText));

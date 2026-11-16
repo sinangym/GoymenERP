@@ -69,11 +69,16 @@ public static class SalesSubcontractServiceInvoiceReasonCodesV1
     public const string WeighingOrderMismatch = "weighing_order_mismatch";
 
     /// <summary>
-    /// SAT-D312 split pending: the weighed instruction serves more than one order or more than one line of the order. The share
-    /// by declared kilograms is decided, but its denominator field and residue rule are an open F2 point (money effect,
-    /// NEEDS-SINAN); nothing is split by guess.
+    /// Retired by SAT-D376/D402 (the shared weighing is now split by theoretical kg); kept as a published V1 value so an older
+    /// client still decodes it. The service no longer answers it.
     /// </summary>
     public const string SharePolicyPending = "subcontract_share_policy_pending";
+
+    /// <summary>SAT-D376 (fail closed): a line of the shared weighing has no readable theoretical kg; the net kg is not split.</summary>
+    public const string TheoreticalKgUnavailable = "subcontract_theoretical_kg_unavailable";
+
+    /// <summary>SAT-D376/D402: a served line's whole-kg share would be zero or negative; it is never billed as zero.</summary>
+    public const string ShareNotPositive = "subcontract_share_not_positive";
 
     /// <summary>A foreign-currency subcontract order: its rate day is not decided for the service invoice (NEEDS-SINAN).</summary>
     public const string CurrencyPending = "subcontract_currency_pending";
@@ -174,8 +179,13 @@ public enum SalesSubcontractDeliveryWeighingStatusV1
     Unavailable = 3,
 }
 
-/// <summary>One instruction line the weighed delivery served: the Sales order line it is bound to (identities only).</summary>
-public sealed record SalesSubcontractDeliveryWeighingLineV1(Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId);
+/// <summary>
+/// One instruction line the weighed delivery served: the Sales order line it is bound to, and the line's theoretical kilograms
+/// (the owner's loaded kg of the line at weighing, exact invariant decimal text; SAT-D376 split weight). A null or unreadable
+/// <paramref name="TheoreticalKg"/> stops a shared-weighing split (fail closed), never a zero.
+/// </summary>
+public sealed record SalesSubcontractDeliveryWeighingLineV1(Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId,
+    string? TheoreticalKg = null);
 
 /// <summary>
 /// The delivery weighing facts Sales needs (Sales-owned shape; the host adapts the Logistics owner's F1 read): the net kilograms

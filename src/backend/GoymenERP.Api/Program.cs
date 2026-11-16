@@ -12,6 +12,7 @@ using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.OrganizationRuntime;
 using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.SalesRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
@@ -365,6 +366,9 @@ builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
 // F2 (SAT-D309, LOJ-D9): the subcontract service invoice reads the delivery weighing's net kg only through the Logistics
 // owner's F1 read; the adapter has no route, carries no authority and maps facts only.
 builder.Services.AddScoped<ISalesSubcontractDeliveryWeighingReadPortV1, SalesSubcontractDeliveryWeighingHost>();
+// SAT-S13 (SAT-D343, SAT-D389): the dispatch screen and the invoice gate read a note's weighing difference only through the
+// Logistics owner's STK-S24 read; the adapter has no route, carries no authority and maps facts only.
+builder.Services.AddScoped<ISalesDispatchWeighingDifferenceReadPortV1, SalesDispatchWeighingDifferenceHost>();
 // MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
 // company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
 builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
@@ -466,6 +470,10 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
+// SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
+builder.Services.AddSalesRiskExceptionUsageInbox();
+// SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
+builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
