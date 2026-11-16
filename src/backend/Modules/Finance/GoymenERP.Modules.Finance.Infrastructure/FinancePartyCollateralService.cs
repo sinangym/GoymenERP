@@ -352,14 +352,27 @@ public sealed class FinancePartyCollateralService(
         }
 
         var held = await HeldReceivedAsync(dbContext, context.CompanyId, companyAccountId, cancellationToken);
-        var asOf = ReadDate(timeProvider);
         var inputs = held.Select(HeldInput).ToList();
-        var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil, asOf))
-            ? await collateralTypes.ListAsync(context.CompanyId, asOf, cancellationToken)
-            : null;
-        var weighted = held.Select(row => row.PartyId).Distinct().Count() > 1
-            ? FinancePartyCollateralFigures.Figure.Unavailable(FinancePartyCollateralFigures.CollateralUnreadable)
-            : FinancePartyCollateralFigures.Weigh(inputs, catalog, asOf);
+        FinancePartyCollateralFigures.Figure weighted;
+        if (held.Select(row => row.PartyId).Distinct().Count() > 1)
+        {
+            weighted = FinancePartyCollateralFigures.Figure.Unavailable(FinancePartyCollateralFigures.CollateralUnreadable);
+        }
+        else if (ReadDate(timeProvider) is not { } asOf)
+        {
+            // FNS-D75: without the business day no collateral can be dated in force — never a UTC guess.
+            weighted = inputs.Count == 0
+                ? new FinancePartyCollateralFigures.Figure(true, [], null)
+                : FinancePartyCollateralFigures.Figure.Unavailable(FinanceBusinessDay.BusinessDayUnavailable);
+        }
+        else
+        {
+            var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil,
+                asOf))
+                ? await collateralTypes.ListAsync(context.CompanyId, asOf, cancellationToken)
+                : null;
+            weighted = FinancePartyCollateralFigures.Weigh(inputs, catalog, asOf);
+        }
         var documentary = await DocumentaryRiskAsync(context, companyAccountId, cancellationToken);
         if (await ReadFenceAsync(context, cancellationToken) is { } again)
         {
@@ -413,7 +426,12 @@ public sealed class FinancePartyCollateralService(
             return new ReadResult<PartyCollateralTypeCandidates>(refused, null);
         }
 
-        var catalog = await collateralTypes.ListAsync(context.CompanyId, ReadDate(timeProvider), cancellationToken);
+        if (ReadDate(timeProvider) is not { } today)
+        {
+            return new ReadResult<PartyCollateralTypeCandidates>(ReadOutcome.Unavailable, null);
+        }
+
+        var catalog = await collateralTypes.ListAsync(context.CompanyId, today, cancellationToken);
         if (await RecordReadFenceAsync(context, cancellationToken) is { } fenced)
         {
             return new ReadResult<PartyCollateralTypeCandidates>(fenced, null);
@@ -482,11 +500,11 @@ public sealed class FinancePartyCollateralService(
         new(row.CollateralTypeId, row.CurrencyId, row.AmountText, row.ValidFrom, row.ValidUntil);
 
     /// <summary>
-    /// The date a collateral's validity and the Settings rate are read on: the UTC calendar date of the server clock
-    /// (NEEDS-SINAN: a company business date/time zone would replace it once one is decided).
+    /// FNS-D75: the date a collateral's validity and the Settings rate are read on — the company business day
+    /// (<see cref="FinanceBusinessDay"/>), or nothing when it cannot be resolved (the caller fails closed).
     /// </summary>
-    internal static DateOnly ReadDate(TimeProvider timeProvider) =>
-        DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+    internal static DateOnly? ReadDate(TimeProvider timeProvider) =>
+        FinanceBusinessDay.TryToday(timeProvider, out var day) ? day : null;
 
     /// <summary>The canonical content of a command: its name and the exact contract JSON of the request.</summary>
     internal static string PayloadHash<T>(string command, T request) =>
@@ -610,7 +628,13 @@ public sealed class FinancePartyCollateralService(
     private async Task<(FinanceCollateralTypeCatalogItem? Item, PartyCollateralCommandResult? Refusal)> TypeAsync(
         FinanceContext context, FinanceAction action, Guid collateralTypeId, CancellationToken cancellationToken)
     {
-        var catalog = await collateralTypes.ListAsync(context.CompanyId, ReadDate(timeProvider), cancellationToken);
+        if (ReadDate(timeProvider) is not { } today)
+        {
+            return (null, Refused(context, CommandOutcome.Unavailable,
+                Issue("collateralTypeId", FinanceBusinessDay.BusinessDayUnavailable)));
+        }
+
+        var catalog = await collateralTypes.ListAsync(context.CompanyId, today, cancellationToken);
         if (await FenceAsync(context, action, cancellationToken) is { } fenced)
         {
             return (null, fenced);

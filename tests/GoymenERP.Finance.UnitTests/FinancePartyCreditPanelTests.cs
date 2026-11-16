@@ -97,7 +97,7 @@ public sealed class FinancePartyCreditPanelTests
     }
 
     [Fact]
-    public async Task A_receivable_in_one_currency_beside_collateral_in_another_has_no_decided_rule_and_is_unavailable()
+    public async Task A_receivable_in_one_currency_beside_collateral_in_another_is_uncovered_and_the_utilization_is_zero()
     {
         await using var run = new Run();
         await run.SeedOpenItemAsync(OpenItem("900"));
@@ -109,8 +109,33 @@ public sealed class FinancePartyCreditPanelTests
 
         AssertAmount(view.OpenReceivables, Lira, "900");
         AssertAmount(view.WeightedCollateral, Dollar, "20");
-        AssertState(view.CollateralUtilization, PartyCreditPanelFigureState.Unavailable,
-            FinancePartyCollateralFigures.UtilizationCurrencyRuleNotSet);
+        // FNS-D74: the dollar collateral is zero cover for the lira receivable, a recorded zero rather than withheld.
+        Assert.Equal((PartyCreditPanelFigureState.Available, 0, (string?)null),
+            (view.CollateralUtilization.State, view.CollateralUtilization.Amounts.Count,
+                view.CollateralUtilization.ReasonCode));
+    }
+
+    [Fact]
+    public async Task The_panel_is_dated_on_the_Istanbul_business_day_not_the_UTC_day()
+    {
+        // FNS-D75: 22:30 UTC on 15 November is already 16 November in Istanbul; a collateral starting on the 16th is in force.
+        await using var run = new Run();
+        var tomorrow = Collateral("1000");
+        tomorrow.ValidFrom = Today.AddDays(1);
+        await run.SeedCollateralAsync(tomorrow);
+
+        var late = new DateTimeOffset(2026, 11, 15, 22, 30, 0, TimeSpan.Zero);
+        var view = (await run.GetAsync(new AllowOnly(Everything), Catalog("100"), at: late)).Resource!;
+
+        Assert.Equal(Today.AddDays(1), view.AsOf);
+        AssertAmount(view.HeldCollateral, Lira, "1000");
+        AssertAmount(view.WeightedCollateral, Lira, "1000");
+
+        // The same instant read as a UTC date would still be the 15th, before the collateral starts.
+        var morning = (await run.GetAsync(new AllowOnly(Everything), Catalog("100"))).Resource!;
+        Assert.Equal(Today, morning.AsOf);
+        Assert.Equal((PartyCreditPanelFigureState.Available, 0), (morning.HeldCollateral.State,
+            morning.HeldCollateral.Amounts.Count));
     }
 
     [Fact]
@@ -329,14 +354,14 @@ public sealed class FinancePartyCreditPanelTests
 
         public async Task<ReadResult<PartyCreditPanelView>> GetAsync(IFinancePermissionPort permissions,
             IFinanceCollateralTypeCatalogReader catalog, IFinancePartyAccountPort? parties = null, Guid? company = null,
-            Guid? requestCompany = null, Guid? party = null, Guid? account = null)
+            Guid? requestCompany = null, Guid? party = null, Guid? account = null, DateTimeOffset? at = null)
         {
             var companyId = company ?? CompanyA;
             await using var context = Memory(companyId);
             var companyContext = new CompanyContext();
             companyContext.Set(companyId);
             var service = new FinancePartyCreditPanelService(context, companyContext, new FixedUser(Reader, companyId),
-                permissions, parties ?? new FixedParty(), catalog, new FixedClock());
+                permissions, parties ?? new FixedParty(), catalog, new FixedClock(at ?? At));
             return await service.GetAsync(
                 new FinanceContext(requestCompany ?? companyId, Reader, "SENTETIK-correlation", null),
                 party ?? Party, account ?? Account, CancellationToken.None);
@@ -364,9 +389,9 @@ public sealed class FinancePartyCreditPanelTests
         }
     }
 
-    private sealed class FixedClock : TimeProvider
+    private sealed class FixedClock(DateTimeOffset at) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => At;
+        public override DateTimeOffset GetUtcNow() => at;
     }
 
     private sealed class FixedCatalog(FinanceCollateralTypeCatalogAnswer answer) : IFinanceCollateralTypeCatalogReader

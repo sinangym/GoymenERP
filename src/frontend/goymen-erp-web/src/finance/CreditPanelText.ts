@@ -48,13 +48,12 @@ export const CREDIT_PANEL_REASON: Readonly<Record<string, string>> = {
   finance_credit_limit_unreadable: 'Kredi limiti kaydı tam okunamadı.',
   finance_open_item_unreadable: 'Açık kalemlerden biri tam okunamadı; kısmi toplam gösterilmez.',
   finance_collateral_unreadable: 'Teminat kayıtlarından biri tam okunamadı; kısmi toplam gösterilmez.',
+  finance_business_day_unavailable:
+    'Şirket iş günü bu sunucuda belirlenemedi; teminat geçerliliği UTC tarihiyle tahmin edilmez.',
   finance_collateral_type_rate_unavailable:
     'Bir teminat türünün oranı Ayarlar\'dan okunamadı; varsayılan oran kullanılmaz.',
   finance_collateral_utilization_source_unavailable:
     'Açık alacak veya sayılan teminat hesaplanamadığı için doluluk hesaplanamaz.',
-  finance_collateral_utilization_currency_rule_not_set:
-    'Bir para biriminde artan teminat başka para birimindeki alacağa sayılabilir mi henüz kararlaştırılmadı; ' +
-    'doluluk tahminle gösterilmez.',
   finance_documentary_risk_status_unknown: 'Bir çek/senedin durumu tanınmıyor; evraklı risk hesaplanmaz.',
   finance_documentary_risk_unreadable: 'Bir çek/senedin tutarı tam okunamadı; kısmi toplam gösterilmez.',
   finance_documentary_risk_withheld: 'Çek/senet tutarlarını görme yetkiniz yok.',

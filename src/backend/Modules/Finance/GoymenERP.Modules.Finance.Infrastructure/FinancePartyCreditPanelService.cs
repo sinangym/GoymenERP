@@ -96,7 +96,12 @@ public sealed class FinancePartyCreditPanelService : IFinancePartyCreditPanelRea
                 cancellationToken))
             : null;
 
-        var asOf = FinancePartyCollateralService.ReadDate(timeProvider);
+        // FNS-D75: the panel is dated on the company business day; without it nothing is dated by a UTC guess.
+        if (FinancePartyCollateralService.ReadDate(timeProvider) is not { } asOf)
+        {
+            return new ReadResult<PartyCreditPanelView>(ReadOutcome.Unavailable, null);
+        }
+
         FinancePartyCollateralFigures.Figure? held = null;
         FinancePartyCollateralFigures.Figure? weighted = null;
         if (mayReadCollateral)

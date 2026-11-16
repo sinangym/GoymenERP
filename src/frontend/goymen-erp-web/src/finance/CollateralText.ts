@@ -146,6 +146,8 @@ export const COLLATERAL_FIGURE_REASON: Readonly<Record<string, string>> = {
   finance_collateral_type_rate_unavailable:
     'Bir teminat türünün oranı Ayarlar\'dan tam okunamadı; kısmi toplam veya varsayılan oran gösterilmez.',
   finance_collateral_unreadable: 'Teminat kayıtlarından biri tam okunamadı; kısmi toplam gösterilmez.',
+  finance_business_day_unavailable:
+    'Şirket iş günü bu sunucuda belirlenemedi; teminat geçerliliği UTC tarihiyle tahmin edilmez.',
   finance_documentary_risk_status_unknown: 'Bir çek/senedin durumu tanınmıyor; evraklı risk hesaplanmaz.',
   finance_documentary_risk_unreadable: 'Bir çek/senedin tutarı tam okunamadı; kısmi toplam gösterilmez.',
   finance_documentary_risk_withheld: 'Çek/senet tutarlarını görme yetkiniz yok; evraklı risk gösterilmez.',
@@ -161,6 +163,7 @@ export const COLLATERAL_ISSUE: Readonly<Record<string, string>> = {
   collateral_not_found: 'Teminat bulunamadı.',
   collateral_released: 'Bu teminat çözülmüş; artık değiştirilemez veya yeniden çözülemez.',
   collateral_type_catalog_unavailable: 'Teminat türleri Ayarlar\'dan şu anda okunamıyor.',
+  finance_business_day_unavailable: 'Şirket iş günü bu sunucuda belirlenemedi; işlem şu anda yapılamaz.',
   collateral_type_not_a_candidate: 'Seçilen teminat türü bu şirketin etkin teminat türleri arasında değil.',
   collateral_type_is_instrument: 'Çek veya senet teminat türü olarak kaydedilemez.',
   collateral_type_rate_unavailable: 'Seçilen teminat türünün oranı tam okunamıyor.',
