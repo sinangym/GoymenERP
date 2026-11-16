@@ -200,7 +200,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryFutureSupplyAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
-        Assert.Equal("AddInventorySupplierReturnExit", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventorySupplierReturnExit", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryOpeningCosts", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -273,6 +275,9 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-stock-scrap")]
     [InlineData("delete-stock-scrap")]
     [InlineData("edit-stock-scrap-decision")]
+    [InlineData("edit-opening-cost")]
+    [InlineData("delete-opening-cost")]
+    [InlineData("edit-opening-cost-decision")]
     [InlineData("edit-allocation-change")]
     [InlineData("delete-allocation-change")]
     [InlineData("edit-allocation-label")]
@@ -374,6 +379,20 @@ public sealed class InventoryPersistenceModelTests
                     CompanyId = CompanyA, ScrapId = Guid.NewGuid(), Decision = 2, Reason = "SYN-REJECT",
                     PayloadHash = new string('0', 64), DecidedAtUtc = At, DecidedBy = "synthetic", CorrelationId = "synthetic",
                 }).Decision = 1;
+                break;
+            case "edit-opening-cost":
+                // SAT-D304 opening cost: a submitted cost is never rewritten; a wrong one is rejected and entered again.
+                Attach(context, OpeningCost()).UnitCostPerKg = 1m;
+                break;
+            case "delete-opening-cost":
+                context.OpeningCosts.Remove(Attach(context, OpeningCost()));
+                break;
+            case "edit-opening-cost-decision":
+                Attach(context, new OpeningCostDecisionRow
+                {
+                    CompanyId = CompanyA, OpeningCostId = Guid.NewGuid(), Decision = 2, Reason = "SYN-REJECT",
+                    PayloadHash = new string('0', 64), DecidedAtUtc = At, DecidedBy = "synthetic", CorrelationId = "synthetic",
+                }).CostedStockKg = 1m;
                 break;
             case "edit-allocation-change":
                 // INV-AL-1 change: the history of a resize or move is evidence; it is never rewritten.
@@ -704,6 +723,44 @@ public sealed class InventoryPersistenceModelTests
     }
 
     [Fact]
+    public void The_opening_cost_migration_adds_company_scoped_append_only_tables_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryOpeningCosts();
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model;
+
+        // SAT-D304: a positive cost (a missing one is "yok", never zero) at the ledger's internal scale.
+        var openingCost = design.FindEntityType(typeof(OpeningCostRow))!;
+        Assert.Equal("[UnitCostPerKg] > 0",
+            Assert.Single(openingCost.GetCheckConstraints(), check => check.Name == "CK_OpeningCosts_Cost").Sql);
+        Assert.Equal((18, 4), (openingCost.FindProperty(nameof(OpeningCostRow.UnitCostPerKg))!.GetPrecision(),
+            openingCost.FindProperty(nameof(OpeningCostRow.UnitCostPerKg))!.GetScale()));
+        Assert.Contains(openingCost.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrganizationLocationReference)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LocationId"]));
+        Assert.Equal(["CompanyId", "Id"], openingCost.GetKeys().Single(key => !key.IsPrimaryKey())
+            .Properties.Select(property => property.Name));
+
+        // One decision per submission; an approval names the positive stock it costed, a rejection none.
+        var decision = design.FindEntityType(typeof(OpeningCostDecisionRow))!;
+        Assert.Equal(["CompanyId", "OpeningCostId"], decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OpeningCostRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OpeningCostId"])
+            && key.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "Id"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Equal("([Decision] = 1 AND [CostedStockKg] IS NOT NULL AND [CostedStockKg] > 0) OR ([Decision] = 2 AND [CostedStockKg] IS NULL)",
+            Assert.Single(decision.GetCheckConstraints(), check => check.Name == "CK_OpeningCostDecisions_Decision").Sql);
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51712", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[OpeningCosts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[OpeningCostDecisions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(["OpeningCostDecisions", "OpeningCosts"], migration.DownOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Select(operation => operation.Name));
+    }
+
+    [Fact]
     public void The_supplier_return_exit_migration_widens_the_movement_kind_check_and_its_Down_refuses_first()
     {
         var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventorySupplierReturnExit();
@@ -886,6 +943,20 @@ public sealed class InventoryPersistenceModelTests
     private static LabelRow Label() => new()
     {
         Id = Guid.NewGuid(), CompanyId = CompanyA, Code = "SYN-L", ProductId = BandProduct, LotId = Lot1, Version = 1,
+    };
+
+    private static OpeningCostRow OpeningCost() => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = CompanyA,
+        LocationId = Warehouse1,
+        ProductId = BandProduct,
+        UnitCostPerKg = 12.5m,
+        Reason = "SYN-OPENING",
+        PayloadHash = new string('0', 64),
+        RecordedAtUtc = At,
+        RecordedBy = "synthetic",
+        CorrelationId = "synthetic",
     };
 
     private static BalanceRow Balance() => new()

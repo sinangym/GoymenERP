@@ -319,6 +319,8 @@ builder.Services.AddScoped<IInventoryLabelClassificationCommandV1, InventoryLabe
 builder.Services.AddInventoryStockCounts();
 // ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
 builder.Services.AddInventoryStockScraps();
+// SAT-D304 / SAT-D372: the opening-stock cost submit/decide commands (giren ≠ onaylayan) behind the published routes.
+builder.Services.AddInventoryOpeningCosts();
 // D-05: read-only Inventory pending approvals composed into the existing Work inbox.
 builder.Services.AddInventoryPendingApprovalReads();
 // B-22a: the stock transfer plan/dispatch commands and the transfer read behind the published routes, with the
