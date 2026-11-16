@@ -5,7 +5,8 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// KLN-D94 (SINAN-CEVAP 34): the receipt host turns Inventory's F017-c conversion answer into receipt warnings. Synthetic host
+/// KLN-D94 (SINAN-CEVAP 34): the receipt host turns Inventory's F017-c conversion answer into receipt warnings; KLN-D110 (2)
+/// (ALC-SC34): after a link failure it releases every still Active allocation of the line through Inventory's release port. Synthetic host
 /// evidence only; the release itself (whole remainder, audit, released outbox) is Inventory's and is covered by its own tests.
 /// </summary>
 public sealed class PurchaseGoodsReceiptFutureSupplyReleaseTests
@@ -91,5 +92,121 @@ public sealed class PurchaseGoodsReceiptFutureSupplyReleaseTests
     {
         // The Purchasing service fails closed on an unknown code; this keeps the two owners' lists in step.
         Assert.Contains(failure, PurchaseReceiptFutureSupplyReleaseCodesV1.All);
+    }
+    // ---- KLN-D110 (2): every still Active allocation on the received line is released too ----------------------------------
+
+    private static readonly Guid GeneralLine = Guid.NewGuid();
+
+    private static readonly InventoryCommandMetadata SweepMetadata = new("SENTETIK-aktor", "SENTETIK-izin", [],
+        "SENTETIK-korelasyon", "SENTETIK-neden", "SENTETIK-anahtar", "SENTETIK-kanal");
+
+    private static InventoryFutureAllocationViewV1 ActiveView(Guid id, string remaining, string version = "3", Guid? line = null,
+        string status = "Active") => new(id, Guid.NewGuid(), version, status, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+        line ?? GeneralLine, Guid.NewGuid(), "SENTETIK-v1", Guid.NewGuid(), remaining, remaining, "0", "0", null, "SENTETIK",
+        null, null, null, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, null);
+
+    [Fact]
+    public async Task After_a_link_failure_every_still_active_allocation_of_the_line_is_released_whole_with_the_failure_text()
+    {
+        var first = ActiveView(Guid.NewGuid(), "4", version: "2");
+        var second = ActiveView(Guid.NewGuid(), "1.25", version: "7");
+        var session = new SweepSession([first, second]);
+
+        var releases = await PurchaseGoodsReceiptHost.Participants.ReleaseRemainingActiveAsync(session, GeneralLine,
+            InventoryFutureSupplyLinkFailuresV1.DemandNotApproved, SweepMetadata, CancellationToken.None);
+
+        Assert.Equal(new[]
+            {
+                new PurchaseReceiptFutureSupplyReleaseV1(first.AllocationId, "4", PurchaseReceiptFutureSupplyReleaseCodesV1.DemandNotApproved),
+                new PurchaseReceiptFutureSupplyReleaseV1(second.AllocationId, "1.25", PurchaseReceiptFutureSupplyReleaseCodesV1.DemandNotApproved),
+            }, releases.ToArray());
+        Assert.Equal(new[] { GeneralLine }, session.ListedLines.ToArray());
+        Assert.Equal(2, session.Released.Count);
+        Assert.All(session.Released, request =>
+        {
+            Assert.Null(request.QuantityText);
+            Assert.Equal(InventoryFutureAllocationReleaseReasonsV1.AcceptanceLinkFailed, request.ReasonCode);
+            Assert.Equal(InventoryFutureSupplyLinkFailuresV1.ReleaseText(InventoryFutureSupplyLinkFailuresV1.DemandNotApproved),
+                request.ReasonText);
+            Assert.Equal(InventoryFutureAllocationOriginsV1.Purchasing, request.Origin);
+        });
+        Assert.Equal(new[] { 2L, 7L }, session.Released.Select(request => request.ExpectedAllocationVersion).ToArray());
+        Assert.All(session.Metadata, metadata => Assert.Same(SweepMetadata, metadata));
+    }
+
+    [Fact]
+    public async Task A_line_with_no_other_active_allocation_releases_nothing_more()
+    {
+        var session = new SweepSession([]);
+
+        var releases = await PurchaseGoodsReceiptHost.Participants.ReleaseRemainingActiveAsync(session, GeneralLine,
+            InventoryFutureSupplyLinkFailuresV1.LabelBlocked, SweepMetadata, CancellationToken.None);
+
+        Assert.Empty(releases);
+        Assert.Empty(session.Released);
+    }
+
+    [Theory]
+    [InlineData("other-line")]
+    [InlineData("not-active")]
+    [InlineData("zero-remaining")]
+    [InlineData("bad-version")]
+    [InlineData("duplicate")]
+    [InlineData("not-released-after")]
+    [InlineData("unknown-code")]
+    public async Task An_inconsistent_sweep_answer_fails_closed_so_the_receipt_rolls_back(string fault)
+    {
+        var id = Guid.NewGuid();
+        var code = fault == "unknown-code" ? "acceptance-link-failed" : InventoryFutureSupplyLinkFailuresV1.ProductMismatch;
+        IReadOnlyList<InventoryFutureAllocationViewV1> active = fault switch
+        {
+            "other-line" => [ActiveView(id, "1", line: Guid.NewGuid())],
+            "not-active" => [ActiveView(id, "1", status: "Released")],
+            "zero-remaining" => [ActiveView(id, "0")],
+            "bad-version" => [ActiveView(id, "1", version: "x")],
+            "duplicate" => [ActiveView(id, "1"), ActiveView(id, "1")],
+            _ => [ActiveView(id, "1")],
+        };
+        var session = new SweepSession(active) { LeaveActive = fault == "not-released-after" };
+
+        var refusal = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+            PurchaseGoodsReceiptHost.Participants.ReleaseRemainingActiveAsync(session, GeneralLine, code, SweepMetadata,
+                CancellationToken.None));
+
+        Assert.Equal((503, InventoryGoodsReceiptCodesV1.Unavailable), (refusal.Status, refusal.Code));
+    }
+
+    private sealed class SweepSession(IReadOnlyList<InventoryFutureAllocationViewV1> active) : IInventoryFutureAllocationReleaseSessionV1
+    {
+        public bool LeaveActive { get; init; }
+        public List<Guid> ListedLines { get; } = [];
+        public List<InventoryFutureAllocationReleaseRequestV1> Released { get; } = [];
+        public List<InventoryCommandMetadata> Metadata { get; } = [];
+
+        public Task<IReadOnlyList<InventoryFutureAllocationViewV1>> ListActiveByPurchaseLineAsync(Guid purchaseOrderLineId,
+            CancellationToken cancellationToken = default)
+        {
+            ListedLines.Add(purchaseOrderLineId);
+            return Task.FromResult(active);
+        }
+
+        public Task<IReadOnlyList<InventoryFutureAllocationViewV1>> ListActiveByDemandLineAsync(Guid salesOrderLineId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<InventoryFutureAllocationViewV1> ReleaseAsync(InventoryFutureAllocationReleaseRequestV1 request,
+            InventoryCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Released.Add(request);
+            Metadata.Add(metadata);
+            var view = active.First(item => item.AllocationId == request.AllocationId);
+            return Task.FromResult(view with
+            {
+                Status = LeaveActive ? view.Status : "Released",
+                RemainingQuantity = "0",
+                ReleasedQuantity = view.RemainingQuantity,
+            });
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

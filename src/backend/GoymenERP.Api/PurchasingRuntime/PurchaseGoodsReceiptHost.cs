@@ -1,5 +1,7 @@
 using System.Data.Common;
+using System.Globalization;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.FutureSupply;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
@@ -38,6 +40,7 @@ internal sealed class PurchaseGoodsReceiptHost(
                 services.GetRequiredService<ISettingsPrerequisiteProvider>(), cancellationToken, clock);
             var participants = new Participants(companyId, purchase, inventory, locationStatus,
                 services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
+                services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(),
                 purchasing.Database.GetDbConnection(), transaction.GetDbTransaction());
             try
             {
@@ -111,7 +114,8 @@ internal sealed class PurchaseGoodsReceiptHost(
     /// </summary>
     internal sealed class Participants(Guid companyId, IPurchaseAcceptanceParticipantV1 purchase,
         IInventoryGoodsReceiptParticipantV1 inventory, IOrganizationLocationStatusReaderV1 locations,
-        IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply, DbConnection connection, DbTransaction transaction)
+        IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply, IInventoryFutureAllocationReleasePortV1 futureReleases,
+        DbConnection connection, DbTransaction transaction)
         : IPurchaseGoodsReceiptParticipantsV1
     {
         private PurchaseAcceptanceStageResultV1? staged;
@@ -164,12 +168,18 @@ internal sealed class PurchaseGoodsReceiptHost(
                 request.CustodianId, request.LocationId, block, request.MovementId, request.QuantityKg,
                 request.OccurredAtUtc), Metadata(envelope), cancellationToken);
             var conversion = await ConvertFutureSupplyAsync(result, envelope, cancellationToken);
+            var releases = LinkFailedReleases(conversion, result.AcceptanceId);
+            if (releases.Count > 0 && !conversion.IsReplay)
+            {
+                releases = [.. releases, .. await ReleaseRemainingActiveAsync(releases[0].FailureCode, envelope, cancellationToken)];
+            }
+
             return new(result.CompanyId, result.AcceptanceId, result.PurchaseOrderId, result.PurchaseOrderLineId,
                 result.PurchaseOrderVersion, result.ProductId, result.ProductVersion, result.PurchaseUnitId,
                 result.LotId, result.LabelId, result.LabelVersion, result.MovementId, result.QuantityKg,
                 result.IsReplay, result.OriginalCorrelationId)
             {
-                FutureSupplyReleases = LinkFailedReleases(conversion, result.AcceptanceId),
+                FutureSupplyReleases = releases,
             };
         }
 
@@ -228,6 +238,69 @@ internal sealed class PurchaseGoodsReceiptHost(
                             : InventoryGoodsReceiptCodesV1.ConcurrentChange)
                     : InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
             }
+        }
+
+        /// <summary>
+        /// KLN-D110 (2): once a link failure released an allocation, EVERY allocation still Active on the received general line is
+        /// released whole too (only the allocations this receipt's quantity reached were converted or failed by Inventory). The
+        /// owner's release port runs on the receipt's own connection and transaction, so Inventory writes its own allocation,
+        /// ledger, audit and <c>inventory.future-allocation.released.v1</c> outbox (reason <c>acceptance-link-failed</c>, the
+        /// failure's Turkish text, origin purchasing) and each Sales line responsible is warned by Sales from that event. A
+        /// replayed conversion is not swept again (it would release allocations created after the original receipt).
+        /// </summary>
+        private async Task<IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>> ReleaseRemainingActiveAsync(string failureCode,
+            PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
+        {
+            var acceptance = staged
+                ?? throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            try
+            {
+                await using var session = await futureReleases.EnlistAsync(connection, transaction, cancellationToken);
+                return await ReleaseRemainingActiveAsync(session, acceptance.PurchaseOrderGeneralLineId ?? acceptance.PurchaseOrderLineId,
+                    failureCode, Metadata(envelope), cancellationToken);
+            }
+            catch (InventoryAllocationException exception)
+            {
+                throw exception.Status == 409
+                    ? InventoryGoodsReceiptException.Refused(409, InventoryGoodsReceiptCodesV1.ConcurrentChange)
+                    : InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            }
+        }
+
+        /// <summary>
+        /// The KLN-D110 sweep over one release session: each Active allocation of <paramref name="generalLineId"/> is released whole
+        /// with the version just read and becomes one more receipt warning with the triggering failure code. An answer for another
+        /// line, a non-positive remainder, an unreadable version or a release that does not end Released fails closed (503).
+        /// </summary>
+        internal static async Task<IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>> ReleaseRemainingActiveAsync(
+            IInventoryFutureAllocationReleaseSessionV1 session, Guid generalLineId, string failureCode,
+            InventoryCommandMetadata metadata, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+            if (generalLineId == Guid.Empty || !PurchaseReceiptFutureSupplyReleaseCodesV1.All.Contains(failureCode))
+                throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            var reasonText = InventoryFutureSupplyLinkFailuresV1.ReleaseText(failureCode);
+            var active = await session.ListActiveByPurchaseLineAsync(generalLineId, cancellationToken)
+                ?? throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            var releases = new List<PurchaseReceiptFutureSupplyReleaseV1>();
+            foreach (var view in active)
+            {
+                if (view is null || view.AllocationId == Guid.Empty || view.PurchaseOrderLineId != generalLineId
+                    || view.Status != FutureSupplyAllocationStatus.Active.ToString()
+                    || !long.TryParse(view.Version, NumberStyles.None, CultureInfo.InvariantCulture, out var version) || version <= 0
+                    || !decimal.TryParse(view.RemainingQuantity, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var remaining)
+                    || remaining <= 0m || releases.Any(current => current.FutureAllocationId == view.AllocationId))
+                    throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                var after = await session.ReleaseAsync(new InventoryFutureAllocationReleaseRequestV1(view.AllocationId, version, null,
+                    InventoryFutureAllocationReleaseReasonsV1.AcceptanceLinkFailed, reasonText, InventoryFutureAllocationOriginsV1.Purchasing),
+                    metadata, cancellationToken);
+                if (after is null || after.AllocationId != view.AllocationId
+                    || after.Status != FutureSupplyAllocationStatus.Released.ToString())
+                    throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                releases.Add(new PurchaseReceiptFutureSupplyReleaseV1(view.AllocationId, view.RemainingQuantity, failureCode));
+            }
+
+            return releases;
         }
 
         private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope) => new(
