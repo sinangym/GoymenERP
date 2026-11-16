@@ -42,8 +42,8 @@ düşünülebilir" isteği üzerine açık ürün maddelerinden derlendi. "(Öne
 - Taslaktaki 31 EN 10255 borusunun kaynak etiketi SINAN-CEVAP 42.4 ile cevaplandı (EK20 URN-D24, #1186). L serisi 9 satırın ölçüleri doğrulanmamıştır ve öyle işaretlidir.
 - 28.1 sorusundaki "en büyük sapma %0,36" rakamı, taslak hazırlanırken 19 ölçünün yayımlanmış tablolarla
   karşılaştırılmasından gelir. Karşılaştırma listesi depoda yoktur ve rakam doğrulanmış kabul edilmez. Soru,
-  Sinan'a sorulduğu biçimiyle kayıtlıdır. Yuvarlak formülde kullanılan `0,02466` katsayısı π·7,85/1000
-  değerinin yuvarlanmış halidir; tam katsayıyla fark en çok 0,0005 kg/m'dir.
+  Sinan'a sorulduğu biçimiyle kayıtlıdır. Veri tablosundaki yuvarlak değerler tam katsayı π·7,85/1000 ile
+  hesaplandı ve 3 ondalığa yuvarlandı; CSV `Note` kolonundaki `0,02466` metni tarihsel bir etikettir (#1184).
 - URN-D17'deki içe aktarma dilimi (STK-S37) SC27 karar PR'ına (#1170) dayanır.
 - Bu belge `OPEN-004` ve `OPEN-005`'i kapatmaz; başlangıç değerlerine işletme onayı verir. Kapanış saha golden kanıtı
   ve ayrı Sinan kararı ister.
