@@ -25,6 +25,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 /// 1.5 (F-029 S1/S2, URN-D2/D3): the unit profile screen (<c>/ayarlar/birim-profilleri</c>) on
 /// <see cref="SettingsUnitProfilePermissionManifestV1.Manage"/>, company-wide, in one company, on its one name; granted to
 /// no role here and not Critical.
+/// 1.5 (URT-D89): the work center capacity screen (<c>/ayarlar/is-merkezi-kapasitesi</c>) on
+/// <see cref="SettingsWorkCenterCapacityPermissionManifestV1.Manage"/>, company-wide, in one company, on its one name. The
+/// name is granted to no role here (the production manager is a persona note only) and is not Critical.
 /// </para>
 /// </summary>
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
@@ -89,6 +92,13 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string UnitProfilesRouteId = SettingsUnitProfilePermissionManifestV1.Manage;
     public const string UnitProfilesRoutePath = "/ayarlar/birim-profilleri";
     public const string UnitProfilesScreenId = "AY-BRP-01";
+    // URT-D89 (provider 1.5): the company's work center capacities (input kg/hour and the optional safety buffer; no seed;
+    // versions per work center, a new version) on settings.work-center-capacities.manage alone, company-wide, in one
+    // company; granted to no role here.
+    public const string WorkCenterCapacityCapabilityId = SettingsWorkCenterCapacityPermissionManifestV1.Manage;
+    public const string WorkCenterCapacityRouteId = SettingsWorkCenterCapacityPermissionManifestV1.Manage;
+    public const string WorkCenterCapacityRoutePath = "/ayarlar/is-merkezi-kapasitesi";
+    public const string WorkCenterCapacityScreenId = "AY-IMK-01";
 
     public string Owner => OwnerId;
 
@@ -202,6 +212,16 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsUnitProfilePermissionManifestV1.Manage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                WorkCenterCapacityCapabilityId,
+                WorkCenterCapacityRouteId,
+                WorkCenterCapacityRoutePath,
+                WorkCenterCapacityScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsWorkCenterCapacityPermissionManifestV1.Manage],
                 ImplementationAvailable: true),
         ];
     }

@@ -25,8 +25,8 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(settings?.entries).toContain(CAPABILITY.settingsSalesDiscountLimits)
   })
 
-  it('mounts the eight static routes', () => {
-    expect(settingsRoutes).toHaveLength(8)
+  it('mounts the nine static routes', () => {
+    expect(settingsRoutes).toHaveLength(9)
     expect(matchRoutes(settingsRoutes, '/ayarlar/iskonto-limitleri')?.at(-1)?.route.path).toBe('ayarlar/iskonto-limitleri')
     expect(matchRoutes(settingsRoutes, '/ayarlar/vergi')?.at(-1)?.route.path).toBe('ayarlar/vergi')
     expect(matchRoutes(settingsRoutes, '/ayarlar/kurlar')?.at(-1)?.route.path).toBe('ayarlar/kurlar')
@@ -39,6 +39,9 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
       'ayarlar/birim-cevrim-politikasi',
     )
     expect(matchRoutes(settingsRoutes, '/ayarlar/birim-profilleri')?.at(-1)?.route.path).toBe('ayarlar/birim-profilleri')
+    expect(matchRoutes(settingsRoutes, '/ayarlar/is-merkezi-kapasitesi')?.at(-1)?.route.path).toBe(
+      'ayarlar/is-merkezi-kapasitesi',
+    )
   })
 
   it('mirrors the MOD-03 tax master id, route and label, with one navigation entry under Ayarlar', () => {
@@ -111,5 +114,19 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(SETTINGS_CAPABILITY.loginRateLimit).toBe('settings.login-rate-limit.manage')
     expect(SETTINGS_CAPABILITY.unitConversionPolicy).toBe('settings.unit-conversion-policies.manage')
     expect(SETTINGS_CAPABILITY.unitProfiles).toBe('settings.unit-profiles.manage')
+  })
+
+  it('mirrors the URT-D89 work center capacity id, route and label, one Ana Veriler entry after the work centers', () => {
+    const shellId = CAPABILITY.settingsWorkCenterCapacity
+    const entries = NAV_GROUPS.find((group) => group.id === 'settings')?.entries ?? []
+    expect(shellId).toBe(SETTINGS_CAPABILITY.workCenterCapacity)
+    expect(CAPABILITY_ROUTE[shellId]).toBe(SETTINGS_ROUTE[SETTINGS_CAPABILITY.workCenterCapacity])
+    expect(CAPABILITY_NAV_LABEL[shellId]).toBe(SETTINGS_NAV_LABEL[SETTINGS_CAPABILITY.workCenterCapacity])
+    expect(NAV_CAPABILITIES.filter((item) => item === shellId)).toHaveLength(1)
+    expect(entries.filter((item) => item === shellId)).toHaveLength(1)
+    expect(entries.indexOf(shellId)).toBe(entries.indexOf('organization.work-centers.list') + 1)
+    expect(entries.indexOf(shellId)).toBeLessThan(entries.indexOf(CAPABILITY.identityAssignmentsList))
+    expect(entries.at(-1)).toBe('inventory.opening-stock.record')
+    expect(SETTINGS_CAPABILITY.workCenterCapacity).toBe('settings.work-center-capacities.manage')
   })
 })

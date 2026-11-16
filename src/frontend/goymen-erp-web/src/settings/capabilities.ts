@@ -46,6 +46,11 @@ export const SETTINGS_CAPABILITY = {
    * `settings.unit-profiles.manage` (company-wide, not Critical, granted to no role here).
    */
   unitProfiles: 'settings.unit-profiles.manage',
+   * URT-D89 (provider 1.5): route `/ayarlar/is-merkezi-kapasitesi`, the company's work center capacities (input kg/hour and
+   * the optional safety buffer) on its own name `settings.work-center-capacities.manage` (company-wide, not Critical,
+   * granted to no role here; the production manager is a persona note only).
+   */
+  workCenterCapacity: 'settings.work-center-capacities.manage',
 } as const
 
 /**
@@ -70,6 +75,7 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.loginRateLimit]: '/ayarlar/giris-deneme-siniri',
   [SETTINGS_CAPABILITY.unitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [SETTINGS_CAPABILITY.unitProfiles]: '/ayarlar/birim-profilleri',
+  [SETTINGS_CAPABILITY.workCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
@@ -81,4 +87,5 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.loginRateLimit]: 'Giriş deneme sınırı',
   [SETTINGS_CAPABILITY.unitConversionPolicy]: 'Birim çevrim politikası',
   [SETTINGS_CAPABILITY.unitProfiles]: 'Birim profilleri',
+  [SETTINGS_CAPABILITY.workCenterCapacity]: 'İş merkezi kapasitesi',
 }

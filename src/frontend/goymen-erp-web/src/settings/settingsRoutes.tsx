@@ -15,6 +15,7 @@ import { SalesPolicyDeliveryTolerancePage } from './SalesPolicyDeliveryTolerance
 import { TaxMasterPage } from './TaxMasterPage'
 import { UnitConversionPolicyPage } from './UnitConversionPolicyPage'
 import { UnitProfilePage } from './UnitProfilePage'
+import { WorkCenterCapacityPage } from './WorkCenterCapacityPage'
 
 export const settingsRoutes: RouteObject[] = [
   {
@@ -78,6 +79,14 @@ export const settingsRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={SETTINGS_CAPABILITY.unitProfiles}>
         <UnitProfilePage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.workCenterCapacity].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.workCenterCapacity}>
+        <WorkCenterCapacityPage />
       </CapabilityRoute>
     ),
   },

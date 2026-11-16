@@ -168,6 +168,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.unit-conversion-policies.manage',
   /** F-029 S1/S2 (URN-D2): the Settings unit profile screen, drawn only where the server granted its one name. */
   'settings.unit-profiles.manage',
+  /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
+  'settings.work-center-capacities.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -274,6 +276,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.login-rate-limit.manage': 'Giriş deneme sınırı',
   'settings.unit-conversion-policies.manage': 'Birim çevrim politikası',
   'settings.unit-profiles.manage': 'Birim profilleri',
+  'settings.work-center-capacities.manage': 'İş merkezi kapasitesi',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -412,6 +415,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'organization.sites.list',
       'organization.work-centers.list',
+      // URT-D89: the work center capacity follows the work centers it belongs to inside Ana Veriler.
+      'settings.work-center-capacities.manage',
       'organization.company.tax-id',
       // F-004, KIM-D37: the unit conversion policy sits before the rates (KLN-D2 order: organization, units, rates).
       'settings.unit-conversion-policies.manage',

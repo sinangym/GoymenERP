@@ -834,3 +834,26 @@ the fallback while the record cannot be read.
 Open: the client IP behind a reverse proxy (forwarded headers) decides the partition key; it is NEEDS-SINAN and not changed
 here. The unit conversion policy screen (Ayarlar → Birim çevrim politikası, KIM-D37) is in this slice too: no value is
 seeded, the decision values are reminder texts, and the coefficient rounding direction is shown as decided (KLN-D88, `AwayFromZero`) and is not selectable.
+
+## Work center capacity and due-date safety buffer (URT-D87, URT-D89, URT-D91, URT-D92)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK12.md` URT-D89 and the URT-D91/URT-D92 notes. Each work center
+can have a versioned capacity record: input kg per hour (URT-D87) and an optional due-date safety buffer. The decided persona
+is Üretim Müdürü; that is a note for the human grant, and no role gets the name. Nothing is seeded (URT-D91). A work center
+without a record has no capacity, so the due-date suggestion answers "hesaplanamadı". A record without a buffer counts as
+buffer 0. The per-work-center buffer is the only buffer (URT-D92); there is no company-wide buffer.
+
+| Part | What |
+|---|---|
+| Table | `WorkCenterCapacityVersions`, keyed by (`CompanyId`, `WorkCenterId`, `Version`) under the company filter. It holds the input capacity (`decimal(18,6)`, > 0), the buffer value (`decimal(9,3)`, > 0) and the buffer unit (`Hours`/`Days`) as a pair that is either both null (no buffer) or both set, plus who recorded it, when and why. Rows are insert-only and the latest version is in force. CHECK constraints hold the shape. Settings stores the Organization work center id and writes no Organization table. |
+| Migration | `AddWorkCenterCapacityVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51333` while any version exists (forward fix). An empty store rolls back freely. |
+| Port | `ISettingsWorkCenterCapacityProviderV1.GetWorkCenterCapacityAsync(companyId, workCenterId)` returns `SettingsWorkCenterCapacityV1` (the latest version), or `null` when nothing is recorded. The company must be the server company. Errors are `settings_access_denied`, `settings_provider_unavailable` and `settings_profile_invalid`; an error never falls back to a default capacity. The consumer decides how a `Days` buffer is counted (working or calendar days; NEEDS-SINAN). Settings stores the value with the unit it was entered in. |
+| Work center check | `ISettingsWorkCenterReferenceV1`: the API host adapter `SettingsWorkCenterReferenceHost` asks the Organization owner's `IOrganizationWorkCenterPlanningReferenceV1`. An unknown or foreign work center gives a stored 404 `settings_work_center_capacity_work_center_not_found`. A missing or failing owner gives 503 `settings_provider_unavailable` (fail closed). |
+| Name | `settings.work-center-capacities.manage`: registered, company-wide, not Critical, **granted to no role** (human gate; persona Üretim Müdürü). |
+| Routes | `GET /api/v1/settings/work-center-capacities` lists the work centers that have a record, each with its versions newest first. `POST /api/v1/settings/work-center-capacities/{workCenterId}/versions` returns 204. Decimals travel as invariant text. |
+| Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). It makes one save with the execution row and one audit event (`settings.work-center-capacity.recorded.v1`, entity = work center id). There is no second approval. Terminal refusals (404, 409) are stored and replay. An unchanged value is a stored no-op without audit. |
+| Screen | Ayarlar → İş merkezi kapasitesi (`/ayarlar/is-merkezi-kapasitesi`, AY-IMK-01). It lists the Organization work centers with their current capacity and buffer, the history and a new-version form. It suggests no value. |
+| Evidence | Unit: `WorkCenterCapacityRulesV1Tests`. Model: `SettingsWorkCenterCapacityPersistenceModelTests`. Names: `SettingsWorkCenterCapacityPermissionRegistrationTests`, `SettingsShellAuthorityTests`. Real SQL: `SettingsWorkCenterCapacitySqlServerRelationalAcceptanceTests`. Screen: `WorkCenterCapacityPage.test.tsx`. |
+
+Open: whether a `Days` buffer counts working days or calendar days (NEEDS-SINAN; the consumer applies it), and a
+company-wide buffer (NEEDS-SINAN, URT-D91 limits).
