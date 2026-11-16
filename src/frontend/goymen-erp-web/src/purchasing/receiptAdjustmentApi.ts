@@ -6,7 +6,7 @@ export type AdjustmentOutcome<T> = { readonly type: 'applied'; readonly response
   | { readonly type: 'failed'; readonly status: number; readonly code: string | null; readonly isReplay?: boolean }
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'malformed' | 'service-unavailable'; readonly status?: number }
 
-async function post<T>(company: string, path: string, payload: unknown, key: string, expectedStatus: number,
+export async function post<T>(company: string, path: string, payload: unknown, key: string, expectedStatus: number,
   decode: (body: unknown, replay: boolean) => T | null): Promise<AdjustmentOutcome<T>> {
   try {
     const response = await fetch(path, { method: 'POST',

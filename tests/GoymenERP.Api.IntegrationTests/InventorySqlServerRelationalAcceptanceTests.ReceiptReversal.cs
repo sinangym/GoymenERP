@@ -126,7 +126,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private sealed record ReceiptReversalSeed(InventoryGoodsReceiptRequestV1 Receipt, Guid FutureId,
         Guid ConversionId, Guid PhysicalId, Guid SalesOrder, Guid SalesLine);
 
-    private static async Task<ReceiptReversalSeed> SeedReceiptReversalAsync(Run run)
+    private static async Task<ReceiptReversalSeed> SeedReceiptReversalAsync(Run run, char conversionKey = 'a')
     {
         var receipt = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
         var seed = new ReceiptReversalSeed(receipt, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
@@ -156,7 +156,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             PhysicalAllocationId = seed.PhysicalId, PhysicalQuantityKg = 3m, CreatedAtUtc = GoodsReceiptTime });
         context.Commands.Add(new() { CompanyId = CompanyA,
             CommandName = InventoryGoodsReceiptFutureSupplyV1.CommandName,
-            IdempotencyKeyHash = new string('a', 64), PayloadHash = new string('b', 64),
+            IdempotencyKeyHash = new string(conversionKey, 64), PayloadHash = new string('b', 64),
             ActorId = "SENTETIK-conversion", TargetId = receipt.AcceptanceId,
             ResultJson = JsonSerializer.Serialize(new InventoryGoodsReceiptFutureSupplyResultV1(receipt.AcceptanceId,
                 [new(seed.FutureId, nameof(InventoryFutureSupplyConversionOutcomeV1.Converted), "3", seed.PhysicalId, "3", null)], false),

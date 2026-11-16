@@ -20,6 +20,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Throws<JsonException>(() => PurchaseReceiptReversalBatchJsonV1.Validate(duplicateMovement));
         Assert.Throws<JsonException>(() => PurchaseReceiptReversalBatchJsonV1.Validate(request with { ExpectedPurchaseOrderVersion = "04" }));
         Assert.Throws<JsonException>(() => PurchaseReceiptReversalBatchJsonV1.Validate(request with { Lines = [] }));
+        Assert.True(PurchasingCommands.IsKnown(PurchaseReceiptReversalBatchApiV1.CommandName));
     }
 
     [Theory]
@@ -37,6 +38,18 @@ public sealed partial class PurchasingServiceTests
         var result = await world.Service(reversalBatches: host).ReverseGoodsReceiptsAsync(order, request, Metadata("reverse-batch-retry"));
         Assert.Equal(request.BatchId, result.BatchId); Assert.Equal(request.Lines.Count, result.Lines.Count);
         Assert.Equal((2, 1), (host.Calls, host.Writes)); Assert.All(result.Lines, line => Assert.Equal(result.OrderVersion, line.Purchase.OrderVersion));
+    }
+
+    [Fact]
+    public async Task A_batch_terminal_business_refusal_is_recorded_under_the_public_batch_command_after_the_owner_rollback()
+    {
+        var world = new World(); var host = new ReversalBatchHostFake { Failure = new(409, "inventory_future_allocation_already_fulfilled") };
+        await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(reversalBatches: host)
+            .ReverseGoodsReceiptsAsync(Guid.NewGuid(), ReversalBatchRequest(), Metadata("reverse-batch-terminal")));
+        var refusal = Assert.Single(world.Store.Refusals);
+        Assert.Equal(PurchaseReceiptReversalBatchApiV1.CommandName, refusal.Command);
+        Assert.Equal((409, "inventory_future_allocation_already_fulfilled"), (refusal.Refusal.Status, refusal.Refusal.Code));
+        Assert.Equal(0, host.Writes);
     }
 
     [Fact]
@@ -72,7 +85,7 @@ public sealed partial class PurchasingServiceTests
                 new PurchaseReceiptReversalResponseV1(new(companyId, line.AdjustmentId, write.OrderId, line.AcceptanceId,
                     Guid.NewGuid(), Guid.NewGuid(), "5", "2", "2", false, false, envelope.CorrelationId),
                     new(companyId, line.AdjustmentId, line.AcceptanceId, line.InventoryMovementId, Guid.NewGuid(), Guid.NewGuid(), "2",
-                        line.MeasuredUndoQuantityKg, [], false, envelope.CorrelationId), null)).ToArray(), false, false, envelope.CorrelationId);
+                        line.MeasuredUndoQuantityKg, [], false, envelope.CorrelationId), null)).ToArray(), [], false, false, envelope.CorrelationId);
         }
     }
 }

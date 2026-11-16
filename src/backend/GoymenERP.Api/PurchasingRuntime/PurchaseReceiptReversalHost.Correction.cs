@@ -10,15 +10,17 @@ namespace GoymenERP.Api.PurchasingRuntime;
 internal sealed partial class PurchaseReceiptReversalHost
 {
     private async Task<PurchaseReceiptCorrectionStockV1?> CorrectionAsync(DbConnection connection, DbTransaction transaction,
-        IPurchaseReceiptAdjustmentParticipantV1 purchase,
+        IPurchaseReceiptAdjustmentParticipantV1? purchase,
         Guid companyId, PurchaseReceiptReversalWriteV1 write, PurchaseReceiptAdjustmentResultV1 adjusted,
         InventoryGoodsReceiptReversalResultV1 reversed, PurchasingWriteEnvelope envelope,
-        Func<CancellationToken, Task> freshAuthority, CancellationToken token)
+        Func<CancellationToken, Task> freshAuthority, CancellationToken token,
+        PurchaseReceiptAdjustmentTargetV1? batchTarget = null, IReadOnlyList<Guid>? batchReopened = null,
+        InventoryCommandMetadata? batchMetadata = null)
     {
         if (adjusted.IsReplay != reversed.IsReplay || adjusted.OriginalCorrelationId != reversed.OriginalCorrelationId) throw Unavailable();
         var next = write.Request.ReplacementReceipt;
         if (next is null) return null;
-        var metadata = Metadata(envelope, write.CommandName);
+        var metadata = batchMetadata ?? Metadata(envelope, write.CommandName);
         await using var receipt = await InventoryGoodsReceiptParticipant.EnlistAsync(connection, transaction, companyId,
             services.GetRequiredService<ISettingsPrerequisiteProvider>(), token, clock);
         InventoryGoodsReceiptRequestV1 request;
@@ -40,7 +42,8 @@ internal sealed partial class PurchaseReceiptReversalHost
             // This is the existing NEW-receipt location/ownership/block/document policy, applied after the genuine
             // Purchasing correction acceptance has been flushed. No second RecordAcceptance call is made.
             {
-                var owner = RequireTarget(await purchase.ReadTargetAsync(write.OrderId, write.AcceptanceId, token), companyId, write);
+                var owner = RequireTarget(batchTarget ?? (purchase is null ? throw Unavailable()
+                    : await purchase.ReadTargetAsync(write.OrderId, write.AcceptanceId, token)), companyId, write);
                 await freshAuthority(token);
                 var location = await locations.ReadAsync(companyId, next.LocationId, token);
                 await freshAuthority(token);
@@ -60,7 +63,8 @@ internal sealed partial class PurchaseReceiptReversalHost
             || stocked.PurchaseOrderVersion != adjusted.OrderVersion || stocked.OriginalCorrelationId != adjusted.OriginalCorrelationId
             || stocked.QuantityKg != next.MeasuredQuantityKg || stocked.LabelId != next.LabelId || stocked.MovementId != next.MovementId)
             throw Unavailable();
-        var reopened = reversed.Conversions.Where(item => item.ReopenedQuantity != "0").Select(item => item.FutureAllocationId).Distinct().ToArray();
+        var reopened = batchReopened?.ToArray() ?? reversed.Conversions.Where(item => item.ReopenedQuantity != "0")
+            .Select(item => item.FutureAllocationId).Distinct().ToArray();
         await using var conversion = await services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>()
             .EnlistAsync(connection, transaction, token);
         var converted = await conversion.ConvertAsync(new(companyId, next.AcceptanceId, write.OrderId, adjusted.GeneralLineId,

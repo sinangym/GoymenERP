@@ -19,7 +19,9 @@ namespace GoymenERP.Api.PurchasingRuntime;
 /// <summary>API-44 / F017-e: owners borrow one transaction. All retries end before the first owner write.</summary>
 internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext purchasing, IServiceProvider services,
     IOrganizationLocationStatusReaderV1 locations, TimeProvider clock,
-    PurchaseReceiptAdjustmentParticipantFactoryV1? ownerFactory = null) : IPurchaseReceiptReversalTransactionV1
+    PurchaseReceiptAdjustmentParticipantFactoryV1? ownerFactory = null,
+    PurchaseReceiptAdjustmentBatchParticipantFactoryV1? batchOwnerFactory = null) : IPurchaseReceiptReversalTransactionV1,
+    IPurchaseReceiptReversalBatchTransactionV1
 {
     public Task<PurchaseReceiptReversalResponseV1> ExecuteAsync(Guid companyId, PurchaseReceiptReversalWriteV1 write,
         PurchasingWriteEnvelope envelope, Func<CancellationToken, Task> freshAuthority,

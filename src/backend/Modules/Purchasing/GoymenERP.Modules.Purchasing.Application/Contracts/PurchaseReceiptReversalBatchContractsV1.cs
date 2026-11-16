@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Data.Common;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -16,8 +17,12 @@ public sealed record ReversePurchaseReceiptBatchLineV1(Guid AcceptanceId, Guid A
 }
 
 public sealed record PurchaseReceiptReversalBatchResponseV1(Guid CompanyId, Guid OrderId, Guid BatchId,
-    string OrderVersion, IReadOnlyList<PurchaseReceiptReversalResponseV1> Lines, bool Revived, bool IsReplay,
+    string OrderVersion, IReadOnlyList<PurchaseReceiptReversalResponseV1> Lines,
+    IReadOnlyList<PurchaseReceiptAdjustmentBatchSupplyV1> Supplies, bool Revived, bool IsReplay,
     string OriginalCorrelationId);
+
+public delegate Task<IPurchaseReceiptAdjustmentBatchParticipantV1> PurchaseReceiptAdjustmentBatchParticipantFactoryV1(
+    DbConnection connection, DbTransaction transaction, Guid companyId, CancellationToken cancellationToken);
 
 public sealed record PurchaseReceiptReversalBatchWriteV1(Guid OrderId, ReversePurchaseReceiptsV1 Request);
 

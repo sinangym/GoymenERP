@@ -7,7 +7,7 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Explicitly synthetic owner/read-set/lock protocol; not SQL exclusion or the complete Purchasing undo journey.</summary>
-public sealed class PurchaseReceiptReversalPrelockTests
+public sealed partial class PurchaseReceiptReversalPrelockTests
 {
     [Fact]
     public void Supplier_return_child_keys_are_scoped_to_the_original_logical_command()
@@ -88,7 +88,7 @@ public sealed class PurchaseReceiptReversalPrelockTests
             Id(purchase), Product, "7", Unit, "2", "2", "0", "0", null, "SENTETIK", null, null, null,
             DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, null);
 
-    private sealed class World : IPurchaseReceiptAdjustmentParticipantV1, IInventoryGoodsReceiptReversalParticipantV1,
+    private sealed class World : IPurchaseReceiptAdjustmentParticipantV1, IPurchaseReceiptAdjustmentBatchParticipantV1, IInventoryGoodsReceiptReversalParticipantV1,
         IInventoryFutureAllocationReleaseSessionV1, ISalesOrderLineSerializationLockV1, IPurchaseLineSerializationLockV1
     {
         public List<string> Locks { get; } = [];
@@ -109,17 +109,17 @@ public sealed class PurchaseReceiptReversalPrelockTests
         {
             TargetReads++;
             return Task.FromResult<PurchaseReceiptAdjustmentTargetV1?>(new(TargetFault == "company" ? Id(999) : Company,
-                Order, Acceptance, General, TargetFault == "general" ? Guid.Empty : General, Product, "7", Unit, true,
+                Order, acceptanceId, General, TargetFault == "general" ? Guid.Empty : General, Product, "7", Unit, true,
                 TargetFault == "version" ? "04" : "4", "4", "0"));
         }
 
         public Task<InventoryGoodsReceiptReversalTargetV1?> ReadTargetAsync(Guid acceptanceId, CancellationToken token = default)
         {
             InventoryReads++;
-            var request = new InventoryGoodsReceiptRequestV1(Company, Acceptance, Order, General, "4", Product, "7", Unit,
+            var request = new InventoryGoodsReceiptRequestV1(Company, acceptanceId, Order, General, "4", Product, "7", Unit,
                 Id(910), Id(911), "SENTETIK", null, null, [], StockPartyKind.Company, Company, StockPartyKind.Company, Company,
                 Id(912), BlockState.Free, Id(913), "4", DateTimeOffset.UnixEpoch);
-            var result = new InventoryGoodsReceiptResultV1(Company, Acceptance, Order, General, "4", Product, "7", Unit,
+            var result = new InventoryGoodsReceiptResultV1(Company, acceptanceId, Order, General, "4", Product, "7", Unit,
                 request.LotId, request.LabelId, "1", request.MovementId, "4", false, "SENTETIK");
             return Task.FromResult<InventoryGoodsReceiptReversalTargetV1?>(new(new(request, result), "1", "0",
                 [new(Id(914), Id(915), Id(503), Id(3), General, "1", "2", "2", "0", Id(916))]));
@@ -151,6 +151,15 @@ public sealed class PurchaseReceiptReversalPrelockTests
         public Task<PurchaseReceiptAdjustmentResultV1> StageAsync(PurchaseReceiptAdjustmentStageV1 request, PurchasingWriteEnvelope envelope, CancellationToken token = default)
         { Writes++; throw new NotSupportedException(); }
         public Task<PurchaseReceiptAdjustmentSupplyV1?> ReadSupplyAsync(Guid order, Guid line, CancellationToken token = default) => throw new NotSupportedException();
+        public async Task<IReadOnlyList<PurchaseReceiptAdjustmentTargetV1>> ReadTargetsAsync(Guid order, IReadOnlyList<Guid> acceptances, CancellationToken token = default)
+        {
+            var result = new List<PurchaseReceiptAdjustmentTargetV1>();
+            foreach (var acceptance in acceptances) result.Add((await ReadTargetAsync(order, acceptance, token))!);
+            return result;
+        }
+        public Task<PurchaseReceiptAdjustmentBatchResultV1?> FindBatchReplayAsync(string command, string hash, PurchasingWriteEnvelope envelope, CancellationToken token = default) => throw new NotSupportedException();
+        public Task<PurchaseReceiptAdjustmentBatchResultV1> StageBatchAsync(PurchaseReceiptAdjustmentBatchStageV1 request, PurchasingWriteEnvelope envelope, CancellationToken token = default)
+        { Writes++; throw new NotSupportedException(); }
         public Task<InventoryGoodsReceiptReversalResultV1?> ReadReplayAsync(InventoryGoodsReceiptReversalRequestV1 request, InventoryCommandMetadata metadata, CancellationToken token = default) => throw new NotSupportedException();
         public Task<InventoryGoodsReceiptReversalResultV1> StageAsync(InventoryGoodsReceiptReversalRequestV1 request, InventoryGoodsReceiptReversalSupplyV1 supply,
             InventoryCommandMetadata metadata, CancellationToken token = default) { Writes++; throw new NotSupportedException(); }
