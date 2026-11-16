@@ -27,7 +27,9 @@
 
 ## Doğrulama
 
-Bu kaynaklar için dalga sonu birleşik .NET derlemesi beklenir. Birim/gerçek SQL/HTTP/
+`0cd9c5145` kaynak head'inde Finance.UnitTests projesi (bağımlılıklarıyla) derlendi:
+**exit 0, 0 uyarı / 0 hata**. Bu bir test koşumu değildir; dalga sonu birleşik derleme de yapılacak.
+Birim/gerçek SQL/HTTP/
 Vitest/tarayıcı/CI koşumu **NOT_RUN**; eski altı kırmızının geçtiği iddia edilmez.
 Test atlanmadı, silinmedi veya karantinaya alınmadı. Gerçek SQL kurulum/servis ayarı,
 production, grant/rol, OPEN durumu ve Finance STOP değiştirilmedi.
