@@ -305,6 +305,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.Property<int>("Outcome")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("ReceiptAdjustmentBatchId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("ReceiptAdjustmentId")
                         .HasColumnType("uniqueidentifier");
 
@@ -337,6 +340,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("UX_PurchaseAttempts_RequestId")
                         .HasFilter("[RequestId] IS NOT NULL AND [CommandName] = N'purchasing.purchase-request.create.v1'");
 
+                    b.HasIndex("CompanyId", "OrderId", "ReceiptAdjustmentBatchId");
+
                     b.ToTable("PurchaseAttempts", "purchasing", t =>
                         {
                             t.HasCheckConstraint("CK_PurchaseAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
@@ -346,6 +351,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PurchaseAttempts_Outcome", "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] IS NULL) OR ([OrderId] IS NOT NULL AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL))) OR ([Outcome] = 2 AND [RequestId] IS NULL AND [OrderId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
 
                             t.HasCheckConstraint("CK_PurchaseAttempts_ReceiptAdjustment", "[ReceiptAdjustmentId] IS NULL OR ([ReceiptAdjustmentId] <> '00000000-0000-0000-0000-000000000000' AND [Outcome] = 1 AND [OrderId] IS NOT NULL AND [RequestId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_PurchaseAttempts_ReceiptAdjustmentBatch", "[ReceiptAdjustmentBatchId] IS NULL OR ([ReceiptAdjustmentBatchId] <> '00000000-0000-0000-0000-000000000000' AND [ReceiptAdjustmentId] IS NULL AND [Outcome] = 1 AND [OrderId] IS NOT NULL AND [RequestId] IS NULL)");
                         });
                 });
 
@@ -1052,6 +1059,58 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentBatchRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("LineCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("OrderVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "BatchId");
+
+                    b.HasIndex("CompanyId", "OrderId", "OrderVersionAfter")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseReceiptAdjustmentBatches", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseReceiptAdjustmentBatches_Facts", "[OrderVersionAfter] >= 2 AND [LineCount] BETWEEN 1 AND 500 AND LEN([RecordedBy]) > 0 AND LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+
+                            t.HasCheckConstraint("CK_PurchaseReceiptAdjustmentBatches_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [BatchId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1062,6 +1121,12 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("AcceptanceId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("BatchLineNo")
+                        .HasColumnType("int");
 
                     b.Property<string>("CorrelationId")
                         .IsRequired()
@@ -1122,13 +1187,22 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "NewAcceptanceId");
 
+                    b.HasIndex("CompanyId", "BatchId", "BatchLineNo")
+                        .IsUnique()
+                        .HasFilter("[BatchId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "OrderId", "BatchId");
+
                     b.HasIndex("CompanyId", "OrderId", "OrderVersionAfter")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[BatchId] IS NULL");
 
                     b.HasIndex("CompanyId", "OrderId", "LineId", "AcceptanceId");
 
                     b.ToTable("PurchaseReceiptAdjustments", "purchasing", t =>
                         {
+                            t.HasCheckConstraint("CK_PurchaseReceiptAdjustments_Batch", "([BatchId] IS NULL AND [BatchLineNo] IS NULL) OR ([BatchId] IS NOT NULL AND [BatchId] <> '00000000-0000-0000-0000-000000000000' AND [BatchLineNo] IS NOT NULL AND [BatchLineNo] BETWEEN 1 AND 500)");
+
                             t.HasCheckConstraint("CK_PurchaseReceiptAdjustments_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AdjustmentId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [AcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_PurchaseReceiptAdjustments_Quantities", "[UndoQuantity] > 0 AND [NewAcceptedQuantity] >= 0 AND [NetOpenedQuantity] >= 0");
@@ -1543,6 +1617,12 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1560,6 +1640,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Position")
+                        .HasDatabaseName("IX_OutboxMessages_Position");
+
                     b.HasIndex("CompanyId", "RecordedAtUtc", "Id")
                         .HasDatabaseName("IX_OutboxMessages_CompanyId_RecordedAtUtc_Id");
 
@@ -1571,7 +1654,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_OutboxMessages_Envelope", "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
 
-                            t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] = 'purchasing.order-line.closed.v1'");
+                            t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] IN ('purchasing.order-line.closed.v1', 'purchasing.order-line.revived.v1')");
 
                             t.HasCheckConstraint("CK_OutboxMessages_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
                         });
@@ -1617,6 +1700,12 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "RequestId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId", "ReceiptAdjustmentBatchId")
+                        .HasPrincipalKey("CompanyId", "OrderId", "BatchId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
@@ -1735,12 +1824,28 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentBatchRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAcceptanceRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "NewAcceptanceId")
                         .HasPrincipalKey("CompanyId", "AcceptanceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentBatchRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId", "BatchId")
+                        .HasPrincipalKey("CompanyId", "OrderId", "BatchId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAcceptanceRow", null)

@@ -120,7 +120,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
 
     /// <summary>The outbox's message types (the store writes nothing else).</summary>
     internal static readonly string OutboxEventTypeCheck =
-        "[EventType] = '" + PurchasingOrderLineClosedEventV1.EventType + "'";
+        "[EventType] IN ('" + PurchasingOrderLineClosedEventV1.EventType + "', '" + PurchasingOrderLineRevivedEventV1.EventType + "')";
 
     /// <summary>
     /// A2a-1 (TEK-01): the order's money snapshot is all five facts or none — a non-empty currency and profile, a non-blank code, a
@@ -605,6 +605,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     private void ConfigureOutbox(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<PurchasingOutboxRow>();
+        entity.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        entity.HasIndex(x => x.Position).HasDatabaseName("IX_OutboxMessages_Position");
         entity.ToTable("OutboxMessages", Schema, table =>
         {
             table.HasCheckConstraint("CK_OutboxMessages_Identity",

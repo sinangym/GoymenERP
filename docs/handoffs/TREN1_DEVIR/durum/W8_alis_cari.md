@@ -1,9 +1,9 @@
 # TREN-1 W8 — Alış / Cari
 
 Bu son paket mevcut 174 dilim kapsamındadır; yeni dalga veya iş politikası açmaz.
-ALC-S6 **PARTIAL**: aşağıdaki tek-kabul sahibi zinciri yazıldı. Çok kabul/satırın
-genel satır başına tek net etkisini birlikte uygulayan batch, canlanma olayı/bildirim
-ve host gerçek sağlayıcı bağları tamamlanmadan DONE sayılmaz.
+ALC-S6 **PARTIAL**: tek-kabul ve çok-kabul owner zincirleri yazıldı. Batch genel
+satır başına tek net etki ve sipariş başına tek sürüm uygular. Bildirim alıcı owner
+bağlantısı, gerçek host sağlayıcıları ve tümleşik kabul tamamlanmadan DONE sayılmaz.
 
 ## Kabul düzeltmesi ve iade sahibi
 
@@ -36,6 +36,14 @@ ve host gerçek sağlayıcı bağları tamamlanmadan DONE sayılmaz.
   ilk iade yanıtı görüntüsü ve JSON kısıtı; Down ilk koruması **51953**.
 - Yeni ham SQL/bypass guard girdileri yalnız yeşil sonuç için izin listesine eklenmedi.
   Ortak bağlantı/transaction katılımı ve iki Down/veri koruma SQL'i K3'te incelenir.
+- EF10.0.8 üretimi `20261116222957_AddPurchaseReceiptAdjustmentBatches`: batch başlığı,
+  değişmez detay/deneme bağlantıları, tek sürüm indeksleri ve outbox rowversion.
+  Down ilk koruması **51956**, batch veya herhangi bir outbox cursor geçmişi varken
+  veri/tekrar yayım kaybını reddeder. Boş depoda generated geri alma korunur.
+- Purchasing outbox sabit `MIN_ACTIVE_ROWVERSION` sorgusuyla yalnız commit edilmiş
+  güvenli sırayı okur; şirket filtresi korunur. Erken commit olan sonraki mesajın
+  eski açık transaction mesajını atlatmaması için gerçek SQL yarış kaynağı eklendi.
+  Ham ufuk okuması gerekçeli **K3 review bekliyor**; dispatcher etkinleştirilmedi.
 - Grant/rol, production, OPEN durumları, Finance STOP ve altyapı değişmedi.
 
 ## Doğrulama
@@ -48,3 +56,19 @@ append-only/şirket ilişkisi, gerçek SQL Down51949/51953 ve ilk Pending replay
 
 Tam test, gerçek SQL/HTTP, Vitest, browser ve CI koşumları **NOT_RUN**; mevcut
 kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
+
+## Çoklu kabul düzeltmesi kaynak checkpoint'i
+
+- ALS-D86/D91/D92/D93: bütün özgün paylar, kimlikler ve sonuç miktarları önce
+  doğrulanır. Bir erken geri alma ile sonraki yeniden kabul geçici canlanma üretmez.
+  Net sıfır batch Cancelled durumunu ve sıfır tahsis edilebilir miktarı korur.
+- Tüm batch sonucu, sıralı detaylar ve genel satır toplamları değişmez saklanır;
+  sonraki tekil düzeltme/version artışından sonra replay ilk sonucu döndürür.
+  Eksik başlık/çocuk geçmişi başarıya çevrilmez. Bütün owner yazıları ve Audit aynı
+  ödünç transaction'a katılır; participant commit yapmaz.
+- Yalnız gerçekten canlanan genel satır için `purchasing.order-line.revived.v1`
+  outbox olayı kaydedilir. Satış ilişkileri ve alış oluşturan/onaylayan alıcıları
+  bildirimin owner portlarına ayrıca bağlanacaktır; kişi varsayımı yapılmaz.
+- Son batch kaynaklarında Purchasing.UnitTests ve Api.IntegrationTests (API dahil)
+  derlemeleri exit 0, sıfır hata/uyarı. Unit/model/SQL kaynakları yazıldı;
+  test koşumu yapılmadı. Pin/ilişkisel envanter son entegrasyonda üretilecektir.
