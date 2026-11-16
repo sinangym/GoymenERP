@@ -577,6 +577,62 @@ internal sealed class OpeningBalanceCommandRow : IFinanceTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
+/// <summary>
+/// FIN-SC47 (FNS-D87, FNS-D88): a credit account of one of the four groups (1 cash, 2 non-cash, 3 instrument and
+/// factoring, 4 leasing). Proposed (1), then approved (2) or rejected (3) by another person; only the decision columns
+/// ever change. The amount is exact decimal text as given.
+/// </summary>
+internal sealed class CreditAccountRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int CreditGroup { get; set; }
+    public string LenderName { get; set; } = string.Empty;
+    public string ContractReference { get; set; } = string.Empty;
+    public Guid CurrencyId { get; set; }
+    public string PrincipalAmountText { get; set; } = string.Empty;
+    public DateOnly StartDate { get; set; }
+    public int Status { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-SC47 (FNS-D93/FNS-D94): one line of a credit account's imported bank repayment plan, stored as given in the same
+/// save as the proposal and never changed afterwards (append-only).
+/// </summary>
+internal sealed class CreditAccountInstallmentRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid CreditAccountId { get; set; }
+    public int Sequence { get; set; }
+    public DateOnly DueDate { get; set; }
+    public string InstallmentText { get; set; } = string.Empty;
+    public string PrincipalText { get; set; } = string.Empty;
+    public string InterestText { get; set; } = string.Empty;
+    public string BsmvText { get; set; } = string.Empty;
+    public string KkdfText { get; set; } = string.Empty;
+}
+
+/// <summary>ADR-011: the idempotency record of a credit account command (a terminal refusal included).</summary>
+internal sealed class CreditAccountCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? CreditAccountId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
 /// <summary>Organization's company, referenced by identity only (the table is Organization's, not migrated here).</summary>
 internal sealed class OrganizationCompanyReference
 {

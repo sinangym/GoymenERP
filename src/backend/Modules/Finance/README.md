@@ -732,3 +732,20 @@ Not in this slice (NEEDS-SINAN, not enabled by assumption): the treasury (cash/b
 approved opening (the movement is recorded, nothing is posted), a separate reversal authority, a negative bank opening
 (overdraft; refused), and whether a future as-of date must be refused (ASSUMPTION-FIN-S9-ASOF refuses it today). The
 Settings opening period adapter is KIM-S19.
+
+## FIN-SC47: credit accounts and the bank repayment plan (krediler) — FNS-D87, FNS-D88, FNS-D93, FNS-D94
+
+| Part | What |
+|---|---|
+| HTTP | `GET /api/v1/finance/credit-accounts` (list), `GET …/credit-accounts/currency-candidates`, `GET …/credit-accounts/{creditAccountId}`, `POST …/credit-accounts/plan-validation` (side-effect free), `POST …/credit-accounts` (propose), `POST …/credit-accounts/{creditAccountId}/approve`, `POST …/credit-accounts/{creditAccountId}/reject` (written reason) |
+| Permissions | `finance.credits.read`, `finance.credits.propose`, `finance.credits.approve`: registered, company-wide, **not Critical, not granted** (FNS-D88). Approve does not imply propose. Granting them to a role or persona stays a human step |
+| Groups (FNS-D87) | One type field on the account: Cash (nakdi), NonCash (gayrinakdi), InstrumentAndFactoring (çek/senet + faktoring), Leasing; `CK_CreditAccounts_Group` holds the four. Group-specific fields are not built |
+| Plan (FNS-D93, FNS-D94) | The bank's installment, principal, interest, BSMV and KKDF are stored AS GIVEN (exact decimal text). `FinanceCreditPlanCalculator` checks each line (installment = principal + interest + BSMV + KKDF) and the plan (sum of principals = credit amount), exactly; interest is never calculated. A failing plan cannot be proposed, and the approval re-checks the stored plan |
+| Two people (FNS-D88) | The holder of `propose` proposes, a different holder of `approve` approves or rejects; never the proposer (`finance_approver_is_proposer`), checked in the service, the save guard and `CK_CreditAccounts_Decision` (BIN2 collation). One live (proposed or approved) account per lender and contract reference (`UX_CreditAccounts_Live`) |
+| Idempotency / audit | `finance.CreditAccountCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event (`finance.credit-account.proposed.v1` / `approved.v1` / `rejected.v1`). An approval moves no money and writes no voucher |
+| Migration `20261116111738_AddCreditAccounts` | Pure DDL up (accounts, installments, commands). `Down` refuses with `THROW 51851` while any credit account or recorded attempt exists (forward fix); an empty store rolls back |
+
+Not in this slice (W6): the screen and shell capability; the per bank + type limit warning (FNS-D95: a warning only,
+never a block; the limit's owner and form are NEEDS-SINAN); the voucher proposal (FNS-D97: Settings mapping, "eşleme
+eksik" when missing, idempotent, never final; the mapping keys are NEEDS-SINAN). The lender is free text until a bank
+master is decided.

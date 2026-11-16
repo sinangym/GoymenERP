@@ -394,6 +394,19 @@ public static class ErpPermissions
     public const string FinanceOpeningBalancesApprove = "finance.opening-balances.approve";
 
     /// <summary>
+    /// Finance credit accounts (FIN-SC47; FNS-D87, FNS-D88, FNS-D93, FNS-D94): read (the company's credit accounts and
+    /// their imported bank repayment plans), propose (enters a credit account of one of the four groups with the bank's
+    /// plan as given; a plan whose totals do not hold is refused) and approve (approves or rejects it; never its proposer,
+    /// maker≠checker). Registering them makes them KNOWN, not granted: no role and no user receives them here, and who
+    /// holds which is a human gate. Company-wide only: a credit account belongs to the server-resolved company. Not
+    /// Critical (whether they should be is not decided). Unrelated to the party credit limit names
+    /// (finance.credit-limits.*).
+    /// </summary>
+    public const string FinanceCreditsRead = "finance.credits.read";
+    public const string FinanceCreditsPropose = "finance.credits.propose";
+    public const string FinanceCreditsApprove = "finance.credits.approve";
+
+    /// <summary>
     /// Finance official-invoice import commands. Registration makes the Finance owner's exact names
     /// measurable and grants nothing. Both are company-wide because the batch belongs to the
     /// server-resolved company and has no narrower scope dimension. They are not Critical; the
@@ -1665,6 +1678,9 @@ public static class ErpPermissions
             FinanceOpeningBalancesRead,
             FinanceOpeningBalancesPropose,
             FinanceOpeningBalancesApprove,
+            FinanceCreditsRead,
+            FinanceCreditsPropose,
+            FinanceCreditsApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,
@@ -1918,6 +1934,9 @@ public static class ErpPermissions
             FinanceOpeningBalancesRead,
             FinanceOpeningBalancesPropose,
             FinanceOpeningBalancesApprove,
+            FinanceCreditsRead,
+            FinanceCreditsPropose,
+            FinanceCreditsApprove,
             FinanceOfficialInvoiceImportUpload,
             FinanceOfficialInvoiceImportApprove,
             FinanceOfficialSalesInvoicesRecord,

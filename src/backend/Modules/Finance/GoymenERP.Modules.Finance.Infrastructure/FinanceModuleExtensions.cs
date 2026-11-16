@@ -96,6 +96,8 @@ public static class FinanceModuleExtensions
         // decision fails closed and the period is never assumed open. An approved opening moves no money.
         services.TryAddScoped<IFinanceOpeningPeriodReader, UnavailableFinanceOpeningPeriodReader>();
         services.AddScoped<IFinanceOpeningBalanceService>(CreateOpeningBalanceService);
+        // FIN-SC47 (FNS-D87/FNS-D88/FNS-D93/FNS-D94): the credit account with its imported plan; no grant.
+        services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
         services.AddScoped<IFinancePartyCreditPanelReader>(provider => new FinancePartyCreditPanelService(
@@ -273,6 +275,25 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeOpeningBalance),
                 Envelope(provider, ErpPermissions.FinanceOpeningBalancesApprove, permissions,
                     FinanceAction.ApproveOpeningBalance)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinanceCreditAccountService CreateCreditAccountService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCreditAccountService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCreditAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
             provider.GetRequiredService<TimeProvider>());
     }
 

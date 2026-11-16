@@ -25,6 +25,7 @@ public static class FinanceEndpoints
     public const string CreditLimitsPath = "/api/v1/finance/credit-limits";
     public const string CollateralsPath = "/api/v1/finance/collaterals";
     public const string OpeningBalancesPath = "/api/v1/finance/opening-balances";
+    public const string CreditAccountsPath = "/api/v1/finance/credit-accounts";
     public const string PartyCreditPanelPath = "/api/v1/finance/party-credit-panel";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string PaymentReversalProposalsPath = "/api/v1/finance/manual-bank-payments/reversal-proposals";
@@ -110,6 +111,7 @@ public static class FinanceEndpoints
         MapCreditLimitEndpoints(endpoints);
         MapCollateralEndpoints(endpoints);
         MapOpeningBalanceEndpoints(endpoints);
+        MapCreditAccountEndpoints(endpoints);
         MapPartyCreditPanelEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
@@ -3120,6 +3122,248 @@ public static class FinanceEndpoints
     /// version is 409 <c>version_conflict</c>; a second live opening for the same target and currency is 422
     /// <c>opening_balance_exists</c>. An approved opening moves no money (FNS-D23 limits).
     /// </summary>
+    // FIN-SC47 (FNS-D87, FNS-D88, FNS-D93, FNS-D94): the credit account with its imported bank repayment plan.
+    // The screen, the FNS-D95 limit warning and the FNS-D97 voucher proposal are W6.
+    private static void MapCreditAccountEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(CreditAccountsPath, async (
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ListAsync(Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("ListFinanceCreditAccountsV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CreditAccountListPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CreditAccountsPath + "/currency-candidates", async (
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.CurrencyCandidatesAsync(Context(companyContext, currentUser, correlation),
+                    cancellationToken));
+            })
+            .WithName("GetFinanceCreditAccountCurrencyCandidatesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CreditAccountCurrencyCandidates>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CreditAccountsPath + "/{creditAccountId:guid}", async (
+                Guid creditAccountId,
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.GetAsync(Context(companyContext, currentUser, correlation), creditAccountId,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceCreditAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CreditAccountView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        // FNS-D94: the side-effect-free plan check (no idempotency key; nothing is stored).
+        endpoints.MapPost(CreditAccountsPath + "/plan-validation", async (
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (await ReadBodyAsync<CreditPlanValidationRequest>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                return Read(await service.ValidatePlanAsync(Context(companyContext, currentUser, correlation), body,
+                    cancellationToken));
+            })
+            .WithName("ValidateFinanceCreditPlanV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Accepts<CreditPlanValidationRequest>("application/json")
+            .Produces<CreditPlanValidationView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CreditAccountsPath, async (
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CreditAccountProposeRequest>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.ProposeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), body, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceCreditAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable result: the stored answer (200); a proposal records no terminal refusal.
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<CreditAccountProposeRequest>("application/json")
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CreditAccountsPath + "/{creditAccountId:guid}/approve", async (
+                Guid creditAccountId,
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CreditAccountApproveBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new CreditAccountApproveRequest(creditAccountId, body.ExpectedVersion),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceCreditAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CreditAccountApproveBody>("application/json")
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CreditAccountsPath + "/{creditAccountId:guid}/reject", async (
+                Guid creditAccountId,
+                HttpContext httpContext,
+                IFinanceCreditAccountService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CreditAccountRejectBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.RejectAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key),
+                    new CreditAccountRejectRequest(creditAccountId, body.ExpectedVersion, body.Reason),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RejectFinanceCreditAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CreditAccountRejectBody>("application/json")
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CreditAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+    }
+
     private static void MapOpeningBalanceEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet(OpeningBalancesPath + "/period", async (
