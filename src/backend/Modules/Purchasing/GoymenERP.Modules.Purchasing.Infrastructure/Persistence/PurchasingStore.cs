@@ -458,7 +458,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             .OrderBy(closure => closure.OrderVersionAfter).ToListAsync(cancellationToken);
         var rateRows = await dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => rate.OrderId == orderId)
             .OrderBy(rate => rate.OrderVersionAfter).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows);
+        var adjustmentRows = await dbContext.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
+        var cancellationRows = await dbContext.CancellationHistory.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows);
         var versionBefore = order.Version;
         var rateChangeBefore = order.LastExchangeRateChange;
         var before = Snapshot(order);
@@ -529,7 +531,12 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             lineRow.Accepted = line.AcceptedQuantity.Value;
             lineRow.Cancelled = line.CancelledQuantity.Value;
             lineRow.Closed = line.ClosedQuantity.Value;
+            lineRow.DefinitiveReturned = line.DefinitiveReturnQuantity.Value;
+            lineRow.ReceiptClosureRevived = line.ReceiptClosureRevived;
         }
+
+        foreach (var change in order.CancellationHistory.Where(change => change.OrderVersionAfter > versionBefore))
+            dbContext.CancellationHistory.Add(CancellationRow(companyId, order.Id, change));
 
         foreach (var line in reclosed)
         {
@@ -1053,6 +1060,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var slices = await dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken);
         var closures = await dbContext.LineClosureEvents.AsNoTracking().Where(closure => ids.Contains(closure.OrderId)).ToListAsync(cancellationToken);
         var rates = await dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => ids.Contains(rate.OrderId)).ToListAsync(cancellationToken);
+        var adjustments = await dbContext.ReceiptAdjustments.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
+        var cancellations = await dbContext.CancellationHistory.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
@@ -1061,7 +1070,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             var ownSlices = slices.Where(slice => slice.OrderId == row.Id).ToList();
             var ownClosures = closures.Where(closure => closure.OrderId == row.Id).OrderBy(closure => closure.OrderVersionAfter).ToList();
             var ownRates = rates.Where(rate => rate.OrderId == row.Id).OrderBy(rate => rate.OrderVersionAfter).ToList();
-            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures, ownRates), row.CompanyAccountId, row.EffectiveOn,
+            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures, ownRates,
+                adjustments.Where(item => item.OrderId == row.Id).ToArray(), cancellations.Where(item => item.OrderId == row.Id).ToArray()), row.CompanyAccountId, row.EffectiveOn,
                 VersionsOf(own));
         })];
     }
@@ -1080,7 +1090,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null,
         IReadOnlyList<PurchaseOrderLineDeliverySliceRow>? deliverySlices = null,
         IReadOnlyList<PurchaseOrderLineClosureEventRow>? closureEvents = null,
-        IReadOnlyList<PurchaseOrderExchangeRateChangeRow>? exchangeRateChanges = null)
+        IReadOnlyList<PurchaseOrderExchangeRateChangeRow>? exchangeRateChanges = null,
+        IReadOnlyList<PurchaseReceiptAdjustmentRow>? receiptAdjustments = null,
+        IReadOnlyList<PurchaseOrderCancellationHistoryRow>? cancellationHistory = null)
     {
         var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
@@ -1162,12 +1174,24 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             }
         }
 
-        var orderedAcceptances = new Queue<PurchaseAcceptanceRow>((acceptances ?? [])
+        var replacements = (receiptAdjustments ?? []).Where(item => item.NewAcceptanceId is not null)
+            .Select(item => item.NewAcceptanceId!.Value).ToHashSet();
+        var orderedAcceptances = new Queue<PurchaseAcceptanceRow>((acceptances ?? []).Where(item => !replacements.Contains(item.AcceptanceId))
             .OrderBy(acceptance => acceptance.OrderVersionAfter)
             .ThenBy(acceptance => acceptance.AcceptanceId));
         var orderedClosures = new Queue<PurchaseOrderLineClosureEventRow>((closureEvents ?? [])
             .OrderBy(closure => closure.OrderVersionAfter));
-        while (orderedAcceptances.Count > 0 || revisions.Count > 0 || orderedClosures.Count > 0)
+        var orderedAdjustments = new Queue<PurchaseReceiptAdjustmentRow>((receiptAdjustments ?? []).OrderBy(item => item.OrderVersionAfter));
+        var cancellations = (cancellationHistory ?? []).OrderBy(item => item.OrderVersionAfter).ToArray();
+        // Compatibility with a pre-migration snapshot; the forward migration backfills these exact historical facts.
+        if (cancellations.Length == 0 && row.Status == (int)PurchaseOrderStatus.Cancelled)
+            cancellations = [new PurchaseOrderCancellationHistoryRow { CompanyId = row.CompanyId, OrderId = row.Id,
+                OrderVersionAfter = row.Version, RecordedBy = row.CancelledBy ?? throw new InvalidOperationException("Missing cancellation actor."),
+                Reason = row.CancellationReason ?? throw new InvalidOperationException("Missing cancellation reason."),
+                RecordedAtUtc = row.CancelledAtUtc ?? throw new InvalidOperationException("Missing cancellation time.") }];
+        var orderedCancellations = new Queue<PurchaseOrderCancellationHistoryRow>(cancellations);
+        while (orderedAcceptances.Count > 0 || revisions.Count > 0 || orderedClosures.Count > 0
+            || orderedAdjustments.Count > 0 || orderedCancellations.Count > 0)
         {
             var expectedVersionAfter = checked(order.Version + 1);
             if (revisions.TryPeek(out var revision) && revision[0].OrderVersionAfter == expectedVersionAfter)
@@ -1179,6 +1203,22 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             if (orderedClosures.TryPeek(out var closureEvent) && closureEvent.OrderVersionAfter == expectedVersionAfter)
             {
                 ReplayClosure(order, row, lines, orderedClosures.Dequeue());
+                continue;
+            }
+
+            if (orderedCancellations.TryPeek(out var cancellation) && cancellation.OrderVersionAfter == expectedVersionAfter)
+            {
+                orderedCancellations.Dequeue();
+                if (cancellation.CompanyId != row.CompanyId || cancellation.OrderId != row.Id)
+                    throw new InvalidOperationException("Cancellation history belongs to another order.");
+                order.Cancel(order.Version, cancellation.RecordedBy, cancellation.Reason, cancellation.RecordedAtUtc);
+                continue;
+            }
+
+            if (orderedAdjustments.TryPeek(out var adjustment) && adjustment.OrderVersionAfter == expectedVersionAfter)
+            {
+                orderedAdjustments.Dequeue();
+                ReplayReceiptAdjustment(order, row, lines, acceptances ?? [], adjustment);
                 continue;
             }
 
@@ -1207,31 +1247,59 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             }
         }
 
-        if (row.Status == (int)PurchaseOrderStatus.Cancelled)
-        {
-            // A1-3: the cancellation follows every acceptance share (none is recorded on a cancelled order); the remainder it
-            // cancelled is rebuilt by the domain and must equal the stored Cancelled totals below.
-            order.Cancel(order.Version, row.CancelledBy ?? throw new InvalidOperationException("Kayıtlı sipariş iptalinin aktörü yok."),
-                row.CancellationReason,
-                row.CancelledAtUtc ?? throw new InvalidOperationException("Kayıtlı sipariş iptalinin zamanı yok."));
-        }
-
         if (order.Version != row.Version || order.Status != (PurchaseOrderStatus)row.Status)
         {
             throw new InvalidOperationException("Kayıtlı siparişin sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
         }
 
+        if (order.Cancellation?.CancelledBy != row.CancelledBy || order.Cancellation?.CancelledAtUtc != row.CancelledAtUtc
+            || order.Cancellation?.Reason != row.CancellationReason)
+            throw new InvalidOperationException("Latest cancellation facts disagree with immutable history.");
+
         foreach (var line in lines)
         {
             var rebuilt = order.Lines.Single(candidate => candidate.Id == line.LineId);
             if (rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted
-                || rebuilt.CancelledQuantity.Value != line.Cancelled || rebuilt.ClosedQuantity.Value != line.Closed)
+                || rebuilt.CancelledQuantity.Value != line.Cancelled || rebuilt.ClosedQuantity.Value != line.Closed
+                || rebuilt.DefinitiveReturnQuantity.Value != line.DefinitiveReturned || rebuilt.ReceiptClosureRevived != line.ReceiptClosureRevived)
             {
                 throw new InvalidOperationException("Kayıtlı satır toplamları yeniden kurulan toplamlarla uyuşmuyor.");
             }
         }
 
         return order;
+    }
+
+    internal static PurchaseOrderCancellationHistoryRow CancellationRow(Guid companyId, Guid orderId, PurchaseOrderCancellationEvent change) => new()
+    {
+        CompanyId = companyId, OrderId = orderId, OrderVersionAfter = change.OrderVersionAfter,
+        RecordedBy = change.Cancellation.CancelledBy, Reason = change.Cancellation.Reason,
+        RecordedAtUtc = change.Cancellation.CancelledAtUtc,
+    };
+
+    private static void ReplayReceiptAdjustment(PurchaseOrder order, PurchaseOrderRow row, IReadOnlyList<PurchaseOrderLineRow> lines,
+        IReadOnlyList<PurchaseAcceptanceRow> acceptances, PurchaseReceiptAdjustmentRow adjustment)
+    {
+        var line = lines.SingleOrDefault(item => item.LineId == adjustment.LineId);
+        var original = acceptances.SingleOrDefault(item => item.AcceptanceId == adjustment.AcceptanceId);
+        if (adjustment.CompanyId != row.CompanyId || adjustment.OrderId != row.Id || line is null
+            || original is null || original.CompanyId != row.CompanyId || original.OrderId != row.Id || original.LineId != line.LineId)
+            throw new InvalidOperationException("Receipt adjustment does not belong to its original acceptance.");
+        if (adjustment.NewAcceptanceId is { } newId)
+        {
+            var replacement = acceptances.SingleOrDefault(item => item.AcceptanceId == newId);
+            if (replacement is null || replacement.CompanyId != row.CompanyId || replacement.OrderId != row.Id
+                || replacement.LineId != line.LineId || replacement.Quantity != adjustment.NewAcceptedQuantity
+                || replacement.OrderVersionAfter != adjustment.OrderVersionAfter || replacement.RecordedAtUtc != adjustment.RecordedAtUtc)
+                throw new InvalidOperationException("Replacement receipt differs from its immutable adjustment.");
+        }
+        var change = order.AdjustReceipt(order.Version, adjustment.AdjustmentId, adjustment.AcceptanceId,
+            Quantity.Of(adjustment.UndoQuantity, UnitOf(line.UnitIsKilogram)), adjustment.IsSupplierReturn, adjustment.ReplacementExpected,
+            adjustment.RecordedBy, adjustment.Reason, adjustment.RecordedAtUtc, adjustment.NewAcceptanceId,
+            Quantity.Of(adjustment.NewAcceptedQuantity, UnitOf(line.UnitIsKilogram)));
+        if (change.OrderVersionAfter != adjustment.OrderVersionAfter || change.Revived != adjustment.Revived
+            || change.NetOpenedQuantity.Value != adjustment.NetOpenedQuantity)
+            throw new InvalidOperationException("Receipt adjustment history differs from the rebuilt owner result.");
     }
 
     /// <summary>ALC-SC33 (FNS-D79): the opening rate is recorded at the order's creation version.</summary>

@@ -10,7 +10,7 @@ public enum PurchaseOrderStatus
 
     /// <summary>
     /// A1-3 (plan API-10, No.161 §2): an approved order whose not-yet-accepted remainder was cancelled in full — on every line,
-    /// even after a partial acceptance. Terminal: no acceptance, breakdown or second cancellation follows; the accepted shares stay.
+    /// even after a partial acceptance. Only the ALS-D92 receipt adjustment can revive it; ordinary acceptance and breakdown stay closed.
     /// </summary>
     Cancelled = 3,
 }
@@ -31,7 +31,7 @@ public enum PurchaseOrderStatus
 /// layer's verifier checks them against the Settings profile before a line is added.
 /// </para>
 /// </summary>
-public sealed class PurchaseOrder
+public sealed partial class PurchaseOrder
 {
     private readonly List<PurchaseOrderLine> lines = [];
     private readonly List<PurchaseAcceptanceShare> acceptances = [];
@@ -475,6 +475,7 @@ public sealed class PurchaseOrder
         }
 
         Cancellation = new PurchaseOrderCancellation(actor, now.ToUniversalTime(), reason);
+        cancellationHistory.Add(new(checked(Version + 1), Cancellation));
         Status = PurchaseOrderStatus.Cancelled;
         Touch(now);
     }
@@ -651,7 +652,8 @@ public sealed class PurchaseOrder
     /// </summary>
     private static void RequireReceivedPortionKept(PurchaseOrderLine line, IReadOnlyList<PurchaseOrderDeliverySlice> next)
     {
-        var received = line.AcceptedQuantity;
+        // A definitive supplier return remains fulfilled commitment; it does not unlock received schedule portions.
+        var received = line.AcceptedQuantity.Add(line.DefinitiveReturnQuantity);
         var current = line.DeliverySchedule;
         var covered = Quantity.Zero(received.Unit);
         for (var index = 0; index < current.Count && received.IsGreaterThan(covered); index++)
