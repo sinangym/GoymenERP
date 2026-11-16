@@ -116,8 +116,17 @@ public sealed partial class OpenApiContractGenerationTests
         {
             var status = int.Parse(response.Name, CultureInfo.InvariantCulture);
             if (status >= 400 && status is not (413 or 415))
-                Assert.Equal(status == 500 ? "#/components/schemas/ErpProblemDetailsContract" : "#/components/schemas/ProductRuntimeProblemContract",
+            {
+                var expectedProblemSchema = status switch
+                {
+                    500 => "#/components/schemas/ErpProblemDetailsContract",
+                    409 when !mutation => "#/components/schemas/ErpProblemDetailsContract",
+                    503 when !mutation => "#/components/schemas/ErpProblemDetailsContract",
+                    _ => "#/components/schemas/ProductRuntimeProblemContract",
+                };
+                Assert.Equal(expectedProblemSchema,
                     response.Value.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema").GetProperty("$ref").GetString());
+            }
             var headers = response.Value.GetProperty("headers");
             var replay = mutation && status is 200 or 201;
             Assert.Equal(replay ? ["Idempotency-Original-Correlation-Id", "Idempotency-Replayed", "X-Correlation-Id"] : ["X-Correlation-Id"],
@@ -134,10 +143,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ? ["company_context_invalid", "correlation_metadata_invalid", "invalid_cursor", "validation_failed"]
                     : ["company_context_invalid", "correlation_metadata_invalid", "validation_failed"],
                 401 => ["authentication_required"], 404 => ["not_found"],
-                409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1" or "DeactivateProductV1" or "ReactivateProductV1"
-                    ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
+                409 => !mutation ? ["organization.company.setup_pending"]
+                    : expected.OperationId is "EditProductDraftV1" or "ActivateProductV1" or "DeactivateProductV1" or "ReactivateProductV1"
+                        ? ["idempotency_conflict", "lifecycle_conflict", "organization.company.setup_pending", "version_conflict"]
+                        : ["idempotency_conflict", "organization.company.setup_pending"],
                 422 => ["validation_failed"],
-                500 => ["internal_error"], 503 => ["product_write_contention"], _ => [],
+                500 => ["internal_error"], 503 => mutation ? ["product_write_contention", "service_unavailable"] : ["service_unavailable"], _ => [],
             };
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
             if (codes.Length > 0) Assert.Equal(codes, actualCodes.EnumerateArray().Select(value => value.GetString()));

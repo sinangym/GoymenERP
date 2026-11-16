@@ -60,7 +60,8 @@ public sealed class FinanceCashAccountService(
     IAuditEventCollector auditEvents,
     FinanceCashAccountEnvelopes envelopes,
     IFinanceCashAccountBalanceReader balances,
-    TimeProvider timeProvider) : IFinanceCashAccountMaster
+    TimeProvider timeProvider,
+    IAuditTransactionWriterV1? auditOwner = null) : IFinanceCashAccountMaster
 {
     public const string ProposeCommand = "finance.cash-account.propose";
     public const string ApproveCommand = "finance.cash-account.approve";
@@ -272,6 +273,21 @@ public sealed class FinanceCashAccountService(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(request);
+        var kind = KindOf(change);
+        if (await StartAsync(context, metadata, kind.Propose, request.AccountId, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ProposeStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
+            async () => await FenceAsync(context, kind.Propose, request.AccountId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("balance", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+    }
+
+    private async Task<CashAccountCommandResult> ProposeStateChangeTreasuryCoreAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
         var kind = KindOf(change);
         if (await StartAsync(context, metadata, kind.Propose, request.AccountId, cancellationToken) is { } refused)
@@ -345,6 +361,21 @@ public sealed class FinanceCashAccountService(
     /// still be a Settings candidate).
     /// </summary>
     public async Task<CashAccountCommandResult> ApproveStateChangeAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        var kind = KindOf(change);
+        if (await StartAsync(context, metadata, kind.Approve, request.AccountId, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ApproveStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
+            async () => await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("balance", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+    }
+
+    private async Task<CashAccountCommandResult> ApproveStateChangeTreasuryCoreAsync(FinanceContext context, CommandMetadata metadata,
         CashAccountStateChange change, CashAccountStateChangeRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -941,6 +972,7 @@ public sealed class FinanceCashAccountService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             if (await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken) is { } prior)
             {

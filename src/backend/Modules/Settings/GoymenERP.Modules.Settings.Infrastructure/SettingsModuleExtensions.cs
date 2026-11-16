@@ -88,9 +88,13 @@ public static class SettingsModuleExtensions
         // Nothing is seeded: every list starts empty; the operation type list is not opened.
         services.AddScoped<ISettingsReferenceListAdministrationV1, SettingsReferenceListAdministration>();
         services.AddScoped<ISettingsReferenceListReaderV1, SettingsReferenceListReaderV1>();
+        services.AddScoped<ISettingsCollateralTypeAdministrationV1, SettingsCollateralTypeAdministration>();
+        services.AddScoped<ISettingsCollateralTypeCatalogV1, SettingsCollateralTypeCatalogV1>();
         // B-13 (ADR-SET-002): the company policy registry. One provider answers every read port of the registry; the number
         // series port (ISettingsNumberSeriesProviderV1) stays unregistered until its policy is decided (NEEDS-SINAN N-12).
-        services.AddScoped<ISettingsCompanyPolicyAdministrationV1, SettingsCompanyPolicyAdministration>();
+        services.AddScoped<SettingsCompanyPolicyAdministration>();
+        services.AddScoped<ISettingsCompanyPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        services.AddScoped<ISettingsSalesContractDiscountLimitAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<SettingsCompanyPolicyProviderV1>();
         services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>
             provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
@@ -100,6 +104,7 @@ public static class SettingsModuleExtensions
             provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsFinanceCreditAccountMappingProviderV1>(provider =>
             provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsSalesContractDiscountLimitProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
         services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both

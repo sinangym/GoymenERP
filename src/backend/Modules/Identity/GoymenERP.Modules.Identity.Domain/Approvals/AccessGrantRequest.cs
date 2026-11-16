@@ -151,6 +151,18 @@ public sealed class AccessGrantRequest
         ResultingRoleAssignmentId = assignmentId;
     }
 
+    public void ApproveAsCompanyOpener(Guid openerUserId, DateTimeOffset decidedAtUtc, Guid resultingRoleAssignmentId)
+    {
+        EnsurePending();
+        EnsureValidActor(openerUserId);
+        if (openerUserId != RequestedByUserId || openerUserId != TargetUserId || ValidUntilUtc is not null)
+            throw new InvalidOperationException("Company opener approval is only its own indefinite first Admin assignment.");
+        var assignmentId = EnsureAssignment(resultingRoleAssignmentId);
+        Decide(AccessGrantRequestStatus.Approved, openerUserId, decidedAtUtc);
+        ApprovalMode = AccessGrantApprovalMode.CompanyOpener;
+        ResultingRoleAssignmentId = assignmentId;
+    }
+
     public void Reject(Guid approverUserId, string reasonCode, DateTimeOffset decidedAtUtc)
     {
         EnsurePending();

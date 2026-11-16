@@ -2,6 +2,9 @@ namespace GoymenERP.BuildingBlocks.Security;
 
 public static class ErpPermissions
 {
+    /// <summary>KIM-D21: Critical registration only. Company opening authority scope remains a decision gate; no grant.</summary>
+    public const string OrganizationCompaniesOpen = "organization.companies.open";
+
     public const string OrganizationContextRead = "organization.context.read";
     public const string OrganizationSitesRead = "organization.sites.read";
     public const string OrganizationLocationsRead = "organization.locations.read";
@@ -1485,6 +1488,12 @@ public static class ErpPermissions
     /// (<c>SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage</c>). Registered, not granted: no role, seed or
     /// user receives it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
+    // FNS-D70/FNS-D68/KLN-D109: registration only, human grant gate.
+    // SAT-D358/KLN-D109: separate setting, registered only; no persona is hardcoded or granted.
+    public const string SettingsSalesContractDiscountLimitManage = "settings.sales-contract-discount-limit.manage";
+
+    public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
+
     public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
 
     /// <summary>
@@ -1612,6 +1621,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
+            OrganizationCompaniesOpen,
             OrganizationContextRead,
             OrganizationSitesRead,
             OrganizationLocationsRead,
@@ -1841,6 +1851,8 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsSalesContractDiscountLimitManage,
+            SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -1870,6 +1882,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> Critical { get; } = new HashSet<string>(
         [
+            OrganizationCompaniesOpen,
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
@@ -2112,6 +2125,8 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsSalesContractDiscountLimitManage,
+            SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,

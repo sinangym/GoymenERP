@@ -567,3 +567,30 @@ export const PLAN_REAPPROVAL_TEXT = {
   history: 'Yeniden onay geçmişi',
   historyLine: (number: number, at: string, version: number) => `${number}. yeniden onay: ${at}, plan sürümü ${version}`,
 } as const
+
+export const PLAN_INPUT_AVAILABILITY_TEXT = {
+  heading: 'Girdi miktarları ve iptal geçmişi', subject: 'Plan girdilerinin güncel miktarları',
+  help: 'Bu okuma stok ayırmaz. Serbest miktar başka işlemlerle değişebilir; yeniden onayda bütün girdiler birlikte tekrar kontrol edilir. Fiziksel bakiye serbest miktar değildir.',
+  caption: 'Stok kaynağından okunan miktarlar (kg)', label: 'Etiket', product: 'Ürün', version: 'Güncel etiket sürümü',
+  requested: 'Planlanan', physical: 'Fiziksel', blocked: 'Blokeli', allocated: 'Ayrılmış', free: 'Serbest', missing: 'Eksik',
+  positions: 'Serbest pozisyon sayısı', positionRefusal: 'Ayırma için tek serbest pozisyon gerekir',
+  readAt: 'Okuma zamanı', refresh: 'Miktarları yeniden oku', cancelledHistory: 'İptal edilen emir geçmişi',
+  cancelledLine: (orderId: string, version: number) => `İptal edilen emir ${orderId}; iptal sonrası plan sürümü ${version}`,
+} as const
+export const PLAN_QUEUE_TEXT = {
+  heading: 'İş merkezi kuyruğu ve plan önceliği', subject: 'İş merkezi kuyruğu',
+  help: 'Sıra: önce termin, sonra yüksek öncelik puanı, sonra oluşturulma zamanı. Taslak satırı yalnız önizlemedir. Kalan miktar ve plan aşımı sunucudan gelir.',
+  caption: 'İş merkezinin kayıtlı kuyruğu', plan: 'Plan', due: 'Termin', priority: 'Öncelik', planned: 'Planlanan kg',
+  processed: 'İşlenen kg', remaining: 'Kalan kg', status: 'Durum', target: 'Bu plan', noDueDate: 'Termin yok',
+  queued: 'Kuyrukta', preview: 'Önizleme', overPlanned: 'Planı aştı', currentPriority: 'Güncel öncelik puanı', revision: 'Revizyon',
+  score: 'Yeni öncelik puanı', reason: 'Değişiklik gerekçesi', save: 'Önceliği kaydet', resend: 'Aynı denemenin sonucunu sor', refresh: 'Kuyruğu yenile',
+  invalid: 'Tam sayı öncelik puanı ve gerekçe girin.', unknown: 'Kaydın sonucu bilinmiyor. Yeni deneme açmadan aynı anahtarla sonucunu sorun.',
+  conflict: 'Plan veya öncelik değişti. Güncel kaydı okuyup yeni bir deneme hazırlayın.', refused: 'Öncelik kaydedilemedi.',
+  applied: 'Öncelik kaydedildi; güncel kuyruk yeniden okunuyor.',
+} as const
+
+export const PLAN_ALLOCATION_SHORTFALL_TEXT = {
+  heading: 'Stok ayırma reddedildi',
+  help: 'Bu miktarlar reddedilen işlemin anına aittir. Ayrılabilir ve eksik miktarı stok kaynağı bildirdi; güncel girdi okuması bu red anının yerine geçmez.',
+  product: 'Ürün', label: 'Etiket', version: 'Red anındaki etiket sürümü', requested: 'İstenen kg', available: 'Ayrılabilir kg', missing: 'Eksik kg',
+} as const

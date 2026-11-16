@@ -59,6 +59,33 @@ public sealed class Company
 
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>KIM-D20. Existing bootstrap companies retain Active; a later opened company starts pending.</summary>
+    public string LifecycleState { get; private set; } = "Active";
+    public Guid? OpenedByUserId { get; private set; }
+
+    public static Company OpenPending(Guid id, string code, string legalName, string vkn,
+        Guid openedByUserId, DateTimeOffset now)
+    {
+        if (openedByUserId == Guid.Empty || now.Offset != TimeSpan.Zero)
+            throw new ArgumentException("Company opening requires its server actor and UTC instant.");
+        return new Company(id, code, legalName, vkn, isPlaceholder: false, invoiceCapable: false)
+        {
+            LifecycleState = "SetupPending", OpenedByUserId = openedByUserId,
+            CreatedAtUtc = now, UpdatedAtUtc = now,
+        };
+    }
+
+    public bool CompleteSetup(DateTimeOffset now)
+    {
+        if (now.Offset != TimeSpan.Zero) throw new ArgumentException("UTC instant required.", nameof(now));
+        if (LifecycleState == "Active") return false;
+        if (LifecycleState != "SetupPending") throw new InvalidOperationException("Unknown company lifecycle.");
+        LifecycleState = "Active";
+        Version++;
+        UpdatedAtUtc = now;
+        return true;
+    }
+
     public long Version { get; private set; } = 1;
 
     public byte[] RowVersion { get; private set; } = [];

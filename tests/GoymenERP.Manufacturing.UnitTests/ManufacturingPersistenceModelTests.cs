@@ -26,7 +26,7 @@ public sealed class ManufacturingPersistenceModelTests
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
             typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
-            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(CommandRow)];
+            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(PlanPriorityVersionRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -143,7 +143,9 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingOutputLineageEdges", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOutputLabelCodes", StringComparison.Ordinal));
-        Assert.EndsWith("_AddManufacturingOrderCancellation", context.Database.GetMigrations().Last(),
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingOrderCancellation", StringComparison.Ordinal));
+        Assert.EndsWith("_AddManufacturingPlanPriorities", context.Database.GetMigrations().Last(),
             StringComparison.Ordinal);
         Assert.False(context.Database.HasPendingModelChanges());
     }

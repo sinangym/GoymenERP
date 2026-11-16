@@ -41,6 +41,44 @@ public static class SettingsCompanyPolicyEndpoints
             .RequireAuthorization()
             .WithTags("Settings");
 
+        group.MapGet("/sales-contract-discount-limit", async (
+                HttpContext httpContext,
+                ISettingsSalesContractDiscountLimitAdministrationV1 service,
+                CancellationToken cancellationToken) =>
+            await ReadAsync(httpContext, () => service.GetSalesContractDiscountLimitAsync(cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsSalesContractDiscountLimitPermissionsV1.Manage)
+            .WithName("GetSettingsSalesContractDiscountLimitV1")
+            .Produces<SalesContractDiscountLimitViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(CompanyPolicyProblemCodesV1.RequestInvalid)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/sales-contract-discount-limit/versions", async (
+                RecordSalesContractDiscountLimitRequestV1 request,
+                ISettingsSalesContractDiscountLimitAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.RecordSalesContractDiscountLimitAsync(request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsSalesContractDiscountLimitPermissionsV1.Manage)
+            .WithName("RecordSettingsSalesContractDiscountLimitV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict)
+            .Accepts<RecordSalesContractDiscountLimitRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(
+                CompanyPolicyProblemCodesV1.IdempotencyConflict,
+                CompanyPolicyProblemCodesV1.VersionConflict)
+            .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet("/finance-opening-period", async (
                 HttpContext httpContext,
                 ISettingsCompanyPolicyAdministrationV1 service,

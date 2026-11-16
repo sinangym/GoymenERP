@@ -107,11 +107,11 @@ public sealed record InventoryManufacturingPlanAllocationShortfallV1
         LabelId = labelId;
         ProductId = productId;
         LabelVersion = labelVersion;
-        RequestedKg = requestedKg.ToString();
-        FreePhysicalKg = freePhysicalKg.ToString();
-        ReservedKg = reservedKg.ToString();
-        AvailableKg = available.ToString();
-        MissingKg = Kilograms.Positive(requestedKg.Value - available.Value).ToString();
+        RequestedKg = InventoryManufacturingPlanAllocationContractV1.Format(requestedKg.Value);
+        FreePhysicalKg = InventoryManufacturingPlanAllocationContractV1.Format(freePhysicalKg.Value);
+        ReservedKg = InventoryManufacturingPlanAllocationContractV1.Format(reservedKg.Value);
+        AvailableKg = InventoryManufacturingPlanAllocationContractV1.Format(available.Value);
+        MissingKg = InventoryManufacturingPlanAllocationContractV1.Format(requestedKg.Value - available.Value);
         FreePositionCount = freePositionCount;
     }
 

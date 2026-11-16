@@ -403,6 +403,10 @@ public sealed record ManufacturingApiResult<T>(
     /// </summary>
     [JsonIgnore]
     public ManufacturingStockShortfallViewV1? StockShortfall { get; init; }
+
+    /// <summary>URT-D35: fresh refusal only; never persisted or replayed as an old owner measurement.</summary>
+    [JsonIgnore]
+    public ManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; init; }
 }
 
 /// <summary>Codes the command surface adds; everything else is the domain's, the store's or Settings'.</summary>
@@ -529,7 +533,10 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingOrderCancellationStore? orderCancellations = null,
     IManufacturingPlanReapprovalStore? planReapprovals = null,
     ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null,
-    IInventoryFreeQuantityReadPortV1? freeQuantity = null)
+    IInventoryFreeQuantityReadPortV1? freeQuantity = null,
+    IInventoryLabelDispositionReadPortV1? inputDisposition = null,
+    ISettingsManufacturingDueDateBufferProviderV1? companyDueDateBuffer = null,
+    IManufacturingPlanPriorityStore? planPriorities = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -2499,6 +2506,8 @@ public sealed partial class ManufacturingCommandService(
                     exception.Field, exception.ExpectedVersion, exception.CurrentVersion)
                 {
                     StockShortfall = StockShortfallView(exception.StockShortfall),
+                    PlanAllocationShortfall = commandName is ManufacturingCommandNames.ApprovePlan or ManufacturingCommandNames.ReapprovePlan
+                        && exception.PlanAllocationShortfall?.CompanyId == companyId ? exception.PlanAllocationShortfall : null,
                 };
         }
         catch (ManufacturingVersionConflictException exception)

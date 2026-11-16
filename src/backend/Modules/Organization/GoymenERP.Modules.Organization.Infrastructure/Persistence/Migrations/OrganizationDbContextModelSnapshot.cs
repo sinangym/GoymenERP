@@ -292,6 +292,16 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<string>("LifecycleState")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Active");
+
+                    b.Property<Guid?>("OpenedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -321,6 +331,8 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.ToTable("Companies", "organization", t =>
                         {
+                            t.HasCheckConstraint("CK_Companies_Lifecycle", "[LifecycleState] IN (N'Active', N'SetupPending') AND ([OpenedByUserId] IS NULL OR [OpenedByUserId] <> '00000000-0000-0000-0000-000000000000') AND ([LifecycleState] <> N'SetupPending' OR [OpenedByUserId] IS NOT NULL)");
+
                             t.HasCheckConstraint("CK_Companies_Placeholder_InvoiceDisabled", "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_Companies_Vkn_Format", "[Vkn] IS NULL OR (LEN([Vkn]) = 10 AND [Vkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
@@ -490,6 +502,71 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Status", "[Status] IN (N'Pending', N'Applied')");
 
                             t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Version", "[Version] >= 1 AND [CompanyVersionAtStaging] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.CompanySetupInboxReceipt", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "EventId");
+
+                    b.ToTable("CompanySetupInboxReceipts", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanySetupInbox_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND LEN([PayloadHash]) = 64 AND [PayloadHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%'");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.CompanySetup.OrganizationCompanySetupOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position");
+
+                    b.ToTable("CompanySetupOutboxMessages", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanySetupOutbox_Payload", "ISJSON([PayloadJson]) = 1");
                         });
                 });
 

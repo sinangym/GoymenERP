@@ -186,7 +186,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                     b.ToTable("AccessGrantRequests", "identity", t =>
                         {
-                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_DecisionReason", "[DecisionReasonCode] IS NULL OR [Status] = N'Rejected'");
 
@@ -194,7 +194,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_ResultingAssignment", "[ResultingRoleAssignmentId] IS NULL OR [Status] = N'Approved'");
 
-                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] = N'FounderDirect' AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener') AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_Validity", "[ValidUntilUtc] IS NULL OR ([ValidFromUtc] IS NOT NULL AND [ValidUntilUtc] > [ValidFromUtc])");
                         });
@@ -396,6 +396,31 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.CompanySetup.CompanySetupInboxReceipt", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "EventId");
+
+                    b.ToTable("CompanySetupInboxReceipts", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanySetupInbox_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND LEN([PayloadHash]) = 64 AND [PayloadHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -549,6 +574,12 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -562,6 +593,8 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position");
 
                     b.HasIndex("RecordedAtUtc", "Id")
                         .HasDatabaseName("IX_IdentityOutbox_Recorded");

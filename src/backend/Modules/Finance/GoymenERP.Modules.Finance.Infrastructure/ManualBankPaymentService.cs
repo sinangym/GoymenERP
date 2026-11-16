@@ -41,7 +41,8 @@ public sealed class ManualBankPaymentService(
     ManualBankPaymentBinding binding,
     ManualBankPaymentAuditEnvelopes envelopes,
     TimeProvider timeProvider,
-    IFinanceTreasuryBalanceGuard balanceGuard) : IManualBankPaymentService
+    IFinanceTreasuryBalanceGuard balanceGuard,
+    IAuditTransactionWriterV1? auditOwner = null) : IManualBankPaymentService
 {
     public const string DraftCommand = "finance.manual-bank-payment.draft.save";
     public const string ApproveCommand = "finance.manual-bank-payment.approve";
@@ -205,6 +206,23 @@ public sealed class ManualBankPaymentService(
     }
 
     public async Task<ManualBankPaymentCommandResult> RecordAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        RecordManualBankPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+        if (!SameContext(context)) return Refused(context, CommandOutcome.Denied);
+        if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => RecordTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () => await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+    }
+
+    private async Task<ManualBankPaymentCommandResult> RecordTreasuryCoreAsync(
         FinanceContext context,
         CommandMetadata metadata,
         RecordManualBankPaymentRequest request,
@@ -511,6 +529,7 @@ public sealed class ManualBankPaymentService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, command, action, keyHash, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));

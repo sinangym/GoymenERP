@@ -361,6 +361,8 @@ public sealed class IdentityAccessAssignmentServiceTests
 
     private sealed class UnexpectedTransactionAuditWriter : IAuditTransactionWriterV1
     {
+        public bool HasPendingDrafts => false;
+
         public Task WritePendingAsync(System.Data.IDbTransaction transaction, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("These in-memory gate tests must not enter a relational write.");
 

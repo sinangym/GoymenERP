@@ -28,10 +28,14 @@ public static class CompanyPolicyKeysV1
     /// <summary>ALS-D105: the separate purchasing-side record (read only until its write authority is decided).</summary>
     public const string PurchasingSubcontractTaxDefault = "purchasing.subcontract-tax-default";
 
+    /// <summary>SAT-D358: separate from the order discount group limits, no default.</summary>
+    public const string SalesContractDiscountLimit = "sales.contract-discount-limit";
+
     public const int MaximumLength = 64;
 
     public static IReadOnlyList<string> All { get; } =
     [
+        SalesContractDiscountLimit,
         FinanceOpeningPeriod,
         ManufacturingDueDateBuffer,
         SalesSubcontractTaxDefault,

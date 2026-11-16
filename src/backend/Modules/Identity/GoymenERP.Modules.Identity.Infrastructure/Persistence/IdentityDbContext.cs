@@ -11,7 +11,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Identity.Infrastructure.Persistence;
 
-public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> options)
+public sealed partial class IdentityDbContext(DbContextOptions<IdentityDbContext> options,
+    GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext? companyContext = null)
     : DbContext(options)
 {
     /// <summary>ID-1: login counters are never negative and every stored hash names its format version.</summary>
@@ -38,7 +39,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     internal const string AccessGrantSecondApprovalCheck =
         "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR "
         + "([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR "
-        + "([Status] = N'Approved' AND [ApprovalMode] = N'FounderDirect' AND [DecidedByUserId] = [RequestedByUserId]) OR "
+        + "([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener') AND [DecidedByUserId] = [RequestedByUserId]) OR "
         + "([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])";
 
     /// <summary>ID-3: a pending request has no decision; every decided state (Withdrawn included) names who and when.</summary>
@@ -49,7 +50,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     /// <summary>ID-3: the approval mode is recorded exactly on an approved request.</summary>
     internal const string AccessGrantApprovalModeCheck =
-        "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect')) OR "
+        "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener')) OR "
         + "([Status] <> N'Approved' AND [ApprovalMode] IS NULL)";
 
     /// <summary>ID-3: a reject carries its reason code; no other state does.</summary>
@@ -115,6 +116,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         ConfigureOutbox(modelBuilder);
         ConfigureLocalCredentialCommand(modelBuilder);
         ConfigureCompanyReference(modelBuilder);
+        ConfigureCompanySetup(modelBuilder);
         modelBuilder.ConfigureProductMasterAssignment();
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
     }
@@ -160,6 +162,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .UseCollation(BinaryCollation)
             .IsRequired();
         entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        entity.HasIndex(x => new { x.CompanyId, x.Position });
         entity.Property(x => x.CorrelationId).HasMaxLength(IdentityOutboxMessage.CorrelationMaxLength).IsRequired();
         entity.Property(x => x.CausationId).HasMaxLength(IdentityOutboxMessage.CorrelationMaxLength);
         entity.HasIndex(x => new { x.RecordedAtUtc, x.Id }).HasDatabaseName("IX_IdentityOutbox_Recorded");

@@ -117,6 +117,8 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
 
     private sealed class FaultingAuditOwner(IAuditTransactionWriterV1 inner, AuditOwnerFault fault) : IAuditTransactionWriterV1
     {
+        public bool HasPendingDrafts => inner.HasPendingDrafts;
+
         public async Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default)
         {
             await inner.WritePendingAsync(transaction, cancellationToken);
