@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -345,6 +346,23 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             });
         }
 
+        if (order.LastExchangeRateChange is { } openingRate)
+        {
+            // ALC-SC33 (FNS-D79): the automatic default the order was opened with, recorded at the creation version (replayed on rebuild).
+            if (openingRate.Previous is not null || openingRate.Current.Source != PurchaseOrderExchangeRateSource.Automatic
+                || !ReferenceEquals(openingRate.Current, order.ExchangeRate))
+            {
+                throw new ArgumentException("Yeni siparişin kuru yalnız otomatik açılış kurudur.", nameof(build));
+            }
+
+            dbContext.ExchangeRateChanges.Add(ExchangeRateChangeRow(companyId, order.Id, OpeningExchangeRateVersion, openingRate,
+                envelope.CorrelationId.Trim()));
+        }
+        else if (order.ExchangeRate is not null)
+        {
+            throw new ArgumentException("Siparişin kuru kaydı olmadan atanamaz.", nameof(build));
+        }
+
         dbContext.Attempts.Add(Attempt(companyId, PurchasingCommands.OrderCreateV1, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, "purchasing.purchase-order.created.v1", "Create", null, order.Version,
             "{}", Snapshot(order), "Satınalma siparişi açıldı");
@@ -354,8 +372,30 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
-    public async Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+    public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default) =>
+        MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant: null, audit, cancellationToken);
+
+    public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task> participant,
+        PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        if (!TakesOrderLineLocks(commandName))
+        {
+            throw new ArgumentException("Yalnız kalan iptali ve satır kapanışı komutları bir katılımcı taşır.", nameof(commandName));
+        }
+
+        return MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant, audit, cancellationToken);
+    }
+
+    /// <summary>A1-3 / API-11 / ALS-D85: the commands that take every general line lock of the order before the read.</summary>
+    private static bool TakesOrderLineLocks(string commandName) =>
+        PurchasingCommands.IsOrderCancellation(commandName) || PurchasingCommands.IsLineClosure(commandName);
+
+    private async Task<PurchasingOrderStoreResult?> MutateOrderCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task>? participant,
+        PurchasingMutationAudit audit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
@@ -364,7 +404,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         RequireAudit(audit);
         if (!PurchasingCommands.IsOrderMutation(commandName))
         {
-            throw new ArgumentException("Yalnız onay, kalan iptali, termin ve satır kapanışı komutları bir siparişi değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız onay, kalan iptali, termin, satır kapanışı ve kur komutları bir siparişi değiştirir.", nameof(commandName));
         }
 
         var companyId = RequireResolvedCompany();
@@ -395,7 +435,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         // API-11 (§3.4): a line closure or reopening moves one general line's remainder (and its allocatable amount), so it takes the
         // same locks — every general line of the order, the canonical order, rather than a second lock path for the one line; the
         // command is rare and the order's lines are few.
-        await using var lockTransaction = commandName == PurchasingCommands.OrderCancelV1 || PurchasingCommands.IsLineClosure(commandName)
+        await using var lockTransaction = TakesOrderLineLocks(commandName)
             ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken)
             : null;
 
@@ -413,8 +453,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo).ToListAsync(cancellationToken);
         var closureRows = await dbContext.LineClosureEvents.AsNoTracking().Where(closure => closure.OrderId == orderId)
             .OrderBy(closure => closure.OrderVersionAfter).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows);
+        var rateRows = await dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => rate.OrderId == orderId)
+            .OrderBy(rate => rate.OrderVersionAfter).ToListAsync(cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows);
         var versionBefore = order.Version;
+        var rateChangeBefore = order.LastExchangeRateChange;
         var before = Snapshot(order);
         var schedulesBefore = order.Lines.ToDictionary(line => line.Id, line => line.DeliverySchedule);
         var closureChangesBefore = order.Lines.ToDictionary(line => line.Id, line => line.LastClosureChange);
@@ -443,6 +486,13 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             throw new InvalidOperationException("Satır kapanışı komutu tam olarak bir genel satırın kapanışını değiştirir; başka komut değiştirmez.");
         }
 
+        // ALC-SC33 (FNS-D79/D91): the rate command records exactly one rate change; every other command records none.
+        var rateChanged = !ReferenceEquals(rateChangeBefore, order.LastExchangeRateChange);
+        if (rateChanged != (commandName == PurchasingCommands.OrderExchangeRateChangeV1))
+        {
+            throw new InvalidOperationException("Kur komutu tam olarak bir kur değişikliği kaydeder; başka komut kuru değiştirmez.");
+        }
+
         // A3 API-30: a schedule changes no ordered quantity, so only the schedule command is exempt; every other command keeps the check.
         // API-11: neither does a line closure or reopening (the ordered share stays; the closed remainder is not given back to the
         // request line's need, the ALS-D68 reading of a cancelled remainder), so it is exempt too.
@@ -450,6 +500,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             && order.Status == PurchaseOrderStatus.Approved && order.SourceRequestId is { } sourceRequestId)
         {
             await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken);
+        }
+
+        if (participant is not null)
+        {
+            // F-017 F17-4 (ALS-D85, §3.6): the Inventory owner's releases join this transaction while every general line lock is held;
+            // a participant failure leaves the tracked rows unchanged and the transaction rolls back on dispose.
+            var transaction = dbContext.Database.CurrentTransaction
+                ?? throw new InvalidOperationException("Katılımcı için etkin işlem bulunamadı.");
+            await participant(order, transaction.GetDbTransaction(), cancellationToken);
         }
 
         row.Status = (int)order.Status;
@@ -515,6 +574,13 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             }
         }
 
+        if (rateChanged)
+        {
+            // ALC-SC33 (FNS-D91): the rate history (replayed on every rebuild); the audit below carries the old and the new rate.
+            var rateChange = order.LastExchangeRateChange ?? throw new InvalidOperationException("Kur değişikliğinin kaydı yok.");
+            dbContext.ExchangeRateChanges.Add(ExchangeRateChangeRow(companyId, order.Id, order.Version, rateChange, envelope.CorrelationId.Trim()));
+        }
+
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, audit.EventType, audit.Operation, versionBefore, order.Version, before, Snapshot(order), audit.Reason);
         await SaveAsync(cancellationToken);
@@ -525,6 +591,110 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         return new PurchasingOrderStoreResult(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)),
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    public async Task<PurchasingOrderStoreResult?> ReleaseOrderFutureAllocationAsync(PurchasingWriteEnvelope envelope, string requestHash, Guid orderId,
+        Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<PurchasingLinkAuditSnapshots>> participant, PurchasingMutationAudit audit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(participant);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireAudit(audit);
+        const string commandName = PurchasingCommands.OrderFutureAllocationReleaseV1;
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await FindAttemptAsync(commandName, keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            RequireSameContent(attempt, actorId, requestHash);
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.OrderId is not { } recordedId)
+            {
+                throw Refused(PurchasingStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var replayed = await FindOrderAsync(recordedId, cancellationToken) ?? throw new InvalidOperationException("Kayıtlı denemenin siparişi bulunamadı.");
+            return new PurchasingOrderStoreResult(replayed, PurchasingWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (orderId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // F-017 §3.5 F17-4 (ALS-D83): the same locks as a cancellation (every general line, ascending) before the order is read; the
+        // Inventory owner re-takes the allocation's purchase line lock re-entrantly in this transaction.
+        await using var lockTransaction = await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken);
+        var row = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var stored = (await RestoreOrdersAsync([row], cancellationToken)).Single();
+        var transaction = dbContext.Database.CurrentTransaction
+            ?? throw new InvalidOperationException("Katılımcı için etkin işlem bulunamadı.");
+        var snapshots = await participant(stored.Order, transaction.GetDbTransaction(), cancellationToken);
+        if (snapshots is null || string.IsNullOrWhiteSpace(snapshots.Before) || string.IsNullOrWhiteSpace(snapshots.After))
+        {
+            throw new InvalidOperationException("Bağ düşürme audit kaydı önce/sonra görüntüsü ister.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var version = stored.Order.Version;
+        dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, stored.Order.Id, now));
+        // The order is not changed (ALS-D83: the purchase quantities stay); its audit record names the released link.
+        Audit(envelope, companyId, OrderEntityType, stored.Order.Id, audit.EventType, audit.Operation, version, version, snapshots.Before,
+            snapshots.After, audit.Reason);
+        await SaveAsync(cancellationToken);
+        if (lockTransaction is not null)
+        {
+            await lockTransaction.CommitAsync(cancellationToken);
+        }
+
+        return new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    public async Task<PurchasingOrderLinkRead<T>?> ReadOrderFutureAllocationsAsync<T>(Guid orderId,
+        Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<T>> read, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        RequireResolvedCompany();
+        if (orderId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var owned = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            var stored = await FindOrderAsync(orderId, cancellationToken);
+            if (stored is null)
+            {
+                return null;
+            }
+
+            var transaction = dbContext.Database.CurrentTransaction
+                ?? throw new InvalidOperationException("Okuma için etkin işlem bulunamadı.");
+            var value = await read(stored.Order, transaction.GetDbTransaction(), cancellationToken);
+            if (owned is not null)
+            {
+                // Nothing was written; the commit only ends the read transaction.
+                await owned.CommitAsync(cancellationToken);
+            }
+
+            return new PurchasingOrderLinkRead<T>(stored, value);
+        }
+        finally
+        {
+            if (owned is not null)
+            {
+                await owned.DisposeAsync();
+            }
+        }
     }
 
     /// <summary>
@@ -879,6 +1049,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var acceptances = await dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken);
         var closures = await dbContext.LineClosureEvents.AsNoTracking().Where(closure => ids.Contains(closure.OrderId)).ToListAsync(cancellationToken);
+        var rates = await dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => ids.Contains(rate.OrderId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
@@ -886,7 +1057,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToList();
             var ownSlices = slices.Where(slice => slice.OrderId == row.Id).ToList();
             var ownClosures = closures.Where(closure => closure.OrderId == row.Id).OrderBy(closure => closure.OrderVersionAfter).ToList();
-            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures), row.CompanyAccountId, row.EffectiveOn,
+            var ownRates = rates.Where(rate => rate.OrderId == row.Id).OrderBy(rate => rate.OrderVersionAfter).ToList();
+            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures, ownRates), row.CompanyAccountId, row.EffectiveOn,
                 VersionsOf(own));
         })];
     }
@@ -904,12 +1076,22 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         IReadOnlyList<PurchaseOrderLineRow> lines,
         IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null,
         IReadOnlyList<PurchaseOrderLineDeliverySliceRow>? deliverySlices = null,
-        IReadOnlyList<PurchaseOrderLineClosureEventRow>? closureEvents = null)
+        IReadOnlyList<PurchaseOrderLineClosureEventRow>? closureEvents = null,
+        IReadOnlyList<PurchaseOrderExchangeRateChangeRow>? exchangeRateChanges = null)
     {
         var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
             ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, money, row.CreatedAtUtc, row.CreatedBy)
             : PurchaseOrder.Create(row.Id, row.CompanyId, row.SupplierPartyId, money, row.CreatedAtUtc, row.CreatedBy);
+        // ALC-SC33 (FNS-D79): the automatic opening rate is part of the opening (no version of its own); each later change is replayed
+        // at the version it produced, on the Draft, between the schedule revisions.
+        var rateChanges = new Queue<PurchaseOrderExchangeRateChangeRow>((exchangeRateChanges ?? []).OrderBy(rate => rate.OrderVersionAfter));
+        if (rateChanges.TryPeek(out var openingRate) && openingRate.OrderVersionAfter == OpeningExchangeRateVersion)
+        {
+            RequireOwnRate(row, rateChanges.Dequeue());
+            order.AssignDefaultExchangeRate(ExchangeRateOf(openingRate), openingRate.RecordedBy, openingRate.RecordedAtUtc);
+        }
+
         foreach (var line in lines)
         {
             var quantity = Quantity.Of(line.Ordered, UnitOf(line.UnitIsKilogram));
@@ -936,10 +1118,30 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             .GroupBy(slice => slice.OrderVersionAfter)
             .OrderBy(revision => revision.Key)
             .Select(revision => revision.OrderBy(slice => slice.SliceNo).ToArray()));
-        // A3 API-30: the revisions recorded on the Draft come before the approval.
-        while (revisions.TryPeek(out var draftRevision) && draftRevision[0].OrderVersionAfter == checked(order.Version + 1))
+        // A3 API-30: the revisions recorded on the Draft come before the approval; ALC-SC33: so do the rate changes, in version order.
+        while (true)
         {
-            ReplaySchedule(order, row, lines, revisions.Dequeue());
+            var draftVersionAfter = checked(order.Version + 1);
+            if (revisions.TryPeek(out var draftRevision) && draftRevision[0].OrderVersionAfter == draftVersionAfter)
+            {
+                ReplaySchedule(order, row, lines, revisions.Dequeue());
+                continue;
+            }
+
+            if (rateChanges.TryPeek(out var rateChange) && rateChange.OrderVersionAfter == draftVersionAfter)
+            {
+                RequireOwnRate(row, rateChanges.Dequeue());
+                order.SetExchangeRate(order.Version, ExchangeRateOf(rateChange), rateChange.RecordedBy, rateChange.Reason, rateChange.RecordedAtUtc);
+                continue;
+            }
+
+            break;
+        }
+
+        if (rateChanges.Count > 0)
+        {
+            // FNS-D80: the rate is locked at approval; a rate row past the Draft history is not the domain's.
+            throw new InvalidOperationException("Kayıtlı kur değişikliği taslak sipariş sürümünde ardışık değil.");
         }
 
         if (row.Status is (int)PurchaseOrderStatus.Approved or (int)PurchaseOrderStatus.Cancelled)
@@ -1028,6 +1230,40 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         return order;
     }
+
+    /// <summary>ALC-SC33 (FNS-D79): the opening rate is recorded at the order's creation version.</summary>
+    internal const long OpeningExchangeRateVersion = 1;
+
+    private static void RequireOwnRate(PurchaseOrderRow row, PurchaseOrderExchangeRateChangeRow rate)
+    {
+        if (rate.CompanyId != row.CompanyId || rate.OrderId != row.Id)
+        {
+            throw new InvalidOperationException("Kayıtlı kur başka bir siparişe ait.");
+        }
+    }
+
+    /// <summary>ALC-SC33: a stored rate through the domain record, so its bounds and its source/bulletin shape apply again.</summary>
+    private static PurchaseOrderExchangeRate ExchangeRateOf(PurchaseOrderExchangeRateChangeRow rate) =>
+        new(rate.Rate, rate.TargetCurrencyId, (PurchaseOrderExchangeRateKind)rate.Kind, rate.RateDay,
+            (PurchaseOrderExchangeRateSource)rate.Source, rate.BulletinDate);
+
+    private static PurchaseOrderExchangeRateChangeRow ExchangeRateChangeRow(Guid companyId, Guid orderId, long orderVersionAfter,
+        PurchaseOrderExchangeRateChange change, string correlationId) => new()
+        {
+            CompanyId = companyId,
+            OrderId = orderId,
+            OrderVersionAfter = orderVersionAfter,
+            Rate = change.Current.Rate,
+            TargetCurrencyId = change.Current.TargetCurrencyId,
+            Kind = (int)change.Current.Kind,
+            RateDay = change.Current.RateDay,
+            Source = (int)change.Current.Source,
+            BulletinDate = change.Current.BulletinDate,
+            Reason = change.Reason,
+            RecordedBy = change.ChangedBy,
+            RecordedAtUtc = change.ChangedAtUtc,
+            CorrelationId = correlationId,
+        };
 
     /// <summary>
     /// API-11: one stored closure or reopening through the domain — this order's general line, recorded at the version the replay
@@ -1173,6 +1409,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         currency = order.Money is { } money
             ? new { currencyId = money.CurrencyId, currencyCode = money.CurrencyCode, profileId = money.ProfileId, profileVersion = money.ProfileVersion, scale = money.Scale,
                 unitPriceScale = money.UnitPriceScale }
+            : null,
+        // ALC-SC33 (FNS-D91): the order's rate is part of the audited record, so a change's before/after carry the old and the new rate.
+        exchangeRate = order.ExchangeRate is { } rate
+            ? new { rate = rate.Rate, targetCurrencyId = rate.TargetCurrencyId, kind = rate.Kind.ToString(), rateDay = rate.RateDay,
+                source = rate.Source.ToString(), bulletinDate = rate.BulletinDate }
+            : null,
+        // FNS-D91: who recorded the current rate, when, and the optional reason of that change.
+        exchangeRateChange = order.LastExchangeRateChange is { } rateChange
+            ? new { changedBy = rateChange.ChangedBy, changedAtUtc = rateChange.ChangedAtUtc, reason = rateChange.Reason }
             : null,
         // A2a-5a (ALS-D3): who prepared and who approved the order are part of the audited record.
         preparedBy = order.PreparedBy,

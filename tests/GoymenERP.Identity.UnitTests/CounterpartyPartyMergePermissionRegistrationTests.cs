@@ -29,7 +29,7 @@ public sealed class CounterpartyPartyMergePermissionRegistrationTests
     {
         Assert.Equal("counterparty.parties.merge.approve", ErpPermissions.CounterpartyPartiesMergeApprove);
         Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, ErpPermissions.CounterpartyPartiesMergeApprove);
-        Assert.NotEqual(ErpPermissions.CounterpartyPartiesLegalNameUpdate, ErpPermissions.CounterpartyPartiesMergeApprove);
+        Assert.NotEqual(ErpPermissions.CounterpartiesLegalNameApprove, ErpPermissions.CounterpartyPartiesMergeApprove);
         Assert.NotEqual(ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesMergeApprove);
         foreach (var name in AllNames)
         {

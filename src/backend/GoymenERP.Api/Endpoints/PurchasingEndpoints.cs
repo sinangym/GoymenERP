@@ -346,8 +346,55 @@ public static partial class PurchasingEndpoints
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
                 PurchasingProblemCodesV1.RequestState, PurchasingProblemCodesV1.RequestLineOverSourced,
                 PurchasingProblemCodesV1.OrderSameActor, PurchasingProblemCodesV1.OrderMakerUnknown,
+                PurchasingProblemCodesV1.OrderExchangeRateRequired,
                 PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // ALC-SC33 (FNS-D79/D80/D83/D91): the rate recorded on a foreign-currency order, read as stored (never recomputed), and the
+        // preparer's change of it while the order is a Draft; after approval the rate is locked.
+        group.MapGet("/{id:guid}/exchange-rate", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetOrderExchangeRateAsync(id, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetPurchaseOrderExchangeRateV1")
+            .Produces<PurchaseOrderExchangeRateView>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/exchange-rate", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadChangeOrderExchangeRate,
+                (body, metadata) => service.ChangeOrderExchangeRateAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("ChangePurchaseOrderExchangeRateV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ChangePurchaseOrderExchangeRateRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderExchangeRateLocked,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.OrderExchangeRateInvalid,
+                PurchasingProblemCodesV1.OrderExchangeRateNotApplicable, PurchasingProblemCodesV1.OrderExchangeRateReasonTooLong)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -392,7 +439,78 @@ public static partial class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
                 PurchasingProblemCodesV1.OrderNothingToCancel, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
-                PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy)
+                PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy, PurchasingProblemCodesV1.LineHasAllocations)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.OrderCancellationReasonRequired,
+                PurchasingProblemCodesV1.OrderCancellationReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // F-017 §3.5 F17-4 (ALS-D83/ALS-D85): the order's active future allocations, the single link drop and the drop-and-cancel,
+        // under purchasing.future-allocation.release (the drop-and-cancel under purchasing.orders.cancel too). The Inventory owner
+        // writes the release; Purchasing holds the order's line locks, the idempotency attempt and its audit row.
+        group.MapGet("/{id:guid}/future-allocations", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetOrderFutureAllocationsAsync(id, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetPurchaseOrderFutureAllocationsV1")
+            .Produces<PurchaseOrderFutureAllocationLinksView>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.LineBusy, PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/future-allocations/{allocationId:guid}/release", (Guid id, Guid allocationId, HttpContext httpContext,
+                [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadReleaseFutureAllocation,
+                (body, metadata) => service.ReleaseOrderFutureAllocationAsync(id, allocationId, body, metadata, cancellationToken),
+                cancellationToken))
+            .WithName("ReleasePurchaseOrderFutureAllocationV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ReleasePurchaseFutureAllocationRequest>("application/json")
+            .Produces<PurchaseFutureAllocationReleaseResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.FutureAllocationVersionConflict, PurchasingProblemCodesV1.FutureAllocationState,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.FutureAllocationReleaseReasonRequired,
+                PurchasingProblemCodesV1.FutureAllocationReleaseReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/cancellation-with-allocation-release", (Guid id, HttpContext httpContext,
+                [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadCancelOrderWithAllocationRelease,
+                (body, metadata) => service.CancelOrderWithAllocationReleaseAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("CancelPurchaseOrderWithAllocationReleaseV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<CancelPurchaseOrderWithAllocationReleaseRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
+                PurchasingProblemCodesV1.OrderNothingToCancel, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
+                PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy,
+                PurchasingProblemCodesV1.FutureAllocationSetChanged, PurchasingProblemCodesV1.FutureAllocationVersionConflict,
+                PurchasingProblemCodesV1.FutureAllocationState)
             .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.OrderCancellationReasonRequired,
                 PurchasingProblemCodesV1.OrderCancellationReasonTooLong)
             .ProducesErpServiceUnavailable()
@@ -435,7 +553,33 @@ public static partial class PurchasingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
                 PurchasingProblemCodesV1.LineClosureState, PurchasingProblemCodesV1.LineNothingToClose,
-                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy)
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy,
+                PurchasingProblemCodesV1.LineHasAllocations)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.LineClosureOnTechnicalLine,
+                PurchasingProblemCodesV1.LineClosureReasonRequired, PurchasingProblemCodesV1.LineClosureReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // F-017 §3.6: the closure together with the line's confirmed future allocations (purchase-line-closed), under
+        // purchasing.orders.close and purchasing.future-allocation.release.
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/closure-with-allocation-release", (Guid id, Guid lineId, HttpContext httpContext,
+                [FromServices] IPurchasingService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadCloseOrderLineWithAllocationRelease,
+                (body, metadata) => service.CloseOrderLineWithAllocationReleaseAsync(id, lineId, body, metadata, cancellationToken),
+                cancellationToken))
+            .WithName("ClosePurchaseOrderLineWithAllocationReleaseV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ClosePurchaseOrderLineWithAllocationReleaseRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
+                PurchasingProblemCodesV1.LineClosureState, PurchasingProblemCodesV1.LineNothingToClose,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange, PurchasingProblemCodesV1.LineBusy,
+                PurchasingProblemCodesV1.FutureAllocationSetChanged, PurchasingProblemCodesV1.FutureAllocationVersionConflict,
+                PurchasingProblemCodesV1.FutureAllocationState)
             .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.LineClosureOnTechnicalLine,
                 PurchasingProblemCodesV1.LineClosureReasonRequired, PurchasingProblemCodesV1.LineClosureReasonTooLong)
             .ProducesErpServiceUnavailable()
@@ -589,6 +733,7 @@ public static partial class PurchasingEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapGoodsReceiptBatches(group);
+        MapSupplierReturns(group);
     }
 
     private static bool IsListQueryValid(HttpContext httpContext, HashSet<string> allowedNames, int? pageSize, string? cursor, string? status,
@@ -687,8 +832,10 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.IsReplay,
         PurchaseOrderResponse order => order.IsReplay,
+        PurchaseFutureAllocationReleaseResponse release => release.IsReplay,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.IsReplay,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.IsReplay,
+        PurchaseSupplierReturnResponseV1 supplierReturn => supplierReturn.IsReplay,
         _ => false,
     };
 
@@ -696,8 +843,10 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.OriginalCorrelationId,
         PurchaseOrderResponse order => order.OriginalCorrelationId,
+        PurchaseFutureAllocationReleaseResponse release => release.OriginalCorrelationId,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.OriginalCorrelationId,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.OriginalCorrelationId,
+        PurchaseSupplierReturnResponseV1 supplierReturn => supplierReturn.OriginalCorrelationId,
         _ => throw new InvalidOperationException("Replay without its original correlation."),
     };
 

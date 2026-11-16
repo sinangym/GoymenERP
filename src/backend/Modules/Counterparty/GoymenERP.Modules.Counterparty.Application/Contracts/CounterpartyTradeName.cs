@@ -7,7 +7,7 @@ namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 /// the company-wide <c>counterparty.parties.update.basic</c> permission (SAT-D192: "cari kartı açma/değiştirme") plus
 /// <c>counterparty.parties.read</c>, fenced on the PARTY version, one Idempotency-Key, and one audit event per real change.
 /// The official legal name (resmi unvan) is shown read-only here and never travels through this command: it has its own
-/// one-step command under a separate permission (ALS-D95, <see cref="ICounterpartyLegalNameService"/>).
+/// maker-checker proposal and approval under separate permissions (ALS-D111/D113, <see cref="ICounterpartyLegalNameService"/>).
 /// </summary>
 public interface ICounterpartyTradeNameService
 {

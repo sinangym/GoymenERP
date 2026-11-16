@@ -202,7 +202,16 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(11, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(12, PurchasingPermissionManifestV1.Names.Count);
+        // ALC-S3 (ALS-D83/D85): the release name measures the link drop and the drop-and-cancel / drop-and-close commands; no shell
+        // control (the screen lives under the order detail capability).
+        Assert.Contains("purchasing.future-allocation.release", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration =>
+            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.FutureAllocationRelease));
+        // ALC-S5 (B-19): the supplier return name measures the return create only (the cost exception uses orders.approve); no shell control yet.
+        Assert.Contains("purchasing.supplier-returns.record", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration =>
+            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.SupplierReturnsRecord));
         // ALC-S16 (KLN-D45): the variance approval name measures the bulk receipt approval and rejection only; no shell control yet.
         Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration =>
@@ -257,13 +266,13 @@ public sealed class PurchasingPersistenceModelTests
     public void The_A1_1_A1_1b_A1_2_A1_3_A2a_1_A2a_1c_A2a_2_A2a_5a_A3_API_30_API_11_and_ALC_S16_migrations_are_the_last_ones_and_the_snapshot_matches_the_model()
     {
         using PurchasingDbContext context = Context();
-        Assert.Equal(["20261102161658_AddPurchaseRequestWithdrawal",
-                "20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
+        Assert.Equal(["20261103012142_AddPurchaseRequestLineSource", "20261103053923_AddPurchaseOrderCancellation",
                 "20261107063820_AddPurchaseOrderLinePrice", "20261107131321_AddPurchaseOrderUnitPriceScale",
                 "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
                 "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure",
-                "20261115184944_AddPurchaseGoodsReceiptBatches"],
-            context.Database.GetMigrations().TakeLast(10));
+                "20261115184944_AddPurchaseGoodsReceiptBatches", "20261116104436_AddPurchaseOrderExchangeRate",
+                "20261116113129_AddPurchaseSupplierReturns"],
+            context.Database.GetMigrations().TakeLast(11));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -562,6 +571,43 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("[purchasing].[PurchaseGoodsReceiptBatches]", batchGuard.Sql, StringComparison.Ordinal);
         Assert.Contains("[purchasing].[PurchaseGoodsReceiptBatchAttempts]", batchGuard.Sql, StringComparison.Ordinal);
         Assert.Single(batchMigration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_ALC_S5_supplier_return_tables_keep_the_decision_rule_one_exit_per_return_and_a_forward_fix_Down()
+    {
+        using PurchasingDbContext context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var returns = model.FindEntityType(typeof(PurchaseSupplierReturnRow))!;
+        var checks = returns.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(PurchasingDbContext.SupplierReturnDecisionCheck, checks["CK_PurchaseSupplierReturns_Decision"]);
+        Assert.Equal("[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)", checks["CK_PurchaseSupplierReturns_Status"]);
+        // ALS-D91: a replacement return is not offered by this version; SAT-D396's same-actor rule stays a policy, not a CHECK.
+        Assert.Contains("[ReplacementExpected] = 0", checks["CK_PurchaseSupplierReturns_Values"], StringComparison.Ordinal);
+        Assert.DoesNotContain("<> [RequestedBy]", PurchasingDbContext.SupplierReturnDecisionCheck, StringComparison.Ordinal);
+        var exit = Assert.Single(returns.GetIndexes(), index => index.GetDatabaseName() == "UX_PurchaseSupplierReturns_MovementId");
+        Assert.True(exit.IsUnique);
+        Assert.Equal([nameof(PurchaseSupplierReturnRow.CompanyId), nameof(PurchaseSupplierReturnRow.MovementId)],
+            exit.Properties.Select(property => property.Name));
+        Assert.Equal(3, returns.FindProperty(nameof(PurchaseSupplierReturnRow.QuantityKg))!.GetScale());
+        Assert.Equal(4, returns.FindProperty(nameof(PurchaseSupplierReturnRow.UnitCostTryPerKg))!.GetScale());
+        Assert.True(returns.FindProperty(nameof(PurchaseSupplierReturnRow.DecidedBy))!.IsNullable);
+        Assert.All(returns.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Single(returns.GetDeclaredQueryFilters());
+        var attempts = model.FindEntityType(typeof(PurchaseSupplierReturnAttemptRow))!;
+        Assert.Contains(attempts.GetCheckConstraints(), check => check.Name == "CK_PurchaseSupplierReturnAttempts_Outcome");
+        Assert.All(attempts.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        Assert.Single(attempts.GetDeclaredQueryFilters());
+
+        // Up creates the two tables and runs no SQL; Down refuses (51893) before any drop while a return or an attempt exists.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseSupplierReturns();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(2, migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>().Count());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51893", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseSupplierReturns]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseSupplierReturnAttempts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]
@@ -883,5 +929,35 @@ public sealed class PurchasingPersistenceModelTests
 
         return new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
             .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;").Options, company);
+    }
+
+    [Fact]
+    public void The_ALC_SC33_order_rate_history_is_a_company_filtered_append_only_table_with_a_Down_that_refuses_while_a_rate_exists()
+    {
+        using PurchasingDbContext context = Context();
+        var changes = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseOrderExchangeRateChangeRow))!;
+        Assert.Equal((PurchasingDbContext.Schema, "PurchaseOrderExchangeRateChanges"), (changes.GetSchema(), changes.GetTableName()));
+        Assert.Equal(["CompanyId", "OrderId", "OrderVersionAfter"], changes.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Single(changes.GetDeclaredQueryFilters());
+        Assert.Equal((28, 10), (changes.FindProperty(nameof(PurchaseOrderExchangeRateChangeRow.Rate))!.GetPrecision(),
+            changes.FindProperty(nameof(PurchaseOrderExchangeRateChangeRow.Rate))!.GetScale()));
+        Assert.True(changes.FindProperty(nameof(PurchaseOrderExchangeRateChangeRow.Reason))!.IsNullable);
+        Assert.Equal(PurchasingDbContext.ExchangeRateKindCheck,
+            Assert.Single(changes.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderExchangeRateChanges_Kind").Sql);
+        Assert.Equal(PurchasingDbContext.ExchangeRateSourceCheck,
+            Assert.Single(changes.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderExchangeRateChanges_Source").Sql);
+        Assert.Equal("[Rate] > 0", Assert.Single(changes.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderExchangeRateChanges_Rate").Sql);
+        var order = Assert.Single(changes.GetForeignKeys());
+        Assert.Equal((typeof(PurchaseOrderRow), DeleteBehavior.Restrict), (order.PrincipalEntityType.ClrType, order.DeleteBehavior));
+
+        // Up creates one table (no SQL); Down refuses (51833) before the drop while any recorded rate exists (forward fix).
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderExchangeRate();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51833", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseOrderExchangeRateChanges]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(migration.DownOperations[1]);
     }
 }

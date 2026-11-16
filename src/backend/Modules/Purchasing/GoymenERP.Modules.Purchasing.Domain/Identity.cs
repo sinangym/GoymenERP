@@ -95,6 +95,21 @@ public static class PurchasingRuleCodes
     /// <summary>A1-3: the order's remainder was cancelled; no acceptance share or breakdown is added to it.</summary>
     public const string OrderCancelled = "purchasing_order_cancelled";
 
+    /// <summary>ALC-SC33 (FNS-D79): an order exchange rate is a positive number within the Settings rate bounds; a wider one is refused, never rounded.</summary>
+    public const string OrderExchangeRateInvalid = "purchasing_order_exchange_rate_invalid";
+
+    /// <summary>ALC-SC33 (FNS-D79): an order without a currency, or one in the functional currency, carries no exchange rate.</summary>
+    public const string OrderExchangeRateNotApplicable = "purchasing_order_exchange_rate_not_applicable";
+
+    /// <summary>ALC-SC33 (FNS-D80): the rate is locked at approval; a later change needs a revision with re-approval, which is not built.</summary>
+    public const string OrderExchangeRateLocked = "purchasing_order_exchange_rate_locked";
+
+    /// <summary>ALC-SC33 (FNS-D80): a foreign-currency order without a rate in the functional currency is not approved.</summary>
+    public const string OrderExchangeRateRequired = "purchasing_order_exchange_rate_required";
+
+    /// <summary>ALC-SC33 (FNS-D91): a rate-change reason longer than the stored bound is refused, never cut.</summary>
+    public const string OrderExchangeRateReasonTooLong = "purchasing_order_exchange_rate_reason_too_long";
+
     /// <summary>A3 API-30 (ALS-D33): a delivery schedule is recorded on a general line; a technical line's quantity is counted in its general line's schedule.</summary>
     public const string ScheduleOnTechnicalLine = "purchasing_schedule_on_technical_line";
 

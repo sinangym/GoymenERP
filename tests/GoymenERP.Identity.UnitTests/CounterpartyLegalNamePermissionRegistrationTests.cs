@@ -9,10 +9,10 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
-/// ALS-D95 (confirmed by SINAN-CEVAP 19.22): the separate official legal name (resmi unvan) permission is REGISTERED,
-/// not granted; who holds it is a human gate (19.31: the accounting persona grant is decided at the end of the train).
-/// Company-wide only; not Critical; no shipped seed role carries it; it is neither the basic Cari edit name nor the
-/// e-belge profile name.
+/// ALS-D111 + ALS-D113: the official legal name (resmi unvan) maker-checker permissions (propose, approve) are REGISTERED,
+/// not granted; who holds them is a human gate (the decision names the accounting specialist for the proposal and the
+/// accounting manager or the general manager for the approval). Company-wide only; not Critical; no shipped seed role
+/// carries them; neither is the basic Cari edit name nor the e-belge profile name. The retired one-step name is gone.
 /// </summary>
 public sealed class CounterpartyLegalNamePermissionRegistrationTests
 {
@@ -20,7 +20,8 @@ public sealed class CounterpartyLegalNamePermissionRegistrationTests
 
     private static readonly string[] AllNames =
     [
-        "counterparty.parties.legal-name.update",
+        "counterparties.legal_name.propose",
+        "counterparties.legal_name.approve",
     ];
 
     public static TheoryData<string> Names { get; } = new(AllNames);
@@ -28,13 +29,15 @@ public sealed class CounterpartyLegalNamePermissionRegistrationTests
     [Fact]
     public void The_names_are_registered_exactly_once_as_the_Counterparty_owner_spells_them()
     {
-        Assert.Equal("counterparty.parties.legal-name.update", ErpPermissions.CounterpartyPartiesLegalNameUpdate);
-        Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, ErpPermissions.CounterpartyPartiesLegalNameUpdate);
-        Assert.NotEqual(ErpPermissions.CounterpartyAccountsEDocumentUpdate, ErpPermissions.CounterpartyPartiesLegalNameUpdate);
+        Assert.Equal("counterparties.legal_name.propose", ErpPermissions.CounterpartiesLegalNamePropose);
+        Assert.Equal("counterparties.legal_name.approve", ErpPermissions.CounterpartiesLegalNameApprove);
+        Assert.False(ErpPermissions.IsKnown("counterparty.parties.legal-name.update"));
         foreach (var name in AllNames)
         {
             Assert.True(ErpPermissions.IsKnown(name));
             Assert.Single(ErpPermissions.All, known => known == name);
+            Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, name);
+            Assert.NotEqual(ErpPermissions.CounterpartyAccountsEDocumentUpdate, name);
         }
     }
 

@@ -22,8 +22,9 @@ public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 R
     /// <summary>
     /// KLN-D94 (SINAN-CEVAP 34): future supply allocations of the received line that this receipt could not link to its label
     /// and that Inventory therefore released in full (<c>acceptance-link-failed</c>). The receipt itself stands; this list only
-    /// tells the receiving user which Sales reservations were dropped. A replay answers the stored list. Empty when nothing
-    /// was released.
+    /// tells the receiving user which Sales reservations were dropped. KLN-D110 (2): after a link failure every allocation still
+    /// Active on the received line is released whole too and listed with the same failure code. A replay answers Inventory's
+    /// stored conversion list (the KLN-D110 sweep is not repeated or re-listed on replay). Empty when nothing was released.
     /// </summary>
     public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
 }

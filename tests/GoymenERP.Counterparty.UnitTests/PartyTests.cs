@@ -103,7 +103,7 @@ public sealed class PartyTests
     [Fact]
     public void Legal_name_change_trims_moves_the_version_once_and_leaves_the_trade_name()
     {
-        // ALS-D95 / 19.22: one step, no approval; the version moves once.
+        // The internal step an approved ALS-D111/D113 request applies; the version moves once.
         var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(11), PartyKind.LegalEntity, "Eski Unvan A.Ş.", "Ticari");
         var at = DateTimeOffset.UnixEpoch.AddDays(1);
 
@@ -114,6 +114,34 @@ public sealed class PartyTests
         Assert.Null(party.TaxIdentityNumber);
         Assert.Equal(2, party.Version);
         Assert.Equal(at, party.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void Approved_legal_name_change_applies_the_proposal_over_the_name_current_at_request()
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(15), PartyKind.LegalEntity, "Eski Unvan A.Ş.", "Ticari");
+        var at = DateTimeOffset.UnixEpoch.AddDays(2);
+
+        party.ApplyApprovedLegalNameChange("Eski Unvan A.Ş.", "Yeni Unvan A.Ş.", at);
+
+        Assert.Equal("Yeni Unvan A.Ş.", party.LegalName);
+        Assert.Equal("Ticari", party.TradeName);
+        Assert.Equal(2, party.Version);
+        Assert.Equal(at, party.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void Approved_legal_name_change_is_refused_when_the_name_moved_or_the_proposal_equals_it()
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.FromSequence(16), PartyKind.LegalEntity, "Güncel Unvan A.Ş.");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            party.ApplyApprovedLegalNameChange("Eski Unvan A.Ş.", "Yeni Unvan A.Ş.", DateTimeOffset.UnixEpoch));
+        Assert.Throws<InvalidOperationException>(() =>
+            party.ApplyApprovedLegalNameChange("Güncel Unvan A.Ş.", " Güncel Unvan A.Ş. ", DateTimeOffset.UnixEpoch));
+
+        Assert.Equal("Güncel Unvan A.Ş.", party.LegalName);
+        Assert.Equal(1, party.Version);
     }
 
     [Fact]

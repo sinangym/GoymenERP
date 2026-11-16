@@ -107,6 +107,20 @@ public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
 public sealed record CancelPurchaseOrderRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
+/// ALC-SC33 (FNS-D79 / FNS-D80 / FNS-D83 / FNS-D91): POST …/orders/{id}/exchange-rate — the preparer changes a Draft foreign-currency
+/// order's rate before approval. <paramref name="Rate"/> is the exact decimal text (one order-currency unit in the functional
+/// currency; at most 10 decimals, never rounded); <paramref name="RateDate"/> is the rate day (when omitted, the order's creation
+/// business day, FNS-D83); <paramref name="Reason"/> is optional (at most 4000 characters, never cut) and goes to the audit with the
+/// old and the new rate (FNS-D91). The kind is the TCMB forex selling rate (DEC-FIN-010 admits no other kind yet). After approval
+/// the rate is locked (FNS-D80): a change needs a revision with a new approval, which is not built, so it is refused.
+/// </summary>
+public sealed record ChangePurchaseOrderExchangeRateRequest(
+    string ExpectedVersion,
+    string Rate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? RateDate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason = null);
+
+/// <summary>
 /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87): POST …/orders/{id}/lines/{lineId}/closure — closes the not-yet-accepted remainder of
 /// one GENERAL line of an APPROVED order (eksik teslim kapanışı, a separate axis from cancellation) at the expected version, its
 /// technical slices' remainders with it, with the reason (required, at most 4000 characters, never cut). Nothing physical or
@@ -120,6 +134,62 @@ public sealed record ClosePurchaseOrderLineRequest(string ExpectedVersion, strin
 /// by the closure do not come back (ALIS_F017 v1 §3.6).
 /// </summary>
 public sealed record ReopenPurchaseOrderLineRequest(string ExpectedVersion, string Reason);
+
+/// <summary>
+/// F-017 §3.5 F17-4 (ALS-D83): POST …/orders/{id}/future-allocations/{allocationId}/release — drops one active future allocation
+/// on a general line of the order at the allocation's expected version (the owner's version text), with the reason (required, at
+/// most 4000 characters, never cut). The whole remaining allocated quantity is released by the Inventory owner with
+/// <c>purchasing-link-dropped</c>; the purchase quantities and the order version do not change.
+/// </summary>
+public sealed record ReleasePurchaseFutureAllocationRequest(string ExpectedAllocationVersion, string ReasonText);
+
+/// <summary>An allocation the actor saw and confirmed (ALS-D85), at the owner's version text.</summary>
+public sealed record PurchaseFutureAllocationSeenRequest(Guid AllocationId, string ExpectedAllocationVersion);
+
+/// <summary>
+/// ALS-D85: POST …/orders/{id}/cancellation-with-allocation-release — cancels the order's remainder (as
+/// <see cref="CancelPurchaseOrderRequest"/>) together with the active future allocations the actor confirmed. The confirmed set must
+/// be exactly the active set (ids and versions) or nothing is written (409 <c>purchasing_future_allocation_set_changed</c>).
+/// </summary>
+public sealed record CancelPurchaseOrderWithAllocationReleaseRequest(
+    string ExpectedVersion,
+    string Reason,
+    IReadOnlyList<PurchaseFutureAllocationSeenRequest> SeenAllocations);
+
+/// <summary>
+/// F-017 §3.6: POST …/orders/{id}/lines/{lineId}/closure-with-allocation-release — closes the general line's remainder (as
+/// <see cref="ClosePurchaseOrderLineRequest"/>) together with the line's active future allocations the actor confirmed.
+/// </summary>
+public sealed record ClosePurchaseOrderLineWithAllocationReleaseRequest(
+    string ExpectedVersion,
+    string Reason,
+    IReadOnlyList<PurchaseFutureAllocationSeenRequest> SeenAllocations);
+
+/// <summary>One active future allocation on a general line of the order (quantities in the purchase line's unit, exact text).</summary>
+public sealed record PurchaseOrderFutureAllocationLinkView(
+    Guid AllocationId,
+    string Version,
+    Guid LineId,
+    Guid SalesOrderId,
+    Guid SalesOrderLineId,
+    Guid UnitId,
+    string AllocatedQuantity,
+    string RemainingQuantity,
+    DateTimeOffset CreatedAtUtc);
+
+/// <summary>GET …/orders/{id}/future-allocations: the order's active future allocations, ordered by line then creation.</summary>
+public sealed record PurchaseOrderFutureAllocationLinksView(
+    Guid OrderId,
+    string OrderVersion,
+    IReadOnlyList<PurchaseOrderFutureAllocationLinkView> Links);
+
+/// <summary>The answer of a link drop: the dropped allocation as released, the unchanged order version, and the replay markers.</summary>
+public sealed record PurchaseFutureAllocationReleaseResponse(
+    Guid OrderId,
+    string OrderVersion,
+    Guid AllocationId,
+    bool IsReplay,
+    string OriginalCorrelationId);
 
 /// <summary>
 /// A3 API-30 (ALS-D33, ALS-D21 "sıra"): POST …/orders/{id}/lines/{lineId}/schedule — the line's delivery schedule (termin
@@ -384,6 +454,25 @@ public sealed record PurchaseOrderCancelImpactView(
 public sealed record PurchaseOrderCancelImpactLineView(
     Guid LineId, int LineNo, string Kind, Guid ProductId, Guid UnitId, string Committed, string Accepted, string ToCancel);
 
+/// <summary>
+/// ALC-SC33 (FNS-D79 / FNS-D80 / FNS-D83): GET …/orders/{id}/exchange-rate — the rate recorded on the order, as stored; the screen
+/// never recomputes it. <see cref="Applicable"/> is false for an order without a currency or in the functional currency;
+/// <see cref="Required"/> says approval waits for a rate (FNS-D80); <see cref="Changeable"/> is true only while the order is a Draft.
+/// <see cref="Current"/> is null when no rate is recorded (the Settings resolver had no answer when the order was opened).
+/// </summary>
+public sealed record PurchaseOrderExchangeRateView(
+    Guid OrderId, string Status, string Version, Guid? CurrencyId, Guid FunctionalCurrencyId, bool Applicable, bool Required,
+    bool Changeable, PurchaseOrderExchangeRateEntryView? Current);
+
+/// <summary>
+/// ALC-SC33: one recorded rate — the exact number text, the kind (<c>TcmbForexSelling</c>), the rate day, the source
+/// (<c>Automatic</c> = the SAT-D54/D170 default, <c>Manual</c> = typed by the preparer), the bulletin day of an automatic rate, and
+/// who recorded it, when and why (FNS-D91).
+/// </summary>
+public sealed record PurchaseOrderExchangeRateEntryView(
+    string Rate, string Kind, DateOnly RateDay, string Source, DateOnly? BulletinDate, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    string? Reason);
+
 /// <summary>One immutable goods-acceptance share in the persisted order sequence; quantity is exact text in the order line's unit.</summary>
 public sealed record PurchaseOrderAcceptanceHistoryView(
     Guid AcceptanceId, Guid LineId, string Quantity, DateTimeOffset RecordedAtUtc);
@@ -591,6 +680,27 @@ public static class PurchasingProblemCodesV1
     /// <summary>409, terminal (§7; A1-3 fail-closed): every line of the order is fully accepted; there is no remainder to cancel.</summary>
     public const string OrderNothingToCancel = "purchasing_order_nothing_to_cancel";
 
+    /// <summary>
+    /// 409, terminal (§7; ALC-SC33, FNS-D80): a foreign-currency order cannot be approved without a rate into the functional currency
+    /// (field <c>exchangeRate</c>).
+    /// </summary>
+    public const string OrderExchangeRateRequired = "purchasing_order_exchange_rate_required";
+
+    /// <summary>
+    /// 409, terminal (§7; ALC-SC33, FNS-D80): the rate is locked once the order is approved; a change needs a revision with a new
+    /// approval, which is not built (field <c>status</c>).
+    /// </summary>
+    public const string OrderExchangeRateLocked = "purchasing_order_exchange_rate_locked";
+
+    /// <summary>422 (ALC-SC33): the rate is not a positive decimal within 18 integer digits and 10 decimals (never rounded; field <c>rate</c>).</summary>
+    public const string OrderExchangeRateInvalid = "purchasing_order_exchange_rate_invalid";
+
+    /// <summary>422 (ALC-SC33): the order has no currency or is in the functional currency; no rate applies (field <c>rate</c>).</summary>
+    public const string OrderExchangeRateNotApplicable = "purchasing_order_exchange_rate_not_applicable";
+
+    /// <summary>422 (ALC-SC33, FNS-D91): the optional reason is longer than 4000 characters (refused, never cut; field <c>reason</c>).</summary>
+    public const string OrderExchangeRateReasonTooLong = "purchasing_order_exchange_rate_reason_too_long";
+
     /// <summary>422 (A1-3, No.161 §2): the cancellation reason is missing or blank.</summary>
     public const string OrderCancellationReasonRequired = "purchasing_order_cancellation_reason_required";
 
@@ -636,6 +746,27 @@ public static class PurchasingProblemCodesV1
     /// allocation, an acceptance share or a cancel on the same line) beyond the short lock wait; nothing was stored.
     /// </summary>
     public const string LineBusy = "purchasing_line_busy";
+
+    /// <summary>
+    /// 409, retryable (ALS-D85): the line(s) still carry active future allocations; a plain cancel/closure is refused and nothing
+    /// was stored. The client lists them (GET …/future-allocations) and confirms the drop-and-cancel/closure command.
+    /// </summary>
+    public const string LineHasAllocations = "purchasing_line_has_allocations";
+
+    /// <summary>409, retryable (ALS-D85): the confirmed allocation set (ids and versions) is not the active set any more; nothing was stored.</summary>
+    public const string FutureAllocationSetChanged = "purchasing_future_allocation_set_changed";
+
+    /// <summary>409, terminal (F17-4): the allocation's expected version is stale at the Inventory owner; nothing was stored.</summary>
+    public const string FutureAllocationVersionConflict = "purchasing_future_allocation_version_conflict";
+
+    /// <summary>409, terminal (F17-4): the allocation is no longer releasable at the Inventory owner (consumed, released); nothing was stored.</summary>
+    public const string FutureAllocationState = "purchasing_future_allocation_state_conflict";
+
+    /// <summary>422 (ALS-D83): the link drop's reason is required (not blank).</summary>
+    public const string FutureAllocationReleaseReasonRequired = "purchasing_future_allocation_release_reason_required";
+
+    /// <summary>422 (ALS-D83): the link drop's reason exceeds the order reason bound; it is never cut.</summary>
+    public const string FutureAllocationReleaseReasonTooLong = "purchasing_future_allocation_release_reason_too_long";
 
     /// <summary>422: the unit is not an approved kilogram profile for this company on the date, or the quantity's scale exceeds it (Ö2).</summary>
     public const string UnsupportedUnit = "unsupported_unit";
@@ -685,7 +816,9 @@ public sealed record PurchasingServiceBindings(
     string? PriceReadPermission = PurchasingPermissionManifestV1.OrdersPriceRead,
     string? RevisePermission = PurchasingPermissionManifestV1.OrdersRevise,
     string? OrderClosePermission = PurchasingPermissionManifestV1.OrdersClose,
-    string? GoodsReceiptVarianceApprovePermission = PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance);
+    string? GoodsReceiptVarianceApprovePermission = PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance,
+    string? FutureAllocationReleasePermission = PurchasingPermissionManifestV1.FutureAllocationRelease,
+    string? SupplierReturnPermission = PurchasingPermissionManifestV1.SupplierReturnsRecord);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -708,6 +841,10 @@ public static class PurchasingApiV1
     public const string OrderLineScheduleHistoryPath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/schedule-history";
     public const string OrderLineClosurePath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/closure";
     public const string OrderLineReopeningPath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/reopening";
+    public const string OrderFutureAllocationsPath = "/api/v1/purchasing/orders/{id}/future-allocations";
+    public const string OrderFutureAllocationReleasePath = "/api/v1/purchasing/orders/{id}/future-allocations/{allocationId}/release";
+    public const string OrderCancellationWithAllocationReleasePath = "/api/v1/purchasing/orders/{id}/cancellation-with-allocation-release";
+    public const string OrderLineClosureWithAllocationReleasePath = "/api/v1/purchasing/orders/{id}/lines/{lineId}/closure-with-allocation-release";
     public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string CurrencyCandidatesPath = "/api/v1/purchasing/references/currencies";
     public const string IdempotencyHeader = "Idempotency-Key";
@@ -902,6 +1039,20 @@ public static class PurchasingJson
         return request;
     }
 
+    /// <summary>ALC-SC33: the rate is a required string (shape); whether it is a valid number, the rate day and the reason are the service's.</summary>
+    public static ChangePurchaseOrderExchangeRateRequest ReadChangeOrderExchangeRate(string json)
+    {
+        var request = JsonSerializer.Deserialize<ChangePurchaseOrderExchangeRateRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Rate is null)
+        {
+            throw new JsonException("Invalid rate.");
+        }
+
+        return request;
+    }
+
     /// <summary>API-11: the reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
     public static ClosePurchaseOrderLineRequest ReadCloseOrderLine(string json)
     {
@@ -928,6 +1079,72 @@ public static class PurchasingJson
         }
 
         return request;
+    }
+
+    /// <summary>F17-4 (ALS-D83): the allocation version is the owner's numeric text; the reason is a required string (blank → 422).</summary>
+    public static ReleasePurchaseFutureAllocationRequest ReadReleaseFutureAllocation(string json)
+    {
+        var request = JsonSerializer.Deserialize<ReleasePurchaseFutureAllocationRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedAllocationVersion);
+        if (request.ReasonText is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        return request;
+    }
+
+    /// <summary>ALS-D85: as <see cref="ReadCancelOrder"/> plus the confirmed set (0..max, distinct non-empty ids, version shape).</summary>
+    public static CancelPurchaseOrderWithAllocationReleaseRequest ReadCancelOrderWithAllocationRelease(string json)
+    {
+        var request = JsonSerializer.Deserialize<CancelPurchaseOrderWithAllocationReleaseRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        RequireSeenShape(request.SeenAllocations);
+        return request;
+    }
+
+    /// <summary>F-017 §3.6: as <see cref="ReadCloseOrderLine"/> plus the confirmed set.</summary>
+    public static ClosePurchaseOrderLineWithAllocationReleaseRequest ReadCloseOrderLineWithAllocationRelease(string json)
+    {
+        var request = JsonSerializer.Deserialize<ClosePurchaseOrderLineWithAllocationReleaseRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
+        RequireSeenShape(request.SeenAllocations);
+        return request;
+    }
+
+    /// <summary>The most allocations one confirmed set may name (the owner's per-line list bound times the order's line bound).</summary>
+    public const int MaximumSeenAllocations = 1000;
+
+    private static void RequireSeenShape(IReadOnlyList<PurchaseFutureAllocationSeenRequest>? seen)
+    {
+        if (seen is null || seen.Count > MaximumSeenAllocations)
+        {
+            throw new JsonException("Invalid seen allocations.");
+        }
+
+        var ids = new HashSet<Guid>();
+        foreach (var item in seen)
+        {
+            if (item is null || item.AllocationId == Guid.Empty || !ids.Add(item.AllocationId))
+            {
+                throw new JsonException("Invalid seen allocation.");
+            }
+
+            RequireVersionShape(item.ExpectedAllocationVersion);
+        }
     }
 
     /// <summary>

@@ -36,7 +36,8 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
             await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
             var enlisted = new BatchParticipants(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
                 services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus,
-                services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(), clock);
+                services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
+                services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock);
             try
             {
                 var result = await operation(enlisted, cancellationToken);
@@ -71,7 +72,7 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
     private sealed class BatchParticipants(Guid companyId, System.Data.Common.DbConnection connection,
         System.Data.Common.DbTransaction transaction, ISettingsPrerequisiteProvider settings,
         IOrganizationLocationStatusReaderV1 locations, IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply,
-        TimeProvider clock) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
+        IInventoryFutureAllocationReleasePortV1 futureReleases, TimeProvider clock) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
     {
         private readonly List<IAsyncDisposable> owned = [];
         private readonly HashSet<int> labels = [];
@@ -87,7 +88,7 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
             owned.Add(inventory);
             return new LabelParticipants(labelIndex,
                 new PurchaseGoodsReceiptHost.Participants(companyId, purchase, inventory, locations, futureSupply,
-                    connection, transaction));
+                    futureReleases, connection, transaction));
         }
 
         public async ValueTask DisposeAsync()

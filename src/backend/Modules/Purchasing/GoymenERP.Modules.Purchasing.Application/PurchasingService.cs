@@ -52,8 +52,15 @@ public sealed partial class PurchasingService(
     IPurchaseGoodsReceiptBatchStore? batchStore = null,
     IPurchaseGoodsReceiptBatchTransactionV1? batchTransactions = null,
     IPurchaseGoodsReceiptPolicyReadPortV1? receiptPolicy = null,
-    IPurchaseLabelCodeRegisterReadPortV1? labelRegister = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
-    IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1
+    IPurchaseLabelCodeRegisterReadPortV1? labelRegister = null,
+    ISettingsExchangeRateResolverV1? exchangeRates = null,
+    IPurchaseFutureAllocationLinkParticipantV1? allocationLinks = null,
+    IPurchaseSupplierReturnStore? returnStore = null,
+    IPurchaseSupplierReturnTransactionV1? returnTransactions = null,
+    IPurchaseSupplierReturnInvoiceCostReadPortV1? returnInvoiceCosts = null,
+    PurchaseSupplierReturnPolicyV1? returnPolicy = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1,
+    IPurchaseSupplierReturnServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -299,8 +306,13 @@ public sealed partial class PurchasingService(
             return ReplayedOrder(winner.Replay, disclosure);
         }
 
-        await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
+        // ALC-SC33 (FNS-D79): a foreign-currency order opens with the automatic default rate of its creation business day — the
+        // Settings resolver's answer (SAT-D54/D170); without an answer the order opens without a rate and waits for one before approval.
         var now = timeProvider.GetUtcNow();
+        var defaultRate = money is { } orderMoney && orderMoney.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
+            ? await ReadDefaultExchangeRateAsync(scope, bindings.CreatePermission, orderMoney.CurrencyId, BusinessDateOf(now), cancellationToken)
+            : null;
+        await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
         var versions = lines.ToDictionary(item => item.Line.LineId, item => item.ProductVersion);
         PurchasingOrderStoreResult stored;
         try
@@ -310,6 +322,11 @@ public sealed partial class PurchasingService(
                 var order = source is { } sourced
                     ? PurchaseOrder.CreateForRequest(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, sourced.Request.Id, money, now, scope.ActorId.Trim())
                     : PurchaseOrder.Create(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, money, now, scope.ActorId.Trim());
+                if (defaultRate is not null)
+                {
+                    order.AssignDefaultExchangeRate(defaultRate, scope.ActorId.Trim(), now);
+                }
+
                 for (var index = 0; index < lines.Count; index++)
                 {
                     var (line, _, quantity, price) = lines[index];
@@ -375,7 +392,7 @@ public sealed partial class PurchasingService(
         try
         {
             result = await store.MutateOrderAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1, orderId,
-                (order, now) => order.Approve(expectedVersion, actor, now),
+                (order, now) => order.Approve(expectedVersion, actor, now, SettingsCurrencyIdentitiesV1.TurkishLira),
                 new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Satınalma siparişi onaylandı"), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
@@ -387,6 +404,13 @@ public sealed partial class PurchasingService(
         {
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
+        }
+        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderExchangeRateRequired)
+        {
+            // ALC-SC33 (FNS-D80): a foreign-currency order is approved only with its rate; terminal for this key (§7).
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderExchangeRateRequired, [new("exchangeRate", exception.Code)]),
+                replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.OrderSameActor or PurchasingRuleCodes.OrderMakerUnknown)
         {

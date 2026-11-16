@@ -84,14 +84,21 @@ public static class ErpPermissions
     public const string CounterpartyAccountsEDocumentUpdate = "counterparty.accounts.e-document.update";
 
     /// <summary>
-    /// ALS-D95 (confirmed by SINAN-CEVAP 19.22): change a Cari card's official legal name (resmi/hukuki unvan) in one
-    /// step, with no approval step — the Counterparty owner's name (CounterpartyLegalNamePermissionsV1). Registered, not
-    /// granted: no role, seed or user receives it here; the decision flags it for the accounting persona and the grant is
-    /// a human gate (19.31). Company-wide only, as every Counterparty name. Not Critical: the decision makes it a
-    /// single-person change. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants are not
-    /// widened (19.22 chose a separate permission over the basic edit).
+    /// ALS-D111 + ALS-D113 (replacing the one-step ALS-D95/ALS-D110 name): propose a change of a Cari card's official
+    /// legal name (resmi/hukuki unvan); the name does not change until a different person approves — the Counterparty
+    /// owner's name (CounterpartyLegalNamePermissionsV1). Registered, not granted: no role, seed or user receives it here;
+    /// the decision names the accounting specialist persona and the grant is a human gate. Company-wide only, as every
+    /// Counterparty name. Not Critical. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants
+    /// are not widened.
     /// </summary>
-    public const string CounterpartyPartiesLegalNameUpdate = "counterparty.parties.legal-name.update";
+    public const string CounterpartiesLegalNamePropose = "counterparties.legal_name.propose";
+
+    /// <summary>
+    /// ALS-D111 + ALS-D113: approve or reject a proposed legal-name change (one approval is enough; never the proposer).
+    /// Registered, not granted: the decision names the accounting manager or the general manager persona and the grant
+    /// is a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string CounterpartiesLegalNameApprove = "counterparties.legal_name.approve";
 
     /// <summary>
     /// F-027 / EK-18 #76 (SINAN_KARARLARI_2026-10-21): approve the merge of a duplicate Cari party into a surviving party
@@ -1215,6 +1222,22 @@ public static class ErpPermissions
     public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
     /// <summary>
+    /// ALC-S3 (F-017 F17-4, ALS-D83/D85): release a sales line's future supply allocation on a purchase line from the Purchasing
+    /// screen (bağ düşürme), and — together with the cancel or close name — release the linked allocations while cancelling an
+    /// order's remainder or closing a line. The Purchasing owner's name (PurchasingPermissionManifestV1.FutureAllocationRelease);
+    /// apart from cancelling and closing, neither confers the other. Registered, not granted: no role, seed or user receives it
+    /// here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingFutureAllocationRelease = "purchasing.future-allocation.release";
+
+    /// <summary>
+    /// ALC-S5 (B-19; SAT-D306): records a return to supplier of one received label (stock leaves at the original purchase line's
+    /// unit cost). The cost exception decision is NOT this permission: it uses <see cref="PurchasingOrdersApprove"/> (SAT-D396).
+    /// Registered, not granted: no role, seed or user receives it here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingSupplierReturnsRecord = "purchasing.supplier-returns.record";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1520,7 +1543,8 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
-            CounterpartyPartiesLegalNameUpdate,
+            CounterpartiesLegalNamePropose,
+            CounterpartiesLegalNameApprove,
             CounterpartyPartiesMergeApprove,
             CounterpartyPartiesSuccessionRecord,
             CounterpartyPartiesGroupDeactivate,
@@ -1631,6 +1655,8 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingFutureAllocationRelease,
+            PurchasingSupplierReturnsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1773,7 +1799,8 @@ public static class ErpPermissions
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
             CounterpartyAccountsEDocumentUpdate,
-            CounterpartyPartiesLegalNameUpdate,
+            CounterpartiesLegalNamePropose,
+            CounterpartiesLegalNameApprove,
             CounterpartyPartiesMergeApprove,
             CounterpartyPartiesSuccessionRecord,
             CounterpartyPartiesGroupDeactivate,
@@ -1884,6 +1911,8 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingFutureAllocationRelease,
+            PurchasingSupplierReturnsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

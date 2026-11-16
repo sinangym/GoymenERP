@@ -57,6 +57,8 @@ public static class PurchasingModuleExtensions
         // ALC-S16 (F-027): the bulk goods receipt (KLN-D41/D43/D45).
         services.AddScoped<IPurchaseGoodsReceiptBatchStore, PurchaseGoodsReceiptBatchStore>();
         services.AddScoped<IPurchaseGoodsReceiptBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseSupplierReturnStore, PurchaseSupplierReturnStore>();
+        services.AddScoped<IPurchaseSupplierReturnServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseAcceptanceSourceV1, PurchaseAcceptanceSource>();
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
@@ -100,7 +102,19 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<IPurchaseGoodsReceiptBatchStore>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptBatchTransactionV1>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptPolicyReadPortV1>(),
-        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>());
+        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>(),
+        // ALC-SC33 (FNS-D79): the existing Settings exchange-rate resolver for a foreign-currency order's default rate (no new port).
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
+        // ALC-S3 (F-017 §3.5 F17-4): the host's bridge to the Inventory release port; unwired, the link list, the link drop and the
+        // release-with-cancel/close are 503 and the plain cancel/close keep their earlier behavior (no allocation guard).
+        serviceProvider.GetService<IPurchaseFutureAllocationLinkParticipantV1>(),
+        // ALC-S5 (B-19; SAT-D306/D392/D393/D396): the supplier return store and host transaction. The invoice unit cost reader is
+        // optional and unwired until supplier invoices exist (every return then takes the manual cost + exception path, SAT-D393);
+        // the same-actor exception policy is not registered, so the default (a different approver) applies — OPEN, see SAT-D396.
+        serviceProvider.GetRequiredService<IPurchaseSupplierReturnStore>(),
+        serviceProvider.GetService<IPurchaseSupplierReturnTransactionV1>(),
+        serviceProvider.GetService<IPurchaseSupplierReturnInvoiceCostReadPortV1>(),
+        serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

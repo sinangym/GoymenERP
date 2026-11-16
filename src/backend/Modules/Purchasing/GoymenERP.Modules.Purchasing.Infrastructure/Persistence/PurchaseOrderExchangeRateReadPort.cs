@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
@@ -6,14 +7,16 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 /// <summary>
-/// FNS-D73: the Purchasing-owned answer to <see cref="IPurchaseOrderExchangeRateReadPortV1"/> over Purchasing's own company-filtered
-/// order header. A purchase order records no exchange rate yet (where the order's rate is specified is NEEDS-SINAN), so a recorded,
-/// approved order always answers <see cref="PurchaseOrderExchangeRateReasonsV1.RateNotSpecified"/> with its version and recorded
-/// currency: the consumer's conversion stays "hesaplanamadı" and no other rate stands in. Untracked; creates nothing (no attempt,
-/// audit or version effect). A Draft is <see cref="PurchaseOrderExchangeRateReasonsV1.OrderNotApproved"/>; a Cancelled order keeps
-/// the receipts made against it, so it is answered like an approved one. A stored header that cannot be answered (a company
-/// mismatch, a version below one, an unknown status, a half currency snapshot) is
-/// <see cref="PurchaseOrderExchangeRateReasonsV1.StoredOrderUnreadable"/>.
+/// FNS-D73 / ALC-SC33 (FNS-D79/D80): the Purchasing-owned answer to <see cref="IPurchaseOrderExchangeRateReadPortV1"/> over
+/// Purchasing's own company-filtered order header and its append-only rate history. An approved order answers
+/// <see cref="PurchaseOrderExchangeRateAnswerV1.Rated"/> with the rate it was approved with — the latest recorded rate, locked at
+/// approval (FNS-D80) — from the order's currency to the rate's target (the functional currency); an approved order without a
+/// recorded rate (no currency, or the functional currency) answers <see cref="PurchaseOrderExchangeRateReasonsV1.RateNotSpecified"/>
+/// and no other rate stands in. Untracked; creates nothing (no attempt, audit or version effect). A Draft is
+/// <see cref="PurchaseOrderExchangeRateReasonsV1.OrderNotApproved"/> (its rate may still change); a Cancelled order keeps the
+/// receipts made against it, so it is answered like an approved one. A stored header or rate that cannot be answered (a company
+/// mismatch, a version below one, an unknown status, a half currency snapshot, a rate on an order without a currency, a rate
+/// recorded after the order's version or between the same currencies) is <see cref="PurchaseOrderExchangeRateReasonsV1.StoredOrderUnreadable"/>.
 /// </summary>
 internal sealed class PurchaseOrderExchangeRateReadPort(PurchasingDbContext dbContext, ICompanyContext companyContext)
     : IPurchaseOrderExchangeRateReadPortV1
@@ -57,14 +60,45 @@ internal sealed class PurchaseOrderExchangeRateReadPort(PurchasingDbContext dbCo
             return Stored(companyId, purchaseOrderId);
         }
 
-        var reason = (PurchaseOrderStatus)order.Status == PurchaseOrderStatus.Draft
-            ? PurchaseOrderExchangeRateReasonsV1.OrderNotApproved
-            : PurchaseOrderExchangeRateReasonsV1.RateNotSpecified;
+        if ((PurchaseOrderStatus)order.Status == PurchaseOrderStatus.Draft)
+        {
+            // A Draft's rate may still change (FNS-D79): it is not the order's specified rate until approval locks it.
+            return PurchaseOrderExchangeRateAnswerV1.Unavailable(companyId, purchaseOrderId, order.Version, order.CurrencyId,
+                order.CurrencyCode, PurchaseOrderExchangeRateReasonsV1.OrderNotApproved);
+        }
 
-        // FNS-D73: the order records no rate (NEEDS-SINAN: where and by whom it is specified); no rate table, bulletin, order-day
-        // or receipt-day rate is substituted, so the answer is never Rated until the order itself records one.
-        return PurchaseOrderExchangeRateAnswerV1.Unavailable(companyId, purchaseOrderId, order.Version, order.CurrencyId,
-            order.CurrencyCode, reason);
+        // FNS-D80: the rate is locked at approval, so the latest recorded rate is the one the order was approved with.
+        var rate = await dbContext.ExchangeRateChanges.AsNoTracking()
+            .Where(row => row.OrderId == purchaseOrderId)
+            .OrderByDescending(row => row.OrderVersionAfter)
+            .Select(row => new RateFacts(row.CompanyId, row.OrderVersionAfter, row.Rate, row.TargetCurrencyId))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (rate is null)
+        {
+            // FNS-D73: the order records no rate (no currency, or the functional currency); no rate table, bulletin, order-day or
+            // receipt-day rate is substituted.
+            return PurchaseOrderExchangeRateAnswerV1.Unavailable(companyId, purchaseOrderId, order.Version, order.CurrencyId,
+                order.CurrencyCode, PurchaseOrderExchangeRateReasonsV1.RateNotSpecified);
+        }
+
+        if (rate.CompanyId != companyId || !hasCurrencyId || rate.OrderVersionAfter < 1 || rate.OrderVersionAfter > order.Version)
+        {
+            return Stored(companyId, purchaseOrderId);
+        }
+
+        ExchangeRate exchangeRate;
+        try
+        {
+            exchangeRate = ExchangeRate.Of(order.CurrencyId!.Value, rate.TargetCurrencyId, rate.Rate);
+        }
+        catch (ArgumentException)
+        {
+            // An empty target, the order's own currency or a non-positive number: never echoed as a rate.
+            return Stored(companyId, purchaseOrderId);
+        }
+
+        return PurchaseOrderExchangeRateAnswerV1.Rated(companyId, purchaseOrderId, order.Version, order.CurrencyId!.Value,
+            order.CurrencyCode!, exchangeRate);
     }
 
     private static PurchaseOrderExchangeRateAnswerV1 Stored(Guid companyId, Guid purchaseOrderId) =>
@@ -72,4 +106,6 @@ internal sealed class PurchaseOrderExchangeRateReadPort(PurchasingDbContext dbCo
             PurchaseOrderExchangeRateReasonsV1.StoredOrderUnreadable);
 
     private sealed record OrderFacts(Guid CompanyId, int Status, long Version, Guid? CurrencyId, string? CurrencyCode);
+
+    private sealed record RateFacts(Guid CompanyId, long OrderVersionAfter, decimal Rate, Guid TargetCurrencyId);
 }

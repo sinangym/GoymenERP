@@ -436,6 +436,8 @@ builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
 builder.Services.AddScoped<IPurchaseGoodsReceiptTransactionV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddScoped<IPurchaseGoodsReceiptReadsV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddScoped<IPurchaseGoodsReceiptBatchTransactionV1, PurchaseGoodsReceiptBatchHost>();
+// ALC-S5 (B-19; SAT-D306): one transaction for the supplier return row and Inventory's exit at the original line cost.
+builder.Services.AddScoped<IPurchaseSupplierReturnTransactionV1, PurchaseSupplierReturnHost>();
 // F-017 F17-1 (§3.4): Inventory's future allocation takes the purchase general line's lock through this binder (no module reference).
 builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineSerializationLockHostBinder>();
 // F-017 STOK F017-b: the sales order line lock (taken before the purchase line lock) and the Purchasing adapter of Inventory's
@@ -445,6 +447,10 @@ builder.Services.AddScoped<IInventoryFutureSupplySourceV1, InventoryFutureSupply
 // X1 (KLN-D28 (9)): the approved sales order cancellation releases its lines' future supply allocations through Inventory's
 // release port in the cancellation's own transaction (sales line locks, then purchase line locks). No route or permission.
 builder.Services.AddScoped<ISalesOrderFutureAllocationReleaseParticipantV1, SalesFutureAllocationReleaseHostParticipant>();
+// F-017 §3.5 F17-4 (ALS-D83/ALS-D85): Purchasing's link drop, drop-and-cancel and drop-and-close release through Inventory's
+// release port in Purchasing's own transaction (the order's purchase line locks are already held); the plain cancel/closure are
+// refused while an active allocation remains.
+builder.Services.AddScoped<IPurchaseFutureAllocationLinkParticipantV1, PurchasingFutureAllocationLinkHostParticipant>();
 // KLN-D42 (STK-S31): the Purchasing adapter of Inventory's shortage warning supply source (replaces the fail-closed default).
 builder.Services.AddScoped<IInventoryShortageSupplySourceV1, InventoryShortageSupplyHostSource>();
 builder.Services.AddPurchasingModule(
