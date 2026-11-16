@@ -1061,6 +1061,23 @@ public static class ErpPermissions
     public const string LogisticsCustomerReturnsDecision = "logistics.customer-returns.decision";
 
     /// <summary>
+    /// STK-S24 (SAT-D319..D325, SAT-D340..D344): record a dispatch note's sales weighing difference (theoretical ↔ scale bands,
+    /// physical cover, the excess rule) — LogisticsPermissionManifestV1. Its own name. Registered, not granted (grant is a human
+    /// gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsWeighingDifferencesRecord = "logistics.weighing-differences.record";
+
+    /// <summary>
+    /// STK-S24 (SAT-D320 (1), SAT-D321 (1)–(2)): approve a weighing difference at or above the rate. The decision names the Satış
+    /// Müdürü; who holds the name is a grant (human gate). The domain still refuses whoever entered the weighing or a shipment.
+    /// Registered, not granted. Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsWeighingDifferencesApprove = "logistics.weighing-differences.approve";
+
+    /// <summary>STK-S24: read weighing-difference records of the context company. Registered, not granted. Company-wide only. Not Critical.</summary>
+    public const string LogisticsWeighingDifferencesRead = "logistics.weighing-differences.read";
+
+    /// <summary>
     /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
     /// the purchase section (L-09), each its own name so that neither implies the other (Sinan #66 5738113623 §4: each read its own
     /// name, deny-first). Registered, not granted: no role, seed or user receives them here. Company-wide only. Not Critical.
@@ -1546,6 +1563,9 @@ public static class ErpPermissions
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
+            LogisticsWeighingDifferencesRecord,
+            LogisticsWeighingDifferencesApprove,
+            LogisticsWeighingDifferencesRead,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
@@ -1789,6 +1809,9 @@ public static class ErpPermissions
             LogisticsCustomerReturnsRead,
             LogisticsCustomerReturnsRequest,
             LogisticsCustomerReturnsDecision,
+            LogisticsWeighingDifferencesRecord,
+            LogisticsWeighingDifferencesApprove,
+            LogisticsWeighingDifferencesRead,
             LogisticsOperationsSalesWorkRead,
             LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,

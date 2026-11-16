@@ -198,7 +198,7 @@ public sealed class LogisticsPersistenceModelTests
         Assert.DoesNotContain(design.GetProperties(), property => property.Name.Contains("Tolerance", StringComparison.OrdinalIgnoreCase)
             || property.Name.Contains("Threshold", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Stock", StringComparison.OrdinalIgnoreCase)
             || property.Name.Contains("Status", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal("AddUnloadWeighings", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddUnloadWeighings", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddUnloadWeighings();
@@ -247,6 +247,154 @@ public sealed class LogisticsPersistenceModelTests
     {
         CompanyId = CompanyA, InstructionId = Guid.NewGuid(), WeighingId = Guid.NewGuid(), Direction = 1, FirstWeighingKg = 1m, SecondWeighingKg = 2m,
         NetKg = 1m, LoadedKgAtCancel = 1m, DifferenceKg = 0m, RecordedBy = "SENTETIK", RecordedAtUtc = DateTimeOffset.UtcNow,
+    };
+
+    [Fact]
+    public void The_weighing_difference_tables_are_tenant_rows_of_their_dispatch_note_with_checks_and_a_forward_fix_down()
+    {
+        // STK-S24 (SAT-D319..D325, SAT-D340..D344): one record per dispatch note, its products, the actors who entered it and the
+        // ADR-011 attempts. No stock column exists: the record never moves stock (the kantar farkı stock entry is Inventory's).
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var record = model.FindEntityType(typeof(WeighingDifferenceRecordRow))!;
+        var products = model.FindEntityType(typeof(WeighingDifferenceProductRow))!;
+        var enteredBy = model.FindEntityType(typeof(WeighingDifferenceEnteredByRow))!;
+        var attempts = model.FindEntityType(typeof(WeighingDifferenceAttemptRow))!;
+        Assert.Equal(
+            ["WeighingDifferences", "WeighingDifferenceProducts", "WeighingDifferenceEnteredBy", "WeighingDifferenceAttempts"],
+            new[] { record, products, enteredBy, attempts }.Select(entity => entity.GetTableName()!).ToArray());
+        foreach (var type in new[] { typeof(WeighingDifferenceRecordRow), typeof(WeighingDifferenceProductRow),
+                     typeof(WeighingDifferenceEnteredByRow), typeof(WeighingDifferenceAttemptRow) })
+        {
+            Assert.Equal(LogisticsDbContext.Schema, model.FindEntityType(type)!.GetSchema());
+            Assert.Single(context.Model.FindEntityType(type)!.GetDeclaredQueryFilters());
+            Assert.All(model.FindEntityType(type)!.GetForeignKeys(), key => Assert.Equal("CompanyId", key.Properties[0].Name));
+        }
+
+        Assert.Equal(["CompanyId", "RecordId"], record.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(["CompanyId", "RecordId", "Ordinal"], products.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(["CompanyId", "RecordId", "ActorId"], enteredBy.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"],
+            attempts.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        var perNote = record.GetIndexes().Single(index => index.GetDatabaseName() == "UX_WeighingDifferences_DispatchNoteId");
+        Assert.True(perNote.IsUnique);
+        Assert.Equal(["CompanyId", "DispatchNoteId"], perNote.Properties.Select(property => property.Name).ToArray());
+        Assert.True(products.GetIndexes().Single(index => index.GetDatabaseName() == "UX_WeighingDifferenceProducts_ProductId").IsUnique);
+        Assert.Contains(record.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DispatchNoteRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "InstructionId", "DispatchNoteId"]));
+        Assert.Equal(LogisticsDbContext.IdentityCollation, enteredBy.FindProperty("ActorId")!.GetCollation());
+        Assert.All(new[] { "TheoreticalKg", "ScaleKg", "DifferenceKg", "TotalExcessKg" },
+            name => Assert.Equal((18, 3), (record.FindProperty(name)!.GetPrecision(), record.FindProperty(name)!.GetScale())));
+        Assert.All(new[] { "WarningBandPercent", "ApprovalBandPercent", "BlockBandPercent", "ApprovalRatePercent" },
+            name => Assert.Equal(LogisticsDbContext.WeighingDifferencePercentScale, record.FindProperty(name)!.GetScale()));
+        Assert.True(record.FindProperty("Version")!.IsConcurrencyToken);
+        Assert.Equal(
+            ["CK_WeighingDifferences_Actors", "CK_WeighingDifferences_Bands", "CK_WeighingDifferences_Decision",
+                "CK_WeighingDifferences_Identity", "CK_WeighingDifferences_Quantities", "CK_WeighingDifferences_Rate",
+                "CK_WeighingDifferences_State"],
+            record.GetCheckConstraints().Select(check => check.Name).Order(StringComparer.Ordinal).ToArray());
+        Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Quantities"
+            && check.Sql.Contains("[DifferenceKg] = [ScaleKg] - [TheoreticalKg]", StringComparison.Ordinal));
+        Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Decision"
+            && check.Sql.Contains("([Decision] = 1 AND [TotalExcessKg] = 0)", StringComparison.Ordinal));
+        Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_State"
+            && check.Sql.Contains("[Status] = 3 AND [Version] = 2 AND [Decision] = 3 AND [EnteredByComplete] = 1", StringComparison.Ordinal));
+        Assert.Contains(products.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferenceProducts_Quantities"
+            && check.Sql.Contains("[PhysicallyCoveredKg] + [ExcessKg] = CASE WHEN [DifferenceKg] > 0 THEN [DifferenceKg] ELSE 0 END",
+                StringComparison.Ordinal));
+        Assert.Contains(products.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferenceProducts_Target"
+            && check.Sql == "([ExcessKg] = 0 AND [TargetLineNo] IS NULL) OR ([ExcessKg] > 0 AND [TargetLineNo] >= 1)");
+        Assert.DoesNotContain(record.GetProperties().Concat(products.GetProperties()), property =>
+            property.Name.Contains("Stock", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Movement", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Cost", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("AddWeighingDifferences", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddWeighingDifferences();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var down = migration.DownOperations;
+        Assert.Equal(5, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        foreach (var table in new[] { "WeighingDifferences", "WeighingDifferenceProducts", "WeighingDifferenceEnteredBy", "WeighingDifferenceAttempts" })
+        {
+            Assert.Contains($"EXISTS (SELECT 1 FROM [logistics].[{table}])", guard.Sql, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("THROW 51761,", guard.Sql, StringComparison.Ordinal);
+        Assert.All(down.Skip(1), operation => Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(operation));
+    }
+
+    [Fact]
+    public async Task A_stored_weighing_difference_keeps_its_evaluation_and_only_moves_from_pending_to_approved()
+    {
+        // The evaluation is written once.
+        await using (var context = Context())
+        {
+            var row = Difference();
+            context.WeighingDifferences.Attach(row);
+            row.TotalExcessKg = 1m;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // Nothing is deleted.
+        await using (var context = Context())
+        {
+            var row = Difference();
+            context.WeighingDifferences.Attach(row);
+            context.Entry(row).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // A recorded (no-approval) row never turns approved, and an approval never drops its approver.
+        await using (var context = Context())
+        {
+            var row = Difference(status: 1);
+            context.WeighingDifferences.Attach(row);
+            row.Status = 3;
+            row.Version = 2;
+            row.ApprovedBy = "SENTETIK-onaylayan";
+            row.ApprovedAtUtc = DateTimeOffset.UtcNow;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("yalnız onay bekliyor", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (var context = Context())
+        {
+            var row = Difference();
+            context.WeighingDifferences.Attach(row);
+            row.Status = 3;
+            row.Version = 2;
+            row.ApprovedAtUtc = DateTimeOffset.UtcNow;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("yalnız onay bekliyor", refusal.Message, StringComparison.Ordinal);
+        }
+
+        // Products are append only.
+        await using (var context = Context())
+        {
+            var row = new WeighingDifferenceProductRow
+            {
+                CompanyId = CompanyA, RecordId = Guid.NewGuid(), Ordinal = 1, ProductId = Guid.NewGuid(), NoteKg = 1000m,
+                ScaleKg = 1008m, DifferenceKg = 8m, RemainingPhysicalKg = 0m, PhysicallyCoveredKg = 0m, ExcessKg = 8m, TargetLineNo = 1,
+            };
+            context.WeighingDifferenceProducts.Attach(row);
+            row.ExcessKg = 0m;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static WeighingDifferenceRecordRow Difference(int status = 2) => new()
+    {
+        CompanyId = CompanyA, RecordId = Guid.NewGuid(), InstructionId = Guid.NewGuid(), DispatchNoteId = Guid.NewGuid(),
+        TheoreticalKg = 1000m, ScaleKg = 1008m, DifferenceKg = 8m, BandLevel = 0, TotalExcessKg = status == 1 ? 0m : 8m,
+        Decision = status == 1 ? 1 : 3, EnteredByComplete = true, Status = status, Version = 1, RowVersion = [1],
+        RecordedBy = "SENTETIK", RecordedAtUtc = DateTimeOffset.UtcNow,
     };
 
     [Fact]

@@ -39,6 +39,9 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.CustomerReturnsDecision, ErpPermissions.LogisticsCustomerReturnsDecision)]
     [InlineData(LogisticsPermissionManifestV1.OperationsSalesWorkRead, ErpPermissions.LogisticsOperationsSalesWorkRead)]
     [InlineData(LogisticsPermissionManifestV1.OperationsPurchaseWorkRead, ErpPermissions.LogisticsOperationsPurchaseWorkRead)]
+    [InlineData(LogisticsPermissionManifestV1.WeighingDifferencesRecord, ErpPermissions.LogisticsWeighingDifferencesRecord)]
+    [InlineData(LogisticsPermissionManifestV1.WeighingDifferencesApprove, ErpPermissions.LogisticsWeighingDifferencesApprove)]
+    [InlineData(LogisticsPermissionManifestV1.WeighingDifferencesRead, ErpPermissions.LogisticsWeighingDifferencesRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);

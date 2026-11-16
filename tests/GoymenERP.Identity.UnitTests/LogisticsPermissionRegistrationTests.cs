@@ -36,6 +36,9 @@ public sealed class LogisticsPermissionRegistrationTests
         ErpPermissions.LogisticsLoadingInstructionsCancel,
         ErpPermissions.LogisticsOperationsSalesWorkRead,
         ErpPermissions.LogisticsOperationsPurchaseWorkRead,
+        ErpPermissions.LogisticsWeighingDifferencesRecord,
+        ErpPermissions.LogisticsWeighingDifferencesApprove,
+        ErpPermissions.LogisticsWeighingDifferencesRead,
     };
 
     [Fact]
@@ -53,6 +56,9 @@ public sealed class LogisticsPermissionRegistrationTests
         Assert.Equal("logistics.loading-instructions.cancel", ErpPermissions.LogisticsLoadingInstructionsCancel);
         Assert.Equal("logistics.operations-work.sales.read", ErpPermissions.LogisticsOperationsSalesWorkRead);
         Assert.Equal("logistics.operations-work.purchase.read", ErpPermissions.LogisticsOperationsPurchaseWorkRead);
+        Assert.Equal("logistics.weighing-differences.record", ErpPermissions.LogisticsWeighingDifferencesRecord);
+        Assert.Equal("logistics.weighing-differences.approve", ErpPermissions.LogisticsWeighingDifferencesApprove);
+        Assert.Equal("logistics.weighing-differences.read", ErpPermissions.LogisticsWeighingDifferencesRead);
     }
 
     [Theory]

@@ -75,7 +75,23 @@ public static class LogisticsPermissionManifestV1
     /// <summary>Approve or reject a pending customer return. The domain still requires a different actor.</summary>
     public const string CustomerReturnsDecision = "logistics.customer-returns.decision";
 
+    /// <summary>
+    /// STK-S24 (SAT-D319..D325, SAT-D340..D344): record a dispatch note's sales weighing difference. Its own name; registered
+    /// centrally, no grant or role is chosen here.
+    /// </summary>
+    public const string WeighingDifferencesRecord = "logistics.weighing-differences.record";
+
+    /// <summary>
+    /// STK-S24 (SAT-D320 (1), SAT-D321): approve a weighing difference at or above the rate. The decision names the Satış Müdürü;
+    /// the grant is a human gate. The domain refuses whoever entered the weighing or a shipment on the note.
+    /// </summary>
+    public const string WeighingDifferencesApprove = "logistics.weighing-differences.approve";
+
+    /// <summary>STK-S24: read weighing-difference records of the context company.</summary>
+    public const string WeighingDifferencesRead = "logistics.weighing-differences.read";
+
     public static readonly IReadOnlyList<string> Names =
         [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
-            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision];
+            DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision,
+            WeighingDifferencesRecord, WeighingDifferencesApprove, WeighingDifferencesRead];
 }
