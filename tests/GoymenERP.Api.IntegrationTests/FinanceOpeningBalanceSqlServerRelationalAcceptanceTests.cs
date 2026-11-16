@@ -364,7 +364,7 @@ public sealed class FinanceOpeningBalanceSqlServerRelationalAcceptanceTests
                 new FinanceOpeningBalanceEnvelopes(
                     new FinanceAuditEnvelope(ErpPermissions.FinanceOpeningBalancesPropose, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ErpPermissions.FinanceOpeningBalancesApprove, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, new InternalLedgerTreasuryBalanceGuard(dbContext, companyContext));
             return new Scope(dbContext, openings, new FinanceContext(company, actor, Correlation, null));
         }
 

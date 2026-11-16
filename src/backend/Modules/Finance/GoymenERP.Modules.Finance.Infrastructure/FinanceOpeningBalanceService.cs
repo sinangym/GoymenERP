@@ -34,8 +34,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// for a new proposal.</item>
 /// <item><b>Authority, idempotency (ADR-011) and audit (ADR-009):</b> as the collateral master.</item>
 /// </list>
-/// Not built (not confirmed): an open item for a party opening, the treasury balance effect of a cash/bank opening
-/// movement, cheque/note, loan and DBS openings.
+/// Treasury movements participate in the FNS-D102 internal ledger. Not built here:
+/// an open item for a party opening, cheque/note, loan and DBS openings.
 /// </summary>
 public sealed class FinanceOpeningBalanceService(
     FinanceDbContext dbContext,
@@ -47,7 +47,9 @@ public sealed class FinanceOpeningBalanceService(
     IFinanceOpeningPeriodReader openingPeriod,
     IAuditEventCollector auditEvents,
     FinanceOpeningBalanceEnvelopes envelopes,
-    TimeProvider timeProvider) : IFinanceOpeningBalanceService
+    TimeProvider timeProvider,
+    IFinanceTreasuryBalanceGuard? balanceGuard = null,
+    IAuditTransactionWriterV1? auditOwner = null) : IFinanceOpeningBalanceService
 {
     public const string ProposeCommand = "finance.opening-balance.propose";
     public const string ApproveCommand = "finance.opening-balance.approve";
@@ -178,6 +180,19 @@ public sealed class FinanceOpeningBalanceService(
     }
 
     public async Task<OpeningBalanceCommandResult> ApproveAsync(FinanceContext context, CommandMetadata metadata,
+        OpeningBalanceApproveRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (await StartAsync(context, metadata, FinanceAction.ApproveOpeningBalance, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ApproveTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () => await FenceAsync(context, FinanceAction.ApproveOpeningBalance, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+    }
+
+    private async Task<OpeningBalanceCommandResult> ApproveTreasuryCoreAsync(FinanceContext context, CommandMetadata metadata,
         OpeningBalanceApproveRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -360,6 +375,19 @@ public sealed class FinanceOpeningBalanceService(
 
     /// <summary>FNS-D85: the approval of a pending reversal; writes the reversal movement and marks the opening reversed.</summary>
     public async Task<OpeningBalanceCommandResult> ApproveReversalAsync(FinanceContext context,
+        CommandMetadata metadata, OpeningBalanceReversalApproveRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (await StartAsync(context, metadata, FinanceAction.ApproveOpeningBalance, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ApproveReversalTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () => await FenceAsync(context, FinanceAction.ApproveOpeningBalance, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+    }
+
+    private async Task<OpeningBalanceCommandResult> ApproveReversalTreasuryCoreAsync(FinanceContext context,
         CommandMetadata metadata, OpeningBalanceReversalApproveRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -700,6 +728,25 @@ public sealed class FinanceOpeningBalanceService(
             dbContext.ChangeTracker.Clear();
             return Refused(context, CommandOutcome.ValidationFailed,
                 Issue("openingPeriod", "opening_period_version_changed"));
+        }
+
+        if (status == Approved && row.TargetKind is CashAccountKind or BankAccountKind)
+        {
+            TreasuryBalanceAnswer? balance;
+            try
+            {
+                balance = await (balanceGuard ?? new UnavailableTreasuryBalanceGuard()).CheckOutgoingAsync(context,
+                    row.TargetKind == BankAccountKind ? ExpensePaymentSourceKind.Bank : ExpensePaymentSourceKind.Cash,
+                    row.TargetId, new MoneyText(row.AmountText, row.CurrencyId), cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException) { balance = null; }
+            if (await FenceAsync(context, action, cancellationToken) is { } afterBalance) return afterBalance;
+            if (balance is null || balance.Outcome == TreasuryBalanceOutcome.Unavailable)
+                return Refused(context, CommandOutcome.Unavailable,
+                    Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode));
+            if (balance.Outcome != TreasuryBalanceOutcome.Sufficient)
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    Issue("amount", TreasuryBalanceAnswer.InsufficientCode));
         }
 
         var now = timeProvider.GetUtcNow();
@@ -1094,6 +1141,7 @@ public sealed class FinanceOpeningBalanceService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             if (await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken) is { } prior)
             {

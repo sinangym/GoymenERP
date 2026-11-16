@@ -576,7 +576,7 @@ public sealed class PartyLedgerServiceTests
             var service = new ReversalProposalService(context, companyContext, user, new AllowAll(), new OpenPeriod(),
                 new FinanceAllocationReversalGate(context, companyContext, user), collector,
                 new FinanceReversalEnvelopes(Envelope(FinancePermissionNames.ReversePropose),
-                    Envelope(FinancePermissionNames.ReverseApprove)), TimeProvider.System);
+                    Envelope(FinancePermissionNames.ReverseApprove)), TimeProvider.System, new SyntheticSufficientTreasuryBalanceGuard());
             return new Scope<IReversalProposalService>(context, service, Finance(Company, actor));
         }
 

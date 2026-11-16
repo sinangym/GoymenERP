@@ -22,12 +22,12 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </para>
 /// <para>
 /// Permission, the Settings money profile, the record period rule and the treasury balance guard are ISOLATED
-/// SYNTHETIC ports: no expense-payment grant exists and no treasury balance source is defined yet (FNS-D49 waits for
-/// F-014's opening balance), so these tests prove the store, its constraints and its rules, not a user outcome.
+/// SYNTHETIC ports in the original store facts. The TreasuryLedger partial separately exercises the real internal
+/// balance guard and transaction. These are bounded store/ledger proofs, not a granted user workflow.
 /// Every identity, amount and account below is SENTETIK / NOT_ENV test data.
 /// </para>
 /// </summary>
-public sealed class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
 {
     private const string Preparer = "SENTETIK-preparer";
     private const string Approver = "SENTETIK-approver";
@@ -330,7 +330,7 @@ public sealed class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
                 new MoneyText(Amount, Currency), new ProfileReference(Profile.ToString("D"), "1"), OccurredOn, null, null,
                 description));
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
@@ -504,7 +504,7 @@ public sealed class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
             Task.FromResult(new RecordPeriodAnswer(RecordPeriodOutcome.Open, null));
     }
 
-    /// <summary>SENTETIK: a fixed treasury balance answer. Not a balance source (FNS-D49 is open).</summary>
+    /// <summary>SENTETIK: a fixed treasury balance answer for the original isolated store facts.</summary>
     private sealed class SyntheticBalance(TreasuryBalanceOutcome outcome) : IFinanceTreasuryBalanceGuard
     {
         public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context,
