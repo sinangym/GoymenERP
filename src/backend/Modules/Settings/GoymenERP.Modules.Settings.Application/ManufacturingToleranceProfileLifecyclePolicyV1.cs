@@ -3,8 +3,11 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Settings.Application;
 
 /// <summary>
-/// Pure lifecycle policy selected by D-MFG-PROFILE-AUTH-01=A. It does not authorize an actor,
-/// persist a command, choose a tolerance value or activate a profile.
+/// Pure lifecycle policy of the Manufacturing parameter and tolerance profiles. URN-D6 (2026-11-12) replaced the
+/// D-MFG-PROFILE-AUTH-01=A maker-checker chain with one prepare → publish flow: an authorized actor publishes a draft
+/// directly (the preparer may publish; no second approval) and the audit keeps who did it. Versions approved or published
+/// under the old chain stay valid as history (their approval is kept), and a version left Approved under it may still be
+/// published. It does not authorize an actor, persist a command, choose a tolerance value or activate a profile.
 /// </summary>
 public static class ManufacturingToleranceProfileLifecyclePolicyV1
 {
@@ -48,30 +51,33 @@ public static class ManufacturingToleranceProfileLifecyclePolicyV1
         };
     }
 
+    /// <summary>
+    /// URN-D6: the separate approval step is retired. It never changes a profile and always refuses with
+    /// <see cref="ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired"/>, whatever the profile's state.
+    /// </summary>
     public static ManufacturingToleranceProfileLifecycleV1 Approve(
         ManufacturingToleranceProfileLifecycleV1 current,
         ManufacturingToleranceProfileCommandContextV1 context)
     {
-        Validate(current, context);
-        RequireStatus(current, ManufacturingToleranceProfileStatusV1.Draft);
-        RequireNotMaker(current, context);
-        return current with
-        {
-            StateVersion = Next(current.StateVersion),
-            Status = ManufacturingToleranceProfileStatusV1.Approved,
-            ApprovedBy = context.ActorId,
-            ApprovedAtUtc = context.OccurredAtUtc,
-            ApprovalReason = context.Reason,
-        };
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(context);
+        throw Failure(ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired);
     }
 
+    /// <summary>
+    /// URN-D6: a Draft is published directly (no approval fields; the preparer may publish). A version left Approved under
+    /// D-MFG-PROFILE-AUTH-01=A is published keeping its approval as history; its publisher may be anyone authorized.
+    /// </summary>
     public static ManufacturingToleranceProfileLifecycleV1 Publish(
         ManufacturingToleranceProfileLifecycleV1 current,
         ManufacturingToleranceProfileCommandContextV1 context)
     {
         Validate(current, context);
-        RequireStatus(current, ManufacturingToleranceProfileStatusV1.Approved);
-        RequireNotMaker(current, context);
+        if (current.Status is not (ManufacturingToleranceProfileStatusV1.Draft or ManufacturingToleranceProfileStatusV1.Approved))
+        {
+            throw Failure(ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition);
+        }
+
         return current with
         {
             StateVersion = Next(current.StateVersion),
@@ -160,21 +166,15 @@ public static class ManufacturingToleranceProfileLifecyclePolicyV1
         var statusValid = current.Status switch
         {
             ManufacturingToleranceProfileStatusV1.Draft =>
-                current.ApprovedBy is null && current.ApprovedAtUtc is null && current.ApprovalReason is null
+                ApprovalAbsent(current)
                 && current.PublishedBy is null && current.PublishedAtUtc is null && current.PublicationReason is null,
             ManufacturingToleranceProfileStatusV1.Approved =>
-                ValidText(current.ApprovedBy, ActorMaximumLength)
-                && current.ApprovedBy != current.PreparedBy
-                && Utc(current.ApprovedAtUtc)
-                && ValidText(current.ApprovalReason, ReasonMaximumLength)
+                ApprovalRecorded(current)
                 && current.PublishedBy is null && current.PublishedAtUtc is null && current.PublicationReason is null,
+            // URN-D6: published directly (no approval) or, as history, after a D-MFG-PROFILE-AUTH-01=A approval.
             ManufacturingToleranceProfileStatusV1.Published =>
-                ValidText(current.ApprovedBy, ActorMaximumLength)
-                && current.ApprovedBy != current.PreparedBy
-                && Utc(current.ApprovedAtUtc)
-                && ValidText(current.ApprovalReason, ReasonMaximumLength)
+                (ApprovalAbsent(current) || ApprovalRecorded(current))
                 && ValidText(current.PublishedBy, ActorMaximumLength)
-                && current.PublishedBy != current.PreparedBy
                 && Utc(current.PublishedAtUtc)
                 && ValidText(current.PublicationReason, ReasonMaximumLength),
             _ => false,
@@ -184,6 +184,16 @@ public static class ManufacturingToleranceProfileLifecyclePolicyV1
             throw Failure(ManufacturingToleranceProfileLifecycleCodesV1.Invalid);
         }
     }
+
+    private static bool ApprovalAbsent(ManufacturingToleranceProfileLifecycleV1 current) =>
+        current.ApprovedBy is null && current.ApprovedAtUtc is null && current.ApprovalReason is null;
+
+    /// <summary>A D-MFG-PROFILE-AUTH-01=A approval, kept as history: by someone other than the preparer.</summary>
+    private static bool ApprovalRecorded(ManufacturingToleranceProfileLifecycleV1 current) =>
+        ValidText(current.ApprovedBy, ActorMaximumLength)
+        && current.ApprovedBy != current.PreparedBy
+        && Utc(current.ApprovedAtUtc)
+        && ValidText(current.ApprovalReason, ReasonMaximumLength);
 
     private static void ValidateContext(ManufacturingToleranceProfileCommandContextV1 context)
     {
@@ -206,16 +216,6 @@ public static class ManufacturingToleranceProfileLifecyclePolicyV1
         if (current.Status != expected)
         {
             throw Failure(ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition);
-        }
-    }
-
-    private static void RequireNotMaker(
-        ManufacturingToleranceProfileLifecycleV1 current,
-        ManufacturingToleranceProfileCommandContextV1 context)
-    {
-        if (string.Equals(current.PreparedBy, context.ActorId, StringComparison.Ordinal))
-        {
-            throw Failure(ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired);
         }
     }
 

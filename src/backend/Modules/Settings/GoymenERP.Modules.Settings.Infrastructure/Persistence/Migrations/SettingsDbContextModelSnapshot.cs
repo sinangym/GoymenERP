@@ -935,7 +935,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Lifecycle", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND (([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Published' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedBy] <> [PreparedBy] AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0))");
+                            t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Lifecycle", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND (([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Published' AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0 AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL) OR (LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0))))");
 
                             t.HasCheckConstraint("CK_SettingsMfgParameterProfiles_Process", "[Process] IN ('Slitting','ColdRolling','TubeProfile','Paint','CutToLength')");
 
@@ -1065,7 +1065,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         {
                             t.HasTrigger("TR_ManufacturingTolerancePolicies_NoOverlap");
 
-                            t.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", "[ApprovalStatus] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedAtUtc] > '0001-01-01T00:00:00+00:00' AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0");
+                            t.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", "[ApprovalStatus] IN ('Approved','Published') AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedAtUtc] > '0001-01-01T00:00:00+00:00' AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0");
 
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
@@ -1177,7 +1177,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Lifecycle", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND (([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Published' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedBy] <> [PreparedBy] AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0))");
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Lifecycle", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND (([Status] = 'Draft' AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL) OR ([Status] = 'Published' AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND [PublishedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0 AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL) OR (LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedBy] <> [PreparedBy] AND [ApprovedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0))))");
 
                             t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Percents", "[MaximumFirePercent] >= 0 AND [MaximumFirePercent] <= 100 AND [MassBalanceDifferenceTolerancePercent] >= 0 AND [MassBalanceDifferenceTolerancePercent] <= 100");
 
@@ -1193,6 +1193,97 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ReferenceListEntryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "EntryId");
+
+                    b.HasIndex("CompanyId", "Kind", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ReferenceListEntries", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntries_Code", "LEN([Code]) BETWEEN 1 AND 32 AND [Code] NOT LIKE '%[^A-Z0-9._-]%' AND LEFT([Code], 1) LIKE '[A-Z0-9]'");
+
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntries_Created", "LEN(LTRIM(RTRIM([CreatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntries_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntries_Kind", "[Kind] IN ('ExpenseType','ServiceType','PaintColor','ScrapKind')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ReferenceListEntryVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "EntryId", "Version");
+
+                    b.ToTable("ReferenceListEntryVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntryVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntryVersions_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsReferenceListEntryVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesApprovalAmountThresholdVersionRow", b =>
@@ -2872,6 +2963,15 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "ProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ReferenceListEntryVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ReferenceListEntryRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "EntryId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -229,6 +229,15 @@ internal sealed partial class SettingsManufacturingProfileAdministration
             return Done(command, metadata, subject, Replay(existing, requestHash, metadata));
         }
 
+        if (!publish)
+        {
+            // URN-D6: the approval step is retired. The route stays (its permission stays registered) and answers a
+            // registered, stored refusal for any profile id; no profile is read or changed.
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done(command, metadata, subject, await StoreRefusalAsync(commandName, Answers.ApprovalRetired(), keyHash,
+                requestHash, metadata, cancellationToken));
+        }
+
         var row = await ReadAsync(() => database.ManufacturingParameterProfiles
             .SingleOrDefaultAsync(profile => profile.ProfileId == profileId, cancellationToken));
         var today = SettingsBusinessDate.Today(timeProvider);
@@ -244,10 +253,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration
             {
                 var current = Lifecycle(row);
                 var context = LifecycleContext(metadata, expectedVersion, reason);
-                next = publish
-                    ? ManufacturingToleranceProfileLifecyclePolicyV1.Publish(current, context)
-                    : ManufacturingToleranceProfileLifecyclePolicyV1.Approve(current, context);
-                refusal = publish && row.EffectiveFrom < today ? Answers.EffectiveFromPast() : null;
+                next = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(current, context);
+                refusal = row.EffectiveFrom < today ? Answers.EffectiveFromPast() : null;
             }
             catch (ManufacturingToleranceProfileLifecycleException exception)
             {
@@ -265,8 +272,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var stateBefore = row!.StateVersion;
         var statusBefore = row.Status;
         ApplyLifecycle(row, next!);
-        Audit(companyId, permission, publish ? ParameterPublishedEvent : ParameterApprovedEvent, ParameterEntityType, profileId,
-            publish ? "PublishManufacturingParameterProfile" : "ApproveManufacturingParameterProfile", stateBefore,
+        Audit(companyId, permission, ParameterPublishedEvent, ParameterEntityType, profileId,
+            "PublishManufacturingParameterProfile", stateBefore,
             row.StateVersion, scope, new { CompanyId = companyId, ProfileId = profileId, Status = statusBefore }, new
             {
                 CompanyId = companyId,

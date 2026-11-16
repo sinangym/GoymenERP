@@ -649,6 +649,25 @@ D-MFG-PROFILE-AUTH-01=A (the existing `ManufacturingToleranceProfileLifecyclePol
   dates are Europe/Istanbul business dates (the same as before U1-b). Work center ids are not validated against Organization
   (as for parameter profiles). A predecessor whose window was closed by a successor shows the registry window in the view but
   its lifecycle row keeps the prepared one.
+- **URN-D6 single flow (F029-C, KIM-S15).** Both families are now prepare → publish: `POST …/{id}/publication` publishes a
+  Draft directly and the preparer may publish their own version (no maker/publisher separation). `POST …/{id}/approval`
+  is retired: it keeps its route, permission fence and idempotency, changes nothing and stores the terminal refusal
+  `settings_manufacturing_profile_approval_retired` (409, replayed under the same key). Versions approved under
+  D-MFG-PROFILE-AUTH-01=A stay valid history and an Approved version can still be published (its approval is kept). A direct
+  publication writes the registry row with `ApprovalStatus = 'Published'` and the publisher in the authorization columns; a
+  legacy approved one still writes `'Approved'` with the approver. The `published.v1` audit payload is unchanged (no v2). The
+  `…approve` names stay registered (granted to no role) for the retired route.
+- **Migration** `AdoptManufacturingProfileSingleFlow` (forward fix, dotnet ef): widens `CK_SettingsMfgParameterProfiles_Lifecycle`
+  and `CK_SettingsMfgToleranceVersions_Lifecycle` (a Published row needs a publication and either no approval or, as history, an
+  approval by someone other than the preparer) and `CK_SettingsMfgTolerance_Approval` (`ApprovalStatus IN ('Approved',
+  'Published')`). `Down` refuses first with `THROW 51345` while any version is published without an approval or by its
+  preparer, or a `'Published'` registry row exists; an empty store rolls back to the approval-era checks. Evidence: unit
+  `ManufacturingToleranceProfileLifecyclePolicyV1Tests`, model `SettingsManufacturingProfileSingleFlowPersistenceModelTests`,
+  real SQL `SettingsManufacturingProfileSqlServerRelationalAcceptanceTests` (every lifecycle scenario asserts the 51345 refusal;
+  `Single_flow_migration_rolls_back_to_the_approval_checks_and_reapplies_on_an_empty_store_on_real_sql`).
+- **Not done here (URN-D5 version-0 transfer).** Copying the reviewed version-0 catalog into company-owned Settings versions
+  (an audited, idempotent transfer command) is not built: which companies receive it and under which permission name is
+  NEEDS-SINAN; until then the catalog keeps answering as version 0.
 
 ## Exchange-rate record (DEC-FIN-010; KUR_GUNU SAT-D54/D55; EK24 SAT-D169…D172; OPEN-012 partial)
 

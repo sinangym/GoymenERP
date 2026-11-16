@@ -214,6 +214,9 @@ public static class ManufacturingProfileProblemCodesV1
     public const string VersionConflict = "settings_manufacturing_profile_version_conflict";
     public const string TransitionInvalid = "settings_manufacturing_profile_transition_invalid";
     public const string MakerSeparationRequired = "settings_manufacturing_profile_maker_separation_required";
+
+    /// <summary>URN-D6: the approval route answers this registered refusal; the draft is published directly.</summary>
+    public const string ApprovalRetired = "settings_manufacturing_profile_approval_retired";
     public const string EffectiveFromPast = "settings_manufacturing_profile_effective_from_past";
     public const string WindowOverlap = "settings_manufacturing_profile_window_overlap";
     public const string ProviderUnavailable = "settings_provider_unavailable";
@@ -288,7 +291,8 @@ public sealed record ManufacturingParameterValueViewV1(string Key, string Unit, 
 
 /// <summary>
 /// One parameter profile version. <c>Source</c> <c>Catalog</c>: the reviewed version 0 (published, no actor, never changes);
-/// <c>Settings</c>: a lifecycle version (Draft → Approved → Published; preparer ≠ approver, preparer ≠ publisher).
+/// <c>Settings</c>: a lifecycle version. URN-D6: Draft → Published in one step by an authorized actor (the preparer may
+/// publish; no approval fields). Versions approved under D-MFG-PROFILE-AUTH-01=A keep their approval as history.
 /// </summary>
 public sealed record ManufacturingParameterProfileViewV1(
     Guid ProfileId,

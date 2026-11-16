@@ -6,9 +6,10 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// API-02 (URT-D6, URT-D7): the write path of the Manufacturing tolerance registry. A version is prepared and approved in
-/// <c>settings.ManufacturingToleranceProfileVersions</c>; publishing inserts the immutable
-/// <c>settings.ManufacturingTolerancePolicies</c> row (same profile id and version, the approver as its approval, active) that the
+/// API-02 (URT-D6, URT-D7; URN-D6): the write path of the Manufacturing tolerance registry. A version is prepared in
+/// <c>settings.ManufacturingToleranceProfileVersions</c> and published directly; publishing inserts the immutable
+/// <c>settings.ManufacturingTolerancePolicies</c> row (same profile id and version, active; its authorization is the
+/// publication — <c>Published</c> — or, for a version approved before URN-D6, the kept approval — <c>Approved</c>) that the
 /// tolerance provider and the close path read, in the same transaction. The registry trigger keeps the windows of one process
 /// from overlapping (a lost race answers <see cref="ManufacturingProfileProblemCodesV1.WindowOverlap"/>).
 /// </summary>
@@ -22,6 +23,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration
     private const string ToleranceApprovedEvent = "settings.manufacturing-tolerance-profile.approved.v1";
     private const string TolerancePublishedEvent = "settings.manufacturing-tolerance-profile.published.v1";
     private const string RegistryApprovalStatus = "Approved";
+    private const string RegistryPublishedStatus = "Published";
 
     async Task<ManufacturingToleranceProfileListViewV1> ISettingsManufacturingToleranceProfileAdministrationV1.ListAsync(
         CancellationToken cancellationToken)
@@ -223,6 +225,15 @@ internal sealed partial class SettingsManufacturingProfileAdministration
             return Done(command, metadata, subject, Replay(existing, requestHash, metadata));
         }
 
+        if (!publish)
+        {
+            // URN-D6: the approval step is retired. The route stays (its permission stays registered) and answers a
+            // registered, stored refusal for any profile id; no profile is read or changed.
+            await RequireStillAsync(permission, companyId, cancellationToken);
+            return Done(command, metadata, subject, await StoreRefusalAsync(commandName, Answers.ApprovalRetired(), keyHash,
+                requestHash, metadata, cancellationToken));
+        }
+
         var row = await ReadAsync(() => database.ManufacturingToleranceProfileVersions
             .SingleOrDefaultAsync(version => version.ProfileId == profileId, cancellationToken));
         var today = SettingsBusinessDate.Today(timeProvider);
@@ -238,11 +249,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration
             {
                 var current = ToleranceLifecycle(row);
                 var context = LifecycleContext(metadata, expectedVersion, reason);
-                next = publish
-                    ? ManufacturingToleranceProfileLifecyclePolicyV1.Publish(current, context)
-                    : ManufacturingToleranceProfileLifecyclePolicyV1.Approve(current, context);
-                refusal = !publish ? null
-                    : row.EffectiveFrom < today ? Answers.EffectiveFromPast()
+                next = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(current, context);
+                refusal = row.EffectiveFrom < today ? Answers.EffectiveFromPast()
                     : await ReadAsync(() => OverlapsPublishedAsync(row, cancellationToken)) ? Answers.WindowOverlap()
                     : null;
             }
@@ -262,38 +270,36 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var stateBefore = row!.StateVersion;
         var statusBefore = row.Status;
         ApplyLifecycle(row, next!);
-        ManufacturingTolerancePolicyRow? superseded = null;
-        if (publish)
+        // U1-b: an open-ended published predecessor of the same scope that starts earlier is superseded — its window
+        // closes on the day before this version starts, in this same save (the registry trigger's one permitted change).
+        var superseded = await ReadAsync(() => SupersedablePredecessorAsync(row, cancellationToken));
+        if (superseded is not null)
         {
-            // U1-b: an open-ended published predecessor of the same scope that starts earlier is superseded — its window
-            // closes on the day before this version starts, in this same save (the registry trigger's one permitted change).
-            superseded = await ReadAsync(() => SupersedablePredecessorAsync(row, cancellationToken));
-            if (superseded is not null)
-            {
-                superseded.EffectiveThrough = row.EffectiveFrom.AddDays(-1);
-            }
-
-            database.ManufacturingTolerancePolicies.Add(new ManufacturingTolerancePolicyRow
-            {
-                CompanyId = companyId,
-                ProfileId = row.ProfileId,
-                Process = row.Process,
-                WorkCenterId = row.WorkCenterId,
-                Version = row.ProfileVersion,
-                MaximumFirePercent = row.MaximumFirePercent,
-                MassBalanceDifferenceTolerancePercent = row.MassBalanceDifferenceTolerancePercent,
-                IsActive = true,
-                EffectiveFrom = row.EffectiveFrom,
-                EffectiveThrough = row.EffectiveThrough,
-                ApprovalStatus = RegistryApprovalStatus,
-                ApprovedBy = row.ApprovedBy!,
-                ApprovedAtUtc = row.ApprovedAtUtc!.Value,
-                ApprovalReason = row.ApprovalReason!,
-            });
+            superseded.EffectiveThrough = row.EffectiveFrom.AddDays(-1);
         }
 
-        Audit(companyId, permission, publish ? TolerancePublishedEvent : ToleranceApprovedEvent, ToleranceEntityType, profileId,
-            publish ? "PublishManufacturingToleranceProfile" : "ApproveManufacturingToleranceProfile", stateBefore,
+        database.ManufacturingTolerancePolicies.Add(new ManufacturingTolerancePolicyRow
+        {
+            CompanyId = companyId,
+            ProfileId = row.ProfileId,
+            Process = row.Process,
+            WorkCenterId = row.WorkCenterId,
+            Version = row.ProfileVersion,
+            MaximumFirePercent = row.MaximumFirePercent,
+            MassBalanceDifferenceTolerancePercent = row.MassBalanceDifferenceTolerancePercent,
+            IsActive = true,
+            EffectiveFrom = row.EffectiveFrom,
+            EffectiveThrough = row.EffectiveThrough,
+            // URN-D6: a directly published version carries its publication as the registry's authorization
+            // ('Published'); a version approved under D-MFG-PROFILE-AUTH-01=A keeps its approval ('Approved').
+            ApprovalStatus = row.ApprovedBy is null ? RegistryPublishedStatus : RegistryApprovalStatus,
+            ApprovedBy = row.ApprovedBy ?? row.PublishedBy!,
+            ApprovedAtUtc = row.ApprovedAtUtc ?? row.PublishedAtUtc!.Value,
+            ApprovalReason = row.ApprovalReason ?? row.PublicationReason!,
+        });
+
+        Audit(companyId, permission, TolerancePublishedEvent, ToleranceEntityType, profileId,
+            "PublishManufacturingToleranceProfile", stateBefore,
             row.StateVersion, scope, new { CompanyId = companyId, ProfileId = profileId, Status = statusBefore }, new
             {
                 CompanyId = companyId,
@@ -318,7 +324,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var published = row;
         return Done(command, metadata, subject, await SaveChangeAsync(commandName,
             Answers.Ok(Receipt(row.ProfileId, row.ProfileVersion, row.StateVersion, row.Status)), keyHash, requestHash, metadata,
-            async token => publish && await OverlapsPublishedAsync(published, token)
+            async token => await OverlapsPublishedAsync(published, token)
                 ? Answers.WindowOverlap()
                 : Answers.VersionConflict(),
             cancellationToken));

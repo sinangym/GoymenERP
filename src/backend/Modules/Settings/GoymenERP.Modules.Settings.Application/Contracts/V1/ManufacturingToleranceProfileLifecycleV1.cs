@@ -6,6 +6,8 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// </summary>
 public static class ManufacturingToleranceProfileActionsV1
 {
+    /// <remarks>URN-D6 retired the approval step: <see cref="Approve"/> stays registered (granted to no role) and its route
+    /// answers a registered refusal; it no longer changes a profile.</remarks>
     public const string Prepare = "settings.manufacturing-tolerance-profiles.prepare";
     public const string Approve = "settings.manufacturing-tolerance-profiles.approve";
     public const string Publish = "settings.manufacturing-tolerance-profiles.publish";
@@ -76,6 +78,9 @@ public static class ManufacturingToleranceProfileLifecycleCodesV1
     public const string InvalidTransition = "settings_manufacturing_tolerance_lifecycle_transition_invalid";
     public const string MakerSeparationRequired =
         "settings_manufacturing_tolerance_lifecycle_maker_separation_required";
+
+    /// <summary>URN-D6: the separate approval step is retired; a draft is published directly by an authorized actor.</summary>
+    public const string ApprovalRetired = "settings_manufacturing_tolerance_lifecycle_approval_retired";
 }
 
 public sealed class ManufacturingToleranceProfileLifecycleException(
