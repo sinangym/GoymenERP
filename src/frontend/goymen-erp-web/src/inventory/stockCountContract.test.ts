@@ -84,4 +84,11 @@ describe('stock count contract', () => {
     expect(stockCountRefusalText(409, 'inventory_stock_count_allocation_conflict')).toMatch(/tahsis/)
     expect(stockCountRefusalText(403, null)).toMatch(/yetkiniz yok/)
   })
+
+  it('warns that a label consumed by a split, merge or production is converted and sends the counter to the new label (SAT-D384)', () => {
+    const text = stockCountRefusalText(409, 'inventory_stock_count_label_converted')
+    expect(text).toMatch(/dönüştürüldü → yeni etiket/)
+    expect(text).toMatch(/sayım farkına girmez/)
+    expect(text).not.toBe(stockCountRefusalText(409, 'inventory_stock_count_position_conflict'))
+  })
 })
