@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Text.Json;
 using GoymenERP.Api.PurchasingRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
@@ -52,6 +53,54 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.False(await context.OutboxMessages.AnyAsync(row => row.EventType == InventoryGoodsReceiptReversalCodesV1.EventType));
         }
         Assert.False((await RunCombinedBatchHostAsync(run, write, envelope)).IsReplay);
+    }
+
+    [SqlServerFact]
+    public async Task A_real_batch_revival_freezes_its_historical_sales_recipients_in_the_event_transaction_and_replay_does_not_enrich_them()
+    {
+        await using var run = await Run.StartAsync(); var seed = await SeedCombinedBatchAsync(run);
+        await using (var scope = run.Factory.Services.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var cancellation = GoodsReceiptPurchaseEnvelope(run, "SENTETIK-notification-cancel", "SENTETIK-notification-cancel");
+            await scope.ServiceProvider.GetRequiredService<IPurchasingStore>().MutateOrderAsync(cancellation, new string('a', 64),
+                PurchasingCommands.OrderCancelV1, seed.Seed.OrderId,
+                (order, now) => order.Cancel(order.Version, cancellation.ActorId, "SENTETIK close the remaining share", now),
+                new PurchasingMutationAudit("purchasing.purchase-order.cancelled.v1", "Cancel", "SENTETIK close the remaining share"));
+        }
+        var historical = FutureSupplyIds.New() with { PurchaseOrder = seed.Seed.OrderId, PurchaseLine = seed.Seed.LineId,
+            Product = GoodsReceiptProduct, Unit = GoodsReceiptUnit };
+        if (await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.FutureSupplyLines WHERE CompanyId=@company AND PurchaseOrderLineId=@line",
+            ("@company", CompanyA), ("@line", historical.PurchaseLine)) == 0)
+            await run.ExecuteAsync(InsertFutureSupplyLine, historical.Line(CompanyA, 0m, 0m));
+        await InsertReleasedHistoryAsync(historical);
+        var write = BatchHostWrite(seed.First, seed.Second); write = write with { Request = write.Request with { ExpectedPurchaseOrderVersion = "6" } };
+        var envelope = GoodsReceiptPurchaseEnvelope(run, "SENTETIK-notification-batch", "SENTETIK-notification-batch");
+        var result = await RunCombinedBatchHostAsync(run, write, envelope);
+        Assert.True(Assert.Single(result.Supplies).Revived);
+        var originalPayload = await PayloadAsync();
+        using (var document = JsonDocument.Parse(originalPayload))
+        {
+            var target = Assert.Single(document.RootElement.GetProperty("salesTargets").EnumerateArray());
+            Assert.Equal(historical.DemandOrder, target.GetProperty("salesOrderId").GetGuid());
+            Assert.Equal(historical.DemandLine, target.GetProperty("salesOrderLineId").GetGuid());
+        }
+        await InsertReleasedHistoryAsync(historical with { DemandOrder = Guid.NewGuid(), DemandLine = Guid.NewGuid() });
+        Assert.True((await RunCombinedBatchHostAsync(run, write, envelope)).IsReplay);
+        Assert.Equal(originalPayload, await PayloadAsync());
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.OutboxMessages WHERE EventType=N'purchasing.order-line.revived.v1' AND CompanyId=@company", ("@company", CompanyA)));
+
+        Task<string> PayloadAsync() => run.ScalarAsync<string>("SELECT PayloadJson FROM purchasing.OutboxMessages WHERE EventType=N'purchasing.order-line.revived.v1' AND CompanyId=@company", ("@company", CompanyA));
+        async Task InsertReleasedHistoryAsync(FutureSupplyIds ids)
+        {
+            var id = Guid.NewGuid();
+            await run.ExecuteAsync(InsertFutureSupplyAllocation, ids.Allocation(CompanyA, id, 5m, 5m, 1));
+            await run.ExecuteAsync("""
+                UPDATE inventory.FutureSupplyAllocations SET RemainingQuantity=0,ReleasedQuantity=5,Status=3,
+                    ReleaseReasonCode='purchase-line-closed',ReleaseOrigin='purchasing',ReleaseReason=N'SENTETIK history',ReleasedAtUtc=@at
+                WHERE CompanyId=@company AND Id=@id;
+                """, ("@company", CompanyA), ("@id", id), ("@at", GoodsReceiptTime));
+        }
     }
 
     private static async Task<(GoodsReceiptAcceptanceSeed Seed, InventoryGoodsReceiptRequestV1 First, InventoryGoodsReceiptRequestV1 Second)> SeedCombinedBatchAsync(Run run)
