@@ -13,11 +13,11 @@ kararlarla ilişki" bölümündeki gibidir:
   kalır.
 - Kısmen geçerli: `URN-D11`'in dört türünün ölçü alanları geçerlidir; "şimdilik dört" sınırı `KLN-D87` (#1176) ile
   kalkmıştır.
-- Sonraki turda cevaplandı: `FNS-D54`, `ALS-D98`'in "yeni yetki yoktur" kısmı ve `SAT-D353`. Güncel durum, main'deki
-  `SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md` (SINAN-CEVAP 21) "Önceki kararlarla ilişki" ve "Sınırlar"
-  bölümlerindedir: SINAN-CEVAP 42.14 → `FNS-D81`; 42.15 ve 44.2 → `ALS-D108` ve `ALS-D110`; 42.16 → `SAT-D406`
-  (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md`, #1186). `ALS-D110` daha sonra `ALS-D111` ile değişir
-  (`SINAN_KARARLARI_2026-11-16_DALGA4_EK21.md`, #1187). Bu belge bu üç madde için karar vermez; onlar için
+- SINAN-CEVAP 42 ve 44 ile cevaplandı (EK20, #1186): `FNS-D54`, `ALS-D98`'in "yeni yetki yoktur" kısmı ve
+  `SAT-D353`. Güncel durum, main'deki `SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md` (SINAN-CEVAP 21) "Önceki
+  kararlarla ilişki" ve "Sınırlar" bölümlerindedir: 42.14 → `FNS-D81`; 42.15 ve 44.2 → `ALS-D108` ve `ALS-D110`;
+  42.16 → `SAT-D406` (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md`, #1186). `ALS-D110` daha sonra `ALS-D111` ile
+  değişir (`SINAN_KARARLARI_2026-11-16_DALGA4_EK21.md`, #1187). Bu belge bu üç madde için karar vermez; onlar için
   yukarıdaki belgeler geçerlidir.
 
 Bu belgedeki `KLN-D58` ve `URN-D12`, `KLN-D56` ve `URN-D10`'a atıf yapar; bunlar `KLN-D49` ve `KLN-D47` ile aynı
