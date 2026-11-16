@@ -86,6 +86,7 @@ public static class SalesModuleExtensions
         // (registered by that module), the Sales store's own order references and the Cari party display (host adapter).
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
+        services.AddScoped<ISalesLineResponsibleReadPortV1, SalesLineResponsibleReadPort>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
         // SAT-S13: the same read service answers one note's weighing difference (the Logistics owner's read through the host adapter).
         services.AddScoped<ISalesDispatchWeighingDifferenceReadService>(CreateDispatchReadService);
