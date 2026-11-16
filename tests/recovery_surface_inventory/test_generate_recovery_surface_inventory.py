@@ -556,7 +556,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
     def test_snapshot_discovery_is_exact_and_excludes_only_audit_metadata(self) -> None:
         discovered = generator._discover_idempotency_key_tables(self.snapshot)
         self.assertEqual(generator.EXPECTED_IDEMPOTENCY_KEY_TABLES, discovered)
-        self.assertEqual(31, len(discovered))
+        self.assertEqual(42, len(discovered))
         replay_tables = set(generator._discover_replay_enforcement_tables(self.snapshot))
         specified = {
             (spec.schema, spec.table)
@@ -780,7 +780,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         # B-24: + work.OutboxDeliveries / work.OutboxSourceCursors (Work outbox dispatcher).
         # A3 API-30: + purchasing.PurchaseOrderLineDeliverySlices, a business table whose name matches "deliver".
         # F-029 S4b: + settings.SalesDeliveryToleranceVersions, a business table whose name matches "deliver".
-        self.assertEqual(14, len(discovered))
+        # tren-1 W5 (integration): count follows EXPECTED_MESSAGE_DELIVERY_TABLES + NON_MESSAGE_DELIVERY_TABLES after the lane merges.
+        self.assertEqual(18, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (

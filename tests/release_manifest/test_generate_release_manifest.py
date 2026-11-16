@@ -203,7 +203,7 @@ class ReleaseManifestTests(unittest.TestCase):
             }.issubset(configuration["backendKeys"])
         )
         self.assertEqual(
-            ["VITE_API_BASE_URL", "VITE_BOOTSTRAP_IDENTITY_ENABLED", "VITE_DEV_USER"],
+            ["VITE_API_BASE_URL", "VITE_AUTH_MODE", "VITE_BOOTSTRAP_IDENTITY_ENABLED", "VITE_DEV_USER"],
             configuration["frontendKeys"],
         )
         encoded = generator.canonical_json(self.manifest)
