@@ -711,6 +711,10 @@ public static partial class ErpOpenApiContract
 
         if (endpointMetadata.OfType<RequiresCompanyContextAttribute>().Any())
         {
+            // The platform problem writer normalizes a lifecycle-read failure before the handler.
+            problemCodesByStatus[StatusCodes.Status503ServiceUnavailable] = problemCodesByStatus
+                .GetValueOrDefault(StatusCodes.Status503ServiceUnavailable, [])
+                .Append(ErpProblemCodes.ServiceUnavailable).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
             if (!endpointMetadata.OfType<FirstCompanyAdminEndpointMetadata>().Any())
                 problemCodesByStatus[StatusCodes.Status409Conflict] = problemCodesByStatus
                     .GetValueOrDefault(StatusCodes.Status409Conflict, [])
@@ -982,6 +986,22 @@ public static partial class ErpOpenApiContract
         }
 
         operation.Responses ??= new OpenApiResponses();
+        // The company boundary can refuse before a handler returning a JSON command result.
+        // Preserve that handler media type and add the boundary's problem response alongside it.
+        if (endpointMetadata.OfType<RequiresCompanyContextAttribute>().Any())
+        {
+            foreach (var boundaryStatus in new[] { "409", "503" })
+            {
+                if (boundaryStatus == "409" && endpointMetadata.OfType<FirstCompanyAdminEndpointMetadata>().Any()) continue;
+                if (!operation.Responses.TryGetValue(boundaryStatus, out var boundaryResponse)
+                    || boundaryResponse is not OpenApiResponse concreteBoundaryResponse) continue;
+                concreteBoundaryResponse.Content ??= new Dictionary<string, OpenApiMediaType>();
+                concreteBoundaryResponse.Content.TryAdd("application/problem+json", new OpenApiMediaType
+                {
+                    Schema = new OpenApiSchemaReference(nameof(ErpProblemDetailsContract), context.Document, externalResource: null),
+                });
+            }
+        }
         foreach (var (statusCode, response) in operation.Responses)
         {
             if (response is not OpenApiResponse concreteResponse)

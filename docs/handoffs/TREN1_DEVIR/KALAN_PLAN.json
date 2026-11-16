@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-16",
   "tren_dali": "claude/tren-1",
-  "kod_head": "65bc94e9691287eebdfd22975fe666578f087c04",
+  "kod_head": "6edcbf09266c5d9f6038cadb8bd5fdcc725a8284",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -45,10 +45,10 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 131,
-  "partial": 24,
-  "remaining_not_started": 19,
-  "last_wave": 6,
+  "done": 135,
+  "partial": 23,
+  "remaining_not_started": 16,
+  "last_wave": 7,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
    "KIM-S13",
@@ -100,7 +100,7 @@
     "work": "EK24 N-12 önek/yıl/sıra ve yıllık sıfırlama",
     "slice": "KIM-S19",
     "status": "PARTIAL",
-    "note": "Purchasing kapsamı BELGE-Q3 cevabı bekler; tahminle açılmaz."
+    "note": "3A yanıtlandı: alış siparişi KIM-D53 önek/yıl/sıra kapsamındadır, ALS-D36 eski algoritması güncellenir; uygulama henüz tamamlanmadı."
    },
    {
     "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
@@ -122,7 +122,7 @@
     "work": "KLN-D114 bildirim deposu/90 gün sonra pasif",
     "slice": "PLATFORM_FOLLOWUP",
     "status": "PLANNED",
-    "note": "PLT-S13 belge işi DONE olması bunu bitirmez. 90 günün Ayarlar kapsamı BELGE-Q4 bekler."
+    "note": "4A yanıtlandı: 90 gün Ayarlar ile değiştirilebilir başlangıç değeri, silme yok. PLT-S13 belge DONE bunu bitirmez; owner depo/süre uygulaması eksik."
    },
    {
     "work": "URT-D109 boya emir toplamı",
@@ -145,7 +145,7 @@
     "work": "SAT-D419 / W5-5 Finans maliyet hesabı eşlemesi ve audit",
     "slice": "STK-SC36-a",
     "status": "PARTIAL",
-    "note": "Ticari mal/mamul sınıf kaynağı BELGE-Q5 bekler."
+    "note": "5 yanıtlandı: açık Product sınıfı; satır bazlı SMM sınıf/hesap düzeltmesi tutar/miktar/vergi/fiziksel stok değiştirmez. Ters/düzeltme yetkilisi hazırlar, farklı muhasebe yetkilisi onaylar; kullanıcı seçili açık dönem/tarih. Gerçek owner zinciri eksik."
    },
    {
     "work": "FNS-D109 kredi approve Critical / propose değil",
@@ -154,7 +154,29 @@
     "note": "Kaynak kayıt düzeltildi; grant/rol/production yok."
    }
   ],
-  "w6_verification_head": "7529fe1e8c2a40d2b050d9e97082b79fc716affd"
+  "w6_verification_head": "7529fe1e8c2a40d2b050d9e97082b79fc716affd",
+  "w7_source_done_ids": [
+   "KIM-SC32-a",
+   "KIM-SC32-b",
+   "STK-S17",
+   "STK-S18"
+  ],
+  "w8_oneri": [
+   "KIM-S5 yeni açık ilk yönetici seçimi/global yetki",
+   "URT-S5 AT-044 fiziksel toplam",
+   "URT-SC33 kalıcı elle sıra ve yeni iş anchor",
+   "STK-S19 + ALC-S6 tüketim tersleme/kısmi reopen",
+   "Ürün açık ticari mal/mamul sınıfı ve fatura satırı muhasebe düzeltmesi",
+   "Kalan READY/PARTIAL dilimler; karar mevcutken eksik owner uygulamasını karar engeli sayma"
+  ],
+  "w7_decision_sources": [
+   "#1189/6926090415",
+   "#1189/6926238225",
+   "#1189/6926298700",
+   "#1189/6926992238",
+   "#1189/6927182217",
+   "#1189/6927195150"
+  ]
  },
  "teams": [
   {
@@ -165,8 +187,8 @@
     "Settings"
    ],
    "toplam": 28,
-   "done": 19,
-   "partial": 4,
+   "done": 21,
+   "partial": 5,
    "kalan": [
     {
      "id": "KIM-S3",
@@ -217,10 +239,12 @@
       "sağlar: organization.company.opened.v1, identity.company.first_admin_assigned.v1, ICompanyLifecycleReadPortV1 (kimlik)",
       "tüketir: outbox/inbox kayıt sözleşmesi (platform PLT-S6)"
      ],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_kimlik.md"
+     "wave": 7,
+     "w6_report": "durum/W6_kimlik.md",
+     "w7_result": "SetupPending/inbox/outbox/lifecycle guard kaynağı var. Son kullanıcı cevabı açana otomatik Admin yerine yetkili yönetim/genel müdürün açık ilk yönetici seçimini gerektirir (#1189/6926238225); mevcut otomatik yol değiştirilmeden DONE değildir. Açma/kurulum ekranı ve gerçek global yetki kaynağı eksik; dispatcher kapalı.",
+     "w7_report": "durum/W7_kimlik.md"
     },
     {
      "id": "KIM-S6",
@@ -437,19 +461,27 @@
     {
      "id": "KIM-SC32-a",
      "title": "Settings teminat türü kataloğu + Finans okuma adapter'ı (FNS-D70)",
-     "status": "PLANNED",
+     "status": "DONE",
      "w6_report": "durum/W6_kimlik.md",
-     "w6_note": "DOGRULA: gerçek Settings teminat türü kataloğu ve Finance adapter kaydı yok; Unavailable provider başarı sayılmadı."
+     "w6_note": "DOGRULA: gerçek Settings teminat türü kataloğu ve Finance adapter kaydı yok; Unavailable provider başarı sayılmadı.",
+     "w7_result": "Settings teminat kataloğu/version HTTP+UI, tam exact oran, Audit owner ve beş replay-race fence kaynağı; gerçek SQL/Vitest koşumu NOT_RUN.",
+     "wave": 7,
+     "w7_report": "durum/W7_kimlik.md",
+     "blocked_reason": ""
     },
     {
      "id": "KIM-SC32-b",
      "title": "Settings sözleşme iskonto sınırı değeri (SAT-D364)",
-     "status": "PLANNED",
+     "status": "DONE",
      "w6_report": "durum/W6_kimlik.md",
-     "w6_note": "DOGRULA: ayrı sözleşme iskonto sınırı Settings değeri ve Sales adapter kaydı yok; genel iskonto sınırı bunun yerine geçmez."
+     "w6_note": "DOGRULA: ayrı sözleşme iskonto sınırı Settings değeri ve Sales adapter kaydı yok; genel iskonto sınırı bunun yerine geçmez.",
+     "w7_result": "Ayrı sözleşme iskonto limiti missing/zero ayrımı, gerçek Settings sahibi+Sales adapter+HTTP/UI; test koşumu NOT_RUN.",
+     "wave": 7,
+     "w7_report": "durum/W7_kimlik.md",
+     "blocked_reason": ""
     }
    ],
-   "remaining_not_started": 5
+   "remaining_not_started": 2
   },
   {
    "key": "platform",
@@ -691,7 +723,9 @@
      "status": "READY",
      "blocked_reason": "",
      "wave": 7,
-     "w6_report": "durum/W6_alis_cari.md"
+     "w6_report": "durum/W6_alis_cari.md",
+     "w7_result": "7B ile kısmi yeniden açma kararı var; Inventory ters-tüketim/özgün conversion ledger ve Purchasing kabul geri alma owner zinciri teknik bağımlılıktır, yeni karar engeli değildir.",
+     "w7_report": "durum/W7_alis_cari.md"
     },
     {
      "id": "ALC-S7",
@@ -803,8 +837,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 33,
-   "partial": 7,
+   "done": 35,
+   "partial": 5,
    "kalan": [
     {
      "id": "STK-S1",
@@ -884,9 +918,11 @@
      "contracts": [],
      "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 7,
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Transfer listesi ve detay okuma var; plan/sevk/iptal/teslim/fazla-kayıp onayı mutation ekranları eksik."
+     "w6_note": "Transfer listesi ve detay okuma var; plan/sevk/iptal/teslim/fazla-kayıp onayı mutation ekranları eksik.",
+     "w7_result": "Sevk iptal ekranı ve aynı anahtar/payload belirsiz tekrar kaynağı var. Gerçek çıkış/GİB iptal gate ve kaynak kantar ayarı sahibi yok; capability false, kullanılabilir iş akışı değildir.",
+     "w7_report": "durum/W7_stok_lojistik.md"
     },
     {
      "id": "STK-S11",
@@ -964,11 +1000,13 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 7,
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Uçlar ve gerçek SAT-S8 host bağı kaynakta; receipt future-to-physical çevriminin başka purchase satırında yeni ayırmayla toplam sınırını aşma yarışı bulundu. W7 ilk teknik işi ortak Sales-then-purchase prelock protokolü; test/SQL koşumu NOT_RUN."
+     "w6_note": "Uçlar ve gerçek SAT-S8 host bağı kaynakta; receipt future-to-physical çevriminin başka purchase satırında yeni ayırmayla toplam sınırını aşma yarışı bulundu. W7 ilk teknik işi ortak Sales-then-purchase prelock protokolü; test/SQL koşumu NOT_RUN.",
+     "w7_result": "Kabulde Sales↑→Purchase kilit sırası ve taze altküme çiti, bounded yalnız-yazma-öncesi retry; callback tek kez. Gerçek SQL fact kaynakları eklendi, koşum NOT_RUN.",
+     "w7_report": "durum/W7_stok_lojistik.md"
     },
     {
      "id": "STK-S18",
@@ -985,11 +1023,13 @@
       "src/frontend/goymen-erp-web/src/inventory/FutureAllocation*.tsx"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 7,
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w6_note": "Ayırma paneli ve Sales satır bağlantısı hazır; mal kabul ekranında çevrim/ayırma bilgisi eksik."
+     "w6_note": "Ayırma paneli ve Sales satır bağlantısı hazır; mal kabul ekranında çevrim/ayırma bilgisi eksik.",
+     "w7_result": "F017-d kabul ekranında gerçek owner gelecek ayırma bilgisi, None/Unavailable ayrımı ve strict decoder; geçmiş çevrim defteri/tüm batch ekranı bu kapsamda değildir. Koşum NOT_RUN.",
+     "w7_report": "durum/W7_stok_lojistik.md"
     },
     {
      "id": "STK-S19",
@@ -1010,8 +1050,10 @@
      "contracts": [],
      "status": "READY",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "wave": 7,
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w7_result": "7B yanıtlandı: yalnız talep sınırına sığan tüketilmiş miktar yeniden açılır, kalan Released; eski Released geri gelmez (#1189/6926090415). Owner ters tüketim/ledger+ALC-S6 aynı transaction uygulaması henüz yok.",
+     "w7_report": "durum/W7_stok_lojistik.md"
     },
     {
      "id": "STK-S21",
@@ -1191,9 +1233,11 @@
      ],
      "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 5,
+     "wave": 7,
      "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md"
+     "w6_report": "durum/W6_uretim.md",
+     "w7_result": "Gerçek Inventory advisory + successful-rollback sonrası company/plan fenced kanonik requested/available/missing kg HTTP/UI shortfall var; replay ayrıntıyı taşımaz. Diğer plan kullanıcı akışı tamamlanmadı.",
+     "w7_report": "durum/W7_uretim.md"
     },
     {
      "id": "URT-S5",
@@ -1213,8 +1257,10 @@
      "contracts": [],
      "status": "PARTIAL",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_uretim.md"
+     "wave": 7,
+     "w6_report": "durum/W6_uretim.md",
+     "w7_result": "8A fiziksel toplam draft/revizyon üst sınırı yanıtlandı; AT-044 uygulaması sonraki dalga. Onayda Free/tek pozisyon sürer.",
+     "w7_report": "durum/W7_uretim.md"
     },
     {
      "id": "URT-S6",
@@ -1334,10 +1380,12 @@
      "files_hint": [],
      "contracts": [],
      "status": "PARTIAL",
-     "blocked_reason": null,
-     "wave": 5,
+     "blocked_reason": "",
+     "wave": 7,
      "w5_raporu": "durum/W5_uretim.md",
-     "w6_report": "durum/W6_uretim.md"
+     "w6_report": "durum/W6_uretim.md",
+     "w7_result": "Gerçek Settings tamponu, append-only expected priority revision, kuyruk HTTP/UI var. 6 elle sıra kalıcı + yeni C15→B20→A10 anchor yanıtlandı (#1189/6926992238); manual sıra deposu/komutu henüz yazılmadı.",
+     "w7_report": "durum/W7_uretim.md"
     },
     {
      "id": "URT-SC36",
@@ -1471,9 +1519,12 @@
      "contracts": [],
      "finding": "SC36-SC47 kararları",
      "status": "PARTIAL",
-     "wave": 5,
+     "wave": 7,
      "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "w7_result": "FNS-D102 gerçek iç defter ve Serializable aynı işlem bakiye koruması, MARS/borrowed transaction/audit rollback kaynakları yazıldı. Paketin kalan FNS-D89/D90 ve KLN-D102/D104 bağları bu işte tamamlanmadı; tüm test koşumları NOT_RUN.",
+     "w7_report": "durum/W7_finans.md",
+     "blocked_reason": ""
     },
     {
      "id": "FIN-SC47-KREDI",

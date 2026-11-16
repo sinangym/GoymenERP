@@ -41,10 +41,10 @@
           "const": 19
         },
         "migrations": {
-          "const": 253
+          "const": 258
         },
         "durableStores": {
-          "const": 53
+          "const": 56
         }
       }
     },
@@ -79,8 +79,8 @@
     },
     "migrations": {
       "type": "array",
-      "minItems": 253,
-      "maxItems": 253,
+      "minItems": 258,
+      "maxItems": 258,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -220,8 +220,8 @@
     },
     "durableStores": {
       "type": "array",
-      "minItems": 53,
-      "maxItems": 53,
+      "minItems": 56,
+      "maxItems": 56,
       "uniqueItems": true,
       "items": {
         "type": "object",
@@ -253,6 +253,7 @@
               "Inventory",
               "Logistics",
               "Manufacturing",
+              "Organization",
               "Product",
               "Purchasing",
               "Sales",
