@@ -31,6 +31,7 @@ import { LabelTransformationPanel } from './LabelTransformationPanel'
 import { LabelClassificationPanel } from './LabelClassificationPanel'
 import { StockCountPanel } from './StockCountPanel'
 import { StockScrapPanel } from './StockScrapPanel'
+import { LabelPrintPanel } from './LabelPrintPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import {
@@ -146,6 +147,8 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       <div><p className={styles.eyebrow}>ST-02</p><h1>{identity.code}</h1></div>
       <span>{identity.documentStatus}</span>
     </header>
+    {canReadLabel && actorId !== null ? <LabelPrintPanel labelId={identity.labelId} companyId={companyId}
+      actorId={actorId} namespace={namespace} /> : null}
     {target !== null && !offered[target]
       ? <p role="status">İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.</p>
       : null}

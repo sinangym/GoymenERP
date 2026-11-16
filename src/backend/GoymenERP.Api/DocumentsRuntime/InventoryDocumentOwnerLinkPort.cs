@@ -15,6 +15,9 @@ public sealed class InventoryDocumentOwnerLinkPort(
     /// <summary>F-026 (PLT-S9): the label/barcode PDF Inventory renders (F-026a) may be kept in the vault on this record.</summary>
     public bool AcceptsGeneratedDocuments => true;
 
+    /// <summary>STK-S26 / KLN-D59: the label producer reuses the existing read permission; no role or grant is added.</summary>
+    public IReadOnlyCollection<string> GeneratedDocumentProducerPermissions => [ErpPermissions.InventoryLabelsRead];
+
     public async Task<DocumentOwnerAccessV1> CheckReadableAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         var companyId = companyContext.CompanyId;
