@@ -1,11 +1,34 @@
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task The_manual_queue_Down_guard_passes_an_empty_store_and_refuses_while_recorded_sequence_history_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddManufacturingManualQueues().DownOperations[0]).Sql;
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
+        var (a, _) = await run.ApprovedOrderAsync(CompanyA); var (b, _) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await ((IManufacturingPlanPriorityStore)scope.Corrections).ChangePlanPriorityAsync(a.Id, a.Version, 0, 10,
+                "Synthetic deterministic initial key", Metadata(run));
+            await scope.Corrections.MoveQueuePlanAsync(a.Id, a.Version, 0, b.Id, a.Id, "Synthetic protected history", Metadata(run),
+                _ => Task.FromResult<ManufacturingApiResult<object>?>(null));
+        }
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));
+        Assert.Equal(51946, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.WorkCenterQueueVersions"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.WorkCenterQueueEntries"));
+    }
+
     [SqlServerFact]
     public async Task Manual_queue_preserves_existing_order_across_key_changes_and_inserts_a_new_member_before_the_first_later_key()
     {

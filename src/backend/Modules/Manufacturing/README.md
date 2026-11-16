@@ -455,9 +455,9 @@ Readiness: DEC-PRDCT-005 is locked (button-less backend preview after a 300–50
 
 ### Queue permission follow-up (URT-D106)
 
-`manufacturing.plans.reorder` is registered company-wide, granted to no role, and its shell control is staged
-(`ImplementationAvailable: false`). URT-D106 supersedes URT-D101 for manual queue movement; priority-score entry
-remains under `manufacturing.plans.approve` (URT-D103). Manual queue movement and its audit remain pending.
+`manufacturing.plans.reorder` is registered company-wide and granted to no role. URT-D106 supersedes URT-D101 for
+manual queue movement; priority-score entry remains under `manufacturing.plans.approve` (URT-D103). W8 connects the
+separate reorder capability to its endpoint and controls; shell provider version is 1.12.
 
 # W7 — URT-SC33 priority and queue
 
@@ -466,7 +466,7 @@ URT-D97/D103 stores a signed Int32 priority score (technical default zero, highe
 the plan version and the independent priority revision, a reason, audit context and ADR-011 idempotency. It does not
 change plan content or invalidate approval. The parent update participates in the plan's optimistic concurrency fence.
 The real work-center queue and termin suggestion read this stored score and the remaining input kg; URT-D107 exposes
-over-plan output as a non-blocking flag with zero remaining kg. Manual queue ordering is still pending a separate answer.
+over-plan output as a non-blocking flag with zero remaining kg. W8 implements the subsequent URT-D110 manual-order answer.
 
 Migration `20261116184005_AddManufacturingPlanPriorities` was generated with `dotnet ef`. Up is DDL only. Down first
 refuses with **THROW 51943** while any priority history exists (forward fix), then drops the empty table. SQL guard,
@@ -477,3 +477,23 @@ plan, label, product, observed label version, requested/available/missing kg and
 never persisted or replayed. The initial approval and reapproval screens display it separately from a fresh advisory
 read. Inventory's host mapping and central OpenAPI schema are integrated by the train owner after the Inventory owner
 commit; without that mapping the unchanged code-only refusal remains valid and no quantity is fabricated.
+
+## W8 — URT-SC33 persisted manual queue (URT-D110)
+
+The real queue and termin suggestion use the same persisted sequence once a manager moves an existing queued plan.
+Existing relative order survives due-date and priority changes. An arriving eligible member is inserted before the
+first existing member whose current automatic key is later (termin, score, creation moment, plan id). Thus B20→A10
+plus C15 becomes C→B→A. Departed members leave the current sequence; immutable prior snapshots retain the history.
+A draft target is placed by the same arrival rule only in the read result and never becomes a saved queue member.
+
+`POST /api/v1/manufacturing/plans/{planId}/work-center-queue/reorder` needs both plans read and the separate reorder
+permission, expected plan version, independent expected queue revision, reason and an idempotency key. The command
+owns a Serializable transaction; its sequence, audit and exact ADR-011 response commit together. All ordinary
+membership mutations synchronize existing manual queues inside the same Manufacturing owner or Inventory host
+transaction. A failed membership save rolls back the business write, and a concurrent revision loser adds no snapshot.
+No permission grant, role assignment or cross-module write bypass is introduced.
+
+Migration `20261116210842_AddManufacturingManualQueues` was generated with `dotnet ef`; it creates append-only,
+company-filtered `WorkCenterQueueVersions` and `WorkCenterQueueEntries` with composite owner foreign keys and unique
+sequence/member constraints. Up is DDL only. Down first refuses with **THROW 51946** while either table has history;
+an empty store may roll back. Unit, real-SQL/HTTP and frontend acceptance sources are written; runtime is **NOT_RUN**.

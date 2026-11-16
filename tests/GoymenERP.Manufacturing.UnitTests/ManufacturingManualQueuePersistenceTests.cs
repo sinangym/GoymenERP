@@ -1,13 +1,28 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
 public sealed class ManufacturingManualQueuePersistenceTests
 {
+    [Fact]
+    public void Manual_queue_migration_is_DDL_only_and_refuses_Down_before_dropping_any_history_table()
+    {
+        var migration = new AddManufacturingManualQueues();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51946", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[manufacturing].[WorkCenterQueueVersions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[manufacturing].[WorkCenterQueueEntries]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Equal(["WorkCenterQueueEntries", "WorkCenterQueueVersions"], migration.DownOperations.OfType<DropTableOperation>().Select(operation => operation.Name));
+    }
+
     [Fact]
     public async Task Queue_snapshots_are_company_bound_and_append_only_and_have_unique_positions_and_members()
     {
