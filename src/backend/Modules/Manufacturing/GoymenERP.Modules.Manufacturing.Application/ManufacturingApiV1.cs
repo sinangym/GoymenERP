@@ -624,7 +624,7 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var verified = await VerifyPlanContentAsync(
-                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
+                    inputs, targetKg, process.Value, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
@@ -798,8 +798,7 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var verified = await VerifyPlanContentAsync(
-                    inputs, targetKg, permission, companyId, actorId, cancellationToken,
-                    enforceCurrentMassBound: current.RequiresReapproval);
+                    inputs, targetKg, process.Value, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
@@ -1233,8 +1232,8 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<(List<VerifiedPlanInput> Inputs, Kilograms? TargetMass,
         ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
-        List<ParsedPlanInput> inputs, decimal? targetKg, string permission, Guid companyId, Guid actorId,
-        CancellationToken cancellationToken, bool enforceCurrentMassBound = false)
+        List<ParsedPlanInput> inputs, decimal? targetKg, ManufacturingProcess process,
+        string permission, Guid companyId, Guid actorId, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
         var planned = new List<VerifiedPlanInput>();
@@ -1262,29 +1261,17 @@ public sealed partial class ManufacturingCommandService(
                 return (planned, null, reference.Refusal);
             }
 
-            if (enforceCurrentMassBound)
+            // AT-044 (URT-D37/URT-D111): a slitting draft/revision may use at most the label's current TOTAL physical
+            // mass, across every position. This exact-version owner reference already includes blocked stock; do not
+            // subtract reservations or apply the approval's separate Free/single-position allocation rule here.
+            if (process == ManufacturingProcess.Slitting)
             {
-                if (freeQuantity is null)
+                var physicalText = reference.Reference!.PhysicalKg;
+                if (!decimal.TryParse(physicalText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                        out var physicalKg) || physicalKg < 0m
+                    || physicalKg.ToString("0.###", CultureInfo.InvariantCulture) != physicalText)
                     return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
-                InventoryFreeQuantityReadV1 free;
-                try { free = await freeQuantity.GetAsync(companyId, input.ParentRollId, cancellationToken); }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception)
-                {
-                    if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } refusedFence)
-                        return (planned, null, refusedFence);
-                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
-                }
-                if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fence)
-                    return (planned, null, fence);
-                if (free is null || free.Status != InventoryLabelDispositionStatusV1.Value || free.Value is not { } available
-                    || available.CompanyId != companyId || available.LabelId != input.ParentRollId
-                    || !decimal.TryParse(available.FreeKg, NumberStyles.AllowDecimalPoint,
-                        CultureInfo.InvariantCulture, out var freeKg) || freeKg < 0)
-                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
-                if (available.LabelVersion != input.ExpectedLabelVersion)
-                    return (planned, null, new(ManufacturingApiStatus.Conflict, null, false, InventoryParentRollCodesV1.VersionConflict));
-                if (mass.Value.Value > freeKg || available.FreePositionCount != 1)
+                if (mass.Value.Value > physicalKg)
                     return (planned, null, new(ManufacturingApiStatus.Unprocessable, null, false,
                         ManufacturingRuleCodes.PlanLabelNotUsable, $"inputs[{index}].plannedKg"));
             }

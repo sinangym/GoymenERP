@@ -7,6 +7,9 @@
  * sent from the screen and the saved plans stay readable.
  */
 
+export const PLAN_PHYSICAL_MASS_REFUSAL =
+  'Planlanan kg, etiketin tüm pozisyonlarındaki güncel fiziksel toplamını aşıyor. Etiketi yeniden okuyup kg değerini düzeltin.'
+
 export const PLAN_FORM_TEXT = {
   eyebrow: 'ÜRETİM PLANI',
   backToOrders: '← Üretim emirleri',
@@ -108,6 +111,7 @@ export function saveFailureText(status: number, code: string | null): string {
   if (status === 401 || status === 403) return 'Plan kaydetme yetkiniz artık geçerli değil.'
   if (status === 404) return 'Seçilen ana rulo veya şirket bağlamı artık bulunamıyor.'
   if (status === 409) return `Seçilen kayıtların sürümü veya yazma durumu değişti (${code ?? 'conflict'}).`
+  if (status === 422 && code === 'manufacturing_plan_label_not_usable') return PLAN_PHYSICAL_MASS_REFUSAL
   if (status === 422) return `Plan girdisi kabul edilmedi (${code ?? 'rule_refusal'}).`
   return `Plan kaydedilmedi (${code ?? status}).`
 }

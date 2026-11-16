@@ -8,6 +8,7 @@
 
 import type { PlanRevision } from './planRevisionContract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { PLAN_PHYSICAL_MASS_REFUSAL } from './planText'
 
 export const PLAN_EDIT_TEXT = {
   editButton: 'Planı düzenle',
@@ -90,7 +91,7 @@ export function revisionFailureText(status: number, code: string | null, field: 
     case 'manufacturing_plan_reapproval_settings_changed':
       return 'İlk onayın Ayarlar profili veya sabit plan içeriği değişti. Yeni plan hazırlayın.'
     case 'manufacturing_plan_label_not_usable':
-      return 'Seçilen ana rulonun kullanılabilir kg miktarı planlanan kg için yeterli değil. Etiketi ve kg değerini yeniden seçin.'
+      return PLAN_PHYSICAL_MASS_REFUSAL
     case 'manufacturing_plan_process_fixed':
       return `Seçilen iş merkezi planın sürecini (${process}) yürütmüyor; planın süreci değişmez.`
     case 'manufacturing_plan_slitting_spec_fixed':

@@ -135,7 +135,7 @@ public sealed partial class ManufacturingCommandService
         }
 
         var verified = await VerifyPlanContentAsync(
-            content.Inputs!, content.TargetKg, permission, companyId, actorId, cancellationToken);
+            content.Inputs!, content.TargetKg, process.Value, permission, companyId, actorId, cancellationToken);
         if (verified.Refusal is not null)
         {
             return Refusal<PlanPreviewViewV1>(verified.Refusal);
