@@ -676,6 +676,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {companyId !== null && namespace !== null ? <PlanQueuePanel
               key={`${namespace}:${companyId}:${plan.planId}:${plan.version}`} companyId={companyId} planId={plan.planId}
               planVersion={plan.version} namespace={namespace} canApprove={canApprove && !busy && plan.status !== 'Cancelled'}
+              canReorder={hasCapability(shell, MANUFACTURING_CAPABILITY.planReorder) && !busy}
               onChanged={() => { void queryClient.invalidateQueries({ queryKey: [namespace, shell.routeEntryGeneration,
                 'manufacturing-plan-due-date-suggestion', plan.planId] }) }} /> : null}
             {plan.status === 'Approved' && companyId !== null && namespace !== null ? (

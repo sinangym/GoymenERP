@@ -1533,6 +1533,7 @@ public sealed partial class ManufacturingStore(
     /// </summary>
     private void Complete(ManufacturingCommandMetadata metadata, Guid companyId, object result)
     {
+        queueMutationMetadata = metadata;
         if (metadata.Completion is { } completion)
         {
             AddCommand(companyId, completion(result));
@@ -2427,7 +2428,9 @@ public sealed partial class ManufacturingStore(
         plan.ApprovedAtUtc,
     }, Json);
 
-    private async Task SaveAsync(CancellationToken cancellationToken)
+    private Task SaveAsync(CancellationToken cancellationToken) => SaveWithManualQueuesAsync(cancellationToken);
+
+    private async Task PersistChangesAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -2469,7 +2472,7 @@ public sealed partial class ManufacturingStore(
 
             var code = sql.Number switch
             {
-                2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
+                1205 or 1222 or 2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
                 547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     || sql.Message.Contains("FK_PlanRevisions_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     => ManufacturingStoreCodes.WorkCenterNotFound,

@@ -610,6 +610,18 @@ public static class ManufacturingEndpoints
                 "manufacturing_plan_priority_reason_required", "manufacturing_plan_priority_unchanged"])
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
 
+        group.MapPost("/plans/{planId:guid}/work-center-queue/reorder", async (Guid planId,
+                MoveManufacturingQueuePlanRequestV1 request, ManufacturingCommandService service,
+                HttpContext httpContext, CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.MoveQueuePlanAsync(planId, request, key, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansReorder)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("MoveManufacturingWorkCenterQueuePlanV1").Accepts<MoveManufacturingQueuePlanRequestV1>("application/json")
+            .Produces<PlanWorkCenterQueueViewV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, "manufacturing_queue_member_invalid", "manufacturing_queue_unchanged"])
+            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
+
         // URT-D99/D107: the same server queue used by termin calculation, including its non-blocking over-plan flag.
         group.MapGet("/plans/{planId:guid}/work-center-queue", async (Guid planId, ManufacturingCommandService service,
                 HttpContext httpContext, CancellationToken cancellationToken) =>

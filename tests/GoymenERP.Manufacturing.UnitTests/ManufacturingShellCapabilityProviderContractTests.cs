@@ -25,7 +25,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.11"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("MANUFACTURING", "1.12"), (provider.Owner, provider.ContractVersion));
         Assert.Equal(19, declarations.Count);
         foreach (var declaration in declarations)
         {
@@ -35,8 +35,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.Equal(declaration.CapabilityId != ManufacturingShellCapabilityProvider.PlanReorderCapabilityId,
-                declaration.ImplementationAvailable);
+            Assert.True(declaration.ImplementationAvailable);
         }
 
         var exceptionApproval = Assert.Single(declarations,

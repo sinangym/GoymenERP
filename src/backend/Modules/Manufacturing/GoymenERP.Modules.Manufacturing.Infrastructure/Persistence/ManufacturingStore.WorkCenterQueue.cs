@@ -66,7 +66,7 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
 
         if (candidates.Count == 0)
         {
-            return new ManufacturingWorkCenterQueue([], target, targetIsQueued);
+            return await WithManualQueueAsync(workCenterId, new([], target, targetIsQueued), cancellationToken);
         }
 
         var ids = candidates.Select(candidate => candidate.Id).ToArray();
@@ -91,7 +91,7 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
 
         if (queued.Count == 0)
         {
-            return new ManufacturingWorkCenterQueue([], target, targetIsQueued);
+            return await WithManualQueueAsync(workCenterId, new([], target, targetIsQueued), cancellationToken);
         }
 
         var created = queued.Where(entry => entry.RevisionNo == 0).Select(entry => entry.PlanId).ToArray();
@@ -164,7 +164,7 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
                 new Kilograms(plannedKg.Value), new Kilograms(processed), priority?.Revision ?? 0));
         }
 
-        return new ManufacturingWorkCenterQueue(entries, target, targetIsQueued);
+        return await WithManualQueueAsync(workCenterId, new(entries, target, targetIsQueued), cancellationToken);
     }
 
     private async Task<decimal> QueueProcessedKgAsync(Guid orderId, Guid companyId, CancellationToken cancellationToken)
