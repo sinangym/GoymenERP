@@ -104,6 +104,7 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryFutureAllocationWriterV1, InventoryFutureAllocationWriter>();
         services.AddScoped<IInventoryFutureAllocationReadPortV1, InventoryFutureAllocationReadPort>();
         services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
+        services.TryAddScoped<IInventoryFutureSupplyScheduleSourceV1, InventoryUnavailableFutureSupplyScheduleSourceV1>();
         services.AddScoped<IInventoryFutureDemandSourceV1, InventoryFutureDemandSource>();
         // KLN-D66: over the Settings unit identities when the host has them (kg only today), identity-only otherwise.
         services.TryAddScoped<IInventoryFutureUnitConverterV1>(serviceProvider =>

@@ -111,6 +111,9 @@ public static class InventoryFutureAllocationCodesV1
     /// <summary>422: the release quantity is not positive or exceeds the allocation's remaining quantity.</summary>
     public const string ReleaseSelectionInvalid = "inventory_future_allocation_release_selection_invalid";
 
+    /// <summary>409 KLN-D32: reduction also needs physical stock release, whose command is not available yet.</summary>
+    public const string PhysicalReleaseUnavailable = "inventory_future_allocation_physical_release_unavailable";
+
     /// <summary>503: a source module could not be read; nothing is written (fail-closed).</summary>
     public const string ServiceUnavailable = "service_unavailable";
 }
@@ -311,6 +314,11 @@ public interface IInventoryFutureAllocationReleasePortV1
 
 public interface IInventoryFutureAllocationReleaseSessionV1 : IAsyncDisposable
 {
+    /// <summary>KLN-D28/30/31/32. Evaluates every source and selection before the first change; host rolls back on refusal.</summary>
+    Task<InventoryFutureDemandReductionResultV1> ReduceDemandAsync(InventoryFutureDemandReductionRequestV1 request,
+        InventoryCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new InventoryAllocationException(503, InventoryFutureAllocationCodesV1.ServiceUnavailable);
+
     Task<IReadOnlyList<InventoryFutureAllocationViewV1>> ListActiveByPurchaseLineAsync(Guid purchaseOrderLineId,
         CancellationToken cancellationToken = default);
 

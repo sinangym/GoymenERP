@@ -113,7 +113,9 @@ internal sealed class InventoryFutureAllocationReadPort(InventoryDbContext dbCon
 internal sealed class InventoryFutureAllocationReleasePort(
     ICompanyContext companyContext,
     IPurchaseLineSerializationLockBinderV1 purchaseLineLocks,
-    TimeProvider timeProvider) : IInventoryFutureAllocationReleasePortV1
+    TimeProvider timeProvider,
+    IInventoryFutureUnitConverterV1? unitConverter = null,
+    IInventoryFutureSupplyScheduleSourceV1? schedules = null) : IInventoryFutureAllocationReleasePortV1
 {
     public async Task<IInventoryFutureAllocationReleaseSessionV1> EnlistAsync(DbConnection connection, DbTransaction transaction,
         CancellationToken cancellationToken = default)
@@ -139,7 +141,8 @@ internal sealed class InventoryFutureAllocationReleasePort(
         {
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
             return new InventoryFutureAllocationReleaseSession(context, audit, connection, transaction, companyId, companyContext,
-                purchaseLineLocks, timeProvider);
+                purchaseLineLocks, timeProvider, unitConverter ?? new InventoryIdentityFutureUnitConverterV1(),
+                schedules ?? new InventoryUnavailableFutureSupplyScheduleSourceV1());
         }
         catch
         {
@@ -149,7 +152,7 @@ internal sealed class InventoryFutureAllocationReleasePort(
     }
 }
 
-internal sealed class InventoryFutureAllocationReleaseSession(
+internal sealed partial class InventoryFutureAllocationReleaseSession(
     InventoryDbContext context,
     AuditEventCollector auditEvents,
     DbConnection connection,
@@ -157,7 +160,9 @@ internal sealed class InventoryFutureAllocationReleaseSession(
     Guid companyId,
     ICompanyContext companyContext,
     IPurchaseLineSerializationLockBinderV1 purchaseLineLocks,
-    TimeProvider timeProvider) : IInventoryFutureAllocationReleaseSessionV1
+    TimeProvider timeProvider,
+    IInventoryFutureUnitConverterV1 unitConverter,
+    IInventoryFutureSupplyScheduleSourceV1 schedules) : IInventoryFutureAllocationReleaseSessionV1
 {
     private bool disposed;
 
