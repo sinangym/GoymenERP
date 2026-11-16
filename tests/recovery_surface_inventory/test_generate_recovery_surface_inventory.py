@@ -47,6 +47,11 @@ EXPECTED_STORES = {
     ("finance", "PartyCollateralCommands"): ("PartyCollateralCommandRow", "idempotency", "FinanceDbContext"),
     ("counterparty", "OutboxMessages"): ("CounterpartyOutboxRow", "outbox", "CounterpartyDbContext"),
     ("identity", "OutboxMessages"): ("IdentityOutboxMessage", "outbox", "IdentityDbContext"),
+    ("identity", "CompanySetupInboxReceipts"): ("CompanySetupInboxReceipt", "inbox", "IdentityDbContext"),
+    ("organization", "CompanySetupInboxReceipts"): ("CompanySetupInboxReceipt", "inbox", "OrganizationDbContext"),
+    ("organization", "CompanySetupOutboxMessages"): (
+        "OrganizationCompanySetupOutboxMessage", "outbox", "OrganizationDbContext"
+    ),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
     ("finance", "InvoiceCancellations"): (
         "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
@@ -488,7 +493,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 19, "migrations": 258, "durableStores": 53},
+            {"dbContexts": 19, "migrations": 258, "durableStores": 56},
             self.inventory["counts"],
         )
         actual = {
@@ -498,13 +503,19 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(53, len(actual))
+        self.assertEqual(56, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
-    def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
+    def test_store_evidence_preserves_the_explicit_company_setup_producer_gap(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(53, len(specs_by_id))
+        self.assertEqual(56, len(specs_by_id))
+        # The physical table must survive recovery inventory even before its command exists.
+        # This exact source gap is not a writer, an activation, or general permission to omit writers.
+        self.assertEqual(
+            {"organization.company-setup-outbox"},
+            {spec.identifier for spec in specs_by_id.values() if not any(item.live_code for item in spec.evidence)},
+        )
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -525,10 +536,17 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 ),
                 record["id"],
             )
-            self.assertTrue(
-                any(".Add" in token or "InsertAsync" in token for token in tokens),
-                record["id"],
-            )
+            if record["id"] == "organization.company-setup-outbox":
+                self.assertFalse(any(item.live_code for item in spec.evidence))
+                self.assertFalse(any(identifier == spec.identifier for identifier, _ in generator.WRITER_METHOD_SCOPES))
+                self.assertIn("database.CompanySetupOutboxMessages.AsNoTracking()", tokens)
+                self.assertEqual(("organization", "CompanySetupOutboxMessages"), (record["schema"], record["table"]))
+            else:
+                self.assertTrue(
+                    any(".Add" in token or "InsertAsync" in token
+                        for evidence in spec.evidence if evidence.live_code for token in evidence.required_tokens),
+                    record["id"],
+                )
 
     def test_transfer_outgoing_document_attempts_are_the_reviewed_replay_store(self) -> None:
         store = next(

@@ -84,8 +84,13 @@ Eski karar dosyaları yerinde değiştirilmedi; belge PR'ları kod kabulü deği
   değişti, tarihsel satırlar korundu. Settings 1.11, Inventory 1.9.
 - OpenAPI: gerçek .NET üretimi **626 operasyon**, baseline byte-equal;
   SHA256 `97695739fc94339ca23de4c5e137ac0595bf1389aea781528611cb95bd9f45cd`.
-- Recovery: üreticiden **19 context, 258 migration, 53 durable store**; risky source
-  sayısı 1049. Audit 31 dosya; DispatchSourceAsync ve altı reviewed blob yeniden üretildi.
+- Recovery: ilk üretici koşumu üç yeni mesaj tablosunun eksikliğinde exit 2 verdi.
+  Identity/Organization inbox ve Organization outbox fiziksel kaynakları kaydedildi;
+  beklenen toplam **19 context, 258 migration, 56 durable store**. Organization outbox
+  için üretim yazıcısı henüz yoktur; DDL/model/okuyucu kanıtı yazıcı diye gösterilmedi,
+  KIM-S5 PARTIAL kaldı. Risky source sayısı 1049; Audit 31 dosya.
+  DispatchSourceAsync, eski altı blob ve gerçek yeni inbox/outbox yazıcıları üreticiyle
+  yeniden ölçüldü. Envanter kaydı K3 onayı veya çalışma kabulü değildir.
 - Mimari guard: 28 mevcut fingerprint, iki mevcut GetDbConnection sayımı yeniden ölçüldü.
   Tek kabul 3→6, batch 1→5; hepsi aynı caller bağlantısı ve owner port enlist'idir,
   yeni bağlantı açma değildir. K3 incelemesi bekler.

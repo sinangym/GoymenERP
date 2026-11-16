@@ -60,7 +60,7 @@ EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
 # commands; stok_lojistik: logistics.outbox, weighing-difference and package-standard attempts;
 # alis_cari: supplier-return attempts; satis: subcontract-service-invoice attempts); every new
 # classification is K3 review pending (owning team) until an independent K3 review signs it.
-EXPECTED_DURABLE_STORE_COUNT = 53
+EXPECTED_DURABLE_STORE_COUNT = 56
 # Recovery pin Faz 1 (docs/delivery/RECOVERY_PIN_CAKISMA_ONERISI_v1.md, Sinan Q1 = yes, Issue #66):
 # the former global byte pin over every src/backend byte is replaced by a NARROW risky-surface
 # pin.  The narrow set is a token/file-class SUPERSET (never an inheritance guess) of the inputs
@@ -248,9 +248,12 @@ EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
     ("counterparty", "OutboxMessages"),
     ("finance", "OfficialInvoiceImportWorkDeliveries"),
+    ("identity", "CompanySetupInboxReceipts"),
     ("identity", "OutboxMessages"),
     ("inventory", "OutboxMessages"),
     ("logistics", "OutboxMessages"),
+    ("organization", "CompanySetupInboxReceipts"),
+    ("organization", "CompanySetupOutboxMessages"),
     ("purchasing", "OutboxMessages"),
     ("sales", "OutboxMessages"),
     ("work", "ObservationInbox"),
@@ -579,6 +582,24 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCollateralService.cs",
         ("dbContext.PartyCollateralCommands.Add(new PartyCollateralCommandRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
+    # KIM-S5 source inventory only; the obsolete automatic-opener path remains PARTIAL.
+    _store(
+        "identity.company-setup-inbox", "Identity", "inbox", "IdentityDbContext",
+        "CompanySetupInboxReceipt", "identity", "CompanySetupInboxReceipts",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/IdentityDbContext.CompanySetup.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261116185533_AddCompanySetupInboxAndOutboxPosition.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs",
+        ("BeginTransactionAsync(IsolationLevel.Serializable", "database.CompanySetupInboxReceipts.AsNoTracking()",
+         "receipt.PayloadHash != hash", "database.CompanySetupInboxReceipts.Add(new(",
+         "database.SaveChangesAsync(cancellationToken)", "transaction.CommitAsync(cancellationToken)"),
+        mapping_tokens=("HasKey(x => new { x.CompanyId, x.EventId })", "HasQueryFilter(x => x.CompanyId == CompanySetupCompanyId)"),
+        contracts=("OrganizationCompanyOpenedV1",),
+        extra_evidence=(
+            _evidence("src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Messaging/CompanySetupEventsV1.cs",
+                      "public sealed record OrganizationCompanyOpenedV1", 'EventType = "organization.company.opened.v1"'),
+        ),
+        uses_schema_constant=False,
+    ),
     DurableStoreSpec(
         "identity.outbox", "Identity", "outbox", "IdentityDbContext", "IdentityOutboxMessage",
         "identity", "OutboxMessages", (),
@@ -597,6 +618,16 @@ DURABLE_STORE_SPECS = (
                 "IdentityPermissionChangedV1.EventType",
                 live_code=True,
             ),
+            _evidence(
+                "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs",
+                "var payload = new IdentityCompanyFirstAdminAssignedV1(",
+                "database.OutboxMessages.Add(new(IdentityCompanyFirstAdminAssignedV1.EventId(metadata.CompanyId)",
+                "IdentityCompanyFirstAdminAssignedV1.EventType", "IdentityPermissionChangedV1.EventType",
+                live_code=True,
+            ),
+            _evidence("src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Messaging/CompanySetupEventsV1.cs",
+                      "public sealed record IdentityCompanyFirstAdminAssignedV1",
+                      'EventType = "identity.company.first_admin_assigned.v1"'),
         ),
     ),
     _store(
@@ -904,6 +935,45 @@ DURABLE_STORE_SPECS = (
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPackageStandardService.cs",
         ("database.PackageStandardAttempts.Add(new ProductPackageStandardAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
+    _store(
+        "organization.company-setup-inbox", "Organization", "inbox", "OrganizationDbContext",
+        "CompanySetupInboxReceipt", "organization", "CompanySetupInboxReceipts",
+        "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationDbContext.CompanySetup.cs",
+        "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116185536_AddCompanySetupLifecycleAndMessaging.cs",
+        "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs",
+        ("BeginTransactionAsync(IsolationLevel.Serializable", "database.CompanySetupInboxReceipts.AsNoTracking()",
+         "receipt.PayloadHash != hash", "company.CompleteSetup(now)", "database.CompanySetupInboxReceipts.Add(new(",
+         "database.SaveChangesAsync(cancellationToken)", "transaction.CommitAsync(cancellationToken)"),
+        mapping_tokens=("HasKey(x => new { x.CompanyId, x.EventId })", "HasQueryFilter(x => x.CompanyId == companyContext.CompanyId)"),
+        contracts=("IdentityCompanyFirstAdminAssignedV1",),
+        extra_evidence=(
+            _evidence("src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Messaging/CompanySetupEventsV1.cs",
+                      "public sealed record IdentityCompanyFirstAdminAssignedV1",
+                      'EventType = "identity.company.first_admin_assigned.v1"'),
+        ),
+        uses_schema_constant=False,
+    ),
+    # Physical recovery surface exists, but production enqueue is not implemented yet.
+    # Mapping/DDL/reader evidence must not be represented as a live writer or activation.
+    DurableStoreSpec(
+        "organization.company-setup-outbox", "Organization", "outbox", "OrganizationDbContext",
+        "OrganizationCompanySetupOutboxMessage", "organization", "CompanySetupOutboxMessages",
+        ("OrganizationCompanyOpenedV1",),
+        (
+            _evidence("src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationDbContext.CompanySetup.cs",
+                      "Entity<OrganizationCompanySetupOutboxMessage>()", 'ToTable("CompanySetupOutboxMessages", "organization"',
+                      "HasKey(x => x.Id)", "Property(x => x.Position).IsRowVersion()",
+                      "HasQueryFilter(x => x.CompanyId == companyContext.CompanyId)"),
+            _evidence("src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/Migrations/20261116185536_AddCompanySetupLifecycleAndMessaging.cs",
+                      'name: "CompanySetupOutboxMessages"'),
+            _evidence("src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupOutboxSource.cs",
+                      "ReadAfterAsync", "database.CompanySetupOutboxMessages.AsNoTracking()",
+                      "x.CompanyId == companyId && x.Position > after && x.Position < horizon",
+                      "OrganizationCompanyOpenedV1.EventType"),
+            _evidence("src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Messaging/CompanySetupEventsV1.cs",
+                      "public sealed record OrganizationCompanyOpenedV1", 'EventType = "organization.company.opened.v1"'),
+        ),
+    ),
     # tren-1 wave 5 integration (alis_cari supplier returns): K3 review pending (alis_cari).
     _store(
         "purchasing.supplier-return-attempts", "Purchasing", "idempotency", "PurchasingDbContext",
@@ -928,6 +998,9 @@ DURABLE_STORE_SPECS = (
 # binding is intentionally explicit: moving a write into an unused helper or a deferred
 # lambda must invalidate the inventory instead of silently preserving its source hash.
 WRITER_METHOD_SCOPES = {
+    ("identity.company-setup-inbox", "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs"): "HandleAsync",
+    ("identity.outbox", "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs"): "StageAssignmentAsync",
+    ("organization.company-setup-inbox", "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs"): "HandleAsync",
     ("accounting.command-replay", ACCOUNTING_STORE): "AddCommand",
     ("accounting.delivery-inbox", ACCOUNTING_STORE): "AddDelivery",
     ("accounting.source-document-admissions", ACCOUNTING_SOURCE_DOCUMENT_ADMISSION_STORE): "WriteAsync",
@@ -1124,6 +1197,9 @@ WRITER_METHOD_SCOPES = {
 # These declaration-and-body fingerprints bind recovery evidence to the reviewed live
 # methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
 REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    ("src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs", "HandleAsync"): "1dacf9be22e0ab7a542a1e9f34088e1e61065c7bcfab72a7c0c492ef64c0e291",
+    ("src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs", "StageAssignmentAsync"): "44dd3de23ae5e5411499be6d89daff2352a9ed8ca9f09395dda57a67d2c7ca1e",
+    ("src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs", "HandleAsync"): "9033105dbdda4d313a516f7672590e3638712855b926b3d59c4a6ceec83a4f33",
     (
         "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Deactivation.cs",
         "EnqueuePartyDeactivatedEvent",
@@ -1378,6 +1454,8 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
 # The full blobs retain reachability evidence around the pinned methods (for example,
 # private writer call sites) and bind every emitted source record to reviewed bytes.
 REVIEWED_LIVE_SOURCE_SHA256 = {
+    "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityCompanySetupService.cs": "d6d1c60e4a3f53abff52c75e6dacb64a9a44435479ae95c8b423c938ffa56525",
+    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanySetupInboxConsumer.cs": "4b9bd27ceef08f89312fabed3e02f19ae60edc6ac5ac3f961d6d49080a8eb730",
     "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Deactivation.cs": "6f44d4f0d467bf3f80f95e84f4d63eb662cbec25a18282fbbf050d211314d827",
     "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Merge.cs": "188e991b0262c6fd7b6c111f4fb6cfca8143ef951da7e319b68f275e98884428",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashTransferService.cs": "313cc495ee3d95b64b8b048327ff435b6623fae145b2c19166627f6df30eba31",
