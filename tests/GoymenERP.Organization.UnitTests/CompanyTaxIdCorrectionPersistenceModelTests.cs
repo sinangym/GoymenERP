@@ -4,6 +4,7 @@ using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Organization.UnitTests;

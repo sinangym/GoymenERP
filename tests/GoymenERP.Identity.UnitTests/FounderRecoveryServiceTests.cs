@@ -263,7 +263,7 @@ public sealed class FounderRecoveryServiceTests
         Assert.Equal(SecurityEventOutcomesV1.Allowed, written.Outcome);
         Assert.Equal((SecurityEventScopeKindsV1.Platform, (Guid?)null), (written.ScopeKind, written.CompanyId));
         Assert.Equal((SecurityEventActorTypesV1.System, FounderRecoveryService.SystemActorId), (written.ActorType, written.ActorId));
-        Assert.Empty(SecurityEventV1.Validate(written));
+        Assert.Empty(SecurityEventV1Validator.Validate(written));
     }
 
     [Fact]
@@ -288,7 +288,7 @@ public sealed class FounderRecoveryServiceTests
 
         var written = Assert.Single(harness.Events.Written);
         Assert.Equal(SecurityEventTypesV1.FounderPasswordReset, written.EventType);
-        Assert.Empty(SecurityEventV1.Validate(written));
+        Assert.Empty(SecurityEventV1Validator.Validate(written));
     }
 
     [Fact]
@@ -329,7 +329,7 @@ public sealed class FounderRecoveryServiceTests
         Assert.Equal(SecurityEventTypesV1.FounderRecoveryRefused, written.EventType);
         Assert.Equal((SecurityEventOutcomesV1.Denied, SecurityEventReasonCodesV1.PolicyRefused), (written.Outcome, written.ReasonCode));
         Assert.Equal((SecurityEventScopeKindsV1.Platform, (Guid?)null, (Guid?)null), (written.ScopeKind, written.CompanyId, written.RequestedCompanyId));
-        Assert.Empty(SecurityEventV1.Validate(written));
+        Assert.Empty(SecurityEventV1Validator.Validate(written));
     }
 
     internal sealed class Harness : IDisposable
