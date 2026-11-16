@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(36, declarations.Count);
+        Assert.Equal(39, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -241,7 +241,25 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal(cashTransfers.CapabilityId, cashTransferCommit.ParentCapabilityId);
         Assert.Superset(cashTransfers.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
             cashTransferCommit.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
-        Assert.Equal(15, declarations.Count(item => item.ParentCapabilityId is not null));
+        foreach (var (parentId, controlIds) in new (string, string[])[]
+                 {
+                     (FinanceShellCapabilityProvider.CollateralListCapabilityId,
+                         [FinanceShellCapabilityProvider.CollateralRecordCapabilityId]),
+                     (FinanceShellCapabilityProvider.OpeningBalanceListCapabilityId,
+                         [FinanceShellCapabilityProvider.OpeningBalanceProposeCapabilityId,
+                             FinanceShellCapabilityProvider.OpeningBalanceApproveCapabilityId]),
+                 })
+        {
+            var parent = Assert.Single(declarations, item => item.CapabilityId == parentId);
+            foreach (var id in controlIds)
+            {
+                var control = Assert.Single(declarations, item => item.CapabilityId == id);
+                Assert.Equal(parent.CapabilityId, control.ParentCapabilityId);
+                Assert.Superset(parent.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+                    control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+            }
+        }
+        Assert.Equal(17, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -280,7 +298,8 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
-                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-CREDIT-LIMITS", "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "M-03"],
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
+                "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }
