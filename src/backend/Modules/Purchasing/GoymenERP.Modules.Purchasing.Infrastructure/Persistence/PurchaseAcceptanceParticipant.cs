@@ -209,7 +209,9 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         // ALC-SC33 (FNS-D79/D91): the order's rate changes are part of the version history too.
         var rateRows = await _dbContext.ExchangeRateChanges.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId)
             .OrderBy(row => row.OrderVersionAfter).ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows);
+        var adjustmentRows = await _dbContext.ReceiptAdjustments.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
+        var cancellationRows = await _dbContext.CancellationHistory.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
+        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows);
         if (order.Version != validated.ExpectedPurchaseOrderVersion)
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.OrderVersionConflict, 409, "Sipariş sürümü değişti.");

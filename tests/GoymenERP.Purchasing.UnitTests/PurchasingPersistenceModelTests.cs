@@ -67,7 +67,7 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains(orderLines.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseOrderLines_SourceRequestLine");
         // A1-3 (master INV-006) and API-11: the cancelled and the closed remainders are inside the shares bound.
         Assert.Contains(orderLines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares"
-            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]", StringComparison.Ordinal)
+            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] + [DefinitiveReturned] <= [Ordered]", StringComparison.Ordinal)
             && check.Sql.Contains("[Cancelled] >= 0", StringComparison.Ordinal));
         Assert.Equal((3, 3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
             orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale(),
@@ -202,7 +202,7 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(12, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(14, PurchasingPermissionManifestV1.Names.Count);
         // ALC-S3 (ALS-D83/D85): the release name measures the link drop and the drop-and-cancel / drop-and-close commands; no shell
         // control (the screen lives under the order detail capability).
         Assert.Contains("purchasing.future-allocation.release", PurchasingPermissionManifestV1.Names);

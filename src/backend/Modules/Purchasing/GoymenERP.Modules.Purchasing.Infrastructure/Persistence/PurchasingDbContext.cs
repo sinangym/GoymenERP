@@ -17,7 +17,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// is never stored. The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// Nothing here is physical: an approved order is expected supply, never stock.
 /// </summary>
-public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> options, ICompanyContext companyContext)
+public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "purchasing";
@@ -87,6 +87,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
     internal const string OrderCancellationCheck =
         "([Status] = 3 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL "
         + "AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) "
+        + "OR ([Status] = 2 AND [CancelledBy] IS NOT NULL AND LEN([CancelledBy]) > 0 AND [CancelledAtUtc] IS NOT NULL "
+        + "AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0) "
         + "OR ([Status] <> 3 AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL)";
 
     /// <summary>
@@ -105,14 +107,16 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
     /// remainder are never negative and together never exceed the first commitment.
     /// </summary>
     internal const string OrderLineSharesCheck =
-        "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Closed] >= 0 "
-        + "AND [Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]";
+        "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Cancelled] >= 0 AND [Closed] >= 0 AND [DefinitiveReturned] >= 0 "
+        + "AND [Technical] + [Accepted] + [Cancelled] + [Closed] + [DefinitiveReturned] <= [Ordered]";
 
     /// <summary>
     /// API-11 (F-017 §3.6): a remainder is either cancelled with the order or closed on the line, never both — closing refuses a
     /// cancelled order and cancelling counts only the remainder still open (the domain's rule, held here as defence in depth).
     /// </summary>
-    internal const string OrderLineClosedOrCancelledCheck = "[Closed] = 0 OR [Cancelled] = 0";
+    // ALS-D92: historical closed and cancelled shares may coexist after a net receipt revival.
+    // The exact aggregate shares CHECK, not mutual exclusion, prevents reopening twice.
+    internal const string OrderLineClosedOrCancelledCheck = "[Closed] >= 0 AND [Cancelled] >= 0";
 
     /// <summary>The outbox's message types (the store writes nothing else).</summary>
     internal static readonly string OutboxEventTypeCheck =
@@ -231,6 +235,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureAttempts(modelBuilder);
         ConfigureGoodsReceiptBatches(modelBuilder);
         ConfigureSupplierReturns(modelBuilder);
+        ConfigureReceiptAdjustments(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -384,7 +389,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         foreach (var quantity in new[]
                  {
                      nameof(PurchaseOrderLineRow.Ordered), nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted),
-                     nameof(PurchaseOrderLineRow.Cancelled), nameof(PurchaseOrderLineRow.Closed),
+                     nameof(PurchaseOrderLineRow.Cancelled), nameof(PurchaseOrderLineRow.Closed), nameof(PurchaseOrderLineRow.DefinitiveReturned),
                  })
         {
             entity.Property<decimal>(quantity).HasPrecision(18, 3);
@@ -413,6 +418,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseAttempts_Identity",
                 $"[CompanyId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
             table.HasCheckConstraint("CK_PurchaseAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_PurchaseAttempts_ReceiptAdjustment",
+                $"[ReceiptAdjustmentId] IS NULL OR ([ReceiptAdjustmentId] <> {EmptyGuid} AND [Outcome] = 1 AND [OrderId] IS NOT NULL AND [RequestId] IS NULL)");
             // ADR-011 §7: a stored result (exactly one of request / order) or a recorded terminal refusal, never both.
             table.HasCheckConstraint("CK_PurchaseAttempts_Outcome",
                 $"([Outcome] = 1 AND [RefusalJson] IS NULL AND (([RequestId] IS NOT NULL AND [RequestId] <> {EmptyGuid} AND [OrderId] IS NULL) "
@@ -459,6 +466,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         });
         entity.HasKey(x => x.AcceptanceId);
         entity.HasAlternateKey(x => new { x.CompanyId, x.AcceptanceId });
+        entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId, x.AcceptanceId });
         entity.Property(x => x.AcceptanceId).ValueGeneratedNever();
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
         entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
@@ -884,7 +892,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                     PurchaseOrderLineRow =>
                     [
                         nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled),
-                        nameof(PurchaseOrderLineRow.Closed),
+                        nameof(PurchaseOrderLineRow.Closed), nameof(PurchaseOrderLineRow.DefinitiveReturned),
+                        nameof(PurchaseOrderLineRow.ReceiptClosureRevived),
                     ],
                     // ALC-S16: a bulk receipt moves once (its status and decision facts); a label is only released by a rejection.
                     PurchaseGoodsReceiptBatchRow =>

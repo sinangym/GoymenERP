@@ -24,6 +24,7 @@ public enum PurchaseOrderLineKind
 /// </summary>
 public sealed class PurchaseOrderLine
 {
+    private bool closureReopenedByReceiptAdjustment;
     internal PurchaseOrderLine(Guid id, Guid productId, Guid unitId, Quantity quantity, PurchaseOrderLineKind kind,
         Guid? parentLineId, Guid? sourceRequestLineId, PurchaseOrderLinePrice? price = null)
     {
@@ -39,6 +40,7 @@ public sealed class PurchaseOrderLine
         AcceptedQuantity = Quantity.Zero(quantity.Unit);
         CancelledQuantity = Quantity.Zero(quantity.Unit);
         ClosedQuantity = Quantity.Zero(quantity.Unit);
+        DefinitiveReturnQuantity = Quantity.Zero(quantity.Unit);
     }
 
     public Guid Id { get; }
@@ -64,13 +66,19 @@ public sealed class PurchaseOrderLine
 
     public Quantity AcceptedQuantity { get; private set; }
 
+    /// <summary>ALS-D91: an unmarked supplier return is no longer accepted and does not reopen future supply.</summary>
+    public Quantity DefinitiveReturnQuantity { get; private set; }
+
+    public bool ReceiptClosureRevived => closureReopenedByReceiptAdjustment;
+
     /// <summary>A1-3 (No.161 §2): the not-yet-accepted remainder cancelled with the order (zero until then).</summary>
     public Quantity CancelledQuantity { get; private set; }
 
     /// <summary>
     /// API-11 (ALIS_F017 v1 §2/§3.6, ALS-D10/D12/D87): the not-yet-accepted remainder closed with the line's short-delivery closure
-    /// (eksik teslim kapanışı) — a separate axis from <see cref="CancelledQuantity"/>; zero while the line is open and again after a
-    /// reopening. On a technical slice it is the slice's part of its general line's closure.
+    /// (eksik teslim kapanışı) — a separate axis from <see cref="CancelledQuantity"/>; an explicit API-11 reopening clears it.
+    /// Receipt adjustment revival preserves this historic share and opens only the net undone acceptance.
+    /// On a technical slice it is the slice's part of its general line's closure.
     /// </summary>
     public Quantity ClosedQuantity { get; private set; }
 
@@ -84,17 +92,17 @@ public sealed class PurchaseOrderLine
     public PurchaseOrderLineClosureChange? LastClosureChange { get; private set; }
 
     /// <summary>API-11: true while the line (or, for a technical slice, its general line) is closed.</summary>
-    public bool IsClosed => Closure is not null || !ClosedQuantity.IsZero;
+    public bool IsClosed => !closureReopenedByReceiptAdjustment && (Closure is not null || !ClosedQuantity.IsZero);
 
     /// <summary>What this line itself still commits to: ordered minus technical slices.</summary>
     public Quantity CommittedQuantity => Quantity.Subtract(TechnicalQuantity);
 
     /// <summary>
-    /// Committed minus accepted minus cancelled minus closed: the future supply still expected on this line (master INV-006:
-    /// Onaylı − İptal − KabulNet, extended with the API-11 <c>closed</c> axis, ALIS_F017 v1 §2; the return effect arrives with
-    /// API-44/API-60).
+    /// Committed minus accepted minus cancelled minus closed minus definitive returned: the future supply still expected
+    /// on this line (master INV-006, ALIS_F017 v1 section2, API-11/API-44/API-60).
     /// </summary>
-    public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity).Subtract(CancelledQuantity).Subtract(ClosedQuantity);
+    public Quantity RemainingQuantity => CommittedQuantity.Subtract(AcceptedQuantity).Subtract(CancelledQuantity)
+        .Subtract(ClosedQuantity).Subtract(DefinitiveReturnQuantity);
 
     /// <summary>
     /// A3 API-30 (ALS-D33): the line's current delivery schedule (termin dilimleri), empty until one is recorded; its slices sum to
@@ -117,7 +125,7 @@ public sealed class PurchaseOrderLine
     internal void AddTechnicalSlice(Quantity slice)
     {
         var next = TechnicalQuantity.Add(slice);
-        if (next.Add(AcceptedQuantity).Add(CancelledQuantity).Add(ClosedQuantity).IsGreaterThan(Quantity))
+        if (next.Add(AcceptedQuantity).Add(CancelledQuantity).Add(ClosedQuantity).Add(DefinitiveReturnQuantity).IsGreaterThan(Quantity))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: teknik kırılımlar ve kabul edilen pay ilk taahhüdü aşıyor.");
@@ -129,7 +137,7 @@ public sealed class PurchaseOrderLine
     internal void AddAcceptedShare(Quantity accepted)
     {
         var next = AcceptedQuantity.Add(accepted);
-        if (next.Add(CancelledQuantity).Add(ClosedQuantity).IsGreaterThan(CommittedQuantity))
+        if (next.Add(CancelledQuantity).Add(ClosedQuantity).Add(DefinitiveReturnQuantity).IsGreaterThan(CommittedQuantity))
         {
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: kabul edilen pay taahhüdü aşıyor.");
@@ -141,13 +149,8 @@ public sealed class PurchaseOrderLine
     /// <summary>A1-3: the line's whole remainder becomes its cancelled share (zero when nothing remains); only the aggregate calls it.</summary>
     internal void CancelRemainder()
     {
-        if (!CancelledQuantity.IsZero)
-        {
-            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
-                "İç tutarsızlık: satırın kalanı zaten iptal edilmiş.");
-        }
-
-        CancelledQuantity = RemainingQuantity;
+        // ALS-D92: after revival only the newly opened remainder is cancelled again.
+        CancelledQuantity = CancelledQuantity.Add(RemainingQuantity);
     }
 
     /// <summary>
@@ -162,8 +165,9 @@ public sealed class PurchaseOrderLine
                 "İç tutarsızlık: satır zaten kapalı veya kapanış kaydı satır türüyle uyuşmuyor.");
         }
 
-        ClosedQuantity = RemainingQuantity;
+        ClosedQuantity = ClosedQuantity.Add(RemainingQuantity);
         Closure = closure;
+        closureReopenedByReceiptAdjustment = false;
         if (closure is not null)
         {
             LastClosureChange = new PurchaseOrderLineClosureChange(true, closure.ClosedBy, closure.ClosedAtUtc, closure.Reason);
@@ -186,9 +190,23 @@ public sealed class PurchaseOrderLine
 
         ClosedQuantity = Quantity.Zero(Quantity.Unit);
         Closure = null;
+        closureReopenedByReceiptAdjustment = false;
         if (reopening is not null)
         {
             LastClosureChange = reopening;
         }
     }
+
+    internal void ApplyReceiptAdjustment(Quantity undone, Quantity newlyAccepted, bool definitiveReturn)
+    {
+        var accepted = AcceptedQuantity.Subtract(undone).Add(newlyAccepted);
+        var returned = definitiveReturn ? DefinitiveReturnQuantity.Add(undone) : DefinitiveReturnQuantity;
+        if (accepted.Add(CancelledQuantity).Add(ClosedQuantity).Add(returned).IsGreaterThan(CommittedQuantity))
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: kabul düzeltmesinin payları taahhüdü aşıyor.");
+        AcceptedQuantity = accepted;
+        DefinitiveReturnQuantity = returned;
+    }
+
+    internal void ReviveReceiptClosure() => closureReopenedByReceiptAdjustment = true;
 }
