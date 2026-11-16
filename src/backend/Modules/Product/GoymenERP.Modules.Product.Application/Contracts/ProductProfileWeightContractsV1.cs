@@ -54,8 +54,18 @@ public static class ProductProfileWeightInputLimitsV1
     public const int ReasonMaximumLength = 4000;
     public const int FileNameMaximumLength = 255;
 
-    /// <summary>The largest file one import reads (1 MiB).</summary>
-    public const int MaximumFileBytes = 1_048_576;
+    /// <summary>
+    /// URN-D21: the starting value of the largest file one import reads (5 MB, read as 5 MiB), used while the Settings group-level
+    /// record (<see cref="IProductProfileWeightImportLimitSourceV1"/>) has no value yet. The recorded value replaces it; the
+    /// document vault's general upload bound applies on top of it in the vault itself.
+    /// </summary>
+    public const int MaximumFileBytes = 5_242_880;
+
+    /// <summary>
+    /// URN-D18 technical bound (reversible): the most uncompressed bytes one XLSX part may expand to while it is read, so a
+    /// compressed workbook cannot grow without bound on the server.
+    /// </summary>
+    public const long MaximumWorkbookPartBytes = 67_108_864;
 
     /// <summary>The most data rows one file may hold.</summary>
     public const int MaximumRows = 5000;
@@ -74,6 +84,25 @@ public static class ProductProfileWeightFileFormatV1
     public const string Header = "sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre";
     public const string FileExtension = ".csv";
     public const string ContentType = "text/csv";
+
+    /// <summary>URN-D18: an Excel workbook (<c>.xlsx</c>) is accepted as well; XLSM (macros) and the old XLS are not.</summary>
+    public const string WorkbookFileExtension = ".xlsx";
+
+    public const string WorkbookContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+}
+
+/// <summary>
+/// URN-D18 (reversible reading details): an <c>.xlsx</c> import holds the same table on its FIRST worksheet. The first non-empty
+/// row carries the six header names of <see cref="ProductProfileWeightFileFormatV1.Header"/> in columns A…F, one per cell; every
+/// further row is one table row in the same columns. A number cell is read as the exact value Excel stored (its shortest
+/// round-trip text, never rounded to fit); a text cell is read as text under the same number rules as the CSV. A formula cell is
+/// refused (no cached result is trusted), as are macros, external links and a non-workbook ZIP. The kind is chosen by the file
+/// extension and proven by the content: a <c>.csv</c> name with workbook bytes, or the reverse, is refused.
+/// </summary>
+public enum ProductProfileWeightFileKindV1
+{
+    Csv = 1,
+    Xlsx = 2,
 }
 
 /// <summary>
@@ -147,6 +176,17 @@ public interface IProductProfileWeightTableServiceV1
 
     Task<ProductProfileWeightResultV1> ImportAsync(ImportProductProfileWeightTableRequestV1 request,
         ProductProfileWeightCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// URN-D21: the Product-owned read of the Settings group-level record of the largest kg/m import file (Admin persona, changed on
+/// the Settings screen with its audit). Settings implements it; Product only reads it. <c>null</c> means no value is recorded yet
+/// and the decided starting value <see cref="ProductProfileWeightInputLimitsV1.MaximumFileBytes"/> applies. An unreachable
+/// source throws and the import refuses with <see cref="ProductProfileWeightProblemCodesV1.ProviderUnavailable"/> (no guess).
+/// </summary>
+public interface IProductProfileWeightImportLimitSourceV1
+{
+    Task<long?> GetMaximumFileBytesAsync(Guid companyId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>What the vault did with the import file.</summary>

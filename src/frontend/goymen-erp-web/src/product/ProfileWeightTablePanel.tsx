@@ -168,7 +168,7 @@ function TableView({ view }: { readonly view: ProfileWeightTableView }) {
 }
 
 const FILE_CHECK_TEXT = {
-  'not-csv': PROFILE_WEIGHT_TEXT.fileNotCsv,
+  'unsupported-type': PROFILE_WEIGHT_TEXT.fileUnsupportedType,
   'name-too-long': PROFILE_WEIGHT_TEXT.fileNameTooLong,
   empty: PROFILE_WEIGHT_TEXT.fileEmpty,
   'too-large': PROFILE_WEIGHT_TEXT.fileTooLarge,
@@ -270,7 +270,7 @@ function ImportForm({
         {PROFILE_WEIGHT_TEXT.fileLabel}
         <input
           type="file"
-          accept={`${PROFILE_WEIGHT_LIMITS.fileExtension},text/csv`}
+          accept={`${PROFILE_WEIGHT_LIMITS.fileExtension},text/csv,${PROFILE_WEIGHT_LIMITS.workbookFileExtension},${PROFILE_WEIGHT_LIMITS.workbookContentType}`}
           required
           onChange={(event) => {
             setFile(event.target.files?.[0] ?? null)
