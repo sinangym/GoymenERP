@@ -17,9 +17,6 @@ internal sealed partial class ProductPackageStandardService
     // The Cari display read answers at most this many identities per call (its own contract bound).
     private const int CustomerLookupBatchSize = 100;
 
-    private ProductPackageStandardApprovalOptionsV3 ApprovalOptions =>
-        approvalOptions ?? ProductPackageStandardApprovalOptionsV3.Closed;
-
     public Task<ProductPackageStandardApprovalViewV3> GetApprovalStateAsync(CancellationToken cancellationToken = default) =>
         ApprovalViewAsync(Permission, cancellationToken);
 
@@ -216,7 +213,9 @@ internal sealed partial class ProductPackageStandardService
                 keyHash, requestHash, metadata, cancellationToken);
         }
 
-        if (!ApprovalOptions.PreparerMayDecide && string.Equals(pending.CreatedBy, metadata.ActorId, StringComparison.Ordinal))
+        // SAT-D416 locks maker != checker; legacy configuration can never override the user decision.
+        _ = approvalOptions;
+        if (string.Equals(pending.CreatedBy, metadata.ActorId, StringComparison.Ordinal))
         {
             return await StoreAsync(commandName, Problem(409, ProductPackageStandardProblemCodesV3.PreparerCannotDecide,
                 "Hazırlayan karar veremez.", "Sürümü hazırlayan kişi onu onaylayamaz veya reddedemez."), keyHash, requestHash,

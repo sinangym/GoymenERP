@@ -716,6 +716,25 @@ public sealed partial class InventoryTransferTests
         Assert.Equal((8, 9), ((int)StockMovementKind.TransferDispatch, (int)StockMovementKind.TransferAccept));
     }
 
+    [Fact]
+    public async Task Transfer_list_rechecks_authority_after_the_owner_read_and_never_returns_a_foreign_company()
+    {
+        var revoked = new CommandWorld();
+        revoked.Reader.During = () => revoked.Authority.Granted = false;
+        await Refused(revoked.Query().ListAsync(25), 403, InventoryTransferCodesV1.Forbidden);
+        Assert.Equal(1, revoked.Reader.Calls);
+
+        var foreign = new CommandWorld();
+        foreign.Reader.ListResult = new(Guid.NewGuid(), [], false);
+        await Refused(foreign.Query().ListAsync(25), 503, InventoryTransferCodesV1.Unavailable);
+        Assert.Equal(2, foreign.Authority.Measured.Count);
+
+        var denied = new CommandWorld();
+        denied.Authority.Granted = false;
+        await Refused(denied.Query().ListAsync(25), 403, InventoryTransferCodesV1.Forbidden);
+        Assert.Equal(0, denied.Reader.Calls);
+    }
+
     private static InventoryTransfer Transfer(params InventoryTransferPlanLine[] lines) =>
         new(Guid.Parse("90000000-0000-0000-0000-000000000001"), Company, Source,
             new StockCustodian(StockPartyKind.Company, Company), Destination,
@@ -1018,8 +1037,16 @@ public sealed partial class InventoryTransferTests
     private sealed class TestReader : IInventoryTransferReaderV1
     {
         public InventoryTransferViewV1? Result { get; set; }
+        public InventoryTransferListV1 ListResult { get; set; } = new(Company, [], false);
         public int Calls { get; private set; }
         public Action? During { get; set; }
+
+        public Task<InventoryTransferListV1> ListAsync(int limit, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            During?.Invoke();
+            return Task.FromResult(ListResult);
+        }
 
         public Task<InventoryTransferViewV1?> ReadAsync(Guid transferId, CancellationToken cancellationToken = default)
         {

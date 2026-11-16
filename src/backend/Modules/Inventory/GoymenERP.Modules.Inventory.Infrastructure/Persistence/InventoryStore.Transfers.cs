@@ -578,6 +578,21 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             : null;
     }
 
+    async Task<InventoryTransferListV1> IInventoryTransferReaderV1.ListAsync(int limit, CancellationToken cancellationToken)
+    {
+        RequireResolvedCompany();
+        if (limit is < 1 or > 50) throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
+        var rows = await dbContext.Transfers.AsNoTracking().OrderByDescending(row => row.PlannedAtUtc)
+            .ThenBy(row => row.Id).Take(limit + 1).ToListAsync(cancellationToken);
+        var ids = rows.Take(limit).Select(row => row.Id).ToArray();
+        var dispatches = await dbContext.TransferDispatches.AsNoTracking().Where(row => ids.Contains(row.TransferId))
+            .ToDictionaryAsync(row => row.TransferId, row => row.DispatchedAtUtc, cancellationToken);
+        return new(companyContext.CompanyId, [.. rows.Take(limit).Select(row => new InventoryTransferListItemV1(
+            row.Id, row.CompanyId, row.Version.ToString(CultureInfo.InvariantCulture),
+            ((InventoryTransferStatus)row.Status).ToString(), row.SourceLocationId, row.DestinationLocationId,
+            row.PlannedAtUtc, dispatches.TryGetValue(row.Id, out var dispatched) ? dispatched : null))], rows.Count > limit);
+    }
+
     private async Task StageTransferMovementAsync(
         Domain.Movements.StockMovement movement,
         InventoryCommandMetadata metadata,

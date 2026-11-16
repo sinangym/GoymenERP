@@ -217,6 +217,9 @@ public interface IInventoryTransferWriterV1
 
 public interface IInventoryTransferReaderV1
 {
+    Task<InventoryTransferListV1> ListAsync(int limit, CancellationToken cancellationToken = default) =>
+        throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+
     Task<InventoryTransferViewV1?> ReadAsync(Guid transferId, CancellationToken cancellationToken = default);
 }
 
@@ -249,6 +252,9 @@ public interface IInventoryTransferCommandV1
 
 public interface IInventoryTransferQueryV1
 {
+    Task<InventoryTransferListV1> ListAsync(int limit, CancellationToken cancellationToken = default) =>
+        throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+
     Task<InventoryTransferViewV1> GetAsync(Guid transferId, CancellationToken cancellationToken = default);
 }
 

@@ -1,0 +1,15 @@
+export const LABEL_PRINT_TEXT = {
+  title: 'Etiket PDF çıktısı',
+  description: 'Etiket kodu, döküm ve rulo bilgileriyle barkodlu PDF oluşturulur ve etiketin belgelerine kaydedilir.',
+  generate: 'PDF oluştur',
+  retry: 'Aynı istekle yeniden dene',
+  generating: 'PDF oluşturuluyor…',
+  download: 'Etiket PDF dosyasını indir',
+  stored: 'PDF etiketin belgelerine kaydedildi.',
+  replayed: 'Önceki PDF kaydı doğrulandı.',
+  unsupported: 'Bu etiket kodu mevcut barkod biçiminde yazdırılamıyor. Etiket kodunu değiştirmeden destek isteyin.',
+  invalid: 'PDF isteği geçersiz. Sayfayı yenileyip yeniden deneyin.',
+  unknown: 'İşlemin sonucu doğrulanamadı. Aynı istekle yeniden deneyin.',
+  subject: 'etiket PDF çıktısı',
+  fileName: 'Etiket.pdf',
+} as const

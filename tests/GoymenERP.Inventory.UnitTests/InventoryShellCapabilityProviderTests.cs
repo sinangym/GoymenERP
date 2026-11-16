@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(9, declarations.Count);
+        Assert.Equal(11, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.7", provider.ContractVersion);
+        Assert.Equal("1.8", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -28,6 +28,20 @@ public sealed class InventoryShellCapabilityProviderTests
         Assert.Equal([ErpPermissions.InventoryOpeningStockRecord], declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);
         Assert.Null(declaration.ParentCapabilityId);
+    }
+
+    [Fact]
+    public void Future_allocation_read_and_write_keep_their_own_route_and_permissions_separate_from_physical_stock()
+    {
+        var declarations = new InventoryShellCapabilityProvider().GetDeclarations();
+        var read = Assert.Single(declarations, item => item.CapabilityId == InventoryShellCapabilityProvider.FutureAllocationReadCapabilityId);
+        var write = Assert.Single(declarations, item => item.CapabilityId == InventoryShellCapabilityProvider.FutureAllocationWriteCapabilityId);
+        Assert.Equal([ErpPermissions.InventoryFutureAllocationRead], read.RequiredPermissions);
+        Assert.Equal([ErpPermissions.InventoryFutureAllocationRead, ErpPermissions.InventoryFutureAllocationWrite], write.RequiredPermissions);
+        Assert.Equal(read.CapabilityId, write.ParentCapabilityId);
+        Assert.Equal(InventoryShellCapabilityProvider.FutureAllocationRoutePath, read.RoutePath);
+        Assert.Equal(ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, read.RoutePrecedence);
+        Assert.True(read.ImplementationAvailable);
     }
 
     [Fact]

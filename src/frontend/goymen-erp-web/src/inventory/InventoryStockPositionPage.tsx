@@ -35,9 +35,10 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
-import { INVENTORY_SHORTAGE_WARNINGS_ROUTE } from './capabilities'
+import { INVENTORY_SHORTAGE_WARNINGS_ROUTE, INVENTORY_TRANSFERS_ROUTE } from './capabilities'
 import { PurchaseSupplySection } from './PurchaseSupplySection'
 import { SHORTAGE_WARNING_TEXT } from './shortageWarningText'
+import { TRANSFER_TEXT } from './transferText'
 import { StockRowActionMenu } from './StockRowActionMenu'
 import {
   normalizeStockSearch,
@@ -792,6 +793,7 @@ function InventoryStockPositionView({
     <header className={styles.header}>
       <h1>{STOCK_TEXT.heading}</h1>
       <Link to={INVENTORY_SHORTAGE_WARNINGS_ROUTE}>{SHORTAGE_WARNING_TEXT.entryLink}</Link>
+      <Link to={INVENTORY_TRANSFERS_ROUTE}>{TRANSFER_TEXT.entryLink}</Link>
     </header>
 
     <div className={styles.toolbar}>
