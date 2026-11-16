@@ -5,11 +5,13 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Inventory.Application;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
@@ -18,6 +20,18 @@ namespace GoymenERP.Api.Endpoints;
 
 public static partial class SalesEndpoints
 {
+    // KLN-D105: the owner codes survive the accepted-revision participant unchanged.
+    private static readonly string[] FutureDemandConflictCodes =
+    [
+        InventoryFutureAllocationCodesV1.VersionConflict,
+        InventoryFutureAllocationCodesV1.StateConflict,
+        InventoryFutureAllocationCodesV1.PhysicalReleaseUnavailable,
+        InventoryFutureAllocationCodesV1.ConcurrentChange,
+        SalesOrderLineSerializationLockContractV1.BusyCode,
+        PurchaseLineSerializationLockContractV1.BusyCode,
+    ];
+    private static readonly string[] FutureDemandUnprocessableCodes =
+    [InventoryFutureAllocationCodesV1.ReleaseSelectionInvalid, InventoryFutureAllocationCodesV1.UnitConversionUnavailable];
     public const string AccountsPath = "/api/v1/sales/references/accounts";
     public const string CurrencyPath = "/api/v1/sales/references/currency";
     public const string ProductPath = "/api/v1/sales/references/product";
@@ -473,14 +487,16 @@ public static partial class SalesEndpoints
             extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: [],
+            unprocessableCodes: FutureDemandUnprocessableCodes,
             // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded);
             // SAT-D373: an active future supply allocation is refused with its own code (not recorded).
             extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked,
-                SalesDraftProblemCodesV1.RevisionFutureAllocationPresent]);
+                SalesDraftProblemCodesV1.RevisionFutureAllocationPresent, .. FutureDemandConflictCodes],
+            hasFutureDemandReduction: true);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: []);
+            unprocessableCodes: FutureDemandUnprocessableCodes, extraConflictCodes: FutureDemandConflictCodes,
+            hasFutureDemandReduction: true);
         // SAT-D115 (EK14): the customer rejects the current approved revision (reason required); the order continues on the revision
         // the customer last accepted. Same authority as the acceptance; 422 validation_failed (reason) is not recorded.
         MapStateCommand(drafts, "/{id:guid}/customer-rejection", "RecordSalesOrderDraftCustomerRejectionV1", allowReason: true,
@@ -1963,7 +1979,7 @@ public static partial class SalesEndpoints
 
     private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,
         Func<ISalesDraftService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken, Task<SalesOrderDraftResponse>> command,
-        string[] unprocessableCodes, string[]? extraConflictCodes = null)
+        string[] unprocessableCodes, string[]? extraConflictCodes = null, bool hasFutureDemandReduction = false)
     {
         var route = drafts.MapPost(pattern, async (
             Guid id,
@@ -2018,8 +2034,10 @@ public static partial class SalesEndpoints
             }
         })
             .WithName(name)
-            // The replayable results: the draft after the transition (200) and the recorded terminal refusals (409, §7).
-            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            // Accepted-revision reduction also stores the Inventory owner's terminal 422 answers under this key.
+            .WithIdempotencyContract(hasFutureDemandReduction
+                ? [SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity]
+                : [SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict])
             .Accepts<SalesDraftStateCommandRequest>("application/json")
             .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
