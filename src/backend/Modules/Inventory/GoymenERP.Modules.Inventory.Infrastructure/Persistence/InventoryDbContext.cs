@@ -64,6 +64,15 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 9 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
 
     /// <summary>
+    /// ST-05 / SAT-D330 (STK-S22): a counted label's stored position and kilograms. The book may be zero: a label the
+    /// system shows at 0 but that physically stands may be counted, and only an approved surplus adds it back to stock.
+    /// The counted kilograms may be zero (the piece is gone). Compared by the persistence-model test.
+    /// </summary>
+    internal const string StockCountStateCheck =
+        "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
+        + "AND [BookKg] >= 0 AND [CountedKg] >= 0";
+
+    /// <summary>
     /// B-03: Split (1), Merge (2) and Manufacturing (3, an output label's descent from its order's net-issued input
     /// labels). Compared by the persistence-model test.
     /// </summary>
@@ -825,9 +834,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_StockCounts_State",
-                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
-                + "AND [BookKg] > 0 AND [CountedKg] >= 0");
+            table.HasCheckConstraint("CK_StockCounts_State", StockCountStateCheck);
             table.HasCheckConstraint("CK_StockCounts_Text",
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");

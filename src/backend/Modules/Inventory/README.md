@@ -400,7 +400,9 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
 
 | Rule | Where | Held by |
 |---|---|---|
-| A count names one stocked label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts, or none, is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| A count names one label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| **SAT-D330 (STK-S22): a label the system shows at 0 is countable.** With no stocked position, the count is taken at the zero balance row the label was last emptied at: its only stored row, or — when it was moved before — the one zero row named by the label's last movement (book = 0). A label never stocked (no balance row), a label a split/merge/manufacturing transformation consumed (its kg live on in its outputs; a surplus would count the same steel twice) and several candidate rows stay `inventory_stock_count_position_conflict`. An approved surplus puts the label back in stock through the same `CountAdjustment`. `CK_StockCounts_State` allows `BookKg >= 0` (`AllowInventoryZeroBookStockCounts`; its `Down` refuses (THROW 51748) while a zero-book count exists, forward fix) | `CountedPositionAsync`, `InventoryDbContext.StockCountStateCheck` | store + SQL |
+| **SAT-D329:** a movement the ledger refuses (negative physical stock — an over-issue, a stopped transaction) leaves the label's kg and version untouched, so the label is never locked by it: the next issue, and a count at the unchanged version, go through | `StockLedger.Apply` (refuses before any write) | ledger + SQL test |
 | A reason is mandatory (≤ 1000, trimmed); counted kg is canonical, ≥ 0, ≤ 3 decimals and on the company's approved kg profile at the count date | `ParseStockCount`, `InventoryKilogramScale` | store (400) |
 | Recording changes no stock and bumps no label version; a zero difference closes at once (`NoDifference`) | `InventoryStore.StockCounts.cs` | store |
 | The difference is final only after a decision under `inventory.stock-count.approve`; recording needs `inventory.stock-count.record`; both company-wide, measured fresh twice before the single owner transaction | `InventoryStockCountCommandService` | command (403/503) |
@@ -419,8 +421,17 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
   time (DEC-SET-001 snapshot), not a code constant.
 - `INV-R21-REASON-LIST-01`: no closed reason list is decided (DEC-STK-007 names "sebep" only); the reason is free
   text. A closed list, if decided, is an additive `ReasonCode` beside the text.
-- Out of this slice: counting a label with no stored stock ("found stock"), a whole-location count sheet, transfer
-  (R20, INV-R20-R21-01 Q1) and cost/valuation of the adjustment (OPEN-008).
+- Out of this slice: a whole-location count sheet and transfer (R20, INV-R20-R21-01 Q1).
+- **Cost of the adjustment (SAT-D331, SAT-D334; STK-S22 partial):** the pure rule is `StockCountCostCalculator`
+  (domain). A surplus is valued at the location/product moving-average cost and leaves the average unchanged; a
+  position at zero stock uses its last average (SAT-D296); an unreadable or never-recorded position leaves the cost
+  "hesaplanamadı" while the surplus is still added — for every surplus, not only a label shown at 0. A shortage is
+  valued at the current average; an unreadable or never-recorded average stops the deduction ("hesaplanamadı").
+  SAT-D331 (5) makes this wait for the average-cost ledger to be wired to stock movements, which no slice has done
+  yet: until then the approval posts its `CountAdjustment` with cost `NotCalculated` (as before) and does not apply the
+  shortage stop, because every position would read "no source" and every shortage would be refused. Wiring the rule
+  into `DecideStockCountAsync` (read port `IInventoryAverageCostReadPortV1`, base currency for `CostResult.Known`) is
+  the follow-up of that ledger wiring.
 
 **Central publication (coordinator):** register `inventory.stock-count.record` and `inventory.stock-count.approve`
 (company-wide) in `ErpPermissions`; `builder.Services.AddInventoryStockCounts();` and `app.MapInventoryStockCountEndpoints();`
