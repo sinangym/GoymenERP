@@ -9,12 +9,13 @@ namespace GoymenERP.Manufacturing.UnitTests;
 public sealed partial class ManufacturingCommandServiceTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task A_fresh_allocation_refusal_carries_the_owner_snapshot_without_recording_an_attempt_and_revocation_hides_it(bool revoked)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task A_fresh_allocation_refusal_carries_the_owner_snapshot_without_recording_an_attempt_and_revocation_or_foreign_scope_hides_it(bool revoked, bool foreign)
     {
         var fixture = new Fixture(); var plan = AvailabilityPlan(fixture); plan.WithDueDate();
-        var snapshot = new ManufacturingPlanAllocationShortfallV1(Company, plan.Id, Roll, Product, "8", "600", "350", "250", 1);
+        var snapshot = new ManufacturingPlanAllocationShortfallV1(foreign ? OtherCompany : Company, plan.Id, Roll, Product, "8", "600", "350", "250", 1);
         var allocation = new RefusedAllocationPort(() => {
             if (revoked) fixture.Authority.Scope = PermissionScope.Denied;
             return new(ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock,
@@ -25,7 +26,7 @@ public sealed partial class ManufacturingCommandServiceTests
             fixture.Correlation, new FixedTime(), planAllocations: allocation, labelDetails: new AllocationLabelDetails());
         var answer = await service.ApprovePlanAsync(plan.Id, new(plan.Version), "synthetic-shortfall", ErpPermissions.ManufacturingPlansApprove, CancellationToken.None);
         Assert.Equal(revoked ? ManufacturingApiStatus.Denied : ManufacturingApiStatus.Conflict, answer.Status);
-        Assert.Equal(revoked ? null : snapshot, answer.PlanAllocationShortfall);
+        Assert.Equal(revoked || foreign ? null : snapshot, answer.PlanAllocationShortfall);
         Assert.Empty(fixture.Store.Commands); Assert.Empty(fixture.Store.Writes); Assert.Equal(PlanStatus.Draft, plan.Status);
         Assert.DoesNotContain("planAllocationShortfall", JsonSerializer.Serialize(answer, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
