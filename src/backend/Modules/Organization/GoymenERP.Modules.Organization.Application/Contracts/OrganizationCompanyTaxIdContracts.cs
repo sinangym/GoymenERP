@@ -75,6 +75,41 @@ public sealed record CompanyTaxIdView(
     CompanyTaxIdChangeView? LastDecided,
     CompanyTaxIdViewer Viewer);
 
+/// <summary>
+/// POST /api/v1/organization/company/tax-id/corrections/{correctionId}/apply (KIM-D48). <paramref name="ExpectedVersion"/>
+/// is the company version the approver saw.
+/// </summary>
+public sealed record ApplyCompanyTaxIdCorrection(
+    [property: JsonRequired] long ExpectedVersion);
+
+/// <summary>
+/// One staged VKN correction (KIM-D41/KIM-D48). <paramref name="StagedVkn"/> is the old value, <paramref name="CorrectedVkn"/>
+/// the new one (null: "VKN girilmemiş"), <paramref name="Source"/> what staged it. <paramref name="Status"/> is
+/// <c>pending</c> or <c>applied</c>; <paramref name="IsCurrent"/> is false when the company's VKN moved since staging
+/// (a pending row that is not current cannot be applied).
+/// </summary>
+public sealed record CompanyTaxIdCorrectionView(
+    Guid Id,
+    string Source,
+    string StagedVkn,
+    string? CorrectedVkn,
+    string Reason,
+    string Status,
+    DateTimeOffset StagedAtUtc,
+    string? AppliedBy,
+    DateTimeOffset? AppliedAtUtc,
+    bool IsCurrent);
+
+/// <summary>
+/// GET /api/v1/organization/company/tax-id/corrections: the active company's staged VKN corrections (pending first, then
+/// applied, newest first), the company version (the <c>expectedVersion</c> of an apply) and whether the reader may apply.
+/// </summary>
+public sealed record CompanyTaxIdCorrectionsView(
+    Guid CompanyId,
+    long CompanyVersion,
+    bool CanApply,
+    IReadOnlyList<CompanyTaxIdCorrectionView> Items);
+
 /// <summary>Request-shape rules shared by the endpoint (400 before anything runs) and the service.</summary>
 public static class OrganizationCompanyTaxIdRules
 {
@@ -127,6 +162,23 @@ public interface IOrganizationCompanyTaxIdService
     Task<CommandExecutionResult> DecideCompanyTaxIdChangeAsync(
         Guid requestId,
         DecideCompanyTaxIdChange command,
+        CommandMetadata metadata,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// KIM-D48: the active company's staged VKN corrections, or null when the caller holds neither tax-id permission in
+    /// the company (same visibility as <see cref="GetCompanyTaxIdAsync"/>).
+    /// </summary>
+    Task<CompanyTaxIdCorrectionsView?> GetCompanyTaxIdCorrectionsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// KIM-D41/KIM-D48: applies one pending staged correction under the approve permission. The company's VKN moves and
+    /// one audit event is written in the same transaction: the system actor is the correction's source, the approver is
+    /// in the approval context.
+    /// </summary>
+    Task<CommandExecutionResult> ApplyCompanyTaxIdCorrectionAsync(
+        Guid correctionId,
+        ApplyCompanyTaxIdCorrection command,
         CommandMetadata metadata,
         CancellationToken cancellationToken);
 }

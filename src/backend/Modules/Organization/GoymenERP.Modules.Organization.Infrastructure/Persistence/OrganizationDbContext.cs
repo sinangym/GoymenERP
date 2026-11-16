@@ -35,6 +35,8 @@ public sealed class OrganizationDbContext(
 
     public DbSet<CompanyTaxIdChangeRequest> CompanyTaxIdChangeRequests => Set<CompanyTaxIdChangeRequest>();
 
+    public DbSet<CompanyTaxIdCorrection> CompanyTaxIdCorrections => Set<CompanyTaxIdCorrection>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     internal const string WorkCenterCalendarVersionCheck = "[Version] >= 1";
@@ -64,6 +66,21 @@ public sealed class OrganizationDbContext(
         "[DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2";
     internal const string CompanyTaxIdChangeVersionCheck = "[Version] >= 1 AND [CompanyVersionAtRequest] >= 1";
 
+    // KIM-D41/KIM-D48: the staged VKN correction table (old/new value and source; applied only after approval, at most
+    // one pending correction per company).
+    internal const string CompanyTaxIdCorrectionPendingFilter = "[Status] = N'Pending'";
+    internal const string CompanyTaxIdCorrectionStatusCheck = "[Status] IN (N'Pending', N'Applied')";
+    internal const string CompanyTaxIdCorrectionStagedVknCheck =
+        "LEN([StagedVkn]) = 10 AND [StagedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%'";
+    internal const string CompanyTaxIdCorrectionCorrectedVknCheck =
+        "[CorrectedVkn] IS NULL OR (LEN([CorrectedVkn]) = 10 AND [CorrectedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%' "
+        + "AND [CorrectedVkn] <> [StagedVkn])";
+    internal const string CompanyTaxIdCorrectionAppliedCheck =
+        "([Status] = N'Pending' AND [AppliedBy] IS NULL AND [AppliedAtUtc] IS NULL) "
+        + "OR ([Status] = N'Applied' AND [AppliedBy] IS NOT NULL AND [AppliedAtUtc] IS NOT NULL)";
+    internal const string CompanyTaxIdCorrectionVersionCheck = "[Version] >= 1 AND [CompanyVersionAtStaging] >= 1";
+    internal const string CompanyTaxIdCorrectionPendingIndexName = "IX_CompanyTaxIdCorrections_CompanyId_Pending";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -74,6 +91,7 @@ public sealed class OrganizationDbContext(
         ConfigureWorkCenter(modelBuilder);
         ConfigureWorkCenterCalendar(modelBuilder);
         ConfigureCompanyTaxIdChangeRequest(modelBuilder);
+        ConfigureCompanyTaxIdCorrection(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -135,6 +153,45 @@ public sealed class OrganizationDbContext(
 
     internal const string CompanyVknUniqueIndexName = "IX_Companies_Vkn";
     internal const string CompanyTaxIdChangePendingIndexName = "IX_CompanyTaxIdChangeRequests_CompanyId_Pending";
+
+    /// <summary>
+    /// KIM-D41/KIM-D48: staged VKN corrections. The company owns its rows (query filter + write guard), at most one
+    /// correction per company is pending (filtered unique index), an applied row names its approver and a row is never
+    /// deleted.
+    /// </summary>
+    private void ConfigureCompanyTaxIdCorrection(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CompanyTaxIdCorrection>();
+        entity.ToTable("CompanyTaxIdCorrections", "organization", table =>
+        {
+            table.HasCheckConstraint("CK_CompanyTaxIdCorrections_Status", CompanyTaxIdCorrectionStatusCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdCorrections_StagedVkn", CompanyTaxIdCorrectionStagedVknCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdCorrections_CorrectedVkn", CompanyTaxIdCorrectionCorrectedVknCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdCorrections_Applied", CompanyTaxIdCorrectionAppliedCheck);
+            table.HasCheckConstraint("CK_CompanyTaxIdCorrections_Version", CompanyTaxIdCorrectionVersionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Source).HasMaxLength(CompanyTaxIdCorrection.SourceMaximumLength).IsRequired();
+        entity.Property(x => x.StagedVkn).HasMaxLength(Company.VknLength).IsRequired();
+        entity.Property(x => x.CorrectedVkn).HasMaxLength(Company.VknLength);
+        entity.Property(x => x.Reason).HasMaxLength(CompanyTaxIdCorrection.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+        entity.Property(x => x.AppliedBy).HasMaxLength(CompanyTaxIdCorrection.ActorMaximumLength);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Ignore(x => x.IsPending);
+        entity.HasIndex(x => x.CompanyId)
+            .IsUnique()
+            .HasFilter(CompanyTaxIdCorrectionPendingFilter)
+            .HasDatabaseName(CompanyTaxIdCorrectionPendingIndexName);
+        entity.HasIndex(x => new { x.CompanyId, x.StagedAtUtc });
+        entity.HasOne<Company>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
 
     /// <summary>
     /// KIM-S23: the company VKN change requests. The company owns its rows (query filter + write guard), at most one
@@ -352,12 +409,13 @@ public sealed class OrganizationDbContext(
 
             if (entry.State == EntityState.Deleted
                 || (entry.State == EntityState.Modified
-                    && entry.Entity is not (WorkCenterCalendar or CompanyTaxIdChangeRequest)))
+                    && entry.Entity is not (WorkCenterCalendar or CompanyTaxIdChangeRequest or CompanyTaxIdCorrection)))
             {
                 // A calendar head is never deleted and a revision row is append-only: a change is a new revision.
-                // A VKN change request is never deleted either; only its decision closes it (KIM-S23).
+                // A VKN change request is never deleted either; only its decision closes it (KIM-S23). A staged VKN
+                // correction is never deleted; only its application closes it (KIM-D48).
                 throw new InvalidOperationException(
-                    "İş merkezi takvimi kayıtları ve VKN değişiklik talepleri silinemez; takvim satırları değiştirilemez.");
+                    "İş merkezi takvimi kayıtları, VKN değişiklik talepleri ve VKN düzeltmeleri silinemez; takvim satırları değiştirilemez.");
             }
 
             if (entry.Entity.CompanyId == Guid.Empty)

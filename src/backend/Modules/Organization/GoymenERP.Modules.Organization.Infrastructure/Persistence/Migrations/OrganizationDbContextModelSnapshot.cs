@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -409,6 +412,84 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Status", "[Status] IN (N'Pending', N'Approved', N'Rejected')");
 
                             t.HasCheckConstraint("CK_CompanyTaxIdChangeRequests_Version", "[Version] >= 1 AND [CompanyVersionAtRequest] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdCorrection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AppliedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AppliedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CompanyVersionAtStaging")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrectedVkn")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("StagedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("StagedVkn")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CompanyTaxIdCorrections_CompanyId_Pending")
+                        .HasFilter("[Status] = N'Pending'");
+
+                    b.HasIndex("CompanyId", "StagedAtUtc");
+
+                    b.ToTable("CompanyTaxIdCorrections", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Applied", "([Status] = N'Pending' AND [AppliedBy] IS NULL AND [AppliedAtUtc] IS NULL) OR ([Status] = N'Applied' AND [AppliedBy] IS NOT NULL AND [AppliedAtUtc] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_CorrectedVkn", "[CorrectedVkn] IS NULL OR (LEN([CorrectedVkn]) = 10 AND [CorrectedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%' AND [CorrectedVkn] <> [StagedVkn])");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_StagedVkn", "LEN([StagedVkn]) = 10 AND [StagedVkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%'");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Status", "[Status] IN (N'Pending', N'Applied')");
+
+                            t.HasCheckConstraint("CK_CompanyTaxIdCorrections_Version", "[Version] >= 1 AND [CompanyVersionAtStaging] >= 1");
                         });
                 });
 
@@ -692,6 +773,15 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdChangeRequest", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Organization.Domain.Companies.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Companies.CompanyTaxIdCorrection", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Organization.Domain.Companies.Company", null)
                         .WithMany()

@@ -22,8 +22,9 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
     private const string GinLegalName = "Göymen İnşaat";
     private const string GdcVkn = "4100046586";
     private const string GspVkn = "4101507252";
-    // KIM-D35: the stand-in value the fiscal migration once wrote for the placeholder company. It is not a VKN; the
-    // ClearPlaceholderCompanyVkn migration clears it and the company is "VKN girilmemiş" (null) from then on.
+    // KIM-D35 + KIM-D41/KIM-D48: the stand-in value the fiscal migration once wrote for the placeholder company. It is
+    // not a VKN; the StageCompanyTaxIdCorrections migration stages a pending correction for it and the company keeps the
+    // value until an approver applies that correction.
     private const string GinPlaceholderVkn = "1111111111";
 
     private static readonly Guid LegacySiteId = Guid.Parse(
@@ -82,6 +83,25 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
             await connection.OpenAsync();
 
             AssertApprovedCompanyRows(await ReadCompanyRowsAsync(connection));
+            // KIM-D41/KIM-D48: the stand-in is staged once as a pending clear for the placeholder company only.
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    """
+                    SELECT COUNT(*)
+                    FROM [organization].[CompanyTaxIdCorrections] AS [t]
+                    INNER JOIN [organization].[Companies] AS [c] ON [c].[Id] = [t].[CompanyId]
+                    WHERE [c].[Code] = N'GIN'
+                      AND [t].[Status] = N'Pending'
+                      AND [t].[StagedVkn] = N'1111111111'
+                      AND [t].[CorrectedVkn] IS NULL;
+                    """));
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [organization].[CompanyTaxIdCorrections];"));
             await AssertProductionTopologyAsync(connection);
             await AssertFiscalConstraintsAsync(connection);
             await AssertDirectoryDoesNotExposeFiscalDataAsync(factory);
@@ -267,7 +287,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                vkn: null,
+                vkn: GinPlaceholderVkn,
                 isPlaceholder: true,
                 invoiceCapable: false);
             // 11 -> 12 by the fiscal migration's normalization, 12 -> 13 by KIM-D35 clearing the stand-in VKN.
@@ -843,7 +863,7 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyC,
                 "GIN",
                 GinLegalName,
-                vkn: null,
+                vkn: GinPlaceholderVkn,
                 isPlaceholder: true,
                 invoiceCapable: false),
             company => AssertCompany(
