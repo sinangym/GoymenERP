@@ -665,12 +665,17 @@ internal sealed class InventoryTransferReceiptRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>KLN-D24: the one immutable decision on a receipt excess (1 approve with movement, 2 reject).</summary>
+/// <summary>
+/// KLN-D24: the one immutable decision on one numbered receipt-excess request (1 approve with movement, 2 reject). KLN-D107:
+/// request 1 is the receipt's own declared excess; a corrected re-request after a rejection takes the next number (see
+/// <see cref="InventoryTransferOverageRenewalRow"/>). A line has at most one approval.
+/// </summary>
 internal sealed class InventoryTransferOverageDecisionRow : IInventoryTenantRow
 {
     public Guid CompanyId { get; set; }
     public Guid TransferId { get; set; }
     public Guid LineId { get; set; }
+    public int RequestNumber { get; set; } = 1;
     public int Decision { get; set; }
     public string Reason { get; set; } = string.Empty;
     public Guid? MovementId { get; set; }
@@ -678,6 +683,44 @@ internal sealed class InventoryTransferOverageDecisionRow : IInventoryTenantRow
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D107: one immutable corrected re-request of a rejected receipt excess, numbered from 2 (request 1 is the receipt's
+/// own declared excess). Its quantity never exceeds the receipt's first declared excess; it is decided under the overage
+/// approval like the first request.
+/// </summary>
+internal sealed class InventoryTransferOverageRenewalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
+    public decimal OverageKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D108: the one immutable withdrawal of an undecided numbered loss request. A withdrawn request is never decided and
+/// no longer blocks dispatch cancellation (KLN-D98).
+/// </summary>
+internal sealed class InventoryTransferLossWithdrawalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset WithdrawnAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string WithdrawnBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }
 

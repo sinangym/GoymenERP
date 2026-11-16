@@ -95,16 +95,27 @@ public sealed partial class InventoryStore : IInventoryTransferReverseWriterV1, 
                 .Select(row => row.LineId)
                 .ToListAsync(cancellationToken))
             .ToHashSet();
-        var decidedOverageLineIds = (await dbContext.TransferOverageDecisions.AsNoTracking()
+        // KLN-D107: every overage request of a line (the receipt's own, number 1, and each renewal) is pending until it is
+        // decided; a rejected first request followed by an undecided renewal keeps the line pending.
+        var decidedOverageRequests = (await dbContext.TransferOverageDecisions.AsNoTracking()
                 .Where(row => row.TransferId == originalTransferId)
-                .Select(row => row.LineId)
+                .Select(row => new { row.LineId, row.RequestNumber })
                 .ToListAsync(cancellationToken))
+            .Select(row => (row.LineId, row.RequestNumber))
             .ToHashSet();
-        var pendingOverageLineIds = (await dbContext.TransferReceipts.AsNoTracking()
+        var overageRequests = (await dbContext.TransferReceipts.AsNoTracking()
                 .Where(row => row.TransferId == originalTransferId && row.OverageKg > 0m)
                 .Select(row => row.LineId)
                 .ToListAsync(cancellationToken))
-            .Where(lineId => !decidedOverageLineIds.Contains(lineId))
+            .Select(lineId => (LineId: lineId, RequestNumber: FirstOverageRequestNumber))
+            .Concat((await dbContext.TransferOverageRenewals.AsNoTracking()
+                    .Where(row => row.TransferId == originalTransferId)
+                    .Select(row => new { row.LineId, row.RequestNumber })
+                    .ToListAsync(cancellationToken))
+                .Select(row => (row.LineId, row.RequestNumber)));
+        var pendingOverageLineIds = overageRequests
+            .Where(request => !decidedOverageRequests.Contains(request))
+            .Select(request => request.LineId)
             .ToHashSet();
         var activeReversedLineIds = await ActiveReversedLineIdsAsync(originalTransferId, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);

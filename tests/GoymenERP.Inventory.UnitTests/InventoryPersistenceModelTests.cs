@@ -209,7 +209,10 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AllowInventoryZeroBookStockCounts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferLossRequestNumbers", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryOpeningCosts", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryOpeningCosts", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryTransferOverageRenewalsAndLossWithdrawals",
+            context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -682,7 +685,7 @@ public sealed class InventoryPersistenceModelTests
             Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
             StringComparison.Ordinal);
 
-        foreach (var entity in new[] { receipts, overageDecisions })
+        foreach (var entity in new[] { receipts })
         {
             Assert.Equal(["CompanyId", "TransferId", "LineId"],
                 entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
@@ -690,8 +693,8 @@ public sealed class InventoryPersistenceModelTests
         }
 
         // KLN-D97 (AddInventoryTransferLossRequestNumbers): loss requests and decisions are also keyed by the per-line
-        // request number.
-        foreach (var entity in new[] { lossRequests, lossDecisions })
+        // request number; STK-SC36-b (KLN-D107) keys the excess decisions the same way.
+        foreach (var entity in new[] { lossRequests, lossDecisions, overageDecisions })
         {
             Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
                 entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
@@ -775,6 +778,67 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("THROW 51811", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[TransferLossRequests] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[TransferLossDecisions] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_overage_renewal_and_loss_withdrawal_migration_keys_both_by_request_number_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferOverageRenewalsAndLossWithdrawals();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var overageDecisions = model.FindEntityType(typeof(InventoryTransferOverageDecisionRow))!;
+        var renewals = model.FindEntityType(typeof(InventoryTransferOverageRenewalRow))!;
+        var withdrawals = model.FindEntityType(typeof(InventoryTransferLossWithdrawalRow))!;
+
+        // KLN-D107: an excess decision names the request it decides; the first request is the receipt itself (1) and a
+        // corrected re-request numbers from 2. A line's excess is approved at most once, whatever request is approved.
+        Assert.Equal("[RequestNumber] >= 1", InventoryDbContext.TransferOverageRequestNumberCheck);
+        Assert.Equal("[RequestNumber] >= 2", InventoryDbContext.TransferOverageRenewalNumberCheck);
+        Assert.Equal(InventoryDbContext.TransferOverageRequestNumberCheck,
+            Assert.Single(overageDecisions.GetCheckConstraints(),
+                check => check.Name == "CK_TransferOverageDecisions_RequestNumber").Sql);
+        Assert.Equal(InventoryDbContext.TransferOverageRenewalNumberCheck,
+            Assert.Single(renewals.GetCheckConstraints(),
+                check => check.Name == "CK_TransferOverageRenewals_RequestNumber").Sql);
+        Assert.Equal("[OverageKg] > 0",
+            Assert.Single(renewals.GetCheckConstraints(), check => check.Name == "CK_TransferOverageRenewals_Quantity").Sql);
+        Assert.Equal((18, 3), (renewals.FindProperty(nameof(InventoryTransferOverageRenewalRow.OverageKg))!.GetPrecision(),
+            renewals.FindProperty(nameof(InventoryTransferOverageRenewalRow.OverageKg))!.GetScale()));
+        Assert.Equal("[Decision] = 1", InventoryDbContext.TransferOverageApprovalFilter);
+        Assert.Contains(overageDecisions.GetIndexes(), index => index.IsUnique
+            && index.GetFilter() == InventoryDbContext.TransferOverageApprovalFilter
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId", "LineId"]));
+
+        // KLN-D108: a withdrawal belongs to exactly one numbered loss request and is never a decision.
+        foreach (var entity in new[] { overageDecisions, renewals, withdrawals })
+        {
+            Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
+                entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
+            Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        }
+
+        Assert.Contains(renewals.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferReceiptRow));
+        var lossRequest = Assert.Single(withdrawals.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLossRequestRow));
+        Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
+            lossRequest.Properties.Select(property => property.Name));
+        Assert.Contains(withdrawals.GetCheckConstraints(), check => check.Name == "CK_TransferLossWithdrawals_Text");
+
+        var added = Assert.Single(migration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>());
+        Assert.Equal(("TransferOverageDecisions", "RequestNumber", false, (object?)1),
+            (added.Table, added.Name, added.IsNullable, added.DefaultValue));
+        Assert.Equal(["TransferLossWithdrawals", "TransferOverageRenewals"], migration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>()
+            .Select(table => table.Name).Order(StringComparer.Ordinal));
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51836", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferOverageRenewals]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferOverageDecisions] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossWithdrawals]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 

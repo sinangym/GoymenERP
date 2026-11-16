@@ -56,12 +56,29 @@ public enum InventoryTransferDecisionKindV1
 
 /// <summary>
 /// KLN-D24: the decision on one recorded receipt excess. The decider must not be the receiver. An approval moves the
-/// excess into the received destination bucket; a rejection keeps it out of stock. One decision per receipt.
+/// excess into the received destination bucket; a rejection keeps it out of stock. One decision per numbered request.
+/// <see cref="RequestNumber"/> names the request decided (KLN-D107): absent, it is the receipt's own declared excess (1),
+/// so a stale decision never lands on a corrected re-request opened after a rejection. Deciding a re-request applies its
+/// own (smaller or equal) kilograms and runs maker≠approver against both the receiver and the re-requester.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DecideInventoryTransferOverageV1(
     [property: JsonRequired] InventoryTransferDecisionKindV1 Decision,
     [property: JsonRequired] DateTimeOffset DecidedAtUtc,
+    [property: JsonRequired] string Reason,
+    int? RequestNumber = null);
+
+/// <summary>
+/// KLN-D107: the corrected re-request of a rejected receipt excess, recorded under the existing receive permission. The
+/// line's latest excess request must be rejected; <see cref="OverageKg"/> (positive, canonical decimal text) never exceeds
+/// the excess first declared on the receipt. The re-request takes the next request number and is decided under the
+/// overage approval like the first one. It changes no stock and no transfer version.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record RenewInventoryTransferOverageV1(
+    [property: JsonRequired] string ExpectedTransferVersion,
+    [property: JsonRequired] DateTimeOffset RequestedAtUtc,
+    [property: JsonRequired] string OverageKg,
     [property: JsonRequired] string Reason);
 
 /// <summary>
@@ -91,8 +108,22 @@ public sealed record DecideInventoryTransferLossV1(
     int? RequestNumber = null);
 
 /// <summary>
+/// KLN-D108: the withdrawal of one undecided loss request (<see cref="RequestNumber"/>), recorded under the existing loss
+/// record permission with a reason. A withdrawn request is never decided and no longer blocks dispatch cancellation
+/// (KLN-D98); the line stays pending and may carry a new request afterwards. It changes no stock and no transfer version.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record WithdrawInventoryTransferLossV1(
+    [property: JsonRequired] string ExpectedTransferVersion,
+    [property: JsonRequired] int RequestNumber,
+    [property: JsonRequired] DateTimeOffset WithdrawnAtUtc,
+    [property: JsonRequired] string Reason);
+
+/// <summary>
 /// One recorded receipt. Kilograms are canonical decimal text. <see cref="OverageStatus"/> is <c>None</c>,
-/// <c>Pending</c>, <c>Approved</c> or <c>Rejected</c>; the decision fields are set only once decided.
+/// <c>Pending</c>, <c>Approved</c> or <c>Rejected</c>; the decision fields are set only once decided. They describe the
+/// receipt's own declared excess (request 1); corrected re-requests are listed in
+/// <see cref="InventoryTransferReceiptFactsViewV1.OverageRenewals"/>.
 /// </summary>
 public sealed record InventoryTransferReceiptViewV1(
     Guid LineId,
@@ -111,7 +142,9 @@ public sealed record InventoryTransferReceiptViewV1(
     Guid? OverageMovementId);
 
 /// <summary>
-/// One recorded loss request. <see cref="Status"/> is <c>Pending</c>, <c>Approved</c> or <c>Rejected</c>.
+/// One recorded loss request. <see cref="Status"/> is <c>Pending</c>, <c>Approved</c>, <c>Rejected</c> or
+/// <c>Withdrawn</c> (KLN-D108); for a withdrawn request the decision fields carry the withdrawal reason, time and actor and
+/// <see cref="MovementId"/> stays null.
 /// <see cref="RequestNumber"/> counts the line's requests from 1 (KLN-D97: a rejected request is never changed; a new
 /// request takes the next number).
 /// </summary>
@@ -133,7 +166,25 @@ public sealed record InventoryTransferReceiptFactsViewV1(
     string Version,
     string Status,
     IReadOnlyList<InventoryTransferReceiptViewV1> Receipts,
-    IReadOnlyList<InventoryTransferLossViewV1> Losses);
+    IReadOnlyList<InventoryTransferLossViewV1> Losses,
+    IReadOnlyList<InventoryTransferOverageRenewalViewV1> OverageRenewals);
+
+/// <summary>
+/// KLN-D107: one corrected re-request of a rejected receipt excess, numbered from 2. <see cref="Status"/> is
+/// <c>Pending</c>, <c>Approved</c> or <c>Rejected</c>; the decision fields are set only once decided.
+/// </summary>
+public sealed record InventoryTransferOverageRenewalViewV1(
+    Guid LineId,
+    int RequestNumber,
+    string OverageKg,
+    string Reason,
+    DateTimeOffset RequestedAtUtc,
+    string RequestedBy,
+    string Status,
+    string? DecisionReason,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecidedBy,
+    Guid? MovementId);
 
 /// <summary>The HTTP body of a B-22c command answer: the transfer view and the receipt facts after the command.</summary>
 public sealed record InventoryTransferReceiptResponseV1(
@@ -148,7 +199,8 @@ public sealed record InventoryTransferReceiptResultV1(
 
 /// <summary>
 /// The B-22c refusals beyond <see cref="InventoryTransferCodesV1"/>. Every refusal here is a 409 except
-/// <see cref="OverageReasonRequired"/> and <see cref="OverageReasonNotAllowed"/> (422).
+/// <see cref="OverageReasonRequired"/>, <see cref="OverageReasonNotAllowed"/> and
+/// <see cref="OverageRenewalExceedsDeclared"/> (422).
 /// </summary>
 public static class InventoryTransferReceiptCodesV1
 {
@@ -167,6 +219,15 @@ public static class InventoryTransferReceiptCodesV1
     /// </summary>
     public const string LossAlreadyRequested = "inventory_transfer_loss_already_requested";
     public const string AlreadyDecided = "inventory_transfer_already_decided";
+
+    /// <summary>KLN-D108: the loss request was withdrawn; it cannot be decided or withdrawn again.</summary>
+    public const string LossWithdrawn = "inventory_transfer_loss_withdrawn";
+
+    /// <summary>KLN-D107: the line already carries an undecided excess request, or no rejected request to correct.</summary>
+    public const string OverageAlreadyRequested = "inventory_transfer_overage_already_requested";
+
+    /// <summary>KLN-D107 (422): a corrected re-request's kilograms exceed the excess first declared on the receipt.</summary>
+    public const string OverageRenewalExceedsDeclared = "inventory_transfer_overage_renewal_exceeds_declared";
 
     /// <summary>KLN-D23/KLN-D24 maker≠approver: the recorder of a receipt or loss request cannot decide it.</summary>
     public const string SelfApproval = "inventory_transfer_self_approval";
@@ -241,6 +302,37 @@ public interface IInventoryTransferReceiptWriterV1
         InventoryCommandMetadata metadata,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
+    Task<InventoryTransferReceiptResultV1?> ReplayRenewOverageAsync(
+        Guid transferId,
+        Guid lineId,
+        RenewInventoryTransferOverageV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    Task<InventoryTransferReceiptResultV1> RenewOverageAsync(
+        Guid transferId,
+        Guid lineId,
+        RenewInventoryTransferOverageV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    Task<InventoryTransferReceiptResultV1?> ReplayWithdrawLossAsync(
+        Guid transferId,
+        Guid lineId,
+        WithdrawInventoryTransferLossV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
+
+    Task<InventoryTransferReceiptResultV1> WithdrawLossAsync(
+        Guid transferId,
+        Guid lineId,
+        WithdrawInventoryTransferLossV1 request,
+        InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IInventoryTransferReceiptReaderV1
@@ -277,6 +369,19 @@ public interface IInventoryTransferReceiptCommandV1
         Guid transferId,
         Guid lineId,
         DecideInventoryTransferLossV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default);
+    Task<InventoryTransferReceiptResultV1> RenewOverageAsync(
+        Guid transferId,
+        Guid lineId,
+        RenewInventoryTransferOverageV1 request,
+        InventoryCommandMetadata transport,
+        CancellationToken cancellationToken = default);
+
+    Task<InventoryTransferReceiptResultV1> WithdrawLossAsync(
+        Guid transferId,
+        Guid lineId,
+        WithdrawInventoryTransferLossV1 request,
         InventoryCommandMetadata transport,
         CancellationToken cancellationToken = default);
 }
