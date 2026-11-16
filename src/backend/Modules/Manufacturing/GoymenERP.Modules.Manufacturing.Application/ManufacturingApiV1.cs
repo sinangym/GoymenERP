@@ -133,7 +133,10 @@ public sealed record DeclareInventoryOutputRequestV1(
     string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
     string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
     string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
-    string? RemnantClassification = null);
+    string? RemnantClassification = null, ManufacturingOutputLineReferenceV1? OutputLine = null);
+
+/// <summary>URT-D30: the user's exact plan output line, or the class line for an unlined output class.</summary>
+public sealed record ManufacturingOutputLineReferenceV1(string Kind, int? SlitLineSequence, Guid? CutLineId);
 
 /// <summary><see cref="OutputClass"/> is one of the five <c>OutputClass</c> names.</summary>
 public sealed record DeclareOutputRequestV1(
@@ -230,6 +233,8 @@ public sealed record PlanCancellationViewV1(string Reason, Guid CancelledByUserI
 /// no time), or null, and <see cref="DueDateRevision"/> how many times it was set, changed or removed (the next termin
 /// request sends it back). Neither moves the plan's version.
 /// </summary>
+public sealed record PlanReapprovalViewV1(int Number, Guid ReapprovedByUserId, DateTimeOffset ReapprovedAtUtc, long PlanVersion);
+
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
@@ -239,7 +244,8 @@ public sealed record PlanViewV1(
     IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
     PlanProcessSpecViewV1? ProcessSpec = null, string? PreparedBy = null,
     PlanSalesOrderLinkViewV1? SalesOrderLink = null, long SalesOrderLinkRevision = 0,
-    DateOnly? RequestedDueDate = null, long DueDateRevision = 0);
+    DateOnly? RequestedDueDate = null, long DueDateRevision = 0, bool RequiresReapproval = false,
+    IReadOnlyList<PlanReapprovalViewV1>? Reapprovals = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -284,7 +290,9 @@ public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
-    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false);
+    DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false,
+    string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null,
+    IReadOnlyList<ManufacturingOutputLineReferenceV1>? OutputLines = null);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -520,7 +528,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingInventoryOutputCorrectionPortV1? outputCorrections = null,
     IManufacturingOrderCancellationStore? orderCancellations = null,
     IManufacturingPlanReapprovalStore? planReapprovals = null,
-    ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null)
+    ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null,
+    IInventoryFreeQuantityReadPortV1? freeQuantity = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -782,7 +791,8 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var verified = await VerifyPlanContentAsync(
-                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
+                    inputs, targetKg, permission, companyId, actorId, cancellationToken,
+                    enforceCurrentMassBound: current.RequiresReapproval);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
@@ -795,16 +805,32 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(parameters.Refusal);
                 }
 
+                if (current.RequiresReapproval && !PlanParameterSnapshotV1.SameSettingsAs(current.ParameterSnapshot,
+                        parameters.Snapshot))
+                    return new(ManufacturingApiStatus.Unprocessable, null, false, ManufacturingRuleCodes.PlanReapprovalSettingsChanged);
+                if (current.RequiresReapproval && current.Spec is not null)
+                {
+                    var candidate = new ProductionPlan(current.Id, companyId, request.WorkCenterId, process.Value,
+                        PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass), current.Spec,
+                        BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value, processSpec.Value);
+                    SlittingApprovalGate.Require(candidate, SlittingPlanParameters.FromCaptured(candidate.Inputs,
+                        current.ParameterSnapshot, candidate.Inputs.ToDictionary(input => input.ParentRollId, _ => true)));
+                }
                 reviseParameters = parameters.Snapshot;
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
-                var revised = await planRevisions.RevisePlanContentAsync(planId, request.ExpectedVersion,
-                    request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
+                Task<ProductionPlan> Write(CancellationToken token) => planRevisions.RevisePlanContentAsync(planId,
+                    request.ExpectedVersion, request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
                     Target(request.Target, verified.TargetMass), BuildCutToLengthSpec(content.CutToLengthSpec),
-                    lineSpeed.Value, reason, metadata, cancellationToken, processSpec.Value);
+                    lineSpeed.Value, reason, metadata, token, processSpec.Value);
+                if (current.RequiresReapproval && planAllocations is null)
+                    return new(ManufacturingApiStatus.Unavailable, null, false, ManufacturingPlanAllocationCodesV1.Incomplete);
+                var revised = current.RequiresReapproval
+                    ? await planAllocations!.WriteReleasedPlanAsync(planId, Write, metadata, cancellationToken)
+                    : await Write(cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok,
                     PlanView(revised, reviseParameters), false, null);
             }, stored => PlanView((ProductionPlan)stored, reviseParameters), cancellationToken);
@@ -1201,7 +1227,7 @@ public sealed partial class ManufacturingCommandService(
     private async Task<(List<VerifiedPlanInput> Inputs, Kilograms? TargetMass,
         ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
         List<ParsedPlanInput> inputs, decimal? targetKg, string permission, Guid companyId, Guid actorId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool enforceCurrentMassBound = false)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
         var planned = new List<VerifiedPlanInput>();
@@ -1227,6 +1253,33 @@ public sealed partial class ManufacturingCommandService(
             if (reference.Refusal is not null)
             {
                 return (planned, null, reference.Refusal);
+            }
+
+            if (enforceCurrentMassBound)
+            {
+                if (freeQuantity is null)
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                InventoryFreeQuantityReadV1 free;
+                try { free = await freeQuantity.GetAsync(companyId, input.ParentRollId, cancellationToken); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception)
+                {
+                    if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } refusedFence)
+                        return (planned, null, refusedFence);
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                }
+                if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fence)
+                    return (planned, null, fence);
+                if (free is null || free.Status != InventoryLabelDispositionStatusV1.Value || free.Value is not { } available
+                    || available.CompanyId != companyId || available.LabelId != input.ParentRollId
+                    || !decimal.TryParse(available.FreeKg, NumberStyles.AllowDecimalPoint,
+                        CultureInfo.InvariantCulture, out var freeKg) || freeKg < 0)
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                if (available.LabelVersion != input.ExpectedLabelVersion)
+                    return (planned, null, new(ManufacturingApiStatus.Conflict, null, false, InventoryParentRollCodesV1.VersionConflict));
+                if (mass.Value.Value > freeKg || available.FreePositionCount != 1)
+                    return (planned, null, new(ManufacturingApiStatus.Unprocessable, null, false,
+                        ManufacturingRuleCodes.PlanLabelNotUsable, $"inputs[{index}].plannedKg"));
             }
 
             var technical = await ReadTechnicalSnapshotAsync(reference.Reference!, today,
@@ -1776,6 +1829,21 @@ public sealed partial class ManufacturingCommandService(
             ? new { declaration = canonical, remnantClassification = chosenRemnantClassification.ToString() }
             : canonical;
 
+        PlanOutputLineReference? outputLine = null;
+        if (request.OutputLine is { } selectedLine)
+        {
+            try
+            {
+                if (!Enum.TryParse<PlanOutputLineKind>(selectedLine.Kind, ignoreCase: false, out var kind)
+                    || !Enum.IsDefined(kind) || kind.ToString() != selectedLine.Kind)
+                    return Task.FromResult(Invalid<OrderViewV1>("outputLine"));
+                outputLine = PlanOutputLineReference.FromStored(kind, selectedLine.SlitLineSequence, selectedLine.CutLineId);
+            }
+            catch (ArgumentException) { return Task.FromResult(Invalid<OrderViewV1>("outputLine")); }
+            // Omitted on old commands: their canonical request and replay hashes remain unchanged.
+            canonicalRequest = new { declaration = canonicalRequest, outputLine = selectedLine };
+        }
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
             canonicalRequest, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
@@ -1803,7 +1871,7 @@ public sealed partial class ManufacturingCommandService(
                         request.LotId, request.LabelId, enteredLabelCode, request.HeatNumber,
                         request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
                         request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
-                        request.MovementId, mass.Value, occurredAt, remnantClassification),
+                        request.MovementId, mass.Value, occurredAt, remnantClassification, outputLine),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -3125,7 +3193,9 @@ public sealed partial class ManufacturingCommandService(
             : null,
         plan.SalesOrderLinkRevision,
         plan.RequestedDueDate,
-        plan.DueDateRevision);
+        plan.DueDateRevision, plan.RequiresReapproval,
+        [.. plan.Reapprovals.Select(reapproval => new PlanReapprovalViewV1(reapproval.Number,
+            reapproval.ReapprovedByUserId, reapproval.ReapprovedAtUtc, reapproval.PlanVersion))]);
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null
@@ -3211,7 +3281,10 @@ public sealed partial class ManufacturingCommandService(
                     CommercialContextView(input.CommercialContext));
             })],
             nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc,
-            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan);
+            order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan,
+            order.CancellationReason, order.CancelledByUserId, order.CancelledAtUtc,
+            [.. order.PlannedOutputLines.Append(PlanOutputLineReference.ClassLine).Select(line =>
+                new ManufacturingOutputLineReferenceV1(line.Kind.ToString(), line.SlitLineSequence, line.CutLineId))]);
     }
 
     /// <summary>

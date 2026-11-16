@@ -75,6 +75,30 @@ public sealed class ReturnLimitFormulaGoldenTests
     }
 
     [Fact]
+    public void Paint_uses_the_order_total_including_output_reversals_and_the_last_WIP_reading()
+    {
+        // URT-D108/D109: 2 000 issued - 100 previous returns - (900 + 800 - 100 reversed) - 100 WIP = 200.
+        var order = Order(ManufacturingProcess.Paint, RollA, RollB);
+        order.Issue(RollA, Kg(1000m));
+        order.Issue(RollB, Kg(1000m));
+        order.Return(RollB, Kg(100m));
+        order.DeclareOutput(order.Version, Guid.NewGuid(), RollA, OutputClass.GoodProduct, Kg(900m),
+            DateTimeOffset.UnixEpoch, PlanOutputLineReference.ClassLine);
+        var output = Guid.NewGuid();
+        order.DeclareOutput(order.Version, output, RollB, OutputClass.GoodProduct, Kg(800m),
+            DateTimeOffset.UnixEpoch, PlanOutputLineReference.ClassLine);
+        order.ReverseOutput(order.Version, Guid.NewGuid(), output, Kg(100m), "SENTETIK paint correction",
+            DateTimeOffset.UnixEpoch.AddMinutes(1));
+        order.MeasureWip(RollA, Kg(150m));
+        order.MeasureWip(RollA, Kg(100m));
+        Assert.Equal(200m, order.TotalBalance().Unexplained);
+        Assert.Equal(ManufacturingRuleCodes.ReturnExceedsUnconsumed, Refused(order, RollA, 200m + OneGram));
+        // RollA alone has no unconsumed kg; painting measures the order total and allows this 200 kg return.
+        order.Return(RollA, Kg(200m));
+        Assert.Equal(0m, order.TotalBalance().Unexplained);
+    }
+
+    [Fact]
     public void A_paint_order_bounds_the_return_on_the_order_total_by_the_formula_golden()
     {
         // Order total: issued 1 000 + 1 000 − returned 100 − output (900 + 700 + 50) − WIP 120 = 130.

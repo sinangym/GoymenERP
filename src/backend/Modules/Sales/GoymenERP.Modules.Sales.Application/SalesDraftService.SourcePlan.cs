@@ -96,7 +96,7 @@ public sealed partial class SalesDraftService
 
         return new SalesOrderDraftSourcePlanResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
             SalesDraftApiV1.RevisionText(draft.Revision), writable,
-            [.. linked.Select(entry => new SalesDraftSourcePlanLinkedSupplyV1(entry.Kind, entry.Read.Status))], lines);
+            [.. linked.Select(entry => new SalesDraftSourcePlanLinkedSupplyV1(entry.Kind, entry.Read.Status, entry.Read.CancelledOrderIds ?? []))], lines);
     }
 
     private static SalesDraftSourcePlanLineV1 SourcePlanLine(SalesOrderDraft draft, SalesOrderDraftLine line,

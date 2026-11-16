@@ -421,6 +421,26 @@ describe('mass balance panel (GDC-BAL/1)', () => {
 })
 
 describe('fact forms', () => {
+  it('requires an explicit server-backed plan output line and switches class lines with the output class', async () => {
+    const user = userEvent.setup()
+    stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES, reads: [() => json(order({ outputLines: [
+      { kind: 'SlitLine', slitLineSequence: 1, cutLineId: null },
+      { kind: 'SlitLine', slitLineSequence: 2, cutLineId: null },
+      { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
+    ] }))] })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    const line = screen.getByLabelText('Plan çıktı satırı')
+    expect((line as HTMLSelectElement).value).toBe('')
+    expect(within(line).getByRole('option', { name: 'Dilme satırı 2' })).toBeTruthy()
+    await user.selectOptions(line, 'SlitLine:2')
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'Scrap')
+    expect((screen.getByLabelText('Plan çıktı satırı') as HTMLSelectElement).value).toBe('')
+    expect(screen.queryByRole('option', { name: 'Dilme satırı 2' })).toBeNull()
+    expect(within(screen.getByLabelText('Plan çıktı satırı')).getByRole('option', { name: 'Çıktı sınıfı satırı' })).toBeTruthy()
+  })
+
   it('names each control by its label alone: no option or help text in the accessible name', async () => {
     // The mfg browser gate (run 35436388761) found a wrapping <label> folding the roll options into the
     // select's name. A role query with a string name is an exact match, so any folded text fails here.

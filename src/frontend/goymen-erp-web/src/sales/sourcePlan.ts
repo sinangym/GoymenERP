@@ -91,6 +91,7 @@ export interface SourcePlanLine {
 }
 
 export interface SourcePlanLinkedSupply {
+  readonly cancelledOrderIds?: readonly string[]
   readonly kind: SourcePlanSupplyKind
   readonly status: SourcePlanLinkStatus
 }
@@ -220,10 +221,14 @@ function decodeLine(value: unknown): SourcePlanLine | null {
 }
 
 function decodeLinked(value: unknown): SourcePlanLinkedSupply | null {
-  const o = exact(value, ['kind', 'status'])
+  const hasHistory = typeof value === 'object' && value !== null && 'cancelledOrderIds' in value
+  const o = exact(value, hasHistory ? ['kind', 'status', 'cancelledOrderIds'] : ['kind', 'status'])
   if (o === null || !oneOf(o.kind, Object.values(SOURCE_PLAN_SUPPLY_KIND))
     || !oneOf(o.status, Object.values(SOURCE_PLAN_LINK_STATUS))) return null
-  return { kind: o.kind, status: o.status }
+  const history = o.cancelledOrderIds === undefined || o.cancelledOrderIds === null ? [] : o.cancelledOrderIds
+  if (!Array.isArray(history) || !history.every(isReferenceId) || new Set(history).size !== history.length
+    || (o.kind !== SOURCE_PLAN_SUPPLY_KIND.production && history.length > 0)) return null
+  return { kind: o.kind, status: o.status, cancelledOrderIds: history as string[] }
 }
 
 /**

@@ -229,6 +229,11 @@ function PlanView({
           </div>
         ))}
       </dl>
+      {plan.linkedSupply.flatMap((entry) => entry.cancelledOrderIds ?? []).map((orderId) => (
+        <p key={orderId} className={styles.muted} data-testid="sales-source-plan-cancelled-order">
+          {T.cancelledProductionOrder} {orderId}
+        </p>
+      ))}
       {linkUnreadable ? <p role="alert" className={styles.notice} data-testid="sales-source-plan-linked-unreadable">{T.linkedUnreadable}</p> : null}
       {linkPresent ? <p className={styles.notice} data-testid="sales-source-plan-linked-present">{T.linkedPresent}</p> : null}
       {!canWrite ? <p className={styles.muted} data-testid="sales-source-plan-read-only">{T.readOnly}</p> : null}

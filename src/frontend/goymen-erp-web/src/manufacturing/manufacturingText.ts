@@ -29,6 +29,7 @@ export const REMNANT_CLASSIFICATION_LABEL: Record<RemnantClassification, string>
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   Open: 'Açık',
   Closed: 'Kapalı',
+  Cancelled: 'İptal',
 }
 
 export const TARGET_BASIS_LABEL: Record<string, string> = {
@@ -93,12 +94,17 @@ export const KG_FORMAT_HELP = 'Nokta ile ondalık, işaretsiz (ör. 1250.5). Ond
 export const KG_FORMAT_ERROR = 'Kilogram biçimi geçersiz: işaretsiz, nokta ile ondalık bir sayı girin.'
 export const ROLL_REQUIRED = 'Bir ana rulo seçin.'
 export const TIME_REQUIRED = 'Olgunun zamanını girin.'
+export const CANCELLED_ORDER_TEXT = 'Emir iptal edildi; yeni gerçekleşme kaydedilmez.'
 export const CLOSED_ORDER_TEXT = 'Emir kapalı; yeni gerçekleşme kaydedilmez.'
 
 export const OUTPUT_INVENTORY_TEXT = {
   productRequired: 'Sunucunun doğruladığı bir stok ürünü seçin.',
   locationRequired: 'Sunucunun doğruladığı aktif bir lokasyon seçin.',
   classRequired: 'Çıktı sınıfını seçin.',
+  outputLine: 'Plan çıktı satırı',
+  outputLineRequired: 'Beyanın bağlı olduğu plan çıktı satırını seçin.',
+  outputLineLabel: (kind: string, sequence: number | null, lineId: string | null) =>
+    kind === 'SlitLine' ? `Dilme satırı ${sequence}` : kind === 'CutLine' ? `Kesim satırı ${lineId}` : 'Çıktı sınıfı satırı',
   blockRequired: 'İlk stok durumunu açıkça seçin; ekran varsayılan seçmez.',
   productLoading: 'Ürün seçenekleri yükleniyor…',
   locationLoading: 'Lokasyon seçenekleri yükleniyor…',
@@ -545,3 +551,19 @@ export function unknownText(unknown: FactUnknown): string {
 
 export const UNKNOWN_ACTION_HELP =
   'Aynı olguyu aynı işlem anahtarıyla yeniden gönderin: kaydedildiyse ikinci bir kayıt oluşmaz. Yeni bir olgu, bu çözülene kadar gönderilemez.'
+
+
+export const PLAN_REAPPROVAL_TEXT = {
+  heading: 'İptal sonrası planı yeniden onayla',
+  help: 'Ayrılacak her etiketi açıkça seçin. Bu adım aynı girdilerle yeniden ayırır; farklı etiket için plan yeniden hesaplanmalıdır.',
+  chooseAll: 'Her plan girdisinin etiketi açıkça seçilmelidir.',
+  submit: 'Seçilen etiketlerle yeniden onayla',
+  resend: 'Aynı isteği tekrar gönder',
+  pending: 'Yeniden onay sonucu bilinmiyor. Aynı istek ve anahtarla tekrar deneyin.',
+  applied: 'Plan yeniden onaylandı; güncel plan okunuyor.',
+  refused: 'Yeniden onay reddedildi.',
+  changedSettings: 'Ayarlar ilk onaydan bu yana değişti; plan iptal edilip yeni plan hazırlanmalıdır.',
+  changedLabels: 'Bu yeniden onay adımı yalnız plandaki etiketleri kabul eder; farklı etiket planın yeniden hesabını gerektirir.',
+  history: 'Yeniden onay geçmişi',
+  historyLine: (number: number, at: string, version: number) => `${number}. yeniden onay: ${at}, plan sürümü ${version}`,
+} as const

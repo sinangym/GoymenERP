@@ -98,7 +98,8 @@ public sealed partial class ManufacturingCommandServiceTests
         var result = await fixture.Service.DeclareInventoryOutputAsync(order.Id,
             new DeclareInventoryOutputRequestV1(outputId, order.Version, Roll, "8", "GoodProduct",
                 Product, "12", lotId, labelId, "LBL-OUT-1", "H-1", "C-1", ["quality-certificate"],
-                "Company", Company, "Company", Company, Location, "Free", movementId, "20", At.AddMinutes(1)),
+                "Company", Company, "Company", Company, Location, "Free", movementId, "20", At.AddMinutes(1),
+                OutputLine: new("ClassLine", null, null)),
             "output-inventory-1", Permission, CancellationToken.None);
 
         Assert.Equal((ManufacturingApiStatus.Ok, 3), (result.Status, result.Resource?.Version));
@@ -109,7 +110,8 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Equal(("Company", Company, "Company", Company, Location, "Free"),
             (command.OwnerKind, command.OwnerId, command.CustodianKind, command.CustodianId,
                 command.LocationId, command.InitialBlock));
-        Assert.Single(order.Outputs);
+        Assert.Equal(PlanOutputLineReference.ClassLine, command.OutputLine);
+        Assert.Equal(PlanOutputLineReference.ClassLine, Assert.Single(order.Outputs).OutputLine);
     }
 
     [Fact]
@@ -3369,7 +3371,7 @@ public sealed partial class ManufacturingCommandServiceTests
             Outputs.Add(command);
             var order = store.Orders[command.OrderId];
             order.DeclareOutput(command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
-                command.OutputClass, command.Quantity, command.OccurredAtUtc);
+                command.OutputClass, command.Quantity, command.OccurredAtUtc, command.OutputLine);
             Complete(store, metadata, order);
             return Task.FromResult(new ManufacturingInventoryOutputPortResultV1(
                 order.Version, command.ExpectedParentLabelVersion + 1, 1, false));

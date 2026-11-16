@@ -76,7 +76,7 @@ export interface ManufacturingOutputLocationCandidates {
   readonly searchWindowFull: boolean
 }
 
-export type OrderStatus = 'Open' | 'Closed'
+export type OrderStatus = 'Open' | 'Closed' | 'Cancelled'
 
 export interface RollBalance {
   readonly parentRollId: string
@@ -229,7 +229,16 @@ export interface PlanParameterSnapshotView {
  * The same shape the create and approve answers return — by construction on the server, not by
  * two projections kept in step — so a reopened plan and a just-created one decode identically.
  */
+export interface PlanReapprovalView {
+  readonly number: number
+  readonly reapprovedByUserId: string
+  readonly reapprovedAtUtc: string
+  readonly planVersion: number
+}
+
 export interface ProductionPlanView {
+  readonly requiresReapproval?: boolean
+  readonly reapprovals?: readonly PlanReapprovalView[]
   readonly planId: string
   readonly companyId: string
   readonly workCenterId: string
@@ -290,6 +299,28 @@ export interface PlanSalesOrderLinkView {
   readonly linkedAtUtc: string
 }
 
+export interface ManufacturingOutputLineReference {
+  readonly kind: 'SlitLine' | 'CutLine' | 'ClassLine'
+  readonly slitLineSequence: number | null
+  readonly cutLineId: string | null
+}
+
+export function outputLineKey(line: ManufacturingOutputLineReference): string {
+  return `${line.kind}:${line.slitLineSequence ?? line.cutLineId ?? ''}`
+}
+
+function decodeOutputLine(value: unknown): ManufacturingOutputLineReference | null {
+  if (!isObject(value) || !hasExactKeys(value, ['kind', 'slitLineSequence', 'cutLineId'])) return null
+  if (value.kind === 'ClassLine' && value.slitLineSequence === null && value.cutLineId === null)
+    return { kind: 'ClassLine', slitLineSequence: null, cutLineId: null }
+  if (value.kind === 'SlitLine' && typeof value.slitLineSequence === 'number'
+    && Number.isSafeInteger(value.slitLineSequence) && value.slitLineSequence > 0 && value.cutLineId === null)
+    return { kind: 'SlitLine', slitLineSequence: value.slitLineSequence, cutLineId: null }
+  if (value.kind === 'CutLine' && value.slitLineSequence === null && nonNilGuid(value.cutLineId) !== null)
+    return { kind: 'CutLine', slitLineSequence: null, cutLineId: value.cutLineId as string }
+  return null
+}
+
 export interface ProductionOrderView {
   readonly orderId: string
   readonly companyId: string
@@ -317,6 +348,10 @@ export interface ProductionOrderView {
   readonly planDueDate: string | null
   /** URT-D66 (4): the server's "emir termini plandan farklı" flag; never computed here. False for legacy JSON. */
   readonly dueDateDiffersFromPlan: boolean
+  readonly outputLines?: readonly ManufacturingOutputLineReference[]
+  readonly cancellationReason?: string | null
+  readonly cancelledByUserId?: string | null
+  readonly cancelledAtUtc?: string | null
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -841,6 +876,19 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   ) {
     return null
   }
+  const requiresReapproval = body.requiresReapproval === undefined ? false : body.requiresReapproval
+  const rawReapprovals = body.reapprovals === undefined || body.reapprovals === null ? [] : body.reapprovals
+  if (typeof requiresReapproval !== 'boolean' || !Array.isArray(rawReapprovals)) return null
+  const reapprovals: PlanReapprovalView[] = []
+  for (const raw of rawReapprovals) {
+    if (!isObject(raw) || !hasExactKeys(raw, ['number', 'reapprovedByUserId', 'reapprovedAtUtc', 'planVersion'])
+      || raw.number !== reapprovals.length + 1 || nonNilGuid(raw.reapprovedByUserId) === null
+      || typeof raw.reapprovedAtUtc !== 'string' || Number.isNaN(Date.parse(raw.reapprovedAtUtc))
+      || version(raw.planVersion) === null || (raw.planVersion as number) > planVersion
+      || (reapprovals.length > 0 && (raw.planVersion as number) <= reapprovals[reapprovals.length - 1].planVersion)) return null
+    reapprovals.push(raw as unknown as PlanReapprovalView)
+  }
+  if (requiresReapproval && (body.status !== 'Approved' || orderId !== null)) return null
   // CK_Plans_Approval: Draft has neither value; Approved has both; a Cancelled plan keeps both or neither.
   if ((approvedByUserId === null) !== (approvedAtUtc === null)) return null
   if (body.status === 'Draft' && approvedByUserId !== null) return null
@@ -899,6 +947,8 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     salesOrderLinkRevision,
     requestedDueDate,
     dueDateRevision,
+    requiresReapproval,
+    reapprovals,
   }
 }
 
@@ -1077,12 +1127,25 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     dueDateRevision === undefined ||
     dueDateDiffersFromPlan === undefined ||
     typeof body.process !== 'string' ||
-    (body.status !== 'Open' && body.status !== 'Closed') ||
+    (body.status !== 'Open' && body.status !== 'Closed' && body.status !== 'Cancelled') ||
     body.costStatus !== 'NotCalculated' ||
     !Array.isArray(body.rolls)
   ) {
     return null
   }
+  const outputLines = body.outputLines === undefined || body.outputLines === null ? []
+    : Array.isArray(body.outputLines) ? body.outputLines.map(decodeOutputLine) : null
+  if (outputLines === null || outputLines.some((line) => line === null)
+    || new Set(outputLines.map((line) => outputLineKey(line!))).size !== outputLines.length) return null
+  // URT-D33: cancellation is retained and cannot be mistaken for an open order.
+  const cancellationReason = body.cancellationReason === undefined || body.cancellationReason === null
+    ? null : boundedSnapshotText(body.cancellationReason, 256) ? body.cancellationReason : undefined
+  const cancelledByUserId = body.cancelledByUserId === undefined ? null : nullableGuid(body.cancelledByUserId)
+  const cancelledAtUtc = body.cancelledAtUtc === undefined ? null : nullableInstant(body.cancelledAtUtc)
+  if (cancellationReason === undefined || cancelledByUserId === undefined || cancelledAtUtc === undefined) return null
+  const cancellationComplete = cancellationReason !== null && cancelledByUserId !== null && cancelledAtUtc !== null
+  if (body.status === 'Cancelled' ? !cancellationComplete || closedAtUtc !== null || closedByUserId !== null
+    : cancellationReason !== null || cancelledByUserId !== null || cancelledAtUtc !== null) return null
   // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
   if (dueDateRevision > 0 && dueDate === null) return null
   // The flag is the server's, but it never contradicts the two days it was computed from.
@@ -1111,6 +1174,10 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     dueDateRevision,
     planDueDate,
     dueDateDiffersFromPlan,
+    outputLines: outputLines as ManufacturingOutputLineReference[],
+    cancellationReason,
+    cancelledByUserId,
+    cancelledAtUtc,
   }
 }
 
@@ -1179,6 +1246,7 @@ export type FactSnapshot =
       readonly movementId: string
       readonly expectedParentLabelVersion: string
       readonly outputClass: InventoryOutputClass
+      readonly outputLine?: ManufacturingOutputLineReference | null
       /** Only for UsableRemnant (null otherwise); sent only with that class. */
       readonly remnantClassification: RemnantClassification | null
       readonly productId: string
@@ -1223,6 +1291,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       outputClass: snapshot.outputClass,
+      ...(snapshot.outputLine == null ? {} : { outputLine: snapshot.outputLine }),
       ...(snapshot.outputClass === 'UsableRemnant' && snapshot.remnantClassification !== null
         ? { remnantClassification: snapshot.remnantClassification }
         : {}),
@@ -1543,7 +1612,7 @@ function decodeSummary(value: unknown): OrderSummary | null {
     createdAtUtc === null ||
     closedAtUtc === undefined ||
     typeof value.process !== 'string' ||
-    (value.status !== 'Open' && value.status !== 'Closed')
+    (value.status !== 'Open' && value.status !== 'Closed' && value.status !== 'Cancelled')
   ) {
     return null
   }

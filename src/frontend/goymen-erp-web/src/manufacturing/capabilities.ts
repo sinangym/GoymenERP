@@ -91,6 +91,8 @@ export const MANUFACTURING_CAPABILITY = {
    * false and no cancel control is drawn. The rejection (API-10) needs no id of its own: it runs under `planApprove`.
    */
   planCancel: 'manufacturing.plans.cancel',
+  /** URT-D106: registered-only; provider keeps this control unavailable until the queue screen exists. */
+  planReorder: 'manufacturing.plans.reorder',
   /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
   planOrderCreate: 'manufacturing.plans.order-create',
   /** MFG-PLAN-EDIT: edit the Draft shown on the detail screen, with its history. Not a route — a control. */

@@ -362,7 +362,11 @@ public sealed class ProductionPlan
             }
         }
 
-        foreach (var revision in revisions ?? [])
+        var revisionSteps = (revisions ?? []).ToArray();
+        var releases = (orderReleases ?? []).ToArray();
+        var firstReleaseVersion = releases.Length == 0 ? long.MaxValue : releases.Min(release => release.PlanVersion);
+        var releasedRevisions = revisionSteps.Where(revision => revision.PlanVersion >= firstReleaseVersion).ToArray();
+        foreach (var revision in revisionSteps.Where(revision => revision.PlanVersion is null || revision.PlanVersion < firstReleaseVersion))
         {
             ArgumentNullException.ThrowIfNull(revision);
             ReplayRejectionsUpTo(revision.PlanVersion);
@@ -421,7 +425,7 @@ public sealed class ProductionPlan
             plan.ParameterSnapshot = parameterSnapshot;
         }
 
-        plan.ReplayReleasesAndReapprovals(orderReleases, reapprovals);
+        plan.ReplayReleasesAndReapprovals(releases, reapprovals, releasedRevisions);
 
         if (orderId is { } order)
         {
@@ -748,12 +752,14 @@ public sealed class ProductionPlan
     /// version, a release must follow an approval and alternate with re-approvals.
     /// </summary>
     private void ReplayReleasesAndReapprovals(IEnumerable<PlanOrderRelease>? orderReleases,
-        IEnumerable<PlanReapproval>? reapprovals)
+        IEnumerable<PlanReapproval>? reapprovals, IEnumerable<PlanRevisionContent>? releasedRevisions = null)
     {
         var steps = (orderReleases ?? Enumerable.Empty<PlanOrderRelease>()).Select(release => (Version: release?.PlanVersion ?? 0, Release: release,
-                Reapproval: (PlanReapproval?)null))
+                Reapproval: (PlanReapproval?)null, Revision: (PlanRevisionContent?)null))
             .Concat((reapprovals ?? Enumerable.Empty<PlanReapproval>()).Select(reapproval => (Version: reapproval?.PlanVersion ?? 0,
-                Release: (PlanOrderRelease?)null, Reapproval: reapproval)))
+                Release: (PlanOrderRelease?)null, Reapproval: reapproval, Revision: (PlanRevisionContent?)null)))
+            .Concat((releasedRevisions ?? []).Select(revision => (Version: revision.PlanVersion ?? 0,
+                Release: (PlanOrderRelease?)null, Reapproval: (PlanReapproval?)null, Revision: (PlanRevisionContent?)revision)))
             .OrderBy(step => step.Version)
             .ToList();
         foreach (var step in steps)
@@ -776,6 +782,23 @@ public sealed class ProductionPlan
                 if (valid)
                 {
                     ApplyReapproval(reapproval.ReapprovedByUserId, reapproval.ReapprovedAtUtc);
+                }
+            }
+            else if (valid && step.Revision is { } revision)
+            {
+                valid = RequiresReapproval;
+                if (valid)
+                {
+                    try
+                    {
+                        Revise(Version, revision.WorkCenterId, Process, revision.Inputs, revision.Target,
+                            revision.CutToLengthSpec, revision.LineSpeedMetresPerMinute, revision.ProcessSpec);
+                    }
+                    catch (Exception exception) when (exception is ManufacturingRuleException or ArgumentException)
+                    {
+                        throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                            "Kayıtlı yeniden hesaplama planın kurallarını karşılamıyor.");
+                    }
                 }
             }
             else
@@ -950,17 +973,13 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
-    /// MFG-PLAN-EDIT: the edit of a plan that has no downstream effect yet. Only a Draft is revised: an approved plan
-    /// has recorded a decision and may have opened its order (one plan opens one order, URT-D1), and an order carries its
-    /// own snapshot from which inputs are issued — so an approved plan is never edited here; a post-approval revision
-    /// with snapshot and difference (PR-09) is a separate flow. A cancelled plan is not a Draft either.
-    /// A revision replaces the work center, the planned inputs, the target and (U2-a) the plan-entered line speed AS A
-    /// WHOLE and advances the version by one. In order, and nothing is applied on a refusal:
+    /// MFG-PLAN-EDIT / URT-D37/D38: revise a Draft, or recalculate a plan released by cancellation of its order.
+    /// A released plan keeps its original work center, process spec, target and first approval; only its input selection
+    /// changes, within the same commercial ownership. The cancelled order retains its own immutable input snapshot.
+    /// Every revision advances the version and is appended to history. Refusals apply nothing.
     /// <list type="number">
     /// <item>the version fence (<see cref="ManufacturingVersionConflictException"/>);</item>
-    /// <item>only a Draft (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>);</item>
-    /// <item>a plan with a slitting spec is not revised (<see cref="ManufacturingRuleCodes.PlanSlittingSpecFixed"/>):
-    /// how its spec balances against the parent coil is open (AT-044, #66 NEEDS-BUSINESS 5741547443);</item>
+    /// <item>a Draft or a released plan waiting for re-approval (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>);</item>
     /// <item>the process is fixed (<see cref="ManufacturingRuleCodes.PlanProcessFixed"/>): the new work center must run
     /// the plan's own process — no plan changes its process while process chains are open;</item>
     /// <item>the plan's own input rules (at least one roll, no roll twice);</item>
@@ -1011,6 +1030,20 @@ public sealed class ProductionPlan
         }
 
         RequireConsistentCommercialContext(newInputs, nameof(inputs));
+        RequireNetWidthWithinParents(Spec, newInputs);
+        if (Status == PlanStatus.Approved)
+        {
+            if (newWorkCenter != WorkCenterId || !Equals(target, Target)
+                || !CutSpecsEqual(cutToLengthSpec, CutToLengthSpec)
+                || lineSpeedMetresPerMinute != LineSpeedMetresPerMinute || !Equals(processSpec, ProcessSpec))
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
+                    "Yeniden hesapta yalnız girdi etiketleri değişir; planın ilk onay içeriği korunur.");
+            var owner = _inputs[0].CommercialContext;
+            if (newInputs.Any(input => input.CommercialContext?.PartyId != owner?.PartyId
+                || input.CommercialContext?.CompanyPartyAccountId != owner?.CompanyPartyAccountId))
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
+                    "Yeni etiketler ilk planla aynı sahipliğe ait olmalıdır.");
+        }
         RequireLineSpeed(Process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
         processSpec?.RequireAllowedFor(Process, nameof(processSpec));
         if (SalesOrderLink is { } salesLink && !InputsMatchParty(newInputs, salesLink.CustomerPartyId))
@@ -1040,22 +1073,16 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
-    /// The revision's preconditions on the plan as it stands — the version fence, only a Draft, no slitting spec —
+    /// The revision's preconditions: the version fence, a Draft or a released plan awaiting re-approval —
     /// without a new content: a caller may ask before it reads anything else, and <see cref="Revise"/> asks again.
     /// </summary>
     public void RequireRevisable(long expectedVersion)
     {
         RequireFence(expectedVersion);
-        if (Status != PlanStatus.Draft)
+        if (Status != PlanStatus.Draft && !(Status == PlanStatus.Approved && RequiresReapproval && OrderId is null))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
-                "Yalnız taslak plan düzenlenebilir; onaylı plan bir karar kaydetmiştir ve emir açmış olabilir.");
-        }
-
-        if (Spec is not null)
-        {
-            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSlittingSpecFixed,
-                "Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).");
+                "Yalnız taslak veya iptal edilmiş emrinden sonra yeniden onay bekleyen plan düzenlenebilir.");
         }
     }
 

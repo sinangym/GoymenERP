@@ -41,6 +41,25 @@ import {
 } from './testHarness'
 
 describe('decodeOrder', () => {
+  it('keeps exact plan output line choices and rejects malformed or duplicate references', () => {
+    const line = { kind: 'SlitLine', slitLineSequence: 2, cutLineId: null }
+    expect(decodeOrder(order({ outputLines: [line] }))?.outputLines).toEqual([line])
+    expect(decodeOrder(order({ outputLines: [line, line] }))).toBeNull()
+    expect(decodeOrder(order({ outputLines: [{ ...line, cutLineId: ORDER }] }))).toBeNull()
+    expect(decodeOrder(order({ outputLines: [{ kind: 'ClassLine', slitLineSequence: null, cutLineId: null }] })))
+      .not.toBeNull()
+  })
+
+  it('accepts retained cancellation metadata and rejects an incomplete cancellation', () => {
+    const cancelled = order({ status: 'Cancelled', cancellationReason: 'SENTETIK iptal',
+      cancelledByUserId: APPROVER, cancelledAtUtc: '2026-11-16T10:00:00Z' })
+    expect(decodeOrder(cancelled)?.status).toBe('Cancelled')
+    expect(decodeOrder({ ...cancelled, cancelledAtUtc: null })).toBeNull()
+    expect(decodeOrder({ ...cancelled, status: 'Open' })).toBeNull()
+    expect(decodeOrderList(orderList([orderSummary({ status: 'Cancelled' })]))?.items[0].status)
+      .toBe('Cancelled')
+  })
+
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
     const decoded = decodeOrder(
       order({ rolls: [roll(ROLL_1, { issuedKg: '1000.125', unexplainedKg: '-2.5', isFullyAccounted: false })] }),
@@ -218,6 +237,7 @@ describe('factBody', () => {
       kind: 'outputs',
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      outputLine: { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
       remnantClassification: null,
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
@@ -239,6 +259,7 @@ describe('factBody', () => {
       parentRollId: ROLL_1,
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      outputLine: { kind: 'ClassLine', slitLineSequence: null, cutLineId: null },
       productId: 'a0000000-0000-4000-8000-000000000001',
       expectedProductVersion: '12',
       lotId: 'a0000000-0000-4000-8000-000000000002',
@@ -848,5 +869,21 @@ describe('decodePlan', () => {
     ['an instant that is not a time', plan({ status: 'Approved', approvedByUserId: APPROVER, approvedAtUtc: 'dün' })],
   ])('fails closed on %s', (_case, body) => {
     expect(decodePlan(body)).toBeNull()
+  })
+})
+
+
+describe('plan reapproval history', () => {
+  it('keeps the first approval and decodes pending reapproval and append-only approval history', () => {
+    const body = plan({ status: 'Approved', version: 5, orderId: null, requiresReapproval: true,
+      approvedByUserId: APPROVER, approvedAtUtc: '2026-11-01T08:00:00Z',
+      reapprovals: [{ number: 1, reapprovedByUserId: APPROVER, reapprovedAtUtc: '2026-11-05T08:00:00Z', planVersion: 4 }] })
+    const decoded = decodePlan(body)
+    expect(decoded?.requiresReapproval).toBe(true)
+    expect(decoded?.approvedAtUtc).toBe('2026-11-01T08:00:00Z')
+    expect(decoded?.reapprovals?.[0].planVersion).toBe(4)
+    expect(decodePlan({ ...body, status: 'Draft' })).toBeNull()
+    expect(decodePlan({ ...body, reapprovals: [{ number: 1, reapprovedByUserId: APPROVER,
+      reapprovedAtUtc: '2026-11-05T08:00:00Z', planVersion: 6 }] })).toBeNull()
   })
 })

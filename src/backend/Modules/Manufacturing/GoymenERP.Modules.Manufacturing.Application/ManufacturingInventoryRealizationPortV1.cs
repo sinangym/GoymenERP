@@ -87,7 +87,8 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     Guid MovementId,
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc,
-    InventoryLabelClassificationV1? RemnantClassification = null);
+    InventoryLabelClassificationV1? RemnantClassification = null,
+    PlanOutputLineReference? OutputLine = null);
 
 public sealed record ManufacturingInventoryInputIssuePortResultV1(
     long OrderVersion,
@@ -266,6 +267,12 @@ public interface IManufacturingPlanAllocationPortV1
     Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
         Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken);
+
+    /// <summary>URT-D37: records changed input content only after the old generation is proven released.</summary>
+    Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken) =>
+        Task.FromException<T>(new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+            ManufacturingPlanAllocationCodesV1.Incomplete));
 }
 
 /// <summary>Why a plan's remaining allocation is released.</summary>

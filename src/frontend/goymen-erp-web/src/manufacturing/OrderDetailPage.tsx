@@ -54,6 +54,7 @@ import {
   REMNANT_CLASSIFICATIONS,
   calendarDate,
   isKilogramText,
+  outputLineKey,
   type CloseSnapshot,
   type EngineAnswer,
   type FactKind,
@@ -90,6 +91,7 @@ import {
   APPLIED_DETAIL,
   APPLIED_TITLE,
   CLOSED_ORDER_TEXT,
+  CANCELLED_ORDER_TEXT,
   CLOSE_TEXT,
   COST_STATUS_TEXT,
   ENGINE_REFUSED,
@@ -478,9 +480,9 @@ function CloseSection({
     <section aria-labelledby="mfg-close-heading" className={styles.section} data-testid="order-close">
       <h2 id="mfg-close-heading">{CLOSE_TEXT.heading}</h2>
       <p className={styles.help}>{CLOSE_TEXT.help}</p>
-      {order.status === 'Closed' ? (
+      {order.status !== 'Open' ? (
         <p className={styles.help} data-testid="order-already-closed">
-          {CLOSED_ORDER_TEXT}
+          {order.status === 'Cancelled' ? CANCELLED_ORDER_TEXT : CLOSED_ORDER_TEXT}
           {order.closedAtUtc !== null ? ` ${CLOSE_TEXT.closedAt}: ${order.closedAtUtc}` : ''}
         </p>
       ) : attempt.phase === 'confirming' ? (
@@ -616,7 +618,7 @@ function OrderDueDateSection({
     <section aria-labelledby="mfg-order-due-date-heading" className={styles.section} data-testid="order-due-date">
       <h2 id="mfg-order-due-date-heading">{ORDER_DUE_DATE_TEXT.heading}</h2>
       <p className={styles.help}>{ORDER_DUE_DATE_TEXT.help}</p>
-      {order.status === 'Closed' ? (
+      {order.status !== 'Open' ? (
         <p className={styles.help} data-testid="order-due-date-closed">{ORDER_DUE_DATE_TEXT.closedReadOnly}</p>
       ) : attempt.phase === 'unknown' ? (
         <div className={styles.actions}>
@@ -892,6 +894,7 @@ interface FormValues {
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
   readonly outputClass: '' | (typeof INVENTORY_OUTPUT_CLASSES)[number]
+  readonly outputLine: string
   /** URT-S16 (BS-14): sent only when the output class is UsableRemnant. */
   readonly remnantClassification: RemnantClassification
   readonly productId: string
@@ -912,6 +915,7 @@ const EMPTY_FORM: FormValues = {
   occurredAt: '',
   // URT-D43 (2): a new output starts as a good product; BS-14: a usable remnant starts as second quality.
   outputClass: DEFAULT_OUTPUT_CLASS,
+  outputLine: '',
   remnantClassification: DEFAULT_REMNANT_CLASSIFICATION,
   productId: '',
   locationId: '',
@@ -933,6 +937,7 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
     kg: snapshot.kg,
     occurredAt: local,
     outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : DEFAULT_OUTPUT_CLASS,
+    outputLine: snapshot.kind === 'outputs' && snapshot.outputLine != null ? outputLineKey(snapshot.outputLine) : '',
     remnantClassification: snapshot.kind === 'outputs'
       ? (snapshot.remnantClassification ?? DEFAULT_REMNANT_CLASSIFICATION)
       : DEFAULT_REMNANT_CLASSIFICATION,
@@ -1103,6 +1108,10 @@ function FactSection({
   const unresolved = isUnresolved(attempt)
   const returnSelected = form.kind === 'input-returns'
   const outputSelected = form.kind === 'outputs'
+  const detailedOutputLines = (order.outputLines ?? []).filter((line) => line.kind !== 'ClassLine')
+  const selectableOutputLines = (order.outputLines ?? []).filter((line) =>
+    form.outputClass === 'GoodProduct' && detailedOutputLines.length > 0 ? line.kind !== 'ClassLine' : line.kind === 'ClassLine')
+  const selectedOutputLine = selectableOutputLines.find((line) => outputLineKey(line) === form.outputLine)
   const outputEnabled = canReadInventoryLabel
   const needsInventoryState = (returnSelected || outputSelected) && canReadInventoryLabel
   const timing = factTiming(form.occurredAt)
@@ -1163,7 +1172,7 @@ function FactSection({
   )
 
   const busy = attempt.phase === 'submitting'
-  const closed = order.status === 'Closed'
+  const closed = order.status !== 'Open'
 
   const dirty = unresolved || Object.entries(form).some(([key, value]) => key !== 'kind' && value.length > 0)
   useEffect(() => {
@@ -1231,6 +1240,8 @@ function FactSection({
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
     if (outputSelected && outputOwnership === null) return setError(ownershipRefusal(issuedOwnership))
     if (timing === null) return setError(TIME_REQUIRED)
+    if (outputSelected && selectableOutputLines.length > 0 && selectedOutputLine === undefined)
+      return setError(OUTPUT_INVENTORY_TEXT.outputLineRequired)
     if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
     if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
@@ -1260,6 +1271,7 @@ function FactSection({
               movementId: newId(),
               expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
               outputClass: form.outputClass as (typeof INVENTORY_OUTPUT_CLASSES)[number],
+              ...(selectedOutputLine === undefined ? {} : { outputLine: selectedOutputLine }),
               remnantClassification: form.outputClass === 'UsableRemnant' ? form.remnantClassification : null,
               productId: selectedProduct?.productId ?? '',
               expectedProductVersion: selectedProduct?.productVersion ?? '',
@@ -1298,7 +1310,7 @@ function FactSection({
   return (
     <section aria-labelledby="mfg-facts-heading" className={styles.section}>
       <h2 id="mfg-facts-heading">{FACT_FORM_TEXT.heading}</h2>
-      {closed ? <p className={styles.help}>{CLOSED_ORDER_TEXT}</p> : null}
+      {closed ? <p className={styles.help}>{order.status === 'Cancelled' ? CANCELLED_ORDER_TEXT : CLOSED_ORDER_TEXT}</p> : null}
 
       <AttemptNotice
         attempt={attempt}
@@ -1387,7 +1399,7 @@ function FactSection({
                   value={form.outputClass}
                   disabled={frozen}
                   onChange={(event) => update({
-                    outputClass: event.target.value as FormValues['outputClass'],
+                    outputClass: event.target.value as FormValues['outputClass'], outputLine: '',
                   })}
                 >
                   <option value="">{FACT_FORM_TEXT.choose}</option>
@@ -1396,6 +1408,18 @@ function FactSection({
                   ))}
                 </select>
               </div>
+              {selectableOutputLines.length > 0 ? (
+                <div className={styles.control}>
+                  <label htmlFor="mfg-output-line">{OUTPUT_INVENTORY_TEXT.outputLine}</label>
+                  <select id="mfg-output-line" value={form.outputLine} disabled={frozen}
+                    onChange={(event) => update({ outputLine: event.target.value })}>
+                    <option value="">{FACT_FORM_TEXT.choose}</option>
+                    {selectableOutputLines.map((line) => <option key={outputLineKey(line)} value={outputLineKey(line)}>
+                      {OUTPUT_INVENTORY_TEXT.outputLineLabel(line.kind, line.slitLineSequence, line.cutLineId)}
+                    </option>)}
+                  </select>
+                </div>
+              ) : null}
               {form.outputClass === 'UsableRemnant' ? (
                 <div className={styles.control}>
                   <label htmlFor="mfg-output-remnant-classification">

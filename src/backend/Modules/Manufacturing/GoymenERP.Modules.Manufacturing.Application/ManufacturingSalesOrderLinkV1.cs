@@ -87,6 +87,11 @@ public interface IManufacturingSalesOrderSupplyReadPortV1
 
     Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListOpenForSalesOrderAsync(Guid companyId,
         Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default);
+
+    /// <summary>URT-S7: linked open supply and retained cancelled orders. Cancelled is history, never open supply.</summary>
+    Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListLinkedForSalesOrderAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default) =>
+        ListOpenForSalesOrderAsync(companyId, salesOrderId, salesOrderLineIds, cancellationToken);
 }
 
 /// <summary>

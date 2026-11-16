@@ -1239,6 +1239,7 @@ export const SOURCE_PLAN_TEXT = {
     NoPlan: 'Henüz plan kaydedilmedi.',
   },
   linkedHeading: 'Bağlı belgeler',
+  cancelledProductionOrder: 'İptal edilen üretim emri:',
   linkedKind: { Production: 'Üretim', Purchasing: 'Satın alma' },
   linkedStatus: { None: 'yok', Present: 'açık belge var', Unreadable: 'okunamadı' },
   linkedUnreadable: 'Bağlı üretim ya da satın alma belgeleri okunamıyor; okunana kadar plan kaydedilemez (SAT-D254).',

@@ -40,7 +40,7 @@ public interface IManufacturingPlanReapprovalStore
 public sealed record CancelOrderRequestV1(long ExpectedVersion, string? Reason);
 
 /// <summary><c>POST /plans/{planId}/reapproval</c>: the plan version the caller read (the version after the release).</summary>
-public sealed record ReapprovePlanRequestV1(long ExpectedVersion);
+public sealed record ReapprovePlanRequestV1(long ExpectedVersion, IReadOnlyList<Guid>? SelectedLabelIds = null);
 
 public sealed partial class ManufacturingCommandService
 {
@@ -108,8 +108,11 @@ public sealed partial class ManufacturingCommandService
             return Task.FromResult(Invalid<PlanViewV1>("expectedVersion"));
         }
 
+        object canonical = new { planId, expectedVersion = request.ExpectedVersion };
+        if (request.SelectedLabelIds is { } selection)
+            canonical = new { planId, expectedVersion = request.ExpectedVersion, selectedLabelIds = selection.Order().ToArray() };
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReapprovePlan,
-            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
+            canonical, ManufacturingApiStatus.Ok,
             async (metadata, actor, companyId) =>
             {
                 if (planReapprovals is null || planAllocations is null)
@@ -128,6 +131,15 @@ public sealed partial class ManufacturingCommandService
                     // or Inventory; the store's domain decision refuses it again at the save. A missing or stale plan goes
                     // straight to the store, whose refusal (not found, version fence) is the key's answer.
                     current.RequireReapprovable();
+                    if (request.SelectedLabelIds is not { Count: > 0 } selected
+                        || selected.Contains(Guid.Empty) || selected.Distinct().Count() != selected.Count)
+                        return Invalid<PlanViewV1>("selectedLabelIds");
+                    // URT-D35: explicit user selection; this minimal D5 path admits only the unchanged planned labels.
+                    // D5b owns a changed label's recalculation and complete revision history.
+                    if (!selected.Order().SequenceEqual(current.Inputs.Select(input => input.ParentRollId).Order()))
+                        return new(ManufacturingApiStatus.Unprocessable, null, false,
+                            ManufacturingRuleCodes.PlanReapprovalLabelMismatch);
+
                     if (current.IsPreparedBy(actor))
                     {
                         return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
