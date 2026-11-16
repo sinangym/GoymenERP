@@ -20,7 +20,7 @@ public sealed partial class ManufacturingCommandServiceTests
         movements.Snapshot = movements.Snapshot with { Issues = [movements.Snapshot.Issues[0] with { StampedUnitCostUsd = 1m, UsdStampVersion = "synthetic-usd-stamp:3" }] };
         var prices = new CostPrices { Entries = [MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new(2026, 10), new(2m), "synthetic-author", weighedAt)] };
         var rates = new CostUsdRateOwner(40m);
-        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, movements, new CostPolicyOwner(), prices, rates);
+        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, movements, new CostPolicyOwner(), prices, rates, new CostNonKgOwner(order));
         var read = await source.ReadAsync(Company, order.Id, CancellationToken.None);
         Assert.Equal(new DateOnly(2026, 10, 1), Assert.Single(rates.Days));
         Assert.Equal(2m, Assert.Single(read.Input!.Cost.ScrapWeighings).Price.TlPerKg);
@@ -43,7 +43,7 @@ public sealed partial class ManufacturingCommandServiceTests
         var month = ManufacturingBusinessDay.DateOf(At); var movements = new CostMovementOwner(order);
         var prices = new CostPrices { Entries = [MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new(month.Year, month.Month), new(10m), "synthetic-author", At)] };
         var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, movements, new CostPolicyOwner(), prices,
-            new CostUsdRateOwner(0.0000000000000000000000000001m));
+            new CostUsdRateOwner(0.0000000000000000000000000001m), new CostNonKgOwner(order));
         var read = await source.ReadAsync(Company, order.Id, CancellationToken.None);
         Assert.Equal(ManufacturingScrapCostDistributionSourceStatusV1.Found, read.Status); Assert.Null(read.UsdInput);
         Assert.Equal("scrap_usd_exchange_rate_unavailable", read.UsdUnavailableReason);
@@ -62,7 +62,7 @@ public sealed partial class ManufacturingCommandServiceTests
     {
         var fixture = new Fixture(); var order = await fixture.BalancedOrderAsync(); order.Close(order.Version, Actor, At.AddDays(1));
         var owner = new CostMovementOwner(order); var policy = new CostPolicyOwner(); var prices = new CostPrices();
-        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, owner, policy, prices);
+        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, owner, policy, prices, nonKgInputs: new CostNonKgOwner(order));
         var read = await source.ReadAsync(Company, order.Id, CancellationToken.None);
         Assert.Equal(ManufacturingScrapCostDistributionSourceStatusV1.Found, read.Status);
         Assert.Equal(owner.Snapshot.Issues[0].MovementId, Assert.Single(read.Input!.Cost.Issues).IssueMovementId);
@@ -88,7 +88,7 @@ public sealed partial class ManufacturingCommandServiceTests
         if (fault == "fact-identity") owner.Snapshot = owner.Snapshot with { Issues = [owner.Snapshot.Issues[0] with { FactId = Guid.NewGuid() }] };
         if (fault == "mass") owner.Snapshot = owner.Snapshot with { Issues = [owner.Snapshot.Issues[0] with { Mass = new Kilograms(99m) }] };
         var policy = new CostPolicyOwner();
-        var read = await new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, owner, policy, new CostPrices())
+        var read = await new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, owner, policy, new CostPrices(), nonKgInputs: new CostNonKgOwner(order))
             .ReadAsync(Company, order.Id, CancellationToken.None);
         Assert.Equal(ManufacturingScrapCostDistributionSourceStatusV1.Unavailable, read.Status); Assert.Null(read.Input);
         Assert.Equal(0, policy.Reads);
@@ -105,7 +105,7 @@ public sealed partial class ManufacturingCommandServiceTests
         order.Close(order.Version, Actor, boundary.AddDays(1));
         var october = MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new(2026, 10), new(2m), "synthetic-author", boundary.AddDays(1));
         var prices = new CostPrices { Entries = [october] };
-        var read = await new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, new CostMovementOwner(order), new CostPolicyOwner(), prices)
+        var read = await new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, new CostMovementOwner(order), new CostPolicyOwner(), prices, nonKgInputs: new CostNonKgOwner(order))
             .ReadAsync(Company, order.Id, CancellationToken.None);
         Assert.Equal(ManufacturingScrapCostDistributionSourceStatusV1.Found, read.Status);
         Assert.Equal(2m, Assert.Single(read.Input!.Cost.ScrapWeighings).Price.TlPerKg);
@@ -118,9 +118,39 @@ public sealed partial class ManufacturingCommandServiceTests
         var fixture = new Fixture(); var order = await fixture.BalancedOrderAsync(); order.Close(order.Version, Actor, At.AddDays(1));
         var owner = new CostMovementOwner(order);
         owner.Snapshot = owner.Snapshot with { Issues = [owner.Snapshot.Issues[0] with { Status = IssueCostReadStatus.Unreadable, StampedUnitCostTl = null }] };
-        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, owner, new CostPolicyOwner(), new CostPrices());
+        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, owner, new CostPolicyOwner(), new CostPrices(), nonKgInputs: new CostNonKgOwner(order));
         var result = await new ManufacturingProductionCostPort(source).ReadAsync(Company, order.Id, CancellationToken.None);
         Assert.Equal(ManufacturingScrapCostDistributionStatusV1.Unreadable, result.Status); Assert.Null(result.InputTotalTl); Assert.Empty(result.Lines);
+    }
+
+    [Fact]
+    public async Task Only_actual_non_kg_facts_enable_cost_notes_and_corrections_preserve_the_original_measurement()
+    {
+        var fixture = new Fixture(); var order = await fixture.BalancedOrderAsync(); order.Close(order.Version, Actor, At.AddDays(1));
+        var paint = new ManufacturingNonKgInputConsumptionV1(Guid.NewGuid(), 1, ManufacturingNonKgInputKindV1.Paint, "Gerçek boya",
+            ManufacturingNonKgInputUnitV1.Litre, "2.25", At, null, "Gerçek tartım");
+        var other = new ManufacturingNonKgInputConsumptionV1(Guid.NewGuid(), 2, ManufacturingNonKgInputKindV1.Other, "Gerçek ambalaj",
+            ManufacturingNonKgInputUnitV1.Piece, "3", At, null, "Gerçek sarf");
+        var zero = paint with { FactId = Guid.NewGuid(), Revision = 3, Quantity = "0", ReplacesFactId = paint.FactId, Reason = "Yanlış boya kaydı düzeltmesi" };
+        var actual = new CostNonKgOwner(order) { Facts = [paint, other, zero] };
+        var read = await new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, new CostMovementOwner(order),
+            new CostPolicyOwner(), new CostPrices(), nonKgInputs: actual).ReadAsync(Company, order.Id, CancellationToken.None);
+        Assert.Equal(NonKgInputUse.Other, read.Input!.Cost.NonKgInput);
+        var result = ProductionCostRoundingCalculatorV1.Round(read.Input);
+        Assert.Equal(1000m, result.InputTotalTl); Assert.NotNull(result.Distribution!.Cost!.NonKgInputCostNote); Assert.Null(result.Distribution.Cost.PaintCostNote);
+        Assert.Equal("2.25", paint.Quantity);
+        var absent = await new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, new CostMovementOwner(order),
+            new CostPolicyOwner(), new CostPrices()).ReadAsync(Company, order.Id, CancellationToken.None);
+        Assert.Equal(ManufacturingScrapCostDistributionSourceStatusV1.Unavailable, absent.Status);
+    }
+
+    private sealed class CostNonKgOwner(ProductionOrder order) : IManufacturingNonKgInputStoreV1
+    {
+        public IReadOnlyList<ManufacturingNonKgInputConsumptionV1> Facts { get; init; } = [];
+        public Task<ManufacturingNonKgInputHistoryV1?> ReadNonKgInputsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ManufacturingNonKgInputHistoryV1?>(new(order.CompanyId, orderId, order.Version, Facts.LastOrDefault()?.Revision ?? 0, Facts));
+        public Task<ManufacturingNonKgInputHistoryV1> RecordNonKgInputAsync(Guid orderId, long expectedVersion, long expectedRevision,
+            ManufacturingNonKgInputConsumptionV1 fact, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class CostMovementOwner : IManufacturingCostMovementReadPortV1

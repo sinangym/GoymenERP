@@ -60,6 +60,7 @@ public sealed record ManufacturingScrapCostDistributionSourceReadV1(
 {
     public ManufacturingCostInputProvenanceV1? Provenance { get; init; }
     public ManufacturingCostMovementSnapshotV1? MovementEvidence { get; init; }
+    public ManufacturingNonKgInputHistoryV1? NonKgEvidence { get; init; }
     public ProductionScrapCostDistributionInput? UsdInput { get; init; }
     public IReadOnlyList<ManufacturingScrapUsdRateSnapshotV1> UsdRateEvidence { get; init; } = [];
     public string? UsdUnavailableReason { get; init; }

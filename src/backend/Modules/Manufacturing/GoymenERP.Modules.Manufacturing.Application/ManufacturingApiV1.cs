@@ -549,7 +549,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingOrderReopeningInventoryPortV1? reopeningInventory = null,
     IManufacturingCostGenerationStoreV1? costGenerations = null,
     IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null,
-    IManufacturingScrapCostDistributionSourceV1? costSource = null)
+    IManufacturingScrapCostDistributionSourceV1? costSource = null,
+    IManufacturingNonKgInputStoreV1? nonKgInputs = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the

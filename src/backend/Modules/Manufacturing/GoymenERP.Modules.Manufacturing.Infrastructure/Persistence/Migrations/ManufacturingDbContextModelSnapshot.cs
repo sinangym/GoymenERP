@@ -444,6 +444,76 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.NonKgInputRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("FactId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Item")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Quantity")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("ReplacesFactId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Unit")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "OrderId", "Revision");
+
+                    b.HasIndex("CompanyId", "FactId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "OrderId", "ReplacesFactId")
+                        .IsUnique()
+                        .HasFilter("[ReplacesFactId] IS NOT NULL");
+
+                    b.ToTable("NonKgInputFacts", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_NonKgInputFacts_Shape", "[Revision] > 0 AND [Kind] IN (1,2) AND [Unit] IN (1,2,3) AND ([Kind] <> 1 OR [Unit] = 1) AND LEN([Item]) > 0 AND LEN([Quantity]) > 0 AND LEN([Reason]) > 0 AND ([ReplacesFactId] IS NULL OR [ReplacesFactId] <> [FactId]) AND ([Quantity] <> '0' OR [ReplacesFactId] IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1983,6 +2053,22 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.NonKgInputRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.NonKgInputRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId", "ReplacesFactId")
+                        .HasPrincipalKey("CompanyId", "OrderId", "FactId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrderClosureDecisionRow", b =>

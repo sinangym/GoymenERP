@@ -982,6 +982,25 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/orders/{orderId:guid}/non-kg-inputs", async (Guid orderId, ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+            {
+                SetPrivateNoStore(http.Response.Headers);
+                return ToHttpResult(http, await service.GetNonKgInputsAsync(orderId, token), null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderNonKgInputsV1").Produces<ManufacturingNonKgInputHistoryV1>()
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/orders/{orderId:guid}/non-kg-inputs", async (Guid orderId, RecordManufacturingNonKgInputRequestV1 request,
+                ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+            await WriteAsync(http, key => service.RecordNonKgInputAsync(orderId, request, key, token)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("RecordManufacturingOrderNonKgInputV1").Accepts<RecordManufacturingNonKgInputRequestV1>("application/json")
+            .Produces<ManufacturingNonKgInputHistoryV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes).ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         group.MapGet("/orders/{orderId:guid}/production-cost-usd", async (Guid orderId, ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
             {
                 SetPrivateNoStore(http.Response.Headers);

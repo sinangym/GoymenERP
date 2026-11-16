@@ -46,7 +46,8 @@ public sealed record ManufacturingScrapUsdRateSnapshotV1(Guid CompanyId, DateOnl
 /// </summary>
 public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext companyContext, IManufacturingOrderStore orders,
     IManufacturingCostMovementReadPortV1 movements, IManufacturingScrapCostPolicyReadPortV1 policy,
-    IManufacturingMonthlyScrapPriceStore prices, IManufacturingScrapUsdRateReadPortV1? usdRates = null) : IManufacturingScrapCostDistributionSourceV1
+    IManufacturingMonthlyScrapPriceStore prices, IManufacturingScrapUsdRateReadPortV1? usdRates = null,
+    IManufacturingNonKgInputStoreV1? nonKgInputs = null) : IManufacturingScrapCostDistributionSourceV1
 {
     public async Task<ManufacturingScrapCostDistributionSourceReadV1> ReadAsync(Guid companyId, Guid orderId, CancellationToken cancellationToken)
     {
@@ -58,6 +59,20 @@ public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext company
             if (order is null) return new(ManufacturingScrapCostDistributionSourceStatusV1.NotFound, companyId, orderId, null);
             if (order.CompanyId != companyId || order.Id != orderId) return Unavailable();
             var version = order.Version;
+            // Inventory's kg-only movements cannot prove absence of paint/other non-kg consumption.
+            // Read actual Manufacturing facts; a missing provider is not an empty successful history.
+            if (nonKgInputs is null) return Unavailable();
+            var consumption = await nonKgInputs.ReadNonKgInputsAsync(orderId, cancellationToken);
+            if (!await FreshAsync(version) || consumption is null || consumption.CompanyId != companyId
+                || consumption.OrderId != orderId || consumption.OrderVersion != version || consumption.Facts is null) return Unavailable();
+            consumption.RequireValid();
+            var replaced = consumption.Facts.Where(fact => fact.ReplacesFactId is not null).Select(fact => fact.ReplacesFactId!.Value).ToHashSet();
+            foreach (var fact in consumption.Facts) fact.RequireValid();
+            var actual = consumption.Facts.Where(fact => !replaced.Contains(fact.FactId) && fact.Quantity != "0").ToArray();
+            var paint = actual.Any(fact => fact.Kind == ManufacturingNonKgInputKindV1.Paint);
+            var other = actual.Any(fact => fact.Kind == ManufacturingNonKgInputKindV1.Other);
+            var nonKg = (paint, other) switch { (true, true) => NonKgInputUse.PaintLitresAndOther,
+                (true, false) => NonKgInputUse.PaintLitres, (false, true) => NonKgInputUse.Other, _ => NonKgInputUse.None };
             var stock = await movements.ReadAsync(companyId, orderId, cancellationToken);
             if (!await FreshAsync(version)) return Unavailable();
             if (stock is null || stock.CompanyId != companyId || stock.OrderId != orderId || string.IsNullOrWhiteSpace(stock.SourceVersion)
@@ -120,12 +135,13 @@ public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext company
             var cost = LegacyClosureCostV1.WithClosureMeasure(new(order.Status == OrderStatus.Closed, issueInputs, returnInputs,
                 Total(OutputClass.GoodProduct), Total(OutputClass.SecondQuality),
                 Total(OutputClass.UsableRemnant), scrapInputs, Total(OutputClass.ProcessLoss),
-                selectedPolicy.IncludeScrapCost ? ScrapCostSettingStatus.On : ScrapCostSettingStatus.Off, stock.NonKgInputs), order);
+                selectedPolicy.IncludeScrapCost ? ScrapCostSettingStatus.On : ScrapCostSettingStatus.Off, nonKg), order);
             var input = new ProductionScrapCostDistributionInput(cost, outputInputs);
             if (!await FreshAsync(version)) return Unavailable();
             var orderedPrices = priceSnapshots.OrderBy(entry => entry.Year).ThenBy(entry => entry.Month).ToArray();
             var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
-                { companyId, orderId, version, stock.SourceVersion, policyVersion = selectedPolicy.SourceVersion, input, prices = orderedPrices }))).ToLowerInvariant();
+                { companyId, orderId, version, stock.SourceVersion, policyVersion = selectedPolicy.SourceVersion, input, prices = orderedPrices,
+                    nonKgRevision = consumption.Revision, nonKgFacts = consumption.Facts }))).ToLowerInvariant();
             // USD is an independent display dimension. Its absence never changes the TL input or its recognition fingerprint.
             ProductionScrapCostDistributionInput? usdInput = null; var usdReasons = new List<string>();
             var usdSnapshots = new List<ManufacturingScrapUsdRateSnapshotV1>();
@@ -159,7 +175,7 @@ public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext company
             if (usdReasons.Count == 0) usdInput = new(cost with { Issues = usdIssues, ScrapWeighings = usdWeighings }, outputInputs);
             return new(ManufacturingScrapCostDistributionSourceStatusV1.Found, companyId, orderId, input)
             { Provenance = new(version, stock.SourceVersion, selectedPolicy.SourceVersion, orderedPrices, fingerprint), MovementEvidence = stock,
-                UsdInput = usdInput, UsdRateEvidence = usdSnapshots, UsdUnavailableReason = usdReasons.FirstOrDefault() };
+                NonKgEvidence = consumption, UsdInput = usdInput, UsdRateEvidence = usdSnapshots, UsdUnavailableReason = usdReasons.FirstOrDefault() };
 
             Kilograms Total(OutputClass outputClass) => order.PlannedInputs.Aggregate(Kilograms.Zero,
                 (sum, input) => sum + order.BalanceOf(input.ParentRollId).OutputOf(outputClass));

@@ -523,3 +523,21 @@ history with a single legacy close per order remains reversible. Registration ad
 Pending/unreadable results carry no fictional money; later recognition retains the generation identity and appends a revision.
 Reopening records the Inventory owner's exact reversal before a second close creates a new generation.
 Down guard **51960** refuses while any generation history exists (forward fix); an empty table may be dropped.
+
+### Actual non-kg consumption — URT-SC36 / URT-D45, SAT-D327
+
+`GET/POST /api/v1/manufacturing/orders/{orderId}/non-kg-inputs` reads the company's actual consumption history and
+records the material description, kind, unit, exact decimal-text quantity, UTC time and reason. The existing
+`manufacturing.facts.record` permission writes; orders read releases the history. Painting-engine estimates are never
+actual consumption. These facts create no duplicate Inventory movement and apply no non-kg money or mass conversion.
+
+Facts are append-only. A correction references the still-active original fact in the same company/order and unit;
+the previous quantity is retained. A zero replacement can correct a mistaken entry without deleting it. The expected
+order version fences close/cancel; an independent expected consumption revision serializes writes. The parent metadata
+update is explicitly marked modified even for a fixed clock. Fact, audit and ADR-011 reply share the owner transaction.
+
+The cost composition source reads this actual history and snapshots it in cost evidence. Only active, nonzero facts
+enable the existing paint/non-kg cost-exclusion notes; no provider is never treated as a proven empty history.
+Migration `20261116234916_AddManufacturingNonKgInputFacts` was generated with `dotnet ef`, including same-company order
+and self-replacement foreign keys. Up is DDL only; Down first refuses with **THROW 51963** while any fact exists.
+No database was changed. Unit, SQL/HTTP and frontend test sources are written; runtime is **NOT_RUN**.

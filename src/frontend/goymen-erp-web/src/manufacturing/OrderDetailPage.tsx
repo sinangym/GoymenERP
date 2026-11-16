@@ -79,6 +79,7 @@ import { OrderCostTracePanel } from './OrderCostTracePanel'
 import { OrderCostPanel } from './OrderCostPanel'
 import { CostGenerationPanel } from './CostGenerationPanel'
 import { OrderUsdCostPanel } from './OrderUsdCostPanel'
+import { NonKgInputPanel } from './NonKgInputPanel'
 import { OrderLineagePanel } from './OrderLineagePanel'
 import { OutputCorrectionSection } from './OutputCorrectionSection'
 import { OrderCancelSection } from './OrderCancelSection'
@@ -280,6 +281,9 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         orderId={order.orderId}
         orderVersion={order.version}
       />
+      <NonKgInputPanel key={`${namespace}:${order.orderId}:non-kg`} namespace={namespace ?? 'no-context'} routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version}
+        canRecord={canRecord && !reopenLocked && order.status === 'Open'} onRefresh={refresh} />
       {canRecord && !reopenLocked ? (
         <FactSection
           order={order}
