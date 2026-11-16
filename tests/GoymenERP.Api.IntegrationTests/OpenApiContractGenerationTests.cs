@@ -725,12 +725,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/sales/drafts/{id}/submission", "SubmitSalesOrderDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
-        // SALES-A1: the internal-approval state command (strict {expectedVersion} body, replayable 200/409).
+        // SALES-A1 / KLN-D105: accepted-revision supply reduction also replays terminal 422 answers.
         new("post", "/api/v1/sales/drafts/{id}/approval", "ApproveSalesOrderDraftV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/sales/drafts/{id}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
         // SAT-D115 (EK14): the customer rejection (reason required, replayable 200/409; 422 for the reason, not recorded).
         new("post", "/api/v1/sales/drafts/{id}/customer-rejection", "RecordSalesOrderDraftCustomerRejectionV1",
@@ -2150,6 +2150,31 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/RecordSettingsReferenceListEntryRequestV1",
             ["path:entryId:true:type:string;format:uuid"]),
+        // W6: generated owner contracts for future supply, label PDF, transfers and money profiles.
+        new("post", "/api/v1/inventory/future-allocations", "CreateInventoryFutureAllocationV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateFutureSupplyAllocationV1"),
+        new("post", "/api/v1/inventory/labels/{labelId}/pdf", "GenerateInventoryLabelPdfV1",
+            AuthenticatedResponses("200:application/pdf", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/GenerateInventoryLabelPdfV1",
+            ["path:labelId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/settings/money-profiles", "GetSettingsMoneyProfilesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/inventory/sales-orders/{salesOrderId}/lines/{salesOrderLineId}/future-allocations", "ListInventoryFutureAllocationsByDemandV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:salesOrderId:true:type:string;format:uuid", "path:salesOrderLineId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/sales-orders/{salesOrderId}/lines/{salesOrderLineId}/future-supply-options", "ListInventoryFutureSupplyOptionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:salesOrderId:true:type:string;format:uuid", "path:salesOrderLineId:true:type:string;format:uuid", "query:cursor:false:type:string"]),
+        new("get", "/api/v1/inventory/transfers", "ListInventoryTransfersV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/settings/money-profiles/versions", "RecordSettingsMoneyProfileV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordMoneyProfileRequestV1"),
+        new("post", "/api/v1/inventory/future-allocations/{allocationId}/release", "ReleaseInventoryFutureAllocationV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ReleaseFutureSupplyAllocationV1",
+            ["path:allocationId:true:type:string;format:uuid"]),
         .. ProductOperations,
     ];
 
@@ -2757,6 +2782,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSettingsScrapKindListV1"] = "ref:SettingsReferenceListViewV1",
             ["CreateSettingsScrapKindEntryV1"] = "none",
             ["RecordSettingsScrapKindEntryVersionV1"] = "none",
+            ["CreateInventoryFutureAllocationV1"] = "ref:InventoryFutureAllocationViewV1",
+            ["GenerateInventoryLabelPdfV1"] = "ref:Stream",
+            ["GetSettingsMoneyProfilesV1"] = "ref:MoneyProfileViewV1",
+            ["ListInventoryFutureAllocationsByDemandV1"] = "ref:InventoryFutureAllocationListV1",
+            ["ListInventoryFutureSupplyOptionsV1"] = "ref:InventoryFutureSupplyOptionsV1",
+            ["ListInventoryTransfersV1"] = "ref:InventoryTransferDisplayListV1",
+            ["RecordSettingsMoneyProfileV1"] = "none",
+            ["ReleaseInventoryFutureAllocationV1"] = "ref:InventoryFutureAllocationViewV1",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -3345,6 +3378,14 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSettingsScrapKindListV1",
         "CreateSettingsScrapKindEntryV1",
         "RecordSettingsScrapKindEntryVersionV1",
+        "CreateInventoryFutureAllocationV1",
+        "GenerateInventoryLabelPdfV1",
+        "GetSettingsMoneyProfilesV1",
+        "ListInventoryFutureAllocationsByDemandV1",
+        "ListInventoryFutureSupplyOptionsV1",
+        "ListInventoryTransfersV1",
+        "RecordSettingsMoneyProfileV1",
+        "ReleaseInventoryFutureAllocationV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -3668,6 +3709,10 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordSettingsPaintColorEntryVersionV1",
         "CreateSettingsScrapKindEntryV1",
         "RecordSettingsScrapKindEntryVersionV1",
+        "CreateInventoryFutureAllocationV1",
+        "GenerateInventoryLabelPdfV1",
+        "RecordSettingsMoneyProfileV1",
+        "ReleaseInventoryFutureAllocationV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -3869,8 +3914,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
-                ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
-                ["RecordSalesOrderDraftCustomerAcceptanceV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["RecordSalesOrderDraftCustomerAcceptanceV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["RecordSalesOrderDraftCustomerRejectionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RequestSalesOrderDraftRemainderChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ApproveSalesOrderDraftRemainderChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -4148,6 +4193,10 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordSettingsPaintColorEntryVersionV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateSettingsScrapKindEntryV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict],
                 ["RecordSettingsScrapKindEntryVersionV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CreateInventoryFutureAllocationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["GenerateInventoryLabelPdfV1"] = [StatusCodes.Status200OK],
+                ["RecordSettingsMoneyProfileV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ReleaseInventoryFutureAllocationV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -4566,6 +4615,10 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordSettingsPaintColorEntryVersionV1",
         "CreateSettingsScrapKindEntryV1",
         "RecordSettingsScrapKindEntryVersionV1",
+        "CreateInventoryFutureAllocationV1",
+        "GenerateInventoryLabelPdfV1",
+        "RecordSettingsMoneyProfileV1",
+        "ReleaseInventoryFutureAllocationV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -4863,6 +4916,10 @@ public sealed partial class OpenApiContractGenerationTests
         "ApprovePurchaseSupplierReturnCostExceptionV1:404",
         "RejectPurchaseSupplierReturnCostExceptionV1:404",
         "GetPurchaseSupplierReturnV1:404",
+        "CreateInventoryFutureAllocationV1:404",
+        "GenerateInventoryLabelPdfV1:404",
+        "ListInventoryFutureSupplyOptionsV1:404",
+        "ReleaseInventoryFutureAllocationV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -5084,6 +5141,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordSettingsPaintColorEntryVersionV1:400",
         "CreateSettingsScrapKindEntryV1:400",
         "RecordSettingsScrapKindEntryVersionV1:400",
+        "RecordSettingsMoneyProfileV1:400",
     ];
 
     // MFG-API (#313): every Manufacturing write advertises the endpoint's one conflict and one
@@ -5371,7 +5429,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReviseManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position",
                     "manufacturing_plan_net_width_exceeds_parent", "manufacturing_plan_process_fixed",
-                    "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
+                    "manufacturing_plan_reapproval_settings_changed", "manufacturing_plan_revision_no_change",
+                    "manufacturing_plan_sales_order_party_mismatch", "manufacturing_plan_slitting_spec_fixed"],
             // Üretim U2-a: the approval reads each roll's current label for the slitting gate (Inventory's 409s join).
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             // Üretim U3-a (URT-D21, URT-D3): the approval allocates the inputs in Inventory at the label version read
@@ -5439,10 +5498,25 @@ public sealed partial class OpenApiContractGenerationTests
             ["SubmitSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["SubmitSalesOrderDraftV1:409"] = ["concurrent_change", "sales_quote_request_not_approved", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ApproveSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["ApproveSalesOrderDraftV1:409"] = ["concurrent_change", "sales_quote_request_not_approved", "sales_revision_blocked", "sales_revision_future_allocation_present", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ApproveSalesOrderDraftV1:409"] =
+            [
+                "concurrent_change", "inventory_allocation_state_conflict", "inventory_allocation_version_conflict",
+                "inventory_concurrent_change", "inventory_future_allocation_physical_release_unavailable", "purchasing_line_busy",
+                "sales_order_line_busy", "sales_quote_request_not_approved", "sales_revision_blocked",
+                "sales_revision_future_allocation_present", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["ApproveSalesOrderDraftV1:422"] =
+                ["inventory_future_allocation_release_selection_invalid", "inventory_future_allocation_unit_conversion_unavailable"],
             ["RecordSalesOrderDraftCustomerAcceptanceV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["RecordSalesOrderDraftCustomerRejectionV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["RecordSalesOrderDraftCustomerAcceptanceV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["RecordSalesOrderDraftCustomerAcceptanceV1:409"] =
+            [
+                "concurrent_change", "inventory_allocation_state_conflict", "inventory_allocation_version_conflict",
+                "inventory_concurrent_change", "inventory_future_allocation_physical_release_unavailable", "purchasing_line_busy",
+                "sales_order_line_busy", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["RecordSalesOrderDraftCustomerAcceptanceV1:422"] =
+                ["inventory_future_allocation_release_selection_invalid", "inventory_future_allocation_unit_conversion_unavailable"],
             ["RecordSalesOrderDraftCustomerRejectionV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["RecordSalesOrderDraftCustomerRejectionV1:422"] = ["validation_failed"],
             ["RequestSalesOrderDraftRemainderChangeV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -6288,7 +6362,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesCustomerReturnInstallmentsV1:503"] = ["sales_customer_return_finance_port_unavailable"],
             ["ReapproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ReapproveManufacturingPlanV1:409"] = ["idempotency_conflict", "inventory_label_detail_read_conflict", "inventory_label_version_conflict", "inventory_manufacturing_allocation_insufficient_free_stock", "inventory_manufacturing_allocation_owner_mismatch", "inventory_manufacturing_input_return_exceeds_issued", "inventory_manufacturing_output_label_already_registered", "inventory_manufacturing_output_lot_or_label_conflict", "inventory_manufacturing_parent_input_not_issued", "inventory_manufacturing_parent_label_context_conflict", "inventory_manufacturing_parent_label_not_releasable", "inventory_manufacturing_parent_label_version_conflict", "inventory_manufacturing_physical_stock_insufficient", "inventory_manufacturing_realization_concurrent_change", "inventory_manufacturing_realization_idempotency_conflict", "inventory_parent_roll_read_conflict", "manufacturing_concurrent_change", "manufacturing_fact_id_conflict", "manufacturing_order_id_conflict", "manufacturing_plan_allocation_label_identity_changed", "manufacturing_plan_allocation_label_not_found", "manufacturing_plan_id_conflict", "manufacturing_version_conflict"],
-            ["ReapproveManufacturingPlanV1:422"] = ["inventory_location_inactive", "inventory_location_not_found", "inventory_product_ineligible", "manufacturing_closure_approval_invalid", "manufacturing_closure_approval_required", "manufacturing_closure_approval_unexpected", "manufacturing_closure_fire_declaration_required", "manufacturing_closure_fire_mass_mismatch", "manufacturing_closure_negative_difference_review", "manufacturing_closure_net_issued_mass_mismatch", "manufacturing_closure_output_exceeds_input", "manufacturing_closure_policy_invalid", "manufacturing_closure_policy_not_effective", "manufacturing_closure_policy_scope_mismatch", "manufacturing_closure_roll_input_invalid", "manufacturing_duplicate_roll_in_plan", "manufacturing_input_already_issued", "manufacturing_kilogram_precision_exceeded", "manufacturing_kilogram_profile_company_mismatch", "manufacturing_kilogram_profile_invalid", "manufacturing_kilogram_profile_not_in_effect", "manufacturing_mass_negative", "manufacturing_mass_scale_exceeded", "manufacturing_order_cancelled", "manufacturing_order_closed", "manufacturing_output_already_declared", "manufacturing_plan_cancelled", "manufacturing_plan_engine_refused", "manufacturing_plan_label_not_usable", "manufacturing_plan_not_approved", "manufacturing_plan_not_draft", "manufacturing_plan_order_exists", "manufacturing_plan_parameters_unavailable", "manufacturing_plan_reapproval_not_required", "manufacturing_plan_reapproval_settings_changed", "manufacturing_plan_self_approval", "manufacturing_plan_winding_does_not_fit", "manufacturing_plan_without_inputs", "manufacturing_return_already_recorded", "manufacturing_return_exceeds_issued", "manufacturing_return_exceeds_unconsumed", "manufacturing_roll_not_in_order", "manufacturing_roll_not_issued", "manufacturing_slitting_spec_without_lines", "manufacturing_stored_record_invalid", "manufacturing_unexplained_difference", "manufacturing_value_does_not_fit", "manufacturing_wip_already_measured", "manufacturing_wip_measurement_not_latest", "manufacturing_work_center_not_found", "settings_manufacturing_tolerance_profile_not_found", "settings_unit_profile_not_found"],
+            ["ReapproveManufacturingPlanV1:422"] = ["inventory_location_inactive", "inventory_location_not_found", "inventory_product_ineligible", "manufacturing_closure_approval_invalid", "manufacturing_closure_approval_required", "manufacturing_closure_approval_unexpected", "manufacturing_closure_fire_declaration_required", "manufacturing_closure_fire_mass_mismatch", "manufacturing_closure_negative_difference_review", "manufacturing_closure_net_issued_mass_mismatch", "manufacturing_closure_output_exceeds_input", "manufacturing_closure_policy_invalid", "manufacturing_closure_policy_not_effective", "manufacturing_closure_policy_scope_mismatch", "manufacturing_closure_roll_input_invalid", "manufacturing_duplicate_roll_in_plan", "manufacturing_input_already_issued", "manufacturing_kilogram_precision_exceeded", "manufacturing_kilogram_profile_company_mismatch", "manufacturing_kilogram_profile_invalid", "manufacturing_kilogram_profile_not_in_effect", "manufacturing_mass_negative", "manufacturing_mass_scale_exceeded", "manufacturing_order_cancelled", "manufacturing_order_closed", "manufacturing_output_already_declared", "manufacturing_plan_cancelled", "manufacturing_plan_engine_refused", "manufacturing_plan_label_not_usable", "manufacturing_plan_not_approved", "manufacturing_plan_not_draft", "manufacturing_plan_order_exists", "manufacturing_plan_parameters_unavailable", "manufacturing_plan_reapproval_label_mismatch", "manufacturing_plan_reapproval_not_required", "manufacturing_plan_reapproval_settings_changed", "manufacturing_plan_self_approval", "manufacturing_plan_winding_does_not_fit", "manufacturing_plan_without_inputs", "manufacturing_return_already_recorded", "manufacturing_return_exceeds_issued", "manufacturing_return_exceeds_unconsumed", "manufacturing_roll_not_in_order", "manufacturing_roll_not_issued", "manufacturing_slitting_spec_without_lines", "manufacturing_stored_record_invalid", "manufacturing_unexplained_difference", "manufacturing_value_does_not_fit", "manufacturing_wip_already_measured", "manufacturing_wip_measurement_not_latest", "manufacturing_work_center_not_found", "settings_manufacturing_tolerance_profile_not_found", "settings_unit_profile_not_found"],
             ["CorrectManufacturingOutputV1:400"] = ["inventory_manufacturing_realization_invalid_request", "inventory_manufacturing_realization_quantity_invalid", "inventory_manufacturing_realization_version_invalid", "manufacturing_request_invalid"],
             ["CorrectManufacturingOutputV1:409"] = ["idempotency_conflict", "inventory_manufacturing_input_return_exceeds_issued", "inventory_manufacturing_output_label_already_registered", "inventory_manufacturing_output_lot_or_label_conflict", "inventory_manufacturing_parent_input_not_issued", "inventory_manufacturing_parent_label_context_conflict", "inventory_manufacturing_parent_label_not_releasable", "inventory_manufacturing_parent_label_version_conflict", "inventory_manufacturing_physical_stock_insufficient", "inventory_manufacturing_realization_concurrent_change", "inventory_manufacturing_realization_idempotency_conflict", "manufacturing_concurrent_change", "manufacturing_fact_id_conflict", "manufacturing_inventory_realization_incomplete", "manufacturing_order_id_conflict", "manufacturing_output_correction_allocated", "manufacturing_output_correction_blocked", "manufacturing_output_correction_exceeds_produced", "manufacturing_output_correction_issued_to_manufacturing", "manufacturing_output_correction_label_unreadable", "manufacturing_output_correction_not_free", "manufacturing_output_correction_shipped", "manufacturing_output_correction_transferred", "manufacturing_plan_id_conflict", "manufacturing_version_conflict"],
             ["CorrectManufacturingOutputV1:422"] = ["inventory_location_inactive", "inventory_location_not_found", "inventory_product_ineligible", "manufacturing_closure_approval_invalid", "manufacturing_closure_approval_required", "manufacturing_closure_approval_unexpected", "manufacturing_closure_fire_declaration_required", "manufacturing_closure_fire_mass_mismatch", "manufacturing_closure_negative_difference_review", "manufacturing_closure_net_issued_mass_mismatch", "manufacturing_closure_output_exceeds_input", "manufacturing_closure_policy_invalid", "manufacturing_closure_policy_not_effective", "manufacturing_closure_policy_scope_mismatch", "manufacturing_closure_roll_input_invalid", "manufacturing_duplicate_roll_in_plan", "manufacturing_input_already_issued", "manufacturing_kilogram_precision_exceeded", "manufacturing_kilogram_profile_company_mismatch", "manufacturing_kilogram_profile_invalid", "manufacturing_kilogram_profile_not_in_effect", "manufacturing_mass_negative", "manufacturing_mass_scale_exceeded", "manufacturing_order_cancelled", "manufacturing_order_closed", "manufacturing_output_already_declared", "manufacturing_output_line_missing", "manufacturing_output_not_declared", "manufacturing_output_reversal_already_recorded", "manufacturing_output_reversal_exceeds_declared", "manufacturing_plan_engine_refused", "manufacturing_plan_label_not_usable", "manufacturing_plan_not_approved", "manufacturing_plan_not_draft", "manufacturing_plan_parameters_unavailable", "manufacturing_plan_winding_does_not_fit", "manufacturing_plan_without_inputs", "manufacturing_return_already_recorded", "manufacturing_return_exceeds_issued", "manufacturing_return_exceeds_unconsumed", "manufacturing_roll_not_in_order", "manufacturing_roll_not_issued", "manufacturing_slitting_spec_without_lines", "manufacturing_stored_record_invalid", "manufacturing_unexplained_difference", "manufacturing_value_does_not_fit", "manufacturing_wip_already_measured", "manufacturing_wip_measurement_not_latest", "manufacturing_work_center_not_found", "settings_manufacturing_tolerance_profile_not_found", "settings_unit_profile_not_found"],
@@ -6393,6 +6467,24 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordSettingsScrapKindEntryVersionV1:404"] = ["settings_reference_list_entry_not_found"],
             ["RecordSettingsScrapKindEntryVersionV1:409"] = ["settings_reference_list_idempotency_conflict", "settings_reference_list_version_conflict"],
             ["RecordSettingsScrapKindEntryVersionV1:503"] = ["settings_provider_unavailable"],
+            ["GenerateInventoryLabelPdfV1:400"] = ["inventory_label_pdf_invalid_request"],
+            ["GenerateInventoryLabelPdfV1:409"] = ["inventory_label_pdf_document_conflict"],
+            ["GenerateInventoryLabelPdfV1:422"] = ["inventory_label_pdf_barcode_unsupported"],
+            ["CreateInventoryFutureAllocationV1:400"] = ["validation_failed"],
+            ["CreateInventoryFutureAllocationV1:409"] = ["idempotency_conflict", "inventory_allocation_state_conflict", "inventory_allocation_version_conflict", "inventory_concurrent_change", "inventory_future_allocation_exceeds_demand_open_quantity", "inventory_future_allocation_insufficient_future_supply", "purchasing_line_busy", "sales_order_line_busy"],
+            ["CreateInventoryFutureAllocationV1:422"] = ["inventory_future_allocation_invalid_reference", "inventory_future_allocation_release_selection_invalid", "inventory_future_allocation_unit_conversion_unavailable", "validation_failed"],
+            ["ReleaseInventoryFutureAllocationV1:400"] = ["validation_failed"],
+            ["ReleaseInventoryFutureAllocationV1:409"] = ["idempotency_conflict", "inventory_allocation_state_conflict", "inventory_allocation_version_conflict", "inventory_concurrent_change", "inventory_future_allocation_exceeds_demand_open_quantity", "inventory_future_allocation_insufficient_future_supply", "purchasing_line_busy", "sales_order_line_busy"],
+            ["ReleaseInventoryFutureAllocationV1:422"] = ["inventory_future_allocation_invalid_reference", "inventory_future_allocation_release_selection_invalid", "inventory_future_allocation_unit_conversion_unavailable", "validation_failed"],
+            ["ListInventoryFutureAllocationsByDemandV1:400"] = ["validation_failed"],
+            ["ListInventoryFutureSupplyOptionsV1:400"] = ["validation_failed"],
+            ["ListInventoryFutureSupplyOptionsV1:422"] = ["inventory_future_allocation_invalid_reference"],
+            ["GetSettingsMoneyProfilesV1:400"] = ["settings_money_profile_request_invalid"],
+            ["GetSettingsMoneyProfilesV1:503"] = ["settings_provider_unavailable"],
+            ["RecordSettingsMoneyProfileV1:400"] = ["settings_money_profile_command_metadata_invalid", "settings_money_profile_reason_required", "settings_money_profile_reason_too_long", "settings_money_profile_request_invalid", "settings_money_profile_unknown"],
+            ["RecordSettingsMoneyProfileV1:409"] = ["settings_money_profile_idempotency_conflict", "settings_money_profile_version_conflict"],
+            ["RecordSettingsMoneyProfileV1:422"] = ["settings_money_profile_effective_from_past"],
+            ["RecordSettingsMoneyProfileV1:503"] = ["settings_provider_unavailable"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -8154,7 +8246,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SalesDraftSourcePlanLinkedSupplyV1"] = ObjectSchema(
                     ["kind", "status"],
                     ("kind", "type:string"),
-                    ("status", "type:string")),
+                    ("status", "type:string"),
+                    ("cancelledOrderIds", "type:array|null;items:type:string;format:uuid")),
                 ["SalesDraftSourcePlanLineV1"] = ObjectSchema(
                     ["lineId", "lineNo", "orderUnitId", "quantity", "locked", "remaining", "stockStatus", "stock", "suggestion", "suggestionReason", "saved", "writable", "lockReason", "warnings"],
                     ("lineId", "type:string;format:uuid"),
@@ -9664,7 +9757,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("dueDate", "type:null|string;format:date"),
                     ("dueDateRevision", "type:integer|string;format:int64"),
                     ("planDueDate", "type:null|string;format:date"),
-                    ("dueDateDiffersFromPlan", "type:boolean")),
+                    ("dueDateDiffersFromPlan", "type:boolean"),
+                    ("cancellationReason", "type:null|string"),
+                    ("cancelledByUserId", "type:null|string;format:uuid"),
+                    ("cancelledAtUtc", "type:null|string;format:date-time"),
+                    ("outputLines", "type:array|null;items:ref:ManufacturingOutputLineReferenceV1")),
                 ["PlannedInputViewV1"] = ObjectSchema(
                     ["parentRollId", "plannedKg"],
                     ("parentRollId", "type:string;format:uuid"),
@@ -9699,7 +9796,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("salesOrderLinkRevision", "type:integer|string;format:int64"),
                     // Üretim URT-D64: the requested termin and its own revision (additive, optional).
                     ("requestedDueDate", "type:null|string;format:date"),
-                    ("dueDateRevision", "type:integer|string;format:int64")),
+                    ("dueDateRevision", "type:integer|string;format:int64"),
+                    ("requiresReapproval", "type:boolean"),
+                    ("reapprovals", "type:array|null;items:ref:PlanReapprovalViewV1")),
                 ["PlanSalesOrderLinkViewV1"] = ObjectSchema(
                     ["salesOrderId", "salesOrderLineId", "customerPartyId", "customerAccountId", "productId", "lineRevision",
                         "linkedBy", "linkedAtUtc"],
@@ -10828,7 +10927,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("validUntilUtc", "type:null|string;format:date-time"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("approvedBy", "oneOf:ref:IdentityAccessPerson|type:null"),
-                    ("scopes", "type:array;items:ref:IdentityAccessScope")),
+                    ("scopes", "type:array;items:ref:IdentityAccessScope"),
+                    ("version", "type:string")),
                 ["IdentityAccessScope"] = ObjectSchema(
                     ["type", "id"],
                     ("type", "type:string"),
@@ -10855,7 +10955,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("permissionCount", "type:integer|string;format:int32"),
                     ("holderCount", "type:integer|string;format:int32"),
-                    ("effectiveHolderCount", "type:integer|string;format:int32")),
+                    ("effectiveHolderCount", "type:integer|string;format:int32"),
+                    ("isCritical", "type:boolean")),
                 ["IdentityAccessRoleDetail"] = ObjectSchema(
                     ["roleId", "code", "name", "isSystem", "isActive", "permissions", "holders"],
                     ("roleId", "type:string;format:uuid"),
@@ -11741,7 +11842,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("ruleNo", "type:integer|string;format:int32"),
                     ("kind", "type:string"),
                     ("label", "type:string"),
-                    ("ratePercent", "type:string")),
+                    // SAT-D363: the Withheld view redacts the rate as well as the monetary amount.
+                    ("ratePercent", "type:null|string")),
                 ["SalesContractInstallmentView"] = ObjectSchema(
                     ["installmentNo", "dueDate", "amount"],
                     ("installmentNo", "type:integer|string;format:int32"),
@@ -13148,6 +13250,123 @@ public sealed partial class OpenApiContractGenerationTests
                     ["capacityUnit", "workCenters"],
                     ("capacityUnit", "type:string"),
                     ("workCenters", "type:array;items:ref:WorkCenterCapacityTimelineViewV1")),
+                ["InventoryFutureAllocationListV1"] = ObjectSchema(
+                    ["companyId", "items", "salesOrderId", "salesOrderLineId", "unitCodes", "windowFull"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:InventoryFutureAllocationViewV1"),
+                    ("windowFull", "type:boolean"),
+                    ("unitCodes", "type:object")),
+                ["InventoryFutureAllocationViewV1"] = ObjectSchema(
+                    ["allocatedQuantity", "allocationId", "companyId", "consumedQuantity", "createdAtUtc", "manualSequence", "productId", "productVersion", "purchaseOrderId", "purchaseOrderLineId", "reason", "releaseOrigin", "releaseReason", "releaseReasonCode", "releasedAtUtc", "releasedQuantity", "remainingQuantity", "salesOrderId", "salesOrderLineId", "status", "unitId", "updatedAtUtc", "version"],
+                    ("allocationId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("status", "type:string"),
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"),
+                    ("purchaseOrderId", "type:string;format:uuid"),
+                    ("purchaseOrderLineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("allocatedQuantity", "type:string"),
+                    ("remainingQuantity", "type:string"),
+                    ("releasedQuantity", "type:string"),
+                    ("consumedQuantity", "type:string"),
+                    ("manualSequence", "type:integer|null|string;format:int32"),
+                    ("reason", "type:string"),
+                    ("releaseReasonCode", "type:null|string"),
+                    ("releaseOrigin", "type:null|string"),
+                    ("releaseReason", "type:null|string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("updatedAtUtc", "type:string;format:date-time"),
+                    ("releasedAtUtc", "type:null|string;format:date-time")),
+                ["InventoryFutureSupplyOptionV1"] = ObjectSchema(
+                    ["allocatableQuantity", "availableQuantity", "lineNo", "purchaseOrderId", "purchaseOrderLineId", "reservedQuantity", "supplierCode", "supplierName", "unitCode", "unitId"],
+                    ("purchaseOrderId", "type:string;format:uuid"),
+                    ("purchaseOrderLineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("supplierCode", "type:string"),
+                    ("supplierName", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("unitCode", "type:string"),
+                    ("allocatableQuantity", "type:string"),
+                    ("reservedQuantity", "type:string"),
+                    ("availableQuantity", "type:string")),
+                ["InventoryFutureSupplyOptionsV1"] = ObjectSchema(
+                    ["companyId", "demandUnitCode", "demandUnitId", "items", "nextCursor", "openDemandQuantity", "productId", "productVersion", "salesOrderId", "salesOrderLineId"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("demandUnitId", "type:string;format:uuid"),
+                    ("demandUnitCode", "type:string"),
+                    ("openDemandQuantity", "type:string"),
+                    ("items", "type:array;items:ref:InventoryFutureSupplyOptionV1"),
+                    ("nextCursor", "type:null|string")),
+                ["InventoryTransferDisplayItemV1"] = ObjectSchema(
+                    ["destinationLocationCode", "destinationLocationName", "sourceLocationCode", "sourceLocationName", "transfer"],
+                    ("transfer", "ref:InventoryTransferListItemV1"),
+                    ("sourceLocationCode", "type:string"),
+                    ("sourceLocationName", "type:string"),
+                    ("destinationLocationCode", "type:string"),
+                    ("destinationLocationName", "type:string")),
+                ["InventoryTransferDisplayListV1"] = ObjectSchema(
+                    ["companyId", "items", "windowFull"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:InventoryTransferDisplayItemV1"),
+                    ("windowFull", "type:boolean")),
+                ["InventoryTransferListItemV1"] = ObjectSchema(
+                    ["companyId", "destinationLocationId", "dispatchedAtUtc", "plannedAtUtc", "sourceLocationId", "status", "transferId", "version"],
+                    ("transferId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("status", "type:string"),
+                    ("sourceLocationId", "type:string;format:uuid"),
+                    ("destinationLocationId", "type:string;format:uuid"),
+                    ("plannedAtUtc", "type:string;format:date-time"),
+                    ("dispatchedAtUtc", "type:null|string;format:date-time")),
+                ["ManufacturingOutputLineReferenceV1"] = ObjectSchema(
+                    ["cutLineId", "kind", "slitLineSequence"],
+                    ("kind", "type:string"),
+                    ("slitLineSequence", "type:integer|null|string;format:int32"),
+                    ("cutLineId", "type:null|string;format:uuid")),
+                ["MoneyProfileSeriesViewV1"] = ObjectSchema(
+                    ["currencyCode", "currencyId", "operation", "version", "versions"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("currencyCode", "type:string"),
+                    ("operation", "type:string"),
+                    ("version", "type:string"),
+                    ("versions", "type:array;items:ref:MoneyProfileVersionViewV1")),
+                ["MoneyProfileVersionViewV1"] = ObjectSchema(
+                    ["decisionReference", "effectiveFrom", "effectiveThrough", "isActive", "profileId", "reason", "recordedAtUtc", "recordedBy", "scale", "sourceKind", "state", "unitPriceScale", "version"],
+                    ("profileId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("scale", "type:integer|string;format:int32"),
+                    ("unitPriceScale", "type:integer|null|string;format:int32"),
+                    ("isActive", "type:boolean"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("effectiveThrough", "type:null|string;format:date"),
+                    ("state", "type:string"),
+                    ("sourceKind", "type:string"),
+                    ("decisionReference", "type:null|string"),
+                    ("recordedBy", "type:null|string"),
+                    ("recordedAtUtc", "type:null|string;format:date-time"),
+                    ("reason", "type:null|string")),
+                ["MoneyProfileViewV1"] = ObjectSchema(
+                    ["companyId", "profiles", "today"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("today", "type:string;format:date"),
+                    ("profiles", "type:array;items:ref:MoneyProfileSeriesViewV1")),
+                ["PlanReapprovalViewV1"] = ObjectSchema(
+                    ["number", "planVersion", "reapprovedAtUtc", "reapprovedByUserId"],
+                    ("number", "type:integer|string;format:int32"),
+                    ("reapprovedByUserId", "type:string;format:uuid"),
+                    ("reapprovedAtUtc", "type:string;format:date-time"),
+                    ("planVersion", "type:integer|string;format:int64")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -14072,7 +14291,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("movementId", "type:string;format:uuid"),
                     ("kg", "type:null|string"),
                     ("occurredAtUtc", "type:null|string;format:date-time"),
-                    ("remnantClassification", "type:null|string")),
+                    ("remnantClassification", "type:null|string"),
+                    ("outputLine", "oneOf:ref:ManufacturingOutputLineReferenceV1|type:null")),
                 ["PlanCommercialContextRequestV1"] = ObjectSchema(
                     ["partyId", "companyPartyAccountId", "partyVersion", "accountVersion"],
                     ("partyId", "type:string;format:uuid"),
@@ -14429,6 +14649,44 @@ public sealed partial class OpenApiContractGenerationTests
                     ("effectiveFrom", "type:null|string;format:date"),
                     ("effectiveThrough", "type:null|string;format:date"),
                     ("workCenterId", "type:null|string;format:uuid")),
+                ["CreateFutureSupplyAllocationV1"] = ObjectSchema(
+                    ["allocationId", "purchaseOrderId", "purchaseOrderLineId", "quantityText", "reason", "salesOrderId", "salesOrderLineId", "unitId"],
+                    ("allocationId", "type:string;format:uuid"),
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"),
+                    ("purchaseOrderId", "type:string;format:uuid"),
+                    ("purchaseOrderLineId", "type:string;format:uuid"),
+                    ("quantityText", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("reason", "type:string")),
+                ["GenerateInventoryLabelPdfV1"] = ObjectSchema(
+                    ["requestedAtUtc"],
+                    ("requestedAtUtc", "type:string;format:date-time")),
+                ["ManufacturingOutputLineReferenceV1"] = ObjectSchema(
+                    ["cutLineId", "kind", "slitLineSequence"],
+                    ("kind", "type:string"),
+                    ("slitLineSequence", "type:integer|null|string;format:int32"),
+                    ("cutLineId", "type:null|string;format:uuid")),
+                ["ReapprovePlanRequestV1"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("selectedLabelIds", "type:array|null;items:type:string;format:uuid")),
+                ["RecordMoneyProfileRequestV1"] = ObjectSchema(
+                    ["currencyId", "expectedVersion", "isActive", "operation", "reason", "scale", "unitPriceScale"],
+                    ("expectedVersion", "type:null|string"),
+                    ("currencyId", "type:null|string;format:uuid"),
+                    ("operation", "type:null|string"),
+                    ("scale", "type:integer|null|string;format:int32"),
+                    ("unitPriceScale", "type:integer|null|string;format:int32"),
+                    ("isActive", "type:boolean|null"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
+                ["ReleaseFutureSupplyAllocationV1"] = ObjectSchema(
+                    ["expectedAllocationVersion", "quantityText", "reasonCode", "reasonText"],
+                    ("expectedAllocationVersion", "type:string"),
+                    ("quantityText", "type:null|string"),
+                    ("reasonCode", "type:string"),
+                    ("reasonText", "type:string")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
