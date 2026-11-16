@@ -5,13 +5,15 @@ using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>
-/// FIN-S10 (FNS-D44, FNS-D54, SAT-D294): the one deterministic calculator of a customer return's split over the original
-/// invoice's installments. The acceptance and the screen's prefill read both use it, so the prefill the user sees and the
-/// split applied without a selection are the same numbers.
+/// FIN-S10 (FNS-D44, FNS-D81, SAT-D294): the one deterministic calculator of a customer return's split over the original
+/// invoice's installments. The acceptance and the screen's prefill read both use it.
 /// <list type="bullet">
 /// <item>A return that covers the whole outstanding amount closes every outstanding item; the rest is the advance.</item>
-/// <item>A partial return without a selection reduces the nearest due open installment first and moves the rest to the
-/// next one (FNS-D54); the same order and amounts are the prefill (FNS-D44).</item>
+/// <item>A partial return is split by the user's installment selection (FNS-D81: the automatic nearest-due order of
+/// FNS-D54 is not applied). Without a selection it is refused when the invoice has more than one outstanding installment
+/// (<see cref="FinanceInvoiceAcceptanceService.AllocationRequiredCode"/>); with exactly one outstanding installment the
+/// split is unambiguous and that installment is reduced. The nearest-due spill-over stays only as the screen's prefill
+/// (FNS-D44), a suggestion the user confirms or changes.</item>
 /// <item>A partial return with the user's selection reduces exactly the selected parts (FNS-D44): every selected item is an
 /// outstanding item of the invoice, no part exceeds its item's open amount, and the parts total the return amount exactly;
 /// otherwise nothing is planned. The selection is never replaced by the prefill.</item>
@@ -50,17 +52,16 @@ internal static class FinanceCustomerReturnInstallmentCalculator
 
         if (allocations is null)
         {
-            if (NearestDue(stored.Outstanding, amount) is not { } prefill)
+            // FNS-D81: the user chooses the installment of a partial return; only a single outstanding installment leaves
+            // nothing to choose. Several outstanding installments are never split by an automatic order.
+            if (stored.Outstanding is not [var only])
             {
                 return FinanceCustomerReturnPlan.Refused(
-                    new ValidationIssue("originalInvoiceId", FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode));
+                    new ValidationIssue("allocations", FinanceInvoiceAcceptanceService.AllocationRequiredCode));
             }
-            var nearest = prefill
-                .Where(line => !line.Prefill.IsZero)
-                .Select(line => (line.Item, After: line.Outstanding.Subtract(line.Prefill), Reduced: line.Prefill))
-                .ToArray();
-            return new FinanceCustomerReturnPlan(null, amount, stored.Total, amount, default, nearest,
-                FinanceCustomerReturnPlanBasis.NearestDue);
+            return new FinanceCustomerReturnPlan(null, amount, stored.Total, amount, default,
+                [(only.Item, After: only.Outstanding.Subtract(amount), Reduced: amount)],
+                FinanceCustomerReturnPlanBasis.SingleOutstanding);
         }
 
         return Selected(stored, amount, allocations);
@@ -214,10 +215,15 @@ internal enum FinanceCustomerReturnPlanBasis
     None = 0,
     /// <summary>The return covers the whole outstanding amount: every outstanding item is closed.</summary>
     WholeOutstanding = 1,
-    /// <summary>A partial return without a selection: nearest due first (FNS-D54).</summary>
+    /// <summary>
+    /// Historical only: a partial return without a selection split nearest due first (FNS-D54). FNS-D81 replaced it with
+    /// the user's selection; the value is kept so audit events written before stay readable. Never produced.
+    /// </summary>
     NearestDue = 2,
-    /// <summary>A partial return over the user's selection, applied as submitted (FNS-D44).</summary>
+    /// <summary>A partial return over the user's selection, applied as submitted (FNS-D44, FNS-D81).</summary>
     UserSelection = 3,
+    /// <summary>A partial return without a selection over the invoice's only outstanding installment (FNS-D81).</summary>
+    SingleOutstanding = 4,
 }
 
 /// <summary>

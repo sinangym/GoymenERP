@@ -14,12 +14,14 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // the return amount and the original invoice link. No party-card movement is written (SAT-D291 (3)); the producer never
 // writes Finance tables (SAT-D291 (4)).
 //
-// FIN-S10 (FNS-D44, FNS-D54): a partial return over several outstanding installments is no longer refused. The user chooses
+// FIN-S10 (FNS-D44, FNS-D81): a partial return over several outstanding installments is no longer refused. The user chooses
 // the installments (FNS-D44): the screen is prefilled from the nearest due date by Finance's one deterministic calculator,
 // read through IFinanceCustomerReturnInstallmentReadPortV2, and the producer reports the user's selection as Allocations.
 // The selection must total the return amount exactly and no installment may take more than its open amount, otherwise the
-// return is refused; the server never replaces a submitted selection with the prefill. When no selection is reported, the
-// same calculator reduces from the nearest due open installment first (FNS-D54).
+// return is refused; the server never replaces a submitted selection with the prefill. FNS-D81: the installment choice is
+// the user's; when no selection is reported over several outstanding installments the return is refused
+// (finance_customer_return_allocation_required) and no automatic nearest-due order (FNS-D54) is applied. Only an invoice
+// with exactly one outstanding installment may omit the selection.
 
 /// <summary>The document kinds version 2 accepts. Only the customer return invoice exists today.</summary>
 public enum FinanceInvoiceAcceptanceKindV2
@@ -80,8 +82,9 @@ public sealed record FinanceInvoiceAcceptanceAllocationV2(Guid OpenItemId, strin
 /// item of the invoice (<c>finance_customer_return_allocation_item_unknown</c>), a part above an item's open amount
 /// (<c>finance_customer_return_allocation_exceeds_open_amount</c>) or a selection whose total is not exactly the return
 /// amount (<c>finance_customer_return_allocation_total_mismatch</c>) is refused and nothing is written. The selection is
-/// never replaced by the prefill. Without a selection the nearest due open installment is reduced first and the rest moves
-/// to the next one (FNS-D54), computed by the same calculator that answers the prefill read.</item>
+/// never replaced by the prefill. Without a selection (FNS-D81) a return over several outstanding installments is refused
+/// (<c>finance_customer_return_allocation_required</c>); only the invoice's single outstanding installment is reduced
+/// without one. The nearest-due prefill is a suggestion the user confirms, never applied on its own.</item>
 /// </list>
 /// Fenced by the host-owned <see cref="IFinanceInvoiceAcceptanceAuthorityV2"/> before any read and right before the save;
 /// the caller's company and actor must equal the server context.

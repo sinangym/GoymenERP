@@ -152,51 +152,60 @@ public sealed class FinanceInvoiceAcceptanceTests
     }
 
     [Fact]
-    public void A_partial_return_without_a_selection_reduces_the_nearest_due_installment_first_and_moves_the_rest_on()
+    public void A_partial_return_without_a_selection_over_several_installments_is_refused_not_split_by_due_date()
     {
-        // The stored order is not the due order: the calculator sorts by due date itself.
+        // FNS-D81: the user chooses the installment; the nearest-due order of FNS-D54 is not applied on its own.
         var later = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
         var nearest = Item("60.00", "30.00", dueOn: new DateOnly(2026, 12, 1));
         var last = Item("50.00", "50.00", dueOn: new DateOnly(2027, 2, 1));
 
         var plan = FinanceInvoiceAcceptanceService.Plan([later, nearest, last], "50.00");
 
-        Assert.Null(plan.Issue);
-        Assert.Equal(FinanceCustomerReturnPlanBasis.NearestDue, plan.Basis);
-        Assert.Equal(2, plan.Reductions.Count);
-        var first = plan.Reductions.Single(r => r.Item == nearest);
-        Assert.True(FinanceExactDecimalText.Equal("30.00", first.Reduced.Text));
-        Assert.True(first.After.IsZero);
-        var second = plan.Reductions.Single(r => r.Item == later);
-        Assert.True(FinanceExactDecimalText.Equal("20.00", second.Reduced.Text));
-        Assert.True(FinanceExactDecimalText.Equal("20.00", second.After.Text));
-        Assert.DoesNotContain(plan.Reductions, r => r.Item == last);
-        Assert.True(FinanceExactDecimalText.Equal("50.00", plan.Applied.Text));
-        Assert.True(plan.Advance.IsZero);
+        Assert.Equal(("allocations", FinanceInvoiceAcceptanceService.AllocationRequiredCode),
+            (plan.Issue?.Field, plan.Issue?.Code));
+        Assert.Equal(FinanceCustomerReturnPlanBasis.None, plan.Basis);
+        Assert.Empty(plan.Reductions);
     }
 
     [Fact]
-    public void Installments_due_on_the_same_day_are_reduced_in_a_deterministic_order()
+    public void Installments_due_on_the_same_day_without_a_selection_are_refused_in_either_stored_order()
     {
         var day = new DateOnly(2026, 12, 1);
         var a = Item("40.00", "40.00", dueOn: day);
         var b = Item("40.00", "40.00", dueOn: day);
-        var expectedFirst = a.Id.CompareTo(b.Id) < 0 ? a : b;
 
-        var forward = FinanceInvoiceAcceptanceService.Plan([a, b], "10.00");
-        var backward = FinanceInvoiceAcceptanceService.Plan([b, a], "10.00");
-
-        Assert.Same(expectedFirst, Assert.Single(forward.Reductions).Item);
-        Assert.Same(expectedFirst, Assert.Single(backward.Reductions).Item);
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationRequiredCode,
+            FinanceInvoiceAcceptanceService.Plan([a, b], "10.00").Issue?.Code);
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationRequiredCode,
+            FinanceInvoiceAcceptanceService.Plan([b, a], "10.00").Issue?.Code);
     }
 
     [Fact]
-    public void A_partial_return_without_a_selection_over_an_outstanding_item_without_a_due_date_is_refused_not_guessed()
+    public void A_partial_return_without_a_selection_over_the_only_outstanding_installment_reduces_it()
+    {
+        var paid = Item("60.00", "0", FinanceOpenItemStatuses.Closed, new DateOnly(2026, 11, 1));
+        var open = Item("40.00", "40.00", dueOn: new DateOnly(2026, 12, 1));
+
+        var plan = FinanceInvoiceAcceptanceService.Plan([paid, open], "15.00");
+
+        Assert.Null(plan.Issue);
+        Assert.Equal(FinanceCustomerReturnPlanBasis.SingleOutstanding, plan.Basis);
+        var reduction = Assert.Single(plan.Reductions);
+        Assert.Same(open, reduction.Item);
+        Assert.True(FinanceExactDecimalText.Equal("15.00", reduction.Reduced.Text));
+        Assert.True(FinanceExactDecimalText.Equal("25.00", reduction.After.Text));
+        Assert.True(FinanceExactDecimalText.Equal("15.00", plan.Applied.Text));
+        Assert.True(plan.Advance.IsZero);
+        Assert.True(FinanceExactDecimalText.Equal("100.00", plan.InvoiceTotal.Text));
+    }
+
+    [Fact]
+    public void A_partial_return_without_a_selection_is_refused_even_when_an_installment_has_no_due_date()
     {
         var plan = FinanceInvoiceAcceptanceService.Plan(
             [Item("60.00", "60.00", dueOn: new DateOnly(2026, 12, 1)), Item("40.00", "40.00")], "50.00");
 
-        Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode, plan.Issue?.Code);
+        Assert.Equal(FinanceInvoiceAcceptanceService.AllocationRequiredCode, plan.Issue?.Code);
         Assert.Empty(plan.Reductions);
     }
 
@@ -325,7 +334,7 @@ public sealed class FinanceInvoiceAcceptanceTests
     }
 
     [Fact]
-    public void The_prefill_lists_every_outstanding_installment_nearest_due_first_with_the_same_parts_as_the_plan()
+    public void The_prefill_lists_every_outstanding_installment_nearest_due_first_and_confirmed_it_is_the_plan()
     {
         var later = Item("40.00", "40.00", dueOn: new DateOnly(2027, 1, 1));
         var nearest = Item("60.00", "30.00", dueOn: new DateOnly(2026, 12, 1));
@@ -334,7 +343,12 @@ public sealed class FinanceInvoiceAcceptanceTests
         FinanceOpenItemRow[] items = [later, nearest, last, paid];
 
         var prefill = FinanceCustomerReturnInstallmentCalculator.Prefill(items, "50.00");
-        var plan = FinanceInvoiceAcceptanceService.Plan(items, "50.00");
+        // FNS-D81: the prefill is only a suggestion; the user confirms it by submitting it as the selection.
+        var confirmed = prefill.Lines
+            .Where(line => !line.Prefill.IsZero)
+            .Select(line => new FinanceInvoiceAcceptanceAllocationV2(line.Item.Id, line.Prefill.Text))
+            .ToArray();
+        var plan = FinanceInvoiceAcceptanceService.Plan(items, "50.00", confirmed);
 
         Assert.Null(prefill.Issue);
         Assert.True(prefill.SelectionAllowed);
@@ -348,6 +362,7 @@ public sealed class FinanceInvoiceAcceptanceTests
         Assert.True(FinanceExactDecimalText.Equal("60.00", prefill.Lines[0].Original.Text));
         Assert.True(FinanceExactDecimalText.Equal("50.00", prefill.Applied.Text));
         Assert.True(prefill.Advance.IsZero);
+        Assert.Equal(FinanceCustomerReturnPlanBasis.UserSelection, plan.Basis);
         Assert.Equal(
             prefill.Lines.Where(line => !line.Prefill.IsZero).Select(line => (line.Item, line.Prefill.Text)),
             plan.Reductions.Select(r => (r.Item, r.Reduced.Text)));

@@ -18,9 +18,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// original items keep their identity and original amount and nothing is deleted. The same acceptance replays; a second
 /// acceptance of the same return document, a total above the invoice, a foreign company, another version, a cancelled
 /// invoice or a missing authority writes nothing; the migration's Down refuses while a credit is stored. FIN-S10
-/// (FNS-D44, FNS-D54): a partial return over several outstanding installments reduces exactly the user's selection, which
+/// (FNS-D44, FNS-D81): a partial return over several outstanding installments reduces exactly the user's selection, which
 /// must total the return amount to the kurus and stay within each installment's open amount, or else writes nothing;
-/// without a selection the nearest due installment is reduced first; the prefill read comes from the same calculator, is
+/// without a selection it is refused and writes nothing (the user chooses the installment); the prefill read comes from the same calculator, is
 /// fenced like the acceptance and writes nothing. Party, authority and grants are SENTETIK inputs.
 /// </summary>
 public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptanceTests
@@ -196,7 +196,7 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
     }
 
     [SqlServerFact]
-    public async Task A_partial_return_without_a_selection_reduces_the_nearest_due_installment_first_as_prefilled()
+    public async Task A_partial_return_without_a_selection_over_several_installments_is_refused_and_writes_nothing()
     {
         await using var run = await Run.StartAsync();
         var invoice = Invoice(Installment(1, "300.00"), Installment(2, "300.00"), Installment(3, "300.00"));
@@ -208,23 +208,30 @@ public sealed class FinanceCustomerReturnAcceptanceSqlServerRelationalAcceptance
             "UPDATE finance.OpenItems SET OutstandingAmountText = N'100.00' WHERE Id = @id; SELECT @@ROWCOUNT",
             ("@id", first)));
 
+        // The screen still suggests nearest due first (FNS-D44)...
         var prefill = await run.ReadAsync(Query(invoice, "250.00"));
         Assert.Equal(CommandOutcome.Succeeded, prefill.Outcome);
         Assert.Equal([first, second, third], prefill.Installments.Select(row => row.OpenItemId).ToArray());
         Assert.Equal(["100.00", "150.00", "0"], prefill.Installments.Select(row => row.PrefillAmount).ToArray());
 
-        var accepted = await run.AcceptAsync("nearest-2", Return(invoice, "250.00"));
-        Assert.Equal(CommandOutcome.Succeeded, accepted.Outcome);
+        // ...but FNS-D81 leaves the choice to the user: without a selection nothing is applied on its own.
+        var refused = await run.AcceptAsync("nearest-2", Return(invoice, "250.00"));
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.Contains(refused.Issues, issue => issue.Field == "allocations"
+            && issue.Code == FinanceInvoiceAcceptanceService.AllocationRequiredCode);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCredits"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnCreditItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CustomerReturnInvoiceStates"));
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Version = 1", ("@id", invoice.InvoiceId)));
+
+        // The user confirms the suggestion as the selection: exactly those parts are applied.
+        var confirmed = await run.AcceptAsync("nearest-3",
+            Return(invoice, "250.00") with { Allocations = [Part(first, "100.00"), Part(second, "150.00")] });
+        Assert.Equal(CommandOutcome.Succeeded, confirmed.Outcome);
         Assert.Equal(
             [new FinanceInvoiceAcceptanceReductionV2(first, "100.00"), new FinanceInvoiceAcceptanceReductionV2(second, "150.00")],
-            accepted.Reductions.ToArray());
-        Assert.Equal("0", accepted.AdvanceAmount);
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'0.00' AND Status = 2 "
-            + "AND Version = 2", ("@id", first)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'150.00' AND Status = 1 "
-            + "AND Version = 2", ("@id", second)));
+            confirmed.Reductions.ToArray());
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.OpenItems WHERE Id = @id AND OutstandingAmountText = N'300.00' AND Status = 1 "
             + "AND Version = 1", ("@id", third)));
