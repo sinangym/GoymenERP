@@ -25,6 +25,7 @@ export const LOGIN_RATE_LIMIT_TEXT = {
   columnPermit: 'Deneme sayısı',
   columnWindow: 'Pencere',
   columnPartition: 'Sayım birimi',
+  columnTrustedProxies: 'Güvenilir vekil sunucular',
   columnCurrent: 'Durum',
   columnRecorded: 'Kaydeden / zaman',
   columnRecordedIn: 'Kaydedildiği şirket',
@@ -45,6 +46,14 @@ export const LOGIN_RATE_LIMIT_TEXT = {
   windowHelp: `Tam sayı; ${LOGIN_RATE_LIMIT_INPUT.minimumWindowSeconds} ile ${LOGIN_RATE_LIMIT_INPUT.maximumWindowSeconds} saniye arasında (örn. bir dakika için 60).`,
   windowError: `${LOGIN_RATE_LIMIT_INPUT.minimumWindowSeconds} ile ${LOGIN_RATE_LIMIT_INPUT.maximumWindowSeconds} arasında bir tam sayı girin.`,
   partitionLegend: 'Sayım birimi',
+  trustedProxiesLabel: 'Güvenilir vekil sunucular (IP adresi veya CIDR bloğu)',
+  trustedProxiesHelp:
+    `Her satıra bir adres ya da blok yazın (örn. 192.0.2.10 veya 198.51.100.0/24); en çok ` +
+    `${LOGIN_RATE_LIMIT_INPUT.maximumTrustedProxyCount} kayıt. Boş bırakırsanız X-Forwarded-For başlığı hiç okunmaz ` +
+    've doğrudan bağlanan adres sayılır. Başlık yalnız doğrudan bağlanan adres bu listedeyse okunur; zincirde ' +
+    'güvenilir vekillerden sonraki ilk adres istemci sayılır.',
+  trustedProxiesError: 'Her satır bir IP adresi veya CIDR bloğu olmalı; aynı kayıt iki kez yazılamaz.',
+  trustedProxiesNone: 'Yok (başlık okunmaz)',
   reasonLabel: 'Gerekçe',
   reasonHelp: `Zorunlu; en çok ${LOGIN_RATE_LIMIT_INPUT.reasonMaximumLength} karakter. Değişiklik gerekçesiyle birlikte denetim kaydına geçer.`,
   save: 'Kaydet',

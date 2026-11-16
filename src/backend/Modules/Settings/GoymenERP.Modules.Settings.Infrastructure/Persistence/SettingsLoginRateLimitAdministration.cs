@@ -89,6 +89,13 @@ internal sealed class SettingsLoginRateLimitAdministration(
                 metadata);
         }
 
+        if (!LoginRateLimitRulesV1.TryNormalizeTrustedProxies(request.TrustedProxies, out var trustedProxies))
+        {
+            return Unstored(Answers.Invalid(
+                $"Güvenilir proxy listesi zorunludur (boş olabilir) ve en çok {Text(LoginRateLimitInputLimitsV1.MaximumTrustedProxyCount)} IP adresi veya CIDR bloğu (ör. 10.0.0.0/8) içerebilir."),
+                metadata);
+        }
+
         if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
         {
             return Unstored(reasonRefusal, metadata);
@@ -97,15 +104,28 @@ internal sealed class SettingsLoginRateLimitAdministration(
         var permitLimit = request.PermitLimit!.Value;
         var windowSeconds = request.WindowSeconds!.Value;
         var partitionBy = request.PartitionBy!;
+        var trustedProxiesText = LoginRateLimitRulesV1.JoinTrustedProxies(trustedProxies);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            ExpectedVersion = expectedVersion,
-            PermitLimit = permitLimit,
-            WindowSeconds = windowSeconds,
-            PartitionBy = partitionBy,
-            Reason = reason,
-        });
+
+        // An empty trusted proxy list stays out of the hash, so a key stored before KIM-D42 still replays.
+        var requestHash = trustedProxies.Count == 0
+            ? IdempotencyHash.ComputePayload(new
+            {
+                ExpectedVersion = expectedVersion,
+                PermitLimit = permitLimit,
+                WindowSeconds = windowSeconds,
+                PartitionBy = partitionBy,
+                Reason = reason,
+            })
+            : IdempotencyHash.ComputePayload(new
+            {
+                ExpectedVersion = expectedVersion,
+                PermitLimit = permitLimit,
+                WindowSeconds = windowSeconds,
+                PartitionBy = partitionBy,
+                TrustedProxies = trustedProxies,
+                Reason = reason,
+            });
         if (await FindExecutionAsync(keyHash, cancellationToken) is { } existing)
         {
             await RequireStillAsync(companyId, cancellationToken);
@@ -124,7 +144,8 @@ internal sealed class SettingsLoginRateLimitAdministration(
         if (current is not null
             && current.PermitLimit == permitLimit
             && current.WindowSeconds == windowSeconds
-            && string.Equals(current.PartitionBy, partitionBy, StringComparison.Ordinal))
+            && string.Equals(current.PartitionBy, partitionBy, StringComparison.Ordinal)
+            && string.Equals(current.TrustedProxies, trustedProxiesText, StringComparison.Ordinal))
         {
             await RequireStillAsync(companyId, cancellationToken);
             return Done(metadata,
@@ -139,6 +160,7 @@ internal sealed class SettingsLoginRateLimitAdministration(
             PermitLimit = permitLimit,
             WindowSeconds = windowSeconds,
             PartitionBy = partitionBy,
+            TrustedProxies = trustedProxiesText,
             RecordedAtUtc = timeProvider.GetUtcNow(),
             RecordedBy = metadata.ActorId,
             RecordedInCompanyId = companyId,
@@ -153,6 +175,7 @@ internal sealed class SettingsLoginRateLimitAdministration(
                 current.PermitLimit,
                 current.WindowSeconds,
                 current.PartitionBy,
+                TrustedProxies = TrustedProxiesOf(current),
             }, Json),
             new
             {
@@ -161,6 +184,7 @@ internal sealed class SettingsLoginRateLimitAdministration(
                 row.PermitLimit,
                 row.WindowSeconds,
                 row.PartitionBy,
+                TrustedProxies = trustedProxies,
                 Scope = "Group",
             }, reason, metadata);
         await RequireStillAsync(companyId, cancellationToken);
@@ -175,11 +199,18 @@ internal sealed class SettingsLoginRateLimitAdministration(
             row.PermitLimit,
             row.WindowSeconds,
             row.PartitionBy,
+            TrustedProxiesOf(row),
             row.Version == latest,
             row.RecordedBy,
             row.RecordedInCompanyId,
             row.RecordedAtUtc,
             row.Reason);
+
+    /// <summary>The stored trusted proxy list of a version; malformed stored data is <c>settings_profile_invalid</c>.</summary>
+    private static IReadOnlyList<string> TrustedProxiesOf(LoginRateLimitVersionRow row) =>
+        LoginRateLimitRulesV1.TryReadTrustedProxies(row.TrustedProxies, out var entries)
+            ? entries
+            : throw new SettingsPrerequisiteException(LoginRateLimitProblemCodesV1.ProfileInvalid);
 
     private Guid RequireContextCompany()
     {

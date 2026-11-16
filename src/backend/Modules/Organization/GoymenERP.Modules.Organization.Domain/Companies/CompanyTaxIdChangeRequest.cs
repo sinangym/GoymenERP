@@ -45,6 +45,12 @@ public sealed class CompanyTaxIdChangeRequest : ICompanyOwnedRecord
             throw new ArgumentException("Önerilen VKN tam olarak 10 ASCII rakamdan oluşmalıdır.", nameof(proposedVkn));
         }
 
+        if (!CompanyVknCheckDigit.IsSatisfiedBy(proposedVkn))
+        {
+            // KIM-D40: defence in depth; the service refuses a non-conforming VKN with an explicit problem code first.
+            throw new ArgumentException("Önerilen VKN resmî kontrol hanesi kuralını sağlamıyor.", nameof(proposedVkn));
+        }
+
         if (string.Equals(currentVkn, proposedVkn, StringComparison.Ordinal))
         {
             throw new ArgumentException("Önerilen VKN mevcut VKN ile aynı.", nameof(proposedVkn));

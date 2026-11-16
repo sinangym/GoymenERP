@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -707,6 +710,12 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("RecordedInCompanyId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TrustedProxies")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(4000)");
 
                     b.Property<int>("WindowSeconds")
                         .HasColumnType("int");

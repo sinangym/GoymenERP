@@ -41,7 +41,8 @@ public sealed class SettingsLoginRateLimitProviderV1 : ISettingsLoginRateLimitPr
         if (row.Version <= 0 || row.ProfileId == Guid.Empty
             || !LoginRateLimitRulesV1.IsPermitLimit(row.PermitLimit)
             || !LoginRateLimitRulesV1.IsWindowSeconds(row.WindowSeconds)
-            || !LoginRateLimitRulesV1.IsPartition(row.PartitionBy))
+            || !LoginRateLimitRulesV1.IsPartition(row.PartitionBy)
+            || !LoginRateLimitRulesV1.TryReadTrustedProxies(row.TrustedProxies, out var trustedProxies))
         {
             throw new SettingsPrerequisiteException(LoginRateLimitProblemCodesV1.ProfileInvalid);
         }
@@ -50,6 +51,7 @@ public sealed class SettingsLoginRateLimitProviderV1 : ISettingsLoginRateLimitPr
             new ProfileVersionV1(row.ProfileId, row.Version),
             row.PermitLimit,
             TimeSpan.FromSeconds(row.WindowSeconds),
-            row.PartitionBy);
+            row.PartitionBy,
+            trustedProxies);
     }
 }

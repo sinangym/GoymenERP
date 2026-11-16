@@ -7,7 +7,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// in its key and no company query filter (the Counterparty e-document profile precedent of a group-wide record); the rows are
 /// insert-only and the primary key on the version number is the concurrency fence (two writers of the same next version: one
 /// wins, the other is a version conflict). The checks hold the published partition names and the technical bounds; no value is
-/// defaulted by the database and nothing is seeded.
+/// defaulted by the database and nothing is seeded. KIM-D42 adds the canonical trusted proxy list of each version (versions
+/// recorded before it read as the empty list: the forwarded header is never read).
 /// </summary>
 public sealed partial class SettingsDbContext
 {
@@ -36,6 +37,7 @@ public sealed partial class SettingsDbContext
         limit.Property(x => x.Version).ValueGeneratedNever();
         limit.HasIndex(x => x.ProfileId).IsUnique();
         limit.Property(x => x.PartitionBy).HasMaxLength(32).IsUnicode(false);
+        limit.Property(x => x.TrustedProxies).HasMaxLength(4000).IsUnicode(false);
         limit.Property(x => x.RecordedBy).HasMaxLength(128);
         limit.Property(x => x.Reason).HasMaxLength(4000);
     }

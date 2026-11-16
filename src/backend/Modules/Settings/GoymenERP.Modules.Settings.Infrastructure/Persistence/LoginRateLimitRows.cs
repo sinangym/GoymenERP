@@ -12,6 +12,12 @@ internal sealed class LoginRateLimitVersionRow
     public int PermitLimit { get; set; }
     public int WindowSeconds { get; set; }
     public string PartitionBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// KIM-D42: the canonical trusted proxy list (<see cref="GoymenERP.Modules.Settings.Application.LoginRateLimitRulesV1.JoinTrustedProxies"/>); empty
+    /// text is the empty list, under which the forwarded header is never read.
+    /// </summary>
+    public string TrustedProxies { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public Guid RecordedInCompanyId { get; set; }

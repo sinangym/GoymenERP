@@ -26,6 +26,7 @@ import {
   LOGIN_RATE_LIMIT_PARTITIONS,
   LOGIN_RATE_LIMIT_STALE_CODES,
   parseBoundedWhole,
+  parseTrustedProxies,
   type LoginRateLimitPartition,
   type LoginRateLimitView,
 } from './loginRateLimitContract'
@@ -130,6 +131,7 @@ function LimitSection({
               <th scope="col">{T.columnPermit}</th>
               <th scope="col">{T.columnWindow}</th>
               <th scope="col">{T.columnPartition}</th>
+              <th scope="col">{T.columnTrustedProxies}</th>
               <th scope="col">{T.columnCurrent}</th>
               <th scope="col">{T.columnRecorded}</th>
               <th scope="col">{T.columnRecordedIn}</th>
@@ -143,6 +145,9 @@ function LimitSection({
                 <td>{entry.permitLimit}</td>
                 <td>{windowLabel(entry.windowSeconds)}</td>
                 <td>{partitionLabel(entry.partitionBy)}</td>
+                <td>
+                  {entry.trustedProxies.length === 0 ? T.trustedProxiesNone : <code>{entry.trustedProxies.join(', ')}</code>}
+                </td>
                 <td>{entry.isCurrent ? T.isCurrent : T.isPrevious}</td>
                 <td>
                   <code>{entry.recordedBy}</code> · <time dateTime={entry.recordedAtUtc}>{entry.recordedAtUtc}</time>
@@ -193,6 +198,7 @@ function LimitForm({
   const [permitText, setPermitText] = useState(current === null ? '' : String(current.permitLimit))
   const [windowText, setWindowText] = useState(current === null ? '' : String(current.windowSeconds))
   const [partitionBy, setPartitionBy] = useState<LoginRateLimitPartition | null>(current?.partitionBy ?? null)
+  const [proxiesText, setProxiesText] = useState(current === null ? '' : current.trustedProxies.join('\n'))
   const [reason, setReason] = useState('')
   const attempt = useCommandAttempt<true>()
   const permitLimit = parseBoundedWhole(
@@ -205,11 +211,19 @@ function LimitForm({
     LOGIN_RATE_LIMIT_INPUT.minimumWindowSeconds,
     LOGIN_RATE_LIMIT_INPUT.maximumWindowSeconds,
   )
+  const trustedProxies = parseTrustedProxies(proxiesText)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (permitLimit === null || windowSeconds === null || partitionBy === null) return
-    const body = { expectedVersion: data.version, permitLimit, windowSeconds, partitionBy, reason: reason.trim() }
+    if (permitLimit === null || windowSeconds === null || partitionBy === null || trustedProxies === null) return
+    const body = {
+      expectedVersion: data.version,
+      permitLimit,
+      windowSeconds,
+      partitionBy,
+      trustedProxies,
+      reason: reason.trim(),
+    }
     const outcome = await attempt.run(body, (idempotencyKey) =>
       recordLoginRateLimitVersion({ companyId, idempotencyKey }, body),
     )
@@ -275,6 +289,22 @@ function LimitForm({
           </label>
         ))}
       </fieldset>
+      <Field
+        label={T.trustedProxiesLabel}
+        help={T.trustedProxiesHelp}
+        error={trustedProxies === null ? T.trustedProxiesError : undefined}
+      >
+        {(control) => (
+          <textarea
+            {...control}
+            rows={3}
+            autoComplete="off"
+            spellCheck={false}
+            value={proxiesText}
+            onChange={(event) => setProxiesText(event.target.value)}
+          />
+        )}
+      </Field>
       <Field label={T.reasonLabel} help={T.reasonHelp}>
         {(control) => (
           <textarea

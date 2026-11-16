@@ -30,13 +30,21 @@ const isRead = (url: string) => url.endsWith('/settings/login-rate-limit')
 const isRecord = (url: string, init: RequestInit | undefined) =>
   init?.method === 'POST' && url.endsWith('/settings/login-rate-limit/versions')
 
-function entry(version: string, permitLimit: number, windowSeconds: number, partitionBy: string, isCurrent: boolean) {
+function entry(
+  version: string,
+  permitLimit: number,
+  windowSeconds: number,
+  partitionBy: string,
+  isCurrent: boolean,
+  trustedProxies: readonly string[] = [],
+) {
   return {
     profileId: PROFILE,
     version,
     permitLimit,
     windowSeconds,
     partitionBy,
+    trustedProxies,
     isCurrent,
     recordedBy: IDENTITY.userId,
     recordedInCompanyId: COMPANY_A,
@@ -48,7 +56,10 @@ function entry(version: string, permitLimit: number, windowSeconds: number, part
 function recordedView() {
   return {
     version: '2',
-    versions: [entry('2', 7, 120, 'IpAddressAndUserName', true), entry('1', 25, 60, 'IpAddress', false)],
+    versions: [
+      entry('2', 7, 120, 'IpAddressAndUserName', true, ['192.0.2.10', '198.51.100.0/24']),
+      entry('1', 25, 60, 'IpAddress', false),
+    ],
   }
 }
 
@@ -81,6 +92,8 @@ describe('Giriş deneme sınırı — reads', () => {
     expect(within(rows[1]).getByText(partitionLabel('IpAddressAndUserName'))).toBeTruthy()
     expect(within(rows[2]).getByText(T.isPrevious)).toBeTruthy()
     expect(within(rows[2]).getByText(partitionLabel('IpAddress'))).toBeTruthy()
+    expect(within(rows[1]).getByText('192.0.2.10, 198.51.100.0/24')).toBeTruthy()
+    expect(within(rows[2]).getByText(T.trustedProxiesNone)).toBeTruthy()
 
     const read = recorded.find((request) => isRead(request.url))
     expect(read?.headers['X-Company-Id']).toBe(COMPANY_A)
@@ -110,12 +123,15 @@ describe('Giriş deneme sınırı — reads', () => {
     expect(await screen.findByRole('table', { name: T.tableLabel })).toBeTruthy()
   })
 
-  it('shows nothing of an off-contract answer (two current entries, an unknown partition, an extra key)', async () => {
+  it('shows nothing of an off-contract answer (two current entries, an unknown partition, an extra key, a bad proxy list)', async () => {
     const view = recordedView()
     const offContract = [
       { ...view, versions: [view.versions[0], { ...view.versions[1], isCurrent: true }] },
       { ...view, versions: [{ ...view.versions[0], partitionBy: 'UserName' }, view.versions[1]] },
       { ...view, permitLimit: 10 },
+      { ...view, versions: [{ ...view.versions[0], trustedProxies: ['proxy.example'] }, view.versions[1]] },
+      { ...view, versions: [{ ...view.versions[0], trustedProxies: ['192.0.2.10', '192.0.2.10'] }, view.versions[1]] },
+      { ...view, versions: [view.versions[0], { ...view.versions[1], trustedProxies: undefined }] },
     ]
     for (const body of offContract) {
       install((url) => (isRead(url) ? json(body) : undefined))
@@ -171,6 +187,7 @@ describe('Giriş deneme sınırı — commands', () => {
       permitLimit: 12,
       windowSeconds: 90,
       partitionBy: 'IpAddressAndUserName',
+      trustedProxies: [],
       reason: 'SENTETIK gerekçe',
     })
     expect(command.headers['X-Company-Id']).toBe(COMPANY_A)
@@ -193,6 +210,9 @@ describe('Giriş deneme sınırı — commands', () => {
     expect(
       (screen.getByRole('radio', { name: partitionLabel('IpAddressAndUserName') }) as HTMLInputElement).checked,
     ).toBe(true)
+    expect((screen.getByLabelText(T.trustedProxiesLabel, { exact: false }) as HTMLTextAreaElement).value).toBe(
+      '192.0.2.10\n198.51.100.0/24',
+    )
     await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: T.save }))
 
@@ -202,8 +222,52 @@ describe('Giriş deneme sınırı — commands', () => {
       permitLimit: 7,
       windowSeconds: 120,
       partitionBy: 'IpAddressAndUserName',
+      trustedProxies: ['192.0.2.10', '198.51.100.0/24'],
       reason: 'SENTETIK',
     })
+  })
+
+  it('sends the typed trusted proxy list one entry per line, and an emptied list as an empty one', async () => {
+    const user = userEvent.setup()
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json(recordedView())
+      return isRecord(url, init) ? noContent() : undefined
+    })
+    renderAt(PATH)
+
+    await openForm(user)
+    const proxies = screen.getByLabelText(T.trustedProxiesLabel, { exact: false })
+    await user.clear(proxies)
+    await user.type(proxies, ' 2001:db8::/64 {Enter}{Enter}203.0.113.5')
+    await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK')
+    await user.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(T.saved)).toBeTruthy()
+    expect((commands(recorded)[0].body as { trustedProxies: unknown }).trustedProxies).toEqual([
+      '2001:db8::/64',
+      '203.0.113.5',
+    ])
+  })
+
+  it('holds back a malformed or repeated trusted proxy entry', async () => {
+    const user = userEvent.setup()
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json(recordedView())
+      return isRecord(url, init) ? noContent() : undefined
+    })
+    renderAt(PATH)
+
+    await openForm(user)
+    const proxies = screen.getByLabelText(T.trustedProxiesLabel, { exact: false })
+    await user.clear(proxies)
+    await user.type(proxies, 'proxy.example')
+    expect(screen.getByText(T.trustedProxiesError)).toBeTruthy()
+    await user.clear(proxies)
+    await user.type(proxies, '192.0.2.10{Enter}192.0.2.10')
+    expect(screen.getByText(T.trustedProxiesError)).toBeTruthy()
+    await user.type(screen.getByLabelText(T.reasonLabel, { exact: false }), 'SENTETIK')
+    fireEvent.submit(screen.getByRole('button', { name: T.save }).closest('form') as HTMLFormElement)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(commands(recorded)).toEqual([])
   })
 
   it('holds back a count or window the server would not read', async () => {

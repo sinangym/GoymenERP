@@ -8,8 +8,8 @@ namespace GoymenERP.Organization.UnitTests;
 /// </summary>
 public sealed class CompanyTaxIdDomainTests
 {
-    private const string CurrentVkn = "9000000001";
-    private const string ProposedVkn = "9000000002";
+    private const string CurrentVkn = "9000000017";
+    private const string ProposedVkn = "9000000025";
     private const string Maker = "SENTETIK-tax-maker";
     private const string Checker = "SENTETIK-tax-checker";
     private static readonly DateTimeOffset RequestedAt = new(2026, 11, 14, 9, 0, 0, TimeSpan.Zero);
@@ -61,6 +61,17 @@ public sealed class CompanyTaxIdDomainTests
     [InlineData("90000O0001")]
     [InlineData(" 9000000002 ")]
     public void A_request_refuses_a_non_canonical_proposed_vkn(string proposed)
+    {
+        var company = RealCompany();
+
+        Assert.Throws<ArgumentException>(() => new CompanyTaxIdChangeRequest(
+            Guid.NewGuid(), company.Id, company.Vkn, proposed, company.Version, "Sentetik gerekçe", Maker, RequestedAt));
+    }
+
+    [Theory]
+    [InlineData("9000000026")]
+    [InlineData("1111111111")]
+    public void A_request_refuses_a_proposed_vkn_failing_the_check_digit(string proposed)
     {
         var company = RealCompany();
 
@@ -166,11 +177,11 @@ public sealed class CompanyTaxIdDomainTests
         var company = RealCompany();
         var stale = Request(company);
         // The company moved after the request was prepared (another approved change).
-        company.ApplyApprovedVkn("9000000003", DecidedAt);
+        company.ApplyApprovedVkn("9000000033", DecidedAt);
 
         Assert.False(stale.IsCurrentFor(company));
         Assert.Throws<InvalidOperationException>(() => stale.Approve(company, Checker, null, DecidedAt));
-        Assert.Equal("9000000003", company.Vkn);
+        Assert.Equal("9000000033", company.Vkn);
         Assert.True(stale.IsPending);
 
         // A stale request can still be rejected.

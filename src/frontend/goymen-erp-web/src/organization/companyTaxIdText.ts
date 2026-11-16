@@ -99,6 +99,13 @@ export function taxIdFailureText(failure: CompanyTaxIdFailure): { title: string;
         title: 'VKN başka bir şirkette kayıtlı',
         detail: 'Aynı VKN iki şirkette olamaz. Önerilen VKN’yi kontrol edin; işlem uygulanmadı.',
       }
+    case 'tax-id-check-digit-invalid':
+      return {
+        title: 'VKN kontrol hanesi hatalı',
+        detail:
+          'Önerilen VKN resmî kontrol hanesi kuralını sağlamıyor. VKN’yi belgeden kontrol edip yeniden girin; ' +
+          'talep oluşturulmadı.',
+      }
     case 'tax-id-change-pending':
       return {
         title: 'Bekleyen bir talep var',
