@@ -133,3 +133,27 @@ SC32 kapsamında yeni iş kararı seçilmedi. Yeni izinlerin gerçek grant/rol e
   envanterleri ve merkezi plan güncellemesi köktedir. Ortak middleware/Program/Work kaynak kapsamı bu dilim için izinliydi.
 - Son kullanıcı cevapları ile gelen notification süresi/numaralama gibi yeni W7 sonrası işler bu commit'te uygulanmadı;
   bir sonraki dalga karar/spec kapsamında alınacaktır.
+
+## SC32 güvenlik takip düzeltmesi
+
+- Kaynak durumu **DONE**; commit `a427e1e9fbb05ab4215914aab1e81f1df80415bb`
+  (`KIM-SC32-a/b: fence race replays (FNS-D70 SAT-D364 KLN-D109)`). Birleşik main-merge tabanı
+  `8ac175881a78f955e9f3f49576a746451cc58824` üzerinden dar güvenlik düzeltmesidir.
+- Collateral yönetimindeki iki ve company-policy yönetimindeki üç unique-race recovery dalı, son kazanan okumasından
+  sonra taze izin ölçer. Özgün authenticated aktör ve sunucu şirketi ölçümün öncesinde ve sonrasında doğrulanır;
+  yetki/bağlam kaybında kayıtlı başarı veya ret cevabı açıklanmaz. Beşinci dal mevcut legacy company-policy save yoludur.
+  Komut/key/request hash, kayıtlı cevap, actor karşılaştırması ve original correlation sözleşmesi korunur.
+- `SettingsReplayRaceSqlServerRelationalAcceptanceTests` altında beş gerçek SQL fact kaynağı eklendi. İkinci bağlantı,
+  kaybedenin okumalarından sonra ama SQL insert'inden önce aynı anahtarın kazananını commit eder. Gerçek 2601/2627
+  unique hatası, tek save denemesi ve rollback sonrası tek winner lookup doğrulanır. Her dalda pozitif replay ile son
+  lookup sırasında izin/şirket/aktör kaybı ve refresh sırasında şirket/aktör değişimi kapsanır. İş satırı, terminal cevap
+  ve audit'in kaybedenden sızmaması; yeniden yetkili çağrının aynı key/body ve özgün correlation ile replay'i sınanır.
+- Yetki ve mutable bağlam fault'ları açık sentetik port kontrolleridir; SQL unique/transaction davranışı gerçek sağlayıcı
+  üzerindedir. Bu kaynaklar gerçek HTTP/Identity revocation kabulünün veya koşulmuş SQL kanıtının yerine geçmez.
+- İki sıralı derleme: `dotnet build tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj` ve
+  `dotnet build tests/GoymenERP.Settings.UnitTests/GoymenERP.Settings.UnitTests.csproj`; `--no-restore -m:1 -nr:false`,
+  `UseSharedCompilation=false`, OpenAPI build üretimi kapalı. İkisi de **exit 0, 0 hata/uyarı**. `git diff --check` temiz.
+- Dar bağımsız kaynak ikinci gözü yeni P1/P2 bildirmedi; bu final K3 review veya imza değildir. Test runtime, gerçek SQL,
+  host, DB apply, tarayıcı ve CI **NOT_RUN**. Migration/tablo/izin/grant/Work/şirket kurulum akışı değişmedi.
+- Beş yeni SQL fact'in merkezi ilişkisel envanter ve test-group pin üretimi kök entegrasyondadır; bu takip commit'inde
+  pin/OpenAPI JSON/generated dosya veya merkezi plan değiştirilmedi. Önceki PARTIAL ve insan kapıları korunur.
