@@ -14,6 +14,8 @@ export function ManualQueueControls({ companyId, planId, namespace, queue, allow
   const key = `goymen.manufacturing.queue.move.v1:${namespace}:${companyId}:${planId}`
   const boundary = useAuthBoundary(); const boundaryRef = useRef(boundary); boundaryRef.current = boundary
   const currentKey = useRef(key); currentKey.current = key
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const [saved, setSaved] = useState(() => readQueueMove(key))
   const [moving, setMoving] = useState(() => saved.kind === 'pending' ? saved.attempt.movingPlanId : '')
   const [before, setBefore] = useState(() => saved.kind === 'pending' ? saved.attempt.beforePlanId ?? '' : '')
@@ -29,7 +31,7 @@ export function ManualQueueControls({ companyId, planId, namespace, queue, allow
     const captured = boundaryRef.current.capture(); const capturedKey = key
     const result = await moveQueuePlan(companyId, planId, attempt)
     inFlight.current = false
-    if (currentKey.current !== capturedKey) return
+    if (!mounted.current || currentKey.current !== capturedKey) return
     setSending(false)
     if (result.type === 'unknown') { setMessage(T.unknown); return }
     if (!clearQueueMove(key)) { setSaved({ kind: 'blocked' }); return }

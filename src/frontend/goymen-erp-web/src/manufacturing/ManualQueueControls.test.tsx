@@ -51,4 +51,14 @@ describe('manual queue controls', () => {
     expect(await screen.findByText(T.conflict)).toBeTruthy(); expect(refresh).toHaveBeenCalledTimes(1)
     expect(sessionStorage.length).toBe(0)
   })
+  it('does not clear an unresolved attempt or refresh a different scope after the old control unmounts', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof moveQueuePlan>>) => void
+    vi.mocked(moveQueuePlan).mockReturnValue(new Promise(value => { resolve = value }))
+    const refresh = vi.fn(); const old = render(controls(true, refresh)); fill()
+    await waitFor(() => expect(moveQueuePlan).toHaveBeenCalledTimes(1))
+    old.unmount(); render(controls(false))
+    resolve({ type: 'failed', status: 403 })
+    await Promise.resolve(); await Promise.resolve()
+    expect(refresh).not.toHaveBeenCalled(); expect(sessionStorage.length).toBe(1)
+  })
 })
