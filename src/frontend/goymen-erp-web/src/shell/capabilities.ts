@@ -320,6 +320,12 @@ export const CAPABILITY = {
    * (no seed). Route `/ayarlar/birim-cevrim-politikasi`, owner Settings 1.4; one non-Critical name, granted to no role here.
    */
   settingsUnitConversionPolicy: 'settings.unit-conversion-policies.manage',
+  /**
+   * URT-D89 Ayarlar > İş merkezi kapasitesi: each work center's input capacity (kg/hour) and optional safety buffer
+   * versions (no seed). Route `/ayarlar/is-merkezi-kapasitesi`, owner Settings 1.5; one non-Critical name, granted to no
+   * role here.
+   */
+  settingsWorkCenterCapacity: 'settings.work-center-capacities.manage',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -452,6 +458,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsSalesApprovalThresholds]: '/ayarlar/onay-esikleri',
   [CAPABILITY.settingsLoginRateLimit]: '/ayarlar/giris-deneme-siniri',
   [CAPABILITY.settingsUnitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
+  [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',

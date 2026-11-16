@@ -1301,6 +1301,14 @@ public static class ErpPermissions
     public const string SettingsLoginRateLimitManage = "settings.login-rate-limit.manage";
 
     /// <summary>
+    /// URT-D89: read the company's work center capacity timelines (input kg/hour and the optional due-date safety buffer in
+    /// hours or days) and record new versions (<c>SettingsWorkCenterCapacityPermissionManifestV1.Manage</c>). Persona: the
+    /// production manager (a persona note only). Registered, not granted: no role, seed or user receives it here (a human
+    /// grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsWorkCenterCapacitiesManage = "settings.work-center-capacities.manage";
+
+    /// <summary>
     /// FNS-D52: read the company's per-bank CSV column mappings of the bank statement import (XLSX and MT940 need none) and
     /// record new versions (<c>SettingsBankCsvMappingPermissionManifestV1.Manage</c>). Registered, not granted: no role, seed
     /// or user receives it here (a human grant gate). Company-wide only. Not Critical.
@@ -1626,6 +1634,7 @@ public static class ErpPermissions
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsLoginRateLimitManage,
+            SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
             SettingsExchangeRatesRead,
@@ -1868,6 +1877,7 @@ public static class ErpPermissions
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsLoginRateLimitManage,
+            SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
             SettingsExchangeRatesRead,

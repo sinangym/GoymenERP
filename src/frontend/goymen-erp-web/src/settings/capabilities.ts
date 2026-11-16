@@ -1,7 +1,7 @@
 /**
  * SAT-D61…D70 — the Ayarlar screen of the Sales discount limit groups, their limits and the person → group bindings.
  *
- * Mirrors `SettingsShellCapabilityProvider` exactly (provider 1.4: seven route capabilities, each on its own server permission,
+ * Mirrors `SettingsShellCapabilityProvider` exactly (provider 1.5: eight route capabilities, each on its own server permission,
  * and the exchange rate screen's three command controls). The first,
  * `settings.sales-discount-limits.manage`, company-wide, in one company (not Critical; granted to no role — SAT-D65/D69,
  * a human gate). Listing the id here grants nothing: an ungranted capability closes the route onto the neutral
@@ -41,6 +41,12 @@ export const SETTINGS_CAPABILITY = {
    * own name `settings.unit-conversion-policies.manage` (company-wide, not Critical, granted to no role here).
    */
   unitConversionPolicy: 'settings.unit-conversion-policies.manage',
+  /**
+   * URT-D89 (provider 1.5): route `/ayarlar/is-merkezi-kapasitesi`, the company's work center capacities (input kg/hour and
+   * the optional safety buffer) on its own name `settings.work-center-capacities.manage` (company-wide, not Critical,
+   * granted to no role here; the production manager is a persona note only).
+   */
+  workCenterCapacity: 'settings.work-center-capacities.manage',
 } as const
 
 /**
@@ -64,6 +70,7 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.salesApprovalThresholds]: '/ayarlar/onay-esikleri',
   [SETTINGS_CAPABILITY.loginRateLimit]: '/ayarlar/giris-deneme-siniri',
   [SETTINGS_CAPABILITY.unitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
+  [SETTINGS_CAPABILITY.workCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
@@ -74,4 +81,5 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.salesApprovalThresholds]: 'Onay tutar eşikleri',
   [SETTINGS_CAPABILITY.loginRateLimit]: 'Giriş deneme sınırı',
   [SETTINGS_CAPABILITY.unitConversionPolicy]: 'Birim çevrim politikası',
+  [SETTINGS_CAPABILITY.workCenterCapacity]: 'İş merkezi kapasitesi',
 }

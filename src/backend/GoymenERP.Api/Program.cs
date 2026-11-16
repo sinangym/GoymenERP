@@ -363,6 +363,9 @@ builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHo
 // SAT-D134/D139: the Settings line tax port reads the product's item type from the Product owner's company-scoped field
 // through this central adapter (Settings reads no Product table).
 builder.Services.AddScoped<ISettingsProductItemTypeSourceV1, SettingsProductItemTypeHost>();
+// URT-D89: the Settings work center capacity administration asks whether a work center exists in the server company through
+// this central adapter over the Organization owner's planning reference read (Settings reads no Organization table).
+builder.Services.AddScoped<ISettingsWorkCenterReferenceV1, SettingsWorkCenterReferenceHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.
@@ -545,6 +548,7 @@ app.MapSettingsSalesPolicyEndpoints();
 app.MapSettingsUnitConversionPolicyEndpoints();
 app.MapSettingsSegregationOfDutiesPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
+app.MapSettingsWorkCenterCapacityEndpoints();
 app.MapSettingsBankCsvMappingEndpoints();
 app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();

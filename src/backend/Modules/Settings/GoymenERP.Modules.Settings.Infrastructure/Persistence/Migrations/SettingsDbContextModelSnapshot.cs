@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -2546,6 +2549,63 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Rounding", "[CoefficientRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity') AND [DocumentTotalRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity') AND [WholeUnitRounding] IN ('ToEven','AwayFromZero','ToZero','ToNegativeInfinity','ToPositiveInfinity')");
 
                             t.HasCheckConstraint("CK_SettingsUnitConversionPolicyVersions_Tolerance", "[WeighbridgeTolerancePercent] >= 0 AND [WeighbridgeTolerancePercent] <= 100 AND [ToleranceBoundary] IN ('Inclusive','Exclusive') AND [ToleranceBase] IN ('TheoreticalKg','WeighedKg')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WorkCenterCapacityVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("InputCapacityKgPerHour")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SafetyBufferUnit")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<decimal?>("SafetyBufferValue")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.HasKey("CompanyId", "WorkCenterId", "Version");
+
+                    b.HasIndex("ProfileId")
+                        .IsUnique();
+
+                    b.ToTable("WorkCenterCapacityVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_Capacity", "[InputCapacityKgPerHour] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsWorkCenterCapacityVersions_SafetyBuffer", "([SafetyBufferValue] IS NULL AND [SafetyBufferUnit] IS NULL) OR ([SafetyBufferValue] > 0 AND [SafetyBufferUnit] IN ('Hours','Days'))");
                         });
                 });
 

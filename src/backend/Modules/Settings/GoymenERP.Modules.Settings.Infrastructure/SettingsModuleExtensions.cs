@@ -71,6 +71,11 @@ public static class SettingsModuleExtensions
         // limiter refreshes from. Nothing is seeded: until the first version the host keeps its configured starting value.
         services.AddScoped<ISettingsLoginRateLimitAdministrationV1, SettingsLoginRateLimitAdministration>();
         services.AddScoped<ISettingsLoginRateLimitProviderV1, SettingsLoginRateLimitProviderV1>();
+        // URT-D89 (URT-D87 the unit, URT-D91/URT-D92 the buffer): the per-work-center capacity record, its administration and
+        // the read port the Manufacturing due-date suggestion consumes. Nothing is seeded: no version is no capacity. The work
+        // center reference port is composed by the API host over the Organization owner's read (none composed: fail closed).
+        services.AddScoped<ISettingsWorkCenterCapacityAdministrationV1, SettingsWorkCenterCapacityAdministration>();
+        services.AddScoped<ISettingsWorkCenterCapacityProviderV1, SettingsWorkCenterCapacityProviderV1>();
         services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
         services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both
