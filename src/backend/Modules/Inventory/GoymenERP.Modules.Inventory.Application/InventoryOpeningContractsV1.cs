@@ -89,6 +89,19 @@ public static class InventoryPermissionManifestV1
     /// Registration/classification and every grant remain central/user-owned.
     /// </summary>
     public const string StockTransferLossApprove = "inventory.stock-transfer.loss-approve";
+
+    /// <summary>
+    /// SAT-D304 (1) / SAT-D372: submit the manually entered unit cost of one location's uncosted opening stock of one
+    /// product. Changes no cost ledger. Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string OpeningCostSubmit = "inventory.opening-cost.submit";
+
+    /// <summary>
+    /// SAT-D304 (1) / SAT-D372: approve (open the average-cost position) or reject one submitted opening cost. A
+    /// separate name from <see cref="OpeningCostSubmit"/> (the service also refuses the submitter's own decision).
+    /// Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string OpeningCostApprove = "inventory.opening-cost.approve";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

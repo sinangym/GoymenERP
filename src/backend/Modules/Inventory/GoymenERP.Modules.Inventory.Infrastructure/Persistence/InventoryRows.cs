@@ -460,6 +460,44 @@ internal sealed class StockScrapDecisionRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// SAT-D304 opening-stock cost submission: the manually entered base-currency unit cost per stock kilogram of one
+/// (location, product) position, with its mandatory reason. A submission changes no cost ledger.
+/// <see cref="PayloadHash"/> is the canonical request, so the same id again is a replay or a conflict. The submitter is
+/// kept for the maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class OpeningCostRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public decimal UnitCostPerKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on an opening-cost submission: approved with the company's own stock on hand it costed (the schema
+/// requires a positive figure), or rejected with none. The key (company, submission) allows exactly one decision.
+/// Append-only.
+/// </summary>
+internal sealed class OpeningCostDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OpeningCostId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public decimal? CostedStockKg { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
 /// <summary>INV-R20 same-company transfer header. Only lifecycle status/version/update time may advance.</summary>
 internal sealed class InventoryTransferRow : IInventoryTenantRow
 {

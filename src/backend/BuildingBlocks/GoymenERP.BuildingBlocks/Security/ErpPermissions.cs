@@ -289,6 +289,24 @@ public static class ErpPermissions
     public const string InventoryStockTransferLossApprove = "inventory.stock-transfer.loss-approve";
 
     /// <summary>
+    /// Opening-stock cost submission (SAT-D304 (1), SAT-D372): enter the unit cost of one location's uncosted opening
+    /// stock of one product, as a pending submission. It changes no cost ledger until another person approves it.
+    /// Registration grants nothing: no seeded role or real user receives this command. Company-wide only because the
+    /// cost ledger has no narrower approved scope dimension. Not Critical: no approved source adds grant-time dual
+    /// control.
+    /// </summary>
+    public const string InventoryOpeningCostSubmit = "inventory.opening-cost.submit";
+
+    /// <summary>
+    /// Opening-stock cost decision (SAT-D304 (1), SAT-D372): approve (open the average-cost position) or reject one
+    /// pending submission. A separate name from <see cref="InventoryOpeningCostSubmit"/>; the service also refuses the
+    /// submitter's own decision (giren ≠ onaylayan). Registration grants nothing: no seeded role or real user receives
+    /// this command. Company-wide only because the cost ledger has no narrower approved scope dimension. Not Critical:
+    /// no approved source adds grant-time dual control.
+    /// </summary>
+    public const string InventoryOpeningCostApprove = "inventory.opening-cost.approve";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -1524,6 +1542,8 @@ public static class ErpPermissions
             InventoryStockTransferOverageApprove,
             InventoryStockTransferLossRecord,
             InventoryStockTransferLossApprove,
+            InventoryOpeningCostSubmit,
+            InventoryOpeningCostApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -1766,6 +1786,8 @@ public static class ErpPermissions
             InventoryStockTransferOverageApprove,
             InventoryStockTransferLossRecord,
             InventoryStockTransferLossApprove,
+            InventoryOpeningCostSubmit,
+            InventoryOpeningCostApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
