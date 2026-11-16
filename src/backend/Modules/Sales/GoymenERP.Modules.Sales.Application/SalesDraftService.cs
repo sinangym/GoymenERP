@@ -77,7 +77,8 @@ public sealed partial class SalesDraftService(
     ISalesInvoiceStore? invoiceRecords = null,
     ISalesInvoiceableShipmentReadPortV1? postedShares = null,
     ISalesOrderAllocationReadPortV2? allocationsV2 = null,
-    ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null,
+    ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -811,9 +812,11 @@ public sealed partial class SalesDraftService(
     /// appended schedule, the header's version, the attempt, the audit event with the dates before and after). A stale
     /// version or a withdrawn draft is the key's TERMINAL 409 (recorded, replayed); a line/slice mismatch or a no-change
     /// update is a 422 on <c>lines</c> / <c>lines[i].slices</c>; a lost race answers the winner (§8). Nothing is measured
-    /// after the commit (S03). The approval axis and the commercial revision do not move. SAT-D370 (SINAN-CEVAP 33): the line termin
-    /// is edited under the existing order edit permission and audited; today that is this registered delivery-schedule name (which
-    /// edit permission SAT-D370 means is NEEDS-SINAN; no name, grant or binding is changed here).
+    /// after the commit (S03). The approval axis and the commercial revision do not move. SAT-D398/SAT-D400 (SINAN-CEVAP 33, replaces
+    /// the SAT-D370 reading): the header and line termin may be changed by an actor holding EITHER the registered delivery-schedule name
+    /// OR the order edit permission (the <see cref="SalesDraftServiceBindings.HeaderPermission"/> binding, <c>sales.orders.header.write</c>
+    /// per EK15 36.6 — the exact code mapping is an author reading to be confirmed in K3 review). No new name, grant or role is opened.
+    /// The name that granted the call is the one the envelope, the audit, the replay and every later fence use.
     /// </summary>
     public async Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -822,8 +825,7 @@ public sealed partial class SalesDraftService(
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var permission = bindings.DeliverySchedulePermission;
-        var scope = await RequireAsync(permission, cancellationToken);
+        var (scope, permission) = await RequireDeliveryScheduleAsync(cancellationToken);
         if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion) || expectedVersion < 1)
         {
             throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
@@ -899,6 +901,27 @@ public sealed partial class SalesDraftService(
         }
 
         return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    /// <summary>
+    /// SAT-D398/SAT-D400: the termin fence is an OR of two registered names. The delivery-schedule name is measured first; only a plain
+    /// 403 on it falls through to the order edit name (a 401 or a 503 setup gap is answered as is). With no distinct edit binding the
+    /// first refusal stands. Returns the scope and the name that granted it.
+    /// </summary>
+    private async Task<(Scope Scope, string? Permission)> RequireDeliveryScheduleAsync(CancellationToken cancellationToken)
+    {
+        var schedule = bindings.DeliverySchedulePermission;
+        var edit = bindings.HeaderPermission;
+        try
+        {
+            return (await RequireAsync(schedule, cancellationToken), schedule);
+        }
+        catch (SalesDraftServiceException exception) when (exception.Status == 403
+            && !string.IsNullOrWhiteSpace(edit)
+            && !string.Equals(edit, schedule, StringComparison.Ordinal))
+        {
+            return (await RequireAsync(edit, cancellationToken), edit);
+        }
     }
 
     /// <summary>The field a schedule refusal is answered on: <c>lines[i].slices</c> for a line's slice mismatch (i = the line's index in THIS request), else <c>lines</c>.</summary>

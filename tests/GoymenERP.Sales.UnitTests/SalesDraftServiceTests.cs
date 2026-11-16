@@ -475,11 +475,13 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task Without_the_schedule_name_it_is_403_before_the_draft_is_read_and_the_other_names_do_not_confer_it()
+    public async Task Without_the_schedule_name_and_the_order_edit_name_it_is_403_before_the_draft_is_read_and_the_other_names_do_not_confer_it()
     {
         var world = new World();
         var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
         world.Authority.Denied.Add(SchedulePermission);
+        // SAT-D398/SAT-D400: the order edit name is the only other name that confers the termin change.
+        world.Authority.Denied.Add(SalesPermissionManifestV1.OrdersHeaderWrite);
 
         var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
             Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
@@ -487,6 +489,50 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((403, "forbidden"), (forbidden.Status, forbidden.Code));
         Assert.Empty(world.Store.Schedules);
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.RescheduleDeliveryV1);
+    }
+
+    [Fact]
+    public async Task An_order_edit_holder_without_the_schedule_name_moves_the_dates_audited_under_the_edit_name_without_re_approval()
+    {
+        // SAT-D398/SAT-D400 (SINAN-CEVAP 33): termin = the order edit permission OR the delivery-schedule name; approval stays.
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        world.Authority.Denied.Add(SchedulePermission);
+
+        var moved = await world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("5", Day.AddDays(30), SameDates(created.Lines[0], 7), SameDates(created.Lines[1])), Metadata("k-s1"));
+
+        Assert.Equal(("Approved", "6"), (moved.Detail.Draft.ApprovalState, moved.Detail.Draft.Version));
+        Assert.Equal(approved.Detail.Approval, moved.Detail.Approval);
+        var transition = world.Store.Transitions.Single(item => item.Command == SalesDraftCommands.RescheduleDeliveryV1);
+        Assert.Equal((SalesPermissionManifestV1.OrdersHeaderWrite, "sales.order-draft.delivery-rescheduled.v1"),
+            (transition.Envelope.PermissionCode, transition.Audit.EventType));
+        Assert.Single(world.Store.Schedules);
+    }
+
+    [Fact]
+    public async Task With_no_order_edit_binding_a_missing_schedule_name_stays_403_and_an_edit_name_revoked_after_the_read_is_refused()
+    {
+        var unbound = new World();
+        var created = (await unbound.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        unbound.Bindings = unbound.Bindings with { HeaderPermission = null };
+        unbound.Authority.Denied.Add(SchedulePermission);
+        var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => unbound.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
+        Assert.Equal((403, "forbidden"), (forbidden.Status, forbidden.Code));
+        Assert.Empty(unbound.Store.Schedules);
+
+        // The name that granted the call is the one the last fence re-measures.
+        var world = new World();
+        var draft = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        world.Authority.Denied.Add(SchedulePermission);
+        world.Store.OnStore = () => world.Authority.Denied.Add(SalesPermissionManifestV1.OrdersHeaderWrite);
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(draft.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(draft.Lines[0]), SameDates(draft.Lines[1])), Metadata("k-s2")));
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Empty(world.Store.Schedules);
     }
 
     [Fact]
@@ -1712,8 +1758,17 @@ public sealed partial class SalesDraftServiceTests
                 LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
                 InvoiceRecords, PostedShares,
                 NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()),
-                FutureAllocationRelease);
+                FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this));
         }
+
+        /// <summary>
+        /// SAT-D406: the Logistics shipment-plan owner's read for the risk remainder; null = the default SYNTHETIC plan, which plans
+        /// exactly the approved basis less the case's definitely shipped quantities, so the cases whose subject is not the plan keep
+        /// measuring what they did.
+        /// </summary>
+        public ISalesOrderPlannedQuantityReadPortV1? PlannedQuantities { get; set; }
+        /// <summary>SAT-D406: true = the plan owner is not composed (the remainder of an open approved order is unavailable).</summary>
+        public bool NoPlannedQuantities { get; set; }
 
         /// <summary>The default SYNTHETIC kind-aware allocation owner: nothing of either kind for any order of the company.</summary>
         private sealed class NoFutureSupplyAllocations : ISalesOrderAllocationReadPortV2

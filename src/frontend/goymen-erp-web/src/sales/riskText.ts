@@ -93,6 +93,8 @@ export const RISK_CHECK_TEXT = {
     finance_processed_set_unavailable: 'Kesinleşmiş bir faturanın Finans\'ta işlenip işlenmediği henüz okunamıyor; eksik toplam gösterilmez.',
     delivery_provider_unavailable: 'Sevkiyat kaynağı (Lojistik) bağlı değil ya da yanıt vermedi.',
     delivery_answer_invalid: 'Sevkiyat kaynağı geçersiz bir değer yanıtladı.',
+    plan_provider_unavailable: 'Sevk planı kaynağı (Lojistik yükleme talimatları) bağlı değil ya da yanıt vermedi.',
+    plan_answer_invalid: 'Sevk planı kaynağı geçersiz bir değer yanıtladı.',
     order_line_unpriced: 'Onaylı bir siparişin fiyatı olmayan satırı var; fiyatsız satır sıfır sayılmaz.',
     price_unit_conversion_unavailable: 'Bir satırın fiyat birimi sipariş biriminden farklı; birim çevrimi yapılmaz.',
     order_basis_unreadable: 'Yeniden onay bekleyen bir siparişin onaylı miktarları okunamadı.',

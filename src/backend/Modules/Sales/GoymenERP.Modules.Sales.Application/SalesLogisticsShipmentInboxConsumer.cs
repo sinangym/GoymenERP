@@ -16,7 +16,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// or one already bound to another shipment is a broken contract, never retried: <see cref="OutboxPermanentFailureException"/>.</item>
 /// <item>A lost race of two deliveries is an ordinary exception: the retry reads the winner and answers "already recorded".</item>
 /// </list>
-/// Not registered with the dispatcher yet (see <see cref="SalesLogisticsShipmentInboxV1"/>).
+/// Registered with the dispatcher by the Api host (SAT-SC33; see <see cref="SalesLogisticsShipmentInboxV1"/>); the dispatcher stays off until enabled.
 /// </summary>
 public sealed class SalesLogisticsShipmentInboxConsumer(ISalesRiskExceptionUsageStore store, ICompanyContext companyContext)
     : IWorkInboxConsumerV1
