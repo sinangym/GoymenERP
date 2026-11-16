@@ -16,8 +16,11 @@ internal sealed class UserDirectoryReadPortV1(
     IdentityDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser)
-    : IUserDirectoryReadPortV1, IUserCompanyMembershipReadPortV1
+    : IUserDirectoryReadPortV1, IUserCompanyMembershipReadPortV1, ICompanySingleActiveMemberReadPortV1
 {
+    /// <summary>Enough rows to tell "exactly one" from "more than one"; the count itself never leaves the module.</summary>
+    private const int SingleMemberProbeSize = 2;
+
     public async Task<UserDirectoryResolveAnswerV1> ResolveAsync(
         UserDirectoryResolveRequestV1 request,
         CancellationToken cancellationToken = default)
@@ -212,6 +215,47 @@ internal sealed class UserDirectoryReadPortV1(
         catch (Exception)
         {
             return new UserCompanyMembershipAnswerV1(UserDirectoryOutcomeV1.Unavailable, []);
+        }
+    }
+
+    /// <summary>
+    /// KIM-D39: whether the server-resolved company has exactly one active member now. The caller must be an active member of
+    /// it, so "one" means the caller alone.
+    /// </summary>
+    public async Task<CompanySingleActiveMemberAnswerV1> GetAsync(
+        CompanySingleActiveMemberRequestV1 request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!TryFence(request?.CompanyId, request?.ActorId, out var fence))
+        {
+            return new CompanySingleActiveMemberAnswerV1(UserDirectoryOutcomeV1.Denied, false);
+        }
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (!await IsActiveMemberAsync(fence.ActorUserId, fence.CompanyId, now, cancellationToken))
+            {
+                return new CompanySingleActiveMemberAnswerV1(UserDirectoryOutcomeV1.Denied, false);
+            }
+
+            var members = await ActiveMembers(fence.CompanyId, now)
+                .Select(user => user.Id)
+                .Take(SingleMemberProbeSize)
+                .CountAsync(cancellationToken);
+
+            return StillFenced(fence)
+                ? new CompanySingleActiveMemberAnswerV1(UserDirectoryOutcomeV1.Found, members == 1)
+                : new CompanySingleActiveMemberAnswerV1(UserDirectoryOutcomeV1.Denied, false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return new CompanySingleActiveMemberAnswerV1(UserDirectoryOutcomeV1.Unavailable, false);
         }
     }
 

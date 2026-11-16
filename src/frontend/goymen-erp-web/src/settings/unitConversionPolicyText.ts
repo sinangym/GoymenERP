@@ -3,8 +3,8 @@
  *
  * KIM-D37: no value is seeded and the form pre-fills nothing. The decision's suggestions are shown as reminder text only
  * (density 7,85; coefficient 3 decimals; kg → whole unit rounded down; document total 2 decimals; tolerance %1 with ≤;
- * theoretical kg). The coefficient's rounding direction has NO suggestion: it is open (URN-D8, NEEDS-SINAN) and the
- * administrator chooses it.
+ * theoretical kg). The coefficient's rounding direction is decided (KLN-D88: half and above away from zero) and is shown,
+ * not chosen.
  */
 
 import {
@@ -44,7 +44,7 @@ export const UNIT_CONVERSION_TEXT = {
   hintDensity: 'Yoğunluk: 7,85 g/cm³ (girişte 7.85).',
   hintCoefficientDecimals: 'Katsayı: 3 ondalık.',
   hintCoefficientRounding:
-    'Katsayının yuvarlama yönü için öneri yoktur; karar açıktır ve yöneticinin seçimine bırakılmıştır.',
+    'Katsayı yuvarlaması karara bağlıdır (KLN-D88): yarım ve üstü sıfırdan uzağa yuvarlanır (örn. 3 ondalıkta 1,2345 → 1,235).',
   hintWholeUnit: 'kg → tam birim: aşağı yuvarlama (pozitif miktarda «Sıfıra doğru» ile «Eksi sonsuza doğru» aynıdır).',
   hintDocumentTotal: 'Belge toplamı: 2 ondalık.',
   hintTolerance: 'Kantar toleransı: %1, sapma toleransa eşitse geçer (≤), teorik kg üzerinden.',
@@ -55,6 +55,7 @@ export const UNIT_CONVERSION_TEXT = {
   densityError: 'Sıfırdan büyük, nokta ile ayrılmış bir sayı girin.',
   coefficientDecimalsLabel: 'Katsayı ondalık sayısı',
   coefficientRoundingLegend: 'Katsayı yuvarlama yönü',
+  coefficientRoundingDecided: 'Karara bağlı (KLN-D88); değiştirilemez. Yalnız katsayı ondalık sayısı şirket ayarıdır.',
   documentTotalDecimalsLabel: 'Belge toplamı ondalık sayısı',
   documentTotalRoundingLegend: 'Belge toplamı yuvarlama yönü',
   wholeUnitRoundingLegend: 'kg → tam birim yuvarlama yönü',

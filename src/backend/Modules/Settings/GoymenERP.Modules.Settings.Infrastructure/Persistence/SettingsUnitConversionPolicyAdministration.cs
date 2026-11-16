@@ -96,6 +96,14 @@ internal sealed class SettingsUnitConversionPolicyAdministration(
                 metadata);
         }
 
+        if (!UnitConversionPolicyRulesV1.TryParseCoefficientRounding(request.CoefficientRounding, out _))
+        {
+            return Unstored(Answers.Invalid(
+                "Katsayı yuvarlaması karara bağlıdır (KLN-D88): yarım ve üstü sıfırdan uzağa yuvarlanır ("
+                + UnitConversionRoundingModesV1.DecidedCoefficientRounding + "). Yalnız katsayı ondalık sayısı şirket ayarıdır."),
+                metadata);
+        }
+
         if (!UnitConversionPolicyRulesV1.TryParseTolerancePercent(request.WeighbridgeTolerancePercent, out var tolerance))
         {
             return Unstored(Answers.Invalid(

@@ -360,6 +360,9 @@ builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost
 // central adapters (no module reads another's tables).
 builder.Services.AddScoped<ISalesDiscountLimitGroupSourceV1, SalesDiscountLimitGroupHost>();
 builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHost>();
+// KIM-D39: the Settings segregation of duties owner reads "exactly one active user in the company" from the Identity owner
+// through this central adapter (Settings reads no Identity table).
+builder.Services.AddScoped<ISettingsCompanyActiveUsersV1, SettingsCompanyActiveUsersHost>();
 // SAT-D134/D139: the Settings line tax port reads the product's item type from the Product owner's company-scoped field
 // through this central adapter (Settings reads no Product table).
 builder.Services.AddScoped<ISettingsProductItemTypeSourceV1, SettingsProductItemTypeHost>();

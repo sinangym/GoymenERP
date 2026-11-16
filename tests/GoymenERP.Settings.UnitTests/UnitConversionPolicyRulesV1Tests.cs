@@ -126,4 +126,30 @@ public sealed class UnitConversionPolicyRulesV1Tests
         Assert.Equal(expected, UnitConversionPolicyRulesV1.Format(UnitConversionPolicyRulesV1.Canonical(value)));
         Assert.Equal(value, UnitConversionPolicyRulesV1.Canonical(value));
     }
+
+    [Fact]
+    public void The_coefficient_rounding_is_decided_as_away_from_zero()
+    {
+        Assert.Equal(UnitConversionRoundingModesV1.AwayFromZero, UnitConversionRoundingModesV1.DecidedCoefficientRounding);
+        Assert.True(UnitConversionPolicyRulesV1.TryParseCoefficientRounding(
+            UnitConversionRoundingModesV1.DecidedCoefficientRounding, out var mode));
+        Assert.Equal(MidpointRounding.AwayFromZero, mode);
+        Assert.Equal(1.235m, Math.Round(1.2345m, 3, mode));
+        Assert.Equal(-1.235m, Math.Round(-1.2345m, 3, mode));
+    }
+
+    [Fact]
+    public void Every_other_coefficient_rounding_code_is_refused_not_rewritten()
+    {
+        foreach (var code in UnitConversionRoundingModesV1.All.Where(code =>
+                     !string.Equals(code, UnitConversionRoundingModesV1.DecidedCoefficientRounding, StringComparison.Ordinal)))
+        {
+            Assert.False(UnitConversionPolicyRulesV1.TryParseCoefficientRounding(code, out var mode));
+            Assert.Equal(default(MidpointRounding), mode);
+        }
+
+        Assert.False(UnitConversionPolicyRulesV1.TryParseCoefficientRounding(null, out _));
+        Assert.False(UnitConversionPolicyRulesV1.TryParseCoefficientRounding("awayfromzero", out _));
+        Assert.False(UnitConversionPolicyRulesV1.TryParseCoefficientRounding(" AwayFromZero", out _));
+    }
 }
