@@ -41,7 +41,8 @@ public sealed partial class ManufacturingStore : IManufacturingWorkCenterQueueSt
         // order (URT-D66 lets it move there), otherwise the plan's requested termin.
         var orderPlanIds = candidates.Select(candidate => candidate.Id).Append(targetPlanId).ToArray();
         var orders = await dbContext.Orders.AsNoTracking()
-            .Where(order => order.CompanyId == companyId && orderPlanIds.Contains(order.PlanId))
+            .Where(order => order.CompanyId == companyId && orderPlanIds.Contains(order.PlanId)
+                && order.Status != (int)OrderStatus.Cancelled)
             .Select(order => new { order.Id, order.PlanId, order.DueDate })
             .ToListAsync(cancellationToken);
         var targetOrder = orders.SingleOrDefault(order => order.PlanId == targetPlanId);
