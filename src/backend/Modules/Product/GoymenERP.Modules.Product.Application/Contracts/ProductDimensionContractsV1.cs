@@ -177,6 +177,13 @@ public static class ProductDimensionProblemCodesV1
 
     /// <summary>URN-D16: a profile card whose measures the acting company's current kg/m table does not hold is not saved.</summary>
     public const string WeightSourceMissing = "product_dimension_weight_source_missing";
+
+    /// <summary>
+    /// URN-D19: a profile whose measures stand in the acting company's current kg/m table in both directions (width and height
+    /// swapped) with different kg/m is a table conflict; the card is not saved until the table is corrected.
+    /// </summary>
+    public const string WeightSourceConflict = "product_dimension_weight_source_conflict";
+
     public const string ProviderUnavailable = "product_dimension_provider_unavailable";
 }
 
@@ -314,6 +321,9 @@ public enum ProductDimensionOutcomeV1
 /// server-resolved company's current imported table value for the measures (URN-D16), with its source label and table version;
 /// null when the table holds none (a profile or round tube without a table value: an operation needing kg is refused, KLN-D66)
 /// and for every KLN-D87 kind without a table source. The KLN-D87 fields trail.
+/// A profile matches the table in either direction (URN-D19: width and height swapped, same wall). <c>KgPerMetreConflict</c> is
+/// true when both directions stand in the table with different kg/m: <c>KgPerMetre</c> is then null and the source label and
+/// table version name the conflicting table, so a consumer refuses with its explicit conflict code instead of "no value".
 /// </summary>
 public sealed record ProductDimensionReadV1(
     ProductDimensionOutcomeV1 Outcome,
@@ -331,7 +341,8 @@ public sealed record ProductDimensionReadV1(
     string? ProfileSeries = null,
     string? ProfileSize = null,
     decimal? MeshSpacingMm = null,
-    string? SurfaceFinish = null)
+    string? SurfaceFinish = null,
+    bool KgPerMetreConflict = false)
 {
     public static ProductDimensionReadV1 Without(ProductDimensionOutcomeV1 outcome) =>
         new(outcome, null, null, null, null, null, null, null, null, null);

@@ -277,7 +277,8 @@ function DimensionForm({
         outcome.code === DIMENSION_PROBLEM.reasonRequired ? DIMENSION_TEXT.reasonRequired
           : outcome.code === DIMENSION_PROBLEM.measureInvalid ? DIMENSION_TEXT.measureInvalid
             : outcome.code === DIMENSION_PROBLEM.weightSourceMissing ? DIMENSION_TEXT.weightSourceMissing
-              : DIMENSION_TEXT.refused,
+              : outcome.code === DIMENSION_PROBLEM.weightSourceConflict ? DIMENSION_TEXT.weightSourceConflict
+                : DIMENSION_TEXT.refused,
       )
     }
   }

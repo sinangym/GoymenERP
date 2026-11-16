@@ -29,7 +29,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// (<see cref="ProductDimensionProblemCodesV1.WeightSourceMissing"/>); a round tube's table value is optional. KLN-D87: an ERW
 /// / painted ERW tube or profile follows the round tube / profile rule on the same rows; a structural profile reads its
 /// (series, size) row and is saved without one (its weight then reads as no source); the other KLN-D87 kinds have no table
-/// source (an operation that needs kg is refused by its consumer, KLN-D66).</item>
+/// source (an operation that needs kg is refused by its consumer, KLN-D66). A profile matches the table with width and height
+/// swapped too (URN-D19); both directions with different kg/m is a table conflict
+/// (<see cref="ProductDimensionProblemCodesV1.WeightSourceConflict"/>), never a pick.</item>
 /// </list>
 /// </summary>
 internal sealed class ProductDimensionService(
@@ -61,7 +63,8 @@ internal sealed class ProductDimensionService(
 
         var row = await database.Dimensions.AsNoTracking()
             .SingleOrDefaultAsync(dimension => dimension.ProductId == productId, cancellationToken);
-        var weight = row is null ? null : await WeightOfAsync(row, scope.CompanyId, cancellationToken);
+        // A URN-D19 table conflict shows no kg/m in the view (never one of the two values); the save names the conflict.
+        var weight = row is null ? null : (await WeightOfAsync(row, scope.CompanyId, cancellationToken)).Match;
         await MeasureAsync(cancellationToken);
         return row is null
             ? new ProductDimensionViewV1(scope.CompanyId, productId, "0", null, null, null, null, null, null, null, null, null, null,
@@ -147,11 +150,20 @@ internal sealed class ProductDimensionService(
             refusal = VersionConflict();
         }
 
-        var weight = refusal is null
+        var lookup = refusal is null
             ? await ProductProfileWeightTableService.FindAsync(database, scope.CompanyId, shape.SectionKind, shape.WidthMm,
                 shape.HeightMm, shape.OuterDiameterMm, shape.WallThicknessMm, cancellationToken, shape.ProfileSeries,
                 shape.ProfileSize)
             : null;
+        var weight = lookup?.Match;
+        if (refusal is null && lookup is { IsConflict: true })
+        {
+            // URN-D19: the two directions of these measures hold different kg/m in the table; neither is picked.
+            refusal = Problem(409, ProductDimensionProblemCodesV1.WeightSourceConflict, "Metre ağırlığı tablosu çelişkili.",
+                "Şirketin güncel metre ağırlığı tablosunda bu ölçünün iki yönü (en ve yükseklik yer değiştirmiş) farklı kg/m ile "
+                + "duruyor; önce tabloyu düzeltip yeniden içe aktarın.");
+        }
+
         if (refusal is null && weight is null && ProductDimensionSectionKindsV1.RequiresTableWeight(shape.SectionKind))
         {
             // URN-D16: a profile's (and an ERW / painted ERW profile's) kg/m is required and comes only from the company's
@@ -244,11 +256,12 @@ internal sealed class ProductDimensionService(
                 return ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.NoSource);
             }
 
-            var weight = await WeightOfAsync(row, companyContext.CompanyId, cancellationToken);
+            var lookup = await WeightOfAsync(row, companyContext.CompanyId, cancellationToken);
+            var weight = lookup.Match;
             return new ProductDimensionReadV1(ProductDimensionOutcomeV1.Found, row.SectionKind, row.ThicknessMm, row.WidthMm,
                 row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, weight?.KgPerMetre, row.Version,
-                weight?.SourceLabel, weight?.TableVersion, row.ProfileSeries, row.ProfileSize, row.MeshSpacingMm,
-                row.SurfaceFinish);
+                weight?.SourceLabel ?? lookup.ConflictSourceLabel, weight?.TableVersion ?? lookup.ConflictTableVersion,
+                row.ProfileSeries, row.ProfileSize, row.MeshSpacingMm, row.SurfaceFinish, lookup.IsConflict);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -273,8 +286,8 @@ internal sealed class ProductDimensionService(
         return new Scope(companyContext.CompanyId, [.. measured.RoleCodes.Order(StringComparer.Ordinal)]);
     }
 
-    /// <summary>The acting company's current table value for the stored measures (URN-D16); null without one.</summary>
-    private Task<ProfileWeightMatch?> WeightOfAsync(ProductCardDimensionRow row, Guid companyId,
+    /// <summary>The acting company's current table lookup for the stored measures (URN-D16, either direction URN-D19).</summary>
+    private Task<ProfileWeightLookup> WeightOfAsync(ProductCardDimensionRow row, Guid companyId,
         CancellationToken cancellationToken) =>
         ProductProfileWeightTableService.FindAsync(database, companyId, row.SectionKind, row.WidthMm, row.HeightMm,
             row.OuterDiameterMm, row.WallThicknessMm, cancellationToken, row.ProfileSeries, row.ProfileSize);

@@ -139,6 +139,63 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.ProductProfileWeightImports"));
     }
 
+    [SqlServerFact]
+    public async Task A_profile_finds_its_kg_per_metre_with_width_and_height_swapped_and_a_two_direction_table_conflict_is_refused()
+    {
+        await using var run = await Run.StartAsync();
+        var vault = new SwitchableVault { Outcome = ProductProfileWeightFileStoreOutcomeV1.Stored };
+
+        // URN-D19: 40×20 stands once; 60×40 and 40×60 (same wall) stand with different kg/m — a table conflict.
+        var file = ProductProfileWeightFileFormatV1.Header
+            + "\nProfile;40;20;;2;1.72\nProfile;60;40;;3;2.5\nProfile;40;60;;3;2.6\n";
+        await using (var scope = run.Request())
+        {
+            var imported = await WeightService(scope, run, vault).ImportAsync(ImportRequest("0", file),
+                WeightMetadata(run, "import-swap"));
+            Assert.Equal(204, imported.Answer.StatusCode);
+        }
+
+        await using (var scope = run.Request())
+        {
+            var dimensions = DimensionService(scope, run);
+            var swapped = await dimensions.SetAsync(ProductId, ProfileRequest(20m, 40m, 2m), DimensionMetadata(run, "swap-1"));
+            Assert.Equal(204, swapped.Answer.StatusCode);
+            var view = await dimensions.GetAsync(ProductId);
+            Assert.Equal((20m, 40m, 1.72m, "SENTETIK KATALOG", "1"),
+                (view.WidthMm, view.HeightMm, view.KgPerMetre, view.KgPerMetreSourceLabel, view.KgPerMetreTableVersion));
+
+            var conflict = await dimensions.SetAsync(ProductId, ProfileRequest(40m, 60m, 3m) with { ExpectedVersion = "1" },
+                DimensionMetadata(run, "swap-2"));
+            Assert.Equal((409, ProductDimensionProblemCodesV1.WeightSourceConflict),
+                (conflict.Answer.StatusCode, conflict.Answer.Code));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM product.ProductCardDimensions WHERE ProductId = @id AND WidthMm = 20.0 AND Version = 1",
+            ProductId));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Product.Dimension' AND EntityId = @id",
+            ProductId.ToString("D")));
+
+        // A stored card whose measures fall into the conflict: the view shows no kg/m, the read port names the conflict.
+        await using (var scope = run.Request())
+        {
+            await scope.Context.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE product.ProductCardDimensions SET WidthMm = 40.0, HeightMm = 60.0, WallThicknessMm = 3.0 WHERE ProductId = {ProductId}");
+        }
+
+        await using (var scope = run.Request())
+        {
+            var dimensions = DimensionService(scope, run);
+            var view = await dimensions.GetAsync(ProductId);
+            Assert.Equal(((decimal?)null, (string?)null), (view.KgPerMetre, view.KgPerMetreSourceLabel));
+
+            var read = await ((IProductDimensionReaderV1)dimensions).GetAsync(ProductId);
+            Assert.Equal((ProductDimensionOutcomeV1.Found, (decimal?)null, true, "SENTETIK KATALOG", (long?)1),
+                (read.Outcome, read.KgPerMetre, read.KgPerMetreConflict, read.KgPerMetreSourceLabel, read.KgPerMetreTableVersion));
+        }
+    }
+
     private static ProductProfileWeightTableService WeightService(RequestScope scope, Run run, IProductProfileWeightFileVaultV1 vault) =>
         new(scope.Context, scope.CompanyContext, new User(run.CreatorActorId), new Granted(), ScopeAudit(scope), vault,
             TimeProvider.System);
@@ -149,8 +206,11 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
     private static IAuditEventCollector ScopeAudit(RequestScope scope) => scope.Services.GetRequiredService<IAuditEventCollector>();
 
     private static ImportProductProfileWeightTableRequestV1 ImportRequest(string expectedVersion) =>
+        ImportRequest(expectedVersion, ProfileWeightFile);
+
+    private static ImportProductProfileWeightTableRequestV1 ImportRequest(string expectedVersion, string file) =>
         new(expectedVersion, " SENTETIK KATALOG ", "SENTETIK gerekçe", "katalog.csv",
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(ProfileWeightFile)));
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(file)));
 
     private static ProductProfileWeightCommandMetadataV1 WeightMetadata(Run run, string key) =>
         new(TestCompanyIds.CompanyA, run.CreatorActorId.ToString("D"), "corr-" + key, null, "Web", null, null, key);

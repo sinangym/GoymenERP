@@ -392,6 +392,58 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
     }
 
     [Fact]
+    public async Task Profile_whose_table_holds_both_directions_with_different_kg_per_metre_is_a_table_conflict_without_a_snapshot()
+    {
+        // URN-D19: the read port names the conflict; V2 answers the explicit field error and never one of the two values.
+        var world = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.Profile, width: 40m, height: 60m, wall: 3m, version: 2) with
+            {
+                KgPerMetreSourceLabel = "SENTETIK KATALOG",
+                KgPerMetreTableVersion = 4,
+                KgPerMetreConflict = true,
+            },
+        };
+
+        var result = await world.Service().ReadAsync(Selection, default);
+
+        Assert.Null(result.Snapshot);
+        Assert.Equal(new ProductFieldError(ProductManufacturingTechnicalSnapshotCodesV2.UnitWeightField,
+            ProductManufacturingTechnicalSnapshotCodesV2.UnitWeightTableConflict), Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Conflicting_lookup_that_still_carries_a_kg_per_metre_is_an_integrity_fault()
+    {
+        var row = ProfileRow(version: 1) with { KgPerMetreConflict = true };
+
+        Assert.Throws<InvalidOperationException>(() => ProductManufacturingTechnicalSnapshotServiceV2.Interpret(row));
+    }
+
+    [Fact]
+    public void Verified_kg_per_metre_of_the_fason_check_is_only_the_company_table_value()
+    {
+        // URN-D20: the table value (answered as ProductMaster) is the single verified kg/m; anything else fails closed.
+        Assert.True(ProductVerifiedUnitWeightV2.TryRequire(
+            new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, 1.75m),
+            out var kgPerMetre, out var accepted));
+        Assert.Equal((1.75m, (string?)null), (kgPerMetre, accepted));
+
+        foreach (var unitWeight in new[]
+                 {
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.None, null),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ManualVerified, 1.75m),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.GeometricEstimate, 1.75m),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, null),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, 0m),
+                 })
+        {
+            Assert.False(ProductVerifiedUnitWeightV2.TryRequire(unitWeight, out var none, out var refusal));
+            Assert.Equal((0m, ProductManufacturingTechnicalSnapshotCodesV2.VerifiedUnitWeightMissing), (none, refusal));
+        }
+    }
+
+    [Fact]
     public void Unit_weight_priority_is_manual_verified_then_product_master_then_geometric_estimate()
     {
         Assert.Equal(new[]
