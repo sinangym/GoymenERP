@@ -1,5 +1,21 @@
 # Settings prerequisite contract V1
 
+## W8 first money profiles (URN-D2/D3/D4; FIN-SC47)
+
+The existing money-profile screen also exposes empty authoring series (`version = "0"`,
+`versions = []`) for the registered operation and TRY/USD/EUR identities. Empty targets have
+no scale, active value or effective date: a permitted human explicitly records the first version.
+The credit-plan target is limited to companies with existing Finance monetary operation
+registration; SAT-D18 company boundaries, module bindings, Finance STOP and grants stay intact.
+New FX identities use the existing `ExchangeRateCurrencyIdentitiesV1` derivation.
+
+The first version and its series marker are saved with audit and idempotency in one transaction,
+using the existing tables; no migration or seed is needed. Operation-specific candidates now
+read the same stored timeline as the profile provider, including scheduled/passive state. A
+missing or unreadable store cannot reactivate a compiled profile. Existing document snapshots
+remain unchanged. New SQL, decoder and screen test sources are recorded in the W8 handoff;
+runtime acceptance remains pending the final train verification.
+
 Source: DEC-SET-001; Master sections 9, 12 and 28.1; Business PR #254
 at `6f0cd10259aeb2a44d32a92535464ed2ce096cf7`, Sales section 4 and Finance section 5;
 issue #66 comment 5653637829. Base: `f6fa07d026403649d6c815b84fd850e7ceeaf092`.

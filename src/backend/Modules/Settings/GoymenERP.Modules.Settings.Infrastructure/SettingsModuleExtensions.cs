@@ -73,6 +73,7 @@ public static class SettingsModuleExtensions
         // transfer; from then on the Settings table is its only unit profile source. F029-S3 adds money profile timelines;
         // its provider delegates unit and period reads to the same existing provider.
         services.Replace(ServiceDescriptor.Scoped<ISettingsPrerequisiteProvider, SettingsMoneyProfilePrerequisiteProvider>());
+        services.Replace(ServiceDescriptor.Scoped<ISettingsMoneyCandidateReaderV2, SettingsMoneyCandidateReaderV2>());
         services.AddScoped<ISettingsUnitProfileAdministrationV1, SettingsUnitProfileAdministration>();
         services.AddScoped<ISettingsMoneyProfileAdministrationV1, SettingsMoneyProfileAdministration>();
         // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
