@@ -81,6 +81,11 @@ public sealed partial class LogisticsInstructionService
             prepare: null, cancellationToken);
     }
 
+    /// <summary>
+    /// F-020 instruction cancel. LOJ-D18: only the instruction's status moves; the cancel calls no Inventory port, so the physical
+    /// allocations its lines name stay with the Sales order and a new instruction may reuse them. Releasing an allocation is the
+    /// separate, audited Inventory release (DEC-STK-005).
+    /// </summary>
     public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
     {

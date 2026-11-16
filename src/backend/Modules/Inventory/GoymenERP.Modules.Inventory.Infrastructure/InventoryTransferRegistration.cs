@@ -18,6 +18,9 @@ public static class InventoryTransferRegistration
         services.AddScoped<IInventoryTransferReaderV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryTransferCommandV1, InventoryTransferCommandService>();
         services.AddScoped<IInventoryTransferQueryV1, InventoryTransferQueryService>();
+        // LOJ-D20: the read-only list of dispatches whose source scale setting could not be read ("kontrol edilemedi").
+        services.AddScoped<IInventoryTransferScaleCheckReviewReaderV1, InventoryTransferScaleCheckReviewReader>();
+        services.AddScoped<IInventoryTransferScaleCheckReviewQueryV1, InventoryTransferScaleCheckReviewQueryService>();
         services.AddScoped<IInventoryTransferReceiptWriterV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryTransferReceiptReaderV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryTransferReceiptCommandV1, InventoryTransferReceiptCommandService>();
