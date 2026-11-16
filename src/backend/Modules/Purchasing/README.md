@@ -365,3 +365,17 @@ The published P-03 reads and approval control are currently `SingleCompany`: the
 `IPurchaseSalesLinkedSupplyReadPortV1` (Contracts) / `PurchaseSalesLinkedSupplyReadPort` (Infrastructure, registered in `AddPurchasingModule`): the context company's open purchase order lines whose request line came from a given sales order (through the `PurchaseRequestLines` source index), optionally narrowed to sales order line ids (at most 500). `OpenQuantity` is the remaining quantity: a general line is ordered − technical − accepted − cancelled, technical slices add ordered − accepted − cancelled, and a technical line carries its general line's request line so it is never listed or counted twice. Purchasing does not reference Sales, so the Sales contract is adapted in the Api host (`PurchasingSalesLinkedSupplyHostPorts.cs`): `ISalesOrderLinkedSupplyReadPortV1` (Present / None / Unreadable with `purchasing_linked_supply_unreadable`; any failure is Unreadable, fail-closed) and `ISalesOrderLinkedSupplyRecorderV1` (the notice that a source exists). The ports carry no authority and create nothing.
 
 SAT-D220 (A4b): `PurchasingService.CreateRequestAsync` reads every Sales-sourced new line through `IPurchaseRequestSalesSourcePortV1` (host adapter over `ISalesOrderLineReferencePortV1.GetApprovedLineAsync`) before any product read: Approved is recorded; NotApproved / NotFound → 422 `validation_failed` with `lines[i].source` = `purchasing_request_source_sales_not_approved` / `_not_found`; owner failure → service code `purchasing_request_source_sales_unavailable` (on the wire a code-less 503, like every Purchasing 503); no adapter composed → 422 `purchasing_request_source_sales_unavailable` (still closed). Nothing is stored on a refusal. Evidence: `PurchasingServiceTests.RequestSource`. Real-SQL acceptance of the Present path of the linked-supply read is a follow-up.
+
+## ALC-S5 / B-19 — return to supplier (SAT-D306, SAT-D392, SAT-D393, SAT-D396)
+
+`IPurchaseSupplierReturnServiceV1` records a return of one received label to the supplier. The exit cost is the order line's
+invoice unit cost when `IPurchaseSupplierReturnInvoiceCostReadPortV1` answers (SAT-D392; no reader is registered until supplier
+invoices exist, so every return takes the exception path today). Otherwise a manual unit cost waits as `PendingCostException`
+and no stock leaves (SAT-D393) until a holder of `purchasing.orders.approve` approves it (SAT-D396); a rejection needs a reason.
+The stock exit is staged through Inventory's `InventorySupplierReturnExitParticipant` in the host's one transaction
+(`PurchaseSupplierReturnHost`). Same-person decision is `PurchaseSupplierReturnPolicyV1.AllowSameActorCostExceptionDecision`
+(default `false`; NEEDS-SINAN), not a CHECK. Replacement returns (ALS-D91) answer 422 in this version. The new permission
+`purchasing.supplier-returns.record` is registered without any grant.
+
+Migration `20261116113129_AddPurchaseSupplierReturns` creates `PurchaseSupplierReturns` and `PurchaseSupplierReturnAttempts`;
+Down guard **51893** refuses while any return or attempt exists (forward fix). API-44 receipt reversal is not in this slice.
