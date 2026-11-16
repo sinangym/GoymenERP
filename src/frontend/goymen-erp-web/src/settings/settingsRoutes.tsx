@@ -16,9 +16,14 @@ import { SalesPolicyDeliveryTolerancePage } from './SalesPolicyDeliveryTolerance
 import { TaxMasterPage } from './TaxMasterPage'
 import { UnitConversionPolicyPage } from './UnitConversionPolicyPage'
 import { UnitProfilePage } from './UnitProfilePage'
+import { MoneyProfilePage } from './MoneyProfilePage'
 import { WorkCenterCapacityPage } from './WorkCenterCapacityPage'
 
 export const settingsRoutes: RouteObject[] = [
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.moneyProfiles].slice(1),
+    element: <CapabilityRoute capability={SETTINGS_CAPABILITY.moneyProfiles}><MoneyProfilePage /></CapabilityRoute>,
+  },
   {
     path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesDiscountLimits].slice(1),
     element: (

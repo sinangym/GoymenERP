@@ -65,9 +65,11 @@ public static class SettingsModuleExtensions
         services.AddScoped<ISettingsUnitConversionPolicyProviderV1, SettingsUnitConversionPolicyProviderV1>();
         // F-029 S1/S2 (URN-D2…D5): the persistent unit profile and its administration. The prerequisite port keeps its
         // signature (spec P2) and answers from the reviewed catalog, byte-identical, until the company's one-time baseline
-        // transfer; from then on the Settings table is its only unit profile source. Money and period reads are unchanged.
-        services.Replace(ServiceDescriptor.Scoped<ISettingsPrerequisiteProvider, SettingsUnitProfilePrerequisiteProvider>());
+        // transfer; from then on the Settings table is its only unit profile source. F029-S3 adds money profile timelines;
+        // its provider delegates unit and period reads to the same existing provider.
+        services.Replace(ServiceDescriptor.Scoped<ISettingsPrerequisiteProvider, SettingsMoneyProfilePrerequisiteProvider>());
         services.AddScoped<ISettingsUnitProfileAdministrationV1, SettingsUnitProfileAdministration>();
+        services.AddScoped<ISettingsMoneyProfileAdministrationV1, SettingsMoneyProfileAdministration>();
         // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
         // port approving modules consume. No row answers the decided default: the preparer may not approve.
         services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();

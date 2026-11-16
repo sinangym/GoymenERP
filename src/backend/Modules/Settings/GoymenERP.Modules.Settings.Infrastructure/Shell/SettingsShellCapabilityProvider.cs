@@ -39,7 +39,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
@@ -98,6 +98,11 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
     public const string UnitProfilesRouteId = SettingsUnitProfilePermissionManifestV1.Manage;
     public const string UnitProfilesRoutePath = "/ayarlar/birim-profilleri";
     public const string UnitProfilesScreenId = "AY-BRP-01";
+
+    public const string MoneyProfilesCapabilityId = SettingsMoneyProfilePermissionManifestV1.Manage;
+    public const string MoneyProfilesRouteId = SettingsMoneyProfilePermissionManifestV1.Manage;
+    public const string MoneyProfilesRoutePath = "/ayarlar/para-profilleri";
+    public const string MoneyProfilesScreenId = "AY-PRP-01";
     // URT-D89 (provider 1.5): the company's work center capacities (input kg/hour and the optional safety buffer; no seed;
     // versions per work center, a new version) on settings.work-center-capacities.manage alone, company-wide, in one
     // company; granted to no role here.
@@ -222,6 +227,16 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsUnitConversionPolicyPermissionManifestV1.Manage],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                MoneyProfilesCapabilityId,
+                MoneyProfilesRouteId,
+                MoneyProfilesRoutePath,
+                MoneyProfilesScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsMoneyProfilePermissionManifestV1.Manage],
                 ImplementationAvailable: true),
             new ShellCapabilityDeclaration(
                 UnitProfilesCapabilityId,

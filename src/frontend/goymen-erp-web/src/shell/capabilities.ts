@@ -329,6 +329,7 @@ export const CAPABILITY = {
    * one-time baseline transfer. Route `/ayarlar/birim-profilleri`, owner Settings 1.5; one non-Critical name, granted to no role here.
    */
   settingsUnitProfiles: 'settings.unit-profiles.manage',
+  settingsMoneyProfiles: 'settings.money-profiles.manage',
   /**
    * URT-D89 Ayarlar > İş merkezi kapasitesi: each work center's input capacity (kg/hour) and optional safety buffer
    * versions (no seed). Route `/ayarlar/is-merkezi-kapasitesi`, owner Settings 1.5; one non-Critical name, granted to no
@@ -479,6 +480,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsLoginRateLimit]: '/ayarlar/giris-deneme-siniri',
   [CAPABILITY.settingsUnitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [CAPABILITY.settingsUnitProfiles]: '/ayarlar/birim-profilleri',
+  [CAPABILITY.settingsMoneyProfiles]: '/ayarlar/para-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
   [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
   [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',

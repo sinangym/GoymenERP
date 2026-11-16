@@ -925,3 +925,21 @@ subcontract ("satış fasonu", an operation type value) is outside it by constru
 
 Open: who edits the paint color and scrap kind lists (NEEDS-SINAN), the operation type list (not opened), and any further
 expense structure beyond code and name (NEEDS-SINAN).
+
+## Prospective money profile versions (KIM-D9, URN-D2, URN-D3, URN-D4; F-029 S3)
+
+Only the currency and operation identities already present in the approved money profile catalog are editable. A first
+real change copies that series' exact approved baseline identities, scales and dates and atomically records a new version.
+This copy is not a new default or a document rewrite. Historical document snapshots remain unchanged. No amount, unit price,
+tax or rate is recalculated by the screen. A series without a stored transfer still uses the existing approved catalog;
+after transfer, a missing or unreadable series fails closed and never returns to the catalog.
+
+| Part | What |
+|---|---|
+| Tables | `MoneyProfileBaselineTransfers` is a permanent marker keyed by company, currency and operation. `MoneyProfileVersions` adds the version to that key and holds profile identity, scales, active flag, effective date, source and recording metadata. Both are company filtered, insert only, without seed or SQL defaults. The version table has a restricted foreign key to its marker. |
+| Migration | `AddMoneyProfileVersions` is generated with `dotnet ef` and contains only DDL in Up. Down begins with `THROW 51940` while either table contains a row; use a reviewed forward fix. An empty store can roll back. |
+| Port | `ISettingsPrerequisiteProvider.GetMoneyProfileAsync` keeps the existing contract and all approved unit and period behavior. Stored company/currency/operation timelines determine money profiles prospectively. Unit-price scale remains nullable; a missing scale is never replaced with zero. |
+| Name | `settings.money-profiles.manage` is registered only, company-wide, not Critical; no grant or role assignment is added. |
+| Routes | `GET /api/v1/settings/money-profiles` and `POST /api/v1/settings/money-profiles/versions`. Commands require fresh authority, expected version, idempotency key, correlation and reason. A change, its terminal execution and audit event commit together. Same-value commands are durable no-ops without audit; version and key conflicts are durable terminal answers. |
+| Screen | Ayarlar → Para profilleri (`/ayarlar/para-profilleri`, AY-PRP-01). It shows the company, operation, current and proposed scales and state, plus the historical/future timeline. Today or a future date may be selected. An unknown response keeps the same request and key for retry. |
+| Source evidence | `SettingsMoneyProfilePersistenceModelTests`, `SettingsMoneyProfileSqlServerRelationalAcceptanceTests`, `moneyProfileContract.test.ts`, `MoneyProfilePage.test.tsx`. The SQL fact includes company and operation isolation, unchanged baseline history, replay, stale version, authority, audit and Down refusal. Test execution is reserved for the final train acceptance run. |

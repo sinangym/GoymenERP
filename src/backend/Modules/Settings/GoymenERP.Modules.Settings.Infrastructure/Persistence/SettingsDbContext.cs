@@ -102,6 +102,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureTaxRateLists(modelBuilder);
         ConfigureUnitConversionPolicies(modelBuilder);
         ConfigureUnitProfiles(modelBuilder);
+        ConfigureMoneyProfiles(modelBuilder);
         ConfigureBankCsvMappings(modelBuilder);
         ConfigureSegregationOfDutiesPolicies(modelBuilder);
         ConfigureLoginRateLimits(modelBuilder);
@@ -655,6 +656,11 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 throw new InvalidOperationException("Kur kaydı değiştirilemez; yeni kayıt eklenir.");
             }
 
+            if (entry.State == EntityState.Modified && entry.Entity is MoneyProfileVersionRow or MoneyProfileBaselineTransferRow)
+            {
+                throw new InvalidOperationException("Para profili kaydı değiştirilemez; yeni sürüm yazılır.");
+            }
+
             var companyId = entry.Entity switch
             {
                 SalesDiscountLimitGroupRow row => row.CompanyId,
@@ -683,6 +689,8 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 ManufacturingParameterProfileRow row => row.CompanyId,
                 ManufacturingParameterProfileValueRow row => row.CompanyId,
                 ManufacturingToleranceProfileVersionRow row => row.CompanyId,
+                MoneyProfileVersionRow row => row.CompanyId,
+                MoneyProfileBaselineTransferRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

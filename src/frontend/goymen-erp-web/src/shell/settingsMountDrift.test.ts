@@ -94,6 +94,7 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
       [CAPABILITY.settingsLoginRateLimit, SETTINGS_CAPABILITY.loginRateLimit],
       [CAPABILITY.settingsUnitConversionPolicy, SETTINGS_CAPABILITY.unitConversionPolicy],
       [CAPABILITY.settingsUnitProfiles, SETTINGS_CAPABILITY.unitProfiles],
+      [CAPABILITY.settingsMoneyProfiles, SETTINGS_CAPABILITY.moneyProfiles],
     ] as const
     const entries = NAV_GROUPS.find((group) => group.id === 'settings')?.entries ?? []
     for (const [shellId, settingsId] of pairs) {
