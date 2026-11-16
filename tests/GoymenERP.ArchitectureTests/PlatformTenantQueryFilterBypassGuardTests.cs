@@ -1109,6 +1109,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // check results; the context is DI-resolved (#66 6860586175: the owner read is registered here too).
                 ["src/backend/GoymenERP.Api/Shell/FinanceOfficialSalesInvoiceHost.cs"] =
                     ("FinanceDbContext", 3),
+                // tren-1 W5 fix: target-typed JSON-options/result/row/event/issue sites are conservatively counted; each context is
+                // DI-resolved and none is constructed here. Exact source counts, pending the owning teams' K3 review.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/"
+                 + "PurchaseSupplierReturnHost.cs"] = ("PurchasingDbContext", 1),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceCreditAccountService.cs"] = ("FinanceDbContext", 4),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOpeningBalanceService.cs"] = ("FinanceDbContext", 6),
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Bootstrap/"
+                 + "FounderRecoveryService.cs"] = ("IdentityDbContext", 4),
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/"
+                 + "LogisticsWeighingDifferenceStore.cs"] = ("LogisticsDbContext", 11),
                 // F-005 D1: target-typed result/view/cursor/ReadResult sites in the official sales invoice service
                 // (#66 6860586175: with the reservation and the owner read) are conservatively counted; the pin is its
                 // exact source count, not a new DbContext writer.
@@ -1988,6 +2000,129 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 W5 fix (Purchasing future-allocation link): DbConnection/DbTransaction only bind the Inventory release session to the
+                // request's open Purchasing transaction; no command text, no new connection. Pending the owning team's K3 review.
+                ["src/backend/GoymenERP.Api/Endpoints/"
+                 + "PurchasingFutureAllocationLinkHostParticipant.cs"] =
+                    new(
+                        "0f2bd73f7b6ce4bacc129937a4eacd827dad7e1af279ee5271a8fae796132186",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["System.Data.Common"] = 1,
+                        ["DbConnection"] = 2
+                        }),
+                // tren-1 W5 fix (supplier return): GetDbConnection/DbConnection hand the open Purchasing transaction to the Inventory exit
+                // participant (one commit); the counted construction is a target-typed metadata record. Pending the owning team's K3 review.
+                ["src/backend/GoymenERP.Api/PurchasingRuntime/"
+                 + "PurchaseSupplierReturnHost.cs"] =
+                    new(
+                        "b131b552d3f98d66b4006dfe9c67c3ff0c4590da5bf85888d31d33a4c580f5c7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["System.Data.Common"] = 1,
+                        ["GetDbConnection"] = 1,
+                        ["DbConnection"] = 1
+                        }),
+                // tren-1 W5 fix (credit accounts): SqlClient classifies 2601/2627 races only; the counted constructions are target-typed
+                // JSON options/rows/issues over the DI context. Pending the owning team's K3 review.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceCreditAccountService.cs"] =
+                    new(
+                        "256ab3b0206849589175c6ac62b8b754108bce5c32ee976286303ddbaa93634e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 W5 fix (opening balances): SqlClient classifies 2601/2627 races only; the counted constructions are target-typed
+                // JSON options/rows/issues over the DI context. Pending the owning team's K3 review.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOpeningBalanceService.cs"] =
+                    new(
+                        "7bbca1c6d80439b71f8049a9c770bbe23a60961533d6dc60d42d6c9a7b5fb9c3",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 W5 fix (founder recovery): System.Data.Common is the provider exception type only; the counted constructions are
+                // target-typed security events and refusal results. Pending the owning team's K3 review.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
+                 + "Bootstrap/FounderRecoveryService.cs"] =
+                    new(
+                        "039d0a1fc34ba2af42515af760544ace4141cec3a4943e7d4a23315a59628063",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["System.Data.Common"] = 1
+                        }),
+                // tren-1 W5 fix (Logistics outbox source): SqlQueryRaw reads the fixed, parameterless visibility horizon; the rows themselves
+                // are read through the company-filtered context with an explicit CompanyId. Pending the owning team's K3 review.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                 + "Outbox/LogisticsDefiniteShipmentOutboxEventSource.cs"] =
+                    new(
+                        "fa7de0eb89420961c0b62289989c263a844ddffd45a0c580a8ba40c5dd827170",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["SqlQueryRaw"] = 1
+                        }),
+                // tren-1 W5 fix (weighing difference): SqlClient classifies 2601/2627 and 1205 only; the counted constructions are
+                // target-typed results/rows over the DI context. Pending the owning team's K3 review.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                 + "Persistence/LogisticsWeighingDifferenceStore.cs"] =
+                    new(
+                        "06f59d9a604b71a1c560b06aa928221d6bb60192739bf8ebc9ce119c87d2bc5e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 W5 fix (supplier return): .FindAsync is the return store port lookup (orderId, returnId), not an EF DbSet.Find.
+                // Pending the owning team's K3 review.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/"
+                 + "PurchasingService.SupplierReturn.cs"] =
+                    new(
+                        "65bcd46634e6e33d627374f10ec7007c7552e9dab80ef6aeb1881a4512c7b002",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        [".FindAsync"] = 3
+                        }),
+                // tren-1 W5 fix (supplier return): SqlClient classifies 2601/2627 races only. Its cross-company return-id collision probe
+                // (IgnoreQueryFilters) is NOT authorised here; it stays red for the owning team's K3 tenant-isolation review.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/PurchaseSupplierReturnStore.cs"] =
+                    new(
+                        "e7e33daaa48e5715a14b00406dc003e22d4a42d1e373259648519b09bc224aec",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // tren-1 W5 fix (reference lists): .FindAsync is ReferenceListReads.FindAsync over the company-filtered Settings context,
+                // not an EF DbSet.Find. Pending the owning team's K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/SettingsReferenceListAdministration.cs"] =
+                    new(
+                        "645792d26be3431d04d263c09db02d9f54135b1b5346745dcff63fb170034577",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        [".FindAsync"] = 1
+                        }),
+                // tren-1 W5 fix (reference lists): .FindAsync is ReferenceListReads.FindAsync over the company-filtered Settings context,
+                // not an EF DbSet.Find. Pending the owning team's K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/SettingsReferenceListReaderV1.cs"] =
+                    new(
+                        "90362beaa729c2508589757d8d3bc1f14cb481638a710f937ed9eb6dd0c7b49d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        [".FindAsync"] = 1
+                        }),
+                // tren-1 W5 fix (work-center capacity): .FindAsync is the work-center reference port lookup (companyId, workCenterId),
+                // not an EF DbSet.Find. Pending the owning team's K3 review.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/SettingsWorkCenterCapacityAdministration.cs"] =
+                    new(
+                        "0e9dbcffcbf5539e459b77c5042e1aa050106313a181c7acb8feb9a5c6b9fa74",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                        [".FindAsync"] = 1
                         }),
                 // tren-1 wave 3 integration: construction-only surfaces (target-typed sites); no provider token. Pending K3 review.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
