@@ -268,7 +268,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/counterparty.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +4 facts, ordinal-sorted (53063d1f… -> e31d1c5b…).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +13 facts, ordinal-sorted (01f5d3ee… -> 02d8add9…).
-                "02d8add9c9b7ec64cfcbdd8db5c6fe2e0de06895e3e01d2147f8a51d6a4f5e93",
+                // Re-fingerprinted for tren-1 W5 (integration): +1 fact(s) from the W5 team merges; value from guard_fingerprint.py (02d8add9… -> 0f10d031…).
+                "0f10d031bf8a00c4cb315deafdf9f5653be49386b36362f5e63b6574b40b14bb",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
@@ -317,7 +318,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/finance.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +15 facts, ordinal-sorted (bfdc3f20… -> 50273987…).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +12/-2 lines, ordinal-sorted (09b1b156… -> eb0d35db…).
-                "eb0d35db7353e6ad9dcabe3d8f5961b3bee415ad3a2538d63f5938a9712945bc",
+                // Re-fingerprinted for tren-1 W5 (integration): +7 fact(s) from the W5 team merges; value from guard_fingerprint.py (eb0d35db… -> 1b47e9a3…).
+                "1b47e9a341ecf95fb4ca704c960cdb7a980882b18266427dd4c2b59cee1b7f20",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -355,7 +357,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (a830a228...) combined, +8 facts in total; neither parent's value.
                 // Re-fingerprinted for tren-1 wave 1: +3 facts and one renamed fact, ordinal-sorted (d7b1ef8c… -> f9b96739…).
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +18 facts, ordinal-sorted (b9a25cb6… -> 86ec6a12…).
-                "86ec6a12bdb3d1812fe54fd54484577f91e8c0e3bf39126ddec0601f99c3d8b2",
+                // Re-fingerprinted for tren-1 W5 (integration): +6 fact(s) from the W5 team merges; value from guard_fingerprint.py (86ec6a12… -> 5d0beeaf…).
+                "5d0beeaff4d038759a7bcf83aac8712434afe09d59648c538f09a4e05b9c96f1",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -372,7 +375,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // outgoing-document Serializable read), kept ordinal-sorted (15a22a9f... -> 82e1c19f...).
             ["tools/relational_inventory/logistics.txt"] =
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +5 facts, ordinal-sorted (82e1c19f… -> 3d8ec0f2…).
-                "3d8ec0f2ec8d27e98015e58740c6acbb7da902bc28cc8de0f2696e8ddb42a1be",
+                // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (3d8ec0f2… -> 2b3edb43…).
+                "2b3edb43c9fd2c472fe1a2bfcf729007864fa35e9bcc000dcb48bba3652361d0",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -417,7 +421,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: +4 facts, ordinal-sorted (e17f2323… -> d968a25e…).
                 // Re-fingerprinted for tren-1 wave 2 trial integration: the Manufacturing team's facts added, ordinal-sorted (d968a25e... -> d6273307...).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +11 facts, ordinal-sorted (d6273307… -> bb328fa5…).
-                "bb328fa5871fa3ea0cc25e13990060a04118008106e8b65bf4841ef979cedc31",
+                // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (bb328fa5… -> 884e8c98…).
+                "884e8c9828bd8894e27e7b79d29aca01543c6aad469a62b7dbc6ab639f82955c",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -460,7 +465,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: +2 facts, ordinal-sorted (fe173b17… -> c34f45fc…).
                 // Re-fingerprinted for tren-1 wave 2 trial integration: the team facts combined, ordinal-sorted (c34f45fc... -> a75473ad...).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +8 facts, ordinal-sorted (a75473ad… -> 71017138…).
-                "71017138497e3a646c80ce3103bee8f726c8d347e9707de2bc64301a2c161bf1",
+                // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (71017138… -> 19a6d7c9…).
+                "19a6d7c9587c3bc24cbc4e4fab147996ec29c8c10050ed77d5bd7dec47611320",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -471,7 +477,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/product.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +1 facts, ordinal-sorted (100c0a2f… -> 1f399639…).
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +3 facts, ordinal-sorted (1f399639… -> ea3dcfbe…).
-                "ea3dcfbeb8caffbb54b25f5cd52d0a884569a798d12a948b7700732a0f8a567f",
+                // Re-fingerprinted for tren-1 W5 (integration): +4 fact(s) from the W5 team merges; value from guard_fingerprint.py (ea3dcfbe… -> 392d7170…).
+                "392d717063b7fc0bc5925239b929aa4e3592195a141d17ea9962b165cb2405c8",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -506,7 +513,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/purchasing.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +5 facts, ordinal-sorted (11e38799… -> ef97c10c…).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +1 fact, ordinal-sorted (710ae3f8… -> f808203c…).
-                "f808203c302a1c2898bc620df3d5f8f0a0b3201d7afbe5baf6623f4f26059b9d",
+                // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (f808203c… -> 188008c1…).
+                "188008c1941d66997fc12b62d9e81a0cc6d5bad7e37f10b6fa171b4994da5747",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -629,7 +637,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the real Sales preview, never as a malformed owner answer), kept ordinal-sorted (46a4216c... -> 5a014a10...).
                 // Tren-1 wave 2 trial integration: +3 F018 limit-warning/risk-gate facts (satis wave 2) and +2 SAT-S14 SalesContract facts,
                 // kept ordinal-sorted (5a014a10... -> cebac90b...).
-                "cebac90b525a5430cb0b36597a8d0a57c676610032fb7a7b879456cf754ff61b",
+                // Re-fingerprinted for tren-1 W5 (integration): +1 fact(s) from the W5 team merges; value from guard_fingerprint.py (cebac90b… -> 8c3781c4…).
+                "8c3781c49e6a68c25dde2631e9779b74574a99eb677faf046e8bd82aead51706",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
