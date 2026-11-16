@@ -44,6 +44,34 @@ public sealed record VehicleWeighing(
 }
 
 /// <summary>
+/// LOJ-D13: one reasoned correction of an instruction's weighbridge record after the vehicle left. Facts only, append-only:
+/// the corrected weighings as entered, the net the backend recalculated (WGT-001), the net it replaces, the signed difference
+/// against the ORIGINAL record's loaded snapshot (WGT-002, no tolerance verdict: OPEN-004), the reason, who entered it and
+/// when. The original record and every earlier correction are never changed. Not a stock movement and not an invoice: a
+/// difference on an invoiced delivery is a Sales difference invoice (SAT-D312 (3)).
+/// </summary>
+/// <param name="Revision">The weighing record's revision this correction creates (the original is <see cref="OriginalRevision"/>).</param>
+/// <param name="PreviousNet">The net in force before this correction (the original or the previous correction).</param>
+/// <param name="SharesBefore">How many shares the instruction had when it was corrected — the rebuild replays it at that point.</param>
+public sealed record VehicleWeighingCorrection(
+    Guid CorrectionId,
+    int Revision,
+    WeighingDirection Direction,
+    Quantity FirstWeighing,
+    Quantity SecondWeighing,
+    Quantity Net,
+    Quantity PreviousNet,
+    decimal DifferenceKg,
+    string Reason,
+    int SharesBefore,
+    string CorrectedBy,
+    DateTimeOffset CorrectedAtUtc)
+{
+    /// <summary>The revision of an uncorrected weighing record.</summary>
+    public const int OriginalRevision = 1;
+}
+
+/// <summary>
 /// The deterministic weighbridge calculator (master v3 §28.12; AGENTS "formula/UI/report use the same
 /// backend calculator"): the screen shows what this answers and never recomputes it.
 /// </summary>
