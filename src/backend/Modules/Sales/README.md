@@ -1009,3 +1009,22 @@ in a later slice. No new permission or shell capability: grants stay a human gat
 | Migration | `20261116002458_AddSubcontractServiceInvoices` (dotnet ef): the three tables, their checks (`CK_SubcontractServiceInvoices_State` = Draft only, `_Source`, `CK_SubcontractServiceInvoiceAttempts_Command`). Down refuses with **51732** while any subcontract service invoice exists (forward fix); an empty table rolls back freely. |
 | Evidence | Unit: `SalesSubcontractServiceInvoiceTests` (goldens), `SalesDraftServiceTests.SubcontractInvoices`, `SalesPersistenceModelTests`. Real SQL: `SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceTests` (2, inventoried). Frontend: `SubcontractInvoiceApi.test.ts`, `SubcontractInvoiceContract.test.ts`, `SubcontractInvoiceCreate.test.tsx`. |
 | Central step (not in this slice) | OpenAPI +2 ops; recovery inventory re-pin (new migration, store and DbContext); guard fingerprints (SalesDbContext, SalesStore, SalesModuleExtensions, the migration's reviewed `Sql`). |
+
+
+## SAT-S8 — effective revision demand reduction (KLN-D105 / KLN-D112)
+
+Sales computes reduced/removed lines against the last customer-accepted archived revision (the last approved archive for
+legacy orders without a customer-acceptance step). A rejected revision is never the demand baseline. Editing, submitting,
+internal rejection and customer rejection do not release allocations. Internal approval completes a legacy revision;
+otherwise customer acceptance completes it. At that final step Logistics' shipped/loaded floor is read again and Sales
+passes exact new order-unit quantity minus shipped quantity, product/version and line identity to the host participant.
+
+`ISalesOrderFutureDemandReductionParticipantV1` owns no business formula and shares the Sales store's SQL transaction.
+The store validates the detached aggregate's transition before the callback, captures the previously accepted revision,
+then saves the state, command attempt and audit once. Callback failure rolls back owner writes; terminal owner refusals
+are recorded only after rollback, while busy/concurrent/unavailable answers remain retryable. Replay calls no owner.
+Missing participant or unsupported transactional store refuses with 503. No new permission or schema was introduced.
+
+Host composition is a separate integration requirement: all affected Sales demand locks ascending, then all purchase
+line locks ascending; no physical allocation release, and transient refusal dominates a multi-line terminal refusal.
+The host bridge, registration and real Inventory reduction acceptance are required before this slice is DONE.

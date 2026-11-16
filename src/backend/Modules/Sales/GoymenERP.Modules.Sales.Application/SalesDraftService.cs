@@ -78,7 +78,8 @@ public sealed partial class SalesDraftService(
     ISalesInvoiceableShipmentReadPortV1? postedShares = null,
     ISalesOrderAllocationReadPortV2? allocationsV2 = null,
     ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null,
-    ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null,
+    ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -1029,7 +1030,7 @@ public sealed partial class SalesDraftService(
         // SAT-D111 / SAT-D112 (EK13 / EK14; K3-REVIEW-B P1-1): during a re-approval the submission and the approval measure
         // the CURRENT quantities against Logistics' loaded total again — a revision rejected and then resubmitted unchanged
         // must not be approved below what was loaded meanwhile under the restored cap.
-        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1)
+        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1 or SalesDraftCommands.RecordCustomerAcceptanceV1)
         {
             await RequireReapprovalFloorAsync(scope, permission, current, expectedVersion, commandName, cancellationToken);
         }
@@ -1053,8 +1054,54 @@ public sealed partial class SalesDraftService(
         SalesDraftStateResult? result;
         try
         {
-            result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
-                (draft, now) => transition(draft, scope.ActorId, expectedVersion, now), audit, cancellationToken, riskWarning);
+            Action<SalesOrderDraft, DateTimeOffset> mutate = (draft, now) => transition(draft, scope.ActorId, expectedVersion, now);
+            if (CompletesReducedRevision(current, expectedVersion, commandName))
+            {
+                result = await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,
+                    mutate, audit, async (draft, previouslyAcceptedRevision, transaction, token) =>
+                    {
+                        scope = await RequireStillAsync(scope, permission, token);
+                        var reductions = ReducedRevisionLines(draft, previouslyAcceptedRevision);
+                        if (reductions.Count == 0) return;
+                        if (futureDemandReduction is null)
+                            throw new SalesFutureAllocationReleaseException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable, false);
+                        var loading = await ReadLoadingAsync(scope, permission, draft, token)
+                            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+                        var lines = new List<SalesOrderFutureDemandReductionLineV1>(reductions.Count);
+                        foreach (var reduction in reductions)
+                        {
+                            var loaded = loading.GetValueOrDefault(reduction.Line.Id);
+                            var shipped = loaded?.Shipped ?? 0m;
+                            if (reduction.NewQuantity < shipped)
+                                throw new SalesDraftServiceException(422, "validation_failed",
+                                    [new("lines", SalesRuleCodes.RevisionBelowShipped)]);
+                            if (reduction.NewQuantity < (loaded?.Loaded ?? 0m))
+                                throw new SalesDraftServiceException(422, "validation_failed",
+                                    [new("lines", SalesRuleCodes.RevisionBelowLoaded)]);
+                            lines.Add(new(reduction.Line.Id, reduction.Line.Product.ProductId,
+                                reduction.Line.Product.ProductVersion, reduction.Line.OrderUnit.UnitId,
+                                Text(reduction.NewQuantity - shipped, reduction.Line.Quantity.Unit)));
+                        }
+                        await futureDemandReduction.ReduceForAcceptedRevisionAsync(transaction,
+                            new SalesOrderFutureDemandReductionRequestV1(draft.Id, draft.Revision, lines,
+                                SalesOrderFutureDemandReductionTextsV1.AcceptedRevision, envelope), token);
+                        scope = await RequireStillAsync(scope, permission, token);
+                    }, cancellationToken, riskWarning);
+            }
+            else
+                result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
+                    mutate, audit, cancellationToken, riskWarning);
+        }
+        catch (SalesFutureAllocationReleaseException exception) when (exception.Terminal)
+        {
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(
+                exception.Status is 409 or 422 ? exception.Status : 409, exception.Code,
+                [new(FutureSupplyAllocationsField, exception.Code)]), cancellationToken, commandName, draftId);
+        }
+        catch (SalesFutureAllocationReleaseException exception)
+        {
+            throw new SalesDraftServiceException(exception.Status is 409 or 503 ? exception.Status : 503,
+                exception.Code, [new(FutureSupplyAllocationsField, exception.Code)]);
         }
         catch (SalesVersionConflictException exception)
         {
