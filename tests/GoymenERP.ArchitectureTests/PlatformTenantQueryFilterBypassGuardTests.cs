@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -330,7 +330,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ID-1: +5 IdentityLocalCredentialSqlServerRelationalAcceptanceTests facts, ordinal-sorted (12e280b9… -> aa5edfd7…).
             // Re-fingerprinted for tren-1 wave 2 (trial integration): +6 facts, ordinal-sorted (aa5edfd7… -> cb7cf51d…).
             ["tools/relational_inventory/identity.txt"] =
-                "cb7cf51d53637b16cf46196336c7b8a5cd10f653cb865cde7838ea64926762ed",
+                // Tren-1 W6: +3 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "1e04377cd0c84e8f2761c7000c9626e3ae420f00b3c1881d493a5aa00bbace0c",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -359,7 +360,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: +3 facts and one renamed fact, ordinal-sorted (d7b1ef8c… -> f9b96739…).
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +18 facts, ordinal-sorted (b9a25cb6… -> 86ec6a12…).
                 // Re-fingerprinted for tren-1 W5 (integration): +6 fact(s) from the W5 team merges; value from guard_fingerprint.py (86ec6a12… -> 5d0beeaf…).
-                "5d0beeaff4d038759a7bcf83aac8712434afe09d59648c538f09a4e05b9c96f1",
+                // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "a9d9494b930ddd6ffb56a7c73852f57dcdc1ea2d49be4fa45c3e98da6b2b13af",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -423,7 +425,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 2 trial integration: the Manufacturing team's facts added, ordinal-sorted (d968a25e... -> d6273307...).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +11 facts, ordinal-sorted (d6273307… -> bb328fa5…).
                 // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (bb328fa5… -> 884e8c98…).
-                "884e8c9828bd8894e27e7b79d29aca01543c6aad469a62b7dbc6ab639f82955c",
+                // Tren-1 W6: +7 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "e286a4192b33f0db9c2fdc225137debca67208cdd3b34617b25125b72311d3ef",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -467,7 +470,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 2 trial integration: the team facts combined, ordinal-sorted (c34f45fc... -> a75473ad...).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +8 facts, ordinal-sorted (a75473ad… -> 71017138…).
                 // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (71017138… -> 19a6d7c9…).
-                "19a6d7c9587c3bc24cbc4e4fab147996ec29c8c10050ed77d5bd7dec47611320",
+                // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "6575418b391f41e952149aa3691fd9e824e1f91237ba68a67e00d3d9121391c8",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -479,7 +483,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: +1 facts, ordinal-sorted (100c0a2f… -> 1f399639…).
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +3 facts, ordinal-sorted (1f399639… -> ea3dcfbe…).
                 // Re-fingerprinted for tren-1 W5 (integration): +4 fact(s) from the W5 team merges; value from guard_fingerprint.py (ea3dcfbe… -> 392d7170…).
-                "392d717063b7fc0bc5925239b929aa4e3592195a141d17ea9962b165cb2405c8",
+                // Tren-1 W6: +1 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "1e841c1dc7875b81803fcbe709f1e171e5985e540f72b18d7b5a7791e1cf13a6",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -515,7 +520,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 1: +5 facts, ordinal-sorted (11e38799… -> ef97c10c…).
                 // Re-fingerprinted for tren-1 wave 3 (integration): +1 fact, ordinal-sorted (710ae3f8… -> f808203c…).
                 // Re-fingerprinted for tren-1 W5 (integration): +2 fact(s) from the W5 team merges; value from guard_fingerprint.py (f808203c… -> 188008c1…).
-                "188008c1941d66997fc12b62d9e81a0cc6d5bad7e37f10b6fa171b4994da5747",
+                // Tren-1 W6: +4 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "f58b8d406c91b9114a871b33ddbc610b639b0abd9ac26e99bec5ec7e4d7d7e77",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -639,7 +645,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 wave 2 trial integration: +3 F018 limit-warning/risk-gate facts (satis wave 2) and +2 SAT-S14 SalesContract facts,
                 // kept ordinal-sorted (5a014a10... -> cebac90b...).
                 // Re-fingerprinted for tren-1 W5 (integration): +1 fact(s) from the W5 team merges; value from guard_fingerprint.py (cebac90b… -> 8c3781c4…).
-                "8c3781c49e6a68c25dde2631e9779b74574a99eb677faf046e8bd82aead51706",
+                // Tren-1 W6: +6 source facts, ordinal-sorted; SQL execution NOT_RUN.
+                "f61efc2c23eda1c79e87a94aec63c246b507f9683b0793af6755c97b79268fe7",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
