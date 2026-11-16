@@ -30,12 +30,17 @@ ile yazılmaz**; yetkili kullanıcı ürün ağırlık tablosu içe aktarma ekra
   - EN 10255 boruları (31 satır): **"Formülle hesaplandı (EN 10255, 7,85)"**. Bu borular EN 10219-2 kapsamında
     değildir, bu yüzden etiket kendi standardını adlandırır. Bu etiket SINAN-CEVAP 42.4 ile onaylandı
     (`SINAN_KARARLARI_2026-11-16_DALGA4_EK20.md` URN-D24, #1186).
-  - L serisi (9 satır) ayrıca **"L serisi ölçüleri doğrulanacak"** notunu taşır. Bu satırların dış çap ve et
-    kalınlığı henüz bir standart tabloyla doğrulanmadı. Doğrulanmış veri sayılmaz.
+  - L serisi (9 satır, `PIPE_EN10255_L`): içe aktarılan `SourceLabel` kolonunda etiketin sonuna
+    **"; L serisi ölçüleri doğrulanacak"** eklidir, yani tam etiket "Formülle hesaplandı (EN 10255, 7,85); L serisi
+    ölçüleri doğrulanacak" olur. Bu satırların dış çap ve et kalınlığı henüz bir standart tabloyla doğrulanmadı; ek
+    metin, doğrulanmamış ölçünün içe aktarıldıktan sonra da ERP'de görünmesi için etikette tutulur. Doğrulanmış
+    veri sayılmaz.
 - Yoğunluk 7,85 kg/dm³. Formüller (EN 10219-2 kesit özellikleri):
-  - yuvarlak: `M = (D − T) · T · π · 7,85 / 1000` kg/m. Tabloda katsayı yuvarlanmış olarak `0,02466` kullanıldı
-    (π · 7,85 / 1000 = 0,0246615…). Tam katsayıyla fark en çok 0,0005 kg/m'dir (göreli en çok %0,03). Değerler
-    3 ondalığa yuvarlıdır.
+  - yuvarlak: `M = (D − T) · T · π · 7,85 / 1000` kg/m. Değerler tam katsayı π · 7,85 / 1000 (= 0,0246615…) ile
+    hesaplandı ve sonuç 3 ondalığa yuvarlandı; 116 yuvarlak satırın hepsi bununla birebir tutar. Yuvarlanmış
+    `0,02466` katsayısı kullanılsaydı 51 satır üçüncü ondalıkta farklı çıkardı.
+  - CSV'nin `Note` kolonundaki 116 `(D-T)*T*0.02466` metni tarihsel bir etikettir, hesaplamayı anlatmaz. `Note`
+    içe aktarılmadığı ve CSV bu PR'da değiştirilmediği için metin yerinde bırakıldı.
   - kare/dikdörtgen: `A = 2T(B + H − 2T) − (4 − π)(Ro² − Ri²)` mm², `M = A · 0,00785` kg/m;
   - köşe yarıçapı T ≤ 6: Ro = 2T, Ri = T; 6 < T ≤ 10: Ro = 2,5T, Ri = 1,5T; T > 10: Ro = 3T, Ri = 2T.
   - EN 10255 boruları aynı yuvarlak formülle, nominal dış çapla, düz uç olarak hesaplandı.
