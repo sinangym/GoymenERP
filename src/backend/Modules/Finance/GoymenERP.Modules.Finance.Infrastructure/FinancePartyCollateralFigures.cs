@@ -19,10 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item><b>Held collateral (F018 §L3, "mevcut teminat"):</b> the held received collaterals in force on the read date at
 /// their recorded amount, summed per currency; a stored amount that does not parse makes it unavailable.</item>
 /// <item><b>Collateral utilization (F018 §L3, FNS-D31 (4), "teminat doluluğu"):</b> the open receivables taken from the
-/// weighted collateral — per currency the smaller of the two (a currency with nothing used is left out). When one currency
-/// has collateral left over while another has receivables uncovered, how the leftover covers the other currency is not
-/// decided (NEEDS-SINAN): the figure is unavailable rather than a per-currency answer that may understate it. Either input
-/// unavailable makes it unavailable.</item>
+/// weighted collateral — per currency the smaller of the two (a currency with nothing used is left out). FNS-D74: collateral
+/// covers only receivables in its own currency; collateral in another currency is zero cover, never converted and never a
+/// reason to withhold the figure, so a leftover in one currency beside an uncovered receivable in another is still a
+/// complete per-currency answer. Either input unavailable makes it unavailable.</item>
 /// </list>
 /// </summary>
 internal static class FinancePartyCollateralFigures
@@ -33,7 +33,6 @@ internal static class FinancePartyCollateralFigures
     public const string DocumentaryRiskUnreadable = "finance_documentary_risk_unreadable";
     public const string DocumentaryRiskWithheld = "finance_documentary_risk_withheld";
     public const string UtilizationSourceUnavailable = "finance_collateral_utilization_source_unavailable";
-    public const string UtilizationCurrencyRuleNotSet = "finance_collateral_utilization_currency_rule_not_set";
 
     private const int RateTextMaximumLength = 64;
     private const int PercentScale = 2;
@@ -161,7 +160,7 @@ internal static class FinancePartyCollateralFigures
 
     /// <summary>
     /// F018 §L3 "teminat doluluğu": per currency the smaller of the open receivables and the weighted collateral; a leftover
-    /// in one currency beside an uncovered receivable in another has no decided rule and fails closed.
+    /// in one currency beside an uncovered receivable in another is zero cover there (FNS-D74), not a withheld figure.
     /// </summary>
     internal static Figure Utilization(Figure openReceivables, Figure weighted)
     {
@@ -175,15 +174,11 @@ internal static class FinancePartyCollateralFigures
 
         var zero = new FinanceExactDecimalText(BigInteger.Zero, 0);
         var used = new Dictionary<Guid, FinanceExactDecimalText>();
-        var collateralLeftOver = false;
-        var receivableUncovered = false;
         foreach (var currencyId in owed.Keys.Union(held.Keys))
         {
             var open = owed.TryGetValue(currencyId, out var openAmount) ? openAmount : zero;
             var cover = held.TryGetValue(currencyId, out var coverAmount) ? coverAmount : zero;
             var comparison = open.CompareTo(cover);
-            receivableUncovered |= comparison > 0;
-            collateralLeftOver |= comparison < 0;
             var smaller = comparison <= 0 ? open : cover;
             if (!smaller.IsZero)
             {
@@ -191,9 +186,7 @@ internal static class FinancePartyCollateralFigures
             }
         }
 
-        return collateralLeftOver && receivableUncovered
-            ? Figure.Unavailable(UtilizationCurrencyRuleNotSet)
-            : new Figure(true, Ordered(used), null);
+        return new Figure(true, Ordered(used), null);
     }
 
     private static bool TryPerCurrency(IReadOnlyList<CurrencyAmount> amounts,

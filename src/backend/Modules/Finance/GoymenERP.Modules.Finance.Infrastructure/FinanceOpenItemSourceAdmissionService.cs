@@ -30,6 +30,8 @@ public sealed class FinanceOpenItemSourceAdmissionService(
     internal const string CommandName = "finance.open-item-source.admit.v1";
     private const int IdentityMaximumLength = 128;
     private const string EntityType = "Finance.OpenItemSourceBatch";
+    internal const string SourceDifferenceEventType = "finance.official-invoice.source-difference.v1";
+    private const string OfficialSalesInvoiceEntityType = "Finance.OfficialSalesInvoice";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
     public async Task<FinanceOpenItemAdmissionResult> AdmitAsync(
@@ -134,9 +136,11 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         }
 
         var now = timeProvider.GetUtcNow();
+        var sourceDifferences = new List<FinanceOfficialInvoiceSourceComparison.Difference>();
         if (!reused)
         {
-            if (await ClaimOfficialIdentitiesAsync(context, batch, now, cancellationToken) is { } claimRefusal)
+            if (await ClaimOfficialIdentitiesAsync(context, batch, now, sourceDifferences, cancellationToken)
+                is { } claimRefusal)
             {
                 dbContext.ChangeTracker.Clear();
                 return claimRefusal;
@@ -194,6 +198,10 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         };
         dbContext.OpenItemSourceBatches.Add(batchRow);
         Audit(context, metadata, batchRow, batch.Rows.Count, reused);
+        foreach (var difference in sourceDifferences)
+        {
+            AuditSourceDifference(context, metadata, difference);
+        }
         return await SaveAsync(context, metadata, source, payloadHash, result, cancellationToken);
     }
 
@@ -203,11 +211,15 @@ public sealed class FinanceOpenItemSourceAdmissionService(
     /// (D5's safe reading of "open"; the narrower reading is a Sinan decision). Installments of the same document
     /// share one claim. A v1 file or a non-file source carries no official identity and claims nothing. Comparison
     /// with Sales finalization identities waits for the Sales contract fields (FNS-D28 (3), #1103).
+    /// FNS-D76 / KLN-D104: an approved manual (D1) record with the same official number or ETTN wins over the import;
+    /// the admission is not refused for it, but every field on which the two disagree is collected into
+    /// <paramref name="sourceDifferences"/> and written to the audit trail as a warning with the admission.
     /// </summary>
     private async Task<FinanceOpenItemAdmissionResult?> ClaimOfficialIdentitiesAsync(
         FinanceContext context,
         ApprovedFinanceOpenItemSourceBatch batch,
         DateTimeOffset now,
+        List<FinanceOfficialInvoiceSourceComparison.Difference> sourceDifferences,
         CancellationToken cancellationToken)
     {
         var upload = await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
@@ -250,6 +262,11 @@ public sealed class FinanceOpenItemSourceAdmissionService(
                 .ToListAsync(cancellationToken))
                 .Select(item => (item.BatchId, item.DocumentId))
                 .ToHashSet();
+        var approvedManualStatus = (int)FinanceOfficialSalesInvoiceStatusV1.Approved;
+        var approvedManual = await dbContext.OfficialSalesInvoices.AsNoTracking()
+            .Where(row => row.CompanyId == context.CompanyId && row.Status == approvedManualStatus
+                && (officialNos.Contains(row.OfficialNo) || ettns.Contains(row.Ettn)))
+            .ToListAsync(cancellationToken);
         if (await FenceAsync(context, batch.BatchId, cancellationToken) is { } claimFence)
         {
             return claimFence;
@@ -260,6 +277,8 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         {
             return Refused(context, CommandOutcome.ValidationFailed, [.. decision.Issues]);
         }
+        sourceDifferences.AddRange(FinanceOfficialInvoiceSourceComparison.Compare(
+            approvedManual, FinanceOfficialInvoiceSourceComparison.Imported(batch, documents)));
         foreach (var claim in decision.Claims)
         {
             dbContext.OfficialInvoiceIdentityClaims.Add(new FinanceOfficialInvoiceIdentityClaimRow
@@ -390,6 +409,32 @@ public sealed class FinanceOpenItemSourceAdmissionService(
             }, Json),
             reused ? "Canonical source identities reused; no second open item created"
                 : "Approved source batch admitted as open items",
+            ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
+            envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
+            context.CorrelationId, context.CausationId, metadata.IdempotencyKey));
+
+    /// <summary>
+    /// FNS-D76 / KLN-D104 warning: the approved manual record (the winner) and the imported document disagree. It is
+    /// written on the manual record's audit stream and changes neither record.
+    /// </summary>
+    private void AuditSourceDifference(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceOfficialInvoiceSourceComparison.Difference difference) =>
+        auditEvents.Enqueue(new AuditEventDraft(
+            context.CompanyId, SourceDifferenceEventType, OfficialSalesInvoiceEntityType,
+            difference.ManualInvoiceId.ToString("D"), "SourceDifference", null, null, AuditActorTypes.User,
+            context.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}",
+            JsonSerializer.Serialize(new
+            {
+                Winner = "ManualRecord",
+                ImportBatchId = difference.Imported.BatchId,
+                ImportSourceDocumentId = difference.Imported.SourceDocumentId,
+                difference.Imported.OfficialNo,
+                difference.Imported.Ettn,
+                Fields = difference.Fields,
+            }, Json),
+            "Approved manual official invoice and imported document disagree; the approved manual record wins",
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
             envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
             context.CorrelationId, context.CausationId, metadata.IdempotencyKey));

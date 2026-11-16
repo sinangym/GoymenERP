@@ -49,6 +49,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<PartyCollateralCommandRow> PartyCollateralCommands => Set<PartyCollateralCommandRow>();
 
+    internal DbSet<OpeningBalanceRow> OpeningBalances => Set<OpeningBalanceRow>();
+
+    internal DbSet<OpeningBalanceCommandRow> OpeningBalanceCommands => Set<OpeningBalanceCommandRow>();
+
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
@@ -152,6 +156,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureCashAccounts(modelBuilder);
         ConfigurePartyCreditLimits(modelBuilder);
         ConfigurePartyCollaterals(modelBuilder);
+        ConfigureOpeningBalances(modelBuilder);
         ConfigureOfficialSalesInvoices(modelBuilder);
         ConfigureExpensePayments(modelBuilder);
         ConfigureCashTransfers(modelBuilder);
@@ -1860,6 +1865,115 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Kind] = 2 AND [Revision] > 1 AND [ReleaseReason] IS NULL) OR "
         + "([Kind] = 3 AND [Revision] > 1 AND [ReleaseReason] IS NOT NULL AND LEN([ReleaseReason]) > 0)";
 
+    /// <summary>
+    /// FIN-S9 (FNS-D23): the cash, bank and party opening balances and their own command records. At most one live
+    /// (proposed or approved) opening per (target kind, target, currency) (<c>UX_OpeningBalances_Live</c>); a rejected one
+    /// stays as history and frees the slot. The decision is made by another actor (binary collation). No foreign key reaches
+    /// the cash/bank account (the service checks them; one module, but the opening outlives no account rule here) or the
+    /// party: the party and its company account are Counterparty's (read through
+    /// <see cref="Contracts.IFinancePartyAccountPort"/>).
+    /// </summary>
+    private void ConfigureOpeningBalances(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OpeningBalanceRow>();
+        entity.ToTable("OpeningBalances", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningBalances_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ProposedBy]) > 0 AND LEN([OpeningPeriodVersion]) > 0");
+            table.HasCheckConstraint("CK_OpeningBalances_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_OpeningBalances_Target", OpeningBalanceTargetCheck);
+            table.HasCheckConstraint("CK_OpeningBalances_Amount", OpeningBalanceAmountCheck);
+            table.HasCheckConstraint("CK_OpeningBalances_Decision", OpeningBalanceDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.AmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.AsOfDate).HasColumnType("date");
+        entity.Property(x => x.OpeningPeriodVersion).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
+            .IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RejectionReason).HasMaxLength(500);
+        entity.HasIndex(x => new { x.CompanyId, x.TargetKind, x.TargetId, x.CurrencyId }, OpeningBalanceLiveIndex)
+            .HasFilter(OpeningBalanceLiveFilter).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.Status, x.ProposedAtUtc }, "IX_OpeningBalances_Status");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var command = modelBuilder.Entity<OpeningBalanceCommandRow>();
+        command.ToTable("OpeningBalanceCommands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningBalanceCommands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_OpeningBalanceCommands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_OpeningBalanceCommands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_OpeningBalanceCommands_ResultJson", "ISJSON([ResultJson]) = 1");
+            // A target always, except a recorded terminal refusal whose target does not exist (ADR-011 §7).
+            table.HasCheckConstraint("CK_OpeningBalanceCommands_Target",
+                "([OpeningBalanceId] IS NOT NULL AND [OpeningBalanceId] <> '00000000-0000-0000-0000-000000000000') OR "
+                + "([OpeningBalanceId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(64);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        command.HasIndex(x => new { x.CompanyId, x.OpeningBalanceId });
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasOne<OpeningBalanceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpeningBalanceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>Per (target kind, target, currency) at most one live opening balance (proposed or approved).</summary>
+    internal const string OpeningBalanceLiveIndex = "UX_OpeningBalances_Live";
+
+    internal const string OpeningBalanceLiveFilter = "[Status] IN (1, 2)";
+
+    /// <summary>
+    /// FNS-D23: a cash (1) or bank (2) opening names no party and no direction (the account's own currency); a party (3)
+    /// opening names its party and a direction (1 debit, 2 credit). Kind is tested for NULL first: a check passes on unknown.
+    /// </summary>
+    internal const string OpeningBalanceTargetCheck =
+        "([TargetKind] IN (1, 2) AND [PartyId] IS NULL AND [Direction] IS NULL) OR "
+        + "([TargetKind] = 3 AND [PartyId] IS NOT NULL AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [Direction] IS NOT NULL AND [Direction] IN (1, 2))";
+
+    /// <summary>
+    /// An unsigned decimal amount text with at least one non-zero digit (digits and at most one inner dot; the service
+    /// holds the exact parse): a negative or a zero opening is never stored.
+    /// </summary>
+    internal const string OpeningBalanceAmountCheck =
+        "LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' "
+        + "AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.' "
+        + "AND [AmountText] LIKE '%[1-9]%'";
+
+    /// <summary>
+    /// FNS-D23 maker≠approver: a proposal carries no decision; an approval carries a decider other than the proposer and no
+    /// reason; a rejection carries a decider other than the proposer and its reason.
+    /// </summary>
+    internal const string OpeningBalanceDecisionCheck =
+        "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NULL) OR "
+        + "([Status] = 3 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecidedBy]) > 0 "
+        + "AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2 "
+        + "AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
@@ -2032,6 +2146,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         "Teminat kaydı yalnız yerine yeni sürüm geçerek, sürümü bir artarak değişir.");
                 }
 
+                if (entry.Entity is OpeningBalanceRow openingBalance
+                    && !IsAllowedOpeningBalanceDecision(entry, openingBalance))
+                {
+                    throw new InvalidOperationException(
+                        "Açılış bakiyesi yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.");
+                }
+
                 if (entry.Entity is FinanceAllocationRow allocation
                     && !IsAllowedAllocationRelease(entry, allocation))
                 {
@@ -2118,6 +2239,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(PartyCreditLimitRow.DecidedAtUtc), nameof(PartyCreditLimitRow.RejectionReason),
                         nameof(PartyCreditLimitRow.AccountRevision), nameof(PartyCreditLimitRow.SupersededAtUtc),
                         nameof(PartyCreditLimitRow.UpdatedAtUtc),
+                    ],
+                    // FIN-S9 (FNS-D23): only the one decision; the opening's values never change.
+                    OpeningBalanceRow =>
+                    [
+                        nameof(OpeningBalanceRow.Status), nameof(OpeningBalanceRow.DecidedBy),
+                        nameof(OpeningBalanceRow.DecidedAtUtc), nameof(OpeningBalanceRow.RejectionReason),
+                        nameof(OpeningBalanceRow.UpdatedAtUtc),
                     ],
                     // API-85b: only a revision superseded by a newer one; the collateral's values never change.
                     PartyCollateralRow =>
@@ -2421,6 +2549,32 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     }
 
     /// <summary>API-85b: a collateral revision only leaves the effective state, superseded by the next revision.</summary>
+    /// <summary>
+    /// FIN-S9 (FNS-D23): proposed → approved (no reason) or rejected (a reason), by an actor other than the proposer, exactly
+    /// one version step; a decided opening never changes again.
+    /// </summary>
+    private static bool IsAllowedOpeningBalanceDecision(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry, OpeningBalanceRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        const int rejected = 3;
+        var originalVersion = (long)entry.OriginalValues[nameof(OpeningBalanceRow.Version)]!;
+        if (current.Version != checked(originalVersion + 1)
+            || (int)entry.OriginalValues[nameof(OpeningBalanceRow.Status)]! != proposed
+            || entry.OriginalValues[nameof(OpeningBalanceRow.DecidedBy)] is not null
+            || entry.OriginalValues[nameof(OpeningBalanceRow.DecidedAtUtc)] is not null
+            || entry.OriginalValues[nameof(OpeningBalanceRow.RejectionReason)] is not null)
+        {
+            return false;
+        }
+
+        var decided = !string.IsNullOrWhiteSpace(current.DecidedBy) && current.DecidedAtUtc is not null
+            && !string.Equals(current.DecidedBy, current.ProposedBy, StringComparison.Ordinal);
+        return decided && ((current.Status == approved && current.RejectionReason is null)
+            || (current.Status == rejected && !string.IsNullOrWhiteSpace(current.RejectionReason)));
+    }
+
     private static bool IsAllowedPartyCollateralSupersede(
         Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
         PartyCollateralRow current)

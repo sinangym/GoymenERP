@@ -24,6 +24,7 @@ public static class FinanceEndpoints
     public const string CashAccountCurrencyCandidatesPath = "/api/v1/finance/cash-accounts/currency-candidates";
     public const string CreditLimitsPath = "/api/v1/finance/credit-limits";
     public const string CollateralsPath = "/api/v1/finance/collaterals";
+    public const string OpeningBalancesPath = "/api/v1/finance/opening-balances";
     public const string PartyCreditPanelPath = "/api/v1/finance/party-credit-panel";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string PaymentReversalProposalsPath = "/api/v1/finance/manual-bank-payments/reversal-proposals";
@@ -108,6 +109,7 @@ public static class FinanceEndpoints
         MapCashAccountEndpoints(endpoints);
         MapCreditLimitEndpoints(endpoints);
         MapCollateralEndpoints(endpoints);
+        MapOpeningBalanceEndpoints(endpoints);
         MapPartyCreditPanelEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
@@ -3107,6 +3109,219 @@ public static class FinanceEndpoints
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// FIN-S9 (FNS-D23): the cash, bank and party opening balances, only while the Settings opening period is open. A
+    /// specialist proposes; a manager other than the proposer approves or rejects with the expected version. A closed
+    /// period is 422 <c>opening_period_closed</c> on a command and 404 on the list; a period Settings cannot answer is 503
+    /// <c>opening_period_unavailable</c>. The proposer's own decision is 403 <c>finance_approver_is_proposer</c>; a stale
+    /// version is 409 <c>version_conflict</c>; a second live opening for the same target and currency is 422
+    /// <c>opening_balance_exists</c>. An approved opening moves no money (FNS-D23 limits).
+    /// </summary>
+    private static void MapOpeningBalanceEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(OpeningBalancesPath + "/period", async (
+                HttpContext httpContext,
+                IFinanceOpeningBalanceService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.GetPeriodAsync(Context(companyContext, currentUser, correlation),
+                    cancellationToken));
+            })
+            .WithName("GetFinanceOpeningPeriodV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<OpeningPeriodView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(OpeningBalancesPath, async (
+                HttpContext httpContext,
+                IFinanceOpeningBalanceService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.ListAsync(Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("ListFinanceOpeningBalancesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<OpeningBalanceListPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(OpeningBalancesPath + "/currency-candidates", async (
+                HttpContext httpContext,
+                IFinanceOpeningBalanceService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.CurrencyCandidatesAsync(Context(companyContext, currentUser, correlation),
+                    cancellationToken));
+            })
+            .WithName("GetFinanceOpeningBalanceCurrencyCandidatesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<OpeningBalanceCurrencyCandidates>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(OpeningBalancesPath, async (
+                HttpContext httpContext,
+                IFinanceOpeningBalanceService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<OpeningBalanceProposeRequest>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.ProposeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), body, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceOpeningBalanceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable result: the stored answer (200); a proposal records no terminal refusal.
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<OpeningBalanceProposeRequest>("application/json")
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status200OK)
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(OpeningBalancesPath + "/{openingBalanceId:guid}/approve", async (
+                Guid openingBalanceId,
+                HttpContext httpContext,
+                IFinanceOpeningBalanceService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<OpeningBalanceApproveBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new OpeningBalanceApproveRequest(openingBalanceId, body.ExpectedVersion),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceOpeningBalanceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<OpeningBalanceApproveBody>("application/json")
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status200OK)
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(OpeningBalancesPath + "/{openingBalanceId:guid}/reject", async (
+                Guid openingBalanceId,
+                HttpContext httpContext,
+                IFinanceOpeningBalanceService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<OpeningBalanceRejectBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.RejectAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key),
+                    new OpeningBalanceRejectRequest(openingBalanceId, body.ExpectedVersion, body.Reason),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RejectFinanceOpeningBalanceV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored answer (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<OpeningBalanceRejectBody>("application/json")
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status200OK)
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<OpeningBalanceCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
             .ProducesErpServiceUnavailable();
     }
 

@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.12", provider.ContractVersion);
+        Assert.Equal("1.13", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -129,6 +129,15 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.collaterals.record", "finance.collaterals.list", "/finans/teminatlar", "F-18-COLLATERALS",
                 ShellCapabilityRoutePrecedence.Static,
                 [ErpPermissions.FinanceCollateralsRead, ErpPermissions.FinanceCollateralsRecord]),
+            // 1.13 (FIN-S9, FNS-D23): opening balances; propose and approve are controls of the route.
+            ("finance.opening-balances.list", "finance.opening-balances.list", "/finans/acilis-bakiyeleri",
+                "F-23-OPENING-BALANCES", ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceOpeningBalancesRead]),
+            ("finance.opening-balances.propose", "finance.opening-balances.list", "/finans/acilis-bakiyeleri",
+                "F-23-OPENING-BALANCES", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesPropose]),
+            ("finance.opening-balances.approve", "finance.opening-balances.list", "/finans/acilis-bakiyeleri",
+                "F-23-OPENING-BALANCES", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesApprove]),
             // 1.11 (FNS-D24): one workspace; the commit is its control and also needs the Accounting period read.
             ("finance.cash-transfers.workspace", "finance.cash-transfers.workspace", "/finans/virman",
                 "F-32-CASH-TRANSFERS", ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.CashTransferRead]),

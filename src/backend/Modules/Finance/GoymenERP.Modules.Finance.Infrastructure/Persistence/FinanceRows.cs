@@ -485,6 +485,53 @@ internal sealed class CustomerInstrumentMovementRow : IFinanceTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// FIN-S9 (FNS-D23): one cash, bank or party opening balance. A specialist proposes it (status 1) while the Settings opening
+/// period is open; a manager other than the proposer approves (2) or rejects (3) it, once. <see cref="TargetId"/> is the
+/// cash account, the bank account or the company account; <see cref="PartyId"/> and <see cref="Direction"/> (1 debit,
+/// 2 credit) exist only for a party opening. The amount is exact decimal text &gt; 0. <see cref="OpeningPeriodVersion"/> is
+/// the Settings period version the proposal was accepted under (the approval re-reads the period). It moves no money.
+/// </summary>
+internal sealed class OpeningBalanceRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+    public Guid? PartyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public int? Direction { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly AsOfDate { get; set; }
+    public int Status { get; set; }
+    public string OpeningPeriodVersion { get; set; } = string.Empty;
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-S9: one accepted opening balance command attempt (ADR-011), like <see cref="CashAccountCommandRow"/>. (company,
+/// command, key hash) is its key; only the key's SHA-256 is kept. <see cref="OpeningBalanceId"/> is the opening balance
+/// the command wrote or decided (null only for a recorded refusal whose target does not exist). Append-only.
+/// </summary>
+internal sealed class OpeningBalanceCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? OpeningBalanceId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
 /// <summary>Organization's company, referenced by identity only (the table is Organization's, not migrated here).</summary>
 internal sealed class OrganizationCompanyReference
 {

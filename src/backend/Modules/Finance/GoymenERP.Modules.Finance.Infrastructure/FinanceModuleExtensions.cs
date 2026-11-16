@@ -91,6 +91,11 @@ public static class FinanceModuleExtensions
         // record and the weighted collateral fail closed.
         services.TryAddScoped<IFinanceCollateralTypeCatalogReader, UnavailableFinanceCollateralTypeCatalogReader>();
         services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
+        // FIN-S9 (FNS-D23): the opening balances, proposed and approved by two people while the Settings opening period
+        // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and
+        // decision fails closed and the period is never assumed open. An approved opening moves no money.
+        services.TryAddScoped<IFinanceOpeningPeriodReader, UnavailableFinanceOpeningPeriodReader>();
+        services.AddScoped<IFinanceOpeningBalanceService>(CreateOpeningBalanceService);
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
         services.AddScoped<IFinancePartyCreditPanelReader>(provider => new FinancePartyCreditPanelService(
@@ -245,6 +250,29 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<IAuditEventCollector>(),
             new FinancePartyCollateralEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceCollateralsRecord, permissions, FinanceAction.RecordCollateral)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinanceOpeningBalanceService CreateOpeningBalanceService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceOpeningBalanceService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceOpeningPeriodReader>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceOpeningBalanceEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceOpeningBalancesPropose, permissions,
+                    FinanceAction.ProposeOpeningBalance),
+                Envelope(provider, ErpPermissions.FinanceOpeningBalancesApprove, permissions,
+                    FinanceAction.ApproveOpeningBalance)),
             provider.GetRequiredService<TimeProvider>());
     }
 

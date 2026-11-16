@@ -28,7 +28,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// stored record Finance cannot read exactly (or one naming another party) is <see cref="SalesPartyRiskFigureStateV1.Unavailable"/>.
 /// A pending proposal never counts.</item>
 /// <item><b>Collateral</b> (API-85b, F018 §L2; FNS-D31, FNS-D57): the account's held received collaterals of the collateral
-/// master (<see cref="FinancePartyCollateralService"/>) in force on the read date (the UTC calendar date of the server clock),
+/// master (<see cref="FinancePartyCollateralService"/>) in force on the read date (the company business day, FNS-D75),
 /// each weighted by the Settings rate of its type at READ time (amount x rate / 100, exact), summed per currency
 /// (<see cref="FinancePartyCollateralFigures"/>; <c>IncludesTax</c> null). No collateral in force is a recorded zero (an
 /// empty list). A Settings catalog that cannot answer (the default until Settings registers one), an unknown type, a rate
@@ -98,8 +98,16 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
                 FinancePartyCollateralFigures.CollateralUnreadable);
         }
 
-        var asOf = FinancePartyCollateralService.ReadDate(timeProvider);
         var inputs = held.Select(FinancePartyCollateralService.HeldInput).ToList();
+        if (FinancePartyCollateralService.ReadDate(timeProvider) is not { } asOf)
+        {
+            // FNS-D75: no collateral is dated in force by a UTC guess; with none held the figure is still a recorded zero.
+            return inputs.Count == 0
+                ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, CollateralSource, [], null, null)
+                : new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                    FinanceBusinessDay.BusinessDayUnavailable);
+        }
+
         var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil, asOf))
             ? await collateralTypes.ListAsync(companyId, asOf, cancellationToken)
             : null;
