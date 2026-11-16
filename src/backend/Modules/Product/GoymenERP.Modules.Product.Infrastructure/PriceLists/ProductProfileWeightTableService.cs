@@ -25,7 +25,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// import. Each import is a new insert-only version; the newest is current. No draft table is seeded (URN-D16).</item>
 /// <item><b>Kinds and size</b> (URN-D18/D21): a <c>.csv</c> or <c>.xlsx</c> file, its kind proven by its content; the largest file
 /// is the Settings group-level record read through <see cref="IProductProfileWeightImportLimitSourceV1"/>, or the decided 5 MB
-/// starting value while none is recorded (an unreachable source refuses 503, nothing is guessed).</item>
+/// starting value (URN-D22: 5,242,880 bytes) while none is recorded, never above the platform's general upload bound read through
+/// <see cref="IProductProfileWeightUploadCeilingSourceV1"/> (URN-D23: the ceiling). An unreachable source refuses 503, nothing is
+/// guessed.</item>
 /// </list>
 /// </summary>
 internal sealed class ProductProfileWeightTableService(
@@ -36,7 +38,8 @@ internal sealed class ProductProfileWeightTableService(
     IAuditEventCollector auditEvents,
     IProductProfileWeightFileVaultV1 vault,
     TimeProvider timeProvider,
-    IProductProfileWeightImportLimitSourceV1? limits = null) : IProductProfileWeightTableServiceV1
+    IProductProfileWeightImportLimitSourceV1? limits = null,
+    IProductProfileWeightUploadCeilingSourceV1? ceiling = null) : IProductProfileWeightTableServiceV1
 {
     private const string Permission = ProductProfileWeightPermissionsV1.Import;
     private const string ImportCommandName = "product.profile-weights.import.v1";
@@ -117,7 +120,8 @@ internal sealed class ProductProfileWeightTableService(
         if (await MaximumFileBytesAsync(scope.CompanyId, cancellationToken) is not { } maximumFileBytes)
         {
             return Unstored(Problem(503, ProductProfileWeightProblemCodesV1.ProviderUnavailable, "Dosya boyutu sınırı okunamıyor.",
-                "İçe aktarım dosyası boyut sınırı Ayarlar'dan şu anda okunamıyor; tablo değişmedi. Daha sonra yeniden deneyin."),
+                "İçe aktarım dosyası boyut sınırı (Ayarlar kaydı veya genel yükleme sınırı) şu anda okunamıyor; tablo değişmedi. "
+                + "Daha sonra yeniden deneyin."),
                 metadata);
         }
 
@@ -350,10 +354,37 @@ internal sealed class ProductProfileWeightTableService(
     }
 
     /// <summary>
-    /// URN-D21: the largest file now, from the Settings group-level record (null there → the decided starting value). Null here
-    /// means the source could not answer or answered a value that is not a positive size: the import refuses (fail-closed).
+    /// URN-D21/D22/D23: the largest file now, from the Settings group-level record (null there → the decided starting value),
+    /// capped by the platform's general upload bound (the ceiling; a host without a ceiling source keeps the vault's own bound
+    /// when the file is stored). Null here means a source could not answer or answered a value that is not a positive size: the
+    /// import refuses (fail-closed).
     /// </summary>
     private async Task<long?> MaximumFileBytesAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        if (await RecordedMaximumFileBytesAsync(companyId, cancellationToken) is not { } recorded)
+        {
+            return null;
+        }
+
+        if (ceiling is null)
+        {
+            return recorded;
+        }
+
+        long platformMaximum;
+        try
+        {
+            platformMaximum = await ceiling.GetPlatformMaximumUploadBytesAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
+
+        return platformMaximum > 0 ? Math.Min(recorded, platformMaximum) : null;
+    }
+
+    private async Task<long?> RecordedMaximumFileBytesAsync(Guid companyId, CancellationToken cancellationToken)
     {
         if (limits is null)
         {
