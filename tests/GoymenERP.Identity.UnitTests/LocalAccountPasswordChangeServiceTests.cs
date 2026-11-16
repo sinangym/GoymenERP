@@ -182,6 +182,31 @@ public sealed class LocalAccountPasswordChangeServiceTests
     }
 
     [Fact]
+    public async Task A_temporary_password_consumed_by_a_login_can_be_replaced_and_its_fields_are_cleared()
+    {
+        var harness = Harness.Create(mustChangePassword: true);
+        harness.Credential.IssueTemporaryPassword(
+            harness.Credential.PasswordHash,
+            FakePasswordHasher.CurrentFormatVersion,
+            Now.AddHours(-2),
+            Now.AddHours(70),
+            Guid.NewGuid());
+        typeof(LocalCredential)
+            .GetProperty(nameof(LocalCredential.TemporaryPasswordConsumedAtUtc))!
+            .SetValue(harness.Credential, Now.AddHours(-1));
+
+        var result = await harness.ChangeAsync();
+
+        // KIM-D23: after the one login the fenced session sets the founder's own password; the temporary fields go.
+        Assert.Equal(LocalAccountPasswordChangeStatus.Changed, result.Status);
+        Assert.Equal(1, harness.Store.Writes);
+        Assert.Equal(
+            ((DateTimeOffset?)null, (DateTimeOffset?)null, (DateTimeOffset?)null, false),
+            (harness.Credential.TemporaryPasswordIssuedAtUtc, harness.Credential.TemporaryPasswordExpiresAtUtc,
+                harness.Credential.TemporaryPasswordConsumedAtUtc, harness.Credential.MustChangePassword));
+    }
+
+    [Fact]
     public async Task A_row_that_moved_before_the_write_is_a_version_conflict_and_nothing_is_written()
     {
         var harness = Harness.Create(mustChangePassword: true);
@@ -315,7 +340,8 @@ internal sealed class InMemoryLocalCredentialCommandStore(LocalCredential creden
                 credential.SecurityStamp,
                 credential.Version,
                 userIsActive,
-                credential.TemporaryPasswordIssuedAtUtc)
+                credential.TemporaryPasswordIssuedAtUtc,
+                credential.TemporaryPasswordConsumedAtUtc)
             : null);
 
     public Task<LocalCredentialCommandRecord?> FindCommandAsync(

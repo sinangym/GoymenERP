@@ -702,6 +702,26 @@ internal sealed class TrackingLocalCredentialStore(IdentityDbContext dbContext) 
         return true;
     }
 
+    public async Task<bool> TryConsumeTemporaryPasswordAsync(
+        LocalCredentialLoginState read,
+        string? rehashedPasswordHash,
+        int? rehashedFormatVersion,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var credential = await FindUnchangedAsync(read, cancellationToken);
+        if (credential is null || credential.TemporaryPasswordConsumedAtUtc is not null)
+        {
+            return false;
+        }
+
+        // The relational store sets only the consumption column; the domain exposes no setter for it.
+        credential.ApplySuccessfulAccess(rehashedPasswordHash, rehashedFormatVersion);
+        dbContext.Entry(credential).Property(nameof(LocalCredential.TemporaryPasswordConsumedAtUtc)).CurrentValue = nowUtc;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<bool> TryRenewSecurityStampAsync(
         Guid userId,
         Guid readSecurityStamp,

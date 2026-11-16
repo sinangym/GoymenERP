@@ -27,11 +27,35 @@ public static class SecurityEventTypesV1
     /// </summary>
     public const string LoginRateLimited = "auth.login.rate_limited";
 
+    /// <summary>
+    /// The terminal recovery command reactivated the inactive bootstrap founder (ID-2r <c>recover-founder reactivate</c>,
+    /// KIM-D22). Platform scope, no company, <c>System</c> actor, always <c>Allowed</c>; written fail-closed before the
+    /// command's commit, so a recovery the channel cannot record does not happen. Never carries a password, hash or stamp.
+    /// </summary>
+    public const string FounderRecovered = "identity.founder.recovered";
+
+    /// <summary>
+    /// The terminal recovery command issued a one-time temporary password to the active bootstrap founder (ID-2r
+    /// <c>recover-founder reset-password</c>, KIM-D23/D43). Same envelope rules as <see cref="FounderRecovered"/>.
+    /// </summary>
+    public const string FounderPasswordReset = "identity.founder.password_reset";
+
+    /// <summary>
+    /// One refused <c>recover-founder</c> run (either sub-command or none). Platform scope, no company, <c>System</c>
+    /// actor, always <c>Denied</c> with <c>policy_refused</c>; the refusal stays in force when the channel cannot record
+    /// it (alarm). Not a denial aggregate: every run is its own row.
+    /// </summary>
+    public const string FounderRecoveryRefused = "identity.founder.recovery_refused";
+
+    /// <summary>The ID-2r founder recovery types: Platform scope, no company, System actor, no permission code.</summary>
+    public static IReadOnlyList<string> FounderRecoveryTypes { get; } =
+        [FounderRecovered, FounderPasswordReset, FounderRecoveryRefused];
+
     public static IReadOnlyList<string> All { get; } =
     [
         LoginSucceeded, LoginFailed, AuthorizationDenied, AiAuthorizationDenied, PermissionChanged,
         PolicyPublished, ExportPerformed, RetentionPurgeRequested, AiToolCalled, AiRequestRefused,
-        SecurityEventsRead, LoginRateLimited,
+        SecurityEventsRead, LoginRateLimited, FounderRecovered, FounderPasswordReset, FounderRecoveryRefused,
     ];
 
     public static bool IsDefined(string? value) => value is not null && All.Contains(value, StringComparer.Ordinal);

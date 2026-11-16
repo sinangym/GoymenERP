@@ -29,7 +29,9 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
                     credential.LockoutEndUtc,
                     credential.TemporaryPasswordIssuedAtUtc,
                     credential.SecurityStamp,
-                    user.IsActive))
+                    user.IsActive,
+                    credential.TemporaryPasswordExpiresAtUtc,
+                    credential.TemporaryPasswordConsumedAtUtc))
             .SingleOrDefaultAsync(cancellationToken);
 
     public async Task<bool> TryRecordFailedAccessAsync(
@@ -92,6 +94,46 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
         return affected == 1;
     }
 
+    public async Task<bool> TryConsumeTemporaryPasswordAsync(
+        LocalCredentialLoginState read,
+        string? rehashedPasswordHash,
+        int? rehashedFormatVersion,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        if ((rehashedPasswordHash is null) != (rehashedFormatVersion is null))
+        {
+            throw new ArgumentException("Yeniden özet ve biçim sürümü birlikte verilmelidir.");
+        }
+
+        if (read.TemporaryPasswordIssuedAtUtc is null)
+        {
+            throw new ArgumentException("Tüketilecek geçici parola yok.", nameof(read));
+        }
+
+        // KIM-D23: the single use is decided by SQL Server. Two parallel logins with the same temporary password both
+        // read ConsumedAt = NULL; only the first UPDATE matches "ConsumedAt IS NULL", the second affects no row.
+        var unconsumed = Unchanged(read)
+            .Where(credential => credential.TemporaryPasswordConsumedAtUtc == null);
+        var affected = rehashedPasswordHash is null
+            ? await unconsumed.ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(credential => credential.FailedAccessCount, 0)
+                    .SetProperty(credential => credential.LockoutEndUtc, (DateTimeOffset?)null)
+                    .SetProperty(credential => credential.TemporaryPasswordConsumedAtUtc, (DateTimeOffset?)nowUtc),
+                cancellationToken)
+            : await unconsumed.ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(credential => credential.FailedAccessCount, 0)
+                    .SetProperty(credential => credential.LockoutEndUtc, (DateTimeOffset?)null)
+                    .SetProperty(credential => credential.TemporaryPasswordConsumedAtUtc, (DateTimeOffset?)nowUtc)
+                    .SetProperty(credential => credential.PasswordHash, rehashedPasswordHash)
+                    .SetProperty(credential => credential.HashFormatVersion, rehashedFormatVersion!.Value),
+                cancellationToken);
+        return affected == 1;
+    }
+
     public Task<LocalCredentialSessionState?> FindForSessionAsync(Guid userId, CancellationToken cancellationToken) =>
         dbContext.LocalCredentials
             .AsNoTracking()
@@ -104,7 +146,8 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
                     credential.SecurityStamp,
                     user.IsActive,
                     credential.MustChangePassword,
-                    credential.TemporaryPasswordIssuedAtUtc))
+                    credential.TemporaryPasswordIssuedAtUtc,
+                    credential.TemporaryPasswordConsumedAtUtc))
             .SingleOrDefaultAsync(cancellationToken);
 
     public async Task<bool> TryRenewSecurityStampAsync(

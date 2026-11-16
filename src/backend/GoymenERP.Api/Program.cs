@@ -627,13 +627,15 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeDocumentsModuleAsync();
 }
 
-// ID-2 operator command (identity bootstrap-founder): runs once and exits; the web host is never started.
+// ID-2/ID-2r operator commands (identity bootstrap-founder, identity recover-founder): run once and exit; the web host
+// is never started.
 if (IdentityCommandLine.IsIdentityCommand(args))
 {
     return await IdentityCommandLine.RunAsync(
         app.Services,
         args,
         new ConsoleFounderBootstrapConsole(Console.Out),
+        new ConsoleFounderRecoveryConsole(Console.Out, app.Environment.EnvironmentName),
         Console.Out,
         Console.Error,
         CancellationToken.None);

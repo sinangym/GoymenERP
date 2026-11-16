@@ -87,6 +87,7 @@ public sealed class SecurityEventsPersistenceModelTests
                 "20261111205852_InitialSecurityEvents",
                 "20261111222917_HardenSecurityEventCodeChecks",
                 "20261115163955_AddLoginRateLimitedSecurityEvent",
+                "20261116100000_AddFounderRecoverySecurityEvents",
             ],
             context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
@@ -145,6 +146,33 @@ public sealed class SecurityEventsPersistenceModelTests
             migration.DownOperations.OfType<AddCheckConstraintOperation>(),
             op => op.Name == "CK_SecurityEvents_EventType");
         Assert.DoesNotContain("auth.login.rate_limited", restored.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Founder_recovery_migration_only_widens_the_type_check_and_its_down_is_a_forward_fix_guard()
+    {
+        var migration = new AddFounderRecoverySecurityEvents();
+
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Equal(2, migration.UpOperations.Count);
+        Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[0]);
+        var widened = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[1]);
+        Assert.Equal("CK_SecurityEvents_EventType", widened.Name);
+        using (var context = Context())
+        {
+            var modelCheck = DesignEntity(context).GetCheckConstraints().Single(c => c.Name == "CK_SecurityEvents_EventType");
+            Assert.Equal(modelCheck.Sql, widened.Sql);
+        }
+
+        Assert.All(SecurityEventTypesV1.FounderRecoveryTypes, type => Assert.Contains($"'{type}'", widened.Sql, StringComparison.Ordinal));
+
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.All(SecurityEventTypesV1.FounderRecoveryTypes, type => Assert.Contains($"N'{type}'", guard.Sql, StringComparison.Ordinal));
+        Assert.Contains("THROW 51851", guard.Sql, StringComparison.Ordinal);
+        var restored = Assert.Single(migration.DownOperations.OfType<AddCheckConstraintOperation>());
+        Assert.Contains("'auth.login.rate_limited'", restored.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("identity.founder.", restored.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
