@@ -820,11 +820,19 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
   being the allocatable amount read under the lock). Checks: `CK_FutureSupplyAllocations_Identity/_Kinds/_Quantity/_Release`
   and `CK_FutureSupplyLines_Ledger`; the allocation's FK to its ledger row is `Restrict`. Both tables carry `CompanyId` and
   the company query filter.
-- **Writer (no route yet; endpoint, OpenAPI and permission are F017-b2):** replay → transaction → Sales line lock, then
+- **Writer (F017-b2 / STK-S17):** replay → transaction → Sales line lock, then
   purchase line lock → fence → demand and supply reads → product match → ledger reserve (insufficient 409, other rule
   422) → demand cap → allocation + command attempt + audit + outbox in one save. The Sales line lock
   (`goymen:sales-order-line:{company:N}:{line:N}`, `sp_getapplock` Exclusive/Transaction) is a host adapter until Sales
   owns it.
+- **User API:** POST `/api/v1/inventory/future-allocations` creates; POST `/{allocationId}/release` explicitly releases.
+  Both require `inventory.future-allocation.write`; GET
+  `/api/v1/inventory/sales-orders/{salesOrderId}/lines/{salesOrderLineId}/future-allocations` requires
+  `inventory.future-allocation.read` and returns a bounded 100-row window. The two names are registered only,
+  company-wide, absent from Critical and shipped grants. The module derives actor and roles from fresh authority,
+  fences the write under the locks, and revalidates successful and refused replays. Future allocations remain separate
+  from physical stock. F017-c, purchase cancellation protection and Sales reduction are an integration prerequisite;
+  the draft train does not authorize a production activation.
 - **Ports:** `IInventoryFutureAllocationReadPortV1` (active allocated sum in the purchase unit; Unreadable when the ledger
   disagrees with Σ active remaining, never the ledger's figure) and `IInventoryFutureAllocationReleasePortV1` (a session
   on the caller's open connection and transaction; the caller commits; no Inventory idempotency row). Defaults are

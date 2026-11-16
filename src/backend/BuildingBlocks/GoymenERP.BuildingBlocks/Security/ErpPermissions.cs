@@ -222,6 +222,18 @@ public static class ErpPermissions
     public const string InventoryPhysicalAllocationWrite = "inventory.physical-allocation.write";
 
     /// <summary>
+    /// STK-S17 / F017-b2 spec §6: read future supply allocations separately from physical stock allocations.
+    /// Registered, not granted; company-wide only. No approved source adds Critical grant-time dual control.
+    /// </summary>
+    public const string InventoryFutureAllocationRead = "inventory.future-allocation.read";
+
+    /// <summary>
+    /// STK-S17 / KLN-D26: create or explicitly release a future supply allocation, without a second approval.
+    /// Registered, not granted; company-wide only. No role assignment, grant or Critical classification is added.
+    /// </summary>
+    public const string InventoryFutureAllocationWrite = "inventory.future-allocation.write";
+
+    /// <summary>
     /// R19 / AT-038: record one same-company label split or merge (DEC-LBL-002/003), the Inventory owner's
     /// name (<c>InventoryPermissionManifestV1.LabelTransformationRecord</c>, same string). The literal is the
     /// owner's technical mapping, confirmed by the coordinator (session decision 2026-09-27; technical names are
@@ -1678,6 +1690,8 @@ public static class ErpPermissions
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryFutureAllocationRead,
+            InventoryFutureAllocationWrite,
             InventoryLabelTransformationRecord,
             InventoryLabelClassificationWrite,
             InventoryStockCountRecord,
@@ -1943,6 +1957,8 @@ public static class ErpPermissions
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryFutureAllocationRead,
+            InventoryFutureAllocationWrite,
             InventoryLabelTransformationRecord,
             InventoryLabelClassificationWrite,
             InventoryStockCountRecord,

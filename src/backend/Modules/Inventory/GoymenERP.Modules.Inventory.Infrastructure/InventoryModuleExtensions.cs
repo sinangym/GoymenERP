@@ -102,6 +102,8 @@ public static class InventoryModuleExtensions
         // The purchase and sales line lock binders and the purchase line source are the host's; the defaults below are
         // fail-closed (identity-only conversion, purchase source unavailable) until the host replaces them.
         services.AddScoped<IInventoryFutureAllocationWriterV1, InventoryFutureAllocationWriter>();
+        services.AddScoped<IInventoryFutureAllocationCommandV1, InventoryFutureAllocationCommandService>();
+        services.AddScoped<IInventoryFutureAllocationQueryV1, InventoryFutureAllocationQueryService>();
         services.AddScoped<IInventoryFutureAllocationReadPortV1, InventoryFutureAllocationReadPort>();
         services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
         services.TryAddScoped<IInventoryFutureSupplyScheduleSourceV1, InventoryUnavailableFutureSupplyScheduleSourceV1>();

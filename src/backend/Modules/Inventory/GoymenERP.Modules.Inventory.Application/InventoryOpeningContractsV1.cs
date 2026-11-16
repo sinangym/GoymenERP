@@ -16,6 +16,12 @@ public static class InventoryPermissionManifestV1
     /// <summary>Create and explicitly release a physical stock allocation. Company-wide.</summary>
     public const string PhysicalAllocationWrite = "inventory.physical-allocation.write";
 
+    /// <summary>F017-b2 / STK-S17 spec §6: read future supply allocations; registered only, company-wide.</summary>
+    public const string FutureAllocationRead = "inventory.future-allocation.read";
+
+    /// <summary>F017-b2 / KLN-D26: create or release future allocations; registered only, company-wide.</summary>
+    public const string FutureAllocationWrite = "inventory.future-allocation.write";
+
     /// <summary>
     /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. The literal is the
     /// owner's technical mapping, confirmed by the coordinator (technical names are not Sinan's to pick,
