@@ -108,6 +108,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureLoginRateLimits(modelBuilder);
         ConfigureWorkCenterCapacities(modelBuilder);
         ConfigureReferenceLists(modelBuilder);
+        ConfigureCollateralTypes(modelBuilder);
         ConfigureCompanyPolicies(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
@@ -661,6 +662,13 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 throw new InvalidOperationException("Para profili kaydı değiştirilemez; yeni sürüm yazılır.");
             }
 
+            if (entry.State == EntityState.Modified && entry.Entity is CompanyPolicyVersionRow
+                or FinanceCreditAccountMappingVersionRow or ReferenceListEntryRow or ReferenceListEntryVersionRow
+                or CollateralTypeRow or CollateralTypeVersionRow)
+            {
+                throw new InvalidOperationException("Ayarlar kaydı değiştirilemez; yeni sürüm yazılır.");
+            }
+
             var companyId = entry.Entity switch
             {
                 SalesDiscountLimitGroupRow row => row.CompanyId,
@@ -691,6 +699,12 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 ManufacturingToleranceProfileVersionRow row => row.CompanyId,
                 MoneyProfileVersionRow row => row.CompanyId,
                 MoneyProfileBaselineTransferRow row => row.CompanyId,
+                CompanyPolicyVersionRow row => row.CompanyId,
+                FinanceCreditAccountMappingVersionRow row => row.CompanyId,
+                ReferenceListEntryRow row => row.CompanyId,
+                ReferenceListEntryVersionRow row => row.CompanyId,
+                CollateralTypeRow row => row.CompanyId,
+                CollateralTypeVersionRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
 
-public sealed class OrganizationDbContext(
+public sealed partial class OrganizationDbContext(
     DbContextOptions<OrganizationDbContext> options,
     ICompanyContext companyContext,
     OrganizationBootstrapWriteScope bootstrapWriteScope)
@@ -86,6 +86,7 @@ public sealed class OrganizationDbContext(
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
         ConfigureCompany(modelBuilder);
+        ConfigureCompanySetup(modelBuilder);
         ConfigureSite(modelBuilder);
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
@@ -136,12 +137,14 @@ public sealed class OrganizationDbContext(
                 "CK_Companies_Placeholder_InvoiceDisabled",
                 "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
             table.HasCheckConstraint("CK_Companies_Vkn_RequiredUnlessPlaceholder", CompanyVknRequiredCheck);
+            table.HasCheckConstraint("CK_Companies_Lifecycle", CompanyLifecycleCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code).HasMaxLength(64).IsRequired();
         entity.Property(x => x.LegalName).HasMaxLength(250).IsRequired();
         entity.Property(x => x.Vkn).HasMaxLength(10);
         entity.Property(x => x.InvoiceCapable).HasDefaultValue(false);
+        entity.Property(x => x.LifecycleState).HasMaxLength(16).HasDefaultValue("Active").IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => x.Code).IsUnique();
@@ -446,6 +449,7 @@ public sealed class OrganizationDbContext(
         }
 
         ApplyCompanyWriteGuard();
+        ApplyCompanySetupWriteGuards();
 
         foreach (var entry in ChangeTracker.Entries<CommandExecution>())
         {

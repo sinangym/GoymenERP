@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Seeding;
@@ -42,6 +44,11 @@ public static class OrganizationModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<OrganizationBootstrapWriteScope>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<OrganizationCompanyLifecycleReader>();
+        services.AddScoped<ICompanyLifecycleReadPortV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());
+        services.AddScoped<IOutboxCompanyDirectoryV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());
+        services.AddScoped<OrganizationCompanySetupInboxConsumer>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IOrganizationMasterDataService, OrganizationMasterDataService>();
         // B-15 calendar master: the same command protocol and helpers as the master edit (one partial class).

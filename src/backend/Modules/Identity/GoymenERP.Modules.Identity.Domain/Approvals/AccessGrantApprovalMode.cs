@@ -11,4 +11,6 @@ public enum AccessGrantApprovalMode
     /// decider, and the row records that the second approval was not applied.
     /// </summary>
     FounderDirect,
+    /// <summary>KIM-D18: only the company-opened inbox under the company Admin lock.</summary>
+    CompanyOpener,
 }

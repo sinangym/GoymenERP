@@ -119,7 +119,17 @@ public sealed class WorkOutboxDispatcher
 
                 try
                 {
-                    await DispatchSourceAsync(db, source, consumers, duplicateSourceNames, companyId, total, cancellationToken);
+                    var lifecycle = scope.ServiceProvider.GetRequiredService<ICompanyLifecycleReadPortV1>();
+                    var company = await lifecycle.ReadAsync(companyId, cancellationToken)
+                        ?? throw new InvalidOperationException("Company lifecycle unavailable; source cursor held.");
+                    if (company.CompanyId != companyId || company.Version < 1)
+                        throw new InvalidOperationException("Company lifecycle contract mismatch; source cursor held.");
+                    var setupOnly = company.State == CompanyLifecycleStateV1.SetupPending;
+                    if (company.State != CompanyLifecycleStateV1.Active && !setupOnly)
+                        throw new InvalidOperationException("Unknown company lifecycle; source cursor held.");
+                    if (setupOnly && source.SourceName is not (OrganizationCompanyOpenedV1.SourceName or IdentityCompanyFirstAdminAssignedV1.SourceName))
+                        continue;
+                    await DispatchSourceAsync(db, source, consumers, duplicateSourceNames, companyId, total, cancellationToken, setupOnly);
                     sourceFailures.TryRemove(failureKey, out _);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -152,7 +162,8 @@ public sealed class WorkOutboxDispatcher
         IReadOnlySet<string> duplicateSourceNames,
         Guid companyId,
         Tally tally,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool setupOnly = false)
     {
         var sourceName = source.SourceName;
         if (!IsStoredName(sourceName))
@@ -208,6 +219,12 @@ public sealed class WorkOutboxDispatcher
                 continue;
             }
 
+            if (setupOnly && !IsSetupDelivery(message))
+            {
+                // Never deliver business events into a pending company or discard them as poison.
+                // Hold the source cursor until setup is complete.
+                break;
+            }
             var held = false;
             var routed = false;
             foreach (var consumer in consumers.Where(c => c.Subscriptions.Any(s =>
@@ -266,6 +283,10 @@ public sealed class WorkOutboxDispatcher
             ct => inserted ? db.OutboxSourceCursors.AsNoTracking().AnyAsync(x => x.SourceName == sourceName, ct) : Task.FromResult(false),
             cancellationToken);
     }
+
+    internal static bool IsSetupDelivery(OutboxMessageEnvelopeV1 message) => message.SchemaVersion == 1
+        && ((message.SourceName == OrganizationCompanyOpenedV1.SourceName && message.EventType == OrganizationCompanyOpenedV1.EventType)
+            || (message.SourceName == IdentityCompanyFirstAdminAssignedV1.SourceName && message.EventType == IdentityCompanyFirstAdminAssignedV1.EventType));
 
     /// <summary>Returns true when the message is resolved for this consumer (delivered, duplicate or poisoned).</summary>
     private async Task<bool> DeliverAsync(

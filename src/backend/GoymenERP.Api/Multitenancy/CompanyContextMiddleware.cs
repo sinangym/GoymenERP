@@ -2,6 +2,7 @@ using GoymenERP.Api.Errors;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Application.Contracts;
 
 namespace GoymenERP.Api.Multitenancy;
 
@@ -12,7 +13,9 @@ public sealed class CompanyContextMiddleware(RequestDelegate next)
     public async Task InvokeAsync(
         HttpContext httpContext,
         ICurrentUser currentUser,
-        ICompanyContext companyContext)
+        ICompanyContext companyContext,
+        ICompanyLifecycleReadPortV1 lifecycle,
+        IIdentityCompanySetupServiceV1 companySetup)
     {
         var requiresContext = httpContext.GetEndpoint()?
             .Metadata.GetMetadata<RequiresCompanyContextAttribute>() is not null;
@@ -37,6 +40,40 @@ public sealed class CompanyContextMiddleware(RequestDelegate next)
             return;
         }
 
+        CompanyLifecycleViewV1? company;
+        try { company = await lifecycle.ReadAsync(companyId, httpContext.RequestAborted); }
+        catch (OperationCanceledException) when (httpContext.RequestAborted.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            await Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Şirket durumu doğrulanamadı.").ExecuteAsync(httpContext);
+            return;
+        }
+        if (company is null || company.CompanyId != companyId || company.Version < 1)
+        {
+            await Results.Problem(statusCode: StatusCodes.Status403Forbidden).ExecuteAsync(httpContext);
+            return;
+        }
+        var firstAdmin = httpContext.GetEndpoint()?.Metadata.GetMetadata<FirstCompanyAdminEndpointMetadata>() is not null;
+        if (company.State == CompanyLifecycleStateV1.SetupPending)
+        {
+            if (firstAdmin && await companySetup.IsActiveFounderAsync(httpContext.RequestAborted))
+            {
+                companyContext.Set(companyId);
+                await next(httpContext);
+                return;
+            }
+            await Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Şirket kurulumu bekliyor.",
+                detail: "İlk Admin ataması tamamlanmadan bu şirkette işlem yapılamaz.",
+                extensions: new Dictionary<string, object?> { ["code"] = "organization.company.setup_pending" })
+                .ExecuteAsync(httpContext);
+            return;
+        }
+        if (company.State != CompanyLifecycleStateV1.Active)
+        {
+            await Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable).ExecuteAsync(httpContext);
+            return;
+        }
         if (!currentUser.CanAccessCompany(companyId))
         {
             // F023-2 scenario 7: platform scope, no company id; the requested company is kept for the user actor.
