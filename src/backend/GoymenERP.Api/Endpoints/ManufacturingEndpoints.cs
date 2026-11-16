@@ -78,6 +78,24 @@ public static class ManufacturingEndpoints
         ManufacturingStoreCodes.OutputLabelCodeFormatInvalid,
     ];
 
+    // F-009 D3 (API-25, URT-S2): the output correction meets Inventory's refusal to take the mass back from the output
+    // position (each named by its Manufacturing code) and an output label Inventory could not read as its 409; the
+    // domain's correction rules are its 422.
+    private static readonly string[] CorrectOutputConflictCodes =
+    [
+        .. ConflictCodes,
+        .. ManufacturingOutputCorrectionCodesV1.All,
+    ];
+
+    private static readonly string[] CorrectOutputUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingRuleCodes.OutputNotDeclared,
+        ManufacturingRuleCodes.OutputLineMissing,
+        ManufacturingRuleCodes.OutputReversalAlreadyRecorded,
+        ManufacturingRuleCodes.OutputReversalExceedsDeclared,
+    ];
+
     private static readonly string[] SavePlanConflictCodes =
     [
         .. ConflictCodes,
@@ -638,6 +656,26 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithDeclareOutputProblems();
 
+        // F-009 D3 (API-25, URT-S2): the correction of a declared output at the order version the caller read. It records
+        // an append-only reversal of the output fact and Inventory's manufacturing.output-reversal movement together;
+        // the original fact is never changed. Its own permission; one attempt per Idempotency-Key.
+        group.MapPost("/orders/{orderId:guid}/facts/{factId:guid}/correction", async (
+                Guid orderId,
+                Guid factId,
+                CorrectOutputRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CorrectOutputAsync(orderId, factId, request, key,
+                ErpPermissions.ManufacturingFactsCorrect, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsCorrect)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CorrectManufacturingOutputV1")
+            .Accepts<CorrectOutputRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithCorrectOutputProblems();
+
         // MFG-ORD: the close of an order at the version the caller read. The persisted Settings snapshot
         // supplies the exact company/process/date tolerance; a reasoned out-of-tolerance close additionally
         // requires the dedicated exception permission. Neither permission supplies a tolerance value.
@@ -952,6 +990,17 @@ public static class ManufacturingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(DeclareOutputConflictCodes)
             .ProducesErpUnprocessableEntity(DeclareOutputUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound();
+
+    private static RouteHandlerBuilder WithCorrectOutputProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CorrectOutputConflictCodes)
+            .ProducesErpUnprocessableEntity(CorrectOutputUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpCodeLessNotFound();

@@ -113,6 +113,16 @@ public sealed record ReturnInventoryInputRequestV1(
     Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
 
 /// <summary>
+/// F-009 D3 (API-25, URT-S2): takes <see cref="Kg"/> back from one recorded output declaration (the path's fact id) as an
+/// append-only reversal. <see cref="ReversalId"/> is the new reversal fact, <see cref="MovementId"/> Inventory's reversal
+/// movement and <see cref="LabelId"/> the output's label at its read <see cref="ExpectedLabelVersion"/>.
+/// <see cref="Reason"/> is required (1 to the domain's maximum characters, trimmed, no control characters).
+/// </summary>
+public sealed record CorrectOutputRequestV1(
+    Guid ReversalId, long ExpectedVersion, Guid LabelId, string? ExpectedLabelVersion, Guid MovementId, string? Kg,
+    string? Reason, DateTimeOffset? OccurredAtUtc);
+
+/// <summary>
 /// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the stock label classification the operator chose
 /// for a <c>UsableRemnant</c> output, <c>Standard</c> or <c>SecondQuality</c>; omitted or null means SecondQuality. It
 /// is refused with any other output class, whose label classification follows the fixed mapping.
@@ -425,6 +435,9 @@ public static class ManufacturingCommandNames
     public const string CreateOrder = "manufacturing.order.create.v1";
     public const string IssueInput = "manufacturing.input.issue.v1";
     public const string ReturnInput = "manufacturing.input.return.v1";
+
+    /// <summary>F-009 D3 (API-25): corrects one output declaration with an append-only reversal.</summary>
+    public const string CorrectOutput = "manufacturing.output.correct.v1";
     public const string DeclareOutput = "manufacturing.output.declare.v1";
     public const string DeclareProcessLoss = "manufacturing.process-loss.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
@@ -497,7 +510,8 @@ public sealed partial class ManufacturingCommandService(
     IOrganizationWorkCenterPlanningReferenceV2? workCenterCalendars = null,
     IManufacturingProductionCostPortV2? productionCost = null,
     IManufacturingLabelLineageReadPortV1? labelLineage = null,
-    IManufacturingWorkCenterQueueStore? workCenterQueues = null)
+    IManufacturingWorkCenterQueueStore? workCenterQueues = null,
+    IManufacturingInventoryOutputCorrectionPortV1? outputCorrections = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -1511,6 +1525,92 @@ public sealed partial class ManufacturingCommandService(
                     new ManufacturingInventoryInputReturnPortCommandV1(
                         orderId, request.ExpectedVersion, request.ReturnId, request.ParentRollId,
                         expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt),
+                    metadata, cancellationToken);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+    }
+
+    /// <summary>
+    /// F-009 D3 (API-25, URT-S2): corrects output declaration <paramref name="factId"/> of order
+    /// <paramref name="orderId"/>. The request grammar and the Settings mass check run here; the order's expected version,
+    /// the domain rules and Inventory's label fence are decided in one transaction by
+    /// <see cref="IManufacturingInventoryOutputCorrectionPortV1"/>. No correction is written without that port.
+    /// </summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> CorrectOutputAsync(
+        Guid orderId,
+        Guid factId,
+        CorrectOutputRequestV1? request,
+        string idempotencyKey,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || factId == Guid.Empty || request is null || request.ReversalId == Guid.Empty
+            || request.LabelId == Guid.Empty || request.MovementId == Guid.Empty
+            || request.MovementId == request.ReversalId || request.ReversalId == factId
+            || request.MovementId == factId || request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("fact"));
+        }
+
+        if (!IsPositiveCanonicalInt64(request.ExpectedLabelVersion))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("expectedLabelVersion"));
+        }
+
+        if (ParseKg(request.Kg) is not { } kg)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("kg"));
+        }
+
+        if (request.Reason?.Trim() is not { Length: > 0 } reason)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("reason"));
+        }
+
+        if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
+        }
+
+        var expectedLabelVersion = long.Parse(request.ExpectedLabelVersion!, CultureInfo.InvariantCulture);
+        var canonical = new
+        {
+            orderId,
+            outputId = factId,
+            reversalId = request.ReversalId,
+            expectedVersion = request.ExpectedVersion,
+            labelId = request.LabelId,
+            expectedLabelVersion,
+            movementId = request.MovementId,
+            kg = Text(kg),
+            reason,
+            occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CorrectOutput,
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
+            {
+                if (outputCorrections is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        InventoryManufacturingRealizationCodesV1.Unavailable);
+                }
+
+                var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
+                if (mass.Refusal is not null)
+                {
+                    return Refusal<OrderViewV1>(mass.Refusal);
+                }
+
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var outcome = await outputCorrections.CorrectOutputAsync(
+                    new ManufacturingInventoryOutputCorrectionPortCommandV1(
+                        orderId, request.ExpectedVersion, factId, request.ReversalId, request.LabelId,
+                        expectedLabelVersion, request.MovementId, mass.Value, reason, occurredAt),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);

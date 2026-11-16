@@ -641,7 +641,9 @@ public static partial class ErpOpenApiContract
         var isManufacturingInventoryRealizationOperation = operation.OperationId is
             "IssueManufacturingInputV1"
             or "ReturnManufacturingInputV1"
-            or "DeclareManufacturingOutputV1";
+            or "DeclareManufacturingOutputV1"
+            // F-009 D3 (URT-S2): the output correction stages Inventory's output reversal in the same transaction.
+            or "CorrectManufacturingOutputV1";
         if (!isManufacturingInventoryRealizationOperation
             && problemCodesByStatus.TryGetValue(
                 StatusCodes.Status400BadRequest,
