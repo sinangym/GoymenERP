@@ -45,6 +45,9 @@ public enum IssueCostCurrencyStatus
     FunctionalCurrency = 1,
     Converted = 2,
     RateMissing = 3,
+
+    /// <summary>The owner cannot prove the issue's entry currency; no functional-currency default is inferred.</summary>
+    Unreadable = 4,
 }
 
 /// <summary>
