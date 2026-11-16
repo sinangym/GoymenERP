@@ -66,7 +66,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             var active = await ActiveAllocatedKgAsync(parent.Label.Id, source, cancellationToken);
             if (quantity.Value > source.QuantityKg - active)
             {
-                throw Refused(409, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock);
+                throw InventoryManufacturingRealizationException.RefusedPlanAllocation(409,
+                    InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock,
+                    new(companyId, request.PlanId, parent.Label.Id, parent.Row.ProductId,
+                        parent.Row.Version.ToString(CultureInfo.InvariantCulture), quantity,
+                        Kilograms.Of(source.QuantityKg), Kilograms.Of(active), freePositionCount: 1));
             }
 
             StockAllocation allocation;
