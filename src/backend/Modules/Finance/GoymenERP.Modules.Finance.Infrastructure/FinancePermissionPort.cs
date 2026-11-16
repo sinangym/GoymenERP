@@ -103,6 +103,10 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadOpeningBalances => ErpPermissions.FinanceOpeningBalancesRead,
         FinanceAction.ProposeOpeningBalance => ErpPermissions.FinanceOpeningBalancesPropose,
         FinanceAction.ApproveOpeningBalance => ErpPermissions.FinanceOpeningBalancesApprove,
+        // FIN-SC47 (FNS-D88): the credit account's own names (company-wide; not Critical; no grant).
+        FinanceAction.ReadCredits => ErpPermissions.FinanceCreditsRead,
+        FinanceAction.ProposeCredit => ErpPermissions.FinanceCreditsPropose,
+        FinanceAction.ApproveCredit => ErpPermissions.FinanceCreditsApprove,
         _ => null,
     };
 

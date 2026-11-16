@@ -515,6 +515,51 @@ internal sealed class OpeningBalanceRow : IFinanceTenantRow
 }
 
 /// <summary>
+/// FIN-S9 (FNS-D85): a reversal of an APPROVED opening balance: proposed by one person, approved or rejected by another
+/// (status 1 proposed, 2 approved, 3 rejected). At most one pending or approved reversal per opening. Its approval marks the
+/// opening reversed (status 4) and writes the reversal movement; a rejected one stays as history.
+/// </summary>
+internal sealed class OpeningBalanceReversalRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid OpeningBalanceId { get; set; }
+    public int Status { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string OpeningPeriodVersion { get; set; } = string.Empty;
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-S9 (FNS-D84, FNS-D85): the one recorded money fact of an opening balance — kind 1 the opening (written when the
+/// opening is approved), kind 2 its reversal (written when the reversal is approved; the reverse side). The opening's
+/// target, currency, direction and exact amount are copied; <see cref="OccurredOn"/> is the opening's AsOfDate (a
+/// Europe/Istanbul business date). (company, opening, kind) is unique: a movement is never produced twice. Append-only.
+/// </summary>
+internal sealed class OpeningBalanceMovementRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid OpeningBalanceId { get; set; }
+    public int Kind { get; set; }
+    public int TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+    public Guid? PartyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public int? Direction { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// FIN-S9: one accepted opening balance command attempt (ADR-011), like <see cref="CashAccountCommandRow"/>. (company,
 /// command, key hash) is its key; only the key's SHA-256 is kept. <see cref="OpeningBalanceId"/> is the opening balance
 /// the command wrote or decided (null only for a recorded refusal whose target does not exist). Append-only.
@@ -527,6 +572,62 @@ internal sealed class OpeningBalanceCommandRow : IFinanceTenantRow
     public string ActorId { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
     public Guid? OpeningBalanceId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-SC47 (FNS-D87, FNS-D88): a credit account of one of the four groups (1 cash, 2 non-cash, 3 instrument and
+/// factoring, 4 leasing). Proposed (1), then approved (2) or rejected (3) by another person; only the decision columns
+/// ever change. The amount is exact decimal text as given.
+/// </summary>
+internal sealed class CreditAccountRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int CreditGroup { get; set; }
+    public string LenderName { get; set; } = string.Empty;
+    public string ContractReference { get; set; } = string.Empty;
+    public Guid CurrencyId { get; set; }
+    public string PrincipalAmountText { get; set; } = string.Empty;
+    public DateOnly StartDate { get; set; }
+    public int Status { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-SC47 (FNS-D93/FNS-D94): one line of a credit account's imported bank repayment plan, stored as given in the same
+/// save as the proposal and never changed afterwards (append-only).
+/// </summary>
+internal sealed class CreditAccountInstallmentRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid CreditAccountId { get; set; }
+    public int Sequence { get; set; }
+    public DateOnly DueDate { get; set; }
+    public string InstallmentText { get; set; } = string.Empty;
+    public string PrincipalText { get; set; } = string.Empty;
+    public string InterestText { get; set; } = string.Empty;
+    public string BsmvText { get; set; } = string.Empty;
+    public string KkdfText { get; set; } = string.Empty;
+}
+
+/// <summary>ADR-011: the idempotency record of a credit account command (a terminal refusal included).</summary>
+internal sealed class CreditAccountCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? CreditAccountId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

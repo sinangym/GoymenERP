@@ -1,3 +1,4 @@
+using GoymenERP.Api.AccountingRuntime;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.DocumentsRuntime;
@@ -471,6 +472,9 @@ builder.Services.AddAccountingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// FIN-S13 (B-04): Accounting's sales invoice journal consumer (scoped, not with the dispatcher until Sales registers its outbox
+// source) and its host admission authority, fail-closed unless Accounting:InvoiceJournal:InboxAdmissionEnabled is true.
+builder.Services.AddAccountingInvoiceJournal(builder.Configuration);
 // B-24b / F-021: Work's module (desired-state store, outbox/inbox tables) is registered in the host. The ERP-000F
 // outbox dispatcher stays OFF unless Work:OutboxDispatcher:Enabled is true (production activation is a human gate);
 // event sources and consumers are registered by their owners.

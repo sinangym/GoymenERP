@@ -19,8 +19,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// nothing. The original items keep their identity, source facts and original amount; nothing is deleted. The credit
 /// reduces the outstanding first; the remainder is the customer's advance, recorded on the credit (SAT-D294 (1)-(3)).
 /// A partial return reduces exactly the installments the user selected (FNS-D44), validated to the last digit against the
-/// items' open amounts and the return amount; without a selection it reduces the nearest due open installment first
-/// (FNS-D54). Both splits and the screen's prefill (<see cref="IFinanceCustomerReturnInstallmentReadPortV2"/>) come from
+/// items' open amounts and the return amount; without a selection it is refused unless the invoice has exactly one
+/// outstanding installment (FNS-D81: the user chooses, no automatic order). Both splits and the screen's prefill (<see cref="IFinanceCustomerReturnInstallmentReadPortV2"/>) come from
 /// <see cref="FinanceCustomerReturnInstallmentCalculator"/>; the submitted selection is never replaced by the prefill.
 /// </summary>
 public sealed class FinanceInvoiceAcceptanceService(
@@ -55,6 +55,11 @@ public sealed class FinanceInvoiceAcceptanceService(
     internal const string AllocationTotalMismatchCode = "finance_customer_return_allocation_total_mismatch";
     /// <summary>The return covers the whole outstanding amount: every outstanding item closes and no selection applies.</summary>
     internal const string AllocationNotApplicableCode = "finance_customer_return_allocation_not_applicable";
+    /// <summary>
+    /// A partial return over several outstanding installments arrived without the user's selection (FNS-D81): the user
+    /// chooses the installment; no automatic order is applied.
+    /// </summary>
+    internal const string AllocationRequiredCode = "finance_customer_return_allocation_required";
     /// <summary>Stored amounts or item state the acceptance cannot read back safely: nothing is written.</summary>
     internal const string StoredStateNotUnderstoodCode = "finance_customer_return_state_not_understood";
     private const int TokenMaximumLength = 128;
@@ -375,8 +380,8 @@ public sealed class FinanceInvoiceAcceptanceService(
     }
 
     /// <summary>
-    /// The split (SAT-D294, FNS-D44, FNS-D54): the return reduces the items' outstanding first, the rest is the advance; a
-    /// partial return follows the user's selection exactly, or nearest due first without one. See
+    /// The split (SAT-D294, FNS-D44, FNS-D81): the return reduces the items' outstanding first, the rest is the advance; a
+    /// partial return follows the user's selection exactly, and without one only the single outstanding installment. See
     /// <see cref="FinanceCustomerReturnInstallmentCalculator"/>.
     /// </summary>
     internal static FinanceCustomerReturnPlan Plan(IReadOnlyList<FinanceOpenItemRow> items, string amountText,

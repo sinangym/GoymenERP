@@ -21,7 +21,8 @@ namespace GoymenERP.Finance.UnitTests;
 /// FIN-S9 (FNS-D23) without a database: the opening balance model (live index, decision and target checks, the command
 /// target), the forward-fix Down, the write guard, and the real service in memory: the Settings opening period
 /// (unavailable by default, closed refuses and hides the list), the specialist's proposal and the manager's decision
-/// (never the proposer), stale versions, replay, authority fences and company isolation. What SQL Server enforces is
+/// (never the proposer), stale versions, replay, authority fences and company isolation; FNS-D84's one movement,
+/// FNS-D85's reversal plus new proposal, and FNS-D86's business-day AsOfDate and period-version check. What SQL Server enforces is
 /// proven by the relational acceptance tests. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class FinanceOpeningBalanceTests
@@ -40,7 +41,10 @@ public sealed class FinanceOpeningBalanceTests
     private const string PeriodVersion = "SENTETIK-period-3";
     private const string Reason = "SENTETIK ret nedeni";
     private const string Guard =
-        "Açılış bakiyesi yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.";
+        "Açılış bakiyesi yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla ya da onaylı "
+        + "açılışın onaylı ters kaydıyla değişir.";
+    private const string ReversalGuard =
+        "Açılış bakiyesi ters kaydı yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.";
 
     [Fact]
     public void An_opening_balance_is_a_company_row_whose_live_slot_and_two_person_decision_are_held_by_the_database()
@@ -213,8 +217,7 @@ public sealed class FinanceOpeningBalanceTests
         Assert.Equal(((Guid?)null, (OpeningBalanceDirection?)null), (view.PartyId, view.Direction));
         Assert.All(permissions.Actions, action => Assert.Equal(FinanceAction.ProposeOpeningBalance, action));
 
-        var approved = await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(view.Id, "1"),
-            period: new FixedPeriod(new(OpeningPeriodState.Open, "SENTETIK-period-4")));
+        var approved = await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(view.Id, "1"));
         Assert.Equal((CommandOutcome.Succeeded, OpeningBalanceStatus.Approved, "2", false),
             (approved.Outcome, approved.Resource!.Status, approved.Resource.Version, approved.Resource.IsOwnProposal));
         var stored = await run.RowAsync(view.Id);
@@ -228,7 +231,7 @@ public sealed class FinanceOpeningBalanceTests
         Assert.Equal((ErpPermissions.FinanceOpeningBalancesApprove, Manager, (long?)1, (long?)2),
             (audits[1].PermissionCode, audits[1].ActorId, audits[1].EntityVersionBefore, audits[1].EntityVersionAfter));
         using var approval = JsonDocument.Parse(audits[1].ApprovalContextJson!);
-        Assert.Equal(("FNS-D23", Specialist, Manager, "SENTETIK-period-4"),
+        Assert.Equal(("FNS-D23", Specialist, Manager, PeriodVersion),
             (approval.RootElement.GetProperty("rule").GetString(), approval.RootElement.GetProperty("proposedBy").GetString(),
                 approval.RootElement.GetProperty("approvedBy").GetString(),
                 approval.RootElement.GetProperty("openingPeriodVersion").GetString()));
@@ -490,6 +493,431 @@ public sealed class FinanceOpeningBalanceTests
         Assert.Equal(FinanceOpeningBalanceService.Proposed, (await run.RowAsync(proposed.Id)).Status);
     }
 
+    [Fact]
+    public void A_reversal_and_a_movement_are_company_rows_whose_single_live_slot_is_held_by_the_database()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model;
+
+        var reversals = design.FindEntityType(typeof(OpeningBalanceReversalRow))!;
+        Assert.Equal((FinanceDbContext.Schema, "OpeningBalanceReversals"), (reversals.GetSchema(), reversals.GetTableName()));
+        Assert.Single(context.Model.FindEntityType(typeof(OpeningBalanceReversalRow))!.GetDeclaredQueryFilters());
+        Assert.True(reversals.FindProperty(nameof(OpeningBalanceReversalRow.Version))!.IsConcurrencyToken);
+        var decision = Assert.Single(reversals.GetCheckConstraints(),
+            check => check.Name == "CK_OpeningBalanceReversals_Decision");
+        Assert.Equal(FinanceDbContext.OpeningBalanceReversalDecisionCheck, decision.Sql);
+        Assert.Contains("[DecidedBy] COLLATE Latin1_General_100_BIN2 <> [ProposedBy] COLLATE Latin1_General_100_BIN2",
+            decision.Sql, StringComparison.Ordinal);
+        Assert.Single(reversals.GetCheckConstraints(), check => check.Name == "CK_OpeningBalanceReversals_Identity");
+        Assert.Single(reversals.GetCheckConstraints(), check => check.Name == "CK_OpeningBalanceReversals_Version");
+        var live = Assert.Single(reversals.GetIndexes(),
+            index => index.GetDatabaseName() == FinanceDbContext.OpeningBalanceReversalLiveIndex);
+        Assert.True(live.IsUnique);
+        Assert.Equal([nameof(OpeningBalanceReversalRow.CompanyId), nameof(OpeningBalanceReversalRow.OpeningBalanceId)],
+            live.Properties.Select(property => property.Name));
+        Assert.Equal("[Status] IN (1, 2)", live.GetFilter());
+
+        var movements = design.FindEntityType(typeof(OpeningBalanceMovementRow))!;
+        Assert.Equal((FinanceDbContext.Schema, "OpeningBalanceMovements"), (movements.GetSchema(), movements.GetTableName()));
+        Assert.Single(context.Model.FindEntityType(typeof(OpeningBalanceMovementRow))!.GetDeclaredQueryFilters());
+        // The amount is exact text: no column could round it.
+        Assert.DoesNotContain(movements.GetProperties(), property => property.ClrType == typeof(decimal)
+            || property.ClrType == typeof(decimal?) || property.ClrType == typeof(double));
+        Assert.Equal("[Kind] IN (1, 2)",
+            Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_OpeningBalanceMovements_Kind").Sql);
+        Assert.Equal(FinanceDbContext.OpeningBalanceTargetCheck,
+            Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_OpeningBalanceMovements_Target").Sql);
+        Assert.Equal(FinanceDbContext.OpeningBalanceAmountCheck,
+            Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_OpeningBalanceMovements_Amount").Sql);
+        Assert.Single(movements.GetCheckConstraints(), check => check.Name == "CK_OpeningBalanceMovements_Identity");
+        // FNS-D84: one movement per opening and kind, whatever replays or races.
+        var once = Assert.Single(movements.GetIndexes(),
+            index => index.GetDatabaseName() == FinanceDbContext.OpeningBalanceMovementIndex);
+        Assert.True(once.IsUnique);
+        Assert.Null(once.GetFilter());
+        Assert.Equal([nameof(OpeningBalanceMovementRow.CompanyId), nameof(OpeningBalanceMovementRow.OpeningBalanceId),
+            nameof(OpeningBalanceMovementRow.Kind)], once.Properties.Select(property => property.Name));
+        Assert.Equal("date", movements.FindProperty(nameof(OpeningBalanceMovementRow.OccurredOn))!.GetColumnType());
+
+        // A reversed opening keeps its decision and frees the opening's live slot.
+        var openingDecision = Assert.Single(design.FindEntityType(typeof(OpeningBalanceRow))!.GetCheckConstraints(),
+            check => check.Name == "CK_OpeningBalances_Decision");
+        Assert.Contains("[Status] IN (2, 4)", openingDecision.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_reversal_and_movement_migration_is_pure_DDL_up_and_refuses_to_drop_stored_rows()
+    {
+        var migration = new AddOpeningBalanceReversalsAndMovements();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Equal(["OpeningBalanceMovements", "OpeningBalanceReversals"],
+            migration.UpOperations.OfType<CreateTableOperation>().Select(operation => operation.Name).Order());
+
+        // Forward fix: the first Down operation is the one guard; reversals, movements or a reversed opening stop it.
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 51841", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[finance].[OpeningBalanceReversals]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[finance].[OpeningBalanceMovements]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[finance].[OpeningBalances]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("AddOpeningBalanceReversalsAndMovements is not rolled back (forward fix).", guard.Sql,
+            StringComparison.Ordinal);
+        Assert.Equal(["OpeningBalanceMovements", "OpeningBalanceReversals"],
+            migration.DownOperations.OfType<DropTableOperation>().Select(operation => operation.Name).Order());
+    }
+
+    [Fact]
+    public async Task An_opening_dated_after_todays_Istanbul_business_day_is_refused_and_today_is_accepted()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+
+        // At is 12:00 in Europe/Istanbul on 16 November.
+        AssertIssue(await run.ProposeAsync(Specialist, CashRequest() with { AsOfDate = new DateOnly(2026, 11, 17) }),
+            CommandOutcome.ValidationFailed, "asOfDate", "opening_as_of_date_in_future");
+        Assert.Empty(await run.AllRowsAsync());
+
+        var today = await run.ProposeAsync(Specialist, CashRequest() with { AsOfDate = new DateOnly(2026, 11, 16) });
+        Assert.Equal((CommandOutcome.Succeeded, new DateOnly(2026, 11, 16)), (today.Outcome, today.Resource!.AsOfDate));
+    }
+
+    [Fact]
+    public async Task A_decision_is_refused_once_the_period_setting_changed_since_the_proposal()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+        var proposed = (await run.ProposeAsync(Specialist, CashRequest())).Resource!;
+        var changed = new FixedPeriod(new(OpeningPeriodState.Open, "SENTETIK-period-4"));
+
+        AssertIssue(await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(proposed.Id, "1"), period: changed),
+            CommandOutcome.ValidationFailed, "openingPeriod", "opening_period_version_changed");
+        var stored = await run.RowAsync(proposed.Id);
+        Assert.Equal((FinanceOpeningBalanceService.Proposed, 1L), (stored.Status, stored.Version));
+        Assert.Empty(await run.MovementsAsync());
+        Assert.Single(await run.AuditsAsync(proposed.Id));
+    }
+
+    [Fact]
+    public async Task The_approval_writes_exactly_one_opening_movement_and_a_rejection_writes_none()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+        var rejected = (await run.ProposeAsync(Specialist, CashRequest())).Resource!;
+        await run.RejectAsync(Manager, new OpeningBalanceRejectRequest(rejected.Id, "1", Reason));
+        Assert.Empty(await run.MovementsAsync());
+
+        var proposed = (await run.ProposeAsync(Specialist, PartyRequest())).Resource!;
+        const string key = "SENTETIK-approve-key";
+        var approved = await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(proposed.Id, "1"), key: key);
+        var replay = await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(proposed.Id, "1"), key: key);
+        Assert.Equal((CommandOutcome.Succeeded, CommandOutcome.Succeeded, true),
+            (approved.Outcome, replay.Outcome, replay.IsReplay));
+
+        var movement = Assert.Single(await run.MovementsAsync());
+        Assert.Equal((CompanyA, proposed.Id, FinanceOpeningBalanceService.OpeningMovement, Account, (Guid?)Party, Currency,
+                "100", AsOf, Manager),
+            (movement.CompanyId, movement.OpeningBalanceId, movement.Kind, movement.TargetId, movement.PartyId,
+                movement.CurrencyId, movement.AmountText, movement.OccurredOn, movement.RecordedBy));
+        Assert.Equal(FinanceOpeningBalanceService.CreditDirection, movement.Direction);
+    }
+
+    [Fact]
+    public async Task An_approved_opening_is_corrected_by_an_approved_reversal_and_a_new_proposal()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+        var opening = await ApprovedAsync(run);
+
+        var proposed = await run.ProposeReversalAsync(Specialist,
+            new OpeningBalanceReversalProposeRequest(opening.Id, "2", Reason));
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        var reversal = proposed.Resource!.Reversal!;
+        Assert.Equal((OpeningBalanceStatus.Approved, "2", OpeningBalanceReversalStatus.Proposed, Reason, PeriodVersion, true,
+                "1"),
+            (proposed.Resource.Status, proposed.Resource.Version, reversal.Status, reversal.Reason,
+                reversal.OpeningPeriodVersion, reversal.IsOwnProposal, reversal.Version));
+        Assert.Single(await run.MovementsAsync());
+
+        var approved = await run.ApproveReversalAsync(Manager, new OpeningBalanceReversalApproveRequest(opening.Id, "1"));
+        Assert.Equal((CommandOutcome.Succeeded, OpeningBalanceStatus.Reversed, "3", OpeningBalanceReversalStatus.Approved,
+                "2", false),
+            (approved.Outcome, approved.Resource!.Status, approved.Resource.Version, approved.Resource.Reversal!.Status,
+                approved.Resource.Reversal.Version, approved.Resource.Reversal.IsOwnProposal));
+
+        var stored = await run.RowAsync(opening.Id);
+        Assert.Equal((FinanceOpeningBalanceService.Reversed, Manager, (string?)null),
+            (stored.Status, stored.DecidedBy, stored.RejectionReason));
+        var storedReversal = Assert.Single(await run.ReversalsAsync());
+        Assert.Equal((Specialist, Manager), (storedReversal.ProposedBy, storedReversal.DecidedBy));
+        var movements = (await run.MovementsAsync()).OrderBy(movement => movement.Kind).ToList();
+        Assert.Equal([FinanceOpeningBalanceService.OpeningMovement, FinanceOpeningBalanceService.ReversalMovement],
+            movements.Select(movement => movement.Kind));
+        Assert.All(movements, movement => Assert.Equal(("2500.75", Cash, AsOf),
+            (movement.AmountText, movement.TargetId, movement.OccurredOn)));
+
+        var audits = await run.AuditsAsync(opening.Id);
+        Assert.Contains(audits, audit => audit.EventType == "finance.opening-balance.reversal-proposed.v1"
+            && audit.PermissionCode == ErpPermissions.FinanceOpeningBalancesPropose && audit.ActorId == Specialist);
+        var approval = Assert.Single(audits, audit => audit.EventType == "finance.opening-balance.reversal-approved.v1");
+        Assert.Equal((ErpPermissions.FinanceOpeningBalancesApprove, Manager, (long?)2, (long?)3),
+            (approval.PermissionCode, approval.ActorId, approval.EntityVersionBefore, approval.EntityVersionAfter));
+        using (var context = JsonDocument.Parse(approval.ApprovalContextJson!))
+        {
+            Assert.Equal(("FNS-D85", Specialist, Manager, PeriodVersion),
+                (context.RootElement.GetProperty("rule").GetString(),
+                    context.RootElement.GetProperty("proposedBy").GetString(),
+                    context.RootElement.GetProperty("approvedBy").GetString(),
+                    context.RootElement.GetProperty("openingPeriodVersion").GetString()));
+        }
+
+        // FNS-D85: the correction is a new proposal; a reversed opening never takes another reversal.
+        Assert.Equal(CommandOutcome.Succeeded, (await run.ProposeAsync(Specialist, CashRequest())).Outcome);
+        AssertIssue(await run.ProposeReversalAsync(Specialist,
+                new OpeningBalanceReversalProposeRequest(opening.Id, "3", Reason)),
+            CommandOutcome.ValidationFailed, "openingBalanceId", "opening_balance_not_approved");
+    }
+
+    [Fact]
+    public async Task A_rejected_reversal_names_its_reason_writes_no_movement_and_frees_the_slot()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+        var opening = await ApprovedAsync(run);
+        await run.ProposeReversalAsync(Specialist, new OpeningBalanceReversalProposeRequest(opening.Id, "2", Reason));
+
+        AssertIssue(await run.RejectReversalAsync(Manager, new OpeningBalanceReversalRejectRequest(opening.Id, "1", " ")),
+            CommandOutcome.ValidationFailed, "reason", "reason_invalid");
+        var rejected = await run.RejectReversalAsync(Manager,
+            new OpeningBalanceReversalRejectRequest(opening.Id, "1", "SENTETIK ters kayıt reddi"));
+        Assert.Equal((CommandOutcome.Succeeded, OpeningBalanceStatus.Approved, "2", OpeningBalanceReversalStatus.Rejected,
+                "SENTETIK ters kayıt reddi"),
+            (rejected.Outcome, rejected.Resource!.Status, rejected.Resource.Version, rejected.Resource.Reversal!.Status,
+                rejected.Resource.Reversal.RejectionReason));
+        Assert.Single(await run.MovementsAsync());
+        var audit = Assert.Single(await run.AuditsAsync(opening.Id),
+            candidate => candidate.EventType == "finance.opening-balance.reversal-rejected.v1");
+        using (var context = JsonDocument.Parse(audit.ApprovalContextJson!))
+        {
+            Assert.Equal(Manager, context.RootElement.GetProperty("rejectedBy").GetString());
+            Assert.False(context.RootElement.TryGetProperty("approvedBy", out _));
+        }
+
+        var again = await run.ProposeReversalAsync(Specialist,
+            new OpeningBalanceReversalProposeRequest(opening.Id, "2", Reason));
+        Assert.Equal((CommandOutcome.Succeeded, OpeningBalanceReversalStatus.Proposed),
+            (again.Outcome, again.Resource!.Reversal!.Status));
+        Assert.Equal(2, (await run.ReversalsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task A_reversal_needs_an_approved_opening_one_live_slot_another_decider_and_current_versions()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+        var pending = (await run.ProposeAsync(Specialist, CashRequest())).Resource!;
+        AssertIssue(await run.ProposeReversalAsync(Specialist,
+                new OpeningBalanceReversalProposeRequest(pending.Id, "1", Reason)),
+            CommandOutcome.ValidationFailed, "openingBalanceId", "opening_balance_not_approved");
+        AssertIssue(await run.ApproveReversalAsync(Manager, new OpeningBalanceReversalApproveRequest(pending.Id, "1")),
+            CommandOutcome.ValidationFailed, "openingBalanceId", "opening_balance_reversal_not_proposed");
+        AssertIssue(await run.ProposeReversalAsync(Specialist,
+                new OpeningBalanceReversalProposeRequest(Guid.NewGuid(), "1", Reason)),
+            CommandOutcome.ValidationFailed, "openingBalanceId", "opening_balance_not_found");
+
+        await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(pending.Id, "1"));
+        AssertIssue(await run.ProposeReversalAsync(Specialist,
+                new OpeningBalanceReversalProposeRequest(pending.Id, "1", Reason)),
+            CommandOutcome.VersionConflict, "expectedVersion", "version_conflict");
+        AssertIssue(await run.ProposeReversalAsync(Specialist,
+                new OpeningBalanceReversalProposeRequest(pending.Id, "2", "  ")),
+            CommandOutcome.ValidationFailed, "reason", "reason_invalid");
+        await run.ProposeReversalAsync(Specialist, new OpeningBalanceReversalProposeRequest(pending.Id, "2", Reason));
+        AssertIssue(await run.ProposeReversalAsync("SENTETIK-other-specialist",
+                new OpeningBalanceReversalProposeRequest(pending.Id, "2", Reason)),
+            CommandOutcome.ValidationFailed, "openingBalanceId", "opening_balance_reversal_exists");
+
+        AssertIssue(await run.ApproveReversalAsync(Specialist, new OpeningBalanceReversalApproveRequest(pending.Id, "1")),
+            CommandOutcome.Denied, "approval", "finance_approver_is_proposer");
+        AssertIssue(await run.RejectReversalAsync(Specialist,
+                new OpeningBalanceReversalRejectRequest(pending.Id, "1", Reason)),
+            CommandOutcome.Denied, "approval", "finance_approver_is_proposer");
+        AssertIssue(await run.ApproveReversalAsync(Manager, new OpeningBalanceReversalApproveRequest(pending.Id, "5")),
+            CommandOutcome.VersionConflict, "expectedVersion", "version_conflict");
+        AssertIssue(await run.ApproveReversalAsync(Manager, new OpeningBalanceReversalApproveRequest(pending.Id, "1"),
+                period: new FixedPeriod(new(OpeningPeriodState.Open, "SENTETIK-period-4"))),
+            CommandOutcome.ValidationFailed, "openingPeriod", "opening_period_version_changed");
+        AssertIssue(await run.ApproveReversalAsync(Manager, new OpeningBalanceReversalApproveRequest(pending.Id, "1"),
+                period: new FixedPeriod(new(OpeningPeriodState.Closed, PeriodVersion))),
+            CommandOutcome.ValidationFailed, "openingPeriod", "opening_period_closed");
+        Assert.Equal(CommandOutcome.Denied, (await run.ApproveReversalAsync(Manager,
+            new OpeningBalanceReversalApproveRequest(pending.Id, "1"),
+            permissions: new OnlyPermission(FinanceAction.ProposeOpeningBalance))).Outcome);
+        Assert.Equal(CommandOutcome.Denied, (await run.ProposeReversalAsync(Specialist,
+            new OpeningBalanceReversalProposeRequest(pending.Id, "2", Reason),
+            permissions: new OnlyPermission(FinanceAction.ApproveOpeningBalance))).Outcome);
+        AssertIssue(await run.ProposeReversalAsync(Specialist,
+                new OpeningBalanceReversalProposeRequest(pending.Id, "2", Reason),
+                period: new FixedPeriod(FinanceOpeningPeriodAnswer.NotAvailable)),
+            CommandOutcome.Unavailable, "openingPeriod", "opening_period_unavailable");
+
+        var stored = await run.RowAsync(pending.Id);
+        Assert.Equal((FinanceOpeningBalanceService.Approved, 2L), (stored.Status, stored.Version));
+        var reversal = Assert.Single(await run.ReversalsAsync());
+        Assert.Equal((FinanceOpeningBalanceService.Proposed, 1L), (reversal.Status, reversal.Version));
+        Assert.Single(await run.MovementsAsync());
+    }
+
+    [Fact]
+    public async Task The_same_reversal_key_answers_its_first_result_and_another_company_never_reverses()
+    {
+        await using var run = new Run();
+        await run.SeedCashAsync();
+        var opening = await ApprovedAsync(run);
+        const string key = "SENTETIK-reversal-key";
+        var request = new OpeningBalanceReversalProposeRequest(opening.Id, "2", Reason);
+
+        var first = await run.ProposeReversalAsync(Specialist, request, key: key);
+        var again = await run.ProposeReversalAsync(Specialist, request, key: key);
+        Assert.Equal((CommandOutcome.Succeeded, true, first.Resource!.Reversal!.Id),
+            (again.Outcome, again.IsReplay, again.Resource!.Reversal!.Id));
+        Assert.Equal(CommandOutcome.IdempotencyConflict,
+            (await run.ProposeReversalAsync(Specialist, request with { Reason = "SENTETIK başka" }, key: key)).Outcome);
+        Assert.Single(await run.ReversalsAsync());
+
+        AssertIssue(await run.ApproveReversalAsync(Manager, new OpeningBalanceReversalApproveRequest(opening.Id, "1"),
+                company: CompanyB),
+            CommandOutcome.ValidationFailed, "openingBalanceId", "opening_balance_not_found");
+        Assert.Equal(FinanceOpeningBalanceService.Approved, (await run.RowAsync(opening.Id)).Status);
+    }
+
+    [Theory]
+    [InlineData("decided-by-proposer")]
+    [InlineData("two-version-steps")]
+    [InlineData("approved-with-reason")]
+    [InlineData("rejected-without-reason")]
+    [InlineData("decided-twice")]
+    [InlineData("reason-changed")]
+    public async Task A_reversal_only_leaves_its_proposal_once_by_another_persons_decision(string fault)
+    {
+        await using var run = new Run();
+        var opening = await run.SeedAsync(Decided(FinanceOpeningBalanceService.Approved));
+        var seeded = await run.SeedReversalAsync(ReversalProposal(opening.Id, fault == "decided-twice"
+            ? FinanceOpeningBalanceService.Approved : FinanceOpeningBalanceService.Proposed));
+        await using var context = run.Memory(CompanyA);
+        var row = await context.OpeningBalanceReversals.SingleAsync(candidate => candidate.Id == seeded.Id);
+        switch (fault)
+        {
+            case "decided-by-proposer":
+                DecideReversal(row, FinanceOpeningBalanceService.Approved, Specialist, null);
+                break;
+            case "two-version-steps":
+                DecideReversal(row, FinanceOpeningBalanceService.Approved, Manager, null);
+                row.Version += 1;
+                break;
+            case "approved-with-reason":
+                DecideReversal(row, FinanceOpeningBalanceService.Approved, Manager, Reason);
+                break;
+            case "rejected-without-reason":
+                DecideReversal(row, FinanceOpeningBalanceService.Rejected, Manager, null);
+                break;
+            case "decided-twice":
+                DecideReversal(row, FinanceOpeningBalanceService.Rejected, Manager, Reason);
+                break;
+            default:
+                DecideReversal(row, FinanceOpeningBalanceService.Approved, Manager, null);
+                row.Reason = "SENTETIK değişti";
+                break;
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        if (fault != "reason-changed")
+        {
+            Assert.Equal(ReversalGuard, exception.Message);
+        }
+    }
+
+    [Theory]
+    [InlineData("reversed-with-new-decider")]
+    [InlineData("reversed-with-reason")]
+    [InlineData("reversed-again")]
+    [InlineData("rejected-to-reversed")]
+    public async Task An_opening_only_becomes_reversed_from_approved_with_its_decision_kept(string fault)
+    {
+        await using var run = new Run();
+        var seeded = await run.SeedAsync(Decided(fault switch
+        {
+            "reversed-again" => FinanceOpeningBalanceService.Reversed,
+            "rejected-to-reversed" => FinanceOpeningBalanceService.Rejected,
+            _ => FinanceOpeningBalanceService.Approved,
+        }));
+        await using var context = run.Memory(CompanyA);
+        var row = await context.OpeningBalances.SingleAsync(candidate => candidate.Id == seeded.Id);
+        row.Status = FinanceOpeningBalanceService.Reversed;
+        row.Version += 1;
+        row.UpdatedAtUtc = At;
+        if (fault == "reversed-with-new-decider")
+        {
+            row.DecidedBy = "SENTETIK-other-manager";
+        }
+        else if (fault == "reversed-with-reason")
+        {
+            row.RejectionReason = Reason;
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        Assert.Equal(Guard, exception.Message);
+    }
+
+    [Fact]
+    public async Task An_approved_opening_marked_reversed_with_its_decision_kept_passes_the_write_guard()
+    {
+        await using var run = new Run();
+        var seeded = await run.SeedAsync(Decided(FinanceOpeningBalanceService.Approved));
+        await using (var context = run.Memory(CompanyA))
+        {
+            var row = await context.OpeningBalances.SingleAsync(candidate => candidate.Id == seeded.Id);
+            row.Status = FinanceOpeningBalanceService.Reversed;
+            row.Version += 1;
+            row.UpdatedAtUtc = At;
+            await context.SaveChangesAsync();
+        }
+
+        var stored = await run.RowAsync(seeded.Id);
+        Assert.Equal((FinanceOpeningBalanceService.Reversed, 3L, Manager), (stored.Status, stored.Version, stored.DecidedBy));
+    }
+
+    private static async Task<OpeningBalanceView> ApprovedAsync(Run run)
+    {
+        var proposed = (await run.ProposeAsync(Specialist, CashRequest())).Resource!;
+        return (await run.ApproveAsync(Manager, new OpeningBalanceApproveRequest(proposed.Id, "1"))).Resource!;
+    }
+
+    private static OpeningBalanceRow Decided(int status)
+    {
+        var row = Proposal(status);
+        row.Version = 2;
+        row.RejectionReason = status == FinanceOpeningBalanceService.Rejected ? Reason : null;
+        return row;
+    }
+
+    private static OpeningBalanceReversalRow ReversalProposal(Guid openingBalanceId, int status) => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, OpeningBalanceId = openingBalanceId, Status = status, Reason = Reason,
+        OpeningPeriodVersion = PeriodVersion, ProposedBy = Specialist, ProposedAtUtc = At, Version = 1, UpdatedAtUtc = At,
+        DecidedBy = status == FinanceOpeningBalanceService.Proposed ? null : Manager,
+        DecidedAtUtc = status == FinanceOpeningBalanceService.Proposed ? null : At,
+    };
+
+    private static void DecideReversal(OpeningBalanceReversalRow row, int status, string decidedBy, string? reason)
+    {
+        row.Status = status;
+        row.DecidedBy = decidedBy;
+        row.DecidedAtUtc = At;
+        row.RejectionReason = reason;
+        row.UpdatedAtUtc = At;
+        row.Version += 1;
+    }
+
     private static OpeningBalanceProposeRequest CashRequest() =>
         new(OpeningBalanceTargetKind.CashAccount, Cash, null, Currency, null, "2500.75", AsOf);
 
@@ -584,9 +1012,30 @@ public sealed class FinanceOpeningBalanceTests
                     CancellationToken.None));
 
         public Task<OpeningBalanceCommandResult> ApproveAsync(string actor, OpeningBalanceApproveRequest request,
-            IFinancePermissionPort? permissions = null, IFinanceOpeningPeriodReader? period = null, Guid? company = null) =>
+            IFinancePermissionPort? permissions = null, IFinanceOpeningPeriodReader? period = null, Guid? company = null,
+            string? key = null) =>
             CallAsync(actor, company ?? CompanyA, permissions, period, null, null,
-                (service, finance) => service.ApproveAsync(finance, new CommandMetadata(Key()), request,
+                (service, finance) => service.ApproveAsync(finance, new CommandMetadata(key ?? Key()), request,
+                    CancellationToken.None));
+
+        public Task<OpeningBalanceCommandResult> ProposeReversalAsync(string actor,
+            OpeningBalanceReversalProposeRequest request, string? key = null, IFinancePermissionPort? permissions = null,
+            IFinanceOpeningPeriodReader? period = null) =>
+            CallAsync(actor, CompanyA, permissions, period, null, null,
+                (service, finance) => service.ProposeReversalAsync(finance, new CommandMetadata(key ?? Key()), request,
+                    CancellationToken.None));
+
+        public Task<OpeningBalanceCommandResult> ApproveReversalAsync(string actor,
+            OpeningBalanceReversalApproveRequest request, IFinancePermissionPort? permissions = null,
+            IFinanceOpeningPeriodReader? period = null, Guid? company = null) =>
+            CallAsync(actor, company ?? CompanyA, permissions, period, null, null,
+                (service, finance) => service.ApproveReversalAsync(finance, new CommandMetadata(Key()), request,
+                    CancellationToken.None));
+
+        public Task<OpeningBalanceCommandResult> RejectReversalAsync(string actor,
+            OpeningBalanceReversalRejectRequest request) =>
+            CallAsync(actor, CompanyA, null, null, null, null,
+                (service, finance) => service.RejectReversalAsync(finance, new CommandMetadata(Key()), request,
                     CancellationToken.None));
 
         public Task<OpeningBalanceCommandResult> RejectAsync(string actor, OpeningBalanceRejectRequest request) =>
@@ -618,6 +1067,26 @@ public sealed class FinanceOpeningBalanceTests
         {
             await using var context = Memory(CompanyA);
             return await context.OpeningBalances.AsNoTracking().ToListAsync();
+        }
+
+        public async Task<OpeningBalanceReversalRow> SeedReversalAsync(OpeningBalanceReversalRow row)
+        {
+            await using var context = Memory(row.CompanyId);
+            context.OpeningBalanceReversals.Add(row);
+            await context.SaveChangesAsync();
+            return row;
+        }
+
+        public async Task<List<OpeningBalanceReversalRow>> ReversalsAsync()
+        {
+            await using var context = Memory(CompanyA);
+            return await context.OpeningBalanceReversals.AsNoTracking().ToListAsync();
+        }
+
+        public async Task<List<OpeningBalanceMovementRow>> MovementsAsync()
+        {
+            await using var context = Memory(CompanyA);
+            return await context.OpeningBalanceMovements.AsNoTracking().ToListAsync();
         }
 
         public async Task<List<OpeningBalanceCommandRow>> CommandsAsync()

@@ -139,6 +139,27 @@ describe('CreditPanel', () => {
     expect(utilization.textContent).not.toContain(T.zero)
   })
 
+  it('shows collateral in another currency as zero cover, never "hesaplanamadı", and says why (FNS-D74)', async () => {
+    install(() => json(panel({
+      openReceivables: available([TRY, '900']),
+      heldCollateral: available([USD, '20']),
+      weightedCollateral: available([USD, '20']),
+      collateralUtilization: available(),
+    })))
+    renderPanel()
+
+    const utilization = await screen.findByTestId('credit-panel-collateralUtilization')
+    expect(utilization.getAttribute('data-figure-state')).toBe('Available')
+    expect(utilization.textContent).toBe(T.zero)
+    expect(utilization.textContent).not.toContain(T.unavailable)
+    // Each currency on its own line: the dollar collateral is not converted into the lira receivable.
+    expect(screen.getByTestId('credit-panel-weightedCollateral').querySelectorAll('li')).toHaveLength(1)
+    expect(screen.getByTestId('credit-panel-openReceivables').querySelectorAll('li')).toHaveLength(1)
+    expect(screen.getByText(T.notice)).toBeTruthy()
+    expect(T.notice).toContain('başka para birimindeki teminat karşılık sayılmaz')
+    expect(screen.getByTestId('credit-panel-as-of').textContent).toContain(T.asOf)
+  })
+
   it('names a missing limit as not set and a withheld figure as withheld', async () => {
     install(() => json(panel({
       creditLimit: notShown('NotSet', 'finance_credit_limit_not_set'),

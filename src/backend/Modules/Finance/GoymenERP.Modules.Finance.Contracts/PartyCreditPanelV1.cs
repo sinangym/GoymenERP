@@ -11,11 +11,14 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // backend calculators the Sales risk port and the collateral master use — never on the screen:
 // - CreditLimit: the account's effective (approved) limit; NotSet when none (never zero, never unlimited).
 // - OpenReceivables: the Sales risk port's open receivables input (open receivable items less unallocated payments).
-// - HeldCollateral ("mevcut teminat"): the held received collaterals in force on the read date, at their amount.
+// - HeldCollateral ("mevcut teminat"): the held received collaterals in force on the read date, at their amount. The
+//   read date (AsOf) is the company business day (FNS-D75, Europe/Istanbul), never the server's UTC date; without a
+//   business day the panel fails closed.
 // - WeightedCollateral ("sayılan teminat"): the same at the Settings rate of their type (FNS-D31 (3)).
 // - CollateralUtilization ("teminat doluluğu"): the open receivables taken from the weighted collateral — per currency
-//   the smaller of the two. When one currency has collateral left over while another has receivables uncovered, the
-//   answer would need a cross-currency rule that is not decided: Unavailable (NEEDS-SINAN), never a guess.
+//   the smaller of the two. FNS-D74: a collateral covers only receivables in its own currency; collateral in another
+//   currency is zero cover (never converted at a rate), so a currency with receivables and no collateral of its own
+//   contributes nothing — a recorded zero, still Available, not Unavailable.
 // - DocumentaryRisk ("evraklı risk", FNS-D58): uncollected customer cheques/notes; a breakdown, never added to a risk.
 //
 // The gross risk ("riskteki tutar") and the limit headroom are NOT here: they are the Sales risk calculator's answer

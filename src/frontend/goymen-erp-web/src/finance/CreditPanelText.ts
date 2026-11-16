@@ -12,9 +12,10 @@ export const CREDIT_PANEL_TEXT = {
   title: 'Kredi limiti ve teminat',
   subject: 'kredi limiti ve teminat bilgisi',
   notice:
-    'Tutarlar para birimi başına, çevrilmeden gösterilir. Brüt risk ve limit boşluğu Satış risk hesabındadır; bu ' +
+    'Tutarlar para birimi başına, çevrilmeden gösterilir. Teminat yalnız kendi para birimindeki alacağı karşılar; ' +
+    'başka para birimindeki teminat karşılık sayılmaz, kurla çevrilmez. Brüt risk ve limit boşluğu Satış risk hesabındadır; bu ' +
     'panel yalnız Finans\'ın kayıtlarını okur. Evraklı risk ayrı gösterilir, teminat veya riske eklenmez.',
-  asOf: 'Gösterim tarihi',
+  asOf: 'Gösterim tarihi (şirket iş günü, Türkiye saati)',
   forbidden: 'Bu cari hesabın kredi limiti ve teminat bilgisini görme yetkiniz yok.',
   zero: 'Yok (sıfır)',
   unavailable: 'hesaplanamadı',
@@ -38,7 +39,9 @@ export const CREDIT_PANEL_HINT: Readonly<Record<CreditPanelFigureName, string>> 
   openReceivables: 'Açık alacak kalemleri, dağıtılmamış tahsilatlar düşülerek.',
   heldCollateral: 'Gösterim tarihinde geçerli, alınmış teminatların kayıtlı tutarı.',
   weightedCollateral: 'Aynı teminatlar × Ayarlar\'daki tür oranı / 100.',
-  collateralUtilization: 'Açık alacağın sayılan teminatla karşılanan kısmı; para birimi başına küçük olan.',
+  collateralUtilization:
+    'Açık alacağın aynı para birimindeki sayılan teminatla karşılanan kısmı; para birimi başına küçük olan. ' +
+    'Başka para birimindeki teminat karşılık sayılmaz (sıfır).',
   documentaryRisk: 'Tahsil edilmemiş ve iade edilmemiş müşteri çek/senetleri. Ayrı gösterilir.',
 }
 

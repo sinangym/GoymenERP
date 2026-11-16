@@ -29,6 +29,7 @@ public sealed class FinanceOpeningBalanceSqlServerRelationalAcceptanceTests
     private const string Manager = "SENTETIK-manager";
     private const string PeriodVersion = "SENTETIK-period-1";
     private const int DownGuardNumber = 51809;
+    private const int ReversalDownGuardNumber = 51841;
     private const int CheckViolation = 547;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -162,6 +163,159 @@ public sealed class FinanceOpeningBalanceSqlServerRelationalAcceptanceTests
         new(OpeningBalanceTargetKind.PartyAccount, Account, Party, Currency, OpeningBalanceDirection.Debit, amount, AsOf);
 
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
+
+    [SqlServerFact]
+    public async Task An_approved_opening_writes_one_movement_and_its_approved_reversal_writes_the_reverse_and_frees_the_slot()
+    {
+        await using var run = await Run.StartAsync();
+        var opening = await ApprovedAsync(run);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpeningBalanceMovements WHERE OpeningBalanceId = @id AND Kind = 1",
+            ("@id", opening.Id)));
+
+        await using (var specialist = run.Open(CompanyA, Specialist))
+        {
+            var proposed = await specialist.Openings.ProposeReversalAsync(specialist.Context, Key("r-1"),
+                new OpeningBalanceReversalProposeRequest(opening.Id, "2", "SENTETIK düzeltme"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, OpeningBalanceReversalStatus.Proposed),
+                (proposed.Outcome, proposed.Resource!.Reversal!.Status));
+
+            var own = await specialist.Openings.ApproveReversalAsync(specialist.Context, Key("ra-own"),
+                new OpeningBalanceReversalApproveRequest(opening.Id, "1"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, own.Outcome);
+        }
+
+        await using (var manager = run.Open(CompanyA, Manager))
+        {
+            var approved = await manager.Openings.ApproveReversalAsync(manager.Context, Key("ra-1"),
+                new OpeningBalanceReversalApproveRequest(opening.Id, "1"), CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, OpeningBalanceStatus.Reversed, OpeningBalanceReversalStatus.Approved),
+                (approved.Outcome, approved.Resource!.Status, approved.Resource.Reversal!.Status));
+
+            // FNS-D84: a replay of the same key answers the first result and writes nothing again.
+            var replay = await manager.Openings.ApproveReversalAsync(manager.Context, Key("ra-1"),
+                new OpeningBalanceReversalApproveRequest(opening.Id, "1"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+        }
+
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT [Status] FROM finance.OpeningBalances WHERE Id = @id", ("@id", opening.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpeningBalanceMovements WHERE OpeningBalanceId = @id", ("@id", opening.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpeningBalanceMovements WHERE OpeningBalanceId = @id AND Kind = 2 "
+            + "AND RecordedBy = @actor AND AmountText = (SELECT AmountText FROM finance.OpeningBalances WHERE Id = @id)",
+            ("@id", opening.Id), ("@actor", Manager)));
+        Assert.Equal(Manager, await run.ScalarAsync<string>(
+            "SELECT [DecidedBy] FROM finance.OpeningBalanceReversals WHERE OpeningBalanceId = @id", ("@id", opening.Id)));
+
+        // FNS-D85: the correction is a new proposal; the reversed opening no longer holds the live slot.
+        await using (var specialist = run.Open(CompanyA, Specialist))
+        {
+            var corrected = await specialist.Openings.ProposeAsync(specialist.Context, Key("p-2"), Request("12"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, corrected.Outcome);
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpeningBalances"));
+    }
+
+    [SqlServerFact]
+    public async Task The_database_refuses_a_second_movement_of_a_kind_a_second_live_reversal_and_a_proposers_own_reversal_decision()
+    {
+        await using var run = await Run.StartAsync();
+        var opening = await ApprovedAsync(run);
+        await using (var specialist = run.Open(CompanyA, Specialist))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await specialist.Openings.ProposeReversalAsync(specialist.Context,
+                Key("r-1"), new OpeningBalanceReversalProposeRequest(opening.Id, "2", "SENTETIK düzeltme"),
+                CancellationToken.None)).Outcome);
+        }
+
+        // The service's save guard is bypassed on purpose: the database checks are the authority.
+        // UX_OpeningBalanceMovements_Kind: the opening movement is never written twice.
+        var movement = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "INSERT INTO finance.OpeningBalanceMovements (Id, CompanyId, OpeningBalanceId, Kind, TargetKind, TargetId, "
+            + "PartyId, CurrencyId, Direction, AmountText, OccurredOn, RecordedBy, RecordedAtUtc) SELECT NEWID(), CompanyId, "
+            + "OpeningBalanceId, Kind, TargetKind, TargetId, PartyId, CurrencyId, Direction, AmountText, OccurredOn, "
+            + "RecordedBy, RecordedAtUtc FROM finance.OpeningBalanceMovements WHERE OpeningBalanceId = @id",
+            ("@id", opening.Id)));
+        Assert.Contains(movement.Number, new[] { 2601, 2627 });
+
+        // UX_OpeningBalanceReversals_Live: one proposed or approved reversal per opening.
+        var live = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "INSERT INTO finance.OpeningBalanceReversals (Id, CompanyId, OpeningBalanceId, [Status], Reason, "
+            + "OpeningPeriodVersion, ProposedBy, ProposedAtUtc, DecidedBy, DecidedAtUtc, RejectionReason, Version, "
+            + "UpdatedAtUtc) SELECT NEWID(), CompanyId, OpeningBalanceId, 1, Reason, OpeningPeriodVersion, ProposedBy, "
+            + "ProposedAtUtc, NULL, NULL, NULL, 1, UpdatedAtUtc FROM finance.OpeningBalanceReversals "
+            + "WHERE OpeningBalanceId = @id", ("@id", opening.Id)));
+        Assert.Contains(live.Number, new[] { 2601, 2627 });
+
+        // CK_OpeningBalanceReversals_Decision: maker≠approver at person level.
+        var own = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.OpeningBalanceReversals SET [Status] = 2, DecidedBy = ProposedBy, "
+            + "DecidedAtUtc = SYSDATETIMEOFFSET(), Version = Version + 1 WHERE OpeningBalanceId = @id",
+            ("@id", opening.Id)));
+        Assert.Equal(CheckViolation, own.Number);
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpeningBalanceMovements"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT [Status] FROM finance.OpeningBalanceReversals WHERE OpeningBalanceId = @id", ("@id", opening.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT [Status] FROM finance.OpeningBalances WHERE Id = @id", ("@id", opening.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task The_reversal_and_movement_migrations_Down_passes_without_movements_and_refuses_once_one_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddOpeningBalanceReversalsAndMovements().DownOperations[0]).Sql;
+
+        await run.ExecuteAsync(guard);
+        await using (var specialist = run.Open(CompanyA, Specialist))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await specialist.Openings.ProposeAsync(specialist.Context,
+                Key("p-1"), Request("10"), CancellationToken.None)).Outcome);
+        }
+
+        // A pending opening has no movement yet: this migration's tables hold nothing to lose.
+        await run.ExecuteAsync(guard);
+
+        var opening = await ApproveOnlyAsync(run);
+
+        // Forward fix: the rollback stops while an opening movement would be lost and deletes nothing.
+        var error = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(ReversalDownGuardNumber, error.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpeningBalanceMovements WHERE OpeningBalanceId = @id", ("@id", opening)));
+    }
+
+    private static async Task<OpeningBalanceView> ApprovedAsync(Run run)
+    {
+        await using (var specialist = run.Open(CompanyA, Specialist))
+        {
+            var proposed = await specialist.Openings.ProposeAsync(specialist.Context, Key("p-1"), Request("10"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        }
+
+        await ApproveOnlyAsync(run);
+        await using var reader = run.Open(CompanyA, Specialist);
+        var list = await reader.Openings.ListAsync(reader.Context, CancellationToken.None);
+        var approved = Assert.Single(list.Resource!.Items);
+        Assert.Equal((OpeningBalanceStatus.Approved, "2"), (approved.Status, approved.Version));
+        return approved;
+    }
+
+    private static async Task<Guid> ApproveOnlyAsync(Run run)
+    {
+        var id = await run.ScalarAsync<Guid>("SELECT Id FROM finance.OpeningBalances WHERE [Status] = 1");
+        await using var manager = run.Open(CompanyA, Manager);
+        var approved = await manager.Openings.ApproveAsync(manager.Context, Key("a-1"),
+            new OpeningBalanceApproveRequest(id, "1"), CancellationToken.None);
+        Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+        return id;
+    }
 
     private sealed class Run : IAsyncDisposable
     {

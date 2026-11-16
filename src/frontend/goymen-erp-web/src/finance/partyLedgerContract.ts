@@ -27,6 +27,10 @@ export const PARTY_LEDGER_ENTRY_KINDS = [
   'OpenItemCancellation',
   'PayableOpenItemCancellation',
   'ManualBankPaymentReversal',
+  'OpeningBalanceDebit',
+  'OpeningBalanceCredit',
+  'OpeningBalanceDebitReversal',
+  'OpeningBalanceCreditReversal',
 ] as const
 export type PartyLedgerEntryKind = (typeof PARTY_LEDGER_ENTRY_KINDS)[number]
 export type PartyLedgerSide = 'Debit' | 'Credit'
@@ -155,6 +159,10 @@ const SIDE_OF: Readonly<Record<PartyLedgerEntryKind, PartyLedgerSide>> = {
   OpenItemCancellation: 'Credit',
   PayableOpenItemCancellation: 'Debit',
   ManualBankPaymentReversal: 'Credit',
+  OpeningBalanceDebit: 'Debit',
+  OpeningBalanceCredit: 'Credit',
+  OpeningBalanceDebitReversal: 'Credit',
+  OpeningBalanceCreditReversal: 'Debit',
 }
 
 /** A receivable or a payable open item (MOD-15): the two kinds that carry the invoice document and due date. */
@@ -164,8 +172,13 @@ const isOpenItemKind = (kind: PartyLedgerEntryKind) => kind === 'OpenItem' || ki
 const isCancellationKind = (kind: PartyLedgerEntryKind) =>
   kind === 'OpenItemCancellation' || kind === 'PayableOpenItemCancellation'
 
+/** FIN-S9 (FNS-D85): an approved opening's reversal — its source and reversed id are both the opening. */
+const isOpeningReversalKind = (kind: PartyLedgerEntryKind) =>
+  kind === 'OpeningBalanceDebitReversal' || kind === 'OpeningBalanceCreditReversal'
+
 const isReversalKind = (kind: PartyLedgerEntryKind) =>
-  kind === 'ManualReceiptReversal' || kind === 'ManualBankPaymentReversal' || isCancellationKind(kind)
+  kind === 'ManualReceiptReversal' || kind === 'ManualBankPaymentReversal' || isCancellationKind(kind) ||
+  isOpeningReversalKind(kind)
 
 function decodeEntry(value: unknown, currencyId: string, from: string, to: string): PartyLedgerEntry | null {
   if (!isRecord(value) || !hasExactKeys(value, ENTRY_KEYS)) return null
@@ -184,6 +197,7 @@ function decodeEntry(value: unknown, currencyId: string, from: string, to: strin
   if (!isOpenItemKind(kind) && !isCancellationKind(kind) && value.documentId !== null) return null
   if ((isOpenItemKind(kind) || isCancellationKind(kind)) && value.documentId === null) return null
   if (isCancellationKind(kind) && (value.sourceId !== value.entryId || value.reversesSourceId !== value.entryId)) return null
+  if (isOpeningReversalKind(kind) && value.reversesSourceId !== value.sourceId) return null
   const amount = decodeAmount(value.amount, currencyId, false)
   const runningBalance = decodeBalance(value.runningBalance, currencyId)
   if (amount === null || runningBalance === null || amount.disclosure !== runningBalance.amount.disclosure) return null

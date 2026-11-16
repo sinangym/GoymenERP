@@ -123,8 +123,10 @@ public sealed record TreasuryBalanceAnswer(TreasuryBalanceOutcome Outcome, strin
 
 /// <summary>
 /// FNS-D11 / FNS-D22: before the final record the treasury account's CURRENT balance (at record time) must cover the
-/// outgoing amount; a balance that would go below zero is refused with an explicit code, never clipped. The KMH/BCH
-/// limit exception (FNS-D4) belongs to the implementation. The implementation must protect the answer against
+/// outgoing amount; a balance that would go below zero is refused with an explicit code, never clipped. FNS-D87: a bank
+/// account never goes below zero — credit use (KMH/flexible commercial accounts included) is managed in separate credit
+/// accounts, not as a negative bank balance — so an implementation grants no overdraft limit on a bank account. The
+/// guard answers both the expense payment and the manual bank payment record. The implementation must protect the answer against
 /// concurrent records in the same database transaction (version or lock). Until a balance source exists the
 /// registered answer is <see cref="TreasuryBalanceOutcome.Unavailable"/> and the record is refused (fail-closed).
 /// </summary>

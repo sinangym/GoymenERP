@@ -14,8 +14,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// marked a cheque/note class, a rate that is not exact decimal text within 0–100, or a stored amount that does not
 /// parse makes the whole figure unavailable — never a partial sum and never an assumed rate. A type deactivated after
 /// the collateral was recorded still answers its rate: the collateral itself is held until it is released.</item>
-/// <item><b>Documentary risk (FNS-D58):</b> every customer instrument of the account whose status is neither Collected
-/// nor ReturnedToCustomer, summed per currency; a status Finance does not know makes the figure unavailable.</item>
+/// <item><b>Documentary risk (FNS-D58, FNS-D82):</b> every customer instrument of the account whose status is neither
+/// Collected nor ReturnedToCustomer, summed per currency — an instrument given to the bank and not yet collected stays in
+/// the risk; a status Finance does not know makes the figure unavailable.</item>
 /// <item><b>Held collateral (F018 §L3, "mevcut teminat"):</b> the held received collaterals in force on the read date at
 /// their recorded amount, summed per currency; a stored amount that does not parse makes it unavailable.</item>
 /// <item><b>Collateral utilization (F018 §L3, FNS-D31 (4), "teminat doluluğu"):</b> the open receivables taken from the
@@ -119,8 +120,9 @@ internal static class FinancePartyCollateralFigures
                 return Figure.Unavailable(DocumentaryRiskStatusUnknown);
             }
 
-            // FNS-D58: only a collected or a returned instrument leaves the risk; one in the portfolio, at the bank but
-            // not yet collected, bounced or protested stays in it.
+            // FNS-D58 / FNS-D82: only a collected or a returned instrument leaves the risk; one in the portfolio, at the
+            // bank (for collection, or as collateral once that status exists — OPEN-010) but not yet collected, bounced or
+            // protested stays in it.
             if ((CustomerInstrumentStatus)instrument.Status is CustomerInstrumentStatus.Collected
                 or CustomerInstrumentStatus.ReturnedToCustomer)
             {

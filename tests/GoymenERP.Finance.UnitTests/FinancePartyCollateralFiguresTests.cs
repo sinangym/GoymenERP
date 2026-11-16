@@ -155,6 +155,23 @@ public sealed class FinancePartyCollateralFiguresTests
     }
 
     [Fact]
+    public void An_instrument_at_the_bank_stays_in_the_documentary_risk_until_it_is_collected_or_returned()
+    {
+        // FNS-D82: an instrument handed to the bank is still the customer's risk until its status says collected/returned.
+        var atBank = FinancePartyCollateralFigures.DocumentaryRisk(
+            [Instrument(CustomerInstrumentStatus.AtBankForCollection, Lira, "250")]);
+        Assert.True(atBank.IsAvailable);
+        Assert.Equal([(Lira, "250")], atBank.Amounts.Select(amount => (amount.CurrencyId, amount.Amount)));
+
+        foreach (var leaves in new[] { CustomerInstrumentStatus.Collected, CustomerInstrumentStatus.ReturnedToCustomer })
+        {
+            var settled = FinancePartyCollateralFigures.DocumentaryRisk([Instrument(leaves, Lira, "250")]);
+            Assert.True(settled.IsAvailable);
+            Assert.Empty(settled.Amounts);
+        }
+    }
+
+    [Fact]
     public void An_unknown_instrument_status_or_an_unreadable_amount_cannot_be_calculated()
     {
         var unknown = FinancePartyCollateralFigures.DocumentaryRisk(
