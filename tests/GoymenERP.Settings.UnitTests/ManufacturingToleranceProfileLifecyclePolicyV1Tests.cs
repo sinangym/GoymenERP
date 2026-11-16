@@ -113,43 +113,92 @@ public sealed class ManufacturingToleranceProfileLifecyclePolicyV1Tests
     }
 
     [Fact]
-    public void Maker_cannot_approve_own_profile_version()
+    public void Approval_is_retired_and_refuses_in_every_state_without_changing_the_profile()
     {
         var draft = Prepare();
+        var published = Published();
 
-        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired,
+        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired,
             () => ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-                draft, Context("maker", draft.StateVersion, "self approval")));
+                draft, Context("checker", draft.StateVersion, "checked", 1)));
+        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired,
+            () => ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
+                draft, Context("maker", draft.StateVersion, "self approval", 1)));
+        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired,
+            () => ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
+                published, Context("checker", published.StateVersion, "approve again", 2)));
+        Assert.Equal(ManufacturingToleranceProfileStatusV1.Draft, draft.Status);
+        Assert.Equal(1, draft.StateVersion);
     }
 
     [Fact]
-    public void Checker_may_approve_and_publish_when_the_later_adapter_authorizes_each_action()
+    public void Preparer_may_publish_own_draft_directly_without_an_approval()
     {
         var draft = Prepare();
-        var approved = ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-            draft, Context("checker", draft.StateVersion, "checked", 1));
         var published = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
-            approved, Context("checker", approved.StateVersion, "published", 2));
+            draft, Context("maker", draft.StateVersion, "published", 1));
 
-        Assert.Equal(ManufacturingToleranceProfileStatusV1.Approved, approved.Status);
-        Assert.Equal(("checker", At.AddMinutes(1), "checked"),
-            (approved.ApprovedBy, approved.ApprovedAtUtc, approved.ApprovalReason));
         Assert.Equal(ManufacturingToleranceProfileStatusV1.Published, published.Status);
-        Assert.Equal(("checker", At.AddMinutes(2), "published"),
+        Assert.Equal(2, published.StateVersion);
+        Assert.Equal(("maker", At.AddMinutes(1), "published"),
             (published.PublishedBy, published.PublishedAtUtc, published.PublicationReason));
-        Assert.Equal(3, published.StateVersion);
+        Assert.Null(published.ApprovedBy);
+        Assert.Null(published.ApprovedAtUtc);
+        Assert.Null(published.ApprovalReason);
+        Assert.Equal(("maker", At, "initial draft"),
+            (published.PreparedBy, published.PreparedAtUtc, published.PreparationReason));
     }
 
     [Fact]
-    public void Maker_cannot_publish_even_after_a_checker_approved()
+    public void Another_authorized_actor_may_publish_a_draft()
     {
         var draft = Prepare();
-        var approved = ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-            draft, Context("checker", draft.StateVersion, "checked", 1));
+        var published = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
+            draft, Context("publisher", draft.StateVersion, "published", 1));
 
-        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired,
+        Assert.Equal("publisher", published.PublishedBy);
+        Assert.Null(published.ApprovedBy);
+    }
+
+    [Fact]
+    public void Legacy_approved_version_publishes_keeping_its_approval_and_the_preparer_may_publish_it()
+    {
+        var approved = LegacyApproved();
+        var published = ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
+            approved, Context("maker", approved.StateVersion, "published", 2));
+
+        Assert.Equal(ManufacturingToleranceProfileStatusV1.Published, published.Status);
+        Assert.Equal(3, published.StateVersion);
+        Assert.Equal(("checker", At.AddMinutes(1), "checked"),
+            (published.ApprovedBy, published.ApprovedAtUtc, published.ApprovalReason));
+        Assert.Equal(("maker", At.AddMinutes(2), "published"),
+            (published.PublishedBy, published.PublishedAtUtc, published.PublicationReason));
+    }
+
+    [Fact]
+    public void Legacy_history_shapes_stay_valid_and_a_self_approval_is_still_malformed()
+    {
+        var legacyPublished = LegacyApproved() with
+        {
+            StateVersion = 3,
+            Status = ManufacturingToleranceProfileStatusV1.Published,
+            PublishedBy = "checker",
+            PublishedAtUtc = At.AddMinutes(2),
+            PublicationReason = "published",
+        };
+
+        var next = ManufacturingToleranceProfileLifecyclePolicyV1.PrepareNextVersion(
+            legacyPublished,
+            new PrepareNextManufacturingToleranceProfileVersionV1(
+                NextProfile, Context("maker-2", legacyPublished.StateVersion, "next version", 3)));
+        Assert.Equal(2, next.ProfileVersion);
+
+        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.Invalid,
             () => ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
-                approved, Context("maker", approved.StateVersion, "self publish", 2)));
+                LegacyApproved() with { ApprovedBy = "maker" }, Context("checker", 2, "published", 2)));
+        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.Invalid,
+            () => ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
+                Prepare() with { ApprovalReason = "half approval" }, Context("checker", 1, "published", 1)));
     }
 
     [Fact]
@@ -157,8 +206,8 @@ public sealed class ManufacturingToleranceProfileLifecyclePolicyV1Tests
     {
         var draft = Prepare();
         var failure = Assert.Throws<ManufacturingToleranceProfileLifecycleException>(() =>
-            ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-                draft, Context("checker", 99, "checked", 1)));
+            ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
+                draft, Context("checker", 99, "published", 1)));
 
         Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.VersionConflict, failure.Code);
         Assert.Equal(99, failure.ExpectedStateVersion);
@@ -172,18 +221,15 @@ public sealed class ManufacturingToleranceProfileLifecyclePolicyV1Tests
 
         AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition,
             () => ManufacturingToleranceProfileLifecyclePolicyV1.Revise(
-                published, Context("maker-2", published.StateVersion, "rewrite", 3)));
-        AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition,
-            () => ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-                published, Context("checker-2", published.StateVersion, "approve again", 3)));
+                published, Context("maker-2", published.StateVersion, "rewrite", 2)));
         AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition,
             () => ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
-                published, Context("checker-2", published.StateVersion, "publish again", 3)));
+                published, Context("checker-2", published.StateVersion, "publish again", 2)));
 
         var next = ManufacturingToleranceProfileLifecyclePolicyV1.PrepareNextVersion(
             published,
             new PrepareNextManufacturingToleranceProfileVersionV1(
-                NextProfile, Context("maker-2", published.StateVersion, "next version", 3)));
+                NextProfile, Context("maker-2", published.StateVersion, "next version", 2)));
 
         Assert.Equal((
                 published.CompanyId,
@@ -220,7 +266,7 @@ public sealed class ManufacturingToleranceProfileLifecyclePolicyV1Tests
             () => ManufacturingToleranceProfileLifecyclePolicyV1.PrepareNextVersion(
                 published,
                 new PrepareNextManufacturingToleranceProfileVersionV1(
-                    published.ProfileId, Context("maker-2", published.StateVersion, "next version", 3))));
+                    published.ProfileId, Context("maker-2", published.StateVersion, "next version", 2))));
     }
 
     [Fact]
@@ -228,11 +274,11 @@ public sealed class ManufacturingToleranceProfileLifecyclePolicyV1Tests
     {
         var draft = Prepare();
         AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.Invalid,
-            () => ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-                draft, Context("checker", draft.StateVersion, "checked", 1) with { CompanyId = Guid.NewGuid() }));
+            () => ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
+                draft, Context("checker", draft.StateVersion, "published", 1) with { CompanyId = Guid.NewGuid() }));
         AssertCode(ManufacturingToleranceProfileLifecycleCodesV1.Invalid,
-            () => ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-                draft with { PreparedBy = " " }, Context("checker", draft.StateVersion, "checked", 1)));
+            () => ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
+                draft with { PreparedBy = " " }, Context("checker", draft.StateVersion, "published", 1)));
     }
 
     [Fact]
@@ -262,11 +308,20 @@ public sealed class ManufacturingToleranceProfileLifecyclePolicyV1Tests
     private static ManufacturingToleranceProfileLifecycleV1 Published()
     {
         var draft = Prepare();
-        var approved = ManufacturingToleranceProfileLifecyclePolicyV1.Approve(
-            draft, Context("checker", draft.StateVersion, "checked", 1));
         return ManufacturingToleranceProfileLifecyclePolicyV1.Publish(
-            approved, Context("checker", approved.StateVersion, "published", 2));
+            draft, Context("maker", draft.StateVersion, "published", 1));
     }
+
+    /// <summary>A version approved under D-MFG-PROFILE-AUTH-01=A before URN-D6 (state as stored).</summary>
+    private static ManufacturingToleranceProfileLifecycleV1 LegacyApproved() =>
+        Prepare() with
+        {
+            StateVersion = 2,
+            Status = ManufacturingToleranceProfileStatusV1.Approved,
+            ApprovedBy = "checker",
+            ApprovedAtUtc = At.AddMinutes(1),
+            ApprovalReason = "checked",
+        };
 
     private static ManufacturingToleranceProfileCommandContextV1 Context(
         string actor,

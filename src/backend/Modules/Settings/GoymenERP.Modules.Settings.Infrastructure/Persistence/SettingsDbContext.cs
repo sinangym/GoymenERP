@@ -80,7 +80,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
             table.HasCheckConstraint("CK_SettingsMfgTolerance_Version", "[Version] > 0");
             table.HasCheckConstraint("CK_SettingsMfgTolerance_Percent", "[MaximumFirePercent] >= 0");
             table.HasCheckConstraint("CK_SettingsMfgTolerance_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
-            table.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", "[ApprovalStatus] = 'Approved' AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND [ApprovedAtUtc] > '0001-01-01T00:00:00+00:00' AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0");
+            table.HasCheckConstraint("CK_SettingsMfgTolerance_Approval", ToleranceRegistryApprovalCheck);
         });
         policy.HasKey(x => new { x.CompanyId, x.ProfileId });
         policy.HasIndex(x => new { x.CompanyId, x.Process, x.Version }).IsUnique();
