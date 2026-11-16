@@ -10,6 +10,8 @@ import listResponseRaw from './examples/list-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_CAPABILITY } from './capabilities'
 import { CAPABILITY } from '../shell/capabilities'
+import { INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY, inventoryFutureAllocationPath } from '../inventory/capabilities'
+import { FUTURE_ALLOCATION_TEXT } from '../inventory/futureAllocationText'
 import type { UseContactInformation } from './referenceSource'
 import { ORDER_DETAIL_TEXT, ORDER_DRAFT_TEXT, ORDER_LIST_TEXT } from './salesText'
 import { formatInstant } from './format'
@@ -124,6 +126,20 @@ describe('S-02 list', () => {
 })
 
 describe('S-04 detail', () => {
+  it.each([false, true])('opens the Inventory demand-line route only with its independent read capability: %s', async (allowed) => {
+    installFetch({ capabilities: allowed ? [...ALL_SALES, INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY] : ALL_SALES,
+      onDetail: () => json(detailResponseRaw) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const line = await screen.findByTestId('sales-line-1')
+    const link = within(line).queryByRole('link', { name: FUTURE_ALLOCATION_TEXT.title })
+    if (allowed) {
+      const raw = JSON.parse(detailResponseRaw)
+      expect(link?.getAttribute('href')).toBe(inventoryFutureAllocationPath(DRAFT, raw.lines[0].lineId))
+    } else {
+      expect(link).toBeNull()
+    }
+  })
+
   it('renders the 360 summary as separate status facts and keeps long Cari, line due date and price in the normal layout flow', async () => {
     const longParty = {
       legalName: 'KARADENİZ ÇELİK DÖKÜM MAKİNA İMALAT SANAYİ VE DIŞ TİCARET ANONİM ŞİRKETİ',

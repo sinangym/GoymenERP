@@ -108,6 +108,8 @@ import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
+import { INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY, inventoryFutureAllocationPath } from '../inventory/capabilities'
+import { FUTURE_ALLOCATION_TEXT } from '../inventory/futureAllocationText'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftLinePricing } from './SalesDraftLinePricing'
@@ -232,6 +234,7 @@ export function SalesDraftDetailPage() {
     <DraftView
       detail={outcome.data}
       canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
+      canOpenFutureAllocations={hasCapability(shell, INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY)}
       backLink={
         <>
           {backLink}
@@ -542,6 +545,7 @@ export function SalesDraftDetailPage() {
 export function DraftView({
   detail,
   canOpenParty,
+  canOpenFutureAllocations = false,
   backLink,
   commands = null,
   statusAxes = null,
@@ -572,6 +576,8 @@ export function DraftView({
   readonly detail: DraftDetailWithParty
   /** The shell publishes the Cari card's own detail capability: only then is the party a link. */
   readonly canOpenParty: boolean
+  /** Inventory owns this route and publishes its read capability independently of Sales write rights. */
+  readonly canOpenFutureAllocations?: boolean
   readonly backLink: React.ReactNode
   readonly commands?: React.ReactNode
   /**
@@ -864,7 +870,10 @@ export function DraftView({
               <section className={styles.section} aria-labelledby="sales-lines-heading">
                 <h2 id="sales-lines-heading">{T.linesHeading}</h2>
                 {detail.lines.map((line) => (
-                  <LineView key={line.lineId} line={line} unitCodes={unitCodes} />
+                  <LineView key={line.lineId} line={line} unitCodes={unitCodes}
+                    futureAllocationLink={canOpenFutureAllocations ? (
+                      <Link to={inventoryFutureAllocationPath(draft.id, line.lineId)}>{FUTURE_ALLOCATION_TEXT.title}</Link>
+                    ) : null} />
                 ))}
                 {detail.removedLines === undefined ? null : <RemovedLinesView detail={detail} />}
                 {quantityRevision}
@@ -1324,7 +1333,11 @@ function RemovedLinesView({ detail }: { readonly detail: DraftDetail }) {
   )
 }
 
-function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
+function LineView({ line, unitCodes, futureAllocationLink }: {
+  readonly line: DraftLine
+  readonly unitCodes: ReadonlyMap<string, string>
+  readonly futureAllocationLink: React.ReactNode
+}) {
   const plan = unplannedQuantity(line, line.requestedDeliverySlices)
   const headingId = `sales-line-${line.lineId}`
   return (
@@ -1332,6 +1345,7 @@ function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unit
       <h3 id={headingId} className={styles.lineTitle}>
         {line.lineNo}. {line.productCode} — {line.productName}
       </h3>
+      {futureAllocationLink === null ? null : <p>{futureAllocationLink}</p>}
       {line.addedInRevision === undefined ? null : (
         <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-added-in`}>{T.addedInRevision(line.addedInRevision)}</p>
       )}

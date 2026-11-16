@@ -8,6 +8,8 @@ import {
   INVENTORY_SHORTAGE_WARNINGS_ROUTE,
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
+  INVENTORY_FUTURE_ALLOCATION_ROUTE,
+  inventoryFutureAllocationPath,
 } from '../inventory/capabilities'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { INVENTORY_LABEL_DETAIL_ROUTE } from '../inventory/labelDetailRoute'
@@ -30,6 +32,11 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
     expect(inventoryRoutes).toHaveLength(10)
+    const futurePath = inventoryFutureAllocationPath('order-1', 'line-2')
+    expect(matchRoutes(inventoryRoutes, futurePath)?.at(-1)?.route.path)
+      .toBe(INVENTORY_FUTURE_ALLOCATION_ROUTE.slice(1))
+    expect(matchRoutes(inventoryRoutes, futurePath)?.at(-1)?.params)
+      .toMatchObject({ salesOrderId: 'order-1', salesOrderLineId: 'line-2' })
     // ST-04 company timeline: an owner route reached from a label detail under the SAME stock-positions
     // capability. It adds no capability, no sidebar entry and no CAPABILITY_ROUTE mapping of its own.
     expect(matchRoutes(inventoryRoutes, INVENTORY_MOVEMENT_TIMELINE_ROUTE)?.at(-1)?.route.path).toBe(
