@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Transfers;
 
 namespace GoymenERP.Api.IntegrationTests;
 
