@@ -184,8 +184,9 @@ public sealed partial class SalesDraftServiceTests
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
             HeaderRevision("5", account: NewAccount), Metadata("k-future-blocked")));
 
-        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked), Status(refused));
-        Assert.Contains(new SalesDraftFieldError(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesDraftProblemCodesV1.RevisionBlocked),
+        // SAT-D373: refused with its own code, before the cancellation categories are read.
+        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent), Status(refused));
+        Assert.Equal([new SalesDraftFieldError("futureSupplyAllocations", SalesDraftProblemCodesV1.RevisionFutureAllocationPresent)],
             refused.Errors);
         Assert.Empty(world.Store.Refusals);
         Assert.Empty(world.Store.Archived);
@@ -197,6 +198,107 @@ public sealed partial class SalesDraftServiceTests
             HeaderRevision("5", account: NewAccount), Metadata("k-future-unavailable")));
         Assert.Equal((503, SalesDraftProblemCodesV1.RevisionImpactUnavailable), Status(unavailable));
         Assert.Empty(world.Store.Refusals);
+    }
+
+    [Theory]
+    [InlineData("sales-owner")]
+    [InlineData("delivery-address")]
+    [InlineData("due-terms")]
+    public async Task SAT_D373_an_active_future_supply_allocation_refuses_every_header_revision_with_its_own_code_unrecorded(string change)
+    {
+        var world = new World();
+        world.SalesOwners!.Eligible.Add(Owner);
+        Owners(world);
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        var future = new FakeFutureAllocations(order => new(Company, order,
+            [new SalesOrderLineAllocationV2(line, SalesOrderAllocationKindsV2.FutureSupply, 1, 2.5m, FuturePurchaseUnit)]));
+        world.FutureAllocations = future;
+        var request = change switch
+        {
+            "sales-owner" => HeaderRevision("5", owner: Owner, reason: "SENTETIK sorumlu değişti"),
+            "delivery-address" => HeaderRevision("5", address: new SalesDraftOwnerReferenceV1(AddressId, AddressVersion),
+                reason: "SENTETIK teslim adresi değişti"),
+            _ => HeaderRevision("5", NetDays(60)),
+        };
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
+            request, Metadata("k-sat-d373-" + change)));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent), Status(refused));
+        Assert.Equal([new SalesDraftFieldError("futureSupplyAllocations", SalesDraftProblemCodesV1.RevisionFutureAllocationPresent)],
+            refused.Errors);
+        Assert.Equal([approved.Id], future.Asked);
+        // Not recorded and no effect: no refusal, no archive, the order stays Approved at Rev.0 with its header.
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.Archived);
+        var detail = await world.Service().GetDraftDetailAsync(approved.Id);
+        Assert.Equal(("Approved", "Rev.0", "5"), (detail.Draft.ApprovalState, detail.Draft.Revision, detail.Draft.Version));
+        Assert.Null((await world.Service().GetDraftHeaderAsync(approved.Id)).SalesOwnerUserId);
+
+        // Released IN INVENTORY: the same revision goes under a new key.
+        future.Answer = order => new(Company, order, []);
+        var revised = await world.Service().ReviseHeaderAsync(approved.Id, request, Metadata("k-sat-d373-again-" + change));
+        Assert.False(revised.IsReplay);
+        Assert.Equal("6", revised.Detail.Draft.Version);
+    }
+
+    [Fact]
+    public async Task SAT_D373_a_kind_aware_owner_that_cannot_answer_refuses_an_in_place_header_revision_503_unrecorded()
+    {
+        var world = new World();
+        world.SalesOwners!.Eligible.Add(Owner);
+        Owners(world);
+        var (approved, _) = await AcceptedApprovedAsync(world);
+        world.FutureAllocations = new FakeFutureAllocations(order => new(Guid.NewGuid(), order, []));
+
+        var malformed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision("5", owner: Owner, reason: "SENTETIK sorumlu değişti"), Metadata("k-sat-d373-malformed")));
+        Assert.Equal((503, SalesDraftProblemCodesV1.RevisionImpactUnavailable), Status(malformed));
+
+        world.FutureAllocations = null;
+        world.NoFutureAllocations = true;
+        var absent = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision("5", owner: Owner, reason: "SENTETIK sorumlu değişti"), Metadata("k-sat-d373-absent")));
+        Assert.Equal((503, SalesDraftProblemCodesV1.RevisionImpactUnavailable), Status(absent));
+
+        Assert.Empty(world.Store.Refusals);
+        Assert.Null((await world.Service().GetDraftHeaderAsync(approved.Id)).SalesOwnerUserId);
+    }
+
+    [Fact]
+    public async Task SAT_D373_a_never_approved_order_is_revised_without_asking_the_kind_aware_owner()
+    {
+        var world = new World();
+        Owners(world);
+        var future = new FakeFutureAllocations(order => new(Company, order, []));
+        world.FutureAllocations = future;
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-sat-d373-create"))).Detail;
+
+        var revised = await world.Service().ReviseHeaderAsync(created.Draft.Id,
+            HeaderRevision(created.Draft.Version, NetDays(45)), Metadata("k-sat-d373-preparing"));
+
+        Assert.Equal("Preparing", revised.Detail.Draft.ApprovalState);
+        Assert.Empty(future.Asked);
+    }
+
+    [Fact]
+    public async Task SAT_D373_a_future_supply_allocation_committed_before_the_approval_of_a_customer_change_is_refused_there_with_its_own_code()
+    {
+        var world = new World();
+        Owners(world);
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        await world.Service().ReviseHeaderAsync(approved.Id, HeaderRevision("5", account: NewAccount, reason: "SENTETIK cari hesap"),
+            Metadata("k-sat-d373-customer"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-sat-d373-submit"));
+        world.FutureAllocations = new FakeFutureAllocations(order => new(Company, order,
+            [new SalesOrderLineAllocationV2(line, SalesOrderAllocationKindsV2.FutureSupply, 1, 1m, FuturePurchaseUnit)]));
+
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-sat-d373-approve")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent), Status(blocked));
+        Assert.Equal("futureSupplyAllocations", Assert.Single(blocked.Errors).Field);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Equal("PendingApproval", (await world.Service().GetDraftDetailAsync(approved.Id)).Draft.ApprovalState);
     }
 
     /// <summary>A SYNTHETIC kind-aware allocation owner (Inventory's role): answers what the case gives it and records the orders asked.</summary>

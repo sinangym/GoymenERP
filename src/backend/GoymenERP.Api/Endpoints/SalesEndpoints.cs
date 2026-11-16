@@ -472,8 +472,10 @@ public static partial class SalesEndpoints
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [],
-            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded).
-            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
+            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded);
+            // SAT-D373: an active future supply allocation is refused with its own code (not recorded).
+            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked,
+                SalesDraftProblemCodesV1.RevisionFutureAllocationPresent]);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);

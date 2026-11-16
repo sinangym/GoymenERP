@@ -215,6 +215,29 @@ describe('S-04 header revision (API-04, DEC-SAL-002, DEC-SAL-008)', () => {
     expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
   })
 
+  it('says an active future supply allocation locks the header (SAT-D373) and changes nothing', async () => {
+    installFetch({
+      capabilities: WITH_HEADER,
+      onDetail: () => json(detail()),
+      onHeader: () => json(header()),
+      onHeaderRevision: () => json({
+        status: 409, title: 'Conflict', code: 'sales_revision_future_allocation_present', correlationId: 'c-373',
+        errors: [{ field: 'futureSupplyAllocations', code: 'sales_revision_future_allocation_present' }],
+      }, 409),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await openForm()
+    const form = await screen.findByTestId('sales-header-revision-form')
+    fireEvent.change(within(form).getByLabelText(T.account), { target: { value: `${PARTY}|${OTHER_ACCOUNT}` } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'SENTETIK hesap değişti' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+    const alert = await within(form).findByRole('alert')
+    expect(alert.textContent).toContain(T.conflict)
+    expect(alert.textContent).toContain(T.fieldCode.sales_revision_future_allocation_present)
+    expect(alert.textContent).not.toContain(T.blockedSource('futureSupplyAllocations'))
+    expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
+  })
+
   it('keeps the key after an unknown outcome and retries the same payload with it', async () => {
     let attempts = 0
     const harness = installFetch({

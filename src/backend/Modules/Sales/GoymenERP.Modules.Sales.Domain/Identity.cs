@@ -525,6 +525,24 @@ public static class SalesRuleCodes
     public const string ContractReasonTooLong = "sales_contract_reason_too_long";
 
     /// <summary>
+    /// KLN-D89: the delivery weighing a subcontract invoice line names was not answered consistently by the Logistics owner
+    /// (no source, unreadable, or a net kg that is not a positive kilogram value); the kg ratio is not computed.
+    /// </summary>
+    public const string SubcontractNetKgUnavailable = "sales_subcontract_net_kg_unavailable";
+
+    /// <summary>
+    /// KLN-D89 (fail closed): a subcontract invoice line has no weighing of its own (none, or one weighing serving several order
+    /// lines); no rule was chosen for it, so the kg ratio stops instead of using declared or shipment-share kilograms.
+    /// </summary>
+    public const string SubcontractLineNotWeighed = "sales_subcontract_line_not_weighed";
+
+    /// <summary>
+    /// KLN-D100: the approved customer returns of a line exceed its delivered total; no correction rule covers that, so the open
+    /// quantity is not computed.
+    /// </summary>
+    public const string OpenQuantityReturnAboveDelivered = "sales_open_quantity_return_above_delivered";
+
+    /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.
     /// </summary>

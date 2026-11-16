@@ -246,6 +246,8 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
     'Siparişe bağlı kayıtlar var (tahsis, yükleme, satın alma ya da üretim); işlem yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+  [SALES_PROBLEM_CODE.revisionFutureAllocationPresent]:
+    'Siparişe bağlı aktif ileri tarihli tahsis (gelecek tedarik ayırması) var; başlık değiştirilmedi. Tahsis kendi ekranında kaldırıldıktan sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.forceCloseBlocked]:
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
@@ -1922,6 +1924,9 @@ export const HEADER_REVISION_TEXT = {
     sales_due_terms_amount_not_splittable: 'Tutar bu kadar taksite bölünemez; daha az taksit girin.',
     sales_header_revision_priced_lines:
       'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez; yanlışsa sipariş iptal edilip yeni sipariş açılır.',
+    // SAT-D373 (temporary, until the SAT-S8 transfer rule): an active future supply allocation locks the whole header.
+    sales_revision_future_allocation_present:
+      'Siparişe bağlı aktif ileri tarihli tahsis (gelecek tedarik ayırması) varken sipariş başlığı değiştirilemez; önce tahsis kendi ekranında kaldırılır.',
     sales_due_terms_required: 'Vade girilmeden sipariş onaylanamaz.',
     sales_revision_no_change: 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
     owner_reference_invalid: 'Seçilen kayıt geçerli değil (pasif, bu cariye ait değil veya satış sorumlusu olamaz).',
