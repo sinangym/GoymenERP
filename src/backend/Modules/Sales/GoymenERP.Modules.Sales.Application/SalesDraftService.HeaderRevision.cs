@@ -345,9 +345,6 @@ public sealed partial class SalesDraftService
             request.SalesOwnerUserId, dueTerms);
     }
 
-    /// <summary>The field the SAT-D373 refusal is answered on.</summary>
-    private const string FutureSupplyAllocationsField = "futureSupplyAllocations";
-
     /// <summary>
     /// SAT-D373 (SINAN-CEVAP 34.20; STK-S16): while the allocation owner holds an ACTIVE future supply allocation against a line
     /// of the order, a header revision is refused with its own code (409
@@ -359,13 +356,14 @@ public sealed partial class SalesDraftService
     private async Task RequireNoFutureAllocationAsync(Scope scope, string? permission, SalesOrderDraft draft,
         CancellationToken cancellationToken)
     {
-        var futureCount = await ReadFutureAllocationCountAsync(scope, permission, draft, cancellationToken);
-        if (futureCount is null)
+        // SAT-S8 (X1) reads the counts per line; any active one on any line refuses.
+        var futureByLine = await ReadFutureAllocationCountsAsync(scope, permission, draft, cancellationToken);
+        if (futureByLine is null)
         {
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
         }
 
-        if (futureCount > 0)
+        if (futureByLine.Values.Sum(count => (long)count) > 0)
         {
             throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent,
                 [new SalesDraftFieldError(FutureSupplyAllocationsField, SalesDraftProblemCodesV1.RevisionFutureAllocationPresent)]);
