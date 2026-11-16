@@ -155,7 +155,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): stok merge: the Product similarity facts host and the Purchasing shortage supply host registrations and the kg/m table endpoint map; no generation or hosted-service change (f11de9cd… -> f66beec7…).
         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (f66beec7… -> 65d7e684…).
         // Re-fingerprinted for tren-1 W6: committed in-process owner registrations and endpoint maps; final host integration must re-pin its exact Program source (65d7e684... -> 1fa4780c...).
-        "1fa4780c0c4b252db338caf02dd3f0739d86ac46622f28c842189489cbb307a8";
+        // Tren-1 W6: owner bridges and scoped DI only; source fingerprint re-derived.
+        "cb18bef27291a85962a8bf9d4bfcda9c373948c28156814b0c81080ca6ed4e62";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -1213,6 +1214,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                // Tren-1 W6 Audit ownership repair. K3 review pending: this namespace is used only for the borrowed
+                // DbTransaction type. A fresh Audit-owned EF context validates every event's CompanyId and appends
+                // inside that transaction; it neither commits nor owns the connection. No raw SQL/filter bypass.
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/AuditTransactionWriterV1.cs"] =
+                    new("9337be15d13f0747b6325e1f0a464ec28fb848d8acd2944fe498afd102424dc5",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["System.Data.Common"] = 1 }),
+                // SAT-S8 / KLN-D105. K3 review pending: the adapter uses the caller's DbTransaction type only,
+                // binds existing owner locks/ports, and revalidates Sales authority. Sales and Inventory alone
+                // write their own tables; no new command text, connection creation or tenant-filter bypass.
+                ["src/backend/GoymenERP.Api/Endpoints/SalesFutureDemandReductionHostParticipant.cs"] =
+                    new("97eeee2f68ff063ab6ac861d9e68b5d7e106848b329e8ce3d696f079e6e0ed66",
+                        new Dictionary<string, int>(StringComparer.Ordinal) { ["System.Data.Common"] = 1 }),
                 // Re-measured for C3: the Product owner's sales and stock eligibility runtimes are composed
                 // here (no new database capability; MigrateAsync stays 2).
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
