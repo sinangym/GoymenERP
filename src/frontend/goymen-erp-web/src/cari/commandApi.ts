@@ -352,6 +352,12 @@ export async function putVersionedCommand(
    * positive version. The server owns the create-or-update decision; the client only carries the token.
    */
   allowZeroVersion = false,
+  /**
+   * The HTTP method of the versioned command. Most versioned updates are PUT; a command that CREATES a record under
+   * the fenced aggregate (for example a maker-checker proposal or its decision) is a POST. Everything else — the gate,
+   * the fence, the key, the exact-204 and acknowledgment rules — is identical.
+   */
+  method: 'PUT' | 'POST' = 'PUT',
 ): Promise<CommandOutcome<null>> {
   // Same write gate as every command: proven compatibility in THIS context first.
   if (!isCommandContractReady(context.contract)) return { type: 'contract-not-ready' }
@@ -370,7 +376,7 @@ export async function putVersionedCommand(
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      method: 'PUT',
+      method,
       headers,
       body: JSON.stringify({ ...fields, expectedVersion }),
       signal,

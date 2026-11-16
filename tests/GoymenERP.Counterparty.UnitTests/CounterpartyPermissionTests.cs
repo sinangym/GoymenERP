@@ -18,15 +18,27 @@ public sealed class CounterpartyPermissionTests
     }
 
     [Fact]
-    public void LegalNameUpdatePermission_IsSeparateFromTheBasicEditAndRequiresCompanyWideScope()
+    public void LegalNameProposeAndApprovePermissions_AreSeparateNonCriticalCompanyWideNames()
     {
-        // ALS-D95 / 19.22: a separate permission, so basic-edit grants are not silently widened to the legal name.
-        Assert.Equal(ErpPermissions.CounterpartyPartiesLegalNameUpdate, CounterpartyLegalNamePermissionsV1.Update);
-        Assert.True(ErpPermissions.IsKnown(CounterpartyLegalNamePermissionsV1.Update));
-        Assert.True(ErpPermissions.RequiresCompanyWideScope(CounterpartyLegalNamePermissionsV1.Update));
-        Assert.False(ErpPermissions.IsCritical(CounterpartyLegalNamePermissionsV1.Update));
-        Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, CounterpartyLegalNamePermissionsV1.Update);
-        Assert.NotEqual(ErpPermissions.CounterpartyPartiesRead, CounterpartyLegalNamePermissionsV1.Update);
+        // ALS-D111 + ALS-D113: maker-checker, two separate names, neither widened from the basic edit; no grant here.
+        Assert.Equal("counterparties.legal_name.propose", CounterpartyLegalNamePermissionsV1.Propose);
+        Assert.Equal("counterparties.legal_name.approve", CounterpartyLegalNamePermissionsV1.Approve);
+        Assert.Equal(ErpPermissions.CounterpartiesLegalNamePropose, CounterpartyLegalNamePermissionsV1.Propose);
+        Assert.Equal(ErpPermissions.CounterpartiesLegalNameApprove, CounterpartyLegalNamePermissionsV1.Approve);
+        foreach (var permission in new[]
+                 {
+                     CounterpartyLegalNamePermissionsV1.Propose, CounterpartyLegalNamePermissionsV1.Approve,
+                 })
+        {
+            Assert.True(ErpPermissions.IsKnown(permission));
+            Assert.True(ErpPermissions.RequiresCompanyWideScope(permission));
+            Assert.False(ErpPermissions.IsCritical(permission));
+            Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, permission);
+            Assert.NotEqual(ErpPermissions.CounterpartyPartiesRead, permission);
+        }
+
+        Assert.NotEqual(CounterpartyLegalNamePermissionsV1.Propose, CounterpartyLegalNamePermissionsV1.Approve);
+        Assert.False(ErpPermissions.IsKnown("counterparty.parties.legal-name.update"));
     }
 
     [Fact]
@@ -38,7 +50,7 @@ public sealed class CounterpartyPermissionTests
         Assert.True(ErpPermissions.RequiresCompanyWideScope(CounterpartyPartyMergePermissionsV1.Approve));
         Assert.False(ErpPermissions.IsCritical(CounterpartyPartyMergePermissionsV1.Approve));
         Assert.NotEqual(ErpPermissions.CounterpartyPartiesUpdateBasic, CounterpartyPartyMergePermissionsV1.Approve);
-        Assert.NotEqual(ErpPermissions.CounterpartyPartiesLegalNameUpdate, CounterpartyPartyMergePermissionsV1.Approve);
+        Assert.NotEqual(ErpPermissions.CounterpartiesLegalNameApprove, CounterpartyPartyMergePermissionsV1.Approve);
     }
 
     [Fact]

@@ -27,7 +27,7 @@ public static class CounterpartyPartySuccessionPermissionsV1
 /// one as predecessor → successor with the legal basis. It moves NO balance: the balance moves only by an approved
 /// transfer voucher (devir fişi) through a Finance port, which keeps the legal basis and evidence; Counterparty never
 /// writes Finance tables.</item>
-/// <item>A type change with the same VKN keeps the same cari; the official legal name change (ALS-D95) is recorded as a
+/// <item>A type change with the same VKN keeps the same cari; the approved official legal name change (ALS-D111/D113) is recorded as a
 /// dated revision.</item>
 /// <item>An invoice reads the identity valid on its document date (<see cref="ICounterpartyAccountIdentityAsOfSourceV1"/>).</item>
 /// </list>

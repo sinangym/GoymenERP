@@ -1,11 +1,12 @@
 /**
- * F-027 / ALS-D95 transport — the Cari card's official legal name.
+ * ALS-D111 + ALS-D113 transport — the Cari card's official legal name, changed by maker-checker.
  *
  * Same thin hand-written shape as ./tradeNameApi.ts, consuming the generated contract (see ./legalName.ts):
  *  - The READ is a side read of the Cari card: it sends the client-contract declaration and the selected company, and
  *    deliberately does NOT move the readiness slot (the card's own detail read owns it).
- *  - The COMMAND shares the write gate, one Idempotency-Key per attempt, the exact-204 rule and the "no acknowledgment =
- *    unknown outcome" rule through `putVersionedCommand`, so the PARTY version travels as lossless decimal text.
+ *  - The two COMMANDS (propose; approve or reject) are POSTs that share the write gate, one Idempotency-Key per attempt,
+ *    the exact-204 rule and the "no acknowledgment = unknown outcome" rule through `putVersionedCommand` (method POST),
+ *    so the PARTY version travels as lossless decimal text.
  */
 
 import { API_BASE, contractRequestHeader } from './clientContract'
@@ -15,6 +16,7 @@ import {
   decodeLegalNameView,
   legalNamePath,
   legalNameProblemCodeOf,
+  type LegalNameDecision,
   type LegalNameView,
 } from './legalName'
 
@@ -68,26 +70,64 @@ export async function fetchLegalName(
   return data === null ? { type: 'malformed' } : { type: 'ok', data }
 }
 
-/** `UpdateCounterpartyLegalNameV1` stores 204, 404 (not found) and 409 (version conflict). */
-export const LEGAL_NAME_REPLAYABLE: ReplayableFailures = new Map([
-  [404, new Set<string>([LEGAL_NAME_PROBLEM_CODE.notFound])],
-  [409, new Set<string>([LEGAL_NAME_PROBLEM_CODE.versionConflict])],
-])
+const replayable = (...codes: string[]): ReplayableFailures =>
+  new Map([
+    [404, new Set<string>([LEGAL_NAME_PROBLEM_CODE.notFound])],
+    [409, new Set<string>([LEGAL_NAME_PROBLEM_CODE.versionConflict, ...codes])],
+  ])
 
-/** Change the legal name; `expectedVersion` is the PARTY version of the read the form opened on. */
-export function updateLegalName(
+/** `ProposeCounterpartyLegalNameChangeV1` stores 204, 404 and 409 (version conflict, unchanged, already pending). */
+export const LEGAL_NAME_PROPOSE_REPLAYABLE: ReplayableFailures = replayable(
+  LEGAL_NAME_PROBLEM_CODE.unchanged,
+  LEGAL_NAME_PROBLEM_CODE.changePending,
+)
+
+/** `DecideCounterpartyLegalNameChangeV1` stores 204, 404 and 409 (version conflict, not pending, stale, self-decision). */
+export const LEGAL_NAME_DECIDE_REPLAYABLE: ReplayableFailures = replayable(
+  LEGAL_NAME_PROBLEM_CODE.changeNotPending,
+  LEGAL_NAME_PROBLEM_CODE.changeStale,
+  LEGAL_NAME_PROBLEM_CODE.selfDecision,
+)
+
+/** Propose a new legal name; the name does not change until another person approves it. */
+export function proposeLegalNameChange(
   context: CommandContext,
   partyId: string,
   expectedVersion: string,
-  legalName: string,
+  proposedLegalName: string,
+  reason: string,
   signal?: AbortSignal,
 ): Promise<CommandOutcome<null>> {
   return putVersionedCommand(
-    legalNamePath(partyId),
+    `${legalNamePath(partyId)}/change-requests`,
     context,
     expectedVersion,
-    { legalName },
+    { proposedLegalName, reason },
     signal,
-    LEGAL_NAME_REPLAYABLE,
+    LEGAL_NAME_PROPOSE_REPLAYABLE,
+    false,
+    'POST',
+  )
+}
+
+/** Approve or reject the pending proposal named by id; the proposer is refused by the server. */
+export function decideLegalNameChange(
+  context: CommandContext,
+  partyId: string,
+  expectedVersion: string,
+  changeRequestId: string,
+  decision: LegalNameDecision,
+  note: string | null,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<null>> {
+  return putVersionedCommand(
+    `${legalNamePath(partyId)}/change-decisions`,
+    context,
+    expectedVersion,
+    note === null ? { changeRequestId, decision } : { changeRequestId, decision, note },
+    signal,
+    LEGAL_NAME_DECIDE_REPLAYABLE,
+    false,
+    'POST',
   )
 }

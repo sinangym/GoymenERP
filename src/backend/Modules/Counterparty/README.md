@@ -173,15 +173,20 @@ table it drops the table. Forward-fix plan otherwise: keep the additive table an
 
 Screen: the Cari card's account section (`src/frontend/goymen-erp-web/src/cari/CariEDocumentPanel.tsx`).
 
-## ALS-D95 / ALS-D97 — official legal name and trade name on the Cari card (F-027; ALS-D95 confirmed by SINAN-CEVAP 19.22)
+## ALS-D111 / ALS-D113 / ALS-D97 — official legal name (maker-checker) and trade name on the Cari card (F-027)
+
+ALS-D111 + ALS-D113 replace the one-step ALS-D95/ALS-D110 path: the retired `PUT …/legal-name` and its permission
+`counterparty.parties.legal-name.update` no longer exist (no role or seed held it).
 
 | Rule | Behaviour |
 |---|---|
-| Legal name (ALS-D95) | `GET /api/v1/counterparties/{partyId}/legal-name` → `partyId`, `companyId`, `code`, the PARTY `version` as decimal text, `legalName`, `viewer {canUpdateLegalName}`. `PUT …/legal-name` `{expectedVersion, legalName}` → 204: one step, **no approval step**, under the separate company-wide permission `counterparty.parties.legal-name.update` plus `counterparty.parties.read`, both re-validated before the single save. One Idempotency-Key; the stored terminal answers (204, 404 `not_found`, 409 `version_conflict`) replay for the same key and body. |
-| Validation | Trimmed; blank is 400 `validation_failed`, longer than 250 is 400 (never truncated). Re-sending the stored value is a fenced no-op: no new version, no audit event. |
-| Audit | One `counterparty.party.legal-name.changed.v1` event per real change; `BeforeJson`/`AfterJson` carry `{LegalName, Version}` (the old and the new legal name), `PermissionCode` is the legal-name permission and `ApprovalContextJson` is empty. Logs never carry the name. |
-| Persistence guard | A legal-name save may change only `LegalName`, `Version`, `UpdatedAtUtc` and the rowversion; anything ridden along (trade name, tax identity, MERSİS, state) is refused. No migration: the column already exists. |
-| Permission | Registered in the central catalogue (company-wide only, not Critical). **Registering grants nothing**: no role, seed or user holds it. It is meant for the accounting persona; the grant is a human gate placed at the end of the train (SINAN-CEVAP 19.31). Until then every legal-name PUT is 403 and the screen shows the legal name read-only. |
+| Read | `GET /api/v1/counterparties/{partyId}/legal-name` → `partyId`, `companyId`, `code`, the PARTY `version` as decimal text, `legalName`, `pendingChange`, `lastDecidedChange` (`id`, `status` pending/approved/rejected, `currentLegalName`, `proposedLegalName`, `reason`, `requestedBy`, `requestedAtUtc`, `decidedBy`, `decidedAtUtc`, `decisionNote`), `viewer {canPropose, canApprove, isRequesterOfPending}`. |
+| Propose | `POST …/legal-name/change-requests` `{expectedVersion, proposedLegalName, reason}` → 204 under the company-wide `counterparties.legal_name.propose` plus `counterparty.parties.read`. **The legal name does not change.** 409 `legal_name_unchanged` (same name), `legal_name_change_pending` (one pending request per party and company; a unique filtered index decides a race), `version_conflict`. |
+| Decide | `POST …/legal-name/change-decisions` `{expectedVersion, changeRequestId, decision: approve\|reject, note?}` → 204 under the company-wide `counterparties.legal_name.approve` plus `counterparty.parties.read`. One approval is enough. The proposer is refused even holding both names (409 `legal_name_self_decision`; the database check refuses `DecidedBy = RequestedBy` too). A decided request is 409 `legal_name_change_not_pending`. An approval of a request whose party version or legal name moved since the request is 409 `legal_name_change_stale` (it can still be rejected). Approval applies the proposal, moves the PARTY version once and appends a dated identity revision (KLN-D38 (3)). |
+| Idempotency | One Idempotency-Key per command; stored terminal answers replay for the same key and body; another body is 409 `idempotency_conflict`. |
+| Audit | `counterparty.party.legal-name.change-requested.v1` (request snapshot), `…change-approved.v1` on the party (`BeforeJson`/`AfterJson` `{LegalName, Version}`, `ApprovalContextJson` with requester and decider), `…change-rejected.v1` on the request. Logs never carry the name. |
+| Persistence | Table `counterparty.PartyLegalNameChangeRequests` (company-scoped, query-filtered; immutable request fields; never deleted). Migration `AddCounterpartyLegalNameChangeRequests` — Down refuses with THROW 51847 while a request exists (forward fix); empty, it drops the table. |
+| Permission | Both names are registered in the central catalogue (company-wide only, not Critical). **Registering grants nothing**: no role, seed or user holds them. Intended personas (ALS-D111): Muhasebe Uzmanı proposes; Muhasebe Müdürü or GM approves. The grant is a human gate. Until then both commands are 403 and the screen shows the legal name read-only. |
 | Trade name (ALS-D97) | Unchanged: `…/trade-name` under `counterparty.parties.update.basic`, fenced on the same PARTY version. VKN/TCKN, MERSİS and IBAN stay in the CARI-DEC-004 maker-checker flow. |
 
 ## F-027 / DEC-CAR-003 / CARI-AC-016 — making a company cari account passive (ALC-S11)

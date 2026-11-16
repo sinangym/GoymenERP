@@ -151,6 +151,21 @@ public enum CounterpartyCommandResult
     /// warning (422). Never stored as an idempotent answer: the warning is re-read live on the next attempt.
     /// </summary>
     DeactivationWarningAcknowledgementRequired = 30,
+
+    /// <summary>ALS-D111: the proposal equals the stored legal name (409).</summary>
+    LegalNameUnchanged = 31,
+
+    /// <summary>ALS-D111: a legal-name change of this party is already pending in this company (409).</summary>
+    LegalNameChangePending = 32,
+
+    /// <summary>ALS-D111: the named legal-name request is no longer pending (409).</summary>
+    LegalNameChangeNotPending = 33,
+
+    /// <summary>ALS-D111: the party moved after the legal-name request was made; it cannot be approved (409).</summary>
+    LegalNameChangeStale = 34,
+
+    /// <summary>ALS-D113: the proposer tried to decide their own legal-name request (409, maker-checker).</summary>
+    LegalNameSelfDecision = 35,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -227,6 +242,17 @@ public static class CounterpartyProblemCodesV1
     /// <summary>ALS-D99: the deactivation warning must be shown and acknowledged before the account becomes passive.</summary>
     public const string DeactivationWarningAcknowledgementRequired = "deactivation_warning_acknowledgement_required";
 
+    /// <summary>ALS-D111/D113 legal-name maker-checker refusals.</summary>
+    public const string LegalNameUnchanged = "legal_name_unchanged";
+
+    public const string LegalNameChangePending = "legal_name_change_pending";
+
+    public const string LegalNameChangeNotPending = "legal_name_change_not_pending";
+
+    public const string LegalNameChangeStale = "legal_name_change_stale";
+
+    public const string LegalNameSelfDecision = "legal_name_self_decision";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -260,6 +286,11 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.SuccessionAlreadyRecorded => SuccessionAlreadyRecorded,
             CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired =>
                 DeactivationWarningAcknowledgementRequired,
+            CounterpartyCommandResult.LegalNameUnchanged => LegalNameUnchanged,
+            CounterpartyCommandResult.LegalNameChangePending => LegalNameChangePending,
+            CounterpartyCommandResult.LegalNameChangeNotPending => LegalNameChangeNotPending,
+            CounterpartyCommandResult.LegalNameChangeStale => LegalNameChangeStale,
+            CounterpartyCommandResult.LegalNameSelfDecision => LegalNameSelfDecision,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

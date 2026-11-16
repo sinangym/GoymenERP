@@ -15,7 +15,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 /// KLN-D38 (Sinan, 2026-11-14) VKN/TCKN change flow, Counterparty side.
 /// <list type="bullet">
 /// <item><b>Dated identity</b>: the tax-identity first entry and approved correction (AT-009 / CARI-DEC-004), the legal
-/// name change (ALS-D95) and the e-belge status check (SAT-D119) append a dated revision in the SAME save as the change.
+/// name change approval (ALS-D111/D113) and the e-belge status check (SAT-D119) append a dated revision in the SAME save as the change.
 /// History begins lazily: the value on file before the first dated change is written as an undated baseline in that same
 /// save (the migration backfills nothing).</item>
 /// <item><b>Succession</b>: a new legal person gets a new cari; <see cref="RecordPartySuccessionAsync"/> makes the old

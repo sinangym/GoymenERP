@@ -347,8 +347,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261115160755_AddCounterpartyIdentityHistoryAndSuccession",
             dbContext.Database.GetMigrations());
+        Assert.Contains(
+            "20261115165158_AddCounterpartyPartyMerge",
+            dbContext.Database.GetMigrations());
         Assert.EndsWith(
-            "_AddCounterpartyPartyMerge",
+            "_AddCounterpartyLegalNameChangeRequests",
             dbContext.Database.GetMigrations().Last(),
             StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
@@ -687,6 +690,76 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             migration.DownOperations,
             operation => operation is DropColumnOperation { Name: "MergedIntoPartyId", Table: "Parties" });
+    }
+
+    [Fact]
+    public void Legal_name_change_request_is_company_scoped_with_one_pending_slot_and_the_maker_checker_checks()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var request = dbContext.Model.FindEntityType(typeof(PartyLegalNameChangeRequest))!;
+        Assert.Equal("counterparty", request.GetSchema());
+        Assert.Equal("PartyLegalNameChangeRequests", request.GetTableName());
+        Assert.NotNull(request.GetDeclaredQueryFilters().SingleOrDefault());
+        var pending = Assert.Single(request.GetIndexes(), index => index.GetDatabaseName() == "UX_PartyLegalNameChangeRequests_Pending");
+        Assert.True(pending.IsUnique);
+        Assert.Equal("[Status] = N'Pending'", pending.GetFilter());
+        Assert.Equal(
+            new[] { nameof(PartyLegalNameChangeRequest.CompanyId), nameof(PartyLegalNameChangeRequest.PartyId) },
+            pending.Properties.Select(property => property.Name));
+        var checks = request.GetCheckConstraints().Select(check => check.Name).ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("CK_PartyLegalNameChangeRequests_Status", checks);
+        Assert.Contains("CK_PartyLegalNameChangeRequests_Names", checks);
+        Assert.Contains("CK_PartyLegalNameChangeRequests_Decision", checks);
+        Assert.Contains("CK_PartyLegalNameChangeRequests_Text", checks);
+        Assert.Contains(
+            "<> [RequestedBy]",
+            request.GetCheckConstraints().Single(check => check.Name == "CK_PartyLegalNameChangeRequests_Decision").Sql,
+            StringComparison.Ordinal);
+        Assert.True(request.FindProperty(nameof(PartyLegalNameChangeRequest.Version))!.IsConcurrencyToken);
+        Assert.Equal(Party.LegalNameMaximumLength, request.FindProperty(nameof(PartyLegalNameChangeRequest.ProposedLegalName))!.GetMaxLength());
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_a_legal_name_change_request_of_another_company_before_the_database_call()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        dbContext.PartyLegalNameChangeRequests.Add(new PartyLegalNameChangeRequest(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Eski Unvan", "Yeni Unvan", 1, "Sicil değişikliği",
+            "unit-maker", DateTimeOffset.UtcNow));
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("aktif şirket", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_to_delete_or_rewrite_a_legal_name_change_request()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var request = new PartyLegalNameChangeRequest(
+            Guid.NewGuid(), companyId, Guid.NewGuid(), "Eski Unvan", "Yeni Unvan", 1, "Sicil değişikliği",
+            "unit-maker", DateTimeOffset.UtcNow);
+        dbContext.PartyLegalNameChangeRequests.Attach(request);
+        dbContext.Entry(request).Property(x => x.ProposedLegalName).CurrentValue = "Başka Unvan";
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.Entry(request).State = EntityState.Deleted;
+        var deleted = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("silinemez", deleted.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Legal_name_change_migration_Up_is_pure_DDL_and_its_Down_first_refuses_while_requests_exist()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddCounterpartyLegalNameChangeRequests();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51847", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[PartyLegalNameChangeRequests]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains(
+            migration.DownOperations,
+            operation => operation is DropTableOperation { Name: "PartyLegalNameChangeRequests", Schema: "counterparty" });
     }
 
     private static (Party Survivor, Party Duplicate) AttachedPair(CounterpartyDbContext dbContext, int sequence)
