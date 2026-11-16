@@ -523,4 +523,3 @@ history with a single legacy close per order remains reversible. Registration ad
 Pending/unreadable results carry no fictional money; later recognition retains the generation identity and appends a revision.
 Reopening records the Inventory owner's exact reversal before a second close creates a new generation.
 Down guard **51960** refuses while any generation history exists (forward fix); an empty table may be dropped.
-
