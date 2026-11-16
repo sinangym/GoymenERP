@@ -1,5 +1,16 @@
 # TREN-1 W8 — Alış / Cari
 
+## ALC-S14 — B-16, ALS-D24/D28
+
+V2 tedarikçi portu gerçek Cari `Tolling` bayrağını ve şirket/cari/hesap sürümlerini
+korur; V1 şekli değişmez. Ödeme vadesi kullanıcının ALS-D24/D28 kararıyla siparişe
+özgüdür; Cari varsayılanı üretilmez. Rol matrisi, aktör/şirket erişim kaybı ve gerçek
+SQL owner okumasında taze rol/yabancı hesap ayrımı için test kaynakları eklendi.
+Yeni migration veya izin yok. Host entegrasyonunda
+`IPurchasingPartyAccountPortV2 → CounterpartyPurchasingPartyAccountPortV1` kaydı
+eklenecek. Bu checkpoint'in derlemesi ortak .NET sırasını bekliyor; runtime
+testler **NOT_RUN**, entegrasyon doğrulanmadan dilim DONE sayılmadı.
+
 Bu son paket mevcut 174 dilim kapsamındadır; yeni dalga veya iş politikası açmaz.
 ALC-S6 **PARTIAL**: tek-kabul ve çok-kabul owner zincirleri yazıldı. Batch genel
 satır başına tek net etki ve sipariş başına tek sürüm uygular. Bildirim alıcı owner

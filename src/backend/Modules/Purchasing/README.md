@@ -1,5 +1,16 @@
 # Purchasing (PUR-1 … PUR-4a, goods receipt and AT-025 — the implemented slices of T08)
 
+## ALC-S14 account contract v2 (source checkpoint)
+
+`IPurchasingPartyAccountPortV2` extends the authorized Counterparty owner projection with its
+actual `Tolling` flag while keeping v1 unchanged. It does not assign roles. B-16's payment-terms
+item is governed by ALS-D24/D28: terms are chosen per order, never a party-level default or an
+implied zero-day term. `PaymentTermsScope = OrderSpecific` makes that distinction explicit.
+The caller/company fences and exact party-account ownership apply to both versions. Unit and
+real SQL test sources cover role combinations, fresh stored changes and foreign-account refusal;
+runtime acceptance is pending the final train verification. V2 host registration is recorded in
+the W8 integration handoff.
+
 ## Current state (2026-11-02)
 
 This section is the current summary; the sections below it are the slice history and are kept as written, with
