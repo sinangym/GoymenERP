@@ -73,6 +73,14 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryAverageCostReadPortV1, InventoryAverageCostReadPort>();
         // SAT-D272 / SAT-D347 / SAT-D350 (STK-S35): the company-wide (all locations) average; the aggregation is Inventory's.
         services.AddScoped<IInventoryCompanyWideAverageCostReadPortV1, InventoryCompanyWideAverageCostReadPort>();
+        // KLN-D85 (STK-SC33-a): the same figure in another unit, over the Settings unit conversion policy. Without the Settings
+        // ports or a kilograms-per-unit adapter (the host's, over the Product owner's answer) the conversion is refused.
+        services.TryAddScoped<IInventoryKilogramsPerUnitSourceV1, NoSourceInventoryKilogramsPerUnitSourceV1>();
+        services.AddScoped<IInventoryAverageCostUnitReadPortV1>(serviceProvider => new InventoryAverageCostUnitReadPort(
+            serviceProvider.GetRequiredService<IInventoryCompanyWideAverageCostReadPortV1>(),
+            serviceProvider.GetService<ISettingsUnitIdentityCatalogV1>(),
+            serviceProvider.GetService<ISettingsUnitConversionPolicyProviderV1>(),
+            serviceProvider.GetRequiredService<IInventoryKilogramsPerUnitSourceV1>()));
         // STK-S35: the ledger's only writer. No movement path calls it until the purchase price input has a port (SAT-D295).
         services.AddScoped<InventoryAverageCostLedgerWriter>();
         services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();

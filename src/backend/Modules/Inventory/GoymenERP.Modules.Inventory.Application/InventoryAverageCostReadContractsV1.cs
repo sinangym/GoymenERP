@@ -10,7 +10,10 @@ public static class InventoryAverageCostReadContractV1
 {
     public const int Version = 1;
 
-    /// <summary>The cost is per stock kilogram. Any other unit is a NEEDS-SINAN conversion: no value is given for it.</summary>
+    /// <summary>
+    /// The cost is per stock kilogram. KLN-D85: another unit (piece, metre…) is read through
+    /// <see cref="IInventoryAverageCostUnitReadPortV1"/> over the Settings unit conversion policy; this read never converts.
+    /// </summary>
     public const string CostUnit = "kg";
 
     /// <summary>The cost basis: purchase receipts only (SAT-D263); no second cost type is added.</summary>

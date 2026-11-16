@@ -1,7 +1,7 @@
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
-/// SAT-D272 / SAT-D347 / SAT-D350 (STK-S35): the company-wide (all locations) on-hand-kg-weighted moving-average purchase
+/// SAT-D272 / SAT-D347 / SAT-D350 / KLN-D83 / KLN-D84 (STK-S35, STK-SC33-a): the company-wide (all locations) on-hand-kg-weighted moving-average purchase
 /// cost of one product, owned and computed by Inventory. Sales orders carry no location (SAT-D272 (1)), so Sales reads this
 /// answer for its margin preview and approval snapshot and never combines location reads itself (SAT-D262 (3), SAT-D347).
 /// Statuses and unreadable codes are those of the location read (<see cref="InventoryAverageCostReadStatusV1"/>,
@@ -19,8 +19,10 @@ public static class InventoryCompanyWideAverageCostReadContractV1
     public const string CostBasis = InventoryAverageCostReadContractV1.CostBasis;
 
     /// <summary>
-    /// SAT-D347 / SAT-D350: every location of the company with stock of the product, weighted by its on-hand kilograms;
-    /// a location without stock is left out; one unreadable location makes the answer unreadable (no partial average).
+    /// SAT-D347 / SAT-D350: every location of the company with stock of the product, weighted by its on-hand kilograms of
+    /// the company's own goods it holds (KLN-D84: consignment and subcontractor stock do not weigh); a location without
+    /// stock is left out; one location with stock that is unreadable or has no cost source makes the answer unreadable
+    /// ("hesaplanamadı", KLN-D83; no partial average).
     /// </summary>
     public const string Aggregation = "all-locations-on-hand-kg-weighted";
 
@@ -39,8 +41,8 @@ public static class InventoryCompanyWideAverageCostReadContractV1
 }
 
 /// <summary>
-/// One location that holds stock of the product and therefore takes part in the answer: its company-owned on-hand
-/// kilograms and the ledger row version it was read at (<c>null</c> when the ledger has no row for stock that is there).
+/// One location that holds stock of the product and therefore takes part in the answer: the on-hand kilograms of the
+/// company's own goods it holds (KLN-D84) and the ledger row version it was read at (<c>null</c> when the ledger has no row for stock that is there).
 /// A snapshot may record the list as the answer's source marker.
 /// </summary>
 public sealed record InventoryCompanyWideAverageCostSourceV1
@@ -201,7 +203,8 @@ public sealed record InventoryCompanyWideAverageCostReadAnswerV1
 
 /// <summary>
 /// Read port V1, owned and implemented by Inventory (registered in its module): the company-wide moving-average purchase
-/// cost per stock kilogram of one product of the server-resolved company (SAT-D272, SAT-D347, SAT-D350). It carries no
+/// cost per stock kilogram of one product of the server-resolved company (SAT-D272, SAT-D347, SAT-D350, KLN-D83, KLN-D84).
+/// Another unit is read through <see cref="IInventoryAverageCostUnitReadPortV1"/> (KLN-D85). It carries no
 /// authority (the consumer fences before and after), reads only the resolved company's own company-filtered ledger and
 /// balances, creates nothing (no attempt, audit, movement or version effect) and never throws for a missing figure: that
 /// is <see cref="InventoryAverageCostReadStatusV1.NoSource"/>. Another company's rows are invisible. An unresolved company

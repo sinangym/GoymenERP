@@ -7,10 +7,11 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// SAT-D272 / SAT-D347 / SAT-D350 (STK-S35) over real SQL: the company-wide port weights every stocked location of the
-/// resolved company by its company-owned on-hand kilograms, leaves a location without stock out, fails closed for one
-/// stocked location it cannot read (unreadable ledger, no ledger row, or a ledger quantity other than the stock), and never
-/// sees another company's stock or ledger. The ledger writer stages receipts, issues and transfers (SAT-D260: at the source
+/// SAT-D272 / SAT-D347 / SAT-D350 (STK-S35) and KLN-D83 / KLN-D84 (STK-SC33-a) over real SQL: the company-wide port weights
+/// every stocked location of the resolved company by the on-hand kilograms of the company's own goods it holds itself
+/// (consignment a counterparty owns and the company's goods held at a fason supplier do not weigh), leaves a location
+/// without stock out, answers "hesaplanamadı" for one stocked location it cannot read (unreadable ledger, no ledger row, or
+/// a ledger quantity other than the stock), and never sees another company's stock or ledger. The ledger writer stages receipts, issues and transfers (SAT-D260: at the source
 /// average) in the caller's context and persists nothing until that caller's single save, moving a row's version once per
 /// save. SENTETIK data only.
 /// </summary>
@@ -96,6 +97,44 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Average_cost_company_wide_weight_counts_only_company_owned_stock_the_company_holds()
+    {
+        await using var run = await Run.StartAsync();
+        var first = await run.LocationOfAsync(CompanyA);
+        var second = await CompanyWideLocationAsync(run, CompanyA, 1);
+        var product = Guid.NewGuid();
+        var supplier = Guid.NewGuid();
+        var consignor = Guid.NewGuid();
+
+        // KLN-D84: the company's own goods it holds weigh; the ledger covers exactly those 10 kg.
+        await SeedCompanyWideStockAsync(run, CompanyA, first, product, CompanyOwner, CompanyA, FreeBlock, 10m);
+        await InsertKnownAverageCostAsync(run, CompanyA, first, product, 10m, 10m);
+
+        // The company's goods held at a fason supplier do not weigh: counted, they would make the 10 kg ledger a mismatch.
+        await SeedCompanyWideHeldStockAsync(
+            run, CompanyA, first, product, CompanyOwner, CompanyA, CounterpartyCustodian, supplier, FreeBlock, 7m);
+
+        // A location holding only fason and consignment stock is no cost source: counted, it would be uncosted stock.
+        await SeedCompanyWideHeldStockAsync(
+            run, CompanyA, second, product, CompanyOwner, CompanyA, CounterpartyCustodian, supplier, FreeBlock, 5m);
+        await SeedCompanyWideHeldStockAsync(
+            run, CompanyA, second, product, CounterpartyOwner, consignor, CompanyCustodian, CompanyA, FreeBlock, 8m);
+
+        var known = await CompanyWideReadAsync(run, CompanyA, product);
+        Assert.Equal((InventoryAverageCostReadStatusV1.Value, 10m, null, 10m),
+            (known.Status, known.AverageCostPerKg, known.UnreadableCode, known.OnHandKg));
+        Assert.Equal([first], known.Sources.Select(source => source.LocationId));
+
+        // KLN-D83: once the company holds its own uncosted goods at the second location the company-wide figure is
+        // "hesaplanamadı" (no partial average over the readable location), naming that location.
+        await SeedCompanyWideStockAsync(run, CompanyA, second, product, CompanyOwner, CompanyA, BlockedBlock, 3m);
+        var unreadable = await CompanyWideReadAsync(run, CompanyA, product);
+        Assert.Equal((InventoryAverageCostReadStatusV1.Unreadable, null, "uncosted_stock_on_hand", second, 13m),
+            (unreadable.Status, unreadable.AverageCostPerKg, unreadable.UnreadableCode, unreadable.UnreadableLocationId,
+                unreadable.OnHandKg));
+    }
+
+    [SqlServerFact]
     public async Task Average_cost_ledger_writer_stages_receipts_issues_and_transfers_in_the_callers_single_save()
     {
         await using var run = await Run.StartAsync();
@@ -176,6 +215,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private const int CounterpartyOwner = 2;
     private const int FreeBlock = 1;
     private const int BlockedBlock = 2;
+    private const int CompanyCustodian = 1;
+    private const int CounterpartyCustodian = 2;
 
     private static InventoryAverageCostLedgerWriter LedgerWriter(InventoryDbContext context, Guid company)
     {
@@ -200,9 +241,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT Id FROM organization.Locations WHERE CompanyId = @company ORDER BY Id OFFSET @offset ROWS FETCH NEXT 1 ROWS ONLY",
             ("@company", company), ("@offset", offset));
 
-    /// <summary>One lot, label and balance of the product at the location, written straight to SQL (synthetic stock).</summary>
+    /// <summary>One lot, label and balance of the product the company holds itself at the location (synthetic stock).</summary>
     private static Task SeedCompanyWideStockAsync(
         Run run, Guid company, Guid location, Guid product, int ownerKind, Guid owner, int block, decimal quantityKg) =>
+        SeedCompanyWideHeldStockAsync(
+            run, company, location, product, ownerKind, owner, CompanyCustodian, company, block, quantityKg);
+
+    /// <summary>One lot, label and balance of the product at the location, written straight to SQL (synthetic stock).</summary>
+    private static Task SeedCompanyWideHeldStockAsync(
+        Run run, Guid company, Guid location, Guid product, int ownerKind, Guid owner, int custodianKind, Guid custodian,
+        int block, decimal quantityKg) =>
         run.ExecuteAsync(
             """
             DECLARE @lot uniqueidentifier = NEWID(), @label uniqueidentifier = NEWID();
@@ -215,10 +263,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
             INSERT INTO inventory.Balances
                 (Id, CompanyId, OwnerKind, OwnerId, CustodianKind, CustodianId, LocationId, LabelId, ProductId, Block, QuantityKg)
-            VALUES (NEWID(), @company, @ownerKind, @owner, 1, @company, @location, @label, @product, @block, @quantity);
+            VALUES (NEWID(), @company, @ownerKind, @owner, @custodianKind, @custodian, @location, @label, @product, @block, @quantity);
             """,
             ("@company", company), ("@location", location), ("@product", product), ("@ownerKind", ownerKind),
-            ("@owner", owner), ("@block", block), ("@quantity", quantityKg), ("@at", At));
+            ("@owner", owner), ("@custodianKind", custodianKind), ("@custodian", custodian), ("@block", block),
+            ("@quantity", quantityKg), ("@at", At));
 
     private static Task<int> LedgerRowCountAsync(Run run, Guid product) =>
         run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.AverageCostLedger WHERE ProductId = @product", ("@product", product));

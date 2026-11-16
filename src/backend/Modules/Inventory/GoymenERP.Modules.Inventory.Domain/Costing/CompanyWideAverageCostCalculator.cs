@@ -1,8 +1,8 @@
 namespace GoymenERP.Modules.Inventory.Domain.Costing;
 
 /// <summary>
-/// One location's share of the company-wide average: Inventory's company-owned physical stock of the product at the
-/// location (<see cref="OnHandKg"/>) and the location's moving-average position (<c>null</c> when the ledger never saw it).
+/// One location's share of the company-wide average: the company's own goods of the product it holds at the location
+/// (<see cref="OnHandKg"/>; KLN-D84: consignment ("emanet") and subcontractor ("fason") stock are not part of it) and the location's moving-average position (<c>null</c> when the ledger never saw it).
 /// </summary>
 public sealed record CompanyWideAverageCostLocation(Guid LocationId, decimal OnHandKg, AverageCostPosition? Position);
 
@@ -11,7 +11,10 @@ public enum CompanyWideAverageCostStatus
     /// <summary>Every location with stock has a readable average that covers its whole stock.</summary>
     Known = 1,
 
-    /// <summary>At least one location with stock cannot be read. No partial average is given (SAT-D347, SAT-D350).</summary>
+    /// <summary>
+    /// At least one location with stock cannot be read or has no cost source: the company-wide figure is "hesaplanamadı"
+    /// and no partial average is given (KLN-D83; SAT-D347, SAT-D350).
+    /// </summary>
     Unreadable = 2,
 
     /// <summary>No location holds stock of the product, so no location is a cost source (SAT-D347 implementation detail).</summary>
@@ -31,20 +34,21 @@ public sealed record CompanyWideAverageCostResult(
     IReadOnlyList<CompanyWideAverageCostLocation> Included);
 
 /// <summary>
-/// SAT-D272 / SAT-D347 / SAT-D350: the company-wide (all locations) on-hand-kg-weighted moving-average purchase cost of one
+/// SAT-D272 / SAT-D347 / SAT-D350 / KLN-D83 / KLN-D84: the company-wide (all locations) on-hand-kg-weighted moving-average purchase cost of one
 /// product. The aggregation rule lives here, in Inventory's own deterministic core; Sales never combines location reads.
 /// Pure: no clock, no storage, no company or role.
 /// <list type="bullet">
-/// <item>The weight is each location's on-hand kilograms. A location without stock is left out of the weight, whatever its
+/// <item>The weight is each location's on-hand kilograms of the company's own goods (KLN-D84; the caller gathers only
+/// that stock). A location without stock is left out of the weight, whatever its
 /// ledger says (SAT-D347: a location without a cost source is the stock-0 location).</item>
 /// <item>No location with stock: <see cref="CompanyWideAverageCostStatus.NoSource"/> (SAT-D347 implementation detail,
 /// reversible).</item>
-/// <item>One location with stock that cannot be read makes the whole answer
-/// <see cref="CompanyWideAverageCostStatus.Unreadable"/>; no partial average (SAT-D347, SAT-D350). A location with stock but
-/// no ledger position, or whose known position covers a different quantity than its stock, holds kilograms the ledger never
-/// costed: it reads as <see cref="AverageCostUnreadableReason.LedgerStockMismatch"/> (fail-closed author reading of
-/// "a location without a cost source has no stock"; reversible, reported as NEEDS-SINAN). When several locations cannot be
-/// read, the first in location-id order names the reason, so the answer is deterministic.</item>
+/// <item>KLN-D83: one location with stock that cannot be read or has no cost source makes the whole answer
+/// <see cref="CompanyWideAverageCostStatus.Unreadable"/> ("hesaplanamadı", fail-closed); no partial average (SAT-D347,
+/// SAT-D350). A location with stock but no ledger position, or whose known position covers a different quantity than its
+/// stock, holds kilograms the ledger never costed: it reads as <see cref="AverageCostUnreadableReason.LedgerStockMismatch"/>.
+/// When several locations cannot be read, the first in location-id order names the reason, so the answer is
+/// deterministic.</item>
 /// <item>Otherwise <c>round4(Σ(kgᵢ·aᵢ) / Σkgᵢ)</c>, rounded once at the internal scale, AwayFromZero (SAT-D265 (2)).</item>
 /// </list>
 /// </summary>
