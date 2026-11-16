@@ -40,6 +40,9 @@ Dar kaynak incelemesinin P2 bulgusu da düzeltildi: daha zayıf borrowed transac
 reddedildiğinde callback başlamadıysa caller'ın tracker'ı veya ortak pending Audit'i
 temizlenmez. Gerçek SQL kaynak fact'i caller transaction'ının çalışmaya devam ettiğini,
 tracked kaydın ve pending Audit'in korunduğunu arar; koşumu NOT_RUN.
+Audit owner'ın dar `HasPendingDrafts` okuması varsa önceki caller taslağı bulunan yeni
+deneme callback başlamadan reddedilir. Replay/iş kuralı reddi de başka caller'ın audit'ini
+temizleyemez; korumalı borrowed transaction ile ayrı gerçek SQL kaynak fact'i eklendi.
 Şirket/aktör/yetki her mevcut çitte, hatadan sonra ve save öncesinde yeniden ölçülür.
 Yeni raw SQL, bypass, migration, THROW, izin, grant veya rol ataması yoktur.
 
@@ -59,6 +62,7 @@ taslakları iptal edilen denemeden temizlemek için üretim factory'lerine bağl
   Ek iki kaynak: `Partial_SQL_save_failure_rolls_back_the_ledger_audit_and_key_before_retry`
   ve `Partial_SQL_save_failure_rolls_back_the_ledger_audit_and_key_even_with_MARS`.
   Beşinci kaynak `Refusing_a_weaker_borrowed_transaction_preserves_the_callers_tracking_and_pending_audit`.
+  Altıncı kaynak `Refusing_a_protected_attempt_with_existing_audit_preserves_the_callers_pending_batch`.
   İkisi de gerçek canonical debit UPDATE çalıştıktan sonra sentetik EF hatası üretir;
   kayıt/anahtar/audit rollback'ini ve aynı anahtarın sonraki başarı/replay'ini arar.
   Gerçek bakiye/transaction kullanılır; yetki, hassasiyet profili ve dönem portları açıkça

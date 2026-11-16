@@ -14,6 +14,8 @@ internal sealed class AuditTransactionWriterV1(
     ICompanyContext companyContext,
     IServiceScopeFactory scopeFactory) : IAuditTransactionWriterV1
 {
+    public bool HasPendingDrafts => collector.Pending.Count != 0;
+
     public async Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default)
     {
         try

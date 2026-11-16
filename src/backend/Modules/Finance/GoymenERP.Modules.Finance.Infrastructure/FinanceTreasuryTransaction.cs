@@ -27,7 +27,8 @@ internal static class FinanceTreasuryTransaction
         IAuditTransactionWriterV1? auditOwner, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (dbContext.ChangeTracker.HasChanges()) return await unavailable();
+        if (dbContext.ChangeTracker.HasChanges() || auditOwner is { HasPendingDrafts: true })
+            return await unavailable();
         var attempt = new object();
         if (!ReferenceEquals(ActiveAttempts.GetValue(dbContext, _ => attempt), attempt)) return await unavailable();
         IDbContextTransaction? transaction = null;

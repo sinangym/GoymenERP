@@ -18,15 +18,22 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
-    public async Task Refusing_a_weaker_borrowed_transaction_preserves_the_callers_tracking_and_pending_audit()
+    public Task Refusing_a_weaker_borrowed_transaction_preserves_the_callers_tracking_and_pending_audit() =>
+        AssertBorrowedRefusalPreservesCallerAsync(IsolationLevel.ReadCommitted, pendingAudit: false);
+
+    [SqlServerFact]
+    public Task Refusing_a_protected_attempt_with_existing_audit_preserves_the_callers_pending_batch() =>
+        AssertBorrowedRefusalPreservesCallerAsync(IsolationLevel.Serializable, pendingAudit: true);
+
+    private static async Task AssertBorrowedRefusalPreservesCallerAsync(IsolationLevel isolation, bool pendingAudit)
     {
         await using var run = await Run.StartAsync();
         var bank = await run.ApprovedBankAccountAsync(CompanyA, "SENTETIK borrowed bank");
         await using var scope = run.OpenLedger(CompanyA, Recorder);
         var db = scope.Db;
         var tracked = await db.BankAccounts.SingleAsync(row => row.Id == bank);
-        await using var caller = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
-        var audit = new UntouchedCallerAudit();
+        await using var caller = await db.Database.BeginTransactionAsync(isolation);
+        var audit = new UntouchedCallerAudit(pendingAudit);
         var operationCalled = false;
 
         var answer = await FinanceTreasuryTransaction.ExecuteAsync(db, () =>
@@ -39,19 +46,19 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         Assert.False(operationCalled);
         Assert.Same(caller, db.Database.CurrentTransaction);
         Assert.Contains(db.ChangeTracker.Entries<BankAccountRow>(), entry => ReferenceEquals(entry.Entity, tracked));
-        Assert.True(audit.HasPending);
+        Assert.Equal(pendingAudit, audit.HasPendingDrafts);
         Assert.Equal(0, audit.DiscardCalls);
         Assert.Equal(42, await db.Database.SqlQuery<int>($"SELECT CAST(42 AS int) AS [Value]").SingleAsync());
         await caller.CommitAsync();
     }
 
-    private sealed class UntouchedCallerAudit : IAuditTransactionWriterV1
+    private sealed class UntouchedCallerAudit(bool pending) : IAuditTransactionWriterV1
     {
-        public bool HasPending { get; private set; } = true;
+        public bool HasPendingDrafts { get; private set; } = pending;
         public int DiscardCalls { get; private set; }
         public Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The refused Finance attempt must not write the caller's audit.");
-        public void DiscardPending() { DiscardCalls++; HasPending = false; }
+        public void DiscardPending() { DiscardCalls++; HasPendingDrafts = false; }
     }
 
     /// <summary>Real internal ledger and real SQL transaction; permission, profile and period remain explicit synthetic seams.</summary>

@@ -109,6 +109,8 @@ public sealed class SettingsSalesContractDiscountLimitSqlServerRelationalAccepta
     private sealed class OwnerFault { public bool Fail { get; set; } = true; public int Calls { get; set; } }
     private sealed class FaultingOwner(IAuditTransactionWriterV1 inner, OwnerFault fault) : IAuditTransactionWriterV1
     {
+        public bool HasPendingDrafts => inner.HasPendingDrafts;
+
         public async Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default)
         {
             await inner.WritePendingAsync(transaction, cancellationToken); fault.Calls++;
