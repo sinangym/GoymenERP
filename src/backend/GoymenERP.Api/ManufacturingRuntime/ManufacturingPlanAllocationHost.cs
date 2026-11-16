@@ -264,7 +264,7 @@ internal sealed class ManufacturingPlanAllocationHost(
                 _ => ManufacturingApiStatus.Unavailable,
             }, exception.Status == 404
                 ? ManufacturingPlanAllocationCodesV1.LabelNotFound
-                : exception.Code);
+                : exception.Code, planAllocationShortfall: MapPlanAllocationShortfall(companyId, planId, exception));
         }
         catch (ManufacturingPlanAllocationHostException exception)
         {
@@ -282,6 +282,14 @@ internal sealed class ManufacturingPlanAllocationHost(
             manufacturing.ChangeTracker.Clear();
         }
     }
+
+    internal static ManufacturingPlanAllocationShortfallV1? MapPlanAllocationShortfall(Guid companyId, Guid planId,
+        InventoryManufacturingRealizationException exception) =>
+        exception.Status == 409 && exception.Code == InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock
+            && exception.PlanAllocationShortfall is { } detail && detail.CompanyId == companyId && detail.PlanId == planId
+            ? new ManufacturingPlanAllocationShortfallV1(detail.CompanyId, detail.PlanId, detail.LabelId, detail.ProductId,
+                detail.LabelVersion, detail.RequestedKg, detail.AvailableKg, detail.MissingKg, detail.FreePositionCount)
+            : null;
 
     private async Task RollbackAsync(IDbContextTransaction transaction, bool committed, Exception attempt)
     {

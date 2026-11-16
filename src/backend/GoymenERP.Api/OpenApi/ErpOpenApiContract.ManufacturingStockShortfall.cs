@@ -8,6 +8,15 @@ public static partial class ErpOpenApiContract
 {
     private const string RemnantClassificationProperty = "remnantClassification";
 
+    public static RouteHandlerBuilder ProducesManufacturingPlanAllocationConflict(
+        this RouteHandlerBuilder builder, params string[] stableCodes)
+    {
+        if (stableCodes.Length == 0) throw new InvalidOperationException("A plan-allocation conflict requires stable codes.");
+        builder.Produces<ManufacturingPlanAllocationConflictProblemContract>(StatusCodes.Status409Conflict, "application/problem+json");
+        AddProblemCodeMetadata(builder, StatusCodes.Status409Conflict, stableCodes);
+        return builder;
+    }
+
     /// <summary>
     /// SAT-D318 (owner decision of 2026-11-13): the input issue's 409 is the shared coded problem plus an optional
     /// <c>stockShortfall</c> member. Same status, same stable codes as <see cref="ProducesErpConflict"/>; only the
@@ -43,6 +52,20 @@ public static partial class ErpOpenApiContract
                 + "inventory_manufacturing_physical_stock_insufficient refusal that Inventory attributed to this "
                 + "issue, and absent on every other code, on a replayed or stored answer and from older servers. "
                 + "No problem response establishes success or current authority.";
+        }
+        else if (type == typeof(ManufacturingPlanAllocationConflictProblemContract))
+        {
+            SetIntegerProperty(schema, "status", nullable: false);
+            schema.Description = "The approval/reapproval 409 problem, with unchanged stable codes. "
+                + "planAllocationShortfall is optional and appears only for a fresh Inventory insufficient-free-stock "
+                + "refusal attributed to the authorized company and plan, after the attempted write was rolled back. "
+                + "It is absent from stored answers and replays; older servers may omit it.";
+        }
+        else if (type == typeof(ManufacturingPlanAllocationShortfallV1))
+        {
+            schema.Description = "Inventory's verified single-position refusal-time measurements, in canonical kilogram text. "
+                + "availableKg and missingKg are computed by Inventory; clients must not recompute them. "
+                + "This optional snapshot grants no authority and is not a current availability promise.";
         }
         else if (type == typeof(ManufacturingStockShortfallViewV1))
         {
@@ -96,4 +119,16 @@ public sealed class ManufacturingInputIssueConflictProblemContract
     public ErpVersionConflictContract? Conflict { get; init; }
 
     public ManufacturingStockShortfallViewV1? StockShortfall { get; init; }
+}
+
+public sealed class ManufacturingPlanAllocationConflictProblemContract
+{
+    public required string Type { get; init; }
+    public required string Title { get; init; }
+    public required int Status { get; init; }
+    public required string Detail { get; init; }
+    public required string Code { get; init; }
+    public string? CorrelationId { get; init; }
+    public ErpVersionConflictContract? Conflict { get; init; }
+    public ManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; init; }
 }
