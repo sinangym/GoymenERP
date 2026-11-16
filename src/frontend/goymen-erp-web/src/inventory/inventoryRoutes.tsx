@@ -3,6 +3,7 @@ import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
 import {
+  INVENTORY_LABEL_TRACE_ROUTE,
   INVENTORY_OPENING_CAPABILITY,
   INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_ROUTE,
@@ -10,6 +11,7 @@ import {
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
 } from './capabilities'
+import { InventoryLabelTracePage } from './InventoryLabelTracePage'
 import { InventoryMovementTimelinePage } from './InventoryMovementTimelinePage'
 import { InventoryOpeningCreatePage } from './InventoryOpeningCreatePage'
 import { InventoryOpeningDetailPage } from './InventoryOpeningDetailPage'
@@ -53,6 +55,14 @@ export const inventoryRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
         <InventoryShortageWarningPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: INVENTORY_LABEL_TRACE_ROUTE.slice(1),
+    element: (
+      <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+        <InventoryLabelTracePage />
       </CapabilityRoute>
     ),
   },

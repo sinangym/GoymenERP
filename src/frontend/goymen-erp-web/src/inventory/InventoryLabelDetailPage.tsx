@@ -19,9 +19,11 @@ import {
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
+  inventoryLabelTracePath,
   inventoryOpeningDetailPath,
   movementTimelineEntryState,
 } from './capabilities'
+import { LABEL_TRACE_TEXT } from './labelTraceText'
 import { MOVEMENT_KIND_TEXT, MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
@@ -208,6 +210,13 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
             {MOVEMENT_TIMELINE_TEXT.entryLink}
           </Link>{' '}
           <span>{MOVEMENT_TIMELINE_TEXT.entryNote}</span>
+        </p>
+        : null}
+      {canReadLabel
+        ? <p data-label-trace-entry="">
+          <Link to={inventoryLabelTracePath(identity.labelId, 'forward')}>{LABEL_TRACE_TEXT.entryForward}</Link>{' '}
+          <Link to={inventoryLabelTracePath(identity.labelId, 'backward')}>{LABEL_TRACE_TEXT.entryBackward}</Link>{' '}
+          <span>{LABEL_TRACE_TEXT.entryNote}</span>
         </p>
         : null}
     </section>

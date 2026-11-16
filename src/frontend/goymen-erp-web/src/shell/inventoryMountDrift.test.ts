@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { matchPath, matchRoutes } from 'react-router'
 import {
+  INVENTORY_LABEL_TRACE_ROUTE,
   INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_CAPABILITY,
   INVENTORY_OPENING_ROUTE,
@@ -28,7 +29,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(7)
+    expect(inventoryRoutes).toHaveLength(8)
     // ST-04 company timeline: an owner route reached from a label detail under the SAME stock-positions
     // capability. It adds no capability, no sidebar entry and no CAPABILITY_ROUTE mapping of its own.
     expect(matchRoutes(inventoryRoutes, INVENTORY_MOVEMENT_TIMELINE_ROUTE)?.at(-1)?.route.path).toBe(
@@ -40,6 +41,11 @@ describe('shell ↔ Inventory opening-stock contract', () => {
       INVENTORY_SHORTAGE_WARNINGS_ROUTE.slice(1),
     )
     expect(Object.values(CAPABILITY_ROUTE)).not.toContain(INVENTORY_SHORTAGE_WARNINGS_ROUTE)
+    // STK-S33 label trace (KLN-D44): reached from a label detail under the SAME capability; no own entry or name.
+    expect(matchRoutes(inventoryRoutes, INVENTORY_LABEL_TRACE_ROUTE)?.at(-1)?.route.path).toBe(
+      INVENTORY_LABEL_TRACE_ROUTE.slice(1),
+    )
+    expect(Object.values(CAPABILITY_ROUTE)).not.toContain(INVENTORY_LABEL_TRACE_ROUTE)
     expect(matchRoutes(inventoryRoutes, '/stok/etiket/hareketler')?.at(-1)?.route.path).toBe(
       INVENTORY_LABEL_DETAIL_ROUTE.slice(1),
     )

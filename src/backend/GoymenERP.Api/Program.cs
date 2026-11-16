@@ -310,6 +310,14 @@ builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
 // R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
 builder.Services.AddInventoryLabelGenealogy();
+// STK-S33 (KLN-D44/KLN-D41): the cross-module label trace under the label-detail permissions (no new permission). The host
+// adapters of the production, party and supplier-search owners replace the trace's not-answered defaults, so they are added
+// before the trace's TryAdd registrations; Logistics answers a shipment line's customer through its own read port.
+builder.Services.AddScoped<IInventoryLabelTraceProductionSourceV1, InventoryLabelTraceProductionHostSource>();
+builder.Services.AddScoped<IInventoryLabelTracePartySourceV1, InventoryLabelTracePartyHostSource>();
+builder.Services.AddScoped<IInventoryLabelTraceSupplierSearchSourceV1, InventoryLabelTraceSupplierSearchHostSource>();
+builder.Services.AddLogisticsShipmentCustomerRead();
+builder.Services.AddInventoryLabelTrace();
 // Label classification is an Inventory-owned, versioned command. Central registers only the reviewed
 // permission identity and binds the existing scoped store/command; this grants no actor access.
 builder.Services.AddScoped(_ => new InventoryLabelClassificationAuthorityV1(
