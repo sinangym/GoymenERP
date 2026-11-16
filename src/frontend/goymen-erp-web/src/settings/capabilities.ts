@@ -46,6 +46,7 @@ export const SETTINGS_CAPABILITY = {
    * `settings.unit-profiles.manage` (company-wide, not Critical, granted to no role here).
    */
   unitProfiles: 'settings.unit-profiles.manage',
+  /**
    * URT-D89 (provider 1.5): route `/ayarlar/is-merkezi-kapasitesi`, the company's work center capacities (input kg/hour and
    * the optional safety buffer) on its own name `settings.work-center-capacities.manage` (company-wide, not Critical,
    * granted to no role here; the production manager is a persona note only).

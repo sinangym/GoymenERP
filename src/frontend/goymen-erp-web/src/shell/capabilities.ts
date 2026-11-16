@@ -325,6 +325,7 @@ export const CAPABILITY = {
    * one-time baseline transfer. Route `/ayarlar/birim-profilleri`, owner Settings 1.5; one non-Critical name, granted to no role here.
    */
   settingsUnitProfiles: 'settings.unit-profiles.manage',
+  /**
    * URT-D89 Ayarlar > İş merkezi kapasitesi: each work center's input capacity (kg/hour) and optional safety buffer
    * versions (no seed). Route `/ayarlar/is-merkezi-kapasitesi`, owner Settings 1.5; one non-Critical name, granted to no
    * role here.
