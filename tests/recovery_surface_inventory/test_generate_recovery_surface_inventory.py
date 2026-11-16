@@ -798,8 +798,8 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         # B-24: + work.OutboxDeliveries / work.OutboxSourceCursors (Work outbox dispatcher).
         # A3 API-30: + purchasing.PurchaseOrderLineDeliverySlices, a business table whose name matches "deliver".
         # F-029 S4b: + settings.SalesDeliveryToleranceVersions, a business table whose name matches "deliver".
-        # tren-1 W5 (integration): count follows EXPECTED_MESSAGE_DELIVERY_TABLES + NON_MESSAGE_DELIVERY_TABLES after the lane merges.
-        self.assertEqual(18, len(discovered))
+        # tren-1 W7: two setup inboxes and the physical Organization setup outbox are message surfaces.
+        self.assertEqual(21, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (

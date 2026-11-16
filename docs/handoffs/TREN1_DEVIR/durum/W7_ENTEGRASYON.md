@@ -88,7 +88,8 @@ Eski karar dosyaları yerinde değiştirilmedi; belge PR'ları kod kabulü deği
   Identity/Organization inbox ve Organization outbox fiziksel kaynakları kaydedildi;
   beklenen toplam **19 context, 258 migration, 56 durable store**. Organization outbox
   için üretim yazıcısı henüz yoktur; DDL/model/okuyucu kanıtı yazıcı diye gösterilmedi,
-  KIM-S5 PARTIAL kaldı. Risky source sayısı 1049; Audit 31 dosya.
+  KIM-S5 PARTIAL kaldı. Yeni writer kaydıyla üreticinin ölçtüğü risky source sayısı
+  1050 oldu; Audit 31 dosya.
   DispatchSourceAsync, eski altı blob ve gerçek yeni inbox/outbox yazıcıları üreticiyle
   yeniden ölçüldü. Envanter kaydı K3 onayı veya çalışma kabulü değildir.
 - Mimari guard: 28 mevcut fingerprint, iki mevcut GetDbConnection sayımı yeniden ölçüldü.
