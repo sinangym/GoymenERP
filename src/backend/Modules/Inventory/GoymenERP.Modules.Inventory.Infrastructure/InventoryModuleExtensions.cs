@@ -108,9 +108,11 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryFutureAllocationReleasePortV1, InventoryFutureAllocationReleasePort>();
         services.TryAddScoped<IInventoryFutureSupplyScheduleSourceV1, InventoryUnavailableFutureSupplyScheduleSourceV1>();
         services.AddScoped<IInventoryFutureDemandSourceV1, InventoryFutureDemandSource>();
-        // KLN-D66: over the Settings unit identities when the host has them (kg only today), identity-only otherwise.
+        // B-07 / KLN-D66: the Product owner source when composed by the host; legacy kg-only source remains fail-closed.
         services.TryAddScoped<IInventoryFutureUnitConverterV1>(serviceProvider =>
-            serviceProvider.GetService<ISettingsUnitIdentityCatalogV1>() is { } units
+            serviceProvider.GetService<IInventoryProductUnitConversionSourceV1>() is { } conversion
+                ? new InventoryProductFutureUnitConverterV1(conversion)
+                : serviceProvider.GetService<ISettingsUnitIdentityCatalogV1>() is { } units
                 ? (IInventoryFutureUnitConverterV1)new InventorySettingsFutureUnitConverterV1(units)
                 : new InventoryIdentityFutureUnitConverterV1());
         // F-017 STOK F017-c: the goods receipt host enlists this port in its own transaction (ALS-D84 order).

@@ -1,5 +1,15 @@
 # W8 Stok / Lojistik
 
+## STK-S11 — kaynak checkpoint, entegrasyon bekliyor
+
+- Kararlar: BS-9/13/16/17, URN-D8/D9, KLN-D66/D67/D88, DEC-PRD-006. Settings typed birim sahibi dar bağımlılık commit'i `15e06fcd9` ile alındı; kg/ton/metre/adet sınıfı kod veya addan tahmin edilmez.
+- Yeni `IProductPurchaseUnitConversionV1`: gerçek Ürün kartının birim referansları ve fiyat birimi, mevcut ebat satırı, şirketin ithal kg/m tablosu ve Settings'in gerçek tarihli yoğunluk/yuvarlama/tolerans politikasını okur. Formül ve ters yön mevcut deterministic calculator'dadır. Katsayı üretilirken bir kez yuvarlanır; kg→adet sonucu ve kalan kg ayrı taşınır. Kantar kontrolü teorik kg, mutlak fark ve kayıtlı sınır/taban ayarıyla aynı calculator'ı kullanır.
+- Boru/profilde şirket tablosu yoksa geometri tahmini yapılmaz. Boyut kaydı olmayan veya kaynak politikası/profili bulunmayan ürün açık NoSource'dur. Teknik bozuk/yabancı kaynak 503 anlamlı Unavailable'dır; kalıcı NoSource'a çevrilmez. Kart ve ebat kaynağı okuma sonunda yeniden ölçülür; her bekleme özgün actor/company üyelik çitini korur. Tüketici kendi komut iznini korur; ek Cari/Ürün operasyon izni getirilmez.
+- Inventory consumer/host adapter bu gerçek owner portunu kullanır. KLN-D67 gereğince ürün kimliği esas alınır; Sales/Purchasing satırlarının farklı tarihsel kart sürümleri aynı ürün kimliğini bozmaz. Host başka company veya ürün cevabını kabul etmez. Merkezi entegrasyon kayıtları: `AddProductPurchaseUnitConversion` mevcut Ürün runtime koşuluyla; `IInventoryProductUnitConversionSourceV1` → `ProductOwnerInventoryUnitConversionSource`.
+- Yeni company unit profile, seed, grant veya aktivasyon yoktur. Global typed unit semantiği company kullanım profili yerine geçmez; gerçek company profili yoksa NoSource korunur. Bu, insan veri/aktivasyon kapısıdır; sahte kullanılabilirlik değildir.
+- Birim ve V1 sözleşme test kaynakları; gerçek SQL Product kartı + ebat okuyucusu + gerçek typed unit kimlikleriyle source fact yazılmıştır. SQL fact'te company unit profile ve yoğunluk politikası açıkça sentetik owner cevaplarıdır; Settings SQL/izin kabulü yerine geçmez. Test/SQL/browser/Vitest/CI koşumları **NOT_RUN**. Product.UnitTests, Inventory.UnitTests ve Api.IntegrationTests (API dahil) final kaynak derlemeleri **exit 0, 0 uyarı/hata**. İlk Product test derlemesindeki iki `Version` ad belirsizliği açık kaynak adıyla düzeltildi; tekrar derlemesi yeşildir. Ham kayıtlar depodışındadır.
+
+
 ## STK-S19 — PARTIAL
 
 - Kararlar/spec: STOK F017 §3.7, ALIS F017 §3.7–3.8; ALS-D86, ALS-D91, ALS-D92, ALS-D93; 7B kısmi yeniden açma kararı.
