@@ -143,7 +143,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Null(rated.UnavailableReason);
         Assert.Equal(((Guid?)OrderExchangeRateCurrency, "USD"), (rated.OrderCurrencyId, rated.OrderCurrencyCode));
         Assert.NotNull(rated.Rate);
-        Assert.Equal((OrderExchangeRateCurrency, lira, 35.25m), (rated.Rate!.SourceCurrencyId, rated.Rate.TargetCurrencyId, rated.Rate.Rate));
+        Assert.Equal((OrderExchangeRateCurrency, lira, 35.25m), (rated.Rate!.Value.SourceCurrencyId, rated.Rate.Value.TargetCurrencyId, rated.Rate.Value.Rate));
 
         // FNS-D91: both the opening default and the change are kept, the change with its reason.
         Assert.Equal(2, await run.ScalarAsync<int>(

@@ -1629,6 +1629,10 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return CloseLine(orderId, lineId, request);
         }
 
+        public Task<PurchaseOrderResponse> ChangeOrderExchangeRateAsync(Guid orderId, ChangePurchaseOrderExchangeRateRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderExchangeRateView> GetOrderExchangeRateAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
         public Task<PurchaseOrderFutureAllocationLinksView> GetOrderFutureAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task<PurchaseFutureAllocationReleaseResponse> ReleaseOrderFutureAllocationAsync(Guid orderId, Guid allocationId,
