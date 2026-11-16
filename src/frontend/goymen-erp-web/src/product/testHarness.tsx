@@ -205,6 +205,8 @@ export interface HarnessConfig {
   readonly onDimension?: (method: string, body: string | null) => Response | Promise<Response>
   /** `GET/POST /product-profile-weight-tables` (URN-D13…D16); defaults to 403 — the import name is granted to no role. */
   readonly onProfileWeights?: (method: string, body: string | null) => Response | Promise<Response>
+  /** `GET/POST/PUT /product-package-standards` (B-08/BS-10); defaults to 403 — the manage name is granted to no role. */
+  readonly onPackageStandards?: (method: string, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -249,6 +251,10 @@ export function installFetch(config: HarnessConfig = {}) {
             PRODUCT_CAPABILITY.productsDetail,
           ],
       })
+    }
+    // Before `/products`: the edit route `/product-package-standards/products/{id}` contains that segment.
+    if (url.includes('/product-package-standards')) {
+      return (await config.onPackageStandards?.(method, body)) ?? json({}, 403)
     }
     if (url.includes('/products/code-groups')) {
       return (await config.onGroups?.()) ?? json(codeGroups())

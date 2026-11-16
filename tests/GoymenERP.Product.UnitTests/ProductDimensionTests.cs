@@ -78,8 +78,8 @@ public sealed class ProductDimensionTests
     public void The_dimension_migration_precedes_the_kg_per_metre_table_and_its_Down_refuses_first_with_51290()
     {
         using var context = Context();
-        Assert.Equal(["AddProductCardDimensions", "AddProductProfileWeightImports"],
-            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(["AddProductCardDimensions", "AddProductProfileWeightImports", "AddProductPackageStandards"],
+            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductCardDimensions();

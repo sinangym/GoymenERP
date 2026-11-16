@@ -174,10 +174,11 @@ public sealed class ProductProfileWeightTests
     }
 
     [Fact]
-    public void The_kg_per_metre_migration_is_the_last_one_and_its_Down_refuses_first_with_51483()
+    public void The_kg_per_metre_migration_precedes_the_package_standard_table_and_its_Down_refuses_first_with_51483()
     {
         using var context = Context();
-        Assert.Equal("AddProductProfileWeightImports", context.Database.GetMigrations().Last().Split('_', 2)[1]);
+        Assert.Equal(["AddProductProfileWeightImports", "AddProductPackageStandards"],
+            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductProfileWeightImports();
