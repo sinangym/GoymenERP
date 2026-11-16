@@ -306,6 +306,7 @@ public sealed class InventoryTransferHttpAcceptanceTests(GoymenErpApiFactory fac
     [InlineData(409, InventoryTransferCodesV1.CancelConfirmationMissing, 409)]
     [InlineData(409, InventoryTransferCodesV1.TransferVersionConflict, 409)]
     [InlineData(409, InventoryTransferCodesV1.TransferStateConflict, 409)]
+    [InlineData(409, InventoryTransferCodesV1.CancelLossRequestPending, 409)]
     [InlineData(400, InventoryTransferCodesV1.ValidationFailed, 400)]
     // Dispatch-only and platform codes are not part of the cancel contract.
     [InlineData(409, InventoryTransferCodesV1.OutgoingDocumentNotFinal, 503)]

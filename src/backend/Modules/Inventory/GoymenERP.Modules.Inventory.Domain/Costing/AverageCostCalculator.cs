@@ -7,6 +7,17 @@ public sealed record AverageCostTransferResult(AverageCostPosition Source, Avera
 public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition DispatchedTo, AverageCostPosition Source);
 
 /// <summary>
+/// KLN-D90: the cost of a transfer receipt shortage (the KLN-D21 fire). <see cref="UnitCostPerKg"/> is the dispatch unit
+/// cost; <see cref="Value"/> is <c>QuantityKg · UnitCostPerKg</c>, unrounded (the posting's rounding belongs to the
+/// Finance accounting-entry spec). Both are <c>null</c> when the dispatch cost is unknown: nothing is guessed.
+/// </summary>
+public sealed record AverageCostTransferShortageValuation(decimal QuantityKg, decimal? UnitCostPerKg, decimal? Value)
+{
+    /// <summary>True when the dispatch unit cost is known and the shortage carries a value.</summary>
+    public bool IsKnown => Value is not null;
+}
+
+/// <summary>
 /// The deterministic moving-average purchase cost core (SAT-D256…SAT-D258, SAT-D262, SAT-D265). One calculator, no screen
 /// or caller re-implements it. Pure: no clock, no storage, no company or role. The key of a position (company, location,
 /// product) lives in the ledger; this core only computes the next state of one position.
@@ -16,6 +27,8 @@ public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition
 /// <item>A transfer enters the target at the SOURCE average (the target's own average then blends as a receipt).</item>
 /// <item>A cancelled transfer dispatch returns to the source at the unit cost used at dispatch, never at the source's
 /// average at cancel time (KLN-D64 (1)).</item>
+/// <item>A transfer receipt shortage (fire) is valued at the dispatch unit cost, never at the average at receipt time
+/// (KLN-D90, <see cref="ValueTransferReceiptShortage"/>).</item>
 /// <item>A production receipt never enters the average: the position becomes unreadable (mixed source is OPEN).</item>
 /// <item>Additional (landed) cost never enters the average in v1 (SAT-D302 (1)). The receipt entering at its own purchase
 /// price, with <see cref="AverageCostMovement.AdditionalCostPerStockKg"/> kept outside the figure, is the implementation
@@ -195,6 +208,33 @@ public static class AverageCostCalculator
         var sourceAfter = Apply(source, new AverageCostMovement(
             AverageCostMovementKind.PurchaseReceipt, quantityKg, sourceStockOnHandBeforeKg, dispatchUnitCost));
         return new(dispatchedToAfter, sourceAfter);
+    }
+
+    /// <summary>
+    /// KLN-D90: values the shortage fire of a transfer receipt at <paramref name="dispatchUnitCostPerKg"/>, the unit cost
+    /// the dispatch used (the KLN-D64 rule), never at the moving average at receipt time. An unknown dispatch cost
+    /// (<c>null</c>) or a zero one ("cost unknown", as for any receipt) leaves the valuation unknown; the current average
+    /// is not a stand-in. No accounting entry is written until ledger posting opens (account mapping: Finance spec), and
+    /// while transfers do not post to the cost ledger (KLN-D64 (2)) no movement path calls this rule.
+    /// </summary>
+    public static AverageCostTransferShortageValuation ValueTransferReceiptShortage(
+        decimal shortageKg,
+        decimal? dispatchUnitCostPerKg)
+    {
+        if (shortageKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shortageKg), "A transfer receipt shortage is positive.");
+        }
+
+        if (dispatchUnitCostPerKg is < 0m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(dispatchUnitCostPerKg), "A dispatch unit cost, when known, is not negative.");
+        }
+
+        return dispatchUnitCostPerKg is { } unitCost && unitCost != 0m
+            ? new(shortageKg, unitCost, shortageKg * unitCost)
+            : new(shortageKg, null, null);
     }
 
     private static AverageCostPosition ApplyReceipt(AverageCostPosition? current, AverageCostMovement movement)

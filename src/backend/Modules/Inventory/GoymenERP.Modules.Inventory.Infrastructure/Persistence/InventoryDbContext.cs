@@ -44,6 +44,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     /// <summary>B-22a: a proved dispatch stores a positive Logistics document version; legacy rows stay null.</summary>
     internal const string TransferDispatchDocumentVersionCheck = "[DocumentVersion] IS NULL OR [DocumentVersion] >= 1";
 
+    /// <summary>KLN-D97: loss requests are numbered per transfer line from 1. Compared by the persistence-model test.</summary>
+    internal const string TransferLossRequestNumberCheck = "[RequestNumber] >= 1";
+
+    /// <summary>KLN-D23 (c), KLN-D97: a line is written off at most once, whatever number its approved request has.</summary>
+    internal const string TransferLossApprovalFilter = "[Decision] = 1";
+
     /// <summary>KLN-D25 (7)(f): Off, On or Unreadable (<see cref="Domain.Transfers.InventoryTransferSourceScaleSetting"/>).</summary>
     internal const string TransferDispatchSourceScaleSettingCheck = "[SourceScaleSettingAtDispatch] IN (1, 2, 3)";
 
@@ -1132,8 +1138,9 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     }
 
     /// <summary>
-    /// B-22c receipt facts (KLN-D21/KLN-D23/KLN-D24). Every row is immutable and keyed by its transfer line; the
-    /// kilogram identity, the shortage movement and the excess reason are enforced by the table itself.
+    /// B-22c receipt facts (KLN-D21/KLN-D23/KLN-D24). Every row is immutable and keyed by its transfer line (loss
+    /// requests and their decisions also by the per-line request number, KLN-D97); the kilogram identity, the shortage
+    /// movement and the excess reason are enforced by the table itself.
     /// </summary>
     private void ConfigureInventoryTransferReceipts(ModelBuilder modelBuilder)
     {
@@ -1208,10 +1215,13 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
         var lossRequest = modelBuilder.Entity<InventoryTransferLossRequestRow>();
         lossRequest.ToTable("TransferLossRequests", Schema, table =>
+        {
             table.HasCheckConstraint("CK_TransferLossRequests_Text",
                 "LEN(LTRIM(RTRIM([Explanation]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
-                + "AND LEN([CorrelationId]) > 0"));
-        lossRequest.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+                + "AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_TransferLossRequests_RequestNumber", TransferLossRequestNumberCheck);
+        });
+        lossRequest.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
         lossRequest.Property(x => x.Explanation)
             .HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength).IsRequired();
         lossRequest.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
@@ -1231,7 +1241,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");
         });
-        lossDecision.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        lossDecision.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
         lossDecision.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength)
             .IsRequired();
         lossDecision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
@@ -1240,9 +1250,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         lossDecision.HasIndex(x => new { x.CompanyId, x.MovementId })
             .IsUnique()
             .HasFilter("[MovementId] IS NOT NULL");
+        lossDecision.HasIndex(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .IsUnique()
+            .HasFilter(TransferLossApprovalFilter);
         lossDecision.HasOne<InventoryTransferLossRequestRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
-            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber })
             .OnDelete(DeleteBehavior.Restrict);
         lossDecision.HasOne<MovementRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.MovementId })

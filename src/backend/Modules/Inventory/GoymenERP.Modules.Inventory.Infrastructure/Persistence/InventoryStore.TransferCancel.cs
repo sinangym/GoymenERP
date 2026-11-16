@@ -59,9 +59,10 @@ public sealed partial class InventoryStore
             ? null
             : (InventoryTransferCancelClosureBasis)closure.Basis;
         DateTimeOffset? closedAtUtc = closure?.ClosedAtUtc;
+        var hasPendingLossRequest = await HasPendingLossRequestAsync(transferId, cancellationToken);
         return new InventoryTransferDispatchCancelContextV1(row.Id, row.CompanyId, row.Version,
             (InventoryTransferStatus)row.Status, row.SourceLocationId, dispatch?.DispatchedAtUtc, storedSetting,
-            closureBasis, closedAtUtc);
+            closureBasis, closedAtUtc, hasPendingLossRequest);
     }
 
     public async Task<InventoryTransferResultV1?> RecordDispatchCancelClosureAsync(
@@ -257,11 +258,20 @@ public sealed partial class InventoryStore
             throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
 
-        if (await HasOpenOrApprovedLossRequestAsync(transferId, cancellationToken))
+        var lossRequestPending = await HasPendingLossRequestAsync(transferId, cancellationToken);
+        var lineWrittenOff = await dbContext.TransferLossDecisions.AsNoTracking()
+            .AnyAsync(candidate => candidate.TransferId == transferId && candidate.Decision == ApproveDecision,
+                cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        if (lossRequestPending)
         {
-            // KLN-D23 (c): a written-off line is terminal, and a loss request still waiting for its decision is not
-            // overtaken by a dispatch cancel (an implementation reading; a rejected request does not block).
-            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            // KLN-D98: an undecided loss request blocks the cancel with its own code; the cancel never withdraws it.
+            throw TransferError(409, InventoryTransferCodesV1.CancelLossRequestPending);
+        }
+
+        if (lineWrittenOff)
+        {
+            // KLN-D23 (c): a written-off line is terminal; a rejected request does not block.
             throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
 

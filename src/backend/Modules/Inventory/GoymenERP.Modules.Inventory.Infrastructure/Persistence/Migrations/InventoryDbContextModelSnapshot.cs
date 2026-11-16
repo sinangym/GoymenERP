@@ -1229,6 +1229,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("LineId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("RequestNumber")
+                        .HasColumnType("int");
+
                     b.Property<string>("CorrelationId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -1262,11 +1265,15 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
-                    b.HasKey("CompanyId", "TransferId", "LineId");
+                    b.HasKey("CompanyId", "TransferId", "LineId", "RequestNumber");
 
                     b.HasIndex("CompanyId", "MovementId")
                         .IsUnique()
                         .HasFilter("[MovementId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "TransferId", "LineId")
+                        .IsUnique()
+                        .HasFilter("[Decision] = 1");
 
                     b.ToTable("TransferLossDecisions", "inventory", t =>
                         {
@@ -1286,6 +1293,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("LineId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RequestNumber")
+                        .HasColumnType("int");
 
                     b.Property<string>("CorrelationId")
                         .IsRequired()
@@ -1314,10 +1324,12 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("RequestedAtUtc")
                         .HasColumnType("datetimeoffset");
 
-                    b.HasKey("CompanyId", "TransferId", "LineId");
+                    b.HasKey("CompanyId", "TransferId", "LineId", "RequestNumber");
 
                     b.ToTable("TransferLossRequests", "inventory", t =>
                         {
+                            t.HasCheckConstraint("CK_TransferLossRequests_RequestNumber", "[RequestNumber] >= 1");
+
                             t.HasCheckConstraint("CK_TransferLossRequests_Text", "LEN(LTRIM(RTRIM([Explanation]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });
                 });
@@ -2794,7 +2806,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
 
                     b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferLossRequestRow", null)
                         .WithMany()
-                        .HasForeignKey("CompanyId", "TransferId", "LineId")
+                        .HasForeignKey("CompanyId", "TransferId", "LineId", "RequestNumber")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

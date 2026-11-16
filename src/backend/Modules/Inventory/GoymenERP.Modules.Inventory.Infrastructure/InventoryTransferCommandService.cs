@@ -198,6 +198,13 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
             throw new InventoryTransferException(409, InventoryTransferCodesV1.TransferStateConflict);
         }
 
+        if (context.HasPendingLossRequest)
+        {
+            // KLN-D98: refused before the Logistics/e-İrsaliye owners are asked. The request is approved, rejected or
+            // withdrawn first; the cancel never withdraws it. The writer checks it again in its own transaction.
+            throw new InventoryTransferException(409, InventoryTransferCodesV1.CancelLossRequestPending);
+        }
+
         if (context.DispatchedAtUtc is not { } dispatchedAtUtc
             || context.StoredScaleSettingAtDispatch is not { } storedSetting)
         {
