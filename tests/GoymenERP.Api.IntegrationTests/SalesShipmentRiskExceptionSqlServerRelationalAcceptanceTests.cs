@@ -1,10 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Logistics.Application.Outbox;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
@@ -18,6 +21,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -395,6 +399,69 @@ public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages]"));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_S10_the_host_inbox_consumer_mirrors_the_logistics_payload_once_and_ignores_a_shipment_without_an_exception_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        var clock = new Clock(T0);
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            await run.Service(scope.Store, CompanyA, Shipper, clock).RequestRiskExceptionAsync(draft.Id,
+                new RequestSalesRiskExceptionRequest(Shipment, "SENTETIK"), Metadata("k-request"));
+            await run.Service(scope.Store, CompanyA, Manager, clock).ApproveRiskExceptionAsync(draft.Id, 1,
+                new SalesDraftStateCommandRequest("1"), Metadata("k-approve"));
+        }
+
+        var definiteShipment = Guid.NewGuid();
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        OutboxMessageEnvelopeV1 Envelope(string eventType, Guid shipmentId, int? exceptionNo) => new(
+            LogisticsDefiniteShipmentOutboxV1.SourceName, Guid.NewGuid(), CompanyA, eventType, LogisticsDefiniteShipmentOutboxV1.Version,
+            JsonSerializer.Serialize(new LogisticsDefiniteShipmentEventV1(CompanyA, shipmentId, draft.Id, Shipment, exceptionNo, null), web),
+            T0, "SENTETIK-logistics-correlation", null, "SENTETIK-position");
+
+        // The host-composed consumer in a dispatcher-like scope (the dispatcher sets the company per scope; it stays disabled here).
+        async Task DeliverAsync(OutboxMessageEnvelopeV1 message)
+        {
+            await using var scope = run.Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var consumer = Assert.Single(scope.ServiceProvider.GetServices<IOutboxConsumerV1>(),
+                candidate => candidate.ConsumerName == SalesLogisticsShipmentInboxV1.ConsumerName);
+            await consumer.HandleAsync(message, CancellationToken.None);
+        }
+
+        // The Logistics payload (number only, no exception id) is mirrored once; a redelivery under another event id is quiet.
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, definiteShipment, 1));
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, definiteShipment, 1));
+        // A shipment within the limit names no exception: nothing of Sales is stored.
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, Guid.NewGuid(), null));
+        // Another shipment cannot claim the consumed exception: the contract is broken, never retried.
+        var conflict = await Assert.ThrowsAsync<OutboxPermanentFailureException>(
+            () => DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, Guid.NewGuid(), 1)));
+        Assert.Equal("risk_exception_shipment_conflict", conflict.Code);
+
+        Assert.Equal((1, 1, 0), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [CompanyId] = @company AND [ShipmentId] = @shipment",
+                ("@company", CompanyA), ("@shipment", definiteShipment)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @type",
+                ("@type", SalesLogisticsShipmentInboxV1.ConsumedAuditEventType)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [ShipmentId] <> @shipment",
+                ("@shipment", definiteShipment))));
+
+        // SAT-D285: the cancellation drops the exception (it is not reopened); the gate then answers lapsed.
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.CancelledEventType, definiteShipment, 1));
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            var port = new SalesShipmentRiskExceptionReadPort(scope.Store, run.Company(CompanyA), clock);
+            Assert.Equal((SalesShipmentRiskExceptionStatusV1.Lapsed, (int?)1), Answer(await port.GetAsync(draft.Id, Shipment)));
+        }
+
+        Assert.Equal((2, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [CompanyId] = @company", ("@company", CompanyA)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @type",
+                ("@type", SalesLogisticsShipmentInboxV1.DroppedAuditEventType))));
     }
 
     private static (SalesShipmentRiskExceptionStatusV1, int?) Answer(SalesShipmentRiskExceptionReadV1 read) => (read.Status, read.ExceptionNo);

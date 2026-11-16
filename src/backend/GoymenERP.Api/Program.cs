@@ -467,8 +467,8 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
-// LOJ-D19 (SAT-D285): the Sales risk-exception usage consumer of that source (registered, not enabled).
-builder.Services.AddSalesLogisticsShipmentInboxConsumer();
+// SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
+builder.Services.AddSalesRiskExceptionUsageInbox();
 // SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
 builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and

@@ -939,7 +939,11 @@ nothing, opens no document and writes no other module's record.
   the exception read as Lapsed, so a new request is admitted. Single use itself stays the Logistics gate's (SAT-D285); an unknown,
   unapproved, other-instruction or other-shipment exception is a permanent (poison) failure, a lost race a retry. Migration
   `20261116001237_AddShipmentRiskExceptionUsages`: the trigger refuses any change (51487); the forward-fix `Down` refuses with
-  51488 while a usage exists. The consumer is NOT registered with the dispatcher until the Logistics outbox source exists.
+  51488 while a usage exists. SAT-S10: the host registers the consumer with the Work dispatcher (`AddSalesRiskExceptionUsageInbox`,
+  after the Logistics source `AddLogisticsDefiniteShipmentOutbox`); a failing save clears the store's change tracker before it
+  throws, as the inbox contract asks. The dispatcher stays off until `Work:OutboxDispatcher:Enabled` is set (a human gate), and
+  the cancelled event has no Logistics producer until the shipment cancel is decided. A cancellation drops the exception; it is
+  never reopened (SAT-D285).
 - **UI:** the S-04 panel `SalesOrderRiskExceptions` lists the exceptions (detail capability), shows the request form only with the
   request capability, approve / reject only on a pending exception with the approve capability and "Geri çek" only on the signed-in
   user's own pending exception with the request capability; an unknown outcome (network error, 502/503/504) keeps its key and is

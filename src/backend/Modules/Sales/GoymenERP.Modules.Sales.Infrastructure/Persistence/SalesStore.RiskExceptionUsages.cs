@@ -80,7 +80,19 @@ public sealed partial class SalesStore : ISalesRiskExceptionUsageStore
         };
         dbContext.ShipmentRiskExceptionUsages.Add(row);
         EnqueueRiskExceptionUsageAudit(companyId, usage.Kind, exception, row);
-        await SaveAsync(cancellationToken);
+        try
+        {
+            await SaveAsync(cancellationToken);
+        }
+        catch
+        {
+            // SAT-S10: the Work inbox contract (IWorkInboxConsumerV1) asks a failing handler to reset its own scoped state before
+            // it throws. The dispatcher hands the company's next event to the same scope, so neither the unsaved usage nor its
+            // audit row may stay tracked behind any failure (SaveAsync already clears behind a lost race).
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+
         return SalesRiskExceptionUsageOutcome.Recorded;
     }
 
