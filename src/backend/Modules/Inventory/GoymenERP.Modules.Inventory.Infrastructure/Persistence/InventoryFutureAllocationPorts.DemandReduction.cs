@@ -46,6 +46,8 @@ internal sealed partial class InventoryFutureAllocationReleaseSession
                 && row.DemandId == request.SalesOrderId && row.DemandLineId == request.SalesOrderLineId
                 && row.Status == (int)StockAllocationStatus.Active)
             .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
+        if (active.Count == 0 && physicalKg == 0m && (request.Selections is null || request.Selections.Count == 0))
+            return new([]);
         var openKg = await ToKilogramsAsync(request.ProductId, request.ProductVersion, open.Value,
             request.DemandUnitId, cancellationToken);
         var candidates = new List<FutureSupplyReductionAllocation>();
@@ -70,6 +72,16 @@ internal sealed partial class InventoryFutureAllocationReleaseSession
             {
                 if (selection is null || !InventoryFutureAllocationTextV1.TryPositiveQuantity(selection.QuantityText, out var quantity))
                     throw Engine.Error(422, InventoryFutureAllocationCodesV1.ReleaseSelectionInvalid);
+                if (!selection.IsPhysical)
+                {
+                    var selected = await context.FutureSupplyAllocations.AsNoTracking()
+                        .SingleOrDefaultAsync(row => row.Id == selection.AllocationId, cancellationToken)
+                        ?? throw Engine.Error(404, InventoryFutureAllocationCodesV1.InvalidReference);
+                    if (selected.DemandId != request.SalesOrderId || selected.DemandLineId != request.SalesOrderLineId)
+                        throw Engine.Error(422, InventoryFutureAllocationCodesV1.ReleaseSelectionInvalid);
+                    if (selected.Version != selection.ExpectedAllocationVersion || selected.Status != (int)FutureSupplyAllocationStatus.Active)
+                        throw Engine.Error(409, InventoryFutureAllocationCodesV1.VersionConflict);
+                }
                 parsed.Add(new(selection.AllocationId, selection.ExpectedAllocationVersion, quantity.Value, selection.IsPhysical));
             }
             selections = parsed;
