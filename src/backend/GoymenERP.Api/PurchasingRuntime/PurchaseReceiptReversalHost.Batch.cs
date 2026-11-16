@@ -185,7 +185,9 @@ internal sealed partial class PurchaseReceiptReversalHost
     private static Dictionary<Guid, PurchaseReceiptAdjustmentTargetV1> RequireBatchTargets(IReadOnlyList<PurchaseReceiptAdjustmentTargetV1>? values,
         Guid company, PurchaseReceiptReversalBatchWriteV1 write)
     {
-        if (values is null || values.Any(value => value is null) || values.Select(value => value.AcceptanceId).Distinct().Count() != values.Count) throw Unavailable();
+        if (values is null || values.Any(value => value is null || !write.Request.Lines.Any(line => line.AcceptanceId == value.AcceptanceId))
+            || values.Select(value => value.AcceptanceId).Distinct().Count() != values.Count
+            || values.Count > 0 && values.Any(value => value.ObservedOrderVersion != values[0].ObservedOrderVersion)) throw Unavailable();
         if (values.Count != write.Request.Lines.Count) throw new PurchasingServiceException(404, "not_found");
         return write.Request.Lines.ToDictionary(line => line.AcceptanceId, line => RequireTarget(values.SingleOrDefault(value => value.AcceptanceId == line.AcceptanceId),
             company, new(write.OrderId, line.AcceptanceId, line.SingleRequest(write.Request))));

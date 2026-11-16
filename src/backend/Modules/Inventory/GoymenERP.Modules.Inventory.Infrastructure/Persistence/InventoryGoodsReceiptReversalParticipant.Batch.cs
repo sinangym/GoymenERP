@@ -53,7 +53,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
             var replacement = Quantity(expected.ImmediateReplacementQuantity);
             if (supplyByLine.TryGetValue(expected.GeneralLineId, out var prior))
             {
-                if (prior.Expected != expected) throw Error(503, Codes.Unavailable);
+                if (prior.Expected != expected || prior.ProductId != original.ProductId || prior.ProductVersion != original.ExpectedProductVersion
+                    || prior.UnitId != original.PurchaseUnitId) throw Error(503, Codes.Unavailable);
             }
             else
             {
@@ -69,7 +70,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
                     && row.Status == (int)FutureSupplyAllocationStatus.Active).SumAsync(row => (decimal?)row.RemainingQuantity, cancellationToken) ?? 0m;
                 var ledger = await context.FutureSupplyLines.AsNoTracking().SingleOrDefaultAsync(row => row.PurchaseOrderLineId == expected.GeneralLineId, cancellationToken);
                 if (target.Links.Count > 0 && (ledger is null || ledger.ActiveAllocated != active)) throw Error(503, Codes.Unavailable);
-                supplyByLine.Add(expected.GeneralLineId, new(expected, Math.Min(opened + replacement, Math.Max(0m, amount + replacement - active))));
+                supplyByLine.Add(expected.GeneralLineId, new(expected, original.ProductId, original.ExpectedProductVersion, original.PurchaseUnitId,
+                    Math.Min(opened + replacement, Math.Max(0m, amount + replacement - active))));
             }
 
             var scale = await new InventoryKilogramScale(settings).CheckAsync(companyId,
@@ -129,7 +131,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
         }
 
         // No awaited owner read follows this point. Pure shadow changes mirror StageCore's original stamped-ratio kernel.
-        var positions = new Dictionary<(Guid LabelId, int Block), decimal>();
+        var positions = new Dictionary<(Guid LabelId, int OwnerKind, Guid OwnerId, int CustodianKind, Guid CustodianId, Guid LocationId, int Block), decimal>();
         var remainingPhysical = physicalById.ToDictionary(pair => pair.Key,
             pair => pair.Value.Status == (int)StockAllocationStatus.Active ? pair.Value.RemainingKg : 0m);
         InventoryGoodsReceiptReversalException? terminal = null;
@@ -161,7 +163,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
                     remaining -= take;
                 }
                 if (label.Allocated > label.Physical - undo) throw Error(409, Codes.StockAllocated);
-                var key = (original.LabelId, (int)item.Request.SourceBlock);
+                var key = (original.LabelId, (int)original.OwnerKind, original.OwnerId, (int)original.CustodianKind,
+                    original.CustodianId, original.LocationId, (int)item.Request.SourceBlock);
                 if (!positions.TryGetValue(key, out var position)) position = read.Position;
                 if (position < undo) throw Error(409, Codes.StockNotAvailable);
                 positions[key] = position - undo; label.Physical -= undo;
@@ -178,8 +181,12 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant
         decimal Position, bool Existing);
     private sealed class BatchDemand(Guid orderId, bool open, decimal quantity, decimal held)
     { public Guid OrderId { get; } = orderId; public bool Open { get; } = open; public decimal Quantity { get; } = quantity; public decimal Held { get; set; } = held; }
-    private sealed class BatchSupply(InventoryGoodsReceiptReversalSupplyV1 expected, decimal remaining)
-    { public InventoryGoodsReceiptReversalSupplyV1 Expected { get; } = expected; public decimal Remaining { get; set; } = remaining; }
+    private sealed class BatchSupply(InventoryGoodsReceiptReversalSupplyV1 expected, Guid productId, string productVersion, Guid unitId, decimal remaining)
+    {
+        public InventoryGoodsReceiptReversalSupplyV1 Expected { get; } = expected;
+        public Guid ProductId { get; } = productId; public string ProductVersion { get; } = productVersion; public Guid UnitId { get; } = unitId;
+        public decimal Remaining { get; set; } = remaining;
+    }
     private sealed class BatchLabel(decimal physical, decimal allocated, bool issued)
     { public decimal Physical { get; set; } = physical; public decimal Allocated { get; set; } = allocated; public bool Issued { get; } = issued; }
 }
