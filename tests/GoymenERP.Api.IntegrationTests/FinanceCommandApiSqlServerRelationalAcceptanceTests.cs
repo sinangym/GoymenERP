@@ -843,6 +843,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
             services.RemoveAll<IFinanceRecordPeriodRule>();
             services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+            services.RemoveAll<IFinanceTreasuryBalanceGuard>();
+            services.AddScoped<IFinanceTreasuryBalanceGuard, SyntheticSufficientBankBalance>();
         });
         const string beforeManualBankPayments = "20260921120000_AddReversalProposals";
         await using (var context = run.Context(CompanyA))
@@ -1119,6 +1121,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
             services.RemoveAll<IFinanceRecordPeriodRule>();
             services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+            services.RemoveAll<IFinanceTreasuryBalanceGuard>();
+            services.AddScoped<IFinanceTreasuryBalanceGuard, SyntheticSufficientBankBalance>();
         });
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, [.. ManualPaymentPreparerGrants,
@@ -1416,6 +1420,15 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                     new PartyAccountEligibility(partyId, companyAccountId, CompanyA, IsActive: true, IsPartyActive: true))
                 : new ReadResult<PartyAccountEligibility>(ReadOutcome.NotFound, null);
         }
+    }
+
+    /// <summary>Explicit HTTP-mapping test input; FNS-D87 has no real bank balance source yet, so the default guard refuses.</summary>
+    private sealed class SyntheticSufficientBankBalance : IFinanceTreasuryBalanceGuard
+    {
+        public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context,
+            ExpensePaymentSourceKind sourceKind, Guid treasuryAccountId, MoneyText money,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new TreasuryBalanceAnswer(TreasuryBalanceOutcome.Sufficient, null));
     }
 
     /// <summary>Explicit HTTP-mapping test input; real period policy is covered by the relational FIN-T05/T06 cases.</summary>

@@ -24,7 +24,9 @@ public sealed record ManualBankPaymentAuditEnvelopes(
 /// R47 A-now manual outgoing bank payment. Draft and approval have no money effect. Only a successful,
 /// explicitly confirmed final Record appends one outgoing event. Missing bank reference is allowed;
 /// an unconfirmed result is not. The approver must differ from the preparer, while the separately
-/// authorized final actor may be the approver or another authorized person.
+/// authorized final actor may be the approver or another authorized person. FNS-D87: a bank account never goes below
+/// zero; the final Record asks <see cref="IFinanceTreasuryBalanceGuard"/> whether the account's current balance covers the
+/// payment and refuses an insufficient or unknown answer (fail-closed) before anything is written.
 /// </summary>
 public sealed class ManualBankPaymentService(
     FinanceDbContext dbContext,
@@ -38,7 +40,8 @@ public sealed class ManualBankPaymentService(
     IAuditEventCollector auditEvents,
     ManualBankPaymentBinding binding,
     ManualBankPaymentAuditEnvelopes envelopes,
-    TimeProvider timeProvider) : IManualBankPaymentService
+    TimeProvider timeProvider,
+    IFinanceTreasuryBalanceGuard balanceGuard) : IManualBankPaymentService
 {
     public const string DraftCommand = "finance.manual-bank-payment.draft.save";
     public const string ApproveCommand = "finance.manual-bank-payment.approve";
@@ -258,6 +261,29 @@ public sealed class ManualBankPaymentService(
                 ? CommandOutcome.Unavailable : CommandOutcome.ValidationFailed,
                 Issue("occurredOn", period.Code ?? (period.Outcome == RecordPeriodOutcome.Unavailable
                     ? RecordPeriodAnswer.RuleUnavailableCode : RecordPeriodAnswer.PeriodNotOpenCode)));
+
+        // FNS-D87 (with FNS-D11 / FNS-D22): the bank account's CURRENT balance at record time must cover the payment; a
+        // payment that would take the account below zero is refused, never clipped. Credit use is not a negative bank
+        // balance (it lives in separate credit accounts), so no overdraft exception applies here.
+        TreasuryBalanceAnswer? balance;
+        try
+        {
+            balance = await balanceGuard.CheckOutgoingAsync(context, ExpensePaymentSourceKind.Bank, row.TreasuryAccountId,
+                new MoneyText(row.AmountText, row.CurrencyId), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            balance = null;
+        }
+
+        if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, row.Id, cancellationToken)
+            is { } afterBalance) return afterBalance;
+        if (balance is null || balance.Outcome == TreasuryBalanceOutcome.Unavailable)
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode));
+        if (balance.Outcome != TreasuryBalanceOutcome.Sufficient)
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("money.amount", TreasuryBalanceAnswer.InsufficientCode));
 
         var before = AuditJson(row);
         var versionBefore = row.Version;
