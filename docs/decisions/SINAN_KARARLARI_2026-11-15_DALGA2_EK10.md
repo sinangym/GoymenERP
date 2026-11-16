@@ -1,10 +1,22 @@
 # Sinan Kararları — 2026-11-15 (Dalga 2 ek 10: üretim maliyetinde yarım yuvarlama yönü ve ondalık, kalan kuruş, kapanmış emirde tartım düzeltmesi, sözleşmede iskonto oranlarının gizlenmesi)
 
-Bu belge önceki karar dosyalarını silmez; URT-D78…URT-D81 ve SAT-D363 kararlarını ekler. SAT-D11 (yarımda sıfırdan
-uzağa), SAT-D265 (stok ortalaması 4 ondalık), 21 Ekim 2026 kararlarındaki "Bankacı yuvarlama kullanılmaz" kuralı,
-URT-D12, URT-D32 (yeniden açma kuralları), URT-D54, URT-D77 (yeniden açma izni) ve SAT-D361 (fiyat okuma izni
-olmayana sözleşme tutarları gizli) aynen geçerlidir. URT-D54 ve URT-D77 henüz merge edilmemiş karar PR'larındadır;
-bu belge onlara o PR'lardaki metinle atıf yapar.
+Bu belge önceki karar dosyalarını silmez; URT-D78…URT-D81 ve SAT-D363 kararlarını ekler. Şu kararlar aynen
+geçerlidir: SAT-D11 (yarımda sıfırdan uzağa), SAT-D265 (stok ortalaması 4 ondalık), 21 Ekim 2026 kararlarındaki
+"Bankacı yuvarlama kullanılmaz" kuralı, URT-D32 (yeniden açma kuralları), URT-D77 (yeniden açma izni) ve SAT-D361
+(fiyat okuma izni olmayana sözleşme tutarları gizli). URT-D77 ve SAT-D361 #1172 ile main'e girmiştir
+(`SINAN_KARARLARI_2026-11-15_DALGA2_EK8.md`).
+
+Bu belge şu önceki kararların adı geçen kısımlarını, daha yeni kullanıcı kararı olarak günceller:
+- **URT-D12** (`SINAN_KARARLARI_2026-11-01_URETIM.md`): "dağıtımda yuvarlama farkı son satıra" kısmının yerine
+  URT-D80 geçer (fark en çok kg'lı satıra). URT-D12'nin geri kalanı (ara hesap tam hassasiyet, yarımda sıfırdan
+  uzağa, kg ve birim kg ondalıkları) aynen geçerlidir.
+- **URT-D54** (`SINAN_KARARLARI_2026-11-14_URETIM_EK4.md`): (1) ve (2) aynen geçerlidir; URT-D80, (2)'deki "sağlam
+  ürün satırı"nı birden çok satırda en çok kg'lı satır diye belirler. URT-D78, URT-D54 (3)'te ve EK4 Sınırlar'ında
+  `NEEDS-SINAN` bırakılan yuvarlama yönü sorusunu cevaplar.
+- **URT-D42 (3)** (`SINAN_KARARLARI_2026-11-13_URETIM_MALIYETI_VE_EKSI_STOK.md`) ve **URT-D52 (3)**
+  (`SINAN_KARARLARI_2026-11-14_URETIM_EK4.md`): "açılmaz ve değiştirilmez" kısmının yerine, tartım düzeltmesi
+  için URT-D81 geçer (önce yeniden açma). URT-D81, URT-D52 (3)'te ve EK4 Sınırlar'ında `NEEDS-SINAN` bırakılan
+  yeniden açma sorusunu cevaplar. Bu emirlerin raporda listelenmesi (URT-D42 (3), URT-D52 (1)) aynen sürer.
 
 **Kaynak:** Sinan, 15 Kasım 2026, bu Claude Code oturumunda soru penceresiyle iki turda cevapladı (SINAN-CEVAP 31).
 Sorular, Üretim takımının tren-1 dalga 3 raporundaki (URT-S14, URT-S15) ve Satış takımının SC29 takip raporundaki
@@ -12,7 +24,7 @@ Sorular, Üretim takımının tren-1 dalga 3 raporundaki (URT-S14, URT-S15) ve S
 sorusuna serbest metinle cevap verildi: **"Hesaplama biçiminin diğer hesaplamaları fiyat tutar hesaplamalarına kadar
 nasıl etkiledğini araştır mantıklı karar verelim gerekirse ondalık hanesinide arttıralım"**. Bunun üzerine depodaki
 yuvarlama kuralları araştırıldı ve araştırma özeti ikinci turdaki iki sorunun metnine yazıldı (31.5 ve 31.6,
-kelimesi kelimesine aşağıda). Diğer dört soruda ve ikinci turdaki iki soruda önerilen seçenek seçildi.
+kelimesi kelimesine aşağıda). Birinci turdaki diğer üç soruda (31.2–31.4) ve ikinci turdaki iki soruda önerilen seçenek seçildi.
 
 ## Soru ve cevaplar
 
@@ -29,11 +41,11 @@ kelimesi kelimesine aşağıda). Diğer dört soruda ve ikinci turdaki iki sorud
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| URT-D78 | Üretim maliyetinde yarım yuvarlama yönü | Üretim maliyetinde tam yarıda kalan tutar sıfırdan uzağa yuvarlanır (0,125 → 0,13; −0,125 → −0,13). Bu, SAT-D11 ve 21 Ekim 2026 "Bankacı yuvarlama kullanılmaz" kuralıyla aynı tek kuraldır; şirket bazında ayar açılmaz ve yön için ayrı bir politika kaynağı gerekmez. Yön kararı bulunduğundan maliyet artık "yuvarlama kuralı belirsiz" gerekçesiyle bekletilmez. Uygulama ayrıntısı (geri alınabilir): ortak para yuvarlama yardımcısının kullanılması ve hesaplayıcıdaki politika girdisinin sabit kurala bağlanma biçimi. | URT-S14 üretim maliyeti yuvarlama hesaplayıcısı ve maliyet portu |
+| URT-D78 | Üretim maliyetinde yarım yuvarlama yönü | Üretim maliyetinde tam yarıda kalan tutar sıfırdan uzağa yuvarlanır (0,125 → 0,13; −0,125 → −0,13). Bu, SAT-D11 ve 21 Ekim 2026 "Bankacı yuvarlama kullanılmaz" kuralıyla aynı tek kuraldır; şirket bazında ayar açılmaz ve yön için ayrı bir politika kaynağı gerekmez. URT-D54 (3)'te ve EK4 Sınırlar'ında `NEEDS-SINAN` bırakılan yuvarlama yönü sorusunu cevaplar. Yön kararı bulunduğundan maliyet artık "yuvarlama kuralı belirsiz" gerekçesiyle bekletilmez. Uygulama ayrıntısı (geri alınabilir): ortak para yuvarlama yardımcısının kullanılması ve hesaplayıcıdaki politika girdisinin sabit kurala bağlanma biçimi. | URT-S14 üretim maliyeti yuvarlama hesaplayıcısı ve maliyet portu |
 | URT-D79 | Üretim maliyetinde ondalık ve hesap sırası | Hesap tam hassasiyetle yapılır. kg maliyeti kayıtta 4 ondalık saklanır (SAT-D265 ve URT-D54 ile aynı). Etiket (satır) tutarı, yuvarlanmamış kg maliyeti × o satırın kg'ı ile hesaplanır ve yalnız bir kez 2 ondalığa yuvarlanır; saklanmış 4 ondalıklı kg maliyetinden yeniden hesaplanmaz. Emir toplamı satır tutarlarının toplamıdır ve ayrıca yuvarlanmaz; URT-D80'deki kalan kuruşla birlikte giren TL = dağıtılan TL olur. 6 ondalığa geçilmez; stok ortalaması, marj ve modüller arası sözleşmelerin ondalık sayısı değişmez. Bu karar fatura ve satış tutarlarının hesabını değiştirmez. | URT-S14 hesaplayıcısı, üretim giriş maliyeti, maliyet izi raporu |
-| URT-D80 | Kalan kuruşun yazıldığı satır | Yuvarlamadan kalan kuruş farkı, emrin iyi ürün etiketleri içinde en çok kg'lı satıra yazılır. Uygulama ayrıntısı (geri alınabilir): kg eşitliğinde en küçük etiket numaralı satır seçilir. Emirde iyi ürün etiketi yoksa maliyet "bekliyor" kalır, kalan kuruş başka satıra (hurda, fire) yazılmaz. | URT-S14 hesaplayıcısı |
-| URT-D81 | Kapanmış, girdiden fazla çıktılı emirde tartım düzeltmesi | Eskiden girdiden fazla çıktıyla kapanmış bir emirde tartım düzeltmesi (URT-D53) yapılabilmesi için emir önce yeniden açılır. Yeniden açma URT-D32 kurallarına (muhasebe dönemi kapalıysa ret) ve URT-D77 iznine tabidir. Emir açıldıktan sonra yanlış çıkışın ters kaydı ve doğru tartımın girişi URT-D53'teki öneren ≠ onaylayan akışıyla yapılır. Kapalı emirde doğrudan düzeltme yapılmaz; deneme reddedilir. | URT-S15 tartım düzeltmesi, üretim emri yeniden açma akışı |
-| SAT-D363 | Sözleşmede iskonto oranlarının gizlenmesi | Şirket çapında `sales.orders.price.read` izni olmayan kullanıcıya satış sözleşmesinde tutarlarla birlikte iskonto oranları ve iskonto sınırı yüzdesi de gösterilmez. Gizleme sunucuda yapılır (alan boş döner); ekran "Gizli" yazar. Bu, sipariş satırlarındaki iskonto yüzdesinin gizlenmesiyle aynı kuraldır. | SAT-S14 satış sözleşmesi okuma uçları ve ekranı |
+| URT-D80 | Kalan kuruşun yazıldığı satır | Yuvarlamadan kalan kuruş farkı, emrin iyi ürün etiketleri içinde en çok kg'lı satıra yazılır. Bu, URT-D12'deki "dağıtımda yuvarlama farkı son satıra" kısmının yerine geçer; URT-D12'nin geri kalanı aynen geçerlidir. Uygulama ayrıntısı (geri alınabilir): kg eşitliğinde en küçük etiket numaralı satır seçilir. Emirde iyi ürün etiketi yoksa maliyet "bekliyor" kalır, kalan kuruş başka satıra (hurda, fire) yazılmaz. | URT-S14 hesaplayıcısı |
+| URT-D81 | Kapanmış, girdiden fazla çıktılı emirde tartım düzeltmesi | Eskiden girdiden fazla çıktıyla kapanmış bir emirde tartım düzeltmesi (URT-D53) yapılabilmesi için emir önce yeniden açılır. Yeniden açma URT-D32 kurallarına (muhasebe dönemi kapalıysa ret) ve URT-D77 iznine tabidir. Emir açıldıktan sonra yanlış çıkışın ters kaydı ve doğru tartımın girişi URT-D53'teki öneren ≠ onaylayan akışıyla yapılır. Kapalı emirde doğrudan düzeltme yapılmaz; deneme reddedilir. Bu, URT-D42 (3) ve URT-D52 (3)'teki "açılmaz ve değiştirilmez" kısmının yerine geçer ve URT-D52 (3)'ün `NEEDS-SINAN`'ını cevaplar; bu emirlerin raporda listelenmesi aynen sürer. | URT-S15 tartım düzeltmesi, üretim emri yeniden açma akışı |
+| SAT-D363 | Sözleşmede iskonto oranlarının gizlenmesi | Satış fiyatı görme izni (SAT-D361; kodda `sales.orders.price.read`) olmayan kullanıcıya satış sözleşmesinde tutarlarla birlikte iskonto oranları ve iskonto sınırı yüzdesi de gösterilmez. Gizleme sunucuda yapılır (alan boş döner); ekran "Gizli" yazar. Bu, sipariş satırlarındaki iskonto yüzdesinin gizlenmesiyle aynı kuraldır. | SAT-S14 satış sözleşmesi okuma uçları ve ekranı |
 
 ## Sınırlar
 
@@ -47,6 +59,8 @@ kelimesi kelimesine aşağıda). Diğer dört soruda ve ikinci turdaki iki sorud
   seçilmedi; `NEEDS-SINAN` olarak kalır.
 - Satılan malın maliyetindeki yuvarlama farkının muhasebeleştirilmesi `OPEN-008` kapsamındadır ve bu belgeyle
   kapanmaz.
+- `URETIM_HAZIRLIK_PLANI_v1.md` içindeki N-06 satırı URT-D12'nin eski "fark son satıra" metnini taşır; o planın
+  güncellenmesi ayrı iştir ve bu belgede yapılmaz.
 - Bu belge yeni rol açmaz ve hiçbir kişiye izin vermez; gerçek grant insan kapısındadır.
 - `OPEN-*` kararları bu belgeyle kapanmaz.
 - İnsan kapıları değişmez: deployment, environment, secret, Settings → Actions etkinleştirme, grant/rol/Critical,
