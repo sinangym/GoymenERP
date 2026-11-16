@@ -543,6 +543,7 @@ app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
 app.MapSettingsSalesPolicyEndpoints();
 app.MapSettingsUnitConversionPolicyEndpoints();
+app.MapSettingsUnitProfileEndpoints();
 app.MapSettingsSegregationOfDutiesPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
 app.MapSettingsBankCsvMappingEndpoints();

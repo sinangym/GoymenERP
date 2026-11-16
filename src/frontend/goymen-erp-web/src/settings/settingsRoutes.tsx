@@ -14,6 +14,7 @@ import { SalesPolicyApprovalThresholdsPage } from './SalesPolicyApprovalThreshol
 import { SalesPolicyDeliveryTolerancePage } from './SalesPolicyDeliveryTolerancePage'
 import { TaxMasterPage } from './TaxMasterPage'
 import { UnitConversionPolicyPage } from './UnitConversionPolicyPage'
+import { UnitProfilePage } from './UnitProfilePage'
 
 export const settingsRoutes: RouteObject[] = [
   {
@@ -69,6 +70,14 @@ export const settingsRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={SETTINGS_CAPABILITY.unitConversionPolicy}>
         <UnitConversionPolicyPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.unitProfiles].slice(1),
+    element: (
+      <CapabilityRoute capability={SETTINGS_CAPABILITY.unitProfiles}>
+        <UnitProfilePage />
       </CapabilityRoute>
     ),
   },

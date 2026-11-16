@@ -74,8 +74,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(10, declarations.Count);
-        Assert.Equal("1.4", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(11, declarations.Count);
+        Assert.Equal("1.5", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -137,6 +137,8 @@ public sealed class SettingsShellAuthorityTests
                 SettingsLoginRateLimitPermissionManifestV1.Manage),
             ("settings.unit-conversion-policies.manage", "/ayarlar/birim-cevrim-politikasi", "AY-BCP-01",
                 SettingsUnitConversionPolicyPermissionManifestV1.Manage),
+            ("settings.unit-profiles.manage", "/ayarlar/birim-profilleri", "AY-BRP-01",
+                SettingsUnitProfilePermissionManifestV1.Manage),
         ];
 
         foreach (var expected in screens)
