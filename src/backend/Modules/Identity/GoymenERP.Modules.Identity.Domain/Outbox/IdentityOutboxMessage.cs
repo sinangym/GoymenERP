@@ -76,6 +76,8 @@ public sealed class IdentityOutboxMessage
         RecordedAtUtc = occurredAtUtc;
     }
 
+    public ulong Position { get; private set; }
+
     public Guid Id { get; private set; }
 
     public Guid? CompanyId { get; private set; }

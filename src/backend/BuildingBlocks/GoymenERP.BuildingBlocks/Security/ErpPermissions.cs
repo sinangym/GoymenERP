@@ -2,6 +2,9 @@ namespace GoymenERP.BuildingBlocks.Security;
 
 public static class ErpPermissions
 {
+    /// <summary>KIM-D21: Critical registration only. Company opening authority scope remains a decision gate; no grant.</summary>
+    public const string OrganizationCompaniesOpen = "organization.companies.open";
+
     public const string OrganizationContextRead = "organization.context.read";
     public const string OrganizationSitesRead = "organization.sites.read";
     public const string OrganizationLocationsRead = "organization.locations.read";
@@ -1618,6 +1621,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
+            OrganizationCompaniesOpen,
             OrganizationContextRead,
             OrganizationSitesRead,
             OrganizationLocationsRead,
@@ -1878,6 +1882,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> Critical { get; } = new HashSet<string>(
         [
+            OrganizationCompaniesOpen,
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,

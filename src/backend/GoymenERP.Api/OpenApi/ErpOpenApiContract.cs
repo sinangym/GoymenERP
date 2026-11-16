@@ -571,6 +571,8 @@ public static partial class ErpOpenApiContract
     public static RouteHandlerBuilder ProducesErpCodeLessConflict(
         this RouteHandlerBuilder builder)
     {
+        // A company-context middleware refusal may carry the setup_pending code before the handler's code-less 409.
+        builder.Add(endpointBuilder => endpointBuilder.Metadata.Add(new CodeLessProblemDetailsResponseMetadata(StatusCodes.Status409Conflict)));
         return builder.Produces<ErpCodeLessProblemDetailsContract>(
             StatusCodes.Status409Conflict,
             "application/problem+json");
@@ -709,6 +711,10 @@ public static partial class ErpOpenApiContract
 
         if (endpointMetadata.OfType<RequiresCompanyContextAttribute>().Any())
         {
+            if (!endpointMetadata.OfType<FirstCompanyAdminEndpointMetadata>().Any())
+                problemCodesByStatus[StatusCodes.Status409Conflict] = problemCodesByStatus
+                    .GetValueOrDefault(StatusCodes.Status409Conflict, [])
+                    .Append("organization.company.setup_pending").Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
             problemCodesByStatus[StatusCodes.Status400BadRequest] =
                 problemCodesByStatus
                     .GetValueOrDefault(StatusCodes.Status400BadRequest, [])

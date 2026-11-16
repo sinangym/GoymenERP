@@ -7,6 +7,8 @@ public static class CompanyContextEndpointExtensions
     {
         builder.Add(endpointBuilder =>
             endpointBuilder.Metadata.Add(new RequiresCompanyContextAttribute()));
+        builder.Add(endpointBuilder => endpointBuilder.Metadata.Add(
+            new Microsoft.AspNetCore.Http.ProducesResponseTypeMetadata(409, typeof(GoymenERP.Api.OpenApi.ErpProblemDetailsContract), ["application/problem+json"])));
         return builder;
     }
 }

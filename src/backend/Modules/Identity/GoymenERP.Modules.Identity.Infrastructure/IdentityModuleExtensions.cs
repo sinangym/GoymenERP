@@ -81,6 +81,8 @@ public static class IdentityModuleExtensions
         // ID-3 role assignment, revocation and the Critical role request (KIM-D1/D5/D15/D17). It grants nothing by
         // itself: who holds identity.roles.manage and identity.access.approve stays a human gate.
         services.AddScoped<IIdentityAccessAssignmentService, IdentityAccessAssignmentService>();
+        services.AddScoped<IdentityCompanySetupService>();
+        services.AddScoped<IIdentityCompanySetupServiceV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
         // MOD-08 user directory: a company-fenced, read-only display-name port for another module's central adapter.
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).
@@ -124,6 +126,16 @@ public static class IdentityModuleExtensions
             }
         }
 
+        return services;
+    }
+
+    /// <summary>Host composition of the Organization lifecycle boundary; one wrapper for all three authority ports.</summary>
+    public static IServiceCollection AddCompanyLifecycleAuthorizationGate(this IServiceCollection services)
+    {
+        services.AddScoped<CompanyLifecycleAuthorizationGate>();
+        services.AddScoped<IErpAuthorizationService>(sp => sp.GetRequiredService<CompanyLifecycleAuthorizationGate>());
+        services.AddScoped<IErpAuthorityRevalidationService>(sp => sp.GetRequiredService<CompanyLifecycleAuthorizationGate>());
+        services.AddScoped<IActiveRoleCodeReader>(sp => sp.GetRequiredService<CompanyLifecycleAuthorizationGate>());
         return services;
     }
 
