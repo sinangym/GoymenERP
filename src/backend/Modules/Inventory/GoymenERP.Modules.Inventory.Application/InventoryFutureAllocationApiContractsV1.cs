@@ -10,7 +10,7 @@ public static class InventoryFutureAllocationApiV1
 }
 
 public sealed record InventoryFutureAllocationListV1(Guid CompanyId, Guid SalesOrderId, Guid SalesOrderLineId,
-    IReadOnlyList<InventoryFutureAllocationViewV1> Items, bool WindowFull);
+    IReadOnlyList<InventoryFutureAllocationViewV1> Items, bool WindowFull, IReadOnlyDictionary<Guid, string> UnitCodes);
 
 /// <summary>User command boundary; trusted actor, company, roles and a freshly measured company-wide permission are derived here.</summary>
 public interface IInventoryFutureAllocationCommandV1

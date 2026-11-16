@@ -29,7 +29,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(9)
+    expect(inventoryRoutes).toHaveLength(10)
     // ST-04 company timeline: an owner route reached from a label detail under the SAME stock-positions
     // capability. It adds no capability, no sidebar entry and no CAPABILITY_ROUTE mapping of its own.
     expect(matchRoutes(inventoryRoutes, INVENTORY_MOVEMENT_TIMELINE_ROUTE)?.at(-1)?.route.path).toBe(

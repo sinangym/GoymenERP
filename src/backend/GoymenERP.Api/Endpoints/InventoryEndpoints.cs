@@ -99,6 +99,7 @@ public static partial class InventoryEndpoints
         MapInventoryTransferEndpoints(endpoints);
         MapInventoryTransferListEndpoint(endpoints);
         MapInventoryFutureAllocationEndpoints(endpoints);
+        MapInventoryFutureSupplyOptionsEndpoint(endpoints);
         return endpoints;
     }
 

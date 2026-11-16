@@ -12,7 +12,11 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
+    // 1.8 / STK-S18: future supply allocation read route and separately granted write control; no grant is added.
+    public const string FutureAllocationReadCapabilityId = InventoryPermissionManifestV1.FutureAllocationRead;
+    public const string FutureAllocationWriteCapabilityId = InventoryPermissionManifestV1.FutureAllocationWrite;
+    public const string FutureAllocationRoutePath = "/stok/satis-siparisleri/:salesOrderId/satirlar/:salesOrderLineId/gelecek-ayirmalar";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
@@ -68,8 +72,19 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ],
             ImplementationAvailable: true);
 
+        var futureAllocations = new ShellCapabilityDeclaration(FutureAllocationReadCapabilityId, FutureAllocationReadCapabilityId,
+            FutureAllocationRoutePath, "F017-D", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [InventoryPermissionManifestV1.FutureAllocationRead], ImplementationAvailable: true);
         return
         [
+        futureAllocations,
+        futureAllocations with
+        {
+            CapabilityId = FutureAllocationWriteCapabilityId,
+            ParentCapabilityId = FutureAllocationReadCapabilityId,
+            RequiredPermissions = [InventoryPermissionManifestV1.FutureAllocationRead, InventoryPermissionManifestV1.FutureAllocationWrite],
+        },
         stockPositions,
         stockPositions with
         {

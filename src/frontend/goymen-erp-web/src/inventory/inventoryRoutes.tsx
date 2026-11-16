@@ -11,6 +11,8 @@ import {
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
   INVENTORY_TRANSFERS_ROUTE,
+  INVENTORY_FUTURE_ALLOCATION_ROUTE,
+  INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY,
 } from './capabilities'
 import { InventoryLabelTracePage } from './InventoryLabelTracePage'
 import { InventoryMovementTimelinePage } from './InventoryMovementTimelinePage'
@@ -21,6 +23,7 @@ import { InventoryShortageWarningPage } from './InventoryShortageWarningPage'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import { InventoryStockPositionPage } from './InventoryStockPositionPage'
 import { InventoryTransferPage } from './InventoryTransferPage'
+import { InventoryFutureAllocationPage } from './InventoryFutureAllocationPage'
 import { INVENTORY_LABEL_DETAIL_ROUTE } from './labelDetailRoute'
 
 function gate(children: ReactNode) {
@@ -28,6 +31,8 @@ function gate(children: ReactNode) {
 }
 
 export const inventoryRoutes: RouteObject[] = [
+  { path: INVENTORY_FUTURE_ALLOCATION_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY as CapabilityId}>
+    <InventoryFutureAllocationPage /></CapabilityRoute> },
   { path: INVENTORY_TRANSFERS_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
     <InventoryTransferPage /></CapabilityRoute> },
   {

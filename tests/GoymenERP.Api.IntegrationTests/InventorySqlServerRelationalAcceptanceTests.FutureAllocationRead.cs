@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -19,7 +20,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
         await using var database = run.Context(CompanyA);
         var authority = new FutureReadAuthority();
-        var query = new InventoryFutureAllocationQueryService(database, Company(CompanyA), new FutureReadUser(), authority);
+        var query = new InventoryFutureAllocationQueryService(database, Company(CompanyA), new FutureReadUser(), authority, new FutureReadUnits());
         var result = await query.ListByDemandAsync(supply.DemandOrder, supply.DemandLine);
         Assert.Equal((CompanyA, ownId), (result.CompanyId, Assert.Single(result.Items).AllocationId));
         Assert.Equal(2, authority.Calls);
@@ -46,5 +47,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             return Task.FromResult(new PermissionScope(companyId == CompanyA && permission == ErpPermissions.InventoryFutureAllocationRead
                 && (!DenyAfterFirst || Calls == 1), true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
+    }
+    private sealed class FutureReadUnits : ISettingsUnitIdentityCatalogV1
+    {
+        public Task<UnitIdentityV1?> ReadAsync(Guid unitId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<UnitIdentityV1?>(new(unitId, "SENTETIK-birim", "synthetic", false));
+        public Task<IReadOnlyList<UnitIdentityV1>> ListAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Only stored units may be requested.");
     }
 }
