@@ -111,3 +111,38 @@ kaynak cevaptan bulunamazsa soru gerekir. Çözüm diye başka bir izni zorunlu 
 
 Kaynak kapsamıyla S1 + S17 + S26 DONE kabul edilirse ekip **34/45 (%75,6)**; **6 PARTIAL, 5 kalan**.
 Kesin plan sayımını diğer ekiplerin entegrasyonu ve KALAN_PLAN sahibi yapacaktır.
+
+## Dalga 6 host bütünleştirme eki
+
+Birleşik kaynak tabanı `ad3867393`; dal `codex/tren-1-host-w6`.
+
+- **SAT-S8 / STK-S17 host kaynağı:** `SalesFutureDemandReductionHostParticipant`, yeni kabul edilen revizyonun Sales
+  tarafından hesaplanan açık miktarını aynen Inventory `ReduceDemandAsync` portuna taşır. Bütün satış satırı kilitleri
+  artan sırada, sonra bütün satırlardaki farklı alış kimliklerinin birleşimi artan sırada alınır. Boş gelecek ayırma
+  listesinde de fiziksel ayırma kontrolü çağrılır; otomatik seçim `Selections: null` olarak korunur.
+- Sales ve Inventory yazmaları **aynı bağlantı ve aynı DbTransaction** içindedir. Commit, rollback ve Idempotency-Key
+  kaydı Sales sahibindedir; yeni Inventory komut kaydı üretilmez. Sales izni, aktör, roller ve audit envelope değişmez;
+  kilitlerden sonra ve her azaltma öncesinde aynı Sales yetkisi yeniden ölçülür. Ek Inventory izni istenmez.
+- Terminal karar `(status, code)` çiftiyle tanınır. Önceki terminal ret sonraki 503, concurrency veya busy reddini örtemez;
+  yalnız terminal retler varsa sabit satış satırı sırasındaki ilk ret döner. Çağıranın cancellation'ı aynen taşınır.
+- **Purchasing termin adaptörü:** `PurchasingOwnerInventoryFutureSupplyScheduleSource`, owner'ın ALS-D81 kapsamında
+  zaten hesapladığı kalan dilimlerinden en geç tarihi alır. Kabul payını yeniden dağıtmaz. Okunamayan / bulunmayan /
+  başka şirket veya satır cevabı tarihsiz başarıya çevrilmez. Purchasing owner okuması **kendi scoped bağlantısındadır**;
+  bunun Sales DbTransaction'ına katıldığı iddia edilmez. Tutarlılık ortak purchase-line lock protokolüne dayanır.
+  Schedule mutation kilit eksikliği entegrasyon sahibine bildirildi ve `7a42d006d` ile düzeltildi; bu düzeltme bu dalın
+  kaynak tabanında değildir, final entegre head'de birlikte bulunmalıdır. Receipt, cancellation ve closure yollarının
+  mevcut aynı purchase-line lock kullanımı kaynakta doğrulandı.
+- Program'a yeni participant ve termin adaptörü ile mevcut `ManufacturingLogisticsSubcontractOrderReadPort`
+  kaydı eklendi. Bu son kayıt, tek başına STK-S3 fason teslim akışını tamamlamaz.
+- Host test kaynakları: global kilit sırası, aynı caller transaction, metadata ve null seçim, fiziksel-only çağrı,
+  terminal / transient önceliği, yanlış status+code, tenant ve kimlik sapması, kilit beklerken yetki kaybı.
+- Üç gerçek SQL fact kaynağı eklendi: gerçek Sales callback + Inventory ortak commit/replay; Sales save hatasında
+  allocation/ledger/audit/outbox rollback; kabulün tuttuğu Sales kilidiyle yarışan yeni ayırmanın busy → anahtar
+  tüketilmemesi → taze kabul edilmiş talep sınırına karşı yeniden denenmesi. Ürün/birim/tedarik ve boş teslim
+  snapshot'ları sentetiktir; bütün Purchasing veya browser iş akışı kabulü sayılmaz.
+- Yeni migration, THROW, izin, route, raw SQL üretim yüzeyi veya bypass allowlist girdisi yok.
+  Yeni SQL fact adları merkezi ilişkisel envantere ve test grubu pinlerine üreticiyle eklenecek.
+- Bu ekin Api.IntegrationTests derlemesi **exit 0, 0 uyarı / 0 hata**; API, host testleri ve üç SQL fact kaynağı
+  birlikte derlendi. OpenAPI build üretimi kapalıydı. Bütün test koşumları ve gerçek SQL kabulü **NOT_RUN**.
+- Yeni azaltma retlerinin approval / customer-acceptance HTTP problem metadata'sı entegrasyon sahibine bildirildi;
+  merkezi `9ee2c5d3d` düzeltmesi final head'de birlikte bulunmalıdır. Bu dalda üretilmiş OpenAPI veya pin yazılmadı.
