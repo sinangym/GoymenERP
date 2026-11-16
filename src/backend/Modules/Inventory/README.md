@@ -648,6 +648,32 @@ Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
   widens both keys, adds `CK_TransferLossRequests_RequestNumber` and the one-approval-per-line filtered unique index.
   Its `Down` refuses (THROW 51811) while a renewed request or its decision exists (forward fix).
 
+### STK-SC36-b — overage re-request, loss withdrawal (KLN-D107, KLN-D108) and the first-receipt rate port (FNS-D77/D78)
+
+- **Overage re-request (KLN-D107).** `POST .../lines/{lineId}/receive/overage-renewal` (`inventory.stock-transfer.write`)
+  records a corrected re-request of a rejected receipt excess. The receipt's own excess is request 1; re-requests are
+  numbered from 2 (`TransferOverageRenewals`, `CK_TransferOverageRenewals_RequestNumber`). It follows only a rejection of
+  the line's latest request and never predates it (409 `inventory_transfer_state_conflict`); an undecided request
+  answers 409 `inventory_transfer_overage_already_requested`; more than the declared excess is 422
+  `inventory_transfer_overage_renewal_exceeds_declared`. `DecideOverage` takes an optional `requestNumber` (absent = 1)
+  under `overage-approve`; neither the receiver nor the re-requester decides a re-request (409 self-approval). A line's
+  excess is approved at most once (filtered unique index on `[Decision] = 1`). A re-request changes no stock and no
+  transfer version; audit `inventory.transfer.overage-renewed.v1`.
+- **Loss withdrawal (KLN-D108).** `POST .../lines/{lineId}/loss-withdrawal` (`inventory.stock-transfer.loss-record`)
+  withdraws an undecided loss request by number (`TransferLossWithdrawals`). A decided request answers 409
+  `inventory_transfer_already_decided`, an unknown one `inventory_transfer_state_conflict`. A withdrawn request is never
+  decided (409 `inventory_transfer_loss_withdrawn`) and no longer blocks `cancel-dispatch`. Stock and version do not
+  change; audit `inventory.transfer.loss-withdrawn.v1`. A new request after a withdrawal takes the line's next number like
+  a KLN-D97 renewal (reversible implementation reading; whether that is wanted is NEEDS-SINAN).
+- **First-receipt rate port (FNS-D77/D78).** `IInventoryFirstReceiptExchangeRateReadPortV1` answers, per label, the
+  approved rate stored on the goods acceptance where the material first entered stock (split lineage followed to a single
+  parent; merge/manufacturing is `first_receipt_lineage_ambiguous`). No goods receipt records a rate yet, so the port is
+  dry: a goods-acceptance first entry answers `Unavailable` / `first_receipt_rate_not_recorded` and the caller shows
+  "hesaplanamadı" (FNS-D83). It never falls back to an invoice, bulletin or current rate. Company-scoped, read-only.
+- **Migration.** `AddInventoryTransferOverageRenewalsAndLossWithdrawals` adds `RequestNumber` (existing rows 1) to
+  `TransferOverageDecisions`, widens its key, adds the one-approval filtered index and creates both tables. Its `Down`
+  refuses (THROW 51836) while a re-request, a decision on one or a withdrawal exists (forward fix).
+
 ## Movement kinds and rollback signal (reference)
 
 `StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 11`):

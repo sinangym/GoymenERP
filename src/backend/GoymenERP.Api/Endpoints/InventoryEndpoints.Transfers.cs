@@ -19,6 +19,9 @@ public static partial class InventoryEndpoints
         InventoryTransferApiV1.Path + "/{transferId:guid}/lines/{lineId:guid}/loss-request";
     private const string TransferLossDecisionRoute =
         InventoryTransferApiV1.Path + "/{transferId:guid}/lines/{lineId:guid}/loss-decision";
+    private const string TransferOverageRenewalRoute = TransferReceiveRoute + "/overage-renewal";
+    private const string TransferLossWithdrawalRoute =
+        InventoryTransferApiV1.Path + "/{transferId:guid}/lines/{lineId:guid}/loss-withdrawal";
     private const string TransferReceiptFactsRoute = InventoryTransferApiV1.Path + "/{transferId:guid}/receipt-facts";
 
     /// <summary>
@@ -437,6 +440,100 @@ public static partial class InventoryEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // STK-SC36-b KLN-D107: a corrected re-request of a rejected excess, under the receive permission.
+        endpoints.MapPost(TransferOverageRenewalRoute, async (
+                Guid transferId,
+                Guid lineId,
+                HttpContext httpContext,
+                IInventoryTransferReceiptCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                var read = await ReadTransferBodyAsync<RenewInventoryTransferOverageV1>(
+                    httpContext, correlation, cancellationToken);
+                if (read.Problem is not null)
+                {
+                    return read.Problem;
+                }
+
+                try
+                {
+                    var result = await command.RenewOverageAsync(transferId, lineId, read.Request!,
+                        StockCountTransport(currentUser, correlation, read.Key,
+                            ErpPermissions.InventoryStockTransferWrite),
+                        cancellationToken);
+                    return TransferReceiptResult(httpContext, result);
+                }
+                catch (InventoryTransferException exception)
+                {
+                    return TransferProblem(httpContext, exception, correlation, InventoryTransferHttpCodes.RenewOverage);
+                }
+            })
+            .RequireAuthorization(ErpPermissions.InventoryStockTransferWrite)
+            .RequireCompanyContext()
+            .WithName("RenewInventoryTransferOverageV1")
+            .WithTags("Inventory")
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<RenewInventoryTransferOverageV1>("application/json")
+            .Produces<InventoryTransferReceiptResponseV1>(StatusCodes.Status201Created)
+            .Produces<InventoryTransferReceiptResponseV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryTransferHttpCodes.RenewOverage.Status400.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict([.. InventoryTransferHttpCodes.RenewOverage.Status409.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity(
+                [.. InventoryTransferHttpCodes.RenewOverage.Status422.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // STK-SC36-b KLN-D108: withdrawing an undecided loss request, under the loss record permission.
+        endpoints.MapPost(TransferLossWithdrawalRoute, async (
+                Guid transferId,
+                Guid lineId,
+                HttpContext httpContext,
+                IInventoryTransferReceiptCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                var read = await ReadTransferBodyAsync<WithdrawInventoryTransferLossV1>(
+                    httpContext, correlation, cancellationToken);
+                if (read.Problem is not null)
+                {
+                    return read.Problem;
+                }
+
+                try
+                {
+                    var result = await command.WithdrawLossAsync(transferId, lineId, read.Request!,
+                        StockCountTransport(currentUser, correlation, read.Key,
+                            ErpPermissions.InventoryStockTransferLossRecord),
+                        cancellationToken);
+                    return TransferReceiptResult(httpContext, result);
+                }
+                catch (InventoryTransferException exception)
+                {
+                    return TransferProblem(httpContext, exception, correlation, InventoryTransferHttpCodes.WithdrawLoss);
+                }
+            })
+            .RequireAuthorization(ErpPermissions.InventoryStockTransferLossRecord)
+            .RequireCompanyContext()
+            .WithName("WithdrawInventoryTransferLossV1")
+            .WithTags("Inventory")
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<WithdrawInventoryTransferLossV1>("application/json")
+            .Produces<InventoryTransferReceiptResponseV1>(StatusCodes.Status201Created)
+            .Produces<InventoryTransferReceiptResponseV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryTransferHttpCodes.WithdrawLoss.Status400.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict([.. InventoryTransferHttpCodes.WithdrawLoss.Status409.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         endpoints.MapGet(TransferReceiptFactsRoute, async (
                 Guid transferId,
                 HttpContext httpContext,
@@ -719,6 +816,36 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.SourcePositionConflict,
                 InventoryTransferReceiptCodesV1.AlreadyDecided,
                 InventoryTransferReceiptCodesV1.SelfApproval,
+                InventoryTransferReceiptCodesV1.LossWithdrawn,
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+
+        internal static readonly Operation RenewOverage = new(
+            new HashSet<string>(StringComparer.Ordinal) { InventoryTransferCodesV1.ValidationFailed },
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                InventoryTransferCodesV1.IdempotencyConflict,
+                InventoryTransferCodesV1.ConcurrentChange,
+                InventoryTransferCodesV1.TransferVersionConflict,
+                InventoryTransferCodesV1.TransferStateConflict,
+                InventoryTransferReceiptCodesV1.OverageNotPending,
+                InventoryTransferReceiptCodesV1.OverageAlreadyRequested,
+            },
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                InventoryTransferReceiptCodesV1.OverageRenewalExceedsDeclared,
+            });
+
+        internal static readonly Operation WithdrawLoss = new(
+            new HashSet<string>(StringComparer.Ordinal) { InventoryTransferCodesV1.ValidationFailed },
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                InventoryTransferCodesV1.IdempotencyConflict,
+                InventoryTransferCodesV1.ConcurrentChange,
+                InventoryTransferCodesV1.TransferVersionConflict,
+                InventoryTransferCodesV1.TransferStateConflict,
+                InventoryTransferReceiptCodesV1.AlreadyDecided,
+                InventoryTransferReceiptCodesV1.LossWithdrawn,
             },
             new HashSet<string>(StringComparer.Ordinal));
     }

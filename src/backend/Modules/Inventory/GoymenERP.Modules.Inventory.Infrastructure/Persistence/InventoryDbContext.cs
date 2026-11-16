@@ -50,6 +50,15 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     /// <summary>KLN-D23 (c), KLN-D97: a line is written off at most once, whatever number its approved request has.</summary>
     internal const string TransferLossApprovalFilter = "[Decision] = 1";
 
+    /// <summary>KLN-D107: receipt-excess requests are numbered per line from 1 (1 is the receipt's own declared excess).</summary>
+    internal const string TransferOverageRequestNumberCheck = "[RequestNumber] >= 1";
+
+    /// <summary>KLN-D107: a corrected re-request always follows the receipt's own request, so it is numbered from 2.</summary>
+    internal const string TransferOverageRenewalNumberCheck = "[RequestNumber] >= 2";
+
+    /// <summary>KLN-D24, KLN-D107: a line's excess is approved at most once, whatever number its approved request has.</summary>
+    internal const string TransferOverageApprovalFilter = "[Decision] = 1";
+
     /// <summary>KLN-D25 (7)(f): Off, On or Unreadable (<see cref="Domain.Transfers.InventoryTransferSourceScaleSetting"/>).</summary>
     internal const string TransferDispatchSourceScaleSettingCheck = "[SourceScaleSettingAtDispatch] IN (1, 2, 3)";
 
@@ -230,7 +239,11 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<InventoryTransferOverageDecisionRow> TransferOverageDecisions =>
         Set<InventoryTransferOverageDecisionRow>();
 
+    internal DbSet<InventoryTransferOverageRenewalRow> TransferOverageRenewals => Set<InventoryTransferOverageRenewalRow>();
+
     internal DbSet<InventoryTransferLossRequestRow> TransferLossRequests => Set<InventoryTransferLossRequestRow>();
+
+    internal DbSet<InventoryTransferLossWithdrawalRow> TransferLossWithdrawals => Set<InventoryTransferLossWithdrawalRow>();
 
     internal DbSet<InventoryTransferLossDecisionRow> TransferLossDecisions => Set<InventoryTransferLossDecisionRow>();
 
@@ -1255,8 +1268,9 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             table.HasCheckConstraint("CK_TransferOverageDecisions_Text",
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_TransferOverageDecisions_RequestNumber", TransferOverageRequestNumberCheck);
         });
-        overage.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        overage.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
         overage.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength)
             .IsRequired();
         overage.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
@@ -1265,6 +1279,9 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         overage.HasIndex(x => new { x.CompanyId, x.MovementId })
             .IsUnique()
             .HasFilter("[MovementId] IS NOT NULL");
+        overage.HasIndex(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .IsUnique()
+            .HasFilter(TransferOverageApprovalFilter);
         overage.HasOne<InventoryTransferReceiptRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
             .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
@@ -1274,6 +1291,28 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         overage.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var overageRenewal = modelBuilder.Entity<InventoryTransferOverageRenewalRow>();
+        overageRenewal.ToTable("TransferOverageRenewals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferOverageRenewals_Quantity", "[OverageKg] > 0");
+            table.HasCheckConstraint("CK_TransferOverageRenewals_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_TransferOverageRenewals_RequestNumber", TransferOverageRenewalNumberCheck);
+        });
+        overageRenewal.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
+        overageRenewal.Property(x => x.OverageKg).HasPrecision(18, 3);
+        overageRenewal.Property(x => x.Reason)
+            .HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength).IsRequired();
+        overageRenewal.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        overageRenewal.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        overageRenewal.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        overageRenewal.HasOne<InventoryTransferReceiptRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        overageRenewal.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
         var lossRequest = modelBuilder.Entity<InventoryTransferLossRequestRow>();
         lossRequest.ToTable("TransferLossRequests", Schema, table =>
@@ -1324,6 +1363,23 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         lossDecision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var lossWithdrawal = modelBuilder.Entity<InventoryTransferLossWithdrawalRow>();
+        lossWithdrawal.ToTable("TransferLossWithdrawals", Schema, table =>
+            table.HasCheckConstraint("CK_TransferLossWithdrawals_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([WithdrawnBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0"));
+        lossWithdrawal.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
+        lossWithdrawal.Property(x => x.Reason)
+            .HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength).IsRequired();
+        lossWithdrawal.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        lossWithdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128).IsRequired();
+        lossWithdrawal.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        lossWithdrawal.HasOne<InventoryTransferLossRequestRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber })
+            .OnDelete(DeleteBehavior.Restrict);
+        lossWithdrawal.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     /// <summary>

@@ -85,6 +85,7 @@ public static class InventoryModuleExtensions
         services.AddScoped<InventoryAverageCostLedgerWriter>();
         services.AddScoped<IInventoryManufacturingPlanAllocationReadPortV1, InventoryManufacturingPlanAllocationReadPort>();
         services.AddScoped<IInventoryLabelDispositionReadPortV1, InventoryLabelDispositionReadPort>();
+        services.AddScoped<IInventoryFirstReceiptExchangeRateReadPortV1, InventoryFirstReceiptExchangeRateReadPort>();
         services.AddScoped<IInventoryFreeQuantityReadPortV1, InventoryFreeQuantityReadPort>();
         // STK-S24: per-product physical kg for the Logistics weighing-difference record (read only; Api host adapter).
         services.AddScoped<IInventoryProductPhysicalStockReadPortV1, InventoryProductPhysicalStockReadPort>();

@@ -80,6 +80,8 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
     [InlineData("overage", ErpPermissions.InventoryStockTransferOverageApprove)]
     [InlineData("loss-request", ErpPermissions.InventoryStockTransferLossRecord)]
     [InlineData("loss-decision", ErpPermissions.InventoryStockTransferLossApprove)]
+    [InlineData("overage-renewal", ErpPermissions.InventoryStockTransferWrite)]
+    [InlineData("loss-withdrawal", ErpPermissions.InventoryStockTransferLossRecord)]
     public async Task Each_decision_route_forwards_the_key_under_its_own_permission(string operation, string permission)
     {
         var command = new StubCommand();
@@ -94,10 +96,26 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
             (call.Operation, call.TransferId, call.LineId, call.Transport.IdempotencyKey, call.Transport.PermissionCode));
     }
 
+    [Fact]
+    public async Task The_overage_approval_alone_does_not_open_the_overage_renewal_route()
+    {
+        var command = new StubCommand();
+        await using var host = CreateHost(command,
+            granted: [ErpPermissions.InventoryStockTransferOverageApprove, ErpPermissions.InventoryBalancesRead]);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(
+            Post(PathOf("overage-renewal"), BodyOf("overage-renewal"), "overage-renewal-key"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(command.Calls);
+    }
+
     [Theory]
     [InlineData("overage")]
     [InlineData("loss-request")]
     [InlineData("loss-decision")]
+    [InlineData("loss-withdrawal")]
     public async Task The_transfer_write_permission_alone_does_not_open_a_decision_route(string operation)
     {
         var command = new StubCommand();
@@ -178,6 +196,11 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
     [InlineData("loss-request", 409, InventoryTransferReceiptCodesV1.LossAlreadyRequested)]
     [InlineData("loss-decision", 409, InventoryTransferReceiptCodesV1.SelfApproval)]
     [InlineData("loss-decision", 409, InventoryTransferReceiptCodesV1.AlreadyDecided)]
+    [InlineData("loss-decision", 409, InventoryTransferReceiptCodesV1.LossWithdrawn)]
+    [InlineData("overage-renewal", 409, InventoryTransferReceiptCodesV1.OverageAlreadyRequested)]
+    [InlineData("overage-renewal", 422, InventoryTransferReceiptCodesV1.OverageRenewalExceedsDeclared)]
+    [InlineData("loss-withdrawal", 409, InventoryTransferReceiptCodesV1.AlreadyDecided)]
+    [InlineData("loss-withdrawal", 409, InventoryTransferReceiptCodesV1.LossWithdrawn)]
     public async Task An_owner_refusal_in_the_operation_code_set_keeps_its_code(string operation, int status, string code)
     {
         var command = new StubCommand { Failure = new InventoryTransferException(status, code) };
@@ -193,6 +216,8 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
     [InlineData("receive", 409, InventoryTransferReceiptCodesV1.SelfApproval)]
     [InlineData("overage", 422, InventoryTransferReceiptCodesV1.OverageReasonRequired)]
     [InlineData("loss-request", 409, InventoryTransferReceiptCodesV1.SelfApproval)]
+    [InlineData("overage-renewal", 409, InventoryTransferReceiptCodesV1.SelfApproval)]
+    [InlineData("loss-withdrawal", 422, InventoryTransferReceiptCodesV1.OverageRenewalExceedsDeclared)]
     public async Task An_owner_code_outside_the_operation_code_set_is_a_code_less_503(
         string operation,
         int status,
@@ -312,6 +337,8 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
         "overage" => $"{ReceivePath()}/overage-decision",
         "loss-request" => $"{InventoryTransferApiV1.Path}/{TransferId:D}/lines/{LineId:D}/loss-request",
         "loss-decision" => $"{InventoryTransferApiV1.Path}/{TransferId:D}/lines/{LineId:D}/loss-decision",
+        "overage-renewal" => $"{ReceivePath()}/overage-renewal",
+        "loss-withdrawal" => $"{InventoryTransferApiV1.Path}/{TransferId:D}/lines/{LineId:D}/loss-withdrawal",
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
     };
 
@@ -324,6 +351,10 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
             new RequestInventoryTransferLossV1("2", At.AddHours(3), "SENTETIK yolda kayıp"), Web),
         "loss-decision" => JsonSerializer.Serialize(new DecideInventoryTransferLossV1("3",
             InventoryTransferDecisionKindV1.Reject, At.AddHours(4), "SENTETIK kayıp reddi"), Web),
+        "overage-renewal" => JsonSerializer.Serialize(new RenewInventoryTransferOverageV1("3", At.AddHours(5), "0.4",
+            "SENTETIK düzeltilmiş fazla talebi"), Web),
+        "loss-withdrawal" => JsonSerializer.Serialize(new WithdrawInventoryTransferLossV1("3", 1, At.AddHours(5),
+            "SENTETIK talep geri çekildi"), Web),
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
     };
 
@@ -368,6 +399,7 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
             new InventoryTransferReceiptViewV1(LineId, "10", "9.5", "0.5", "0", Guid.NewGuid(), null, At.AddHours(2),
                 "receiver", "None", null, null, null, null),
         ],
+        [],
         []);
 
     private sealed class StubCommand : IInventoryTransferReceiptCommandV1
@@ -396,6 +428,14 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
         public Task<InventoryTransferReceiptResultV1> DecideLossAsync(Guid transferId, Guid lineId,
             DecideInventoryTransferLossV1 request, InventoryCommandMetadata transport,
             CancellationToken cancellationToken = default) => Answer("loss-decision", transferId, lineId, transport);
+
+        public Task<InventoryTransferReceiptResultV1> RenewOverageAsync(Guid transferId, Guid lineId,
+            RenewInventoryTransferOverageV1 request, InventoryCommandMetadata transport,
+            CancellationToken cancellationToken = default) => Answer("overage-renewal", transferId, lineId, transport);
+
+        public Task<InventoryTransferReceiptResultV1> WithdrawLossAsync(Guid transferId, Guid lineId,
+            WithdrawInventoryTransferLossV1 request, InventoryCommandMetadata transport,
+            CancellationToken cancellationToken = default) => Answer("loss-withdrawal", transferId, lineId, transport);
 
         private Task<InventoryTransferReceiptResultV1> Answer(string operation, Guid transferId, Guid lineId,
             InventoryCommandMetadata transport)

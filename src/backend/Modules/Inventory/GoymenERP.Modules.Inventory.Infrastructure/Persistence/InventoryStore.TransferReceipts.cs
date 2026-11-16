@@ -26,6 +26,9 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
     /// <summary>The first loss request of a transfer line (KLN-D97); a renewal after a rejection takes the next one.</summary>
     internal const int FirstLossRequestNumber = 1;
 
+    /// <summary>KLN-D107: the receipt's own declared excess is request 1; a corrected re-request takes the next number.</summary>
+    internal const int FirstOverageRequestNumber = 1;
+
     public async Task<InventoryTransferReceiptResultV1?> ReplayReceiveLineAsync(
         Guid transferId,
         Guid lineId,
@@ -254,9 +257,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             return keyReplay;
         }
 
+        var overageRequestNumber = parsed.RequestNumber;
         if (await dbContext.TransferOverageDecisions.AsNoTracking()
-                .SingleOrDefaultAsync(row => row.TransferId == transferId && row.LineId == lineId,
-                    cancellationToken) is { } prior)
+                .SingleOrDefaultAsync(row => row.TransferId == transferId && row.LineId == lineId
+                    && row.RequestNumber == overageRequestNumber, cancellationToken) is { } prior)
         {
             var priorResult = await ReceiptResultAsync(transferId, prior.CorrelationId, cancellationToken);
             await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -276,27 +280,39 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                     cancellationToken);
         var lineExists = row is not null && await dbContext.TransferLines.AsNoTracking()
             .AnyAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId, cancellationToken);
+        var renewal = row is null || overageRequestNumber == FirstOverageRequestNumber
+            ? null
+            : await dbContext.TransferOverageRenewals.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
+                    && candidate.RequestNumber == overageRequestNumber, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (row is null || !lineExists)
         {
             throw TransferError(404, InventoryTransferCodesV1.TransferNotFound);
         }
 
-        if (receipt is null || receipt.OverageKg <= 0m)
+        if (receipt is null || receipt.OverageKg <= 0m
+            || (overageRequestNumber != FirstOverageRequestNumber && renewal is null))
         {
             throw TransferError(409, InventoryTransferReceiptCodesV1.OverageNotPending);
         }
 
-        if (string.Equals(receipt.RecordedBy, metadata.ActorId.Trim(), StringComparison.Ordinal))
+        var actor = metadata.ActorId.Trim();
+        if (string.Equals(receipt.RecordedBy, actor, StringComparison.Ordinal)
+            || (renewal is not null && string.Equals(renewal.RecordedBy, actor, StringComparison.Ordinal)))
         {
-            // KLN-D24 maker≠approver: the receiver never decides their own excess.
+            // KLN-D24, KLN-D107 maker≠approver: neither the receiver nor the re-requester decides the excess.
             throw TransferError(409, InventoryTransferReceiptCodesV1.SelfApproval);
         }
 
-        if (request.DecidedAtUtc < receipt.ReceivedAtUtc)
+        if (request.DecidedAtUtc < receipt.ReceivedAtUtc
+            || (renewal is not null && request.DecidedAtUtc < renewal.RequestedAtUtc))
         {
             throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
+
+        // KLN-D107: a re-request is decided for its own kilograms, never above the receipt's first declared excess.
+        var decidedOverageKg = renewal?.OverageKg ?? receipt.OverageKg;
 
         Guid? movementId = null;
         if (parsed.Decision == ApproveDecision)
@@ -313,7 +329,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             InventoryTransferReceiptOverageEffect effect;
             try
             {
-                effect = aggregate.ReceiptOverage(lineId, Kilograms.Positive(receipt.OverageKg), request.DecidedAtUtc);
+                effect = aggregate.ReceiptOverage(lineId, Kilograms.Positive(decidedOverageKg), request.DecidedAtUtc);
             }
             catch (InventoryRuleException exception)
             {
@@ -331,6 +347,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             CompanyId = row.CompanyId,
             TransferId = row.Id,
             LineId = lineId,
+            RequestNumber = overageRequestNumber,
             Decision = parsed.Decision,
             Reason = parsed.Reason,
             MovementId = movementId,
@@ -352,10 +369,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             JsonSerializer.Serialize(new
             {
                 lineId,
+                requestNumber = overageRequestNumber,
                 decision = ((InventoryTransferDecisionKindV1)parsed.Decision).ToString(),
                 reason = parsed.Reason,
-                overageKg = Kilograms.Positive(receipt.OverageKg).ToString(),
+                overageKg = Kilograms.Positive(decidedOverageKg).ToString(),
                 receivedBy = receipt.RecordedBy,
+                requestedBy = renewal?.RecordedBy ?? receipt.RecordedBy,
                 movementId,
             }, Json),
             parsed.Decision == ApproveDecision ? "Transfer fazla teslimi onaylandı" : "Transfer fazla teslimi reddedildi");
@@ -406,6 +425,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             .OrderByDescending(candidate => candidate.RequestNumber)
             .FirstOrDefaultAsync(cancellationToken);
         InventoryTransferLossDecisionRow? priorDecision = null;
+        InventoryTransferLossWithdrawalRow? priorWithdrawal = null;
         if (prior is not null)
         {
             if (string.Equals(prior.PayloadHash, payloadHash, StringComparison.Ordinal))
@@ -418,7 +438,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             priorDecision = await dbContext.TransferLossDecisions.AsNoTracking()
                 .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
                     && candidate.RequestNumber == prior.RequestNumber, cancellationToken);
-            if (priorDecision is null)
+            priorWithdrawal = priorDecision is not null
+                ? null
+                : await dbContext.TransferLossWithdrawals.AsNoTracking()
+                    .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
+                        && candidate.RequestNumber == prior.RequestNumber, cancellationToken);
+            if (priorDecision is null && priorWithdrawal is null)
             {
                 // ASSUMPTION (KLN-D97, reversible implementation detail): one undecided request per line at a time.
                 await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -442,6 +467,13 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         // predates that rejection.
         if (priorDecision is not null
             && (priorDecision.Decision != RejectDecision || request.RequestedAtUtc < priorDecision.DecidedAtUtc))
+        {
+            throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
+        }
+
+        // ASSUMPTION (KLN-D108, reversible): a withdrawn request is not decided, so like a rejection it may be followed by
+        // a new request, which never predates the withdrawal.
+        if (priorWithdrawal is not null && request.RequestedAtUtc < priorWithdrawal.WithdrawnAtUtc)
         {
             throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
         }
@@ -492,9 +524,11 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.loss-requested.v1",
             "RequestLoss", parsed.ExpectedVersion, row.Version, "{}",
             JsonSerializer.Serialize(new { lineId, requestNumber, explanation = parsed.Explanation }, Json),
-            requestNumber == 1
+            requestNumber == FirstLossRequestNumber
                 ? "Transfer satırı için yolda kayıp talebi kaydedildi"
-                : "Reddedilen talebin ardından transfer satırı için yeni yolda kayıp talebi kaydedildi");
+                : priorWithdrawal is not null
+                    ? "Geri çekilen talebin ardından transfer satırı için yeni yolda kayıp talebi kaydedildi"
+                    : "Reddedilen talebin ardından transfer satırı için yeni yolda kayıp talebi kaydedildi");
         return await SaveReceiptAsync(view, facts, lossRequest.CorrelationId, metadata, RequestTransferLossCommand,
             keyHash, payloadHash, freshAuthorityFence, cancellationToken);
     }
@@ -568,10 +602,19 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         var lossRequest = await dbContext.TransferLossRequests.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
                 && candidate.RequestNumber == requestNumber, cancellationToken);
+        var withdrawn = lossRequest is not null && await dbContext.TransferLossWithdrawals.AsNoTracking()
+            .AnyAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
+                && candidate.RequestNumber == requestNumber, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (!lineExists)
         {
             throw TransferError(404, InventoryTransferCodesV1.TransferNotFound);
+        }
+
+        if (withdrawn)
+        {
+            // KLN-D108: a withdrawn request is closed without a decision.
+            throw TransferError(409, InventoryTransferReceiptCodesV1.LossWithdrawn);
         }
 
         if (lossRequest is null || request.DecidedAtUtc < lossRequest.RequestedAtUtc)
@@ -689,21 +732,25 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
 
     /// <summary>
     /// True when the line carries a loss request that has no decision yet (KLN-D23 (c)); a rejected request does not
-    /// count, its renewal (KLN-D97) does until it is decided.
+    /// count, its renewal (KLN-D97) does until it is decided; a withdrawn request (KLN-D108) does not count.
     /// </summary>
     private Task<bool> LossPendingAsync(Guid transferId, Guid lineId, CancellationToken cancellationToken) =>
         dbContext.TransferLossRequests.AsNoTracking()
             .AnyAsync(request => request.TransferId == transferId && request.LineId == lineId
                 && !dbContext.TransferLossDecisions.Any(decision => decision.TransferId == request.TransferId
-                    && decision.LineId == request.LineId && decision.RequestNumber == request.RequestNumber),
+                    && decision.LineId == request.LineId && decision.RequestNumber == request.RequestNumber)
+                && !dbContext.TransferLossWithdrawals.Any(withdrawal => withdrawal.TransferId == request.TransferId
+                    && withdrawal.LineId == request.LineId && withdrawal.RequestNumber == request.RequestNumber),
                 cancellationToken);
 
-    /// <summary>True when any line of the transfer carries an undecided loss request (KLN-D98).</summary>
+    /// <summary>True when any line of the transfer carries an undecided, not withdrawn loss request (KLN-D98, KLN-D108).</summary>
     private Task<bool> HasPendingLossRequestAsync(Guid transferId, CancellationToken cancellationToken) =>
         dbContext.TransferLossRequests.AsNoTracking()
             .AnyAsync(request => request.TransferId == transferId
                 && !dbContext.TransferLossDecisions.Any(decision => decision.TransferId == request.TransferId
-                    && decision.LineId == request.LineId && decision.RequestNumber == request.RequestNumber),
+                    && decision.LineId == request.LineId && decision.RequestNumber == request.RequestNumber)
+                && !dbContext.TransferLossWithdrawals.Any(withdrawal => withdrawal.TransferId == request.TransferId
+                    && withdrawal.LineId == request.LineId && withdrawal.RequestNumber == request.RequestNumber),
                 cancellationToken);
 
     private async Task<ReceiptState> LoadReceiptStateAsync(
@@ -777,7 +824,9 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         InventoryTransferReceiptRow? addedReceipt = null,
         InventoryTransferOverageDecisionRow? addedOverageDecision = null,
         InventoryTransferLossRequestRow? addedLossRequest = null,
-        InventoryTransferLossDecisionRow? addedLossDecision = null)
+        InventoryTransferLossDecisionRow? addedLossDecision = null,
+        InventoryTransferOverageRenewalRow? addedOverageRenewal = null,
+        InventoryTransferLossWithdrawalRow? addedLossWithdrawal = null)
     {
         var transferId = row.Id;
         var receipts = await dbContext.TransferReceipts.AsNoTracking()
@@ -788,6 +837,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             .Where(candidate => candidate.TransferId == transferId).ToListAsync(cancellationToken);
         var lossDecisions = await dbContext.TransferLossDecisions.AsNoTracking()
             .Where(candidate => candidate.TransferId == transferId).ToListAsync(cancellationToken);
+        var overageRenewals = await dbContext.TransferOverageRenewals.AsNoTracking()
+            .Where(candidate => candidate.TransferId == transferId).ToListAsync(cancellationToken);
+        var lossWithdrawals = await dbContext.TransferLossWithdrawals.AsNoTracking()
+            .Where(candidate => candidate.TransferId == transferId).ToListAsync(cancellationToken);
+        if (addedOverageRenewal is not null) overageRenewals.Add(addedOverageRenewal);
+        if (addedLossWithdrawal is not null) lossWithdrawals.Add(addedLossWithdrawal);
         if (addedReceipt is not null) receipts.Add(addedReceipt);
         if (addedOverageDecision is not null) overageDecisions.Add(addedOverageDecision);
         if (addedLossRequest is not null) lossRequests.Add(addedLossRequest);
@@ -795,13 +850,15 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         var sequence = (await dbContext.TransferLines.AsNoTracking().Where(line => line.TransferId == transferId)
                 .Select(line => new { line.LineId, line.Sequence }).ToListAsync(cancellationToken))
             .ToDictionary(line => line.LineId, line => line.Sequence);
-        var overageByLine = overageDecisions.ToDictionary(decision => decision.LineId);
+        // KLN-D107: the receipt view describes the receipt's own request (1); re-requests are listed separately.
+        var overageByRequest = overageDecisions.ToDictionary(decision => (decision.LineId, decision.RequestNumber));
+        var withdrawalByRequest = lossWithdrawals.ToDictionary(withdrawal => (withdrawal.LineId, withdrawal.RequestNumber));
         var lossDecisionByRequest = lossDecisions.ToDictionary(decision => (decision.LineId, decision.RequestNumber));
         return new InventoryTransferReceiptFactsViewV1(row.Id, row.CompanyId,
             row.Version.ToString(CultureInfo.InvariantCulture), ((InventoryTransferStatus)row.Status).ToString(),
             [.. receipts.OrderBy(receipt => sequence.GetValueOrDefault(receipt.LineId)).Select(receipt =>
             {
-                overageByLine.TryGetValue(receipt.LineId, out var decision);
+                overageByRequest.TryGetValue((receipt.LineId, FirstOverageRequestNumber), out var decision);
                 return new InventoryTransferReceiptViewV1(receipt.LineId,
                     Kilograms.Positive(receipt.DispatchedKg).ToString(),
                     Kilograms.Positive(receipt.ReceivedKg).ToString(),
@@ -821,12 +878,32 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                 .ThenBy(request => request.RequestNumber).Select(request =>
             {
                 lossDecisionByRequest.TryGetValue((request.LineId, request.RequestNumber), out var decision);
+                if (decision is null
+                    && withdrawalByRequest.TryGetValue((request.LineId, request.RequestNumber), out var withdrawal))
+                {
+                    return new InventoryTransferLossViewV1(request.LineId, request.RequestNumber, request.Explanation,
+                        request.RequestedAtUtc, request.RecordedBy, WithdrawnStatus, withdrawal.Reason,
+                        withdrawal.WithdrawnAtUtc, withdrawal.WithdrawnBy, null);
+                }
+
                 return new InventoryTransferLossViewV1(request.LineId, request.RequestNumber, request.Explanation,
                     request.RequestedAtUtc,
                     request.RecordedBy, DecisionStatus(decision?.Decision), decision?.Reason, decision?.DecidedAtUtc,
                     decision?.DecidedBy, decision?.MovementId);
+            })],
+            [.. overageRenewals.OrderBy(renewal => sequence.GetValueOrDefault(renewal.LineId))
+                .ThenBy(renewal => renewal.RequestNumber).Select(renewal =>
+            {
+                overageByRequest.TryGetValue((renewal.LineId, renewal.RequestNumber), out var decision);
+                return new InventoryTransferOverageRenewalViewV1(renewal.LineId, renewal.RequestNumber,
+                    Kilograms.Positive(renewal.OverageKg).ToString(), renewal.Reason, renewal.RequestedAtUtc,
+                    renewal.RecordedBy, DecisionStatus(decision?.Decision), decision?.Reason, decision?.DecidedAtUtc,
+                    decision?.DecidedBy, decision?.MovementId);
             })]);
     }
+
+    /// <summary>KLN-D108: the loss view status of a withdrawn request.</summary>
+    private const string WithdrawnStatus = "Withdrawn";
 
     private static string DecisionStatus(int? decision) => decision switch
     {
@@ -856,8 +933,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         }
 
         var stored = JsonSerializer.Deserialize<ReceiptCommandResult>(prior.ResultJson, Json);
+        // A result stored before KLN-D107 has no re-request list; it replays with an empty one.
         return stored is { Transfer: { } transfer, Facts: { } facts }
-            ? new(transfer, facts, true, prior.CorrelationId)
+            ? new(transfer, facts.OverageRenewals is null ? facts with { OverageRenewals = [] } : facts, true,
+                prior.CorrelationId)
             : throw TransferError(503, InventoryTransferCodesV1.Unavailable);
     }
 
@@ -949,20 +1028,34 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
     {
         var reason = InventoryTransferReceiptApiV1.NormalizeText(request.Reason);
         if (transferId == Guid.Empty || lineId == Guid.Empty || !Enum.IsDefined(request.Decision)
-            || request.DecidedAtUtc.Offset != TimeSpan.Zero || reason is null)
+            || request.DecidedAtUtc.Offset != TimeSpan.Zero || reason is null
+            || request.RequestNumber is < FirstOverageRequestNumber)
         {
             throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
         }
 
-        var payloadHash = GenealogyPayloadHash(new
-        {
-            transferId,
-            lineId,
-            decision = (int)request.Decision,
-            decidedAtUtc = request.DecidedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
-            reason,
-        });
-        return new(0, (int)request.Decision, reason, payloadHash);
+        var decidedAtUtc = request.DecidedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+        // KLN-D107: the request number joins the hash only when it is sent, so a decision recorded before re-requests
+        // existed still replays with its stored hash.
+        var payloadHash = request.RequestNumber is { } sentNumber
+            ? GenealogyPayloadHash(new
+            {
+                transferId,
+                lineId,
+                requestNumber = sentNumber,
+                decision = (int)request.Decision,
+                decidedAtUtc,
+                reason,
+            })
+            : GenealogyPayloadHash(new
+            {
+                transferId,
+                lineId,
+                decision = (int)request.Decision,
+                decidedAtUtc,
+                reason,
+            });
+        return new(0, request.RequestNumber ?? FirstOverageRequestNumber, (int)request.Decision, reason, payloadHash);
     }
 
     private static (long ExpectedVersion, string Explanation, string PayloadHash) LossRequestPayload(
@@ -1038,7 +1131,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         string? OverageReason,
         string PayloadHash);
 
-    private sealed record ParsedDecision(long ExpectedVersion, int Decision, string Reason, string PayloadHash);
+    private sealed record ParsedDecision(long ExpectedVersion, int RequestNumber, int Decision, string Reason, string PayloadHash);
 
     private sealed record ParsedLossDecision(
         long ExpectedVersion,
