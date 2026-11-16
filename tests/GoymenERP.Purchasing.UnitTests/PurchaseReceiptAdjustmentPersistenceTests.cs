@@ -8,7 +8,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
-public sealed class PurchaseReceiptAdjustmentPersistenceTests
+public sealed partial class PurchaseReceiptAdjustmentPersistenceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 17, 8, 0, 0, TimeSpan.Zero);
     private static Quantity Kg(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
@@ -24,6 +24,19 @@ public sealed class PurchaseReceiptAdjustmentPersistenceTests
         var backfill = Assert.Single(migration.UpOperations.OfType<SqlOperation>());
         Assert.Contains("WHERE [Status] = 3", backfill.Sql, StringComparison.Ordinal);
         Assert.Contains("[CancelledBy], [CancellationReason], [CancelledAtUtc]", backfill.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Batch_Down_preserves_grouped_replay_and_any_published_cursor_history_before_schema_changes()
+    {
+        var migration = new AddPurchaseReceiptAdjustmentBatches();
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 51956", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[PurchaseReceiptAdjustmentBatches]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[ReceiptAdjustmentBatchId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("SELECT 1 FROM [purchasing].[OutboxMessages]", guard.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

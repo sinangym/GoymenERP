@@ -24,7 +24,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// 5738113623 §1) is measured inside the approval's save, and the source request's sourcing version moves
 /// with it so two approvals against the same request collide on the request's row version.
 /// </summary>
-public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
+public sealed partial class PurchasingStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
     : IPurchasingStore
 {
     private const string RequestEntityType = "Purchasing.PurchaseRequest";
@@ -460,7 +460,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             .OrderBy(rate => rate.OrderVersionAfter).ToListAsync(cancellationToken);
         var adjustmentRows = await dbContext.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
         var cancellationRows = await dbContext.CancellationHistory.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows);
+        var batchRows = await dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows);
         var versionBefore = order.Version;
         var rateChangeBefore = order.LastExchangeRateChange;
         var before = Snapshot(order);
@@ -1062,6 +1063,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var rates = await dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => ids.Contains(rate.OrderId)).ToListAsync(cancellationToken);
         var adjustments = await dbContext.ReceiptAdjustments.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
         var cancellations = await dbContext.CancellationHistory.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
+        var batches = await dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
@@ -1071,7 +1073,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             var ownClosures = closures.Where(closure => closure.OrderId == row.Id).OrderBy(closure => closure.OrderVersionAfter).ToList();
             var ownRates = rates.Where(rate => rate.OrderId == row.Id).OrderBy(rate => rate.OrderVersionAfter).ToList();
             return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures, ownRates,
-                adjustments.Where(item => item.OrderId == row.Id).ToArray(), cancellations.Where(item => item.OrderId == row.Id).ToArray()), row.CompanyAccountId, row.EffectiveOn,
+                adjustments.Where(item => item.OrderId == row.Id).ToArray(), cancellations.Where(item => item.OrderId == row.Id).ToArray(),
+                batches.Where(item => item.OrderId == row.Id).ToArray()), row.CompanyAccountId, row.EffectiveOn,
                 VersionsOf(own));
         })];
     }
@@ -1092,7 +1095,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         IReadOnlyList<PurchaseOrderLineClosureEventRow>? closureEvents = null,
         IReadOnlyList<PurchaseOrderExchangeRateChangeRow>? exchangeRateChanges = null,
         IReadOnlyList<PurchaseReceiptAdjustmentRow>? receiptAdjustments = null,
-        IReadOnlyList<PurchaseOrderCancellationHistoryRow>? cancellationHistory = null)
+        IReadOnlyList<PurchaseOrderCancellationHistoryRow>? cancellationHistory = null,
+        IReadOnlyList<PurchaseReceiptAdjustmentBatchRow>? receiptBatches = null)
     {
         var money = MoneyOf(row);
         var order = row.SourceRequestId is { } sourceRequestId
@@ -1181,7 +1185,14 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             .ThenBy(acceptance => acceptance.AcceptanceId));
         var orderedClosures = new Queue<PurchaseOrderLineClosureEventRow>((closureEvents ?? [])
             .OrderBy(closure => closure.OrderVersionAfter));
-        var orderedAdjustments = new Queue<PurchaseReceiptAdjustmentRow>((receiptAdjustments ?? []).OrderBy(item => item.OrderVersionAfter));
+        var orderedAdjustments = new Queue<PurchaseReceiptAdjustmentRow[]>((receiptAdjustments ?? [])
+            .GroupBy(item => item.OrderVersionAfter).OrderBy(group => group.Key)
+            .Select(group => group.OrderBy(item => item.BatchLineNo ?? 0).ToArray()));
+        var batchHeaders = (receiptBatches ?? []).ToDictionary(item => item.BatchId);
+        var batchIds = (receiptAdjustments ?? []).Where(item => item.BatchId is not null).Select(item => item.BatchId!.Value).Distinct().ToArray();
+        if (batchHeaders.Count != batchIds.Length || batchIds.Any(id => !batchHeaders.ContainsKey(id))
+            || batchHeaders.Values.Any(header => header.CompanyId != row.CompanyId || header.OrderId != row.Id))
+            throw new InvalidOperationException("Receipt batch history is incomplete or belongs to another order.");
         var cancellations = (cancellationHistory ?? []).OrderBy(item => item.OrderVersionAfter).ToArray();
         // Compatibility with a pre-migration snapshot; the forward migration backfills these exact historical facts.
         if (cancellations.Length == 0 && row.Status == (int)PurchaseOrderStatus.Cancelled)
@@ -1215,10 +1226,13 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 continue;
             }
 
-            if (orderedAdjustments.TryPeek(out var adjustment) && adjustment.OrderVersionAfter == expectedVersionAfter)
+            if (orderedAdjustments.TryPeek(out var adjustmentGroup) && adjustmentGroup[0].OrderVersionAfter == expectedVersionAfter)
             {
                 orderedAdjustments.Dequeue();
-                ReplayReceiptAdjustment(order, row, lines, acceptances ?? [], adjustment);
+                if (adjustmentGroup.Length == 1 && adjustmentGroup[0].BatchId is null && adjustmentGroup[0].BatchLineNo is null)
+                    ReplayReceiptAdjustment(order, row, lines, acceptances ?? [], adjustmentGroup[0]);
+                else
+                    ReplayReceiptAdjustmentBatch(order, row, lines, acceptances ?? [], adjustmentGroup, batchHeaders);
                 continue;
             }
 

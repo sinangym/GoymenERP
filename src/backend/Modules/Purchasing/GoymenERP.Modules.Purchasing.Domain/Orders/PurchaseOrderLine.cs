@@ -201,6 +201,11 @@ public sealed class PurchaseOrderLine
     {
         var accepted = AcceptedQuantity.Subtract(undone).Add(newlyAccepted);
         var returned = definitiveReturn ? DefinitiveReturnQuantity.Add(undone) : DefinitiveReturnQuantity;
+        ApplyReceiptAdjustmentTotals(accepted, returned);
+    }
+
+    internal void ApplyReceiptAdjustmentTotals(Quantity accepted, Quantity returned)
+    {
         if (accepted.Add(CancelledQuantity).Add(ClosedQuantity).Add(returned).IsGreaterThan(CommittedQuantity))
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: kabul düzeltmesinin payları taahhüdü aşıyor.");

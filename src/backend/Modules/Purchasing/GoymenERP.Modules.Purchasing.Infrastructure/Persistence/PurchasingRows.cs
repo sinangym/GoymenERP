@@ -154,6 +154,7 @@ internal sealed class PurchaseAttemptRow : IPurchasingTenantRow
     public Guid? OrderId { get; set; }
     /// <summary>The immutable API-44/API-60 result; success and refusal share this attempt's unique key.</summary>
     public Guid? ReceiptAdjustmentId { get; set; }
+    public Guid? ReceiptAdjustmentBatchId { get; set; }
     public string? RefusalJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

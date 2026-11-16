@@ -384,3 +384,12 @@ acceptance remain separate work. No role, persona or user is granted the permiss
 
 Migration `20261116113129_AddPurchaseSupplierReturns` creates `PurchaseSupplierReturns` and `PurchaseSupplierReturnAttempts`;
 Down guard **51893** refuses while any return or attempt exists (forward fix). API-44 receipt reversal is not in this slice.
+# W8 receipt adjustment migrations (ALS-D86/D91/D92/D93)
+
+The forward-fix guards run before any schema drop. `20261116213347_AddPurchaseReceiptAdjustments`
+uses **51949** for immutable receipt/cancellation history; its recorded-cancellation backfill awaits K3 review.
+`20261116215806_AddPurchaseSupplierReturnResponseSnapshots` uses **51953** for original response snapshots.
+`20261116222957_AddPurchaseReceiptAdjustmentBatches` uses **51956** for grouped receipt history or any outbox
+cursor history. Batch identity, detail ordering and first response remain immutable. The outbox's fixed
+`MIN_ACTIVE_ROWVERSION` read protects commit ordering and awaits K3 review; tenant filters remain in place.
+Runtime SQL acceptance is not yet run; these migrations are generated source, not deployment evidence.

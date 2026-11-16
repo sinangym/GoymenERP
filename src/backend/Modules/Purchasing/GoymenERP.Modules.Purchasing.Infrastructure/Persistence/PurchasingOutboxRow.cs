@@ -10,6 +10,9 @@ internal sealed class PurchasingOutboxRow : IPurchasingTenantRow
 {
     public Guid Id { get; set; }
 
+    /// <summary>Database-generated committed-reader cursor; not the aggregate sequence or a wall-clock timestamp.</summary>
+    public ulong Position { get; set; }
+
     public Guid CompanyId { get; set; }
 
     public required string EventType { get; set; }
