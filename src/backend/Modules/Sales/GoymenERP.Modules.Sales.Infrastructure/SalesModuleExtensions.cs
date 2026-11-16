@@ -90,6 +90,10 @@ public static class SalesModuleExtensions
         // S5 API-32 (Fatura çekirdeği 1): the invoice draft over the Sales store, the Logistics shares and the Settings rate.
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
+        // F2 (SAT-D309/D312, LOJ-D9/D12): the subcontract service invoice draft over the Sales store; the delivery weighing read is
+        // the host's adapter of the Logistics owner's net-weight port. Without it the create is 503, never an assumed quantity.
+        services.AddScoped<ISalesSubcontractServiceInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractServiceInvoiceService>(CreateInvoiceService);
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
         // invoice read port is the Finance owner's and Finance's AddFinanceServices registers it (FIN-S6, SAT-S1); Sales never registers a
         // default, so a host without Finance answers the match with 503, never an assumed document.
@@ -183,7 +187,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOfficialInvoiceReadPortV1>(),
         serviceProvider.GetRequiredService<SalesInvoiceMatchTolerancePolicy>(),
         serviceProvider.GetService<ISalesFinanceAdmissionPortV1>(),
-        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>());
+        serviceProvider.GetService<ISalesInvoiceDiagnosticsV1>(),
+        serviceProvider.GetService<ISalesSubcontractServiceInvoiceStore>(),
+        serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.

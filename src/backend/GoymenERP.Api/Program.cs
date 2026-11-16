@@ -350,6 +350,9 @@ builder.Services.AddSalesModule(
 // A Sales draft read may disclose only the code/name of the Cari record already linked to that
 // authorized Sales result. The adapter grants no generic Cari read and has no public lookup route.
 builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
+// F2 (SAT-D309, LOJ-D9): the subcontract service invoice reads the delivery weighing's net kg only through the Logistics
+// owner's F1 read; the adapter has no route, carries no authority and maps facts only.
+builder.Services.AddScoped<ISalesSubcontractDeliveryWeighingReadPortV1, SalesSubcontractDeliveryWeighingHost>();
 // MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
 // company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
 builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();

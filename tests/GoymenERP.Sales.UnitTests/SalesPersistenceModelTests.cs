@@ -139,7 +139,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddOrderRiskLimitWarnings", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesContracts", StringComparison.Ordinal));
-        Assert.Equal("20261115160935_AddSalesContracts", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSubcontractServiceInvoices", StringComparison.Ordinal));
+        Assert.Equal("20261116002458_AddSubcontractServiceInvoices", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -417,6 +418,49 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains("[sales].[ContractAttempts]", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         Assert.Equal(2, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
+    }
+
+    /// <summary>F2 (SAT-D309/D312, LOJ-D12): the subcontract service invoice tables — one invoice per (company, loading instruction,
+    /// weighing, order), a draft-only state check, the command-name check on the attempts; Down is a forward fix (51732) first.</summary>
+    [Fact]
+    public void The_subcontract_service_invoice_model_keys_one_invoice_per_weighing_and_order_and_its_down_refuses_with_51732_first()
+    {
+        using var context = Context();
+        var invoice = context.Model.FindEntityType(typeof(SubcontractServiceInvoiceRow))!;
+        Assert.Equal(("sales", "SubcontractServiceInvoices"), (invoice.GetSchema(), invoice.GetTableName()));
+        Assert.Single(invoice.GetDeclaredQueryFilters());
+        Assert.True(UniqueIndex(invoice, "UX_SubcontractServiceInvoices_DocumentNo"));
+        Assert.True(UniqueIndex(invoice, "UX_SubcontractServiceInvoices_Weighing"));
+        Assert.Equal(["CompanyId", "LoadingInstructionId", "WeighingId", "SalesOrderId"], invoice.GetIndexes()
+            .Single(index => index.GetDatabaseName() == "UX_SubcontractServiceInvoices_Weighing").Properties.Select(property => property.Name));
+        var line = context.Model.FindEntityType(typeof(SubcontractServiceInvoiceLineRow))!;
+        Assert.Equal(("sales", "SubcontractServiceInvoiceLines"), (line.GetSchema(), line.GetTableName()));
+        Assert.Single(line.GetDeclaredQueryFilters());
+        var attempt = context.Model.FindEntityType(typeof(SubcontractServiceInvoiceAttemptRow))!;
+        Assert.Equal(("sales", "SubcontractServiceInvoiceAttempts"), (attempt.GetSchema(), attempt.GetTableName()));
+        Assert.Single(attempt.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempt.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Null(attempt.FindProperty("IdempotencyKey"));
+
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var checks = design.FindEntityType(typeof(SubcontractServiceInvoiceRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(checks, check => check.Name == "CK_SubcontractServiceInvoices_State"
+            && check.Sql == SalesDbContext.SubcontractServiceInvoiceStateConstraint);
+        Assert.Contains(checks, check => check.Name == "CK_SubcontractServiceInvoices_Source"
+            && check.Sql == SalesDbContext.SubcontractServiceInvoiceSourceConstraint);
+        var attemptChecks = design.FindEntityType(typeof(SubcontractServiceInvoiceAttemptRow))!.GetCheckConstraints().ToArray();
+        Assert.Contains(attemptChecks, check => check.Name == "CK_SubcontractServiceInvoiceAttempts_Command"
+            && check.Sql == SalesDbContext.SubcontractServiceInvoiceAttemptCommandConstraint);
+
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSubcontractServiceInvoices();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(3, migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>().Count());
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 51732,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[sales].[SubcontractServiceInvoices]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(3, down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Count());
     }
 
     [Fact]
