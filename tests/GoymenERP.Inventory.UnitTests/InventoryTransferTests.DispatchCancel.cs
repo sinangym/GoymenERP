@@ -414,6 +414,20 @@ public sealed partial class InventoryTransferTests
         Assert.Empty(world.Writer.Calls);
     }
 
+    [Fact]
+    public async Task An_undecided_loss_request_refuses_the_cancel_with_its_own_code_before_any_owner_read()
+    {
+        var world = new CommandWorld().Cancellable(InventoryTransferSourceScaleSetting.On);
+        world.Writer.CancelContext = world.Writer.CancelContext! with { HasPendingLossRequest = true };
+
+        // KLN-D98: the cancel never withdraws the request; its decision (or a later withdrawal) comes first.
+        await Refused(world.Service().CancelDispatchAsync(CancelledTransfer, CancelRequest("2"), Transport("actor")),
+            409, InventoryTransferCodesV1.CancelLossRequestPending);
+
+        Assert.Empty(world.CancelGate.Reads);
+        Assert.Empty(world.Writer.Calls);
+    }
+
     [Theory]
     [InlineData("version-zero")]
     [InlineData("version-signed")]
@@ -546,7 +560,7 @@ public sealed partial class InventoryTransferTests
     private static InventoryTransferDispatchCancelContextV1 InTransitContext(
         InventoryTransferSourceScaleSetting storedAtDispatch) =>
         new(CancelledTransfer, Company, 2, InventoryTransferStatus.InTransit, Source, DispatchedAt, storedAtDispatch,
-            null, null);
+            null, null, HasPendingLossRequest: false);
 
     private sealed class TestScaleSetting : IInventoryTransferSourceScaleSettingPortV1
     {

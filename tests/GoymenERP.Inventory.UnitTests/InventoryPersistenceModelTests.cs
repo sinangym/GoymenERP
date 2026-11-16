@@ -200,7 +200,9 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryFutureSupplyAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
-        Assert.Equal("AddInventorySupplierReturnExit", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventorySupplierReturnExit", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryTransferLossRequestNumbers", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -656,9 +658,18 @@ public sealed class InventoryPersistenceModelTests
             Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
             StringComparison.Ordinal);
 
-        foreach (var entity in new[] { receipts, overageDecisions, lossRequests, lossDecisions })
+        foreach (var entity in new[] { receipts, overageDecisions })
         {
             Assert.Equal(["CompanyId", "TransferId", "LineId"],
+                entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
+            Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        }
+
+        // KLN-D97 (AddInventoryTransferLossRequestNumbers): loss requests and decisions are also keyed by the per-line
+        // request number.
+        foreach (var entity in new[] { lossRequests, lossDecisions })
+        {
+            Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
                 entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
             Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
         }
@@ -701,6 +712,46 @@ public sealed class InventoryPersistenceModelTests
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);
         Assert.Equal("[Kind] BETWEEN 1 AND 11", narrowed.Sql);
+    }
+
+    [Fact]
+    public void The_loss_request_number_migration_widens_both_keys_keeps_one_approval_per_line_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferLossRequestNumbers();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var lossRequests = model.FindEntityType(typeof(InventoryTransferLossRequestRow))!;
+        var lossDecisions = model.FindEntityType(typeof(InventoryTransferLossDecisionRow))!;
+
+        Assert.Equal((false, false), (lossRequests.FindProperty("RequestNumber")!.IsNullable,
+            lossDecisions.FindProperty("RequestNumber")!.IsNullable));
+        Assert.Equal("[RequestNumber] >= 1", InventoryDbContext.TransferLossRequestNumberCheck);
+        Assert.Equal(InventoryDbContext.TransferLossRequestNumberCheck,
+            Assert.Single(lossRequests.GetCheckConstraints(),
+                check => check.Name == "CK_TransferLossRequests_RequestNumber").Sql);
+        var request = Assert.Single(lossDecisions.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLossRequestRow));
+        Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
+            request.Properties.Select(property => property.Name));
+        Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
+            request.PrincipalKey.Properties.Select(property => property.Name));
+        // KLN-D23 (c): a line is written off at most once, whatever number its approved request has.
+        Assert.Equal("[Decision] = 1", InventoryDbContext.TransferLossApprovalFilter);
+        Assert.Contains(lossDecisions.GetIndexes(), index => index.IsUnique
+            && index.GetFilter() == InventoryDbContext.TransferLossApprovalFilter
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId", "LineId"]));
+
+        var added = migration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>().ToArray();
+        Assert.Equal(["TransferLossRequests", "TransferLossDecisions"], added.Select(column => column.Table));
+        Assert.All(added, column => Assert.Equal(("RequestNumber", false, (object?)1),
+            (column.Name, column.IsNullable, column.DefaultValue)));
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51811", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossRequests] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossDecisions] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
     }
 
     [Fact]

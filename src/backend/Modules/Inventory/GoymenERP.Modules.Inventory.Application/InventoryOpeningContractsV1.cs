@@ -73,20 +73,23 @@ public static class InventoryPermissionManifestV1
     /// <summary>
     /// KLN-D24 (B-22c): approve or reject a recorded receipt excess. A separate name from <see cref="StockTransferWrite"/>
     /// so the receiver and the approver can be different people (the service also refuses self-approval).
-    /// Registration/classification and every grant remain central/user-owned.
+    /// Registration/classification and every grant remain central/user-owned. KLN-D92 persona (grant-time human gate,
+    /// not a grant): Stok/Depo Müdürü and Genel Müdür.
     /// </summary>
     public const string StockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
 
     /// <summary>
     /// KLN-D23 (c) (B-22c): record a loss request with an explanation for one pending transfer label. Moves no stock.
-    /// Registration/classification and every grant remain central/user-owned.
+    /// Registration/classification and every grant remain central/user-owned. KLN-D92 persona (grant-time human gate,
+    /// not a grant): Depo Sorumlusu. KLN-D97: the same name renews a rejected request.
     /// </summary>
     public const string StockTransferLossRecord = "inventory.stock-transfer.loss-record";
 
     /// <summary>
     /// KLN-D23 (c) (B-22c): approve (write off as a transit loss) or reject one recorded loss request. A separate name
     /// from <see cref="StockTransferLossRecord"/> (the service also refuses the requester's own decision).
-    /// Registration/classification and every grant remain central/user-owned.
+    /// Registration/classification and every grant remain central/user-owned. KLN-D92 persona (grant-time human gate,
+    /// not a grant): Stok/Depo Müdürü and Genel Müdür.
     /// </summary>
     public const string StockTransferLossApprove = "inventory.stock-transfer.loss-approve";
 }

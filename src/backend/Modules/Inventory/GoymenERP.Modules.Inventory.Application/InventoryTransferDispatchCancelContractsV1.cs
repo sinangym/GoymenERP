@@ -29,7 +29,9 @@ public sealed record CancelInventoryTransferDispatchV1(
 
 /// <summary>
 /// What Inventory stored for one transfer that the cancellation window needs. The closure, once persisted, is final
-/// (KLN-D25 (7)(g), KLN-D27 (5)): a later reading never reopens it.
+/// (KLN-D25 (7)(g), KLN-D27 (5)): a later reading never reopens it. <see cref="HasPendingLossRequest"/> is true while
+/// any line of the transfer carries an undecided loss request (KLN-D98: the cancel is refused before any owner is
+/// asked; the writer checks it again inside its own transaction).
 /// </summary>
 public sealed record InventoryTransferDispatchCancelContextV1(
     Guid TransferId,
@@ -40,7 +42,8 @@ public sealed record InventoryTransferDispatchCancelContextV1(
     DateTimeOffset? DispatchedAtUtc,
     InventoryTransferSourceScaleSetting? StoredScaleSettingAtDispatch,
     InventoryTransferCancelClosureBasis? ClosureBasis,
-    DateTimeOffset? ClosedAtUtc);
+    DateTimeOffset? ClosedAtUtc,
+    bool HasPendingLossRequest);
 
 /// <summary>
 /// The source warehouse "kantardan geçer" setting as its owner reports it (KLN-D25 (7)(a), LOJ-D11). An undefined

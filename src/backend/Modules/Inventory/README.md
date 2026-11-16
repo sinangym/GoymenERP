@@ -586,6 +586,35 @@ Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
   setting, and the disposition snapshot bucket of a cancellation (counted as other inbound kg today). The real
   Settings and Logistics/e-İrsaliye producers are those owners' integration work.
 
+### STK-SC34-a — receipt follow-ups (KLN-D90, KLN-D91, KLN-D92, KLN-D97, KLN-D98)
+
+- **Shortage cost (KLN-D90).** `AverageCostCalculator.ValueTransferReceiptShortage` values the KLN-D21 fire at the
+  dispatch unit cost, never the moving average at receipt; an unknown or zero dispatch cost has no value, and the
+  value is left unrounded for the Finance accounting-entry spec. Transfers post nothing to the cost ledger yet
+  (KLN-D64 (2)) and the dispatch unit cost is not stored, so no movement path calls the rule; no accounting entry is
+  written until ledger posting opens (account mapping is NEEDS-SPEC, Finance).
+- **Multi-block label (KLN-D91).** A label dispatched in more than one block/lot bucket is received only with its full
+  dispatched kilograms; any difference is 409 `inventory_transfer_receipt_multi_block_full_only` (replaces
+  `inventory_transfer_receipt_split_undecided`), checked before the excess-reason rules, never split over buckets.
+- **Personas (KLN-D92).** `inventory.stock-transfer.loss-record`: Depo Sorumlusu; `overage-approve` and `loss-approve`:
+  Stok/Depo Müdürü and Genel Müdür. A declaration for the grant-time human gate, not a grant: no role, no user, no
+  seed. Maker≠approver stays enforced by the service.
+- **Renewed loss request (KLN-D97).** Loss requests and decisions are numbered per line (`RequestNumber`, from 1). A
+  rejected request stays as it was; `RequestLoss` on the same line opens the next number (not before the rejection,
+  maker≠approver and audit as before). An undecided request blocks a second one (409
+  `inventory_transfer_loss_already_requested`; one undecided request per line is the reversible implementation reading
+  of KLN-D97); an approved one is terminal. `DecideLoss` takes an optional `requestNumber` (absent = 1, so a stale
+  decision never lands on a newer request; the hash includes it only when sent, so old keys still replay). A line is
+  written off at most once (filtered unique index on `[Decision] = 1`). The overage side is not renewed here: a
+  corrected overage request needs a permission and a quantity bound that are not decided (NEEDS-SINAN).
+- **Cancel while a loss request is pending (KLN-D98).** `cancel-dispatch` answers 409
+  `inventory_transfer_cancel_loss_request_pending` before any owner is asked, and the writer re-checks it in its own
+  transaction; the cancel never withdraws the request. An approved write-off still answers
+  `inventory_transfer_state_conflict`. A withdraw command does not exist yet (its permission is NEEDS-SINAN).
+- **Migration.** `AddInventoryTransferLossRequestNumbers` adds `RequestNumber` (existing rows 1) to both loss tables,
+  widens both keys, adds `CK_TransferLossRequests_RequestNumber` and the one-approval-per-line filtered unique index.
+  Its `Down` refuses (THROW 51811) while a renewed request or its decision exists (forward fix).
+
 ## Movement kinds and rollback signal (reference)
 
 `StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 11`):

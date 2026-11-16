@@ -444,7 +444,8 @@ public sealed class InventoryTransfer
     /// B-22c receipt of one in-transit line with the receiver's weighed kilograms (KLN-D21: the entered kg is final).
     /// The whole dispatched label is accepted at the destination exactly as <see cref="AcceptLine"/> does. A shortage
     /// becomes a separate automatic fire movement; an overage is only reported (KLN-D24 approval comes later). A
-    /// difference on a label dispatched in more than one block bucket is refused: how it splits is not decided.
+    /// KLN-D91: a label dispatched in more than one block/lot bucket is received only with its full dispatched kilograms;
+    /// a difference is refused and never split over the buckets.
     /// </summary>
     public InventoryTransferReceiptEffect ReceiveLine(
         long expectedVersion,
@@ -462,7 +463,7 @@ public sealed class InventoryTransfer
         if (candidate?.Effect is { } dispatched && dispatched.Buckets.Count != 1
             && receivedQuantity != dispatched.ActualQuantity)
         {
-            throw Invalid("Birden çok blok kovasıyla çıkan etikette teslim farkının bölüşümü kararlaştırılmadı.");
+            throw Invalid("Birden çok blok veya partiyle sevk edilen etiket yalnız tam miktarla teslim alınır.");
         }
 
         var acceptance = AcceptLine(expectedVersion, lineId, receivedAtUtc, incomingDocument);
@@ -505,7 +506,8 @@ public sealed class InventoryTransfer
 
         if (line.Effect.Buckets.Count != 1)
         {
-            throw Invalid("Birden çok blok kovasıyla çıkan etikette teslim farkının bölüşümü kararlaştırılmadı.");
+            // KLN-D91: a multi-block label is received only in full, so it never carries an excess to approve.
+            throw Invalid("Birden çok blok veya partiyle sevk edilen etiket yalnız tam miktarla teslim alınır.");
         }
 
         if (approvedAtUtc < acceptedAtUtc)

@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using static GoymenERP.Modules.Inventory.Domain.Costing.AverageCostMovementKind;
 using static GoymenERP.Modules.Inventory.Domain.Costing.AverageCostUnreadableReason;
@@ -172,6 +173,47 @@ public sealed class InventoryAverageCostCalculatorTests
 
         AssertKnown(result.DispatchedTo, 3m, 11.4286m);
         AssertKnown(result.Source, 7m, 10.5714m);
+    }
+
+    [Fact]
+    public void A_transfer_receipt_shortage_is_valued_at_the_dispatch_unit_cost_not_the_average_at_receipt()
+    {
+        // KLN-D90: dispatched at 10.5714/kg; the moving average at receipt may since be 12, which is never used.
+        var valuation = AverageCostCalculator.ValueTransferReceiptShortage(2.5m, 10.5714m);
+
+        Assert.True(valuation.IsKnown);
+        Assert.Equal((2.5m, (decimal?)10.5714m, (decimal?)26.4285m),
+            (valuation.QuantityKg, valuation.UnitCostPerKg, valuation.Value));
+    }
+
+    [Fact]
+    public void A_transfer_receipt_shortage_value_is_left_unrounded_for_the_finance_posting_spec()
+    {
+        var valuation = AverageCostCalculator.ValueTransferReceiptShortage(0.333m, 10.5714m);
+
+        Assert.Equal(3.5202762m, valuation.Value);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    public void A_transfer_receipt_shortage_without_a_known_dispatch_cost_has_no_value(string? dispatchUnitCost)
+    {
+        decimal? cost = dispatchUnitCost is null ? null : decimal.Parse(dispatchUnitCost, CultureInfo.InvariantCulture);
+
+        var valuation = AverageCostCalculator.ValueTransferReceiptShortage(4m, cost);
+
+        Assert.False(valuation.IsKnown);
+        Assert.Equal((4m, (decimal?)null, (decimal?)null),
+            (valuation.QuantityKg, valuation.UnitCostPerKg, valuation.Value));
+    }
+
+    [Fact]
+    public void A_transfer_receipt_shortage_refuses_a_non_positive_quantity_or_a_negative_dispatch_cost()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ValueTransferReceiptShortage(0m, 10m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ValueTransferReceiptShortage(-1m, 10m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ValueTransferReceiptShortage(1m, -0.01m));
     }
 
     [Fact]

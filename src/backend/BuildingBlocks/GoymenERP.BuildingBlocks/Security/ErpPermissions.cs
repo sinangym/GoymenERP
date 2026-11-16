@@ -267,7 +267,8 @@ public static class ErpPermissions
     /// stock). A separate name from <see cref="InventoryStockTransferWrite"/> so the receiver and the approver can be
     /// different people; the service also refuses the receiver's own approval. Registration grants nothing: no seeded
     /// role or real user receives this command. Company-wide only because the transfer has no narrower approved scope
-    /// dimension. Not Critical: no approved source adds grant-time dual control.
+    /// dimension. Not Critical: no approved source adds grant-time dual control. KLN-D92 persona: Stok/Depo Müdürü and
+    /// Genel Müdür, a declaration for the grant-time human gate, not a grant: no role, no user, no seed.
     /// </summary>
     public const string InventoryStockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
 
@@ -275,7 +276,8 @@ public static class ErpPermissions
     /// B-22c pending-label loss request (KLN-D23 (c): a pending label may be closed as a loss only with an explanation
     /// and a maker≠approver approval). Records the explanation; it moves no stock. Registration grants nothing: no
     /// seeded role or real user receives this command. Company-wide only because the transfer has no narrower approved
-    /// scope dimension. Not Critical: no approved source adds grant-time dual control.
+    /// scope dimension. Not Critical: no approved source adds grant-time dual control. KLN-D92 persona: Depo Sorumlusu,
+    /// a declaration for the grant-time human gate, not a grant: no role, no user, no seed.
     /// </summary>
     public const string InventoryStockTransferLossRecord = "inventory.stock-transfer.loss-record";
 
@@ -284,7 +286,8 @@ public static class ErpPermissions
     /// recorded loss request. A separate name from <see cref="InventoryStockTransferLossRecord"/>; the service also
     /// refuses the requester's own decision. Registration grants nothing: no seeded role or real user receives this
     /// command. Company-wide only because the transfer has no narrower approved scope dimension. Not Critical: no
-    /// approved source adds grant-time dual control.
+    /// approved source adds grant-time dual control. KLN-D92 persona: Stok/Depo Müdürü and Genel Müdür, a declaration
+    /// for the grant-time human gate, not a grant: no role, no user, no seed.
     /// </summary>
     public const string InventoryStockTransferLossApprove = "inventory.stock-transfer.loss-approve";
 

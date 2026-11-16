@@ -575,6 +575,7 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.CancelWindowClosed,
                 InventoryTransferCodesV1.CancelWindowUnreadable,
                 InventoryTransferCodesV1.CancelConfirmationMissing,
+                InventoryTransferCodesV1.CancelLossRequestPending,
             },
             new HashSet<string>(StringComparer.Ordinal));
 
@@ -592,7 +593,7 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.TransferStateConflict,
                 InventoryTransferCodesV1.LabelVersionConflict,
                 InventoryTransferCodesV1.SourcePositionConflict,
-                InventoryTransferReceiptCodesV1.SplitUndecided,
+                InventoryTransferReceiptCodesV1.MultiBlockFullReceiptOnly,
                 InventoryTransferReceiptCodesV1.LossPending,
             },
             new HashSet<string>(StringComparer.Ordinal)

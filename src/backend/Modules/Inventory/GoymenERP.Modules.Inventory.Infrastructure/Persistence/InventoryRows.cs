@@ -643,12 +643,16 @@ internal sealed class InventoryTransferOverageDecisionRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>KLN-D23 (c): the one immutable loss request of a pending line, with its explanation.</summary>
+/// <summary>
+/// KLN-D23 (c): one immutable loss request of a pending line, with its explanation. KLN-D97: requests are numbered per
+/// line from 1; a rejected request stays as it was and a new one takes the next number.
+/// </summary>
 internal sealed class InventoryTransferLossRequestRow : IInventoryTenantRow
 {
     public Guid CompanyId { get; set; }
     public Guid TransferId { get; set; }
     public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
     public string Explanation { get; set; } = string.Empty;
     public DateTimeOffset RequestedAtUtc { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
@@ -657,12 +661,16 @@ internal sealed class InventoryTransferLossRequestRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>KLN-D23 (c): the one immutable decision on a loss request (1 approve with movement, 2 reject).</summary>
+/// <summary>
+/// KLN-D23 (c): the one immutable decision on one numbered loss request (1 approve with movement, 2 reject); a line
+/// has at most one approval.
+/// </summary>
 internal sealed class InventoryTransferLossDecisionRow : IInventoryTenantRow
 {
     public Guid CompanyId { get; set; }
     public Guid TransferId { get; set; }
     public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
     public int Decision { get; set; }
     public string Reason { get; set; } = string.Empty;
     public Guid? MovementId { get; set; }
