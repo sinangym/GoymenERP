@@ -64,6 +64,7 @@ using GoymenERP.Modules.Settings.Infrastructure;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using GoymenERP.Modules.Work.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 var isOpenApiDocumentGeneration = OpenApiDocumentGenerationMode.IsActive;
@@ -246,6 +247,9 @@ builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// KIM-S19 (B-13): Finance's opening period reader answers from the Settings company policy registry. Finance registers its
+// fail-closed default with TryAddScoped, so the host replaces it here; any failure still answers "not available".
+builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceOpeningPeriodReader, SettingsFinanceOpeningPeriodReader>());
 
 static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
     new SalesReferenceReadHandler(
@@ -576,6 +580,7 @@ app.MapSettingsSalesPolicyEndpoints();
 app.MapSettingsUnitConversionPolicyEndpoints();
 app.MapSettingsUnitProfileEndpoints();
 app.MapSettingsSegregationOfDutiesPolicyEndpoints();
+app.MapSettingsCompanyPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
 app.MapSettingsWorkCenterCapacityEndpoints();
 app.MapSettingsBankCsvMappingEndpoints();

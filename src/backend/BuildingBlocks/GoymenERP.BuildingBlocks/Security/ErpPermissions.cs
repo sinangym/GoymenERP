@@ -1391,6 +1391,13 @@ public static class ErpPermissions
     public const string SettingsSegregationOfDutiesManage = "settings.segregation-of-duties.manage";
 
     /// <summary>
+    /// KIM-S19 (B-13): read the company's Finance opening-balance period and record open/close versions
+    /// (<c>SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage</c>). Registered, not granted: no role, seed or
+    /// user receives it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
+
+    /// <summary>
     /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
     /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
     /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
@@ -1714,6 +1721,7 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsFinanceOpeningPeriodManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,
@@ -1967,6 +1975,7 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsFinanceOpeningPeriodManage,
             SettingsExchangeRatesRead,
             SettingsExchangeRatesCorrect,
             SettingsExchangeRatesImport,

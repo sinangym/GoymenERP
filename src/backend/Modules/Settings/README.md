@@ -865,3 +865,22 @@ buffer 0. The per-work-center buffer is the only buffer (URT-D92); there is no c
 
 Open: whether a `Days` buffer counts working days or calendar days (NEEDS-SINAN; the consumer applies it), and a
 company-wide buffer (NEEDS-SINAN, URT-D91 limits).
+
+## Company policy registry and finance opening period (B-13, ADR-SET-002, URT-D96, SAT-D381, ALS-D105, FNS-D97)
+
+One registry of company-wide policy keys kept as insert-only, versioned Settings records. A missing record is never read as a
+permissive value. Nothing is seeded.
+
+| Part | What |
+|---|---|
+| Tables | `CompanyPolicyVersions`, keyed by (`CompanyId`, `PolicyKey`, `Version`) under the company filter: one version sequence per company and key (`finance.opening-period`, `manufacturing.due-date-buffer`, `sales.subcontract-tax-default`, `purchasing.subcontract-tax-default`). `FinanceCreditAccountMappingVersions`, keyed by (`CompanyId`, `Purpose`, `Version`), is empty (FNS-D97: no write path yet). CHECK constraints hold the shape. |
+| Migration | `AddCompanyPolicyVersions` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51853` while any policy or mapping version exists (forward fix). An empty store rolls back freely. |
+| Opening period | Finance's `IFinanceOpeningPeriodReader` is answered in the host by `SettingsFinanceOpeningPeriodReader` (registered with `Replace` after the Finance default). No record, a refused or unreadable read or an invalid row answers `NotAvailable`; it is never assumed open. The version text is `finance.opening-period:<version>` and changes on every open or close. |
+| Due-date buffer | URT-D96: company-wide working days, start value 0 when nothing is recorded. The upper bound is NEEDS-SINAN. |
+| Subcontract tax default | SAT-D381 (sales) and ALS-D105 (purchasing) are separate keys with the tax master's item type default shape; codes must exist in the tax master. Only the sales side has a write route; the purchasing write authority is NEEDS-SINAN, so it reads "no default". |
+| Credit account mapping | FNS-D97: `ISettingsFinanceCreditAccountMappingProviderV1` answers `MappingMissing` ("eşleme eksik") until a mapping is recorded. |
+| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered (NEEDS-SINAN N-12: format, reset, gaps). |
+| Names | `settings.finance-opening-period.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). The due-date buffer route uses `manufacturing.plans.approve`; the sales tax default route uses `purchasing.orders.approve` (to be confirmed, NEEDS-SINAN). |
+| Routes | `GET` and `POST .../versions` under `/api/v1/settings/company-policies/` for `finance-opening-period`, `manufacturing-due-date-buffer` and `sales-subcontract-tax-default`. POST returns 204. |
+| Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). One save with the execution row and one audit event. Terminal refusals (409, 422) are stored and replay. |
+| Evidence | Unit: `CompanyPolicyRulesV1Tests`. Model: `SettingsCompanyPolicyPersistenceModelTests`. Names: `SettingsCompanyPolicyPermissionRegistrationTests`. Adapter: `SettingsFinanceOpeningPeriodReaderTests`. No real-SQL acceptance test yet. |
