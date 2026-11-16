@@ -102,6 +102,27 @@ public sealed class PurchaseOrderLineCostReadPortTests
     }
 
     [Fact]
+    public void The_moving_average_unit_cost_is_the_discounted_unit_price_without_the_maturity_surcharge()
+    {
+        // ALS-D104 / SAT-D386: discounts applied, VAT excluded (the line price carries no tax), vade farkı excluded (SAT-D263 (3)).
+        var percent = PurchaseOrderLineCostPriceV1.Of(LineA, ProductA, UnitA, UnitA, false, Money.Of(12.3456m, Usd, 4), "USD", 10m,
+            null, 2m, null);
+        Assert.Equal(11.11104m, percent.MovingAverageUnitCost);
+        Assert.Equal(percent.DiscountedUnitPrice, percent.MovingAverageUnitCost);
+        Assert.NotEqual(percent.NetUnitPrice, percent.MovingAverageUnitCost);
+
+        // 10 − 1.25 per unit = 8.75; the 0.5 per unit surcharge stays out of the cost.
+        var amount = PurchaseOrderLineCostPriceV1.Of(LineA, ProductA, UnitA, UnitA, false, Money.Of(10m, Usd, 2), "USD", null, 1.25m,
+            null, 0.5m);
+        Assert.Equal(8.75m, amount.MovingAverageUnitCost);
+        Assert.Equal(9.25m, amount.NetUnitPrice);
+
+        var plain = PurchaseOrderLineCostPriceV1.Of(LineA, ProductA, UnitA, UnitA, true, Money.Of(7.5m, Usd, 2), "USD", null, null,
+            null, null);
+        Assert.Equal(7.5m, plain.MovingAverageUnitCost);
+    }
+
+    [Fact]
     public void A_price_without_discount_or_surcharge_answers_the_unit_price_as_both_derived_prices()
     {
         var price = PurchaseOrderLineCostPriceV1.Of(LineA, ProductA, UnitA, UnitA, true, Money.Of(7.5m, Usd, 2), "USD", null, null,
@@ -235,7 +256,8 @@ public sealed class PurchaseOrderLineCostReadPortTests
         string[] priceNames = [.. typeof(PurchaseOrderLineCostPriceV1).GetProperties().Select(property => property.Name)];
         Assert.Equal(
             ["PricedLineId", "ProductId", "LineUnitId", "PriceUnitId", "PriceUnitIsKilogram", "UnitPrice", "CurrencyCode",
-                "DiscountPercent", "DiscountAmount", "DeferralPercent", "DeferralAmount", "DiscountedUnitPrice", "NetUnitPrice"],
+                "DiscountPercent", "DiscountAmount", "DeferralPercent", "DeferralAmount", "DiscountedUnitPrice", "NetUnitPrice",
+                "MovingAverageUnitCost"],
             priceNames);
 
         // BS-1: the rate is the invoice's (IPurchaseInvoiceCostRateReadPortV1); nothing here converts or picks a functional currency.
