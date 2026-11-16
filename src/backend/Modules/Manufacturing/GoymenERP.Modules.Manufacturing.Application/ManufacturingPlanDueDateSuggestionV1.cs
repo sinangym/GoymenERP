@@ -30,8 +30,8 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 //   record is not captured at approval; reversible, reported). No record is capacity_not_configured; a Settings failure
 //   is capacity_source_unavailable. The parameter-profile keys below are no longer read for the suggestion.
 // - URT-D96: a "day" buffer counts WORKING days of the work center calendar. The work center's own buffer applies when
-//   it has one; otherwise the company default buffer — the two are never added. No company default source exists yet
-//   (no Settings port), so the default is zero until one is composed.
+//   it has one; otherwise the real Settings company default buffer — the two are never added. A missing record is the
+//   decided zero/version-0 answer; a missing or unreadable provider is a retryable 503, never silently zero.
 // - URT-D97: the queue order is termin, then priority score, then creation (ProductionWorkCenterQueueOrderV1); a draft
 //   is placed where it would stand by the same key. The priority score is zero until it is stored.
 // - URT-D99: each plan ahead counts its REMAINING kg (ProductionQueueRemainingKgCalculatorV1).
@@ -126,6 +126,8 @@ public static class ManufacturingDueDateSuggestionV1
     /// <summary>No capacity provider is composed, or Settings could not answer.</summary>
     public const string CapacitySourceUnavailable = "capacity_source_unavailable";
 
+    public const string CompanyBufferSourceUnavailable = "company_buffer_source_unavailable";
+
     /// <summary>No calendar port is composed, or Organization failed to answer.</summary>
     public const string CalendarUnavailable = "calendar_unavailable";
 
@@ -172,11 +174,15 @@ public sealed partial class ManufacturingCommandService
             else
             {
                 var now = timeProvider.GetUtcNow();
-                answer = BusinessToday() is { } businessDate
-                    ? new ManufacturingApiResult<PlanDueDateSuggestionViewV1>(ManufacturingApiStatus.Ok,
-                        await SuggestDueDateAsync(plan, companyId, now, businessDate, cancellationToken), false, null)
-                    : new ManufacturingApiResult<PlanDueDateSuggestionViewV1>(ManufacturingApiStatus.Unavailable,
-                        null, false, null);
+                if (BusinessToday() is not { } businessDate)
+                    answer = new(ManufacturingApiStatus.Unavailable, null, false, null);
+                else
+                {
+                    var suggestion = await SuggestDueDateAsync(plan, companyId, now, businessDate, cancellationToken);
+                    answer = suggestion.ReasonCode == ManufacturingDueDateSuggestionV1.CompanyBufferSourceUnavailable
+                        ? new(ManufacturingApiStatus.Unavailable, null, false, suggestion.ReasonCode)
+                        : new(ManufacturingApiStatus.Ok, suggestion, false, null);
+                }
             }
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
@@ -245,8 +251,16 @@ public sealed partial class ManufacturingCommandService
             };
         }
 
+        var companyBuffer = (Value: 0m, Unit: (string?)null);
+        if (capacityRecord.SafetyBufferUnit is null && capacityRecord.SafetyBufferValue == 0m)
+        {
+            var recorded = await ReadCompanyDueDateBufferAsync(companyId, cancellationToken);
+            if (recorded is null)
+                return view with { ReasonCode = ManufacturingDueDateSuggestionV1.CompanyBufferSourceUnavailable };
+            companyBuffer = (recorded.WorkingDays, WorkCenterSafetyBufferUnitsV1.Days);
+        }
         var (margin, marginRefusal) = SafetyBufferOf(capacityRecord.SafetyBufferValue, capacityRecord.SafetyBufferUnit,
-            CompanyDefaultSafetyBuffer());
+            companyBuffer);
         if (marginRefusal is not null || margin is null)
         {
             return view with { ReasonCode = marginRefusal ?? ManufacturingDueDateSuggestionV1.SafetyMarginInvalid };
@@ -349,10 +363,21 @@ public sealed partial class ManufacturingCommandService
     }
 
     /// <summary>
-    /// URT-D96: the company default safety buffer, used only when the work center records none. No Settings source for
-    /// it exists yet, so it is zero (no buffer) until one is composed; it is never added to a work center buffer.
+    /// URT-D96/D100: the latest company default, used only when the work center records none. Settings owns the
+    /// decided zero/version-0 answer when no record exists. No provider, a failed read or a foreign/malformed answer
+    /// is unavailable; it is never interpreted as that zero. The caller revalidates PlansRead after all owner awaits.
     /// </summary>
-    private static (decimal Value, string? Unit) CompanyDefaultSafetyBuffer() => (0m, null);
+    private async Task<SettingsManufacturingDueDateBufferV1?> ReadCompanyDueDateBufferAsync(Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        if (companyDueDateBuffer is null) return null;
+        try
+        {
+            var answer = await companyDueDateBuffer.GetDueDateBufferAsync(companyId, cancellationToken);
+            return answer.CompanyId == companyId && answer.WorkingDays >= 0 && answer.Version >= 0 ? answer : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException) { return null; }
+    }
 
     /// <summary>
     /// URT-D89/URT-D96: the safety buffer from the work center record, or — only when the work center records none — the
