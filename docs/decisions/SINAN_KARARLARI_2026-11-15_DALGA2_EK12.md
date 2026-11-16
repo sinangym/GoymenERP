@@ -3,15 +3,19 @@
 Bu belge önceki karar dosyalarını silmez; FNS-D73…FNS-D76, KLN-D83…KLN-D88, ALS-D104, URT-D86…URT-D89, SAT-D367…SAT-D370,
 LOJ-D18…LOJ-D20 ve KIM-D38…KIM-D39 kararlarını ekler. SAT-D295/BS-1 (giriş maliyetinde kur = fatura kuru), SAT-D263(3),
 FNS-D31, FNS-D35…FNS-D39, FNS-D58, URT-D82, KIM-D28, KIM-D36, KIM-D37, BS-5, BS-13, BS-14, URT-D43, URN-D8, NS-01
-(SINAN-CEVAP 14) ve LOJ-D15 aynen geçerlidir; bu belge onların açık bıraktığı noktaları tamamlar. İki çelişki (KLN-D46 ↔
-SC21, KLN-D48 ↔ URN-D11) bu belgeyle çözülür. Bazı kaynak kararlar henüz merge edilmemiş karar PR'larındadır; bu belge
-onlara o PR'lardaki metinle atıf yapar.
+(SINAN-CEVAP 14) ve LOJ-D15 aynen geçerlidir; bu belge onların açık bıraktığı noktaları tamamlar. KLN-D46 ↔ SC21
+çelişkisini EK6'daki KLN-D63 (SINAN-CEVAP 27, `SINAN_KARARLARI_2026-11-15_DALGA2_EK6.md`, #1170) zaten aynı yönde çözmüştür;
+bu belgedeki KLN-D86 onu tekrarlar, değiştirmez. KLN-D48 ↔ URN-D11 çelişkisi bu belgeyle (KLN-D87) yeniden çözülür ve
+EK6'daki çözüm satırının yerine geçer. SAT-D368 ve SAT-D370, aşağıdaki "Teyit (SINAN-CEVAP 39)" bölümüne göre yazılmıştır.
+Bazı kaynak kararlar henüz merge edilmemiş karar PR'larındadır; bu belge onlara o PR'lardaki metinle atıf yapar.
 
 **Kaynak:** Sinan, 15 Kasım 2026, bu Claude Code oturumunda soru penceresiyle cevapladı (SINAN-CEVAP 33). Sorular, tren-1
 dalga 2/3 takım raporlarındaki `NEEDS-SINAN` maddelerinden geldi (Alış-Cari ALC-S17, Stok STK-S35/STK-S14/STK-S2/STK-S5/
 STK-S36, Üretim URT-S10, Kimlik KIM-S22/KIM-S20, Finans FIN-S3/FIN-S6, Satış SAT-S10 ve sözleşme dilimleri). "(Önerilen)"
 işaretleri soranındır. Yirmi dört sorunun on dokuzunda önerilen seçenek seçildi; dört soruda önerilmeyen bir seçenek
 seçildi (33.9, 33.14, 33.18, 33.21) ve kur sorusuna serbest metinle cevap verildi (33.1, aşağıda kelimesi kelimesine).
+SAT-D368 ve SAT-D370 için inceleme sırasında çıkan iki çelişki Sinan'a 16 Kasım 2026'da aynı oturumda ayrıca soruldu
+(SINAN-CEVAP 39, Issue #66 yorumu https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6910907285).
 
 ## Soru ve cevaplar
 
@@ -42,6 +46,16 @@ seçildi (33.9, 33.14, 33.18, 33.21) ve kur sorusuna serbest metinle cevap veril
 | 33.23 | Sözleşme tutarlarını (fiyat, toplam) görmek için ayrıca "satış fiyatı okuma" izni gereksin mi? | **Evet, fiyat izni de gerekir (Önerilen)** | "Sözleşmeyi gören ama fiyat izni olmayan kişi tutarları gizli görür; siparişteki fiyat gizleme kuralıyla aynı." Seçilmeyen: "Hayır, sözleşme izni yeter" — sözleşmeyi okuyan tutarları da görür. |
 | 33.24 | Satış siparişi satırında termin tarihini kim değiştirebilsin? | **Siparişi düzenleyebilen (Önerilen)** | "Mevcut sipariş düzenleme izni yeter; yeni izin yok, değişiklik denetime yazılır." Seçilmeyen: "Ayrı 'termin değiştir' izni" — yeni bir izin açılır (yalnız kayıt; kime verileceğini Sinan seçer). |
 
+## Teyit (SINAN-CEVAP 39)
+
+| # | Soru | Cevap | Seçilen seçeneğin açıklaması |
+|---|---|---|---|
+| 39.1 | SAT-D370'e "ayrı izin yok, sipariş düzenleme izni yeter" yazıldı. Ancak kilitli DEC-SAL-003 "termin güncellemesi planlama/sevkiyat rolündedir" diyor ve kodda zaten ayrı bir `sales.orders.delivery-schedule.write` izni var. Soru 33.24 "yeni izin açılsın mı" diye sorulduğu için öncülü yanlıştı. Hangisi geçerli olsun? | **Mevcut termin izni (Önerilen)** | "Mevcut `sales.orders.delivery-schedule.write` izni kullanılır, DEC-SAL-003 aynen geçerli kalır (planlama/sevkiyat). SAT-D370 buna göre düzeltilir." Seçilmeyen: "Düzenleme izni yetsin" — sipariş düzenleme izni olan herkes değiştirebilir; bu DEC-SAL-003'ü daraltır, kilitli kararı açıkça güncellemek gerekir. |
+| 39.2 | SAT-D368 "bitiş tarihi başlangıçtan sonra olmalı" (aynı gün olmaz) diyor. #1172'deki SAT-D362 ise "bitiş başlangıçtan önce olamaz" diyor (aynı gün olur). Başlangıç ve bitiş aynı gün olabilir mi? | **Aynı gün olabilir (Önerilen)** | "SAT-D362 geçerli: bitiş başlangıçtan önce olamaz, eşit olabilir. SAT-D368 SAT-D362'ye atıfla düzeltilir." Seçilmeyen: "Kesin sonra olmalı" — bitiş başlangıçtan en az bir gün sonra olmalı; SAT-D362 açıkça değiştirilir. |
+
+Soru penceresinde 39.2 "teslim aralığı" diye yazıldı; seçenekler SAT-D362'ye (sözleşme bitiş tarihi) atıf yaptığı için
+cevap sözleşme tarihleri için uygulanır.
+
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
@@ -51,10 +65,10 @@ seçildi (33.9, 33.14, 33.18, 33.21) ve kur sorusuna serbest metinle cevap veril
 | FNS-D75 | Teminat ve panel tarih tabanı | Teminatın "yürürlükte mi" kontrolü ve kredi paneli `asOf` tarihi şirketin iş günüyle (şirket yerel saati, Türkiye) belirlenir; sunucu UTC günü kullanılmaz. Uygulama ayrıntısı (geri alınabilir): iş gününü veren mevcut sağlayıcı/saat kaynağının adı. | Finans teminat (FIN-S2), kredi paneli (FIN-S3) |
 | FNS-D76 | Resmî satış faturasının kaynağı | Satış eşleşmesi (API-35) için resmî kayıt iki kaynaktan okunur: onaylı elle girilmiş kayıt (D1) ve CSV v2 dosya içe aktarımı (FIN-S5). Aynı resmî numara/ETTN iki kaynakta da varsa **onaylı elle kayıt geçerlidir**. Uygulama ayrıntısı (geri alınabilir): iki kaynak arasında tutar/tarih farkı olduğunda ayrıca uyumsuzluk bilgisi gösterilip gösterilmeyeceği. | Finans resmî fatura okuma portu (FIN-S6), Satış eşleşmesi |
 | KLN-D83 | Şirket geneli ortalama maliyette eksik depo | Şirket geneli ortalama maliyet hesabında depolardan biri okunamaz veya kaynağı yoksa şirket geneli değer verilmez; sonuç "hesaplanamadı" olur (fail-closed). | Stok şirket geneli ortalama maliyet (STK-S35) |
-| KLN-D84 | Şirket geneli ortalama maliyetin ağırlığı | Ağırlık yalnız şirketin kendi malı olan stoktur, eldeki kg ile; emanet ve fason stok ağırlığa girmez. | STK-S35 |
+| KLN-D84 | Şirket geneli ortalama maliyetin ağırlığı | Ağırlık yalnız şirketin kendi malı olan stoktur, eldeki kg ile; emanet ve fason stok ağırlığa girmez. Bu, EK6'daki KLN-D68 (1)–(2) ile aynı yöndedir; KLN-D68'i değiştirmez (serbest/bloke stok ve toplama kuralı KLN-D68/KLN-D55'teki gibidir). | STK-S35 |
 | KLN-D85 | Maliyette birim çevrim kaynağı | Hareketli ortalama maliyetin KG dışı birime (adet, metre vb.) çevrilmesinde Ayarlar'daki birim çevrim politikası (KIM-D37) kullanılır. Politika girilmemişse çevrim reddedilir (fail-closed). Ürün kartına ayrı katsayı alanı eklenmez. | Stok maliyet okuma (STK-S14), Ayarlar birim çevrim sağlayıcısı (KIM-S20) |
-| KLN-D86 | Kullanılabilir artık mirası (çelişki çözümü) | KLN-D46 geçerlidir: bölmede bütün alt etiketler kullanılabilir artık olur; birleştirmede kaynakların hepsi kullanılabilir artıksa sonuç da öyle olur; karışık kaynaklı birleştirmede sonucun üretim durumu boş kalır. SC21 karar dosyasındaki "bölünme/birleşme mirası açık kalır" ifadesi bu kararla geçersizdir. | Stok etiket bölme/birleştirme (STK-S36) |
-| KLN-D87 | Kesit türleri (çelişki çözümü) | KLN-D48'deki bütün aileler ilk kesit türü diliminde eklenir: Sac, Rulo, Boru, Profil'e ek olarak uzun mamul (köşebent, lama, silme, dolu yuvarlak, dolu kare, altıgen, T demiri), yapısal profil (NPU/UPN, NPI, IPE, HEA/HEB/HEM; kg/m standart tablodan), inşaat demiri/filmaşin/hasır çelik, sac türevleri (baklavalı, delikli, trapez/oluklu), ERW boru ve profil, boyalı ERW. URN-D11'deki "şimdilik dört; yeni tür ayrı dilimle" sınırı bu kararla kalkar; URN-D11'deki dört türün ölçü alanları aynen geçerlidir. Standart kg/m tablosunun kaynağı ve sürümü KLN-D48'deki gibi dilim spec'inde gösterilir. | Ürün kartı kesit türleri (STK-S37) |
+| KLN-D86 | Kullanılabilir artık mirası (çelişki çözümü) | KLN-D46 geçerlidir: bölmede bütün alt etiketler kullanılabilir artık olur; birleştirmede kaynakların hepsi kullanılabilir artıksa sonuç da öyle olur; karışık kaynaklı birleştirmede sonucun üretim durumu boş kalır. SC21 karar dosyasındaki "bölünme/birleşme mirası açık kalır" ifadesi bu kararla geçersizdir. Bu, EK6'daki KLN-D63'ün (SINAN-CEVAP 27) tekrarıdır; KLN-D63 aynen geçerlidir. | Stok etiket bölme/birleştirme (STK-S36) |
+| KLN-D87 | Kesit türleri (çelişki çözümü) | KLN-D48'deki bütün aileler ilk kesit türü diliminde eklenir: Sac, Rulo, Boru, Profil'e ek olarak uzun mamul (köşebent, lama, silme, dolu yuvarlak, dolu kare, altıgen, T demiri), yapısal profil (NPU/UPN, NPI, IPE, HEA/HEB/HEM; kg/m standart tablodan), inşaat demiri/filmaşin/hasır çelik, sac türevleri (baklavalı, delikli, trapez/oluklu), ERW boru ve profil, boyalı ERW. URN-D11'deki "şimdilik dört; yeni tür ayrı dilimle" sınırı bu kararla kalkar; EK6'nın çelişki tablosundaki "KLN-D48 (SC19) ↔ URN-D11 (SC21): URN-D11 daha yeni kullanıcı kararıdır: dört tür" satırı da bu daha yeni kararla (SINAN-CEVAP 33.18) geçersizdir; URN-D11'deki dört türün ölçü alanları aynen geçerlidir. Standart kg/m tablosunun kaynağı ve sürümü KLN-D48'deki gibi dilim spec'inde gösterilir. | Ürün kartı kesit türleri (STK-S37) |
 | KLN-D88 | Birim çevrim katsayısının yuvarlama yönü | URN-D8'deki katsayı yuvarlaması normal yuvarlamadır: yarım ve üstü sıfırdan uzağa (AwayFromZero), ör. 1,2345 → 1,235 (3 ondalıkta). Ondalık sayısı BS-13/URN-D8'deki şirket ayarıdır (`CoefficientDecimals`). | Ayarlar birim çevrim politikası (KIM-S20/KIM-F1), ürün katsayı hesapları |
 | ALS-D104 | Hareketli ortalama maliyete giren alış fiyatı | Satınalma sipariş satırından hareketli ortalama maliyete iskontolu birim fiyat girer; tedarikçi vade farkı maliyete girmez, ayrı gider olarak kalır (SAT-D263(3) ile uyumlu). | Alış maliyet okuma portu (ALC-S17), Stok hareketli ortalama |
 | URT-D86 | Termin önerisinde kuyruk | Termin önerisi, iş merkezinde sırada bekleyen planlı işlerin süresini de hesaba katar: önce bekleyen işler, sonra bu plan. Uygulama ayrıntısı (geri alınabilir): sıradaki işlerin hangi plan durumlarından okunacağı ve sıralama anahtarı; dilim raporunda yazılır. | Üretim termin önerisi (URT-S10) |
@@ -62,10 +76,10 @@ seçildi (33.9, 33.14, 33.18, 33.21) ve kur sorusuna serbest metinle cevap veril
 | URT-D88 | Gece yarısını aşan vardiya | Vardiya başladığı güne aittir: başladığı gün çalışma günüyse vardiyanın tamamı, gece yarısından sonra tatile taşan saatler dahil, çalışma süresi sayılır. | URT-S10 vardiya takvimi |
 | URT-D89 | Kapasiteyi ve güvenlik payını kim girer | İş merkezi kapasitesi (giriş kg/saat) ve isteğe bağlı termin güvenlik payı (saat/gün) Ayarlar'da iş merkezi başına girilir; değişiklik denetime yazılır. Kapasite girilmemişse termin önerisi "hesaplanamadı" döner (fail-closed). Güvenlik payı girilmemişse sıfır kabul edilir. Persona dağılımı: Üretim Müdürü. | Ayarlar (Kimlik takımı, `inputCapacityKgPerHour` ve güvenlik payı kayıtları), URT-S10 |
 | SAT-D367 | Sevk planı miktarının kaynağı | SAT-D313'teki "sevk planı miktarı", Lojistik'teki onaylanmış ama henüz sevk edilmemiş açık sevk talimatlarındaki miktardır; taslak ve iptal edilmiş talimatlar sayılmaz. | Lojistik okuma portu, Satış sipariş satırı |
-| SAT-D368 | Sözleşme bitiş tarihi | Sözleşme bitiş tarihi isteğe bağlıdır (boşsa süresiz). Girilirse başlangıç tarihinden sonra olmalıdır. | Satış sözleşme kaydı |
-| SAT-D369 | Sözleşme tutarlarını görme | Sözleşme tutarları (fiyat, toplam) yalnız satış fiyatı okuma izni de olan kişiye gösterilir; sözleşmeyi okuyabilen ama fiyat izni olmayan kişi tutarları gizli görür (siparişteki fiyat gizleme kuralıyla aynı). Yeni izin açılmaz. | Satış sözleşme okuma ucu ve ekranı |
-| SAT-D370 | Sipariş satırı termin değişikliği | Satış sipariş satırının termin tarihini mevcut sipariş düzenleme iznine sahip kişi değiştirir; ayrı izin yoktur. Değişiklik denetime yazılır. | Satış sipariş satırı düzenleme |
-| LOJ-D18 | Sevk talimatı iptalinde tahsis | Sevk talimatı iptal edildiğinde o satır için depoda ayrılmış fiziksel tahsis kalkmaz; mal satış siparişine ayrılmış kalır ve yeni talimat aynı malı kullanabilir. Tahsisin serbest bırakılması ayrı, denetime yazılan bir işlemdir. Bu karar LOJ-D15(2)'nin iptal anındaki tahsis davranışını belirler. | Lojistik sevk talimatı iptali (STK-S2), Stok tahsis |
+| SAT-D368 | Sözleşme bitiş tarihi (33.22, 39.2) | Sözleşme bitiş tarihi isteğe bağlıdır (boşsa süresiz). Girilirse başlangıç tarihinden önce olamaz; başlangıçla aynı gün olabilir. Bu, SAT-D362 (SINAN-CEVAP 29, #1172) ile aynıdır; SAT-D362 aynen geçerlidir. | Satış sözleşme kaydı |
+| SAT-D369 | Sözleşme tutarlarını görme | Sözleşme tutarları (fiyat, toplam) yalnız satış fiyatı okuma izni de olan kişiye gösterilir; sözleşmeyi okuyabilen ama fiyat izni olmayan kişi tutarları gizli görür (siparişteki fiyat gizleme kuralıyla aynı). Yeni izin açılmaz. İskonto oranlarının gizlenmesi SAT-D363'teki (SINAN-CEVAP 31, #1174) gibidir; bu karar onunla tutarlıdır. | Satış sözleşme okuma ucu ve ekranı |
+| SAT-D370 | Sipariş satırı termin değişikliği (33.24, 39.1) | Satış sipariş satırının termin tarihi mevcut `sales.orders.delivery-schedule.write` izniyle değiştirilir; kilitli DEC-SAL-003 (termin güncellemesi planlama/sevkiyat rolündedir, yeniden onay gerektirmez, auditlidir) aynen geçerlidir. Yeni izin açılmaz, mevcut izin kaldırılmaz. Değişiklik denetime yazılır. EK15'teki SAT-D375 ile çelişki için Sınırlar'a bakınız. | Satış sipariş satırı düzenleme |
+| LOJ-D18 | Sevk talimatı iptalinde tahsis | Sevk talimatı iptal edildiğinde o satır için depoda ayrılmış fiziksel tahsis kalkmaz; mal satış siparişine ayrılmış kalır ve yeni talimat aynı malı kullanabilir. Tahsisin serbest bırakılması ayrı, denetime yazılan bir işlemdir. Bu, EK6'daki LOJ-D16'nın (SINAN-CEVAP 27; LOJ-D15 (1)–(2)'yi netleştirir) tekrarıdır: LOJ-D15 (2)'deki "diğer satışlara satılabilir" ifadesi LOJ-D16 (3)'teki gibi, tahsisin ayrıca bırakılması anlamında okunur. LOJ-D16 aynen geçerlidir. | Lojistik sevk talimatı iptali (STK-S2), Stok tahsis |
 | LOJ-D19 | Tek sevk istisnası ve sevk iptali olayları | Lojistik, tek sevk istisnasının kullanıldığını ve sevkin iptal edildiğini transactional outbox ile sürümlü olay olarak yayınlar; Satış inbox/dedup ile dinler ve sipariş durumunu günceller (SAT-D285/SAT-D209). Uygulama ayrıntısı (geri alınabilir): olay adları ve sürümleri. | Lojistik outbox, Satış inbox (SAT-S10) |
 | LOJ-D20 | Kantar ayarı okunamadığında | Sevkiyatta tartım toleransı (kantar) ayarı okunamazsa sevk durdurulmaz: sevk kaydedilir, tartım kontrolünün sonucu "kontrol edilemedi" olarak saklanır ve sonradan incelenebilir şekilde listelenir. Uygulama ayrıntısı (geri alınabilir): inceleme listesinin yeri ve durum kodu adı. | Lojistik sevk kaydı (STK-S5) |
 | KIM-D38 | Görev ayrılığı gevşetmesinin kapsamı | NS-01'deki tek kişilik şirket gevşetmesi yalnız genel "hazırlayan ≠ onaylayan" kontrolüne uygulanır. Ayrıca kilitli çift onaylar gevşemez: KIM-D28/KIM-D35 VKN değişikliği, Critical izin verme çift kontrolü, SAT-D290 ve kendi kararında hazırlayan ≠ onaylayan yazan diğer akışlar. | Ayarlar görev ayrılığı politikası (KIM-S22), tüketen akışlar |
@@ -76,6 +90,14 @@ seçildi (33.9, 33.14, 33.18, 33.21) ve kur sorusuna serbest metinle cevap veril
 - FNS-D73, Sinan'ın serbest metin cevabının ("Satış siparişinde yada alış siparişinde hangisini söylediysem") yazıya
   geçirilmiş halidir: kur türünü sistem seçmez, siparişte belirtilen kur geçerlidir. Siparişe bağlanamayan çevrimde
   hangi kurun kullanılacağı seçilmedi ve `NEEDS-SINAN` olarak kalır; Sinan farklı bir okuma kastettiyse netleştirir.
+- SAT-D370 ↔ SAT-D375 çelişkisi: EK15'teki SAT-D375 (SINAN-CEVAP 36.6, #1179) termin düzenlemesini başlık düzenleme
+  iznine taşıyıp ayrı `sales.orders.delivery-schedule.write` iznini kaldırıyordu. Daha sonra verilen SINAN-CEVAP 39.1
+  mevcut izni ve DEC-SAL-003'ü korur; "çelişkide daha yeni kullanıcı kararı geçerlidir" kuralıyla geçerli olan 39.1'dir.
+  39.1 sorulurken SAT-D375 soru metninde gösterilmedi; bu yüzden SAT-D375'in geri alındığının teyidi `NEEDS-SINAN`
+  olarak kalır. Teyit gelene kadar izin kaldırılmaz (mevcut durum korunur); izin yüzeyini değiştiren kod yazılmaz.
+- FNS-D73'teki "siparişte belirtilen kur" ifadesinin kur türü mü yoksa kur tarihi mi olduğu bu belgede netleşmedi.
+  Sipariş kurunun kim tarafından ve hangi varsayılanla girildiği sonraki SINAN-CEVAP 40'ta soruldu ve ayrı karar
+  dosyasında yazılır; bu belge onu seçmez.
 - LOJ-D20, önerilen fail-closed seçeneğin yerine Sinan'ın seçtiği "kaydet ve işaretle" yoludur; tartım ayarı
   okunamadığında sevk durmaz. Bu, yalnız kantar ayarının okunamaması durumu içindir; okunan toleransın aşılması
   davranışı bu belgeyle değişmez.
