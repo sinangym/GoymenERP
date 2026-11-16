@@ -133,7 +133,9 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<IProductProfileWeightFileVaultV1>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
         // URN-D21: the Settings group-level file size record; absent → the decided 5 MB starting value.
-        serviceProvider.GetService<IProductProfileWeightImportLimitSourceV1>());
+        serviceProvider.GetService<IProductProfileWeightImportLimitSourceV1>(),
+        // URN-D23: the platform's general upload bound is the ceiling of that record.
+        serviceProvider.GetService<IProductProfileWeightUploadCeilingSourceV1>());
 
     private static ProductPackageStandardService CreatePackageStandardService(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListDbContext>(),

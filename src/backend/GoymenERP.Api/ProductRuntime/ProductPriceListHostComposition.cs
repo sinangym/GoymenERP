@@ -30,6 +30,8 @@ public static class ProductPriceListHostComposition
         {
             // MOD-02: a customer-specific list asks the Cari owner through this adapter (registered before the service resolves it).
             services.TryAddScoped<IProductPriceListCustomerPortV1, CounterpartyProductPriceListCustomerPortV1>();
+            // URN-D23: the kg/m import size never exceeds the platform's general upload bound (the vault's bindings).
+            services.TryAddScoped<IProductProfileWeightUploadCeilingSourceV1, DocumentsProductProfileWeightUploadCeilingSource>();
             return services.AddProductPriceLists(configuration, configureDbContext);
         }
 
