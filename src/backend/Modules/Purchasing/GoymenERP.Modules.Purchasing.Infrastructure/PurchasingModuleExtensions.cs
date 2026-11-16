@@ -100,7 +100,9 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<IPurchaseGoodsReceiptBatchStore>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptBatchTransactionV1>(),
         serviceProvider.GetService<IPurchaseGoodsReceiptPolicyReadPortV1>(),
-        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>());
+        serviceProvider.GetService<IPurchaseLabelCodeRegisterReadPortV1>(),
+        // ALC-SC33 (FNS-D79): the existing Settings exchange-rate resolver for a foreign-currency order's default rate (no new port).
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

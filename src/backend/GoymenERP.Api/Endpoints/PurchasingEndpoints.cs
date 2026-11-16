@@ -346,8 +346,55 @@ public static partial class PurchasingEndpoints
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
                 PurchasingProblemCodesV1.RequestState, PurchasingProblemCodesV1.RequestLineOverSourced,
                 PurchasingProblemCodesV1.OrderSameActor, PurchasingProblemCodesV1.OrderMakerUnknown,
+                PurchasingProblemCodesV1.OrderExchangeRateRequired,
                 PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // ALC-SC33 (FNS-D79/D80/D83/D91): the rate recorded on a foreign-currency order, read as stored (never recomputed), and the
+        // preparer's change of it while the order is a Draft; after approval the rate is locked.
+        group.MapGet("/{id:guid}/exchange-rate", async (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count != 0)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetOrderExchangeRateAsync(id, cancellationToken), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetPurchaseOrderExchangeRateV1")
+            .Produces<PurchaseOrderExchangeRateView>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/exchange-rate", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadChangeOrderExchangeRate,
+                (body, metadata) => service.ChangeOrderExchangeRateAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("ChangePurchaseOrderExchangeRateV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ChangePurchaseOrderExchangeRateRequest>("application/json")
+            .Produces<PurchaseOrderResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderExchangeRateLocked,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.OrderExchangeRateInvalid,
+                PurchasingProblemCodesV1.OrderExchangeRateNotApplicable, PurchasingProblemCodesV1.OrderExchangeRateReasonTooLong)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

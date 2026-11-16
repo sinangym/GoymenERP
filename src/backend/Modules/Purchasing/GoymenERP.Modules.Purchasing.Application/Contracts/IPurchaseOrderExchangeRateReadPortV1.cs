@@ -9,14 +9,14 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// purchase order applies. Where a supplier invoice rate exists for a receipt, SAT-D295/BS-1 stays as is (the receipt's cost rate
 /// is the invoice's, <see cref="IPurchaseInvoiceCostRateReadPortV1"/>); this port does not replace it.
 /// <para>
-/// A purchase order records no exchange rate yet: it carries one currency (its Settings money profile, A2a-1) and nothing else
-/// about conversion. Where on the order the rate is specified (a rate typed on the order header, by whom, when, and whether it may
-/// change after approval) is not decided (<c>NEEDS-SINAN</c>), so today every recorded, approved order answers
-/// <see cref="PurchaseOrderExchangeRateOutcomeV1.Unavailable"/> with <see cref="PurchaseOrderExchangeRateReasonsV1.RateNotSpecified"/>
-/// and the consumer's conversion stays "hesaplanamadı" (fail-closed, FNS-D73: a conversion with no order rate is refused). The
-/// slice that first records a rate on the order answers <see cref="PurchaseOrderExchangeRateOutcomeV1.Rate"/> through
-/// <see cref="PurchaseOrderExchangeRateAnswerV1.Rated"/> without changing this contract. No rate table, bulletin, order-day or
-/// receipt-day rate ever stands in for the order's rate here.
+/// ALC-SC33 (FNS-D79/D80/D83): a foreign-currency purchase order records its rate as a number on the order — opened with the
+/// automatic SAT-D54/D170 default of its creation business day, changeable by the preparer before approval, required and locked at
+/// approval. An approved (or later cancelled) order with a recorded rate answers <see cref="PurchaseOrderExchangeRateOutcomeV1.Rate"/>
+/// through <see cref="PurchaseOrderExchangeRateAnswerV1.Rated"/>, from the order's currency to the rate's target currency. A Draft
+/// answers <see cref="PurchaseOrderExchangeRateReasonsV1.OrderNotApproved"/> (its rate may still change); an approved order that
+/// records no rate (no currency, or already in the functional currency) answers
+/// <see cref="PurchaseOrderExchangeRateReasonsV1.RateNotSpecified"/> and the consumer's conversion stays "hesaplanamadı" (fail-closed,
+/// FNS-D73). No rate table, bulletin, order-day or receipt-day rate ever stands in for the order's rate here.
 /// </para>
 /// <para>
 /// The answer carries the order's currency as a recorded fact (or null when the order was opened without a money snapshot);
@@ -62,8 +62,8 @@ public static class PurchaseOrderExchangeRateReasonsV1
     public const string OrderNotApproved = "purchase_order_not_approved";
 
     /// <summary>
-    /// The order specifies no exchange rate (today: every order — the order records no rate yet; or an order opened without a
-    /// currency). FNS-D73: the conversion is refused, never filled with another rate.
+    /// The approved order specifies no exchange rate (an order opened without a currency, or in the functional currency, records
+    /// none). FNS-D73: the conversion is refused, never filled with another rate.
     /// </summary>
     public const string RateNotSpecified = "purchase_order_exchange_rate_not_specified";
 

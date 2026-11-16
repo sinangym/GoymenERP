@@ -84,6 +84,15 @@ public sealed class PurchaseOrder
     /// <summary>A1-3 (No.161 §2): who cancelled the unaccepted remainder, when and why; null until <see cref="Cancel"/>.</summary>
     public PurchaseOrderCancellation? Cancellation { get; private set; }
 
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D83): the exchange rate written on a foreign-currency order as a number, or null (no currency, the
+    /// functional currency, or no default could be resolved at opening). Changed only while Draft; locked at approval.
+    /// </summary>
+    public PurchaseOrderExchangeRate? ExchangeRate { get; private set; }
+
+    /// <summary>ALC-SC33 (FNS-D91): the last recorded rate assignment or change (old rate, new rate, who, when, why); null while none.</summary>
+    public PurchaseOrderExchangeRateChange? LastExchangeRateChange { get; private set; }
+
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
@@ -230,6 +239,80 @@ public sealed class PurchaseOrder
         Approval = new PurchaseOrderApproval(actor, now.ToUniversalTime());
         Status = PurchaseOrderStatus.Approved;
         Touch(now);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D80): approval of an order whose currency is not <paramref name="functionalCurrencyId"/> needs a recorded rate
+    /// into the functional currency (<see cref="PurchasingRuleCodes.OrderExchangeRateRequired"/>); every other rule is
+    /// <see cref="Approve(long, string, DateTimeOffset)"/>'s. The rate is locked from here on (<see cref="SetExchangeRate"/>).
+    /// </summary>
+    public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId)
+    {
+        RequireVersion(expectedVersion);
+        var functional = Identity.Require(functionalCurrencyId, nameof(functionalCurrencyId));
+        if (Status == PurchaseOrderStatus.Draft && Money is { } money && money.CurrencyId != functional
+            && (ExchangeRate is null || ExchangeRate.TargetCurrencyId != functional))
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderExchangeRateRequired,
+                "Döviz cinsinden siparişin kuru yok; kur girilmeden sipariş onaylanamaz.");
+        }
+
+        Approve(expectedVersion, approvedBy, now);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79): the automatic default rate an order is opened with — the Settings resolver's SAT-D54/D170 answer for the
+    /// order's business day. Assigned once, on a Draft order with a foreign currency and no rate yet; it is part of the opening and
+    /// does not move the version.
+    /// </summary>
+    public void AssignDefaultExchangeRate(PurchaseOrderExchangeRate rate, string recordedBy, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(rate);
+        var actor = RequireActor(recordedBy, nameof(recordedBy));
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderExchangeRateLocked, "Onaylanmış siparişin kuru değişmez.");
+        if (ExchangeRate is not null || rate.Source != PurchaseOrderExchangeRateSource.Automatic)
+        {
+            throw new InvalidOperationException("Siparişin otomatik kuru yalnız açılışta ve bir kez atanır.");
+        }
+
+        RequireRateApplies(rate);
+        ExchangeRate = rate;
+        LastExchangeRateChange = new PurchaseOrderExchangeRateChange(null, rate, actor, now.ToUniversalTime(), null);
+    }
+
+    /// <summary>
+    /// ALC-SC33 (FNS-D79/D80/D91): the preparer's change of the rate before approval. The rate is locked once the order is approved
+    /// or cancelled (<see cref="PurchasingRuleCodes.OrderExchangeRateLocked"/>; a revision with re-approval is not built). The
+    /// optional reason is recorded with the old and the new rate.
+    /// </summary>
+    public void SetExchangeRate(long expectedVersion, PurchaseOrderExchangeRate rate, string changedBy, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        ArgumentNullException.ThrowIfNull(rate);
+        var actor = RequireActor(changedBy, nameof(changedBy));
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderExchangeRateLocked,
+            "Sipariş kuru onayda kilitlenir; onaydan sonra kur yalnız yeniden onaylı revizyonla değişir.");
+        RequireRateApplies(rate);
+        var trimmed = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmed is { Length: > MaximumReasonLength })
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderExchangeRateReasonTooLong,
+                $"Kur değişikliği gerekçesi en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+        }
+
+        var previous = ExchangeRate;
+        ExchangeRate = rate;
+        LastExchangeRateChange = new PurchaseOrderExchangeRateChange(previous, rate, actor, now.ToUniversalTime(), trimmed);
+        Touch(now);
+    }
+
+    private void RequireRateApplies(PurchaseOrderExchangeRate rate)
+    {
+        if (Money is not { } money || money.CurrencyId == rate.TargetCurrencyId)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderExchangeRateNotApplicable,
+                "Para birimi olmayan veya kur hedefiyle aynı para birimindeki siparişe kur yazılmaz.");
+        }
     }
 
     /// <summary>
