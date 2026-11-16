@@ -49,8 +49,9 @@ public sealed record SalesOfficialInvoiceAnswerV1(SalesOfficialInvoiceOutcomeV1 
 /// document (number, ETTN, customer, currency, payable amount and its TL equivalent, and — SAT-D241 — the TL equivalents of its VAT and
 /// withholding totals). The owner implements it over its own
 /// company-filtered data and registers it in its own module; Sales never reads those tables. The port carries NO authority — the
-/// match command measures its own names — and CREATES NOTHING. Until an owner registers it the default adapter answers
-/// <see cref="SalesOfficialInvoiceOutcomeV1.Unavailable"/> and the match fails closed (503).
+/// match command measures its own names — and CREATES NOTHING. The Finance owner registers it (FIN-S6: only an approved official
+/// record is <see cref="SalesOfficialInvoiceOutcomeV1.Found"/>); Sales registers no default, so where no owner is composed the match
+/// fails closed (503).
 /// </summary>
 public interface ISalesOfficialInvoiceReadPortV1
 {

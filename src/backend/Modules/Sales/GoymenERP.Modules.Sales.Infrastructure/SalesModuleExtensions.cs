@@ -91,7 +91,8 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesInvoiceStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesInvoiceService>(CreateInvoiceService);
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
-        // invoice read port is the Finance owner's (not composed yet): without it the match is 503, never an assumed document.
+        // invoice read port is the Finance owner's and Finance's AddFinanceServices registers it (FIN-S6, SAT-S1); Sales never registers a
+        // default, so a host without Finance answers the match with 503, never an assumed document.
         services.TryAddSingleton(new SalesInvoiceMatchTolerancePolicy());
         services.TryAddSingleton<ISalesInvoiceDiagnosticsV1>(serviceProvider => new SalesInvoiceDiagnostics(
             serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<SalesInvoiceDiagnostics>()));
