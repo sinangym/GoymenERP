@@ -48,9 +48,11 @@ satırının çalışma kabulü olarak gösterilmez; ayrı açık kontrol olarak
 
 ## Karar ve belge kapıları
 
-- SAT-D421: kesinleşmiş ETTN'li belge yokken irsaliyede teorik kg oranlı dağılımın
-  yuvarlama artığının satırı için NEEDS-SINAN soruldu. Yanıt gelmeden bu hesaplama
-  dilimine başlanmaz. Diğer dilimler devam eder; öneri karar sayılmaz.
+- SAT-D421 takip sorusu 17 Kasım'da [6929718990](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6929718990)
+  aktarımıyla yanıtlandı: kesinleşmiş dış belge yokken hesaplanan irsaliye dağılımının
+  artığı eşit en ağır satırlar içinden ilk satıra verilir. Yeni SAT-D424 / #1198
+  belgesi hazırlanmıştır; önce irsaliye, irsaliyelerden fatura normal akışı korunur.
+  Kesinleşmiş gerçek dış belge dağılımı yeniden hesaplanmaz.
 - #1194/#1195/#1196/#1197 güncel head'lerinde iki DOCS APPROVE doğrulandı.
   Bu head'lere yazılmaz; merge ayrı yetkili koordinatördedir. Sıra
   #1194 → #1196 → #1197; #1195 bağımsız. Makbuz güncel AGENTS.md gereği #1189'a gider.
