@@ -14,7 +14,7 @@ namespace GoymenERP.Identity.UnitTests;
 /// <summary>
 /// The Finance credit permissions (FIN-SC47; FNS-D88) are REGISTERED, not granted; who holds which (one person
 /// proposes, another person approves) is a human gate. These cases keep registration and grant apart, pin the company-wide
-/// scope and that no name is Critical (no Critical classification was decided). No role is seeded with any of them.
+/// scope and FNS-D109's approve-only Critical classification. No role is seeded with any of them.
 /// </summary>
 public sealed class FinanceCreditPermissionRegistrationTests
 {
@@ -52,9 +52,9 @@ public sealed class FinanceCreditPermissionRegistrationTests
 
     [Theory]
     [MemberData(nameof(Names))]
-    public void None_is_critical(string permission)
+    public void Only_approve_is_critical_under_FNS_D109(string permission)
     {
-        Assert.False(ErpPermissions.IsCritical(permission));
+        Assert.Equal(permission == ErpPermissions.FinanceCreditsApprove, ErpPermissions.IsCritical(permission));
     }
 
     [Theory]

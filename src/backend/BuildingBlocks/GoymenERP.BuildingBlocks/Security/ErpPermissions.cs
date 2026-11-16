@@ -412,8 +412,9 @@ public static class ErpPermissions
     /// their imported bank repayment plans), propose (enters a credit account of one of the four groups with the bank's
     /// plan as given; a plan whose totals do not hold is refused) and approve (approves or rejects it; never its proposer,
     /// maker≠checker). Registering them makes them KNOWN, not granted: no role and no user receives them here, and who
-    /// holds which is a human gate. Company-wide only: a credit account belongs to the server-resolved company. Not
-    /// Critical (whether they should be is not decided). Unrelated to the party credit limit names
+    /// holds which is a human gate. Company-wide only: a credit account belongs to the server-resolved company.
+    /// FNS-D109 makes approve Critical; propose and read remain non-Critical. No grant or role is assigned here.
+    /// Unrelated to the party credit limit names
     /// (finance.credit-limits.*).
     /// </summary>
     public const string FinanceCreditsRead = "finance.credits.read";
@@ -1851,6 +1852,7 @@ public static class ErpPermissions
             FinanceCashAccountReactivationPropose,
             FinanceCashAccountReactivationApprove,
             FinanceCreditLimitsApprove,
+            FinanceCreditsApprove,
             CounterpartyPartiesTaxIdentityApprove,
         ],
         StringComparer.Ordinal);
