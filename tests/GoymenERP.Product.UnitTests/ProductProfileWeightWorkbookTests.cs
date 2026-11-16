@@ -15,13 +15,15 @@ namespace GoymenERP.Product.UnitTests;
 /// rules as the CSV (number cells as the exact stored value, shared and inline text), a formula cell, a macro-enabled or
 /// template workbook, a VBA project, an external link and a non-workbook ZIP are refused, the kind named by the extension is
 /// proven by the content in both directions, XLSM / XLS names are refused, and the size bound is the Settings record (null →
-/// the decided 5 MB starting value; an unreachable or non-positive answer refuses 503 before anything is read). SENTETIK / NOT_ENV.
+/// the decided 5 MB starting value; an unreachable or non-positive answer refuses 503 before anything is read), capped by the
+/// platform's general upload bound (URN-D23), and the KLN-D87 extended header reads from a workbook too. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class ProductProfileWeightWorkbookTests
 {
     private static readonly Guid CompanyA = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly string[] HeaderCells =
         ["sectionKind", "widthMm", "heightMm", "outerDiameterMm", "wallThicknessMm", "kgPerMetre"];
+    private static readonly string[] ExtendedHeaderCells = [.. HeaderCells, "profileSeries", "profileSize"];
 
     [Fact]
     public void A_workbook_is_read_from_its_first_sheet_with_exact_numbers_shared_and_inline_text_and_sheet_row_numbers()
@@ -42,6 +44,68 @@ public sealed class ProductProfileWeightWorkbookTests
         Assert.Equal(new ProductProfileWeightRowV1("Profile", 40m, 20m, null, 2m, 1.72m), rows[0]);
         Assert.Equal(new ProductProfileWeightRowV1("RoundTube", null, null, 48.3m, 2.6m, 2.93m), rows[1]);
         Assert.Equal(new ProductProfileWeightRowV1("Profile", 40m, 40m, null, 1.5m, 1.789012m), rows[2]);
+    }
+
+    [Fact]
+    public void A_workbook_with_the_extended_header_reads_structural_profile_rows_by_series_and_size_beside_measured_rows()
+    {
+        var workbook = SyntheticWorkbook.Build(
+        [
+            ExtendedHeaderCells,
+            ["StructuralProfile", null, null, null, null, "#22.4", "IPE", "200"],
+            ["StructuralProfile", null, null, null, null, "#25.3", "UPN", "inline:200"],
+            // A worksheet drops the trailing empty series/size cells of a measured row: it is padded to the eight fields.
+            ["Profile", "#40", "#20", null, "#2", "#1.72"],
+            ["RoundTube", null, null, "#48.3", "#2.6", "#2.93", null, null],
+        ]);
+
+        var refusal = ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, workbook, out var rows);
+
+        Assert.Null(refusal);
+        Assert.Equal(4, rows.Count);
+        Assert.Equal(new ProductProfileWeightRowV1("StructuralProfile", null, null, null, null, 22.4m, "IPE", "200"), rows[0]);
+        Assert.Equal(new ProductProfileWeightRowV1("StructuralProfile", null, null, null, null, 25.3m, "UPN", "200"), rows[1]);
+        Assert.Equal(new ProductProfileWeightRowV1("Profile", 40m, 20m, null, 2m, 1.72m), rows[2]);
+        Assert.Equal(new ProductProfileWeightRowV1("RoundTube", null, null, 48.3m, 2.6m, 2.93m), rows[3]);
+    }
+
+    [Fact]
+    public void A_workbook_with_the_extended_header_refuses_the_same_rows_as_the_csv_with_the_sheet_row_number()
+    {
+        // The standard header does not admit a structural profile row.
+        var standard = SyntheticWorkbook.Build([HeaderCells, ["StructuralProfile", null, null, null, null, "#22.4"]]);
+        Assert.Contains("Profile veya RoundTube",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, standard, out var none), StringComparison.Ordinal);
+        Assert.Empty(none);
+
+        var unknownSeries = SyntheticWorkbook.Build([ExtendedHeaderCells, ["StructuralProfile", null, null, null, null, "#22.4", "IPN", "200"]]);
+        Assert.Contains("Satır 2",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, unknownSeries, out _), StringComparison.Ordinal);
+
+        var missingSize = SyntheticWorkbook.Build([ExtendedHeaderCells, ["StructuralProfile", null, null, null, null, "#22.4", "IPE"]]);
+        Assert.Contains("Satır 2",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, missingSize, out _), StringComparison.Ordinal);
+
+        var measured = SyntheticWorkbook.Build([ExtendedHeaderCells, ["StructuralProfile", "#100", null, null, null, "#22.4", "IPE", "200"]]);
+        Assert.Contains("ölçüler boş kalır",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, measured, out _), StringComparison.Ordinal);
+
+        var seriesOnProfile = SyntheticWorkbook.Build([ExtendedHeaderCells, ["Profile", "#40", "#20", null, "#2", "#1.72", "IPE", "200"]]);
+        Assert.Contains("yalnız yapısal profil",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, seriesOnProfile, out _), StringComparison.Ordinal);
+
+        var ninthColumn = SyntheticWorkbook.Build([ExtendedHeaderCells, ["StructuralProfile", null, null, null, null, "#22.4", "IPE", "200", "fazla"]]);
+        Assert.Contains("8 alan",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, ninthColumn, out _), StringComparison.Ordinal);
+
+        var repeated = SyntheticWorkbook.Build(
+        [
+            ExtendedHeaderCells,
+            ["StructuralProfile", null, null, null, null, "#22.4", "IPE", "200"],
+            ["StructuralProfile", null, null, null, null, "#22.5", "IPE", "200"],
+        ]);
+        Assert.Contains("Satır 3",
+            ProductProfileWeightFile.Refusal(ProductProfileWeightFileKindV1.Xlsx, repeated, out _), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -152,6 +216,51 @@ public sealed class ProductProfileWeightWorkbookTests
             ProductProfileWeightProblemCodesV1.ProviderUnavailable);
     }
 
+    [Fact]
+    public async Task The_platform_general_upload_bound_is_the_ceiling_of_the_recorded_value_and_of_the_starting_value()
+    {
+        var small = Base64(ProductProfileWeightFileFormatV1.Header + "\nProfile;40;20;;2;1.72\n");
+
+        // URN-D23: a recorded value above the general bound applies only up to it (the general bound is never widened).
+        var capped = await Service(new FixedLimit(1_000_000), new FixedCeiling(16)).ImportAsync(Request("katalog.csv", small),
+            Metadata());
+        Assert.Equal((400, ProductProfileWeightProblemCodesV1.FileInvalid), (capped.Answer.StatusCode, capped.Answer.Code));
+        Assert.Contains("16 bayt", capped.Answer.Detail, StringComparison.Ordinal);
+
+        // No record: the URN-D22 starting value is capped by a smaller general bound too.
+        var startingCapped = await Service(new FixedLimit(null), new FixedCeiling(16)).ImportAsync(Request("katalog.csv", small),
+            Metadata());
+        Assert.Contains("16 bayt", startingCapped.Answer.Detail, StringComparison.Ordinal);
+
+        // A recorded value below the general bound stays the bound.
+        var recorded = await Service(new FixedLimit(16), new FixedCeiling(ProductProfileWeightInputLimitsV1.MaximumFileBytes))
+            .ImportAsync(Request("katalog.csv", small), Metadata());
+        Assert.Contains("16 bayt", recorded.Answer.Detail, StringComparison.Ordinal);
+
+        // An oversized file above the starting value is refused although the general bound is larger.
+        var oversized = Convert.ToBase64String(new byte[ProductProfileWeightInputLimitsV1.MaximumFileBytes + 1]);
+        await AssertUnstored(Service(new FixedLimit(null), new FixedCeiling(4L * ProductProfileWeightInputLimitsV1.MaximumFileBytes)),
+            Request("katalog.csv", oversized), 400, ProductProfileWeightProblemCodesV1.FileInvalid);
+    }
+
+    [Fact]
+    public async Task An_unreadable_or_non_positive_general_upload_bound_refuses_503_before_anything_is_read()
+    {
+        var small = Base64(ProductProfileWeightFileFormatV1.Header + "\nProfile;40;20;;2;1.72\n");
+        await AssertUnstored(Service(new FixedLimit(null), new FixedCeiling(0)), Request("katalog.csv", small), 503,
+            ProductProfileWeightProblemCodesV1.ProviderUnavailable);
+        await AssertUnstored(Service(new FixedLimit(null), new FixedCeiling(-1)), Request("katalog.csv", small), 503,
+            ProductProfileWeightProblemCodesV1.ProviderUnavailable);
+        await AssertUnstored(Service(new FixedLimit(null), new BrokenCeiling()), Request("katalog.csv", small), 503,
+            ProductProfileWeightProblemCodesV1.ProviderUnavailable);
+
+        // The Settings record is read first: an unreadable record refuses without asking the ceiling.
+        var ceiling = new FixedCeiling(ProductProfileWeightInputLimitsV1.MaximumFileBytes);
+        await AssertUnstored(Service(new BrokenLimit(), ceiling), Request("katalog.csv", small), 503,
+            ProductProfileWeightProblemCodesV1.ProviderUnavailable);
+        Assert.Equal(0, ceiling.Asked);
+    }
+
     private static async Task AssertUnstored(ProductProfileWeightTableService service, ImportProductProfileWeightTableRequestV1 request,
         int status, string code)
     {
@@ -180,14 +289,15 @@ public sealed class ProductProfileWeightWorkbookTests
     private static ProductProfileWeightCommandMetadataV1 Metadata() =>
         new(CompanyA, "user-1", "corr-1", null, "Web", null, null, "key-1");
 
-    private static ProductProfileWeightTableService Service(IProductProfileWeightImportLimitSourceV1? limits)
+    private static ProductProfileWeightTableService Service(IProductProfileWeightImportLimitSourceV1? limits,
+        IProductProfileWeightUploadCeilingSourceV1? ceiling = null)
     {
         var company = new CompanyContext();
         company.Set(CompanyA);
         var context = new ProductPriceListDbContext(new DbContextOptionsBuilder<ProductPriceListDbContext>()
             .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;").Options, company);
         return new ProductProfileWeightTableService(context, company, new FakeUser(), new FakeAuthority(), new NoAudit(), new NoVault(),
-            TimeProvider.System, limits);
+            TimeProvider.System, limits, ceiling);
     }
 
     private sealed class FixedLimit(long? value) : IProductProfileWeightImportLimitSourceV1
@@ -199,6 +309,23 @@ public sealed class ProductProfileWeightWorkbookTests
             Asked.Add(companyId);
             return Task.FromResult(value);
         }
+    }
+
+    private sealed class FixedCeiling(long value) : IProductProfileWeightUploadCeilingSourceV1
+    {
+        public int Asked { get; private set; }
+
+        public Task<long> GetPlatformMaximumUploadBytesAsync(CancellationToken cancellationToken = default)
+        {
+            Asked++;
+            return Task.FromResult(value);
+        }
+    }
+
+    private sealed class BrokenCeiling : IProductProfileWeightUploadCeilingSourceV1
+    {
+        public Task<long> GetPlatformMaximumUploadBytesAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("SENTETIK: the platform upload bound is unreachable.");
     }
 
     private sealed class BrokenLimit : IProductProfileWeightImportLimitSourceV1

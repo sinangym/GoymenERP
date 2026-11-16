@@ -58,9 +58,10 @@ public static class ProductProfileWeightInputLimitsV1
     public const int FileNameMaximumLength = 255;
 
     /// <summary>
-    /// URN-D21: the starting value of the largest file one import reads (5 MB, read as 5 MiB), used while the Settings group-level
-    /// record (<see cref="IProductProfileWeightImportLimitSourceV1"/>) has no value yet. The recorded value replaces it; the
-    /// document vault's general upload bound applies on top of it in the vault itself.
+    /// URN-D21/D22: the starting value of the largest file one import reads (5 MB = 5,242,880 bytes, 5 MiB), used while the
+    /// Settings group-level record (<see cref="IProductProfileWeightImportLimitSourceV1"/>) has no value yet. The recorded value
+    /// replaces it. URN-D23: the platform's general upload bound (<see cref="IProductProfileWeightUploadCeilingSourceV1"/>) is the
+    /// ceiling of both; it is never a second value written here.
     /// </summary>
     public const int MaximumFileBytes = 5_242_880;
 
@@ -201,6 +202,18 @@ public interface IProductProfileWeightTableServiceV1
 public interface IProductProfileWeightImportLimitSourceV1
 {
     Task<long?> GetMaximumFileBytesAsync(Guid companyId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// URN-D23: the Product-owned read of the platform's general file upload bound (the document vault's configured maximum upload
+/// size). It is the ceiling of the kg/m import size: the recorded Settings value (or the URN-D22 starting value while none is
+/// recorded) applies only up to it, so a larger value never widens the general bound. The platform owns the value; Product only
+/// reads it. An unreachable source throws, and a value that is not a positive size is refused: the import answers
+/// <see cref="ProductProfileWeightProblemCodesV1.ProviderUnavailable"/> (fail-closed, no guess).
+/// </summary>
+public interface IProductProfileWeightUploadCeilingSourceV1
+{
+    Task<long> GetPlatformMaximumUploadBytesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>What the vault did with the import file.</summary>
