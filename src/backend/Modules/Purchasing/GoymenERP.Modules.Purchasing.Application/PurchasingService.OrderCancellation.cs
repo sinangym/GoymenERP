@@ -26,13 +26,32 @@ public sealed partial class PurchasingService
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
+        return await CancelOrderCoreAsync(orderId, PurchasingCommands.OrderCancelV1, request.ExpectedVersion, request.Reason, request,
+            seen: null, metadata, cancellationToken);
+    }
+
+    /// <summary>
+    /// The plain cancel (<paramref name="seen"/> null: ALS-D85 refuses it with 409 <c>purchasing_line_has_allocations</c> while a
+    /// general line still carries an active future allocation) and the drop-and-cancel (the confirmed set, released with
+    /// <c>source-cancelled</c> in the same transaction, under both names). The plain cancel's request hash is unchanged.
+    /// </summary>
+    private async Task<PurchaseOrderResponse> CancelOrderCoreAsync(Guid orderId, string commandName, string expectedVersionText, string reason,
+        object hashedRequest, IReadOnlyList<PurchaseFutureAllocationSeenV1>? seen, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var permission = bindings.OrderCancelPermission;
-        const string commandName = PurchasingCommands.OrderCancelV1;
+        var releasing = seen is not null;
+        var releasePermission = releasing ? bindings.FutureAllocationReleasePermission : null;
         var scope = await RequireAsync(permission, cancellationToken);
+        if (releasing)
+        {
+            await RequireStillAsync(scope, releasePermission, cancellationToken);
+        }
+
         var disclosure = await DiscloseAsync(scope, cancellationToken);
-        var expectedVersion = ParseVersion(request.ExpectedVersion);
-        var requestHash = PurchasingRequestHash.Compute(commandName, orderId, request);
+        var expectedVersion = ParseVersion(expectedVersionText);
+        var requestHash = PurchasingRequestHash.Compute(commandName, orderId, hashedRequest);
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
         if (replay is not null)
@@ -45,31 +64,56 @@ public sealed partial class PurchasingService
             throw new PurchasingServiceException(404, "not_found");
         }
 
+        if (releasing && allocationLinks is null)
+        {
+            throw new PurchasingServiceException(503, "service_unavailable");
+        }
+
         // The last fence that can still prevent the write; none after the commit.
         await RequireStillAsync(scope, permission, cancellationToken);
+        if (releasing)
+        {
+            await RequireStillAsync(scope, releasePermission, cancellationToken);
+        }
+
         var actor = scope.ActorId.Trim();
+        var audit = new PurchasingMutationAudit("purchasing.purchase-order.remainder-cancelled.v1", "Cancel",
+            "Satınalma siparişinin kabul edilmemiş kalanı iptal edildi");
         PurchasingOrderStoreResult? result;
         try
         {
-            result = await store.MutateOrderAsync(envelope, requestHash, commandName, orderId,
-                (order, now) => order.Cancel(expectedVersion, actor, request.Reason, now),
-                new PurchasingMutationAudit("purchasing.purchase-order.remainder-cancelled.v1", "Cancel",
-                    "Satınalma siparişinin kabul edilmemiş kalanı iptal edildi"), cancellationToken);
+            result = allocationLinks is null
+                ? await store.MutateOrderAsync(envelope, requestHash, commandName, orderId,
+                    (order, now) => order.Cancel(expectedVersion, actor, reason, now), audit, cancellationToken)
+                : await store.MutateOrderAsync(envelope, requestHash, commandName, orderId,
+                    (order, now) => order.Cancel(expectedVersion, actor, reason, now),
+                    (order, transaction, token) => GuardFutureAllocationsAsync(transaction, order.Id, GeneralLineIds(order), seen,
+                        PurchaseFutureAllocationLinkReasonsV1.SourceCancelled, reason, envelope, token),
+                    audit, cancellationToken);
+        }
+        catch (PurchaseFutureAllocationLinkException exception) when (exception.Terminal)
+        {
+            return await CancellationTerminalAsync(scope, permission, envelope, requestHash, exception.Code, "futureAllocations", exception.Code,
+                disclosure, cancellationToken, commandName);
+        }
+        catch (PurchaseFutureAllocationLinkException exception)
+        {
+            throw LinkRefusal(exception);
         }
         catch (PurchasingVersionConflictException)
         {
             return await CancellationTerminalAsync(scope, permission, envelope, requestHash, PurchasingProblemCodesV1.VersionConflict,
-                "expectedVersion", "version_conflict", disclosure, cancellationToken);
+                "expectedVersion", "version_conflict", disclosure, cancellationToken, commandName);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNotCancellable)
         {
             return await CancellationTerminalAsync(scope, permission, envelope, requestHash, PurchasingProblemCodesV1.OrderState,
-                "status", exception.Code, disclosure, cancellationToken);
+                "status", exception.Code, disclosure, cancellationToken, commandName);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNothingToCancel)
         {
             return await CancellationTerminalAsync(scope, permission, envelope, requestHash, PurchasingProblemCodesV1.OrderNothingToCancel,
-                "lines", exception.Code, disclosure, cancellationToken);
+                "lines", exception.Code, disclosure, cancellationToken, commandName);
         }
         catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.OrderCancellationReasonRequired
                                                              or PurchasingRuleCodes.OrderCancellationReasonTooLong)
@@ -138,7 +182,8 @@ public sealed partial class PurchasingService
     }
 
     private Task<PurchaseOrderResponse> CancellationTerminalAsync(Scope scope, string? permission, PurchasingWriteEnvelope envelope, string requestHash,
-        string code, string field, string fieldCode, string disclosure, CancellationToken cancellationToken) =>
-        TerminalAsync(scope, permission, envelope, requestHash, PurchasingCommands.OrderCancelV1,
+        string code, string field, string fieldCode, string disclosure, CancellationToken cancellationToken,
+        string commandName = PurchasingCommands.OrderCancelV1) =>
+        TerminalAsync(scope, permission, envelope, requestHash, commandName,
             new PurchasingTerminalRefusal(409, code, [new(field, fieldCode)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
 }

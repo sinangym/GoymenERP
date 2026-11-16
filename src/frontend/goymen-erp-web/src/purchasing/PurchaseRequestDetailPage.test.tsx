@@ -44,6 +44,7 @@ vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ token: scenario.generation }), report: scenario.report }),
 }))
 vi.mock('./api', () => ({ fetchPurchaseOrder: vi.fn(), fetchPurchaseRequest: vi.fn() }))
+vi.mock('./AllocationLinkPanel', () => ({ AllocationLinkPanel: () => null }))
 vi.mock('./approvalApi', () => ({ approvePurchaseOrder: vi.fn() }))
 vi.mock('./requestSubmissionApi', () => ({ submitPurchaseRequest: vi.fn() }))
 

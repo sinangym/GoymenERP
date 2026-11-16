@@ -202,7 +202,12 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(11, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(12, PurchasingPermissionManifestV1.Names.Count);
+        // ALC-S3 (ALS-D83/D85): the release name measures the link drop and the drop-and-cancel / drop-and-close commands; no shell
+        // control (the screen lives under the order detail capability).
+        Assert.Contains("purchasing.future-allocation.release", PurchasingPermissionManifestV1.Names);
+        Assert.DoesNotContain(declarations, declaration =>
+            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.FutureAllocationRelease));
         // ALC-S16 (KLN-D45): the variance approval name measures the bulk receipt approval and rejection only; no shell control yet.
         Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration =>

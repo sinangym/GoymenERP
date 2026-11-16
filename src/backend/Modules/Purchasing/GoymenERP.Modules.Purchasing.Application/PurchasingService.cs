@@ -53,7 +53,8 @@ public sealed partial class PurchasingService(
     IPurchaseGoodsReceiptBatchTransactionV1? batchTransactions = null,
     IPurchaseGoodsReceiptPolicyReadPortV1? receiptPolicy = null,
     IPurchaseLabelCodeRegisterReadPortV1? labelRegister = null,
-    ISettingsExchangeRateResolverV1? exchangeRates = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    ISettingsExchangeRateResolverV1? exchangeRates = null,
+    IPurchaseFutureAllocationLinkParticipantV1? allocationLinks = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1
 {
     private const int DefaultPageSize = 50;

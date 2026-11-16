@@ -91,7 +91,16 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string GoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
+    /// <summary>
+    /// ALC-S3 (F-017 F17-4, ALS-D83/D85): drop a sales line's future supply allocation (bağ) on one of this company's purchase lines
+    /// from the Purchasing screen, without changing any purchase quantity; and, beside <see cref="OrdersCancel"/> or
+    /// <see cref="OrdersClose"/>, release the linked allocations while the remainder is cancelled or the line is closed (both names
+    /// are measured; either missing is 403). Apart from every other name; none confers another. Company-wide, not critical.
+    /// Registered only: the grant is a human gate.
+    /// </summary>
+    public const string FutureAllocationRelease = "purchasing.future-allocation.release";
+
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
-            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance];
+            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance, FutureAllocationRelease];
 }

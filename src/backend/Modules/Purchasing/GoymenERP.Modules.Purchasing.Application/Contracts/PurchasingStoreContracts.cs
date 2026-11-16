@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -70,26 +71,51 @@ public static class PurchasingCommands
     /// </summary>
     public const string OrderExchangeRateChangeV1 = "purchasing.purchase-order.exchange-rate-change.v1";
 
+    /// <summary>
+    /// F-017 §3.5 F17-4 (ALS-D83): one Inventory future allocation on the order's general line is released with
+    /// <c>purchasing-link-dropped</c>; the order and its quantities do not change (no version move), under
+    /// <c>purchasing.future-allocation.release</c>.
+    /// </summary>
+    public const string OrderFutureAllocationReleaseV1 = "purchasing.purchase-order.future-allocation-release.v1";
+
+    /// <summary>ALS-D85: the confirmed allocations are released with <c>source-cancelled</c> and the remainder is cancelled, in one transaction.</summary>
+    public const string OrderCancelWithAllocationReleaseV1 = "purchasing.purchase-order.cancel-with-allocation-release.v1";
+
+    /// <summary>F-017 §3.6: the confirmed allocations of the line are released with <c>purchase-line-closed</c> and the line is closed, in one transaction.</summary>
+    public const string OrderLineCloseWithAllocationReleaseV1 = "purchasing.purchase-order.line-close-with-allocation-release.v1";
+
     public static bool IsRequestCommand(string commandName) =>
         commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderCommand(string commandName) =>
         commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1
-            or OrderExchangeRateChangeV1;
+            or OrderExchangeRateChangeV1 or OrderFutureAllocationReleaseV1 or OrderCancelWithAllocationReleaseV1
+            or OrderLineCloseWithAllocationReleaseV1;
 
     public static bool IsRequestMutation(string commandName) =>
         commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderMutation(string commandName) =>
-        commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1 or OrderExchangeRateChangeV1;
+        commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1 or OrderExchangeRateChangeV1
+            or OrderCancelWithAllocationReleaseV1 or OrderLineCloseWithAllocationReleaseV1;
 
-    /// <summary>API-11: the two line closure commands (both take the §3.4 line lock and write a closure event + outbox message).</summary>
-    public static bool IsLineClosure(string commandName) => commandName is OrderLineCloseV1 or OrderLineReopenV1;
+    /// <summary>API-11: the line closure commands (all take the §3.4 line lock and write a closure event + outbox message).</summary>
+    public static bool IsLineClosure(string commandName) =>
+        commandName is OrderLineCloseV1 or OrderLineReopenV1 or OrderLineCloseWithAllocationReleaseV1;
+
+    /// <summary>A1-3 / ALS-D85: the remainder cancellation commands (both take every general line lock of the order).</summary>
+    public static bool IsOrderCancellation(string commandName) => commandName is OrderCancelV1 or OrderCancelWithAllocationReleaseV1;
 
     public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || IsOrderMutation(commandName);
 
     public static bool IsKnown(string commandName) => IsRequestCommand(commandName) || IsOrderCommand(commandName);
 }
+
+/// <summary>F-017 F17-4: the JSON snapshots of the released allocation for the order's audit record (before / after).</summary>
+public sealed record PurchasingLinkAuditSnapshots(string Before, string After);
+
+/// <summary>F-017 F17-4: the order and what the read answered inside the same transaction.</summary>
+public sealed record PurchasingOrderLinkRead<T>(StoredPurchaseOrder Order, T Value);
 
 /// <summary>The stable refusal codes of the store, beside the domain's rule codes.</summary>
 public static class PurchasingStoreCodes
@@ -220,6 +246,33 @@ public interface IPurchasingStore
     /// </summary>
     Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// F-017 §3.5 F17-4 (ALS-D85, §3.6): <see cref="MutateOrderAsync"/> with a <paramref name="participant"/> that runs inside the
+    /// same transaction, after the domain transition and its invariants and before the single save, while every general line lock
+    /// of the order is held (cancellation and closure commands only). The participant gets the transitioned order and the
+    /// transaction; a participant failure rolls everything back and nothing is written.
+    /// </summary>
+    Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task> participant,
+        PurchasingMutationAudit audit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// F-017 §3.5 F17-4 (ALS-D83): the link drop. Takes every general line lock of the company's order (ascending) in one transaction,
+    /// runs <paramref name="participant"/> (which releases through the Inventory owner and answers the audit's before/after
+    /// snapshots), and records the attempt and the order's audit record (version unchanged) in the same transaction. The order itself
+    /// is not changed. A recorded attempt under the key answers the order again (replay); an unknown order is null.
+    /// </summary>
+    Task<PurchasingOrderStoreResult?> ReleaseOrderFutureAllocationAsync(PurchasingWriteEnvelope envelope, string requestHash, Guid orderId,
+        Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<PurchasingLinkAuditSnapshots>> participant, PurchasingMutationAudit audit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// F-017 §3.5 F17-4: reads the company's order and runs <paramref name="read"/> inside a short read transaction (no lock, nothing
+    /// written) so the Inventory owner's read joins the same connection. An unknown order is null.
+    /// </summary>
+    Task<PurchasingOrderLinkRead<T>?> ReadOrderFutureAllocationsAsync<T>(Guid orderId,
+        Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<T>> read, CancellationToken cancellationToken = default);
 
     Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
 

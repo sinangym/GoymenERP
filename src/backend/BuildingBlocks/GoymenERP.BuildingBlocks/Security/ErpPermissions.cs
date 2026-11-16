@@ -1215,6 +1215,15 @@ public static class ErpPermissions
     public const string PurchasingGoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
 
     /// <summary>
+    /// ALC-S3 (F-017 F17-4, ALS-D83/D85): release a sales line's future supply allocation on a purchase line from the Purchasing
+    /// screen (bağ düşürme), and — together with the cancel or close name — release the linked allocations while cancelling an
+    /// order's remainder or closing a line. The Purchasing owner's name (PurchasingPermissionManifestV1.FutureAllocationRelease);
+    /// apart from cancelling and closing, neither confers the other. Registered, not granted: no role, seed or user receives it
+    /// here; any real grant stays a human gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingFutureAllocationRelease = "purchasing.future-allocation.release";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -1631,6 +1640,7 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingFutureAllocationRelease,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1884,6 +1894,7 @@ public static class ErpPermissions
             PurchasingOrdersRevise,
             PurchasingOrdersClose,
             PurchasingGoodsReceiptsApproveVariance,
+            PurchasingFutureAllocationRelease,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
