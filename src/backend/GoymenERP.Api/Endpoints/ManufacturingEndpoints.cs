@@ -64,7 +64,8 @@ public static class ManufacturingEndpoints
     ];
 
     // URT-S21 (URT-D62): the output declaration gives the output label its own code; a code already used in the company
-    // (entered, or no free number in the Ayarlar format) is its 409, a missing or unusable Ayarlar format its 422.
+    // (entered, or no free number in the Ayarlar format) is its 409, a missing or unusable Ayarlar format its 422, and
+    // (URT-D98) an entered code while an Ayarlar format is defined its 422.
     private static readonly string[] DeclareOutputConflictCodes =
     [
         .. ConflictCodes,
@@ -76,6 +77,7 @@ public static class ManufacturingEndpoints
         .. ManufacturingProblemCodes.Unprocessable,
         ManufacturingStoreCodes.OutputLabelCodeRequired,
         ManufacturingStoreCodes.OutputLabelCodeFormatInvalid,
+        ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed,
     ];
 
     // F-009 D3 (API-25, URT-S2): the output correction meets Inventory's refusal to take the mass back from the output

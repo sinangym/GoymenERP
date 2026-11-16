@@ -68,4 +68,14 @@ public sealed class ProductionOutputLabelCodesTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ProductionOutputLabelCodes.Format("CK-{n}", 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => ProductionOutputLabelCodes.Format("CK-{n}", -1));
     }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("   ", true)]
+    [InlineData("CK-{n}", false)]
+    [InlineData("CK-", false)]
+    public void An_entered_code_is_accepted_only_while_no_ayarlar_format_is_defined(string? format, bool accepted) =>
+        // URT-SC36 (URT-D98): a defined format, even an unusable one, makes the format the only source of the code.
+        Assert.Equal(accepted, ProductionOutputLabelCodes.AcceptsEnteredCode(format));
 }

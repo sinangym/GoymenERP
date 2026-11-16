@@ -12,7 +12,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// takes the next number of the company's Ayarlar output label format as its own label code — the Inventory label opens
 /// with it, never with the input label's number, which stays only the lineage edge; a replay answers the same code and
 /// writes nothing more; a generated candidate already taken is skipped to the next number while a taken entered code is
-/// refused and both owners roll back; without an entered code or an Ayarlar format nothing is written; and the
+/// refused and both owners roll back; an entered code is refused while an Ayarlar format is defined (URT-SC36, URT-D98); without an entered code or an Ayarlar format nothing is written; and the
 /// migration's Down passes while no code is stored and refuses (51731) once one is.
 /// </summary>
 public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
@@ -87,16 +87,18 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         var admission = new ManufacturingInventoryOutputAdmission(
             new ManufacturingOutputProducts(), new ManufacturingOutputLocations(seed.LocationId));
+        // URT-D98: an entered code is accepted only while Ayarlar defines no output label format.
+        await using var manualScope = ReturnOutputHostScope.Create(run, authority, admission);
         await using var scope = ReturnOutputHostScope.Create(run, authority, admission,
             labelCodePolicy: new FixedOutputLabelCodePolicy(SyntheticOutputLabelFormat));
 
-        // An entered code wins and is recorded as entered, without a number.
+        // Without a format an entered code is recorded as entered, without a number.
         var entered = OutputCommand(seed, seed.OrderVersion, seed.ParentLabelVersion, 10m) with
         {
             LabelCode = "SYN-CK-1",
             OccurredAtUtc = seed.OccurredAtUtc.AddMinutes(2),
         };
-        var enteredResult = await scope.Host.DeclareOutputAsync(entered,
+        var enteredResult = await manualScope.Host.DeclareOutputAsync(entered,
             ManufacturingHostMetadata(run, "label-code-entered"));
         Assert.Equal("SYN-CK-1", enteredResult.LabelCode);
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -104,11 +106,31 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             + "AND GeneratedNumber IS NULL AND Format IS NULL",
             ("@output", entered.OutputId)));
 
+        // Once a format is defined an entered code is refused and both owners roll back (URT-D98).
+        var manual = OutputCommand(seed, enteredResult.OrderVersion, enteredResult.ParentLabelVersion, 10m) with
+        {
+            LabelCode = "SYN-CK-MANUAL",
+            OccurredAtUtc = seed.OccurredAtUtc.AddMinutes(3),
+        };
+        var manualMetadata = ManufacturingHostMetadata(run, "label-code-entry-not-allowed");
+        var notAllowed = await Assert.ThrowsAsync<ManufacturingStoreException>(() =>
+            scope.Host.DeclareOutputAsync(manual, manualMetadata));
+        Assert.Equal(ManufacturingStoreCodes.OutputLabelCodeEntryNotAllowed, notAllowed.Code);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", manual.OutputId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id", ("@id", manual.LabelId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", manualMetadata.CorrelationId)));
+        Assert.Equal(enteredResult.OrderVersion, await run.ScalarAsync<long>(
+            "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", seed.OrderId)));
+
         // The first candidate of the format is already the entered code: it is skipped, never renamed.
         var generated = OutputCommand(seed, enteredResult.OrderVersion, enteredResult.ParentLabelVersion, 10m) with
         {
             LabelCode = null,
-            OccurredAtUtc = seed.OccurredAtUtc.AddMinutes(3),
+            OccurredAtUtc = seed.OccurredAtUtc.AddMinutes(4),
         };
         var generatedResult = await scope.Host.DeclareOutputAsync(generated,
             ManufacturingHostMetadata(run, "label-code-skipped"));
@@ -120,15 +142,16 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal("SYN-CK-2", await run.ScalarAsync<string>(
             "SELECT Code FROM inventory.Labels WHERE Id = @id", ("@id", generated.LabelId)));
 
-        // A taken entered code is refused; the output fact, its edges and the Inventory label all roll back.
+        // Without a format a taken entered code is refused; the output fact, its edges and the Inventory label all
+        // roll back.
         var taken = OutputCommand(seed, generatedResult.OrderVersion, generatedResult.ParentLabelVersion, 10m) with
         {
             LabelCode = "SYN-CK-2",
-            OccurredAtUtc = seed.OccurredAtUtc.AddMinutes(4),
+            OccurredAtUtc = seed.OccurredAtUtc.AddMinutes(5),
         };
         var takenMetadata = ManufacturingHostMetadata(run, "label-code-taken");
         var refused = await Assert.ThrowsAsync<ManufacturingStoreException>(() =>
-            scope.Host.DeclareOutputAsync(taken, takenMetadata));
+            manualScope.Host.DeclareOutputAsync(taken, takenMetadata));
 
         Assert.Equal(ManufacturingStoreCodes.OutputLabelCodeConflict, refused.Code);
         Assert.Equal(0, await run.ScalarAsync<int>(
