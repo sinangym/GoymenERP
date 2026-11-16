@@ -6,7 +6,7 @@
  *
  *  - The TRADE name (ticari ad) is a basic card field: it is changed directly, fenced on the PARTY version.
  *  - The official LEGAL name (resmi unvan) is shown read-only here and never sent from this screen: it is changed on its
- *    own panel under a separate permission (ALS-D95, ./legalName.ts).
+ *    own panel by maker-checker under separate permissions (ALS-D111/ALS-D113, ./legalName.ts).
  *  - The party is shared by every company holding an account for it, so a trade name change is seen by all of them.
  *
  * The decoder is strict: an unknown shape is `null`, never a partly trusted object. Every user-facing word lives in

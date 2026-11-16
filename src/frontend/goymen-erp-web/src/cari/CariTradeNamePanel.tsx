@@ -3,7 +3,7 @@
  *
  * What the user can do here, and nothing more:
  *  - READ the hukuki unvan (legal name), read-only: it is changed on its own panel under a separate permission
- *    (ALS-D95, ./CariLegalNamePanel.tsx), so this panel points there instead of offering a field.
+ *    (ALS-D111/ALS-D113 maker-checker, ./CariLegalNamePanel.tsx), so this panel points there instead of offering a field.
  *  - CHANGE or CLEAR the ticari unvan (trade name), fenced on the party version the form opened on. A save of the stored
  *    value is the server's no-op; the client does not send an unchanged value at all.
  *

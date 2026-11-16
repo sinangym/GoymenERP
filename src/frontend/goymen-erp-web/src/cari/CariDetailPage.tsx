@@ -237,7 +237,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
   // Both names panels show the legal name and fence on the same PARTY version, so a change in either one refreshes the
-  // card's own read and the other panel's read (F-027, ALS-D95/ALS-D97).
+  // card's own read and the other panel's read (F-027, ALS-D111/ALS-D97).
   const onNamesChanged = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: detailQueryKey })
     void queryClient.invalidateQueries({
@@ -415,8 +415,8 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         </dl>
         {/* AT-009: the party's VKN/TCKN (one per party, like the facts above), its duplicate warning in THIS
             company, and the maker-checker change. Its own read, bound to the selected company. */}
-        {/* F-027 / ALS-D95: the official legal name, changed in one step under its own separate permission. Its own
-            read, bound to the selected company. */}
+        {/* ALS-D111 + ALS-D113: the official legal name, changed by maker-checker (one person proposes, another
+            approves; the name changes only on approval). Its own read, bound to the selected company. */}
         {namespace !== null && activeCompanyId !== null ? (
           <CariLegalNamePanel
             partyId={detail.id}

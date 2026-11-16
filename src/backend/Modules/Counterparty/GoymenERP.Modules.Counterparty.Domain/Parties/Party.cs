@@ -107,7 +107,7 @@ public sealed class Party
     /// F-027 / C-02 trade name edit: the optional trade name (ticari ad) is a basic card field, changed directly with the
     /// basic-update permission and audited (ALS-D97). Blank clears it. Returns false and leaves the version untouched when
     /// the normalized value is the one already stored, so a repeated save is not a business change. The legal name is
-    /// never changed here (ALS-D95 gives it its own command).
+    /// never changed here (ALS-D111/D113 give it its own maker-checker path).
     /// </summary>
     internal bool ChangeTradeName(string? tradeName, DateTimeOffset utcNow)
     {
@@ -127,11 +127,12 @@ public sealed class Party
         NormalizeOptionalText(tradeName, nameof(tradeName), TradeNameMaximumLength);
 
     /// <summary>
-    /// ALS-D95 (confirmed by SINAN-CEVAP 19.22): the official legal name (resmi/hukuki unvan) is changed in one step,
-    /// without an approval step, by the holder of its own separate permission. It stays required (trimmed, at most
+    /// The official legal name (resmi/hukuki unvan) write. It stays required (trimmed, at most
     /// <see cref="LegalNameMaximumLength"/>); blank is refused, never stored. Returns false and leaves the version untouched
-    /// when the normalized value is the one already stored, so a repeated save is not a business change. VKN/TCKN, MERSİS
-    /// and IBAN stay in the CARI-DEC-004 maker-checker flow; nothing else is changed here.
+    /// when the normalized value is the one already stored, so a repeated save is not a business change. ALS-D111/D113
+    /// (replacing the one-step ALS-D110 path): the only command that reaches it is the approval of a
+    /// <see cref="PartyLegalNameChangeRequest"/> by a person other than its proposer
+    /// (<see cref="ApplyApprovedLegalNameChange"/>); the name does not move before that approval.
     /// </summary>
     internal bool ChangeLegalName(string legalName, DateTimeOffset utcNow)
     {
@@ -144,6 +145,24 @@ public sealed class Party
         LegalName = normalized;
         Touch(utcNow);
         return true;
+    }
+
+    /// <summary>
+    /// ALS-D111/D113 approved change: the approved request's proposal replaces the legal name that was current when the
+    /// request was made. A party whose legal name moved since then is not changed (the request is stale), and a proposal
+    /// equal to the stored name is never an approval.
+    /// </summary>
+    internal void ApplyApprovedLegalNameChange(string expectedCurrentLegalName, string proposedLegalName, DateTimeOffset utcNow)
+    {
+        if (!string.Equals(LegalName, expectedCurrentLegalName, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Resmi unvan talepten sonra değişmiş; talep güncel değil.");
+        }
+
+        if (!ChangeLegalName(proposedLegalName, utcNow))
+        {
+            throw new InvalidOperationException("Önerilen resmi unvan mevcut unvanla aynı.");
+        }
     }
 
     /// <summary>

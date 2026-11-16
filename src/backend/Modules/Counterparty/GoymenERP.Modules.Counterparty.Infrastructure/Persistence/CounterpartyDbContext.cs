@@ -30,12 +30,36 @@ public sealed class CounterpartyDbContext(
     internal const string PartyMergeTextCheck =
         "LEN([Reason]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0";
 
+    /// <summary>ALS-D111/D113: a legal-name change request names one status of three.</summary>
+    internal const string PartyLegalNameChangeStatusCheck = "[Status] IN (N'Pending', N'Approved', N'Rejected')";
+
+    /// <summary>ALS-D111/D113: both names are non-blank and a proposal never repeats the current legal name.</summary>
+    internal const string PartyLegalNameChangeNamesCheck =
+        "LEN([CurrentLegalName]) > 0 AND LEN([ProposedLegalName]) > 0"
+        + " AND [ProposedLegalName] COLLATE Latin1_General_100_BIN2 <> [CurrentLegalName] COLLATE Latin1_General_100_BIN2";
+
+    /// <summary>
+    /// ALS-D111/D113 maker-checker in the database too: a decision names its decider, who is never the proposer (actor
+    /// ids compared byte-wise, so a case or accent variant of the proposer is not a second person).
+    /// </summary>
+    internal const string PartyLegalNameChangeDecisionCheck =
+        "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL)"
+        + " OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL"
+        + " AND LEN([DecidedBy]) > 0"
+        + " AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2)";
+
+    internal const string PartyLegalNameChangeTextCheck =
+        "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND [Version] >= 1 AND [PartyVersionAtRequest] >= 1";
+
     public DbSet<Party> Parties => Set<Party>();
 
     public DbSet<CompanyPartyAccount> CompanyPartyAccounts => Set<CompanyPartyAccount>();
 
     public DbSet<PartyTaxIdentityChangeRequest> PartyTaxIdentityChangeRequests =>
         Set<PartyTaxIdentityChangeRequest>();
+
+    /// <summary>ALS-D111/D113: proposed legal-name changes awaiting (or carrying) a second person's decision.</summary>
+    public DbSet<PartyLegalNameChangeRequest> PartyLegalNameChangeRequests => Set<PartyLegalNameChangeRequest>();
 
     /// <summary>SAT-D57: each company's customer (price) group list.</summary>
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
@@ -71,6 +95,7 @@ public sealed class CounterpartyDbContext(
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
+        ConfigurePartyLegalNameChangeRequest(modelBuilder);
         ConfigureCustomerGroup(modelBuilder);
         ConfigureCustomerEDocumentProfile(modelBuilder);
         ConfigurePartyMerge(modelBuilder);
@@ -243,6 +268,48 @@ public sealed class CounterpartyDbContext(
             .IsUnique()
             .HasFilter("[Status] = N'Pending'")
             .HasDatabaseName("UX_PartyTaxIdentityChangeRequests_Pending");
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId, x.RequestedAtUtc });
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigurePartyLegalNameChangeRequest(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyLegalNameChangeRequest>();
+        entity.ToTable("PartyLegalNameChangeRequests", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Status", PartyLegalNameChangeStatusCheck);
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Names", PartyLegalNameChangeNamesCheck);
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Decision", PartyLegalNameChangeDecisionCheck);
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Text", PartyLegalNameChangeTextCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.CurrentLegalName).HasMaxLength(Party.LegalNameMaximumLength).IsRequired();
+        entity.Property(x => x.ProposedLegalName).HasMaxLength(Party.LegalNameMaximumLength).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(PartyLegalNameChangeRequest.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(x => x.RequestedBy)
+            .HasMaxLength(PartyLegalNameChangeRequest.ActorMaximumLength).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(PartyLegalNameChangeRequest.ActorMaximumLength);
+        entity.Property(x => x.DecisionNote).HasMaxLength(PartyLegalNameChangeRequest.NoteMaximumLength);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        // One pending legal-name change per party per company; a concurrent second proposal loses on this index.
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId })
+            .IsUnique()
+            .HasFilter("[Status] = N'Pending'")
+            .HasDatabaseName("UX_PartyLegalNameChangeRequests_Pending");
         entity.HasIndex(x => new { x.CompanyId, x.PartyId, x.RequestedAtUtc });
 
         entity.HasOne<Party>()
@@ -820,6 +887,34 @@ public sealed class CounterpartyDbContext(
             }
         }
 
+        foreach (var entry in ChangeTracker.Entries<PartyLegalNameChangeRequest>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Resmi unvan değişiklik talebi silinemez; karar geçmişi korunur.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && ImmutableLegalNameChangeRequestProperties.Any(name => entry.Property(name).IsModified))
+            {
+                throw new InvalidOperationException(
+                    "Resmi unvan değişiklik talebinin kimlik, şirket, cari, unvan ve talep eden bilgisi değiştirilemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Resmi unvan değişiklik talebi aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
         foreach (var entry in ChangeTracker.Entries<PartyMerge>())
         {
             if (entry.State == EntityState.Unchanged)
@@ -894,7 +989,7 @@ public sealed class CounterpartyDbContext(
 
     /// <summary>
     /// F-027 / C-02: the trade name edit touches only these. The official legal name never rides along: it has its own
-    /// command and permission (ALS-D95), and a tax identity change never rides along either.
+    /// maker-checker commands and permissions (ALS-D111/D113), and a tax identity change never rides along either.
     /// </summary>
     private static readonly string[] MutableTradeNamePartyProperties =
     [
@@ -905,7 +1000,7 @@ public sealed class CounterpartyDbContext(
     ];
 
     /// <summary>
-    /// ALS-D95 (19.22): the legal name change touches only these. The trade name and the tax identity never ride along,
+    /// ALS-D111/D113 (approved legal-name change; formerly ALS-D95 19.22): the legal name change touches only these. The trade name and the tax identity never ride along,
     /// so each name change is fenced and audited under its own permission.
     /// </summary>
     private static readonly string[] MutableLegalNamePartyProperties =
@@ -937,6 +1032,19 @@ public sealed class CounterpartyDbContext(
         nameof(PartyTaxIdentityChangeRequest.Reason),
         nameof(PartyTaxIdentityChangeRequest.RequestedBy),
         nameof(PartyTaxIdentityChangeRequest.RequestedAtUtc),
+    ];
+
+    private static readonly string[] ImmutableLegalNameChangeRequestProperties =
+    [
+        nameof(PartyLegalNameChangeRequest.Id),
+        nameof(PartyLegalNameChangeRequest.CompanyId),
+        nameof(PartyLegalNameChangeRequest.PartyId),
+        nameof(PartyLegalNameChangeRequest.CurrentLegalName),
+        nameof(PartyLegalNameChangeRequest.ProposedLegalName),
+        nameof(PartyLegalNameChangeRequest.PartyVersionAtRequest),
+        nameof(PartyLegalNameChangeRequest.Reason),
+        nameof(PartyLegalNameChangeRequest.RequestedBy),
+        nameof(PartyLegalNameChangeRequest.RequestedAtUtc),
     ];
 
     /// <summary>

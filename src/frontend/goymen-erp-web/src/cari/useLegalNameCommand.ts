@@ -1,5 +1,5 @@
 /**
- * F-027 / ALS-D95 — one legal name command attempt at a time on the Cari card.
+ * ALS-D111 + ALS-D113 — one legal name command attempt (propose, approve or reject) at a time on the Cari card.
  *
  * The rules are the Cari command rules (./commandAttempt.ts), exactly as ./useTradeNameCommand.ts applies them: one
  * Idempotency-Key per submitted snapshot, never per click; an answer the client could not read (network, 5xx, missing
@@ -31,7 +31,14 @@ export interface LegalNameNotice {
 }
 
 /** Definite answers after which the card's names are stale and are read again. */
-const REFRESH_CODES = new Set<string>([LEGAL_NAME_PROBLEM_CODE.versionConflict, LEGAL_NAME_PROBLEM_CODE.notFound])
+const REFRESH_CODES = new Set<string>([
+  LEGAL_NAME_PROBLEM_CODE.versionConflict,
+  LEGAL_NAME_PROBLEM_CODE.notFound,
+  LEGAL_NAME_PROBLEM_CODE.changePending,
+  LEGAL_NAME_PROBLEM_CODE.changeNotPending,
+  LEGAL_NAME_PROBLEM_CODE.changeStale,
+  LEGAL_NAME_PROBLEM_CODE.selfDecision,
+])
 
 export function legalNameRefusalText(status: number, body: unknown): string {
   const code = legalNameProblemCodeOf(body)

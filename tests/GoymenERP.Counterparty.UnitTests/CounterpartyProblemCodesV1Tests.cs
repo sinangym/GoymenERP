@@ -41,9 +41,14 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.SuccessionCycle,
             CounterpartyProblemCodesV1.SuccessionAlreadyRecorded,
             CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired,
+            CounterpartyProblemCodesV1.LegalNameUnchanged,
+            CounterpartyProblemCodesV1.LegalNameChangePending,
+            CounterpartyProblemCodesV1.LegalNameChangeNotPending,
+            CounterpartyProblemCodesV1.LegalNameChangeStale,
+            CounterpartyProblemCodesV1.LegalNameSelfDecision,
         };
 
-        Assert.Equal(32, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(37, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -100,6 +105,13 @@ public sealed class CounterpartyProblemCodesV1Tests
     [InlineData(
         CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired,
         CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired)]
+    [InlineData(CounterpartyCommandResult.LegalNameUnchanged, CounterpartyProblemCodesV1.LegalNameUnchanged)]
+    [InlineData(CounterpartyCommandResult.LegalNameChangePending, CounterpartyProblemCodesV1.LegalNameChangePending)]
+    [InlineData(
+        CounterpartyCommandResult.LegalNameChangeNotPending,
+        CounterpartyProblemCodesV1.LegalNameChangeNotPending)]
+    [InlineData(CounterpartyCommandResult.LegalNameChangeStale, CounterpartyProblemCodesV1.LegalNameChangeStale)]
+    [InlineData(CounterpartyCommandResult.LegalNameSelfDecision, CounterpartyProblemCodesV1.LegalNameSelfDecision)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)
