@@ -64,6 +64,20 @@ public static class InventorySupplierReturnExitCodesV1
     public const string ReceiptTraceInvalid = "inventory_supplier_return_exit_receipt_trace_invalid";
     public const string ExitExceedsReceipt = "inventory_supplier_return_exit_exceeds_receipt";
     public const string StockNotAvailable = "inventory_supplier_return_exit_stock_not_available";
+
+    /// <summary>
+    /// KLN-D93: the exit would take kilograms an active allocation (such as a sales order's) still holds on the label.
+    /// The return never releases that allocation itself; it is released first by its own command, then the return is
+    /// retried.
+    /// </summary>
+    public const string StockAllocated = "inventory_supplier_return_exit_stock_allocated";
+
+    /// <summary>
+    /// SAT-D371 (completes SAT-D306 (c)): leaving at the original unit cost would leave a cost difference against the
+    /// moving average that no account can take yet (residual value at zero stock, or a non-positive remaining value).
+    /// Fail-closed until the Finance accounting-voucher spec names that account; a return without a difference proceeds.
+    /// </summary>
+    public const string CostDifferenceUnposted = "inventory_supplier_return_exit_cost_difference_unposted";
     public const string IdempotencyConflict = "inventory_supplier_return_exit_idempotency_conflict";
     public const string ConcurrentChange = "inventory_supplier_return_exit_concurrent_change";
     public const string QuantityProfileUnavailable = "inventory_supplier_return_exit_quantity_profile_unavailable";
@@ -72,7 +86,8 @@ public static class InventorySupplierReturnExitCodesV1
     public static IReadOnlySet<string> Status400Codes { get; } = Set(InvalidRequest, InvalidQuantity, InvalidCost);
     public static IReadOnlySet<string> Status404Codes { get; } = Set(InvalidReference);
     public static IReadOnlySet<string> Status409Codes { get; } = Set(
-        ReceiptNotRecorded, ExitExceedsReceipt, StockNotAvailable, IdempotencyConflict, ConcurrentChange);
+        ReceiptNotRecorded, ExitExceedsReceipt, StockNotAvailable, StockAllocated, CostDifferenceUnposted,
+        IdempotencyConflict, ConcurrentChange);
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         ReceiptTraceInvalid, QuantityProfileUnavailable, Unavailable);
 

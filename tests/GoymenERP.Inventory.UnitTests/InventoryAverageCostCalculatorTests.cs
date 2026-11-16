@@ -355,6 +355,50 @@ public sealed class InventoryAverageCostCalculatorTests
     }
 
     [Fact]
+    public void The_purchase_return_cost_difference_check_answers_exactly_where_the_ledger_step_turns_unreadable()
+    {
+        // SAT-D371 / SAT-D306 (c): the refusal predicate and the ledger step read one rule. Each row: held kg, held
+        // average, returned kg, return cost. SENTETIK figures.
+        (decimal HeldKg, decimal Average, decimal Kg, decimal Cost)[] cases =
+        [
+            (150m, 11m, 50m, 13m), // (1650 - 650) / 100 = 10: no difference.
+            (3m, 10m, 1m, 11m), // remaining value 19 over 2 kg: no difference.
+            (5m, 8m, 5m, 8m), // empties at the average: no left-over value.
+            (5m, 8m, 5m, 9m), // empties with a left-over value of -5: difference.
+            (5m, 8m, 5m, 7m), // empties with a left-over value of 5: difference.
+            (10m, 2m, 5m, 5m), // remaining value -5 with stock left: difference.
+            (10m, 2m, 5m, 4m), // remaining value exactly 0 with stock left: difference.
+        ];
+        foreach (var (heldKg, average, kg, cost) in cases)
+        {
+            var held = AverageCostPosition.Known(heldKg, average);
+            var stepIsUnreadable = AverageCostCalculator.Apply(held, new(PurchaseReturn, kg, heldKg, cost)).Status
+                == AverageCostStatus.Unreadable;
+            Assert.Equal(stepIsUnreadable, AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, kg, cost));
+        }
+
+        Assert.False(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(150m, 11m), 50m, 13m));
+        Assert.True(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(5m, 8m), 5m, 9m));
+        Assert.True(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(10m, 2m), 5m, 4m));
+    }
+
+    [Fact]
+    public void The_purchase_return_cost_difference_check_has_no_figure_without_a_readable_covering_position()
+    {
+        // An unreadable position or a return larger than the position keeps its own rule; nothing is measured here.
+        Assert.False(AverageCostCalculator.PurchaseReturnLeavesCostDifference(
+            AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return), 1m, 8m));
+        Assert.False(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(5m, 8m), 6m, 1m));
+
+        // An unknown cost is never passed in as zero, and a return moves a positive quantity.
+        var held = AverageCostPosition.Known(5m, 8m);
+        Assert.Throws<ArgumentNullException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(null!, 1m, 8m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, 0m, 8m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, 1m, 0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, 1m, -1m));
+    }
+
+    [Fact]
     public void An_approved_opening_cost_seeds_only_an_untracked_position_with_a_positive_cost()
     {
         // SAT-D304: the entered cost costs the whole stock on hand; afterwards receipts blend normally.
