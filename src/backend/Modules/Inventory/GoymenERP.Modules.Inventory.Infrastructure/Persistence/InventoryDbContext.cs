@@ -203,6 +203,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<StockScrapDecisionRow> StockScrapDecisions => Set<StockScrapDecisionRow>();
 
+    internal DbSet<OpeningCostRow> OpeningCosts => Set<OpeningCostRow>();
+
+    internal DbSet<OpeningCostDecisionRow> OpeningCostDecisions => Set<OpeningCostDecisionRow>();
+
     internal DbSet<InventoryTransferRow> Transfers => Set<InventoryTransferRow>();
 
     internal DbSet<InventoryTransferLineRow> TransferLines => Set<InventoryTransferLineRow>();
@@ -262,6 +266,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureCommands(modelBuilder);
         ConfigureStockCounts(modelBuilder);
         ConfigureStockScraps(modelBuilder);
+        ConfigureOpeningCosts(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
         ConfigureFutureSupply(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -971,6 +976,63 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .OnDelete(DeleteBehavior.Restrict);
         decision.HasOne<MovementRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// SAT-D304 opening-stock cost: a submission of one (location, product) unit cost and at most one decision on it. A
+    /// submission names its company's location (by (company, id)); the product is another module's record, referenced by
+    /// identity only. The cost is positive at the ledger's precision; an approval keeps the positive stock it costed, a
+    /// rejection none. Both are append-only; the cost ledger row an approval opens is the ledger's own.
+    /// </summary>
+    private void ConfigureOpeningCosts(ModelBuilder modelBuilder)
+    {
+        var openingCost = modelBuilder.Entity<OpeningCostRow>();
+        openingCost.ToTable("OpeningCosts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningCosts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OpeningCosts_Cost", "[UnitCostPerKg] > 0");
+            table.HasCheckConstraint("CK_OpeningCosts_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        openingCost.HasKey(x => x.Id);
+        openingCost.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        openingCost.Property(x => x.Id).ValueGeneratedNever();
+        openingCost.Property(x => x.UnitCostPerKg).HasPrecision(18, 4);
+        openingCost.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        openingCost.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        openingCost.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        openingCost.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        openingCost.HasIndex(x => new { x.CompanyId, x.LocationId, x.ProductId, x.RecordedAtUtc, x.Id });
+        openingCost.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LocationOf(openingCost);
+        openingCost.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<OpeningCostDecisionRow>();
+        decision.ToTable("OpeningCostDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningCostDecisions_Decision",
+                "([Decision] = 1 AND [CostedStockKg] IS NOT NULL AND [CostedStockKg] > 0) "
+                + "OR ([Decision] = 2 AND [CostedStockKg] IS NULL)");
+            table.HasCheckConstraint("CK_OpeningCostDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.OpeningCostId });
+        decision.Property(x => x.CostedStockKg).HasPrecision(18, 3);
+        decision.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        decision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasOne<OpeningCostRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpeningCostId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
