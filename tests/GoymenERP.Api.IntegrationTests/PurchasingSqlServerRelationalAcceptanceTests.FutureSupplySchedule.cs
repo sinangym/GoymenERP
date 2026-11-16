@@ -1,14 +1,60 @@
+using System.Data.Common;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task A_future_reduction_purchase_lock_refuses_schedule_changes_without_recording_the_key_and_retry_succeeds()
+    {
+        await using Run run = await Run.StartAsync();
+        var (orderId, lineId, version) = await ApprovedAcceptanceOrderAsync(run, 10m);
+        var before = await run.OrderCountsAsync(orderId);
+        var envelope = run.Envelope("future-schedule-race");
+        var hash = Hash("future-schedule-race");
+        await using (var holder = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await holder.OpenAsync();
+            await using var transaction = (DbTransaction)await holder.BeginTransactionAsync();
+            await PurchaseLineSerializationLock.Bind(holder, transaction, CompanyA).AcquireAsync(lineId);
+            await using (var scope = run.Store(CompanyA))
+            {
+                var busy = await Assert.ThrowsAsync<PurchasingStoreException>(() => scope.Store.MutateOrderAsync(
+                    envelope, hash, PurchasingCommands.OrderLineScheduleV1, orderId,
+                    (order, now) => order.SetLineDeliverySchedule(version, lineId, [KgSlice(10m, ScheduleD2)], run.Actor, now),
+                    LineScheduleSet));
+                Assert.Equal(PurchaseLineSerializationLockContractV1.BusyCode, busy.Code);
+            }
+            Assert.Equal(before, await run.OrderCountsAsync(orderId));
+            Assert.Empty((await ReadFutureSupplyScheduleAsync(run, CompanyA, orderId, lineId)).Slices);
+            await transaction.RollbackAsync();
+        }
+        await using (var scope = run.Store(CompanyA))
+        {
+            var recorded = await scope.Store.MutateOrderAsync(envelope, hash, PurchasingCommands.OrderLineScheduleV1, orderId,
+                (order, now) => order.SetLineDeliverySchedule(version, lineId, [KgSlice(10m, ScheduleD2)], run.Actor, now),
+                LineScheduleSet);
+            Assert.Equal(PurchasingWriteOutcome.Recorded, recorded!.Outcome);
+        }
+        var after = await ReadFutureSupplyScheduleAsync(run, CompanyA, orderId, lineId);
+        Assert.Equal(version + 1, after.ObservedOrderVersion);
+        Assert.Equal(ScheduleD2, Assert.Single(after.Slices).DeliveryDate);
+        await using (var scope = run.Store(CompanyA))
+        {
+            var replay = await scope.Store.MutateOrderAsync(envelope, hash, PurchasingCommands.OrderLineScheduleV1, orderId,
+                (_, _) => throw new InvalidOperationException("Replay must not execute a new schedule mutation."), LineScheduleSet);
+            Assert.Equal(PurchasingWriteOutcome.Replayed, replay!.Outcome);
+        }
+    }
+
     [SqlServerFact]
     public async Task Future_supply_schedule_uses_latest_revision_and_subtracts_receipts_in_slice_order_without_writing()
     {

@@ -381,7 +381,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(participant);
-        if (!TakesOrderLineLocks(commandName))
+        if (!PurchasingCommands.IsOrderCancellation(commandName) && !PurchasingCommands.IsLineClosure(commandName))
         {
             throw new ArgumentException("Yalnız kalan iptali ve satır kapanışı komutları bir katılımcı taşır.", nameof(commandName));
         }
@@ -389,9 +389,10 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         return MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant, audit, cancellationToken);
     }
 
-    /// <summary>A1-3 / API-11 / ALS-D85: the commands that take every general line lock of the order before the read.</summary>
+    /// <summary>A1-3 / API-11 / ALS-D85 and KLN-D105: serialize remainder and schedule changes with future allocation reduction.</summary>
     private static bool TakesOrderLineLocks(string commandName) =>
-        PurchasingCommands.IsOrderCancellation(commandName) || PurchasingCommands.IsLineClosure(commandName);
+        PurchasingCommands.IsOrderCancellation(commandName) || PurchasingCommands.IsLineClosure(commandName)
+        || commandName == PurchasingCommands.OrderLineScheduleV1;
 
     private async Task<PurchasingOrderStoreResult?> MutateOrderCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task>? participant,
@@ -435,6 +436,8 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         // API-11 (§3.4): a line closure or reopening moves one general line's remainder (and its allocatable amount), so it takes the
         // same locks — every general line of the order, the canonical order, rather than a second lock path for the one line; the
         // command is rare and the order's lines are few.
+        // KLN-D105: a schedule change can reorder the latest-delivery-first reduction choices. It uses these same locks,
+        // so the owner schedule read remains stable until the Sales/Inventory transaction releases its purchase locks.
         await using var lockTransaction = TakesOrderLineLocks(commandName)
             ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken)
             : null;
