@@ -37,7 +37,7 @@ function comparison(source: GoodsReceipt) {
     acceptedQuantity: source.acceptedQuantity, measuredQuantityKg: source.measuredQuantityKg,
     comparisonStatus: 'SameKilogramUnit', acceptedQuantityKg: source.acceptedQuantity, measuredMinusAcceptedKg: '-0.1' }
 }
-function fixture(unknownFirst = false) {
+function fixture(unknownFirst = false, futureSupplyReleases?: readonly unknown[]) {
   const posts: { key: string; body: string }[] = []
   const receipts: GoodsReceipt[] = []
   const comparisonReads: string[] = []
@@ -47,7 +47,8 @@ function fixture(unknownFirst = false) {
       const payload = JSON.parse(init.body as string) as GoodsReceiptRequest
       if (receipts.length === 0) receipts.push(recorded(payload))
       if (unknownFirst && posts.length === 1) return json({}, 503)
-      return json({ receipt: receipts[0], isReplay: posts.length > 1, originalCorrelationId: 'original' }, 201, posts.length > 1)
+      return json({ receipt: receipts[0], isReplay: posts.length > 1, originalCorrelationId: 'original',
+        ...(futureSupplyReleases === undefined ? {} : { futureSupplyReleases }) }, 201, posts.length > 1)
     }
     if (url.endsWith('goods-receipt-options')) return json({ source: { companyId: COMPANY, purchaseOrderId: ORDER,
       purchaseOrderLineId: LINE, purchaseOrderVersion: '3', productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: '2026-09-25' },
@@ -143,7 +144,7 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
       heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
     const response = { receipt: recorded(payload), isReplay: true, originalCorrelationId: 'original' }
     vi.stubGlobal('fetch', vi.fn(async () => json(response, 201, true)))
-    expect(await recordGoodsReceipt(detail, LINE, payload, 'same-key')).toEqual({ type: 'applied', response })
+    expect(await recordGoodsReceipt(detail, LINE, payload, 'same-key')).toEqual({ type: 'applied', response: { ...response, futureSupplyReleases: [] } })
   })
   it.each([
     ['legacy 200 success', 200, 'matching'],
@@ -168,6 +169,31 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     expect(decodeGoodsReceiptResponse(answer, detail, LINE, request, false)).toBeNull()
     expect(decodeGoodsReceiptResponse({ ...answer, isReplay: true }, detail, LINE, request, true)?.receipt.initialBlock).toBe('Blocked')
     expect(decodeGoodsReceiptResponse({ ...answer, isReplay: true }, detail, LINE, request, false)).toBeNull()
+  })
+  it('KLN-D94: decodes released future supply allocations exactly and refuses a malformed list instead of hiding a release', () => {
+    const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
+      acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'SYNTHETIC',
+      heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
+    const answer = { receipt: recorded(request), isReplay: false, originalCorrelationId: 'c' }
+    const release = { futureAllocationId: ORDER, releasedQuantity: '7.5', failureCode: 'demand-not-approved' }
+    expect(decodeGoodsReceiptResponse(answer, detail, LINE, request, false)?.futureSupplyReleases).toEqual([])
+    expect(decodeGoodsReceiptResponse({ ...answer, futureSupplyReleases: [release] }, detail, LINE, request, false)?.futureSupplyReleases)
+      .toEqual([release])
+    for (const bad of [null, {}, [{ ...release, failureCode: 'acceptance-link-failed' }], [{ ...release, releasedQuantity: '0' }],
+      [{ ...release, futureAllocationId: 'x' }], [release, release], [{ ...release, extra: true }]]) {
+      expect(decodeGoodsReceiptResponse({ ...answer, futureSupplyReleases: bad }, detail, LINE, request, false)).toBeNull()
+    }
+  })
+  it('KLN-D94: shows that the receipt stands and which Sales reservations were released in full', async () => {
+    fixture(false, [{ futureAllocationId: ORDER, releasedQuantity: '5', failureCode: 'label-blocked' }])
+    mount()
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    const warning = await screen.findByTestId(/-future-supply-released$/)
+    expect(warning.textContent).toContain(T.futureSupplyReleasedHeading)
+    expect(warning.textContent).toContain(T.futureSupplyReleasedNote)
+    expect(warning.textContent).toContain(T.futureSupplyReleasedItem('5', T.futureSupplyReleaseReason['label-blocked']))
+    expect(screen.getByRole('status').textContent).toContain(T.saved)
   })
   it('reopens a historical Blocked receipt without changing its stored state or submitting a release', async () => {
     const server = fixture()

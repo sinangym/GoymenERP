@@ -335,7 +335,10 @@ public sealed partial class PurchasingServiceTests
             return Task.FromResult(new PurchaseReceiptStockResultV1(Company, request.AcceptanceId, request.PurchaseOrderId,
                 request.PurchaseOrderLineId, request.PurchaseOrderVersionAfter, request.ProductId, request.ExpectedProductVersion,
                 request.PurchaseUnitId, request.LotId, request.LabelId, "1", request.MovementId, request.QuantityKg,
-                Original is not null, "synthetic-correlation"));
+                Original is not null, "synthetic-correlation") { FutureSupplyReleases = FutureSupplyReleases! });
         }
+
+        /// <summary>KLN-D94: what the host reports as released future allocations (null simulates a broken adapter).</summary>
+        public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>? FutureSupplyReleases { get; set; } = [];
     }
 }

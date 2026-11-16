@@ -17,7 +17,39 @@ public sealed record PurchaseGoodsReceiptViewV1(
     Guid LotId, Guid LabelId, string LabelCode, string LabelVersion, Guid MovementId, Guid LocationId,
     string MeasuredQuantityKg, string InitialBlock, DateTimeOffset OccurredAtUtc);
 
-public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 Receipt, bool IsReplay, string OriginalCorrelationId);
+public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 Receipt, bool IsReplay, string OriginalCorrelationId)
+{
+    /// <summary>
+    /// KLN-D94 (SINAN-CEVAP 34): future supply allocations of the received line that this receipt could not link to its label
+    /// and that Inventory therefore released in full (<c>acceptance-link-failed</c>). The receipt itself stands; this list only
+    /// tells the receiving user which Sales reservations were dropped. A replay answers the stored list. Empty when nothing
+    /// was released.
+    /// </summary>
+    public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
+}
+
+/// <summary>
+/// KLN-D94: one future supply allocation released at goods receipt because its label link failed. <see cref="ReleasedQuantity"/>
+/// is the WHOLE remainder Inventory released (purchase unit), not only this receipt's share (Q34.8). <see cref="FailureCode"/>
+/// is one of <see cref="PurchaseReceiptFutureSupplyReleaseCodesV1"/>; the user text is localized by the client.
+/// </summary>
+public sealed record PurchaseReceiptFutureSupplyReleaseV1(Guid FutureAllocationId, string ReleasedQuantity, string FailureCode);
+
+/// <summary>The link failure codes Inventory reports for a released future allocation (F-017 STOK §3.5).</summary>
+public static class PurchaseReceiptFutureSupplyReleaseCodesV1
+{
+    public const string LabelBlocked = "label-blocked";
+    public const string UnitConversionUnavailable = "unit-conversion-unavailable";
+    public const string DemandNotApproved = "demand-not-approved";
+    public const string ProductMismatch = "product-mismatch";
+    public const string InsufficientLabelQuantity = "insufficient-label-quantity";
+    public const string OwnerNotCompany = "owner-not-company";
+
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        LabelBlocked, UnitConversionUnavailable, DemandNotApproved, ProductMismatch, InsufficientLabelQuantity, OwnerNotCompany,
+    };
+}
 public sealed record PurchaseGoodsReceiptDetailV1(PurchaseGoodsReceiptViewV1 Receipt);
 public sealed record PurchaseGoodsReceiptPageV1(IReadOnlyList<PurchaseGoodsReceiptViewV1> Items, bool SearchWindowFull);
 public sealed record PurchaseReceiptLocationV1(Guid LocationId, string LocationCode, string LocationName, string SiteName);
@@ -126,7 +158,11 @@ public sealed record PurchaseReceiptStockRequestV1(Guid CompanyId, Guid Acceptan
 
 public sealed record PurchaseReceiptStockResultV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
     string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid PurchaseUnitId, Guid LotId, Guid LabelId,
-    string LabelVersion, Guid MovementId, string QuantityKg, bool IsReplay, string OriginalCorrelationId);
+    string LabelVersion, Guid MovementId, string QuantityKg, bool IsReplay, string OriginalCorrelationId)
+{
+    /// <summary>KLN-D94: the future allocations the same transaction released because their label link failed (host-supplied).</summary>
+    public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
+}
 
 public static class PurchaseGoodsReceiptJsonV1
 {
