@@ -12,7 +12,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// SAT-D295 with BS-1 on real SQL Server: the order line cost read port answers a Draft order's line
 /// <c>purchase_order_not_approved</c> with the order version; once approved, a priced general line is Known with its recorded unit
 /// price in the order currency at the snapshot's price scale, its discount and maturity surcharge as stored and the shared
-/// calculator's exact discounted and net unit prices; an unpriced line is <c>purchase_order_line_price_pending</c>; a technical
+/// calculator's exact discounted and net unit prices, the discounted one answered as the moving-average unit cost (ALS-D104,
+/// SAT-D386); an unpriced line is <c>purchase_order_line_price_pending</c>; a technical
 /// slice answers its general line's price (naming that line) and inherits its pending state. Company B's context sees company A's
 /// line as NotFound; asking for company A from company B's context is refused; an unknown line or order is NotFound; reading writes
 /// nothing. SENTETIK owners.
@@ -81,6 +82,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(((decimal?)10m, (decimal?)null, (decimal?)2m, (decimal?)null),
             (price.DiscountPercent, price.DiscountAmount, price.DeferralPercent, price.DeferralAmount));
         Assert.Equal((11.11104m, 11.3332608m), (price.DiscountedUnitPrice, price.NetUnitPrice));
+        // ALS-D104 / SAT-D386: the moving average takes the discounted price; the maturity surcharge stays out of the cost.
+        Assert.Equal(11.11104m, price.MovingAverageUnitCost);
 
         var pending = await ReadOrderLineCostAsync(run, CompanyA, CompanyA, orderId, unpricedLine);
         Assert.Equal((PurchaseOrderLineCostOutcomeV1.Unreadable, PurchaseOrderLineCostReasonsV1.PricePending, (long?)approvedVersion),
