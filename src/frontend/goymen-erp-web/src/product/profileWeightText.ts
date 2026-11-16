@@ -5,6 +5,7 @@ import type { TableSectionKind } from './profileWeightApi'
 export const TABLE_KIND_LABEL: Record<TableSectionKind, string> = {
   Profile: 'Kutu / dikdörtgen profil',
   RoundTube: 'Yuvarlak boru',
+  StructuralProfile: 'Yapısal profil (standart seri)',
 }
 
 export const PROFILE_WEIGHT_TEXT = {
@@ -29,11 +30,14 @@ export const PROFILE_WEIGHT_TEXT = {
   columnDiameter: 'Dış çap (mm)',
   columnWall: 'Et kalınlığı (mm)',
   columnKg: 'Metre ağırlığı (kg/m)',
+  columnSeries: 'Profil serisi',
+  columnSize: 'Profil ölçü adı',
   noValue: '—',
   openImport: 'Yeni tablo içe aktar',
   formLabel: 'Metre ağırlığı tablosu içe aktarma',
   fileLabel: 'Tablo dosyası (.csv)',
   fileFormat: 'İlk satır başlıktır; alanlar noktalı virgülle ayrılır, ondalık ayırıcı noktadır. Başlık:',
+  extendedFileFormat: 'Yapısal profil (UPN/NPI/IPE/HEA/HEB/HEM) satırları için genişletilmiş başlık kullanılır; bu satırlarda ölçüler boş, seri ve ölçü adı dolu olur. Genişletilmiş başlık:',
   sourceLabelLabel: 'Kaynak etiketi (örn. tedarikçi kataloğu)',
   reasonLabel: 'Gerekçe',
   submit: 'İçe aktar',

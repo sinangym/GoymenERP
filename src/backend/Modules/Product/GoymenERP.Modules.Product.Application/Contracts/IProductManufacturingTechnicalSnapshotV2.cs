@@ -72,7 +72,8 @@ public enum ProductManufacturingDimensionSourceV2
 /// <summary>
 /// The shared card's "Ebat/kalınlık" row as stored: millimetres at full stored precision (at most three decimals), never
 /// rounded or inferred here. <c>SectionKind</c> is one of <see cref="ProductDimensionSectionKindsV1"/>. The kg/m of the row is
-/// published in <see cref="ProductManufacturingUnitWeightV2"/>, with its source.
+/// published in <see cref="ProductManufacturingUnitWeightV2"/>, with its source. The trailing KLN-D87 fields (structural
+/// profile series and size, welded mesh spacing, painted family surface finish) are null for every other section kind.
 /// </summary>
 public sealed record ProductManufacturingDimensionV2(
     ProductManufacturingDimensionSourceV2 Source,
@@ -83,7 +84,11 @@ public sealed record ProductManufacturingDimensionV2(
     decimal? LengthMm,
     decimal? HeightMm,
     decimal? OuterDiameterMm,
-    decimal? WallThicknessMm);
+    decimal? WallThicknessMm,
+    string? ProfileSeries = null,
+    string? ProfileSize = null,
+    decimal? MeshSpacingMm = null,
+    string? SurfaceFinish = null);
 
 /// <summary>
 /// Where a unit weight (kg/m) comes from, in the locked priority of DEC-PRD-009 / master §28.2

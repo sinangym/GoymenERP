@@ -18,6 +18,15 @@ internal sealed class ProductCardDimensionRow
     public decimal? OuterDiameterMm { get; set; }
     public decimal? WallThicknessMm { get; set; }
     public decimal? KgPerMetre { get; set; }
+
+    /// <summary>KLN-D87: the structural profile series and size designation; the welded mesh spacing; the painted ERW surface.</summary>
+    public string? ProfileSeries { get; set; }
+
+    public string? ProfileSize { get; set; }
+
+    public decimal? MeshSpacingMm { get; set; }
+
+    public string? SurfaceFinish { get; set; }
     public long Version { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;

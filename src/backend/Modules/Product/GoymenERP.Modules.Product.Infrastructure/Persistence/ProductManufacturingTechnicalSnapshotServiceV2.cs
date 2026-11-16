@@ -107,12 +107,14 @@ public sealed class ProductManufacturingTechnicalSnapshotServiceV2(
 
         if (row.Version is not { } version || version <= 0
             || ProductDimensionShape.Refusal(new SetProductDimensionRequestV1(null, row.SectionKind, row.ThicknessMm,
-                row.WidthMm, row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, null), out _) is not null)
+                row.WidthMm, row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, null, row.ProfileSeries,
+                row.ProfileSize, row.MeshSpacingMm, row.SurfaceFinish), out _) is not null)
             throw new InvalidOperationException("The stored Product dimension row breaks its section-kind rule.");
 
         var dimension = new ProductManufacturingDimensionV2(ProductManufacturingDimensionSourceV2.Stored,
             version.ToString(CultureInfo.InvariantCulture), row.SectionKind, row.ThicknessMm, row.WidthMm,
-            row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm);
+            row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, row.ProfileSeries, row.ProfileSize,
+            row.MeshSpacingMm, row.SurfaceFinish);
         var unitWeight = row.KgPerMetre is { } kgPerMetre
             ? new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, kgPerMetre)
             : new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.None, null);

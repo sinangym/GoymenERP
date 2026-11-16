@@ -24,7 +24,8 @@ internal sealed class ProductProfileWeightImportRow : IProductPriceListTenantRow
 
 /// <summary>
 /// One kg/m row of an import: a profile (width, height, wall; no diameter) or a round tube (outer diameter, wall; no width or
-/// height). A measure pair appears once per import (the database holds it). Insert-only.
+/// height) or, KLN-D87, a structural profile (series and size designation; no measure, no wall). A measure pair appears once per
+/// import (the database holds it). Insert-only.
 /// </summary>
 internal sealed class ProductProfileWeightLineRow : IProductPriceListTenantRow
 {
@@ -35,7 +36,9 @@ internal sealed class ProductProfileWeightLineRow : IProductPriceListTenantRow
     public decimal? WidthMm { get; set; }
     public decimal? HeightMm { get; set; }
     public decimal? OuterDiameterMm { get; set; }
-    public decimal WallThicknessMm { get; set; }
+    public decimal? WallThicknessMm { get; set; }
+    public string? ProfileSeries { get; set; }
+    public string? ProfileSize { get; set; }
     public decimal KgPerMetre { get; set; }
 }
 

@@ -5,6 +5,7 @@
  * is a failed read, the import sends the company, one Idempotency-Key and the exact body (whole file in base64, source label,
  * reason, expected version), keeps the key for a retry after an unknown outcome, reads the vault's fail-closed 503 as a refusal,
  * checks the file and the mandatory label before sending, and the routes and bodies are pinned to the canonical OpenAPI document.
+ * KLN-D87 (STK-SC33-b): a structural profile row (series and size, no measure) is shown and decoded; its shape is fail-closed.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -64,9 +65,15 @@ const EMPTY = {
 
 const PROFILE_ROW = {
   sectionKind: 'Profile', widthMm: 40, heightMm: 20, outerDiameterMm: null, wallThicknessMm: 2, kgPerMetre: 1.75,
+  profileSeries: null, profileSize: null,
 }
 const TUBE_ROW = {
   sectionKind: 'RoundTube', widthMm: null, heightMm: null, outerDiameterMm: 48.3, wallThicknessMm: 2.6, kgPerMetre: 2.93,
+  profileSeries: null, profileSize: null,
+}
+const STRUCTURAL_ROW = {
+  sectionKind: 'StructuralProfile', widthMm: null, heightMm: null, outerDiameterMm: null, wallThicknessMm: null,
+  kgPerMetre: 22.4, profileSeries: 'IPE', profileSize: '200',
 }
 
 function table(overrides: Record<string, unknown> = {}) {
@@ -134,6 +141,18 @@ describe('company kg/m table panel (URN-D13…D16)', () => {
     expect(rows.textContent).toContain('1.75')
     expect(rows.textContent).toContain('48.3')
     expect(rows.textContent).toContain(PROFILE_WEIGHT_TEXT.noValue)
+  })
+
+  it('shows a structural profile row by its series and size, with no measure', async () => {
+    install(() => json(table({ rows: [PROFILE_ROW, STRUCTURAL_ROW] })))
+    renderPanel()
+    const rows = await screen.findByTestId('profile-weight-rows')
+    const structural = rows.querySelectorAll('tbody tr')[1]
+    expect(structural.textContent).toContain('IPE')
+    expect(structural.textContent).toContain('200')
+    expect(structural.textContent).toContain('22.4')
+    expect(screen.getByText(PROFILE_WEIGHT_TEXT.columnSeries)).toBeTruthy()
+    expect(screen.getByText(PROFILE_WEIGHT_TEXT.extendedFileFormat, { exact: false })).toBeTruthy()
   })
 
   it('says what failed for an ended session, an unwired provider, a failed or an off-contract read', async () => {
@@ -292,6 +311,13 @@ describe('company kg/m table panel (URN-D13…D16)', () => {
     expect(decodeProfileWeightTable(table({ rows: [{ ...PROFILE_ROW, sectionKind: 'Sheet' }] }), COMPANY)).toBeNull()
     expect(decodeProfileWeightTable(table({ rows: [{ ...PROFILE_ROW, kgPerMetre: 0 }] }), COMPANY)).toBeNull()
     expect(decodeProfileWeightTable(table({ rows: [{ ...PROFILE_ROW, extra: 1 }] }), COMPANY)).toBeNull()
+    // KLN-D87: a structural profile row holds its series and size and no measure; the other kinds hold neither.
+    expect(decodeProfileWeightTable(table({ rows: [STRUCTURAL_ROW] }), COMPANY)?.rows[0]).toEqual(STRUCTURAL_ROW)
+    expect(decodeProfileWeightTable(table({ rows: [{ ...STRUCTURAL_ROW, wallThicknessMm: 2 }] }), COMPANY)).toBeNull()
+    expect(decodeProfileWeightTable(table({ rows: [{ ...STRUCTURAL_ROW, profileSeries: 'W' }] }), COMPANY)).toBeNull()
+    expect(decodeProfileWeightTable(table({ rows: [{ ...STRUCTURAL_ROW, profileSize: null }] }), COMPANY)).toBeNull()
+    expect(decodeProfileWeightTable(table({ rows: [{ ...PROFILE_ROW, profileSeries: 'IPE' }] }), COMPANY)).toBeNull()
+    expect(decodeProfileWeightTable(table({ rows: [{ ...TUBE_ROW, wallThicknessMm: null }] }), COMPANY)).toBeNull()
   })
 
   it('checks a file name and size only to help the person', () => {
@@ -351,7 +377,7 @@ describe('company kg/m table client ↔ canonical OpenAPI', () => {
       'companyId', 'documentId', 'fileName', 'fileSha256', 'importedAtUtc', 'importedBy', 'rows', 'sourceLabel', 'version',
     ])
     expect(Object.keys(document.components.schemas.ProductProfileWeightRowV1?.properties ?? {}).sort()).toEqual([
-      'heightMm', 'kgPerMetre', 'outerDiameterMm', 'sectionKind', 'wallThicknessMm', 'widthMm',
+      'heightMm', 'kgPerMetre', 'outerDiameterMm', 'profileSeries', 'profileSize', 'sectionKind', 'wallThicknessMm', 'widthMm',
     ])
     const declared = new Set(
       [document.paths[currentRoute] ?? {}, document.paths[importRoute] ?? {}]

@@ -212,10 +212,11 @@ public sealed class ProductPackageStandardTests
     }
 
     [Fact]
-    public void The_package_standard_migration_is_the_last_one_and_its_Down_refuses_first_with_51492()
+    public void The_package_standard_migration_precedes_the_section_families_and_its_Down_refuses_first_with_51492()
     {
         using var context = Context();
-        Assert.Equal("AddProductPackageStandards", context.Database.GetMigrations().Last().Split('_', 2)[1]);
+        Assert.Equal(["AddProductPackageStandards", "AddProductSectionFamilies"],
+            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductPackageStandards();

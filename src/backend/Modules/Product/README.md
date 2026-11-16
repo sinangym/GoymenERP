@@ -683,6 +683,20 @@ the request; the view answers the table's `kgPerMetre`, `kgPerMetreSourceLabel` 
 | Command | `GET /api/v1/product-profile-weight-tables/current` and `POST /api/v1/product-profile-weight-tables` `{expectedVersion, sourceLabel (mandatory, URN-D14), reason, fileName, contentBase64}`: Idempotency-Key, stale version 409, invalid file 400 with the row number; ONE audit event `product.profile-weights.imported.v1`. |
 | Rollback | Migration `AddProductProfileWeightImports` (`dotnet ef`): `Down` refuses with `THROW 51483` while any import or import answer exists, or while a profile card has no stored kg/m (the old shape check would not hold) — forward fix; an empty store rolls back freely. |
 
+### Section families (STK-SC33-b, KLN-D87)
+
+Source: SINAN-CEVAP 33 / KLN-D87 (every KLN-D48 family now; URN-D11's four kinds keep their fields). One rule table
+(`ProductDimensionShape.Rules`) feeds the 400 answer and `CK_ProductCardDimensions_Shape`, so they cannot drift.
+
+| Area | Rule |
+|---|---|
+| Kinds | `Sheet`, `Coil`, `RoundTube`, `Profile` (unchanged); long products `EqualAngle`, `UnequalAngle`, `FlatBar` (lama), `NarrowFlatBar` (silme), `RoundBar`, `SquareBar`, `HexBar`, `TeeBar` (length optional); `StructuralProfile` (`profileSeries` `UPN`/`NPI`/`IPE`/`HEA`/`HEB`/`HEM` + `profileSize`, length optional); `Rebar`, `WireRod`, `WeldedMesh` (wire diameter in `outerDiameterMm`, `meshSpacingMm`, width, length); `ChequeredSheet`, `PerforatedSheet`, `CorrugatedSheet` (sheet measures); `ErwTube` / `ErwProfile` (round tube / profile measures) and `PaintedErwTube` / `PaintedErwProfile` (plus `surfaceFinish`). |
+| Fields | Trailing optional request/view/read fields `profileSeries`, `profileSize`, `meshSpacingMm`, `surfaceFinish`; `CK_ProductCardDimensions_Texts` holds the series list, the size format (capitals, digits, dot) and a non-empty surface. A request with none of them hashes exactly as before (old keys replay). |
+| kg/m | URN-D16 extends to the ERW kinds: `ErwProfile`/`PaintedErwProfile` need the company table's `Profile` row (409 `product_dimension_weight_source_missing` otherwise); `ErwTube`/`PaintedErwTube` read the `RoundTube` row when present. `StructuralProfile` reads the table's `StructuralProfile` row of its series and size; without one it has no source. Long products, rebar, wire rod, mesh and sheet derivatives have NO kg/m source (a consumer that needs kg refuses, KLN-D66). NEEDS-SINAN: the source and version of the standard structural table (KLN-D87 does not choose it) and any kg/m source for the other new families. |
+| Table file | The V1 header stays valid; the extended header `…;kgPerMetre;profileSeries;profileSize` also takes `StructuralProfile` rows (every measure empty, series and size set). `ProductProfileWeightLines.WallThicknessMm` is nullable only for those rows. |
+| Snapshot V2 | `ProductManufacturingDimensionV2` carries the four fields as trailing optional members; the stored row is re-validated with the same shape. |
+| Rollback | Migration `AddProductSectionFamilies` (`dotnet ef`): `Down` refuses with `THROW 51737` while a card of a new kind (or with a new field) or a structural / wall-less weight line exists — forward fix; otherwise it restores the four-kind checks. |
+
 ## Package standard (STK-S12, B-08 / BS-10)
 
 Source: `docs/delivery/KALAN_MODULLER_HAZIRLIK_PLANI_v1.md` B-08, `SINAN_KARARLARI_2026-11-11` BS-10, DEC-PRD-008 /
