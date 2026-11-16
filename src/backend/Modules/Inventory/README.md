@@ -877,6 +877,16 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 
 ## dependency_wait
 
+## Immutable movement cost and Manufacturing generations (SC36 / URT-D67 / URT-D79)
+
+- `AddInventoryMovementCostProvenance` is EF-generated. Its Down first refuses with **THROW 51959** while any new stamp, independent-currency ledger, pending entry, recognition or generation/history row exists (forward fix). It never backfills old movement prices.
+- New movement stamps preserve the actual event-time TL/USD and original currency proof. Canonical invariant decimal text plus strict SQL checks preserve all System.Decimal digits without database rounding; public owner fields remain decimals. Moving averages still use the existing 4-decimal calculator.
+- A borrowed-transaction `InventoryManufacturingCostGenerationParticipant` records Pending/Unreadable without a new physical-close prerequisite; actual recognition preserves authoritative label amounts and the exact before/after average-pool effect. Reopening reverses that actual immutable effect. Average rounding differences are provenance, never an automatic accounting posting.
+- Missing balances are not assumed sold: only actual net definite shipment proves the consumed SMM proposal. Unresolved transit/downstream lineage remains explicitly unreadable. USD is production display only. Accounting proposal acceptance, open-period/date selection, different approver and dispatcher activation remain separate owner/human gates.
+- Sources include model/unit and real-SQL rollback, replay, precision/reversal and Down-guard facts. Final Inventory and API integration test-project compilation is exit 0; runtime tests/SQL/browser/CI are **NOT_RUN**. Committed outbox source and all physical-return cost propagation are still pending.
+
+## Existing central dependencies
+
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
 - **INV-3 central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs` and `InventoryStore.cs`, which changed here (no new raw SQL; the SqlClient use is unchanged); add the four new names of `InventorySqlServerRelationalAcceptanceTests` to the relational verifier's BROAD list and counts.
 - **INV-3:** command/query surface, permissions (registered centrally, granted by a human), host wiring with the audit interceptor, and UI.

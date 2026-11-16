@@ -168,8 +168,7 @@ public sealed partial class InventoryStore
         try
         {
             var amount = checked(unit * kg);
-            if (Scale(unit) > CostScaleMaximum || Scale(amount) > CostScaleMaximum
-                || Math.Abs(unit) >= 100_000_000_000_000_000_000m || Math.Abs(amount) >= 100_000_000_000_000_000_000m)
+            if (Math.Abs(unit) >= 100_000_000_000_000_000_000m || Math.Abs(amount) >= 100_000_000_000_000_000_000m)
             { stamp.Reason = "movement_cost_not_representable"; return; }
             stamp.Status = (int)InventoryMovementCostStampStatusV1.Known;
             stamp.UnitCostPerKg = unit; stamp.Amount = amount; stamp.LedgerVersion = version; stamp.Reason = null;

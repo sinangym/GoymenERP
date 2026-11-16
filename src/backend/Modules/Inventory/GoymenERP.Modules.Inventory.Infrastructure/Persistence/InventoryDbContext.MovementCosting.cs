@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using System.Globalization;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
@@ -19,27 +21,30 @@ public sealed partial class InventoryDbContext
             table.HasCheckConstraint("CK_MovementCostStamps_Identity", "[LineNumber] >= 1 AND [StampVersion] >= 1 "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceIssueMovementId] IS NULL OR [SourceIssueMovementId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_MovementCostStamps_Value", "([Status] = 1 AND [UnitCostPerKg] >= 0 AND [Amount] >= 0 "
+            table.HasCheckConstraint("CK_MovementCostStamps_Value", "([Status] = 1 "
                 + "AND [UnitCostPerKg] IS NOT NULL AND [Amount] IS NOT NULL AND [LedgerVersion] >= 1 AND [LedgerVersion] IS NOT NULL "
                 + "AND [Reason] IS NULL) OR ([Status] = 2 AND [UnitCostPerKg] IS NULL AND [Amount] IS NULL "
                 + "AND LEN([Reason]) > 0 AND [Reason] IS NOT NULL AND ([LedgerVersion] IS NULL OR [LedgerVersion] >= 1))");
             table.HasCheckConstraint("CK_MovementCostStamps_Currency", "LEN([CurrencySourceVersion]) > 0 AND "
                 + "(([EntryCurrencyStatus] = 1 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL AND [EntryExchangeRate] IS NULL "
                 + "AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 2 AND [OriginalCurrencyId] IS NOT NULL "
-                + "AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [ForeignUnitCostPerKg] > 0 "
+                + "AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [ForeignUnitCostPerKg] <> '0' "
                 + "AND [ForeignUnitCostPerKg] IS NOT NULL AND [EntryExchangeRate] > 0 AND [EntryExchangeRate] IS NOT NULL AND [CurrencyReason] IS NULL) "
                 + "OR ([EntryCurrencyStatus] = 3 AND [OriginalCurrencyId] IS NOT NULL "
                 + "AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryExchangeRate] IS NULL "
-                + "AND ([ForeignUnitCostPerKg] IS NULL OR [ForeignUnitCostPerKg] > 0) AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL) "
+                + "AND ([ForeignUnitCostPerKg] IS NULL OR [ForeignUnitCostPerKg] <> '0') AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL) "
                 + "OR ([EntryCurrencyStatus] = 4 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL "
                 + "AND [EntryExchangeRate] IS NULL AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL))");
             table.HasCheckConstraint("CK_MovementCostStamps_Envelope", "LEN([CorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 "
                 + "AND ISJSON([EvidenceJson], OBJECT) = 1");
+            table.HasCheckConstraint("CK_MovementCostStamps_DecimalText", CanonicalCostDecimal("UnitCostPerKg")
+                + " AND " + CanonicalCostDecimal("Amount") + " AND " + CanonicalCostDecimal("ForeignUnitCostPerKg"));
         });
         stamp.HasKey(row => new { row.CompanyId, row.MovementId, row.LineNumber, row.CurrencyId });
-        stamp.Property(row => row.UnitCostPerKg).HasPrecision(38, 18);
-        stamp.Property(row => row.Amount).HasPrecision(38, 18);
-        stamp.Property(row => row.ForeignUnitCostPerKg).HasPrecision(38, 18);
+        var decimalText = new ValueConverter<decimal, string>(value => CostDecimalText(value), value => CostDecimalValue(value));
+        stamp.Property(row => row.UnitCostPerKg).HasConversion(decimalText).HasColumnType("varchar(64)");
+        stamp.Property(row => row.Amount).HasConversion(decimalText).HasColumnType("varchar(64)");
+        stamp.Property(row => row.ForeignUnitCostPerKg).HasConversion(decimalText).HasColumnType("varchar(64)");
         stamp.Property(row => row.EntryExchangeRate).HasPrecision(38, 18);
         stamp.Property(row => row.Reason).HasMaxLength(160).IsUnicode(false);
         stamp.Property(row => row.CurrencyReason).HasMaxLength(160).IsUnicode(false);
@@ -71,6 +76,21 @@ public sealed partial class InventoryDbContext
         ledger.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
         ConfigurePendingCostRecognition(modelBuilder);
     }
+
+    internal static string CostDecimalText(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
+    internal static decimal CostDecimalValue(string value)
+    {
+        if (!decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var result)
+            || result < 0m || CostDecimalText(result) != value) throw new InvalidOperationException("Maliyet decimal metni canonical değil.");
+        return result;
+    }
+    private static string CanonicalCostDecimal(string name) => $"([{name}] IS NULL OR (LEN([{name}]) BETWEEN 1 AND 50 "
+        + $"AND [{name}] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9.]%' AND [{name}] NOT LIKE '%.%.%' "
+        + $"AND [{name}] NOT LIKE '.%' AND [{name}] NOT LIKE '%.' AND [{name}] NOT LIKE '0[0-9]%' "
+        + $"AND (CHARINDEX('.',[{name}]) = 0 OR [{name}] NOT LIKE '%0') AND LEN([{name}]) = DATALENGTH([{name}]) "
+        + $"AND LEN(REPLACE([{name}],'.','')) <= 29 AND (CHARINDEX('.',[{name}]) = 0 OR LEN([{name}]) - CHARINDEX('.',[{name}]) <= 28) "
+        + $"AND (LEN(REPLACE([{name}],'.','')) < 29 OR REPLACE([{name}],'.','') COLLATE Latin1_General_100_BIN2 <= '79228162514264337593543950335') "
+        + $"AND TRY_CONVERT(decimal(38,18),[{name}]) IS NOT NULL))";
 
     private void ConfigurePendingCostRecognition(ModelBuilder modelBuilder)
     {

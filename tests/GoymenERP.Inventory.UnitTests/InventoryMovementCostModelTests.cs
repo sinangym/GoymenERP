@@ -5,11 +5,24 @@ using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Inventory.UnitTests;
 
 public sealed class InventoryMovementCostModelTests
 {
+    [Fact]
+    public void Movement_cost_migration_refuses_data_loss_before_every_down_drop_and_never_backfills_old_prices()
+    {
+        var migration = new AddInventoryMovementCostProvenance();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51959", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[MovementCostStamps]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[ManufacturingCostGenerationHistory]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+    }
     [Fact]
     public void Cost_stamps_are_append_only_same_company_movement_lines_with_independent_currency_keys()
     {
@@ -20,12 +33,32 @@ public sealed class InventoryMovementCostModelTests
         var line = Assert.Single(stamp.GetForeignKeys(), fk => fk.PrincipalEntityType.ClrType == typeof(MovementLineRow));
         Assert.Equal(["CompanyId", "MovementId", "LineNumber"], line.Properties.Select(p => p.Name));
         Assert.Equal(DeleteBehavior.Restrict, line.DeleteBehavior);
-        Assert.Equal((38, 18), (stamp.FindProperty(nameof(MovementCostStampRow.Amount))!.GetPrecision(), stamp.FindProperty(nameof(MovementCostStampRow.Amount))!.GetScale()));
+        Assert.Equal("varchar(64)", stamp.FindProperty(nameof(MovementCostStampRow.Amount))!.GetColumnType());
         Assert.Contains(stamp.GetCheckConstraints(), c => c.Name == "CK_MovementCostStamps_Currency" && c.Sql.Contains("[EntryExchangeRate] > 0", StringComparison.Ordinal));
         foreach (var type in new[] { typeof(MovementCostStampRow), typeof(CurrencyAverageCostLedgerRow), typeof(PendingMovementCostRow),
                      typeof(MovementCostRecognitionRow), typeof(ManufacturingCostGenerationRow), typeof(ManufacturingCostGenerationHistoryRow) })
             Assert.Single(context.Model.FindEntityType(type)!.GetDeclaredQueryFilters());
     }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("0.1234567890123456789012345678")]
+    [InlineData("123456789.1234567890123456789")]
+    public void Decimal_stamp_text_preserves_all_decimal_digits_without_a_database_rounding_scale(string text)
+    {
+        var value = InventoryDbContext.CostDecimalValue(text);
+        Assert.Equal(text, InventoryDbContext.CostDecimalText(value));
+    }
+
+    [Theory]
+    [InlineData("01")]
+    [InlineData("1.0")]
+    [InlineData("+1")]
+    [InlineData("1e-3")]
+    [InlineData("1,23")]
+    [InlineData("1 ")]
+    public void Noncanonical_cost_text_is_refused(string text) =>
+        Assert.Throws<InvalidOperationException>(() => InventoryDbContext.CostDecimalValue(text));
 
     [Fact]
     public async Task Editing_an_original_stamp_or_recognition_is_rejected_before_sql()
