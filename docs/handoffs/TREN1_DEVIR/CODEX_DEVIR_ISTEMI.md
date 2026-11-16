@@ -14,9 +14,10 @@ kararlarıdır. Çelişki görürsen daha yeni Sinan kararı geçerlidir.
 ## 0. Önce oku (sırayla)
 
 1. `AGENTS.md`: mimari değişmezler, yasaklar, insan kapıları.
-2. `docs/decisions/SINAN_KARARLARI_2026-11-12…16_*.md` ve açık karar PR'larındaki dosyalar
-   (§5). Açık PR'lardaki kararlar main'de değildir ama Sinan'ın #66 / #1189 cevaplarına
-   dayanır, kod için geçerlidir. Her PR tek dosya değiştirir; dosyayı PR'dan oku.
+2. `docs/decisions/SINAN_KARARLARI_2026-11-12…16_*.md` (main'de; EK21'e kadar) ve açık dört
+   karar PR'ındaki dosyalar: EK22–EK25 (§5). Açık PR'lardaki kararlar main'de değildir ama
+   Sinan'ın #66 / #1189 cevaplarına dayanır, kod için geçerlidir. Her PR tek dosya değiştirir;
+   dosyayı PR'dan oku.
 3. Bu klasör:
    - `KALAN_PLAN.json`: bitmemiş her dilim (kimlik, başlık, seviye, karar/spec referansı,
      bağımlılık, dosya ipucu, sözleşme, durum).
@@ -31,7 +32,10 @@ kararlarıdır. Çelişki görürsen daha yeni Sinan kararı geçerlidir.
 
 - Dal: `claude/tren-1`. Kod head'i `24fd735d753ffae0c69f774785f71c7c6125c30d`; üstünde yalnız bu
   devir klasörünü ekleyen doküman commit'i var. Güncel head: `git rev-parse origin/claude/tren-1`.
-- Trenin main tabanı `a13a6e69d`. `main` ilerledi (`0daa9412…`); trene henüz merge edilmedi (§4.5).
+- Trenin main tabanı `a13a6e69d`. `main` ilerledi (`8e82795b…`; aradaki fark yalnız karar ve
+  governance dokümanı merge'leridir); trene henüz merge edilmedi (§4.5).
+- Claude tarafında yarım kalan kod işi yok: bütün ekip dalları trene girdi, başka oturum trene
+  yazmıyor. Buradan sonrası senindir.
 - 174 dilimin 120'si bitti, 19'u kısmi, 35'i başlanmadı / bekliyor. Dalga 1–5 tamam.
 
   | Ekip | Modüller | Biten | Kısmi | Kalan |
@@ -215,16 +219,26 @@ kalmayana kadar dalga döngüsünü yinele.
 
 ## 5. Karar dokümanı işleri
 
-- **Açık karar PR'ları (15):** #1165, #1171, #1175, #1179, #1180, #1182, #1184, #1185, #1186,
-  #1187, #1188, #1190, #1191, #1192, #1193. Her biri iki bağımsız DOCS review ister
-  (`review-signatures`); yalnız #1182'de iki imza var. Bu dallara **commit atma**: her push
-  eski imzaları geçersiz kılar. Codex yazar olmadığı için `DOCS-REVIEW-1` verebilir; kullanıcı
-  bunun için ayrı bir inceleme istemi verecektir.
-- **Merge sırası:** #1171 → #1184; #1179 → #1180 → #1182; #1165, #1175; #1185–#1188, #1191,
-  #1192, #1193; #1190 herhangi bir zamanda. Merge `AGENTS.md` 22 Ekim kuralına göre yapılır,
-  makbuz Issue #1189'a yazılır. Emin değilsen merge'i Claude'a bırak; kararlar merge edilmeden
-  de kod için geçerlidir.
-- **EK26 (W5-5 cevapları):** yazılmadı. Yazarsan `decision-docs-validation` yapısını uygula:
+- **Merge edilenler (11; makbuzlar Issue #1189'da):** #1165, #1171, #1175, #1179, #1180,
+  #1182, #1184, #1185, #1186, #1187, #1190. Bu kararlar artık main'dedir.
+- **Açık karar PR'ları (4):**
+
+  | PR | Dosya | Head | Durum |
+  |---|---|---|---|
+  | #1188 | EK22 | `d9c7e32016ec7e2d7610bdad6f270b7ad3f780d9` | iki **yeni** DOCS review bekliyor (önceki head iki REQUEST-CHANGES aldı; düzeltildi) |
+  | #1191 | EK23 | `00f65bbecd3036f8b907d5907ff3a5673c6514be` | iki imzalı; #1188'i bekliyor |
+  | #1192 | EK24 | `05f2b93c0346ab1018c2a69fec9e80865912dd96` | iki imzalı; #1191'i bekliyor |
+  | #1193 | EK25 | `b7df43935cbd7449a1331e07598a7bcc1801b6ec` | iki imzalı; #1192'yi bekliyor |
+
+  Bu dallara **commit atma**: her push eski imzaları geçersiz kılar. Codex yazar olmadığı için
+  #1188'e `DOCS-REVIEW-1` verebilir (`review-signatures`: ilk satır imza + 40 haneli head,
+  beş hafif kontrol, kendi okuman); ikinci imza başka bir oturumdan gelir.
+- **Merge sırası:** #1188 → #1191 → #1192 → #1193 (her biri öncekinin kimliklerine atıf yapar).
+  Merge öncesi head ve iki imza aynı 40 haneli sha'da doğrulanır; squash expected-head ile
+  yapılır; makbuz Issue #1189'a yazılır (`AGENTS.md` 22 Ekim kuralı; inceleyen ile merge eden
+  ayrı olmalı). Emin değilsen merge'i Claude'a bırak; kararlar merge edilmeden de kod için
+  geçerlidir.
+- **EK26 (W5-5 cevapları):** yazılmadı; #1193'ten sonra merge edilecek ayrı bir PR'dır. Yazarsan `decision-docs-validation` yapısını uygula:
   tek dosya, kaynak #1189 yorum 6920278065, cevaplar sözcüğü sözcüğüne, beş hafif kontrol,
   iki DOCS review. Sinan'ın vermediği kararı yazma.
 - **Yeni soru:** Issue #1189'a tek satır `NEEDS-SINAN: <soru>` yaz ve sıradaki dilime geç.
