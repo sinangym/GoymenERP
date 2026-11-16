@@ -1629,8 +1629,8 @@ export interface CancellationImpactSource {
   readonly status: CancellationStatus
 }
 
-/** One line of the preview; a null member means its owner could not be read — never zero in its place. */
-export interface CancellationImpactLine {
+/** One line of an impact preview; a null member means its owner could not be read — never zero in its place. */
+export interface ImpactLineFacts {
   readonly lineId: string
   readonly lineNo: number
   readonly orderUnitId: string
@@ -1642,6 +1642,15 @@ export interface CancellationImpactLine {
   readonly loaded: string | null
   readonly shipped: string | null
   readonly delivered: string | null
+}
+
+/** One line of the cancellation preview. */
+export interface CancellationImpactLine extends ImpactLineFacts {
+  /**
+   * X1 / KLN-D28 (9): the line's active future supply allocations (the owner's count); the approved cancellation releases them
+   * in its own transaction. Null exactly when the allocation owner could not be read.
+   */
+  readonly futureSupplyAllocations: number | null
 }
 
 export interface CancellationImpact {
@@ -1712,16 +1721,16 @@ export function decodeCancellationImpact(value: unknown, detail: DraftDetail): C
   const lines: CancellationImpactLine[] = []
   for (const [index, entry] of o.lines.entries()) {
     const l = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'activeAllocations', 'allocatedKg',
-      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered'])
+      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered', 'futureSupplyAllocations'])
     const line = detail.lines[index]
     if (
       l === null || !isRevisionId(l.lineId) || l.lineId.toLowerCase() !== line.lineId.toLowerCase() || l.lineNo !== line.lineNo ||
       !isRevisionId(l.orderUnitId) || l.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || l.ordered !== line.quantity
     ) return null
-    const allocation = [l.activeAllocations, l.allocatedKg]
+    const allocation = [l.activeAllocations, l.allocatedKg, l.futureSupplyAllocations]
     const loading = [l.loadingInstructionLines, l.instructed, l.loaded, l.shipped, l.delivered]
     const allocationOk = allocationsRead
-      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false)
+      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false) && isCount(l.futureSupplyAllocations)
       : allocation.every((member) => member === null)
     const loadingOk = loadingRead
       ? isCount(l.loadingInstructionLines) && [l.instructed, l.loaded, l.shipped, l.delivered].every((member) => isRevisionDecimal(member, false))
@@ -1732,6 +1741,7 @@ export function decodeCancellationImpact(value: unknown, detail: DraftDetail): C
       activeAllocations: l.activeAllocations as number | null, allocatedKg: l.allocatedKg as string | null,
       loadingInstructionLines: l.loadingInstructionLines as number | null, instructed: l.instructed as string | null,
       loaded: l.loaded as string | null, shipped: l.shipped as string | null, delivered: l.delivered as string | null,
+      futureSupplyAllocations: l.futureSupplyAllocations as number | null,
     })
   }
   return { draftVersion: o.draftVersion, revision: o.revision, cancellable: o.cancellable, impactToken: o.impactToken, sources, lines }
@@ -1769,7 +1779,7 @@ export interface ForceCloseImpactSource {
 }
 
 /** One line of the force-close preview: the cancellation's facts plus the remainder that would be closed. */
-export interface ForceCloseImpactLine extends CancellationImpactLine {
+export interface ForceCloseImpactLine extends ImpactLineFacts {
   /** Ordered − shipped (exact); null when the loading owner could not be read. */
   readonly closedRemainder: string | null
 }

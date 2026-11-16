@@ -1946,7 +1946,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Impact = id => Task.FromResult(new SalesOrderDraftCancellationImpactResponse("4", "Rev.0", false, token,
                 [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.Present),
                  new(SalesCancellationImpactSourcesV1.LinkedPurchasing, SalesCancellationImpactStatusesV1.NoSource)],
-                [new(lineId, 1, unitId, "6", 1, "2.5", null, null, null, null, null)])),
+                [new(lineId, 1, unitId, "6", 1, "2.5", null, null, null, null, null, 2)])),
         };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
@@ -1963,10 +1963,12 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(["source", "status"], body.GetProperty("sources")[0].EnumerateObject().Select(member => member.Name));
             var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
             Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "activeAllocations", "allocatedKg", "loadingInstructionLines",
-                "instructed", "loaded", "shipped", "delivered"], line.EnumerateObject().Select(member => member.Name));
+                "instructed", "loaded", "shipped", "delivered", "futureSupplyAllocations"], line.EnumerateObject().Select(member => member.Name));
             // An owner that could not be read is null on the wire, never 0.
             Assert.Equal((1, "2.5", JsonValueKind.Null), (line.GetProperty("activeAllocations").GetInt32(), line.GetProperty("allocatedKg").GetString(),
                 line.GetProperty("instructed").ValueKind));
+            // X1 / KLN-D28 (9): the line's active future supply allocations, shown as the owner's count.
+            Assert.Equal(2, line.GetProperty("futureSupplyAllocations").GetInt32());
         }
 
         foreach (var status in new[] { 404, 503 })

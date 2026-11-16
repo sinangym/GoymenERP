@@ -775,6 +775,9 @@ export const ORDER_DETAIL_TEXT = {
     loaded: 'Yüklenen',
     shipped: 'Sevk edilen',
     delivered: 'Teslim edilen',
+    futureSupplyAllocations: 'Gelecek tedarik ayırması (iptalde bırakılır)',
+    futureSupplyNote:
+      'Satırlara bağlı gelecek tedarik ayırmaları fiziksel tahsis değildir; iptal onaylandığında aynı işlemde bırakılır.',
     unreadable: 'okunamadı',
     blocked: 'Bu sipariş şu anda iptal edilemez. Engelleyen kayıtları kendi ekranlarında kapatın, sonra etkiyi yeniden okuyun.',
     reasonLabel: 'İptal nedeni (zorunlu)',

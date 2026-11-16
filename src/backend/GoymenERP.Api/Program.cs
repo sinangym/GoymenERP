@@ -416,6 +416,9 @@ builder.Services.AddScoped<IPurchaseLineSerializationLockBinderV1, PurchaseLineS
 // future supply source; both replace Inventory's fail-closed defaults. No route or permission (F017-b2).
 builder.Services.AddScoped<ISalesOrderLineSerializationLockBinderV1, SalesOrderLineSerializationLockHostBinder>();
 builder.Services.AddScoped<IInventoryFutureSupplySourceV1, InventoryFutureSupplyHostSource>();
+// X1 (KLN-D28 (9)): the approved sales order cancellation releases its lines' future supply allocations through Inventory's
+// release port in the cancellation's own transaction (sales line locks, then purchase line locks). No route or permission.
+builder.Services.AddScoped<ISalesOrderFutureAllocationReleaseParticipantV1, SalesFutureAllocationReleaseHostParticipant>();
 // KLN-D42 (STK-S31): the Purchasing adapter of Inventory's shortage warning supply source (replaces the fail-closed default).
 builder.Services.AddScoped<IInventoryShortageSupplySourceV1, InventoryShortageSupplyHostSource>();
 builder.Services.AddPurchasingModule(

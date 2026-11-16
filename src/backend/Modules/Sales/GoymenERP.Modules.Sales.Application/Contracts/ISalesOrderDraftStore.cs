@@ -297,10 +297,16 @@ public interface ISalesOrderDraftStore
     /// cancellation row (who, when, why, the revision, the version produced, the impact the user confirmed) and moves the
     /// header's lifecycle state and version together with the attempt record and the audit event — or nothing at all. No
     /// line, revision, schedule or approval column changes. The command name must be <see cref="SalesDraftCommands.CancelV1"/>.
+    /// X1 (KLN-D28): when <paramref name="withinTransaction"/> is given, the store opens ONE transaction on its own connection after
+    /// <paramref name="beforeWrite"/>, runs it (the owners' work that must commit with the cancellation, e.g. the release of the
+    /// lines' future supply allocations), then the mutation and the save, and commits; any refusal rolls everything back. A store
+    /// that cannot open such a transaction refuses (fail-closed) rather than cancelling without it.
     /// </summary>
     Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
-        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default);
+        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite,
+        Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// No 30 / SAT-D12: the force-closure of an approved order, one save — the cancellation's key rules and shape (§3/§4/§7/§8).
