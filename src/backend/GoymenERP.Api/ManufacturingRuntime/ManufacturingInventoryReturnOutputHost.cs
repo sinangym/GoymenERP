@@ -44,6 +44,11 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
+        // Never discard the explicit issue trace while the Inventory owner contract is being integrated.
+        // The integration adapter replaces this fence with the exact owner request member, before any fact is staged.
+        if (command.SourceIssueMovementId is not null)
+            throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
         try
         {
             var result = await ReturnAsync(new ManufacturingInventoryInputReturnCommand(

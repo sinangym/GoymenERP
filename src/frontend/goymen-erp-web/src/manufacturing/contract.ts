@@ -1255,6 +1255,7 @@ export type FactSnapshot =
       readonly kind: 'input-returns'
       readonly movementId: string
       readonly expectedParentLabelVersion: string
+      readonly sourceIssueMovementId?: string | null
     })
   | (FactSnapshotBase & {
       readonly kind: 'wip-measurements'
@@ -1308,6 +1309,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       movementId: snapshot.movementId,
+      ...(snapshot.sourceIssueMovementId == null ? {} : { sourceIssueMovementId: snapshot.sourceIssueMovementId }),
     }
   }
   if (snapshot.kind === 'outputs') {

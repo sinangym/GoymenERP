@@ -602,6 +602,29 @@ describe('fact forms', () => {
     expect(within(row).getByText('50')).toBeTruthy()
   })
 
+  it('selects only this orders real issue movement for a return and freezes the trace across an ambiguous resend', async () => {
+    const user = userEvent.setup(); const foreign = 'e0000000-0000-4000-8000-000000000099'
+    const { recorded } = stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('8', '750', COMPANY_A, COMPANY_A, 'Company', 'Company', [
+        issueMovement(), issueMovement('Company', COMPANY_A, 'Company', COMPANY_A, { movementId: foreign, sourceId: COMPANY_B }),
+      ], true))], commands: [() => problem(503), () => json(order({ version: 2 }))] })
+    renderAt(PATH); await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '2' })
+    await screen.findByTestId('parent-label-state')
+    const select = screen.getByLabelText('İadenin kaynak sarf hareketi')
+    await waitFor(() => expect(within(select).getByRole('option', { name: new RegExp(ISSUE_MOVEMENT) })).toBeTruthy())
+    expect(within(select).queryByRole('option', { name: new RegExp(foreign) })).toBeNull()
+    await user.selectOptions(select, ISSUE_MOVEMENT)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı olguyu yeniden gönder' })
+    expect((select as HTMLSelectElement).disabled).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Aynı olguyu yeniden gönder' }))
+    await waitFor(() => expect(posts(recorded)).toHaveLength(2))
+    expect(posts(recorded)[0].body).toHaveProperty('sourceIssueMovementId', ISSUE_MOVEMENT)
+    expect(posts(recorded)[1].body).toEqual(posts(recorded)[0].body)
+    expect(posts(recorded)[1].headers['Idempotency-Key']).toBe(posts(recorded)[0].headers['Idempotency-Key'])
+  })
+
   it('selects server-backed Product and Organization facts and records one company-owned output atomically', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({

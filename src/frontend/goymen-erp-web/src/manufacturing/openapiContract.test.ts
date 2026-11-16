@@ -274,6 +274,7 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
           'parentRollId',
           'returnId',
         ],
+        optional: ['sourceIssueMovementId'],
       },
       {
         kind: 'outputs',

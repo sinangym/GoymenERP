@@ -110,7 +110,8 @@ public sealed record IssueInventoryInputRequestV1(
 
 public sealed record ReturnInventoryInputRequestV1(
     Guid ReturnId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
-    Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+    Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceIssueMovementId = null);
 
 /// <summary>
 /// F-009 D3 (API-25, URT-S2): takes <see cref="Kg"/> back from one recorded output declaration (the path's fact id) as an
@@ -1530,6 +1531,8 @@ public sealed partial class ManufacturingCommandService(
         string permission,
         CancellationToken cancellationToken)
     {
+        if (request?.SourceIssueMovementId == Guid.Empty)
+            return Task.FromResult(Invalid<OrderViewV1>("sourceIssueMovementId"));
         if (orderId == Guid.Empty || request is null || request.ReturnId == Guid.Empty
             || request.ParentRollId == Guid.Empty || request.MovementId == Guid.Empty
             || request.MovementId == request.ReturnId || request.ExpectedVersion <= 0)
@@ -1554,7 +1557,7 @@ public sealed partial class ManufacturingCommandService(
 
         var expectedParentLabelVersion = long.Parse(
             request.ExpectedParentLabelVersion!, CultureInfo.InvariantCulture);
-        var canonical = new
+        object canonical = new
         {
             orderId,
             returnId = request.ReturnId,
@@ -1565,6 +1568,13 @@ public sealed partial class ManufacturingCommandService(
             kg = Text(kg),
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+        // SAT-D317 (2), ADR-011: legacy requests keep their exact canonical hash; an explicit trace is immutable input.
+        if (request.SourceIssueMovementId is { } sourceIssueMovementId)
+        {
+            var node = JsonSerializer.SerializeToNode(canonical, Json)!.AsObject();
+            node["sourceIssueMovementId"] = sourceIssueMovementId;
+            canonical = node;
+        }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
             canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
@@ -1589,7 +1599,7 @@ public sealed partial class ManufacturingCommandService(
                 var outcome = await inventoryReturnsAndOutputs.ReturnAsync(
                     new ManufacturingInventoryInputReturnPortCommandV1(
                         orderId, request.ExpectedVersion, request.ReturnId, request.ParentRollId,
-                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt),
+                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt, request.SourceIssueMovementId),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
