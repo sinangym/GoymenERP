@@ -20,9 +20,12 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// <para>
 /// Every price fact is answered as recorded and nothing is chosen: the unit price, the price unit (and whether it is the kilogram),
 /// the discount and the maturity surcharge (vade farkı) as stored, and the shared calculator's exact discounted and net unit prices
-/// (<see cref="CommercialLinePriceCalculator"/>, never rounded, SAT-D76). Which of them feeds the moving average (for instance whether a
-/// supplier's maturity surcharge is part of the purchase cost, SAT-D263 (3)) is not decided here. A zero unit price is a recorded
-/// price and is answered Known; how a zero-cost receipt counts is the consumer's rule (SAT-D297).
+/// (<see cref="CommercialLinePriceCalculator"/>, never rounded, SAT-D76). Which of them feeds the moving average is decided by
+/// ALS-D104 (SINAN_KARARLARI_2026-11-15_DALGA2_EK12) and SAT-D386 (SINAN_KARARLARI_2026-11-16_DALGA4_EK15): the discounted unit
+/// price — every discount the order records applied, VAT excluded (the order line price carries no tax) and the supplier's
+/// maturity surcharge (vade farkı) excluded, which stays a separate expense (SAT-D263 (3)). The port answers it as
+/// <see cref="PurchaseOrderLineCostPriceV1.MovingAverageUnitCost"/> so no consumer maps the fields on its own. A zero unit price is
+/// a recorded price and is answered Known; how a zero-cost receipt counts is the consumer's rule (SAT-D297).
 /// </para>
 /// <para>
 /// The company is a required input and is validated server-side: it must equal the server-resolved company context, otherwise the
@@ -203,7 +206,11 @@ public sealed record PurchaseOrderLineCostAnswerV1
 /// discounted price OR an amount per unit, never both), as stored;</item>
 /// <item><see cref="DiscountedUnitPrice"/> (unit price − discount) and <see cref="NetUnitPrice"/> ((unit price − discount) +
 /// surcharge): exact, never rounded, from <see cref="CommercialLinePriceCalculator"/> — the one calculator the order's own amounts
-/// use, never recomputed by the consumer.</item>
+/// use, never recomputed by the consumer;</item>
+/// <item><see cref="MovingAverageUnitCost"/>: the unit price that feeds the moving-average purchase cost (ALS-D104, SAT-D386) —
+/// exactly <see cref="DiscountedUnitPrice"/>: every discount the order records applied (a purchase order has only the line discount;
+/// no document-level discount exists), VAT excluded and the maturity surcharge excluded. <see cref="NetUnitPrice"/> includes the
+/// surcharge and therefore never feeds the moving average.</item>
 /// </list>
 /// Built only through <see cref="Of"/>, which refuses an inconsistent set.
 /// </summary>
@@ -222,7 +229,8 @@ public sealed record PurchaseOrderLineCostPriceV1
         decimal? deferralPercent,
         decimal? deferralAmount,
         decimal discountedUnitPrice,
-        decimal netUnitPrice)
+        decimal netUnitPrice,
+        decimal movingAverageUnitCost)
     {
         PricedLineId = pricedLineId;
         ProductId = productId;
@@ -237,6 +245,7 @@ public sealed record PurchaseOrderLineCostPriceV1
         DeferralAmount = deferralAmount;
         DiscountedUnitPrice = discountedUnitPrice;
         NetUnitPrice = netUnitPrice;
+        MovingAverageUnitCost = movingAverageUnitCost;
     }
 
     public Guid PricedLineId { get; }
@@ -264,6 +273,13 @@ public sealed record PurchaseOrderLineCostPriceV1
     public decimal DiscountedUnitPrice { get; }
 
     public decimal NetUnitPrice { get; }
+
+    /// <summary>
+    /// ALS-D104 / SAT-D386: the order currency unit price that enters the moving-average purchase cost — the discounted unit price
+    /// (discounts applied, VAT excluded, maturity surcharge excluded). Exact and never rounded; equal to
+    /// <see cref="DiscountedUnitPrice"/>.
+    /// </summary>
+    public decimal MovingAverageUnitCost { get; }
 
     /// <summary>
     /// The price facts of a line; the discounted and net unit prices are computed here by <see cref="CommercialLinePriceCalculator"/>.
@@ -325,6 +341,7 @@ public sealed record PurchaseOrderLineCostPriceV1
         var net = CommercialLinePriceCalculator.NetUnitPrice(unitPrice.Amount, discountPercent, discountAmount, deferralPercent,
             deferralAmount);
         return new PurchaseOrderLineCostPriceV1(pricedLineId, productId, lineUnitId, priceUnitId, priceUnitIsKilogram, unitPrice,
-            currencyCode, discountPercent, discountAmount, deferralPercent, deferralAmount, discounted, net);
+            currencyCode, discountPercent, discountAmount, deferralPercent, deferralAmount, discounted, net,
+            movingAverageUnitCost: discounted);
     }
 }

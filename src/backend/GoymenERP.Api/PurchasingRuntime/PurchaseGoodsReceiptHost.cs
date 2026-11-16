@@ -163,20 +163,48 @@ internal sealed class PurchaseGoodsReceiptHost(
                 request.CoilNumber, request.RequiredDocuments, owner, request.OwnerId, custodian,
                 request.CustodianId, request.LocationId, block, request.MovementId, request.QuantityKg,
                 request.OccurredAtUtc), Metadata(envelope), cancellationToken);
-            await ConvertFutureSupplyAsync(result, envelope, cancellationToken);
+            var conversion = await ConvertFutureSupplyAsync(result, envelope, cancellationToken);
             return new(result.CompanyId, result.AcceptanceId, result.PurchaseOrderId, result.PurchaseOrderLineId,
                 result.PurchaseOrderVersion, result.ProductId, result.ProductVersion, result.PurchaseUnitId,
                 result.LotId, result.LabelId, result.LabelVersion, result.MovementId, result.QuantityKg,
-                result.IsReplay, result.OriginalCorrelationId);
+                result.IsReplay, result.OriginalCorrelationId)
+            {
+                FutureSupplyReleases = LinkFailedReleases(conversion, result.AcceptanceId),
+            };
+        }
+
+        /// <summary>
+        /// KLN-D94 (SINAN-CEVAP 34): a link failure released the allocation's WHOLE remainder in Inventory (link row, audit,
+        /// released outbox for Sales). The receipt stands; the conversions that ended <c>LinkFailed</c> go back to the receiving
+        /// user as warnings. A conversion answer for another acceptance, or a released row without its failure code, fails closed
+        /// (503, the receipt rolls back) instead of hiding a release.
+        /// </summary>
+        internal static IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> LinkFailedReleases(
+            InventoryGoodsReceiptFutureSupplyResultV1? conversion, Guid acceptanceId)
+        {
+            if (conversion is null || conversion.AcceptanceId != acceptanceId || conversion.Conversions is null)
+                throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            var releases = new List<PurchaseReceiptFutureSupplyReleaseV1>();
+            foreach (var item in conversion.Conversions)
+            {
+                if (item is null)
+                    throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                if (item.Outcome == InventoryFutureSupplyConversionOutcomeV1.Converted.ToString()) continue;
+                if (item.Outcome != InventoryFutureSupplyConversionOutcomeV1.LinkFailed.ToString()
+                    || string.IsNullOrWhiteSpace(item.FailureReason))
+                    throw InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+                releases.Add(new PurchaseReceiptFutureSupplyReleaseV1(item.FutureAllocationId, item.Quantity, item.FailureReason));
+            }
+            return releases;
         }
 
         /// <summary>
         /// F017-c: the accepted quantity (purchase unit) and the label's measured kilograms go to Inventory's conversion port on the
-        /// receipt's own connection and transaction. Its result stays in Inventory (link rows, audit, outbox); the receipt response
-        /// does not change. Inventory refusals map to the receipt's own stable codes.
+        /// receipt's own connection and transaction. The link rows, audit and outbox stay in Inventory; the host returns the answer
+        /// so KLN-D94 releases reach the receipt response. Inventory refusals map to the receipt's own stable codes.
         /// </summary>
-        private async Task ConvertFutureSupplyAsync(InventoryGoodsReceiptResultV1 result, PurchasingWriteEnvelope envelope,
-            CancellationToken cancellationToken)
+        private async Task<InventoryGoodsReceiptFutureSupplyResultV1> ConvertFutureSupplyAsync(InventoryGoodsReceiptResultV1 result,
+            PurchasingWriteEnvelope envelope, CancellationToken cancellationToken)
         {
             var acceptance = staged;
             if (acceptance is null || acceptance.AcceptanceId != result.AcceptanceId
@@ -185,7 +213,7 @@ internal sealed class PurchaseGoodsReceiptHost(
             try
             {
                 await using var session = await futureSupply.EnlistAsync(connection, transaction, cancellationToken);
-                await session.ConvertAsync(new InventoryGoodsReceiptFutureSupplyRequestV1(result.CompanyId,
+                return await session.ConvertAsync(new InventoryGoodsReceiptFutureSupplyRequestV1(result.CompanyId,
                     result.AcceptanceId, result.PurchaseOrderId,
                     acceptance.PurchaseOrderGeneralLineId ?? acceptance.PurchaseOrderLineId, result.PurchaseUnitId,
                     result.ProductId, result.ProductVersion, result.LabelId, acceptance.AcceptedQuantity, result.QuantityKg,

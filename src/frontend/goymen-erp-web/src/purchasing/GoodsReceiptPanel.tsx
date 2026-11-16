@@ -165,6 +165,13 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
     {phase === 'done' && answer !== null ? <p role="status" className={styles.success}>
       {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {answer.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
     </p> : null}
+    {phase === 'done' && answer !== null && answer.futureSupplyReleases.length > 0
+      ? <div className={styles.warningCard} role="alert" data-testid={`${id}-future-supply-released`}>
+        <p><strong>{T.futureSupplyReleasedHeading}</strong></p>
+        <p>{T.futureSupplyReleasedNote}</p>
+        <ul>{answer.futureSupplyReleases.map((release) => <li key={release.futureAllocationId}>
+          {T.futureSupplyReleasedItem(release.releasedQuantity, T.futureSupplyReleaseReason[release.failureCode])}</li>)}</ul>
+      </div> : null}
     {active && options.data?.type !== 'ok-single' ? <StateBlock subject={T.location}
       state={options.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(options.data)} onRetry={() => void options.refetch()} /> : null}
     {options.data?.type === 'ok-single' && options.data.data.searchWindowFull ? <p>{T.limited}</p> : null}
