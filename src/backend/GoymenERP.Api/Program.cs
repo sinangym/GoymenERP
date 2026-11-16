@@ -12,6 +12,7 @@ using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.OrganizationRuntime;
 using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.SalesRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
@@ -466,6 +467,8 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
+// SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
+builder.Services.AddSalesRiskExceptionUsageInbox();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).

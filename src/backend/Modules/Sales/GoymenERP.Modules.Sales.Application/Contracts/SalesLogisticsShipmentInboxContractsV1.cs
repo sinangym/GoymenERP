@@ -7,9 +7,10 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // outbox events; Sales listens through the Work inbox (dedup per company, consumer and event id) and mirrors the fact on its own
 // risk exception record. Sales never queries Logistics for it and never writes a Logistics table (SAT-D209). The event names and
 // versions are reversible (LOJ-D19); the names below are the board's draft (PANO row 112, provider STK-S27) in the Work
-// registration form "<name>.v1". The consumer is NOT registered with the dispatcher yet: AddWorkInboxConsumer validates on start
-// that the source is registered, and the Logistics source does not exist until STK-S27 lands. The dispatcher itself stays off
-// until Work:OutboxDispatcher:Enabled is set (a human gate).
+// registration form "<name>.v1". SAT-S10: the host registers the consumer (AddSalesRiskExceptionUsageInbox) after the Logistics
+// source (STK-S27); AddWorkInboxConsumer validates on start that the source is registered and declares both events. Logistics
+// publishes only the recorded event today; the cancelled event has no producer until the shipment cancel is decided. The
+// dispatcher itself stays off until Work:OutboxDispatcher:Enabled is set (a human gate).
 
 /// <summary>The Sales side of the Logistics definite-shipment events (consumer name, source, event types, version).</summary>
 public static class SalesLogisticsShipmentInboxV1
@@ -17,7 +18,7 @@ public static class SalesLogisticsShipmentInboxV1
     /// <summary>The Sales consumer's registered name (dedup key part).</summary>
     public const string ConsumerName = "sales.risk-exception-usage";
 
-    /// <summary>The Logistics outbox source name (draft; must equal the name Logistics registers with AddWorkOutboxEventSource).</summary>
+    /// <summary>The Logistics outbox source name (must equal the name Logistics registers with AddWorkOutboxEventSource).</summary>
     public const string SourceName = "logistics";
 
     /// <summary>A definite shipment was recorded; when it used a single-shipment risk exception the payload names it.</summary>
@@ -29,7 +30,7 @@ public static class SalesLogisticsShipmentInboxV1
     /// <summary>The one version this consumer reads.</summary>
     public const int Version = 1;
 
-    /// <summary>The consumer's subscriptions, for the composition root's AddWorkInboxConsumer call once the source exists.</summary>
+    /// <summary>The consumer's subscriptions, for the composition root's AddWorkInboxConsumer call (SAT-S10).</summary>
     public static IReadOnlyList<WorkInboxSubscriptionV1> Subscriptions { get; } =
     [
         new(SourceName, RecordedEventType, Version),
