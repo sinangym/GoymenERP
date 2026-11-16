@@ -514,6 +514,16 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("CancelledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("ClosedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -536,6 +546,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("PlanId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("PlanVersionAfterCancel")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("Process")
                         .HasColumnType("int");
@@ -569,17 +582,20 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CompanyId", "PlanId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[Status] <> 3");
 
                     b.HasIndex("CompanyId", "WorkCenterId");
 
                     b.ToTable("Orders", "manufacturing", t =>
                         {
-                            t.HasCheckConstraint("CK_Orders_Close", "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_Orders_Cancel", "([Status] = 3 AND [CancelledByUserId] IS NOT NULL AND [CancelledByUserId] <> '00000000-0000-0000-0000-000000000000' AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND LEN([CancellationReason]) > 0 AND [PlanVersionAfterCancel] IS NOT NULL AND [PlanVersionAfterCancel] >= 3) OR ([Status] <> 3 AND [CancelledByUserId] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL AND [PlanVersionAfterCancel] IS NULL)");
+
+                            t.HasCheckConstraint("CK_Orders_Close", "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedAtUtc] IS NOT NULL) OR ([Status] = 3 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL)");
 
                             t.HasCheckConstraint("CK_Orders_DueDateRevision", "[DueDateRevision] >= 0 AND ([DueDateRevision] = 0 OR [DueDate] IS NOT NULL)");
 
-                            t.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
+                            t.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)");
 
                             t.HasCheckConstraint("CK_Orders_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
 
@@ -872,6 +888,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("PlanId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<long>("PlanVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<Guid>("ParentRollId")
                         .HasColumnType("uniqueidentifier");
 
@@ -888,10 +907,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.Property<long>("LabelVersionAfter")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("PlanVersion")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("CompanyId", "PlanId", "ParentRollId");
+                    b.HasKey("CompanyId", "PlanId", "PlanVersion", "ParentRollId");
 
                     b.HasIndex("CompanyId", "AllocationId")
                         .IsUnique();
@@ -1129,6 +1145,44 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PlanParameterSnapshotValues_Source", "[ValueSource] IS NULL OR ([ValueSource] = 'Plan' AND [NumericValue] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_PlanParameterSnapshotValues_Unit", "LEN(LTRIM(RTRIM([Unit]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanReapprovalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ReapprovalNo")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("PlanVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ReapprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ReapprovedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "PlanId", "ReapprovalNo");
+
+                    b.HasIndex("CompanyId", "PlanId", "PlanVersion")
+                        .IsUnique();
+
+                    b.ToTable("PlanReapprovals", "manufacturing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PlanReapprovals_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [ReapprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ReapprovalNo] >= 1 AND [PlanVersion] >= 3");
+
+                            t.HasCheckConstraint("CK_PlanReapprovals_Text", "LEN([CorrelationId]) > 0");
                         });
                 });
 
@@ -1822,6 +1876,16 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanParameterSnapshotRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanReapprovalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PlanId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
