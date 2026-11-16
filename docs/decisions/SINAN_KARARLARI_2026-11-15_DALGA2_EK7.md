@@ -1,7 +1,7 @@
 # Sinan Kararları — 2026-11-15 (Dalga 2 ek 7: kg/m başlangıç tablosu, kantar farkı ve kütle dengesi başlangıç değerleri, benzer ürün ölçü toleransı)
 
 Bu belge önceki karar dosyalarını silmez; URN-D17, KLN-D69, URT-D76 ve KLN-D70 kararlarını ve
-ASSUMPTION-STK-SIMILAR-ORDER-1 varsayımını ekler; iki noktayı `NEEDS-SINAN` olarak açık bırakır. URN-D13…URN-D16 (ağırlık tablosu içe aktarma, kaynak etiketi,
+ASSUMPTION-STK-SIMILAR-ORDER-1 varsayımını ekler; bir noktayı `NEEDS-SINAN` olarak açık bırakır. URN-D13…URN-D16 (ağırlık tablosu içe aktarma, kaynak etiketi,
 izin, tablo kaynağı), BS-9/BS-13/BS-16/BS-17 (yoğunluk, yuvarlama, kantar–hesap %1), DEC-STK-009, DEC-SET-001,
 URT-D6, URT-D9, KLN-D34, KLN-D39 ve KLN-D40 aynen geçerlidir.
 
@@ -39,9 +39,7 @@ düşünülebilir" isteği üzerine açık ürün maddelerinden derlendi. "(Öne
 - `NEEDS-SINAN`: Ürün kartında kalınlık, en veya boydan biri eksikse benzer ürün karşılaştırması ne yapar (eksik
   ölçüyü atlar mı, ürünü öneriden çıkarır mı)? Bu belge bu durumu seçmez; uygulama dilimi bu
   davranışı Sinan'ın cevabından önce etkinleştirmez.
-- `NEEDS-SINAN`: Taslaktaki 31 EN 10255 borusu EN 10219-2 kapsamında değildir. Kaynak etiketi URN-D17 (3)'teki
-  biçimle mi, yoksa "Formülle hesaplandı (EN 10255, 7,85)" biçimiyle mi yazılır? Veri PR'ı (#1184) ikinci
-  biçimi taslak olarak kullanır. L serisi 9 satırın ölçüleri doğrulanmamıştır ve öyle işaretlidir.
+- Taslaktaki 31 EN 10255 borusunun kaynak etiketi SINAN-CEVAP 42.4 ile cevaplandı (EK20 URN-D24, #1186). L serisi 9 satırın ölçüleri doğrulanmamıştır ve öyle işaretlidir.
 - 28.1 sorusundaki "en büyük sapma %0,36" rakamı, taslak hazırlanırken 19 ölçünün yayımlanmış tablolarla
   karşılaştırılmasından gelir. Karşılaştırma listesi depoda yoktur ve rakam doğrulanmış kabul edilmez. Soru,
   Sinan'a sorulduğu biçimiyle kayıtlıdır. Yuvarlak formülde kullanılan `0,02466` katsayısı π·7,85/1000
