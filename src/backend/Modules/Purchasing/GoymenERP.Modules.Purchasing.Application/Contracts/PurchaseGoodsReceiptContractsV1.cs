@@ -105,9 +105,19 @@ public static class PurchaseGoodsReceiptDocumentPolicyV1
 /// </summary>
 public interface IPurchaseGoodsReceiptTransactionV1
 {
-    Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
+    Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target, Guid acceptanceId,
+        PurchasingWriteEnvelope envelope, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Server-authorized receipt intent. The host resolves its general line from Purchasing's owner participant, pre-reads its
+/// active Inventory demand set, locks every Sales line ascending and then every purchase general line ascending, and re-reads
+/// the set before invoking the business callback ONCE. An expanding set retries only this read/lock preparation in a fresh
+/// transaction. The expected version is checked by the existing acceptance stage, never used to block an immutable replay.
+/// </summary>
+public sealed record PurchaseGoodsReceiptTargetV1(Guid PurchaseOrderId, Guid PurchaseOrderLineId,
+    string ExpectedPurchaseOrderVersion);
 
 public interface IPurchaseGoodsReceiptParticipantsV1
 {

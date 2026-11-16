@@ -3,6 +3,7 @@ using System.Text.Json;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
@@ -655,6 +656,7 @@ public static partial class PurchasingEndpoints
                 PurchaseAcceptanceParticipantCodes.IdempotencyConflict,
                 PurchaseAcceptanceParticipantCodes.ConcurrentChange,
                 PurchaseAcceptanceParticipantCodes.LineBusy,
+                SalesOrderLineSerializationLockContractV1.BusyCode,
                 InventoryGoodsReceiptCodesV1.LabelAlreadyRegistered,
                 InventoryGoodsReceiptCodesV1.LotOrLabelConflict,
                 InventoryGoodsReceiptCodesV1.IdempotencyConflict,

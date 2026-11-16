@@ -21,7 +21,8 @@ public sealed partial class PurchasingService
         var envelope = Envelope(scope, metadata, permission!);
         try
         {
-            return await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
+            return await runner.ExecuteAsync(scope.CompanyId, new(orderId, lineId, request.ExpectedPurchaseOrderVersion),
+                request.AcceptanceId, envelope, async (participants, token) =>
             {
                 var original = await GuardedAsync(scope, permission,
                     () => participants.ReadOriginalAsync(request.AcceptanceId, envelope, token), token);
@@ -94,9 +95,22 @@ public sealed partial class PurchasingService
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw new PurchasingServiceException(exception.StatusCode, exception.Code);
         }
-        catch (PurchasingStoreException exception) { throw Store(exception); }
+        catch (PurchasingStoreException exception)
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw Store(exception);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            // Host preparation can refuse before any GuardedAsync callback read/stage. Recheck the original command's
+            // authority/company before disclosing that owner/lock failure; never invoke beforeCommit an extra time.
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<PurchaseGoodsReceiptOptionsV1> GetGoodsReceiptOptionsAsync(Guid orderId, Guid lineId,

@@ -109,7 +109,7 @@ public sealed partial class PurchasingService
             }
             else
             {
-                saved = await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
+                saved = await runner.ExecuteAsync(scope.CompanyId, new(orderId, lineId, source.PurchaseOrderVersion), async (participants, token) =>
                 {
                     releases = await PostBatchLabelsAsync(scope, permission, participants, source, draft, source.PurchaseOrderVersion, envelope, token);
                     return await batches.SaveNewAsync(draft, envelope, requestHash, command, token);
@@ -120,16 +120,25 @@ public sealed partial class PurchasingService
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw new PurchasingServiceException(exception.StatusCode, exception.Code);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             var won = await FindBatchReplayAsync(scope, permission, batches, envelope, requestHash, command, cancellationToken);
             return won is null ? throw Store(exception) : await BatchReplayedAsync(scope, permission, batches, orderId, won, cancellationToken);
         }
         catch (PurchasingStoreException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw Store(exception);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
         }
     }
 
@@ -281,7 +290,8 @@ public sealed partial class PurchasingService
             {
                 var runner = batchTransactions ?? throw BatchUnavailable();
                 var source = await ApprovalSourceAsync(scope, permission, stored, cancellationToken);
-                saved = await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
+                saved = await runner.ExecuteAsync(scope.CompanyId,
+                    new(source.PurchaseOrderId, source.PurchaseOrderLineId, source.PurchaseOrderVersion), async (participants, token) =>
                 {
                     releases = await PostBatchLabelsAsync(scope, permission, participants, source, stored.Batch, source.PurchaseOrderVersion, envelope, token);
                     return await batches.SaveDecisionAsync(orderId, batch, expectedVersion, envelope, requestHash, command, token);
@@ -292,16 +302,25 @@ public sealed partial class PurchasingService
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw new PurchasingServiceException(exception.StatusCode, exception.Code);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             var won = await FindBatchReplayAsync(scope, permission, batches, envelope, requestHash, command, cancellationToken);
             return won is null ? throw Store(exception) : await BatchReplayedAsync(scope, permission, batches, orderId, won, cancellationToken);
         }
         catch (PurchasingStoreException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw Store(exception);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
         }
     }
 
