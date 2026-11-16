@@ -26,8 +26,11 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// B-19 / SAT-D306: Inventory's single-use participant in the purchasing host's already-open supplier-return
 /// transaction. It writes one exit movement of the original receipt's label from its free or blocked kilograms, never
 /// more than that receipt brought in minus the earlier supplier returns of it (SAT-D306 (a)), and never below the
-/// label's active allocations. It flushes Inventory rows but never commits, rolls back or closes borrowed handles.
-/// The original receipt cost is carried in the result, outbox and audit; the average-cost ledger is not written here.
+/// label's active allocations: KLN-D93 refuses that with its own code and never releases an allocation. It flushes
+/// Inventory rows but never commits, rolls back or closes borrowed handles. The original receipt cost is carried in the
+/// result, outbox and audit; the average-cost ledger is only read here, never written: SAT-D371 refuses a return whose
+/// original cost would leave a cost difference against a readable position (SAT-D306 (c)) until the Finance
+/// accounting-voucher spec names its account.
 /// </summary>
 public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierReturnExitParticipantV1
 {
@@ -148,6 +151,7 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
         }
 
         await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, cancellationToken);
+        await RequireNoUnpostedCostDifferenceAsync(receipt, source, input, cancellationToken);
 
         var versionBefore = receipt.LabelRow.Version;
         var movement = new StockMovement(
@@ -463,7 +467,11 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
         return lines.Sum(row => row.QuantityKg);
     }
 
-    /// <summary>A reservation is never silently broken: what stays on the label must cover its active allocations.</summary>
+    /// <summary>
+    /// KLN-D93: a reservation is never silently broken. What stays on the label must cover its active allocations;
+    /// otherwise the return is refused with its own code. The return never releases an allocation: the allocation is
+    /// released first by its own command, then the return is retried.
+    /// </summary>
     private async Task RequireExitLeavesAllocationsAsync(Guid labelId, decimal exitKg,
         CancellationToken cancellationToken)
     {
@@ -475,7 +483,64 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
             .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
         if (reserved > onLabel - exitKg)
         {
-            throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable);
+            throw Refused(409, InventorySupplierReturnExitCodesV1.StockAllocated);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D371 (completes SAT-D306 (c)): the account of a purchase-return cost difference is named by the Finance
+    /// accounting-voucher spec, so until then a return that would leave one is refused; a return without a difference
+    /// proceeds under the existing rules. A difference is measurable only for the company's own goods (counterparty-owned
+    /// goods never had this company's purchase cost), with a known original cost, against a readable ledger position at
+    /// the exit's location whose quantity is the costed stock there (the ledger writer's own reading). An unknown cost,
+    /// an untracked or unreadable position, or a ledger that disagrees with the stock has no figure to compare: the
+    /// return is not refused for it here, and nothing is written to the ledger. The rule itself is the cost core's.
+    /// </summary>
+    private async Task RequireNoUnpostedCostDifferenceAsync(ReceiptTrace receipt, SourcePosition source,
+        InventorySupplierReturnExitInput input, CancellationToken cancellationToken)
+    {
+        if (input.OriginalUnitCostTryPerKg is not { } returnCost
+            || receipt.OwnerKind != StockPartyKind.Company || receipt.OwnerId != companyId)
+        {
+            return;
+        }
+
+        var locationId = source.Position.LocationId;
+        var productId = receipt.ProductId;
+        var row = await context.AverageCostLedger.AsNoTracking()
+            .Where(item => item.CompanyId == companyId && item.LocationId == locationId && item.ProductId == productId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            return;
+        }
+
+        AverageCostPosition position;
+        try
+        {
+            position = InventoryAverageCostLedgerRows.PositionOf(row);
+        }
+        catch (InvalidOperationException)
+        {
+            throw Refused(503, InventorySupplierReturnExitCodesV1.Unavailable);
+        }
+
+        if (position.Status != AverageCostStatus.Known)
+        {
+            return;
+        }
+
+        var stockBeforeKg = await InventoryAverageCostLedgerRows.CostedStock(context, companyId, productId)
+            .Where(balance => balance.LocationId == locationId)
+            .SumAsync(balance => (decimal?)balance.QuantityKg, cancellationToken) ?? 0m;
+        if (stockBeforeKg != position.QuantityKg)
+        {
+            return;
+        }
+
+        if (AverageCostCalculator.PurchaseReturnLeavesCostDifference(position, input.Quantity.Value, returnCost))
+        {
+            throw Refused(409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
         }
     }
 

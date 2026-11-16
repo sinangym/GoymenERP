@@ -158,6 +158,28 @@ public sealed class InventorySupplierReturnExitContractTests
     }
 
     [Fact]
+    public void An_allocated_label_and_an_unposted_cost_difference_are_explicit_conflicts_of_their_own()
+    {
+        // KLN-D93 and SAT-D371: each refusal has its own code; neither is the generic stock-not-available answer.
+        Assert.Equal("inventory_supplier_return_exit_stock_allocated", InventorySupplierReturnExitCodesV1.StockAllocated);
+        Assert.Equal(
+            "inventory_supplier_return_exit_cost_difference_unposted",
+            InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+        foreach (var code in new[]
+                 {
+                     InventorySupplierReturnExitCodesV1.StockAllocated,
+                     InventorySupplierReturnExitCodesV1.CostDifferenceUnposted,
+                 })
+        {
+            Assert.True(InventorySupplierReturnExitCodesV1.IsDefined(409, code));
+            Assert.False(InventorySupplierReturnExitCodesV1.IsDefined(503, code));
+            Assert.NotEqual(InventorySupplierReturnExitCodesV1.StockNotAvailable, code);
+            var refusal = InventorySupplierReturnExitException.Refused(409, code);
+            Assert.Equal((409, code), (refusal.Status, refusal.Code));
+        }
+    }
+
+    [Fact]
     public void Event_is_versioned_and_carries_the_physical_identity_and_original_cost_without_authority_metadata()
     {
         Assert.Equal("inventory.supplier-return-exit.recorded.v1", InventorySupplierReturnExitOutboxV1.EventType);

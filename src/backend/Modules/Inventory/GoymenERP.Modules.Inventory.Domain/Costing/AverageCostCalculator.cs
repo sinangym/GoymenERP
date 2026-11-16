@@ -29,7 +29,8 @@ public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition
 /// <item>SAT-D306: a purchase return leaves at the original purchase line's unit cost:
 /// <c>round4((q·a − Δ·c) / (q − Δ))</c>. A residual value at zero stock, or a non-positive remaining value, would need a
 /// cost-difference record whose posting is not specified: the position is unreadable
-/// (<see cref="AverageCostUnreadableReason.Return"/>), fail-closed, never a negative or invented average.</item>
+/// (<see cref="AverageCostUnreadableReason.Return"/>), fail-closed, never a negative or invented average. SAT-D371:
+/// <see cref="PurchaseReturnLeavesCostDifference"/> lets the exit refuse such a return before it is staged.</item>
 /// <item>SAT-D304: an approved opening cost seeds a position the ledger never tracked (<see cref="ApplyOpeningCost"/>).</item>
 /// </list>
 /// A position never seen by the ledger is <c>null</c> (it reads as NoSource). A position that falls to exactly zero keeps
@@ -280,21 +281,62 @@ public static class AverageCostCalculator
         }
 
         var heldCost = current.AverageCostPerKg!.Value;
-        var remainingKg = heldKg - movement.QuantityKg;
-        var remainingValue = (heldKg * heldCost) - (movement.QuantityKg * returnCost);
-        if (remainingKg == 0m)
-        {
-            return remainingValue == 0m
-                ? AverageCostPosition.Known(0m, heldCost)
-                : AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
-        }
-
-        if (remainingValue <= 0m)
+        if (LeavesCostDifference(heldKg, heldCost, movement.QuantityKg, returnCost))
         {
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
         }
 
+        var remainingKg = heldKg - movement.QuantityKg;
+        if (remainingKg == 0m)
+        {
+            return AverageCostPosition.Known(0m, heldCost);
+        }
+
+        var remainingValue = (heldKg * heldCost) - (movement.QuantityKg * returnCost);
         return AverageCostPosition.Known(remainingKg, AverageCostPrecision.Round(remainingValue / remainingKg));
+    }
+
+    /// <summary>
+    /// SAT-D371 (completes SAT-D306 (c)): whether a purchase return of <paramref name="quantityKg"/> leaving a readable
+    /// position at <paramref name="unitCostPerStockKg"/> (base currency, per stock kilogram) would leave the cost
+    /// difference that the purchase-return step of <see cref="Apply"/> answers as unreadable: a residual value at zero
+    /// stock, or a remaining value that is not positive. The account of that difference is named by the Finance
+    /// accounting-voucher spec; until then the caller refuses such a return. A position that is not readable, or a
+    /// return larger than the position, has no measurable difference here (those paths keep their own rules). A cost
+    /// that is unknown is not passed in: a zero or negative cost is a caller error.
+    /// </summary>
+    public static bool PurchaseReturnLeavesCostDifference(
+        AverageCostPosition current, decimal quantityKg, decimal unitCostPerStockKg)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        if (quantityKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantityKg), "A return moves a positive quantity.");
+        }
+
+        if (unitCostPerStockKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(unitCostPerStockKg), "A known return cost is positive; an unknown cost is not passed in.");
+        }
+
+        if (current.Status != AverageCostStatus.Known
+            || current.QuantityKg is not { } heldKg
+            || current.AverageCostPerKg is not { } heldCost
+            || quantityKg > heldKg)
+        {
+            return false;
+        }
+
+        return LeavesCostDifference(heldKg, heldCost, quantityKg, unitCostPerStockKg);
+    }
+
+    /// <summary>SAT-D306 (c): the single rule both the ledger step and the SAT-D371 refusal read.</summary>
+    private static bool LeavesCostDifference(decimal heldKg, decimal heldCost, decimal quantityKg, decimal returnCost)
+    {
+        var remainingKg = heldKg - quantityKg;
+        var remainingValue = (heldKg * heldCost) - (quantityKg * returnCost);
+        return remainingKg == 0m ? remainingValue != 0m : remainingValue <= 0m;
     }
 
     private static AverageCostPosition ApplyIssue(AverageCostPosition? current, AverageCostMovement movement)
