@@ -1,11 +1,23 @@
 # Sinan Kararları — 2026-11-15 Dalga 2 ek (artık etiketi mirası, yeni izinlerin personaları, başlangıç politika aktarımı, sipariş limit uyarısı)
 
 Bu belge önceki karar dosyalarını silmez; `KLN-D57`, `KLN-D58`, `URN-D12`, `SAT-D355`–`SAT-D357` kararlarını ekler.
-`SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md` (`KLN-D55`, `SAT-D353`, `SAT-D354`, `FNS-D54`–`FNS-D56`, `KLN-D56`,
-`ALS-D98`, `URN-D10`, `URN-D11`), `SINAN_KARARLARI_2026-11-15_DALGA1_EK.md` (`URT-D66` dahil) ve
-`docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md`'deki önceki persona kararları (`SAT-D69`, `SAT-D145`, `SAT-D187`,
-`SAT-D191`) aynen geçerlidir. Bu belge `SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md` "Sınırlar" bölümündeki açık
-maddeleri cevaplar.
+`SINAN_KARARLARI_2026-11-15_DALGA1_EK.md` (`URT-D66` dahil) ve `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md`'deki
+önceki persona kararları (`SAT-D69`, `SAT-D145`, `SAT-D187`, `SAT-D191`) aynen geçerlidir. Bu belge
+`SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md` (SINAN-CEVAP 21, #1164) "Sınırlar" bölümündeki persona ve aktarım
+maddelerini cevaplar. O belgenin kararlarını genel olarak teyit etmez; her birinin durumu o belgenin "Önceki
+kararlarla ilişki" bölümündeki gibidir:
+
+- Geçerli, önceki kararı teyit eder: `KLN-D55` (= `SAT-D350`), `SAT-D354` (= `SAT-D352`), `KLN-D56` (= `KLN-D49`),
+  `URN-D10` (= `KLN-D47`), `FNS-D55` (= `FNS-D48`).
+- Geçerli, sonraki turla teyit edildi: `FNS-D56` (tek adım; SINAN-CEVAP 25.13, `FNS-D57` (3), #1168). OPEN-009 açık
+  kalır.
+- Kısmen geçerli: `URN-D11`'in dört türünün ölçü alanları geçerlidir; "şimdilik dört" sınırı `KLN-D87` (#1176) ile
+  kalkmıştır.
+- Uygulanmaz, `NEEDS-SINAN`: `FNS-D54` (yerine `FNS-D44` geçerli), `ALS-D98`'in "yeni yetki yoktur" kısmı (yerine
+  `ALS-D95`/19.22 geçerli), `SAT-D353` (yerine `SAT-D351` ve `SAT-D348` geçerli; kaynak için `SAT-D367`, #1176).
+
+Bu belgedeki `KLN-D58` ve `URN-D12`, `KLN-D56` ve `URN-D10`'a atıf yapar; bunlar `KLN-D49` ve `KLN-D47` ile aynı
+kurallardır.
 
 **Kaynak:** Sinan, 2026-11-15, Claude şeridi oturumunda soru-cevap aracıyla, iki turda. Sorular dalga 2 karar
 belgesinin açık maddelerinden ve satış takımının dalga 2 raporundaki NEEDS-SINAN maddelerinden (SAT-S4,
@@ -33,12 +45,12 @@ nedenle açık değildir.
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| KLN-D57 | Kullanılabilir artık (BS-5) etiketinin mirası | Etiketli parti **bölünürse** bütün çocuk partiler etiketi miras alır. Partiler **birleştirilirse** sonuç yalnız bütün kaynak partiler etiketliyse etiketli olur; tek bir kaynak etiketsizse sonuç etiketsizdir. Miras, bölme/birleştirme hareketiyle aynı kayıtta yazılır; ayrı hareket üretilmez. | Stok etiket bölme/birleştirme (BS-5) |
+| KLN-D57 | Kullanılabilir artık (BS-5) etiketinin mirası | Etiketli parti **bölünürse** bütün çocuk partiler etiketi miras alır. Partiler **birleştirilirse** sonuç yalnız bütün kaynak partiler etiketliyse etiketli olur; tek bir kaynak etiketsizse sonuç etiketsizdir. Miras, bölme/birleştirme hareketiyle aynı kayıtta yazılır; ayrı hareket üretilmez. Bu karar **KLN-D46'yı teyit eder** (SINAN-CEVAP 18, `SINAN_KARARLARI_2026-11-15_GIRIS_VE_ARTIK.md`, #1161); buradaki "etiketsiz", KLN-D46'daki "üretim durumu boş" ile aynı anlamdadır. Aynı çözüm KLN-D63 (EK6) ve KLN-D86 (#1176) ile de teyit edilmiştir. | Stok etiket bölme/birleştirme (BS-5) |
 | SAT-D355 | Satış teslim toleransı ve onay eşiği ayarlarının personası | `settings.sales-delivery-tolerances.manage` ve `settings.sales-approval-thresholds.manage` **Yönetim Kurulu ve Admin** personalarına eşlenir (SAT-D69 iskonto limitleri emsali); hiçbir satış personası ve müdür personası bu izinleri almaz. Bu bir persona eşlemesidir; grant'ı Sinan uygular. | Persona grant matrisi, Satış ayarları |
-| URN-D12 | Ürün ölçü tanımı izninin personası | `product.dimension.manage` ayrı izin adı olarak kalır ve ürün/stok tarafındaki **mevcut Stok Müdürü personasına** ve Admin'e eşlenir; yeni müdür personası açılmaz. Ara dönemde Stok Müdürü personasını taşıyan kişi SAT-D187'deki gibidir. İzin ayrı ad olduğundan tek bir kişiye de verilebilir. Bu bir persona eşlemesidir; grant'ı Sinan uygular. | Persona grant matrisi, Ürün ölçü paneli (URN-D10) |
+| URN-D12 | Ürün ölçü tanımı izninin personası | Sinan'ın cevabı (aynen): "Ölçü müdürü kavramı eğer ürün stok tarafı ile ilgili bir müdür varsa o olsun, çok müdürlük açmayalım, yada ayrı açalım ama tek bir kişiye bunuda verebilelim". **Uygulama yorumu (geri alınabilir):** `product.dimension.manage` ayrı izin adı olarak kalır ve ürün/stok tarafındaki **Stok Müdürü personasına** ve Admin'e eşlenir; şimdilik ayrı bir "ölçü müdürü" personası açılmaz. Cevaptaki "yada ayrı açalım ama tek bir kişiye bunuda verebilelim" alternatifi kapatılmaz: ayrı persona istenirse ayrı kararla açılır. Stok Müdürü persona kartında henüz yer tutucudur; rol kartına işlenene kadar bu izni **Genel Müdür ve Admin** kullanır (SAT-D187 ara dönemi, SAT-D191). İzin ayrı ad olduğundan tek bir kişiye de verilebilir. Bu bir persona eşlemesidir; grant'ı Sinan uygular. | Persona grant matrisi, Ürün ölçü paneli (URN-D10) |
 | KLN-D58 | Belgeye dosya bağlama izninin personası | `documents.files.link` **bütün iş personalarına** eşlenir. Erişim sınırı KLN-D56'dır: bağlama için kaynak dosya en az bir bağlantısından ve hedef kayıt görülebilmelidir; izin bu kontrolü kaldırmaz. Bu bir persona eşlemesidir; grant'ı Sinan uygular. | Persona grant matrisi, Belgeler PLT-S16 |
-| SAT-D356 | Başlangıç satış politikalarının kataloğa aktarımı | Üretimde `CompiledBaselineV0` → katalog aktarımı **önce tek bir şirkette** yapılır ve kontrol edilir, sonra diğer şirketlerde; her şirketin aktarımını **Sinan başlatır**. Hangi şirketin ilk olacağı aktarım anında Sinan tarafından seçilir. Aktarım bir production aktivasyonudur; bu karar ajanlara aktarım yetkisi vermez. | Satış politika katalogları (F029), production aktivasyon adımları |
-| SAT-D357 | Sipariş kredi limiti uyarı kaydı (SAT-S4, FNS-D27(3)) | (1) Uyarı satırları ve audit olayları **genel audit kayıtlarıyla aynı saklama politikasına** bağlıdır; o politikanın süresi bu kararla belirlenmez. Satırda **tutar saklanmaz**; yalnız uyarı türü ve sipariş sürümü saklanır. (2) Uyarı **yalnız onaya gönderme ve onay** anlarında kaydedilir; taslak oluşturma/düzenlemede yalnız ekranda gösterilir; sevkte kaydedilmez. (3) Kaydedilen uyarılar mevcut **`sales.drafts.read`** izniyle okunur; yeni izin açılmaz. ASSUMPTION-SAT-RISK-1…3 bu kararla karara bağlanmıştır. Uyarı siparişi durdurmaz (FNS-D27). | Satış SAT-S4 (`sales.DraftRiskWarnings`, risk uyarısı okuma ucu) |
+| SAT-D356 | Başlangıç satış politikalarının kataloğa aktarımı | Üretimde `CompiledBaselineV0` → katalog aktarımı **önce tek bir şirkette** yapılır ve kontrol edilir, sonra diğer şirketlerde; her şirketin aktarımını **Sinan başlatır**. Hangi şirketin ilk olacağı cevapta seçilmedi; aktarım anında Sinan seçer (uygulama notu, cevapta yoktur). Aktarım bir production aktivasyonudur; bu karar ajanlara aktarım yetkisi vermez. | Satış politika katalogları (F029), production aktivasyon adımları |
+| SAT-D357 | Sipariş kredi limiti uyarı kaydı (SAT-S4, FNS-D27(3)) | (1) Uyarı satırları ve audit olayları **genel audit kayıtlarıyla aynı saklama politikasına** bağlıdır; o politikanın süresi bu kararla belirlenmez. Satırda **tutar saklanmaz**; iş alanı olarak uyarı türü ve sipariş sürümü saklanır. Plan N-1'deki (ASSUMPTION-SAT-RISK-1) kullanıcı, zaman ve port sürümü alanları bu cümleyle kaldırılmaz. (2) Uyarı **yalnız onaya gönderme ve onay** anlarında kaydedilir; taslak oluşturma/düzenlemede yalnız ekranda gösterilir; sevkte kaydedilmez. (3) Kaydedilen uyarılar mevcut **`sales.drafts.read`** izniyle okunur; yeni izin açılmaz. ASSUMPTION-SAT-RISK-1…3 bu kararla karara bağlanmıştır. Uyarı siparişi durdurmaz (FNS-D27). | Satış SAT-S4 (`sales.DraftRiskWarnings`, risk uyarısı okuma ucu) |
 
 ## Sınırlar
 
