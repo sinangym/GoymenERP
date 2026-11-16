@@ -69,6 +69,13 @@ public sealed class FinanceCreditAccountService(
             return refused;
         }
 
+        // The strict string-enum contract cannot serialize an undefined group. Refuse it after
+        // authority validation and before hashing; valid requests keep their existing hash.
+        if (!Enum.IsDefined(request.Group))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("group", "credit_group_invalid"));
+        }
+
         // A null text or a null plan cannot be the contract's JSON; refused before it is hashed.
         if (request.LenderName is null)
         {
