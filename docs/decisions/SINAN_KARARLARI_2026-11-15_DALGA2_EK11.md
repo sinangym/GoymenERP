@@ -9,7 +9,7 @@ SAT-D357 aynen geçerlidir; bu belge onların açık bıraktığı noktaları ta
 
 **Güncellenen noktalar (SINAN-CEVAP 41.1):** 32.15 ve 32.14'teki toplu cevap, daha önce açıkça seçilmiş beş kararla
 çelişiyordu. Sinan 41.1'de önceki açık seçimlerin geçerli kaldığını, SC32'deki çelişen beş maddenin düşürüldüğünü ve kalan
-SC32 kararlarının geçerli olduğunu söyledi. Bu yüzden şu beş madde düşürüldü ve önceki karar aynen geçerlidir:
+SC32 kararlarının geçerli olduğunu söyledi. Aynı karar `SINAN_KARARLARI_2026-11-16_DALGA4_EK19.md` dosyasında KLN-D109 olarak yazılıdır (henüz merge edilmemiş PR #1185). Bu yüzden şu beş madde düşürüldü ve önceki karar aynen geçerlidir:
 - KLN-D80 → KLN-D73;
 - KLN-D82 → KLN-D74;
 - SAT-D364'ün Admin girişi ve ret kısmı → SAT-D358 (3) / SAT-D346;
