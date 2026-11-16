@@ -7,6 +7,17 @@ public sealed record AverageCostTransferResult(AverageCostPosition Source, Avera
 public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition DispatchedTo, AverageCostPosition Source);
 
 /// <summary>
+/// KLN-D90: the cost of a transfer receipt shortage (the KLN-D21 fire). <see cref="UnitCostPerKg"/> is the dispatch unit
+/// cost; <see cref="Value"/> is <c>QuantityKg · UnitCostPerKg</c>, unrounded (the posting's rounding belongs to the
+/// Finance accounting-entry spec). Both are <c>null</c> when the dispatch cost is unknown: nothing is guessed.
+/// </summary>
+public sealed record AverageCostTransferShortageValuation(decimal QuantityKg, decimal? UnitCostPerKg, decimal? Value)
+{
+    /// <summary>True when the dispatch unit cost is known and the shortage carries a value.</summary>
+    public bool IsKnown => Value is not null;
+}
+
+/// <summary>
 /// The deterministic moving-average purchase cost core (SAT-D256…SAT-D258, SAT-D262, SAT-D265). One calculator, no screen
 /// or caller re-implements it. Pure: no clock, no storage, no company or role. The key of a position (company, location,
 /// product) lives in the ledger; this core only computes the next state of one position.
@@ -16,20 +27,25 @@ public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition
 /// <item>A transfer enters the target at the SOURCE average (the target's own average then blends as a receipt).</item>
 /// <item>A cancelled transfer dispatch returns to the source at the unit cost used at dispatch, never at the source's
 /// average at cancel time (KLN-D64 (1)).</item>
+/// <item>A transfer receipt shortage (fire) is valued at the dispatch unit cost, never at the average at receipt time
+/// (KLN-D90, <see cref="ValueTransferReceiptShortage"/>).</item>
 /// <item>A production receipt never enters the average: the position becomes unreadable (mixed source is OPEN).</item>
 /// <item>Additional (landed) cost never enters the average in v1 (SAT-D302 (1)). The receipt entering at its own purchase
 /// price, with <see cref="AverageCostMovement.AdditionalCostPerStockKg"/> kept outside the figure, is the implementation
 /// reading of that decision (reversible).</item>
 /// <item>Stock never goes below zero (SAT-D318 (1)) and no recovery-from-negative formula is written (SAT-D323 (2)): an
 /// issue that would breach this answers <see cref="AverageCostUnreadableReason.NegativeStock"/>, fail-closed (the decision
-/// file's author reading; see that reason). Unit conversion and foreign currency are decided (SAT-D298, BS-1) but not
-/// implemented in this core yet: they answer <see cref="AverageCostStatus.Unreadable"/> with their
-/// <see cref="AverageCostUnreadableReason"/>; nothing is guessed.</item>
+/// file's author reading; see that reason). Unit conversion is decided (SAT-D298) but not implemented in this core yet: it
+/// answers <see cref="AverageCostStatus.Unreadable"/> with its <see cref="AverageCostUnreadableReason"/>; nothing is guessed.
+/// A foreign-currency cost (BS-1) is converted to TL before this core with the supplier invoice's official rate (the
+/// application's rate resolver); while that rate is not recorded the cost arrives as foreign and the position answers
+/// <see cref="AverageCostUnreadableReason.ForeignCurrency"/>, sticky, with no provisional rate.</item>
 /// <item>SAT-D303: a customer return enters at the original issue's unit cost and blends like a receipt.</item>
 /// <item>SAT-D306: a purchase return leaves at the original purchase line's unit cost:
 /// <c>round4((q·a − Δ·c) / (q − Δ))</c>. A residual value at zero stock, or a non-positive remaining value, would need a
 /// cost-difference record whose posting is not specified: the position is unreadable
-/// (<see cref="AverageCostUnreadableReason.Return"/>), fail-closed, never a negative or invented average.</item>
+/// (<see cref="AverageCostUnreadableReason.Return"/>), fail-closed, never a negative or invented average. SAT-D371:
+/// <see cref="PurchaseReturnLeavesCostDifference"/> lets the exit refuse such a return before it is staged.</item>
 /// <item>SAT-D304: an approved opening cost seeds a position the ledger never tracked (<see cref="ApplyOpeningCost"/>).</item>
 /// </list>
 /// A position never seen by the ledger is <c>null</c> (it reads as NoSource). A position that falls to exactly zero keeps
@@ -195,6 +211,33 @@ public static class AverageCostCalculator
         return new(dispatchedToAfter, sourceAfter);
     }
 
+    /// <summary>
+    /// KLN-D90: values the shortage fire of a transfer receipt at <paramref name="dispatchUnitCostPerKg"/>, the unit cost
+    /// the dispatch used (the KLN-D64 rule), never at the moving average at receipt time. An unknown dispatch cost
+    /// (<c>null</c>) or a zero one ("cost unknown", as for any receipt) leaves the valuation unknown; the current average
+    /// is not a stand-in. No accounting entry is written until ledger posting opens (account mapping: Finance spec), and
+    /// while transfers do not post to the cost ledger (KLN-D64 (2)) no movement path calls this rule.
+    /// </summary>
+    public static AverageCostTransferShortageValuation ValueTransferReceiptShortage(
+        decimal shortageKg,
+        decimal? dispatchUnitCostPerKg)
+    {
+        if (shortageKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shortageKg), "A transfer receipt shortage is positive.");
+        }
+
+        if (dispatchUnitCostPerKg is < 0m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(dispatchUnitCostPerKg), "A dispatch unit cost, when known, is not negative.");
+        }
+
+        return dispatchUnitCostPerKg is { } unitCost && unitCost != 0m
+            ? new(shortageKg, unitCost, shortageKg * unitCost)
+            : new(shortageKg, null, null);
+    }
+
     private static AverageCostPosition ApplyReceipt(AverageCostPosition? current, AverageCostMovement movement)
     {
         if (!movement.UnitCostIsPerStockKg)
@@ -280,21 +323,62 @@ public static class AverageCostCalculator
         }
 
         var heldCost = current.AverageCostPerKg!.Value;
-        var remainingKg = heldKg - movement.QuantityKg;
-        var remainingValue = (heldKg * heldCost) - (movement.QuantityKg * returnCost);
-        if (remainingKg == 0m)
-        {
-            return remainingValue == 0m
-                ? AverageCostPosition.Known(0m, heldCost)
-                : AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
-        }
-
-        if (remainingValue <= 0m)
+        if (LeavesCostDifference(heldKg, heldCost, movement.QuantityKg, returnCost))
         {
             return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
         }
 
+        var remainingKg = heldKg - movement.QuantityKg;
+        if (remainingKg == 0m)
+        {
+            return AverageCostPosition.Known(0m, heldCost);
+        }
+
+        var remainingValue = (heldKg * heldCost) - (movement.QuantityKg * returnCost);
         return AverageCostPosition.Known(remainingKg, AverageCostPrecision.Round(remainingValue / remainingKg));
+    }
+
+    /// <summary>
+    /// SAT-D371 (completes SAT-D306 (c)): whether a purchase return of <paramref name="quantityKg"/> leaving a readable
+    /// position at <paramref name="unitCostPerStockKg"/> (base currency, per stock kilogram) would leave the cost
+    /// difference that the purchase-return step of <see cref="Apply"/> answers as unreadable: a residual value at zero
+    /// stock, or a remaining value that is not positive. The account of that difference is named by the Finance
+    /// accounting-voucher spec; until then the caller refuses such a return. A position that is not readable, or a
+    /// return larger than the position, has no measurable difference here (those paths keep their own rules). A cost
+    /// that is unknown is not passed in: a zero or negative cost is a caller error.
+    /// </summary>
+    public static bool PurchaseReturnLeavesCostDifference(
+        AverageCostPosition current, decimal quantityKg, decimal unitCostPerStockKg)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        if (quantityKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantityKg), "A return moves a positive quantity.");
+        }
+
+        if (unitCostPerStockKg <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(unitCostPerStockKg), "A known return cost is positive; an unknown cost is not passed in.");
+        }
+
+        if (current.Status != AverageCostStatus.Known
+            || current.QuantityKg is not { } heldKg
+            || current.AverageCostPerKg is not { } heldCost
+            || quantityKg > heldKg)
+        {
+            return false;
+        }
+
+        return LeavesCostDifference(heldKg, heldCost, quantityKg, unitCostPerStockKg);
+    }
+
+    /// <summary>SAT-D306 (c): the single rule both the ledger step and the SAT-D371 refusal read.</summary>
+    private static bool LeavesCostDifference(decimal heldKg, decimal heldCost, decimal quantityKg, decimal returnCost)
+    {
+        var remainingKg = heldKg - quantityKg;
+        var remainingValue = (heldKg * heldCost) - (quantityKg * returnCost);
+        return remainingKg == 0m ? remainingValue != 0m : remainingValue <= 0m;
     }
 
     private static AverageCostPosition ApplyIssue(AverageCostPosition? current, AverageCostMovement movement)

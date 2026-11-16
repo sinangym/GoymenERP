@@ -72,7 +72,8 @@ public enum ProductManufacturingDimensionSourceV2
 /// <summary>
 /// The shared card's "Ebat/kalınlık" row as stored: millimetres at full stored precision (at most three decimals), never
 /// rounded or inferred here. <c>SectionKind</c> is one of <see cref="ProductDimensionSectionKindsV1"/>. The kg/m of the row is
-/// published in <see cref="ProductManufacturingUnitWeightV2"/>, with its source.
+/// published in <see cref="ProductManufacturingUnitWeightV2"/>, with its source. The trailing KLN-D87 fields (structural
+/// profile series and size, welded mesh spacing, painted family surface finish) are null for every other section kind.
 /// </summary>
 public sealed record ProductManufacturingDimensionV2(
     ProductManufacturingDimensionSourceV2 Source,
@@ -83,7 +84,11 @@ public sealed record ProductManufacturingDimensionV2(
     decimal? LengthMm,
     decimal? HeightMm,
     decimal? OuterDiameterMm,
-    decimal? WallThicknessMm);
+    decimal? WallThicknessMm,
+    string? ProfileSeries = null,
+    string? ProfileSize = null,
+    decimal? MeshSpacingMm = null,
+    string? SurfaceFinish = null);
 
 /// <summary>
 /// Where a unit weight (kg/m) comes from, in the locked priority of DEC-PRD-009 / master §28.2
@@ -95,15 +100,20 @@ public enum ProductManufacturingUnitWeightSourceV2
     None = 0,
 
     /// <summary>
-    /// A manually verified weight. Product has no store for it yet, so V2 never answers it (its owner and store are an open
-    /// question, not chosen here).
+    /// A manually verified weight typed somewhere else than the company table. V2 never answers it: URN-D20 makes the company
+    /// kg/m table (URN-D16) the single source of the "elle doğrulanmış kg/m" of the fason invoice kg check (STK-S32), answered
+    /// here as <see cref="ProductMaster"/> and required through <see cref="ProductVerifiedUnitWeightV2"/>; a free value on the
+    /// card is never used for it.
     /// </summary>
     ManualVerified = 1,
 
     /// <summary>
     /// The product master: the kg/m the "Ebat/kalınlık" read answers — the company's current imported kg/m table value of a
     /// profile (#66 m.21, URN-D16) or of a round tube, where it wins over the formula (#66 m.24). The card never stores a typed
-    /// kg/m (URN-D11); the table version is not part of the recipe binding yet.
+    /// kg/m (URN-D11); the table version is not part of the recipe binding yet. A profile matches the table with width and height
+    /// swapped too (URN-D19); when both directions hold different kg/m the snapshot answers the field error
+    /// <see cref="ProductManufacturingTechnicalSnapshotCodesV2.UnitWeightTableConflict"/>, never one of the two values. Per
+    /// URN-D20 this is the verified kg/m of the fason invoice kg check.
     /// </summary>
     ProductMaster = 2,
 
@@ -160,4 +170,45 @@ public static class ProductManufacturingTechnicalSnapshotCodesV2
 
     /// <summary>The field name of the dimension binding errors.</summary>
     public const string ExpectedDimensionVersionField = "expectedDimensionVersion";
+
+    /// <summary>The field name of the unit weight errors.</summary>
+    public const string UnitWeightField = "unitWeight";
+
+    /// <summary>
+    /// Field error (URN-D19): the company kg/m table holds both directions (width and height swapped) of the stored profile
+    /// measures with different kg/m; neither is answered until the table is corrected.
+    /// </summary>
+    public const string UnitWeightTableConflict = "product_unit_weight_table_conflict";
+
+    /// <summary>
+    /// Refusal (URN-D20): the fason invoice kg check needs the verified kg/m and the company kg/m table has none for the product
+    /// (no row, no table match, or a section kind without one). The check stops; nothing else stands in for it.
+    /// </summary>
+    public const string VerifiedUnitWeightMissing = "product_verified_unit_weight_missing";
+}
+
+/// <summary>
+/// URN-D20 (B-09, STK-S32): the "elle doğrulanmış kg/m" a fason invoice kg check uses is only the company kg/m table value
+/// (URN-D16) the V2 snapshot answers as <see cref="ProductManufacturingUnitWeightSourceV2.ProductMaster"/>. Any other source —
+/// none, a geometric estimate, or a manually typed value — is refused with
+/// <see cref="ProductManufacturingTechnicalSnapshotCodesV2.VerifiedUnitWeightMissing"/> (fail-closed). The check never computes
+/// a fallback weight and never compares; it only says which kg/m the comparison may use.
+/// </summary>
+public static class ProductVerifiedUnitWeightV2
+{
+    /// <summary>True with the table kg/m when the unit weight comes from the company table; otherwise false with the refusal code.</summary>
+    public static bool TryRequire(ProductManufacturingUnitWeightV2 unitWeight, out decimal kgPerMetre, out string? refusalCode)
+    {
+        ArgumentNullException.ThrowIfNull(unitWeight);
+        if (unitWeight is { Source: ProductManufacturingUnitWeightSourceV2.ProductMaster, KgPerMetre: { } value } && value > 0m)
+        {
+            kgPerMetre = value;
+            refusalCode = null;
+            return true;
+        }
+
+        kgPerMetre = 0m;
+        refusalCode = ProductManufacturingTechnicalSnapshotCodesV2.VerifiedUnitWeightMissing;
+        return false;
+    }
 }

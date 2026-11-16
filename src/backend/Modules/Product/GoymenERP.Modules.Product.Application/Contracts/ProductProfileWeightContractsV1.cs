@@ -3,7 +3,10 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// <summary>
 /// URN-D13…D16 (STK-S37R) and KLN-D54: the company-wide kg/m table of the two section kinds whose kg/m is not typed on the card —
 /// <see cref="ProductDimensionSectionKindsV1.Profile"/> (required) and <see cref="ProductDimensionSectionKindsV1.RoundTube"/>
-/// (optional). The table is imported from a file only:
+/// (optional) — and, KLN-D87, of <see cref="ProductDimensionSectionKindsV1.StructuralProfile"/> rows keyed by the standard series
+/// and size designation (the ERW / painted ERW kinds read the round tube / profile rows,
+/// <see cref="ProductDimensionSectionKindsV1.WeightTableKind"/>). The source and version of the standard table are NOT chosen
+/// here (KLN-D87): whichever source-labelled table the company imports is its table. The table is imported from a file only:
 /// <list type="bullet">
 /// <item>URN-D13: the uploaded file is kept in the Platform document vault under the user-upload rules (allowlist, content type,
 /// malware scan) and linked to the import record; without a scanner the import is refused fail-closed. The rows read from the
@@ -73,15 +76,21 @@ public static class ProductProfileWeightInputLimitsV1
 
 /// <summary>
 /// The import file (KLN-D54 reversible detail): UTF-8 text (a byte-order mark is allowed), one header line exactly
-/// <see cref="Header"/>, then one row per line with <see cref="Separator"/> between the fields and a dot as the decimal mark.
+/// <see cref="Header"/> or <see cref="ExtendedHeader"/>, then one row per line with <see cref="Separator"/> between the fields (as
+/// many as the header names) and a dot as the decimal mark.
 /// A <c>Profile</c> row fills width, height, wall and kg/m and leaves the diameter empty; a <c>RoundTube</c> row fills diameter,
-/// wall and kg/m and leaves width and height empty. Millimetres at most three decimals, kg/m at most six; no thousands separator,
-/// no sign, no exponent. A measure pair appears once per file. Empty lines are ignored.
+/// wall and kg/m and leaves width and height empty. KLN-D87: under <see cref="ExtendedHeader"/> a <c>StructuralProfile</c> row
+/// fills kg/m, the series (<see cref="ProductProfileSeriesV1"/>) and the size designation and leaves every measure empty; the
+/// other kinds leave the two trailing fields empty. Millimetres at most three decimals, kg/m at most six; no thousands
+/// separator, no sign, no exponent. A measure pair (or series and size) appears once per file. Empty lines are ignored.
 /// </summary>
 public static class ProductProfileWeightFileFormatV1
 {
     public const char Separator = ';';
     public const string Header = "sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre";
+
+    /// <summary>KLN-D87: the header with the structural profile series and size designation fields.</summary>
+    public const string ExtendedHeader = Header + ";profileSeries;profileSize";
     public const string FileExtension = ".csv";
     public const string ContentType = "text/csv";
 
@@ -116,14 +125,19 @@ public sealed record ImportProductProfileWeightTableRequestV1(
     string? FileName,
     string? ContentBase64);
 
-/// <summary>One kg/m row of a table: a profile (width, height, wall) or a round tube (outer diameter, wall).</summary>
+/// <summary>
+/// One kg/m row of a table: a profile (width, height, wall) or a round tube (outer diameter, wall); KLN-D87: a structural profile
+/// (series and size designation; no measure, so <c>WallThicknessMm</c> is null).
+/// </summary>
 public sealed record ProductProfileWeightRowV1(
     string SectionKind,
     decimal? WidthMm,
     decimal? HeightMm,
     decimal? OuterDiameterMm,
-    decimal WallThicknessMm,
-    decimal KgPerMetre);
+    decimal? WallThicknessMm,
+    decimal KgPerMetre,
+    string? ProfileSeries = null,
+    string? ProfileSize = null);
 
 /// <summary>
 /// The company's current kg/m table, read in <c>CompanyId</c> (the server-resolved company): version "0", no source and no rows

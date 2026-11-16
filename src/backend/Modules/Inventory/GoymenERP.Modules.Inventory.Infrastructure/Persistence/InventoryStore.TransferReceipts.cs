@@ -23,6 +23,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
     internal const string DecideTransferLossCommand = "inventory.transfer.loss-decision.v1";
     private const int ApproveDecision = (int)InventoryTransferDecisionKindV1.Approve;
     private const int RejectDecision = (int)InventoryTransferDecisionKindV1.Reject;
+    /// <summary>The first loss request of a transfer line (KLN-D97); a renewal after a rejection takes the next one.</summary>
+    internal const int FirstLossRequestNumber = 1;
 
     public async Task<InventoryTransferReceiptResultV1?> ReplayReceiveLineAsync(
         Guid transferId,
@@ -107,6 +109,13 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
 
         var dispatchedKg = state.DispatchLine.ActualKg;
         var receivedKg = parsed.Received.Value;
+        if (receivedKg != dispatchedKg && state.Buckets.Count(bucket => bucket.LineId == lineId) != 1)
+        {
+            // KLN-D91: a label dispatched in more than one block/lot bucket is received only with its full dispatched
+            // kilograms. The difference is refused before any excess reason is weighed, and never split over buckets.
+            throw TransferError(409, InventoryTransferReceiptCodesV1.MultiBlockFullReceiptOnly);
+        }
+
         if (receivedKg > dispatchedKg && parsed.OverageReason is null)
         {
             throw TransferError(422, InventoryTransferReceiptCodesV1.OverageReasonRequired);
@@ -115,12 +124,6 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         if (receivedKg <= dispatchedKg && parsed.OverageReason is not null)
         {
             throw TransferError(422, InventoryTransferReceiptCodesV1.OverageReasonNotAllowed);
-        }
-
-        if (receivedKg != dispatchedKg && state.Buckets.Count(bucket => bucket.LineId == lineId) != 1)
-        {
-            // How a difference splits over more than one dispatched block bucket is not decided; nothing is guessed.
-            throw TransferError(409, InventoryTransferReceiptCodesV1.SplitUndecided);
         }
 
         var aggregate = RestoreTransfer(row, state.Lines, state.Dispatch, state.DispatchLines, state.Accepted,
@@ -142,6 +145,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         if (shortageMovement is not null)
         {
             // KLN-D21: the fire is its own movement right after the acceptance, with no tolerance and no approval.
+            // KLN-D90: its cost is the transfer dispatch unit cost (AverageCostCalculator.ValueTransferReceiptShortage),
+            // never the moving average at receipt. Transfers post nothing to the cost ledger yet (KLN-D64 (2)) and no
+            // accounting entry is written until ledger posting opens (account mapping: Finance spec), so nothing is
+            // valued here today.
             await StageTransferMovementAsync(shortageMovement, metadata, freshAuthorityFence, cancellationToken);
         }
 
@@ -393,18 +400,30 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             return keyReplay;
         }
 
-        if (await dbContext.TransferLossRequests.AsNoTracking()
-                .SingleOrDefaultAsync(row => row.TransferId == transferId && row.LineId == lineId,
-                    cancellationToken) is { } prior)
+        // KLN-D97: requests are numbered per line. A rejected request stays as it was; a new one takes the next number.
+        var prior = await dbContext.TransferLossRequests.AsNoTracking()
+            .Where(candidate => candidate.TransferId == transferId && candidate.LineId == lineId)
+            .OrderByDescending(candidate => candidate.RequestNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+        InventoryTransferLossDecisionRow? priorDecision = null;
+        if (prior is not null)
         {
-            var priorResult = await ReceiptResultAsync(transferId, prior.CorrelationId, cancellationToken);
-            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
-            if (!string.Equals(prior.PayloadHash, payloadHash, StringComparison.Ordinal))
+            if (string.Equals(prior.PayloadHash, payloadHash, StringComparison.Ordinal))
             {
-                throw TransferError(409, InventoryTransferReceiptCodesV1.LossAlreadyRequested);
+                var priorResult = await ReceiptResultAsync(transferId, prior.CorrelationId, cancellationToken);
+                await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                return priorResult;
             }
 
-            return priorResult;
+            priorDecision = await dbContext.TransferLossDecisions.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
+                    && candidate.RequestNumber == prior.RequestNumber, cancellationToken);
+            if (priorDecision is null)
+            {
+                // ASSUMPTION (KLN-D97, reversible implementation detail): one undecided request per line at a time.
+                await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                throw TransferError(409, InventoryTransferReceiptCodesV1.LossAlreadyRequested);
+            }
         }
 
         var row = await dbContext.Transfers.SingleOrDefaultAsync(candidate => candidate.Id == transferId, cancellationToken);
@@ -418,6 +437,16 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         {
             throw TransferError(409, InventoryTransferCodesV1.TransferVersionConflict);
         }
+
+        // An approved request wrote the line off (terminal); a new request may only follow a rejection, and never
+        // predates that rejection.
+        if (priorDecision is not null
+            && (priorDecision.Decision != RejectDecision || request.RequestedAtUtc < priorDecision.DecidedAtUtc))
+        {
+            throw TransferError(409, InventoryTransferCodesV1.TransferStateConflict);
+        }
+
+        var requestNumber = prior is null ? FirstLossRequestNumber : prior.RequestNumber + 1;
 
         var lineExists = await dbContext.TransferLines.AsNoTracking()
             .AnyAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId, cancellationToken);
@@ -445,6 +474,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             CompanyId = row.CompanyId,
             TransferId = row.Id,
             LineId = lineId,
+            RequestNumber = requestNumber,
             Explanation = parsed.Explanation,
             RequestedAtUtc = request.RequestedAtUtc,
             PayloadHash = payloadHash,
@@ -461,8 +491,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             view, facts));
         Audit(metadata, row.CompanyId, TransferEntityType, row.Id, "inventory.transfer.loss-requested.v1",
             "RequestLoss", parsed.ExpectedVersion, row.Version, "{}",
-            JsonSerializer.Serialize(new { lineId, explanation = parsed.Explanation }, Json),
-            "Transfer satırı için yolda kayıp talebi kaydedildi");
+            JsonSerializer.Serialize(new { lineId, requestNumber, explanation = parsed.Explanation }, Json),
+            requestNumber == 1
+                ? "Transfer satırı için yolda kayıp talebi kaydedildi"
+                : "Reddedilen talebin ardından transfer satırı için yeni yolda kayıp talebi kaydedildi");
         return await SaveReceiptAsync(view, facts, lossRequest.CorrelationId, metadata, RequestTransferLossCommand,
             keyHash, payloadHash, freshAuthorityFence, cancellationToken);
     }
@@ -504,9 +536,10 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             return keyReplay;
         }
 
+        var requestNumber = parsed.RequestNumber;
         if (await dbContext.TransferLossDecisions.AsNoTracking()
-                .SingleOrDefaultAsync(row => row.TransferId == transferId && row.LineId == lineId,
-                    cancellationToken) is { } prior)
+                .SingleOrDefaultAsync(row => row.TransferId == transferId && row.LineId == lineId
+                    && row.RequestNumber == requestNumber, cancellationToken) is { } prior)
         {
             var priorResult = await ReceiptResultAsync(transferId, prior.CorrelationId, cancellationToken);
             await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -533,8 +566,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         var lineExists = await dbContext.TransferLines.AsNoTracking()
             .AnyAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId, cancellationToken);
         var lossRequest = await dbContext.TransferLossRequests.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId,
-                cancellationToken);
+            .SingleOrDefaultAsync(candidate => candidate.TransferId == transferId && candidate.LineId == lineId
+                && candidate.RequestNumber == requestNumber, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (!lineExists)
         {
@@ -548,7 +581,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
 
         if (string.Equals(lossRequest.RecordedBy, metadata.ActorId.Trim(), StringComparison.Ordinal))
         {
-            // KLN-D23 (c) maker≠approver: the requester never approves or rejects their own loss request.
+            // KLN-D23 (c), KLN-D92, KLN-D97 maker≠approver: the requester never approves or rejects their own loss
+            // request, a renewed one included.
             throw TransferError(409, InventoryTransferReceiptCodesV1.SelfApproval);
         }
 
@@ -561,6 +595,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             CompanyId = row.CompanyId,
             TransferId = row.Id,
             LineId = lineId,
+            RequestNumber = requestNumber,
             Decision = parsed.Decision,
             Reason = parsed.Reason,
             DecidedAtUtc = request.DecidedAtUtc,
@@ -616,6 +651,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             {
                 transfer = view,
                 lineId,
+                requestNumber,
                 decision = ((InventoryTransferDecisionKindV1)parsed.Decision).ToString(),
                 reason = parsed.Reason,
                 requestedBy = lossRequest.RecordedBy,
@@ -651,19 +687,24 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             .Where(candidate => candidate.TransferId == transferId && candidate.Decision == ApproveDecision)
             .ToListAsync(cancellationToken);
 
-    /// <summary>True when the line carries a loss request that has no decision yet (KLN-D23 (c)).</summary>
+    /// <summary>
+    /// True when the line carries a loss request that has no decision yet (KLN-D23 (c)); a rejected request does not
+    /// count, its renewal (KLN-D97) does until it is decided.
+    /// </summary>
     private Task<bool> LossPendingAsync(Guid transferId, Guid lineId, CancellationToken cancellationToken) =>
         dbContext.TransferLossRequests.AsNoTracking()
             .AnyAsync(request => request.TransferId == transferId && request.LineId == lineId
                 && !dbContext.TransferLossDecisions.Any(decision => decision.TransferId == request.TransferId
-                    && decision.LineId == request.LineId), cancellationToken);
+                    && decision.LineId == request.LineId && decision.RequestNumber == request.RequestNumber),
+                cancellationToken);
 
-    /// <summary>True when any line of the transfer has a loss request that was not rejected.</summary>
-    private Task<bool> HasOpenOrApprovedLossRequestAsync(Guid transferId, CancellationToken cancellationToken) =>
+    /// <summary>True when any line of the transfer carries an undecided loss request (KLN-D98).</summary>
+    private Task<bool> HasPendingLossRequestAsync(Guid transferId, CancellationToken cancellationToken) =>
         dbContext.TransferLossRequests.AsNoTracking()
             .AnyAsync(request => request.TransferId == transferId
                 && !dbContext.TransferLossDecisions.Any(decision => decision.TransferId == request.TransferId
-                    && decision.LineId == request.LineId && decision.Decision == RejectDecision), cancellationToken);
+                    && decision.LineId == request.LineId && decision.RequestNumber == request.RequestNumber),
+                cancellationToken);
 
     private async Task<ReceiptState> LoadReceiptStateAsync(
         InventoryTransferRow row,
@@ -755,7 +796,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                 .Select(line => new { line.LineId, line.Sequence }).ToListAsync(cancellationToken))
             .ToDictionary(line => line.LineId, line => line.Sequence);
         var overageByLine = overageDecisions.ToDictionary(decision => decision.LineId);
-        var lossDecisionByLine = lossDecisions.ToDictionary(decision => decision.LineId);
+        var lossDecisionByRequest = lossDecisions.ToDictionary(decision => (decision.LineId, decision.RequestNumber));
         return new InventoryTransferReceiptFactsViewV1(row.Id, row.CompanyId,
             row.Version.ToString(CultureInfo.InvariantCulture), ((InventoryTransferStatus)row.Status).ToString(),
             [.. receipts.OrderBy(receipt => sequence.GetValueOrDefault(receipt.LineId)).Select(receipt =>
@@ -776,10 +817,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
                     decision?.DecidedBy,
                     decision?.MovementId);
             })],
-            [.. lossRequests.OrderBy(request => sequence.GetValueOrDefault(request.LineId)).Select(request =>
+            [.. lossRequests.OrderBy(request => sequence.GetValueOrDefault(request.LineId))
+                .ThenBy(request => request.RequestNumber).Select(request =>
             {
-                lossDecisionByLine.TryGetValue(request.LineId, out var decision);
-                return new InventoryTransferLossViewV1(request.LineId, request.Explanation, request.RequestedAtUtc,
+                lossDecisionByRequest.TryGetValue((request.LineId, request.RequestNumber), out var decision);
+                return new InventoryTransferLossViewV1(request.LineId, request.RequestNumber, request.Explanation,
+                    request.RequestedAtUtc,
                     request.RecordedBy, DecisionStatus(decision?.Decision), decision?.Reason, decision?.DecidedAtUtc,
                     decision?.DecidedBy, decision?.MovementId);
             })]);
@@ -946,27 +989,46 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         return (expectedVersion, explanation, payloadHash);
     }
 
-    private static ParsedDecision LossDecisionPayload(Guid transferId, Guid lineId, DecideInventoryTransferLossV1 request)
+    private static ParsedLossDecision LossDecisionPayload(
+        Guid transferId,
+        Guid lineId,
+        DecideInventoryTransferLossV1 request)
     {
         var reason = InventoryTransferReceiptApiV1.NormalizeText(request.Reason);
         if (transferId == Guid.Empty || lineId == Guid.Empty
             || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
             || !Enum.IsDefined(request.Decision)
-            || request.DecidedAtUtc.Offset != TimeSpan.Zero || reason is null)
+            || request.DecidedAtUtc.Offset != TimeSpan.Zero || reason is null
+            || request.RequestNumber is < FirstLossRequestNumber)
         {
             throw TransferError(400, InventoryTransferCodesV1.ValidationFailed);
         }
 
-        var payloadHash = GenealogyPayloadHash(new
-        {
-            transferId,
-            lineId,
-            expectedVersion,
-            decision = (int)request.Decision,
-            decidedAtUtc = request.DecidedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
-            reason,
-        });
-        return new(expectedVersion, (int)request.Decision, reason, payloadHash);
+        var decidedAtUtc = request.DecidedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+        // KLN-D97: the request number joins the hash only when it is sent, so a decision recorded before requests
+        // were numbered still replays with its stored hash.
+        var payloadHash = request.RequestNumber is { } sentNumber
+            ? GenealogyPayloadHash(new
+            {
+                transferId,
+                lineId,
+                expectedVersion,
+                requestNumber = sentNumber,
+                decision = (int)request.Decision,
+                decidedAtUtc,
+                reason,
+            })
+            : GenealogyPayloadHash(new
+            {
+                transferId,
+                lineId,
+                expectedVersion,
+                decision = (int)request.Decision,
+                decidedAtUtc,
+                reason,
+            });
+        return new(expectedVersion, request.RequestNumber ?? FirstLossRequestNumber, (int)request.Decision, reason,
+            payloadHash);
     }
 
     private sealed record ParsedReceipt(
@@ -977,6 +1039,13 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         string PayloadHash);
 
     private sealed record ParsedDecision(long ExpectedVersion, int Decision, string Reason, string PayloadHash);
+
+    private sealed record ParsedLossDecision(
+        long ExpectedVersion,
+        int RequestNumber,
+        int Decision,
+        string Reason,
+        string PayloadHash);
 
     private sealed record ReceiptState(
         IReadOnlyList<InventoryTransferLineRow> Lines,

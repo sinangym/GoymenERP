@@ -148,6 +148,8 @@ function TableView({ view }: { readonly view: ProfileWeightTableView }) {
             <th scope="col">{PROFILE_WEIGHT_TEXT.columnDiameter}</th>
             <th scope="col">{PROFILE_WEIGHT_TEXT.columnWall}</th>
             <th scope="col">{PROFILE_WEIGHT_TEXT.columnKg}</th>
+            <th scope="col">{PROFILE_WEIGHT_TEXT.columnSeries}</th>
+            <th scope="col">{PROFILE_WEIGHT_TEXT.columnSize}</th>
           </tr>
         </thead>
         <tbody>
@@ -157,8 +159,10 @@ function TableView({ view }: { readonly view: ProfileWeightTableView }) {
               <td>{cell(row.widthMm)}</td>
               <td>{cell(row.heightMm)}</td>
               <td>{cell(row.outerDiameterMm)}</td>
-              <td>{String(row.wallThicknessMm)}</td>
+              <td>{cell(row.wallThicknessMm)}</td>
               <td>{String(row.kgPerMetre)}</td>
+              <td>{row.profileSeries ?? PROFILE_WEIGHT_TEXT.noValue}</td>
+              <td>{row.profileSize ?? PROFILE_WEIGHT_TEXT.noValue}</td>
             </tr>
           ))}
         </tbody>
@@ -280,6 +284,9 @@ function ImportForm({
       </label>
       <p className={styles.note}>
         {PROFILE_WEIGHT_TEXT.fileFormat} <code>{PROFILE_WEIGHT_LIMITS.header}</code>
+      </p>
+      <p className={styles.note}>
+        {PROFILE_WEIGHT_TEXT.extendedFileFormat} <code>{PROFILE_WEIGHT_LIMITS.extendedHeader}</code>
       </p>
       <label>
         {PROFILE_WEIGHT_TEXT.sourceLabelLabel}

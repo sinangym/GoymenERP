@@ -9,7 +9,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// B-22b (STK-S5) actual SQL: the dispatch cancellation migration rolls back while nothing it added holds data and its
-/// Down refuses (THROW 51471) once a cancelled dispatch exists, leaving the reverse movement and the cancellation row in
+/// Down refuses (THROW 51823) once a cancelled dispatch exists, leaving the reverse movement and the cancellation row in
 /// place. KLN-D64 (2): the cancellation returns the stock to its source position and, like the dispatch, writes nothing
 /// to the average-cost ledger. SENTETIK data only.
 /// </summary>
@@ -18,7 +18,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private const string TransferDispatchCancelReason = "SENTETIK yanlis sevk";
 
     [SqlServerFact]
-    public async Task Transfer_dispatch_cancellation_migration_rolls_back_when_empty_and_refuses_with_51471_after_a_cancelled_dispatch()
+    public async Task Transfer_dispatch_cancellation_migration_rolls_back_when_empty_and_refuses_with_51823_after_a_cancelled_dispatch()
     {
         const string previousMigration = "20261115142457_AddInventoryFutureSupplyAllocations";
         const string currentMigration = "20261115151824_AddInventoryTransferDispatchCancellation";
@@ -53,7 +53,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             var rejected = await Assert.ThrowsAsync<SqlException>(
                 () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
-            Assert.Equal(51471, rejected.Number);
+            Assert.Equal(51823, rejected.Number);
             Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
         }
 

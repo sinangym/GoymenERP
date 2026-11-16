@@ -460,6 +460,44 @@ internal sealed class StockScrapDecisionRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// SAT-D304 opening-stock cost submission: the manually entered base-currency unit cost per stock kilogram of one
+/// (location, product) position, with its mandatory reason. A submission changes no cost ledger.
+/// <see cref="PayloadHash"/> is the canonical request, so the same id again is a replay or a conflict. The submitter is
+/// kept for the maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class OpeningCostRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public decimal UnitCostPerKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on an opening-cost submission: approved with the company's own stock on hand it costed (the schema
+/// requires a positive figure), or rejected with none. The key (company, submission) allows exactly one decision.
+/// Append-only.
+/// </summary>
+internal sealed class OpeningCostDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OpeningCostId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public decimal? CostedStockKg { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
 /// <summary>INV-R20 same-company transfer header. Only lifecycle status/version/update time may advance.</summary>
 internal sealed class InventoryTransferRow : IInventoryTenantRow
 {
@@ -643,12 +681,16 @@ internal sealed class InventoryTransferOverageDecisionRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>KLN-D23 (c): the one immutable loss request of a pending line, with its explanation.</summary>
+/// <summary>
+/// KLN-D23 (c): one immutable loss request of a pending line, with its explanation. KLN-D97: requests are numbered per
+/// line from 1; a rejected request stays as it was and a new one takes the next number.
+/// </summary>
 internal sealed class InventoryTransferLossRequestRow : IInventoryTenantRow
 {
     public Guid CompanyId { get; set; }
     public Guid TransferId { get; set; }
     public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
     public string Explanation { get; set; } = string.Empty;
     public DateTimeOffset RequestedAtUtc { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
@@ -657,12 +699,16 @@ internal sealed class InventoryTransferLossRequestRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>KLN-D23 (c): the one immutable decision on a loss request (1 approve with movement, 2 reject).</summary>
+/// <summary>
+/// KLN-D23 (c): the one immutable decision on one numbered loss request (1 approve with movement, 2 reject); a line
+/// has at most one approval.
+/// </summary>
 internal sealed class InventoryTransferLossDecisionRow : IInventoryTenantRow
 {
     public Guid CompanyId { get; set; }
     public Guid TransferId { get; set; }
     public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
     public int Decision { get; set; }
     public string Reason { get; set; } = string.Empty;
     public Guid? MovementId { get; set; }
@@ -671,4 +717,30 @@ internal sealed class InventoryTransferLossDecisionRow : IInventoryTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string DecidedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D22: the immutable link of one reverse transfer (a new transfer in the opposite direction) to the accepted
+/// transfer it undoes, with the mandatory reason. One link per reverse transfer.
+/// </summary>
+internal sealed class InventoryTransferReversalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid OriginalTransferId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>KLN-D22: one reverse transfer line and the accepted original line it brings back. Immutable.</summary>
+internal sealed class InventoryTransferReversalLineRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public Guid OriginalTransferId { get; set; }
+    public Guid OriginalLineId { get; set; }
 }

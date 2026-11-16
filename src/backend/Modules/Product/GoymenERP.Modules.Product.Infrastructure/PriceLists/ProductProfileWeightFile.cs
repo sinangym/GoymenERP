@@ -7,12 +7,14 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// <summary>
 /// URN-D13/D16: reads the rows of one kg/m table file (<see cref="ProductProfileWeightFileFormatV1"/>) on the server. Nothing is
 /// rounded or guessed: a value with more decimals than its column holds, a missing or extra field, an unknown kind, a solid or
-/// impossible section or a repeated measure pair refuses the whole file with its line number (Turkish, for the detail).
+/// impossible section or a repeated measure pair refuses the whole file with its line number (Turkish, for the detail). KLN-D87:
+/// under the extended header a structural profile row is keyed by its series and size designation.
 /// </summary>
 internal static class ProductProfileWeightFile
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     internal const int FieldCount = 6;
+    private const int ExtendedFieldCount = 8;
 
     /// <summary>Null when the CSV file is a valid table; otherwise the reason. <paramref name="rows"/> keep the file order.</summary>
     internal static string? Refusal(byte[] content, out IReadOnlyList<ProductProfileWeightRowV1> rows) =>
@@ -53,7 +55,7 @@ internal static class ProductProfileWeightFile
                 return "Dosya türü desteklenmiyor.";
         }
 
-        return LinesRefusal(lines, out rows);
+        return LinesRefusal(kind, lines, out rows);
     }
 
     private static string? CsvLines(byte[] content, out IReadOnlyList<SourceLine> lines)
@@ -89,21 +91,30 @@ internal static class ProductProfileWeightFile
         return null;
     }
 
-    /// <summary>The shared table rules: the header line first, then the rows (same rules for CSV and XLSX).</summary>
-    private static string? LinesRefusal(IReadOnlyList<SourceLine> lines, out IReadOnlyList<ProductProfileWeightRowV1> rows)
+    /// <summary>
+    /// The shared table rules: the header line first (standard or KLN-D87 extended), then the rows (same rules for CSV and XLSX).
+    /// A worksheet drops trailing empty cells, so an XLSX row shorter than the header's field count is padded with empty fields.
+    /// </summary>
+    private static string? LinesRefusal(ProductProfileWeightFileKindV1 kind, IReadOnlyList<SourceLine> lines,
+        out IReadOnlyList<ProductProfileWeightRowV1> rows)
     {
         rows = [];
         var parsed = new List<ProductProfileWeightRowV1>();
-        var keys = new HashSet<(string, decimal?, decimal?, decimal?, decimal)>();
+        var keys = new HashSet<(string, decimal?, decimal?, decimal?, decimal?, string?, string?)>();
         var headerSeen = false;
+        var fieldCount = FieldCount;
         foreach (var line in lines)
         {
             if (!headerSeen)
             {
-                if (!string.Equals(string.Join(ProductProfileWeightFileFormatV1.Separator, line.Fields).Trim(),
-                        ProductProfileWeightFileFormatV1.Header, StringComparison.Ordinal))
+                var header = string.Join(ProductProfileWeightFileFormatV1.Separator, line.Fields).Trim();
+                if (string.Equals(header, ProductProfileWeightFileFormatV1.ExtendedHeader, StringComparison.Ordinal))
                 {
-                    return $"İlk satır başlık olmalıdır: {ProductProfileWeightFileFormatV1.Header}";
+                    fieldCount = ExtendedFieldCount;
+                }
+                else if (!string.Equals(header, ProductProfileWeightFileFormatV1.Header, StringComparison.Ordinal))
+                {
+                    return HeaderRefusal;
                 }
 
                 headerSeen = true;
@@ -115,12 +126,16 @@ internal static class ProductProfileWeightFile
                 return $"Dosya en fazla {ProductProfileWeightInputLimitsV1.MaximumRows} satır içerebilir.";
             }
 
-            if (Row(line.Fields, line.LineNo, out var row) is { } refusal)
+            var fields = kind == ProductProfileWeightFileKindV1.Xlsx && line.Fields.Count < fieldCount
+                ? [.. line.Fields, .. Enumerable.Repeat(string.Empty, fieldCount - line.Fields.Count)]
+                : line.Fields;
+            if (Row(fields, line.LineNo, fieldCount, out var row) is { } refusal)
             {
                 return refusal;
             }
 
-            if (!keys.Add((row!.SectionKind, row.WidthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm)))
+            if (!keys.Add((row!.SectionKind, row.WidthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, row.ProfileSeries,
+                    row.ProfileSize)))
             {
                 return $"Satır {line.LineNo}: aynı ölçü dosyada birden fazla kez geçiyor.";
             }
@@ -130,7 +145,7 @@ internal static class ProductProfileWeightFile
 
         if (!headerSeen)
         {
-            return $"İlk satır başlık olmalıdır: {ProductProfileWeightFileFormatV1.Header}";
+            return HeaderRefusal;
         }
 
         if (parsed.Count == 0)
@@ -142,18 +157,31 @@ internal static class ProductProfileWeightFile
         return null;
     }
 
-    private static string? Row(IReadOnlyList<string> fields, int lineNo, out ProductProfileWeightRowV1? row)
+    private static string HeaderRefusal =>
+        $"İlk satır başlık olmalıdır: {ProductProfileWeightFileFormatV1.Header} veya {ProductProfileWeightFileFormatV1.ExtendedHeader}";
+
+    private static string? Row(IReadOnlyList<string> fields, int lineNo, int fieldCount, out ProductProfileWeightRowV1? row)
     {
         row = null;
-        if (fields.Count != FieldCount)
+        if (fields.Count != fieldCount)
         {
-            return $"Satır {lineNo}: {FieldCount} alan olmalıdır.";
+            return $"Satır {lineNo}: {fieldCount} alan olmalıdır.";
         }
 
         var kind = fields[0].Trim();
-        if (kind is not (ProductDimensionSectionKindsV1.Profile or ProductDimensionSectionKindsV1.RoundTube))
+        var structural = fieldCount == ExtendedFieldCount && kind == ProductDimensionSectionKindsV1.StructuralProfile;
+        if (!structural && kind is not (ProductDimensionSectionKindsV1.Profile or ProductDimensionSectionKindsV1.RoundTube))
         {
-            return $"Satır {lineNo}: kesit türü Profile veya RoundTube olmalıdır.";
+            return fieldCount == ExtendedFieldCount
+                ? $"Satır {lineNo}: kesit türü Profile, RoundTube veya StructuralProfile olmalıdır."
+                : $"Satır {lineNo}: kesit türü Profile veya RoundTube olmalıdır.";
+        }
+
+        var series = fieldCount == ExtendedFieldCount ? fields[6].Trim() : string.Empty;
+        var size = fieldCount == ExtendedFieldCount ? fields[7].Trim() : string.Empty;
+        if (!structural && (series.Length > 0 || size.Length > 0))
+        {
+            return $"Satır {lineNo}: profil serisi ve ölçü adı yalnız yapısal profil satırında girilir.";
         }
 
         if (!TryNumber(fields[1], out var width) || !TryNumber(fields[2], out var height)
@@ -174,6 +202,29 @@ internal static class ProductProfileWeightFile
         {
             return $"Satır {lineNo}: metre ağırlığı zorunludur; sıfırdan büyük ve en fazla "
                 + $"{ProductDimensionInputLimitsV1.KgPerMetreDecimals} ondalıklı olmalıdır.";
+        }
+
+        if (structural)
+        {
+            if (width is not null || height is not null || diameter is not null || wall is not null)
+            {
+                return $"Satır {lineNo}: yapısal profil için seri, ölçü adı ve metre ağırlığı girilir; ölçüler boş kalır.";
+            }
+
+            if (!ProductProfileSeriesV1.IsKnown(series))
+            {
+                return $"Satır {lineNo}: yapısal profil serisi UPN (NPU), NPI, IPE, HEA, HEB veya HEM olmalıdır.";
+            }
+
+            if (!ProductDimensionShape.IsProfileSize(size))
+            {
+                return $"Satır {lineNo}: profil ölçü adı en fazla {ProductDimensionInputLimitsV1.ProfileSizeMaximumLength} karakter; "
+                    + "büyük harf, rakam ve nokta olmalıdır.";
+            }
+
+            row = new ProductProfileWeightRowV1(kind, null, null, null, null, ProductDimensionShape.Canonical(kg)!.Value, series,
+                size);
+            return null;
         }
 
         if (wall is null)
@@ -207,7 +258,7 @@ internal static class ProductProfileWeightFile
         }
 
         row = new ProductProfileWeightRowV1(kind, ProductDimensionShape.Canonical(width), ProductDimensionShape.Canonical(height),
-            ProductDimensionShape.Canonical(diameter), ProductDimensionShape.Canonical(wall)!.Value,
+            ProductDimensionShape.Canonical(diameter), ProductDimensionShape.Canonical(wall),
             ProductDimensionShape.Canonical(kg)!.Value);
         return null;
     }

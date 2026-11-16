@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Inventory.Domain.Quantities;
+
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
@@ -115,6 +117,7 @@ public sealed record InventoryProductVersionV1(Guid ProductId, string ProductVer
 /// template and every controlled attribute value); it is null when the product has no accepted technical facts, and such
 /// a product is never similar to anything. Measures are the card's nominal millimetres; a null measure is not defined.
 /// <see cref="ProductCode"/>/<see cref="ProductName"/> are null only when the exact version is not readable.
+/// <see cref="CoatingCode"/> is the product's stored coating code (KLN-D95); a null coating is never similar to anything.
 /// </summary>
 public sealed record InventoryProductSimilarityFactsV1(
     Guid ProductId,
@@ -124,7 +127,8 @@ public sealed record InventoryProductSimilarityFactsV1(
     string? SimilarityKey,
     decimal? ThicknessMm,
     decimal? WidthMm,
-    decimal? LengthMm);
+    decimal? LengthMm,
+    string? CoatingCode);
 
 /// <summary>
 /// Reads <see cref="InventoryProductSimilarityFactsV1"/> for a batch of exact product versions in the server-resolved
@@ -185,12 +189,17 @@ public sealed class DisabledInventoryAllocationAiSuggestionToolV1 : IInventoryAl
         Task.FromException<IReadOnlyList<Guid>>(new InvalidOperationException("AI öneri aracı kapalı."));
 }
 
-/// <summary>The suggestion query, as the host derives it from the approved Sales line (never from the caller).</summary>
+/// <summary>
+/// The suggestion query. Order, line, product and version are derived by the host from the approved Sales line (never
+/// from the caller). <see cref="RequestedKg"/> is the kilograms the user is about to reserve, as typed on the screen:
+/// when stated, the line's own product labels are listed closest to it first (KLN-D99); it never selects a label.
+/// </summary>
 public sealed record InventoryAllocationSuggestionQueryV1(
     Guid SalesOrderId,
     Guid SalesOrderLineId,
     Guid ProductId,
-    string ProductVersion);
+    string ProductVersion,
+    Kilograms? RequestedKg = null);
 
 /// <summary>
 /// One suggested label. <see cref="UnreservedKg"/> is the label's free kilograms minus its active allocations;
@@ -210,6 +219,10 @@ public sealed record InventoryAllocationSuggestionV1(
     string UnreservedKg,
     string? MaximumDeviationPercent);
 
+/// <summary>
+/// The suggestion answer. <see cref="RequestedKg"/> echoes the query's requested kilograms as invariant text (null when
+/// none was stated); when it is set, same-product items are ordered by KLN-D99 proximity, otherwise by label code.
+/// </summary>
 public sealed record InventoryAllocationSuggestionsV1(
     Guid CompanyId,
     Guid SalesOrderId,
@@ -219,7 +232,8 @@ public sealed record InventoryAllocationSuggestionsV1(
     string SimilarProductMode,
     string AiSuggestions,
     bool Truncated,
-    IReadOnlyList<InventoryAllocationSuggestionV1> Items);
+    IReadOnlyList<InventoryAllocationSuggestionV1> Items,
+    string? RequestedKg);
 
 /// <summary>
 /// The suggestion read (KLN-D34/D39): labels of the line's own product with unreserved free kilograms; when there is none,

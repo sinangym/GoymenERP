@@ -400,7 +400,9 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
 
 | Rule | Where | Held by |
 |---|---|---|
-| A count names one stocked label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts, or none, is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| A count names one label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| **SAT-D330 (STK-S22): a label the system shows at 0 is countable.** With no stocked position, the count is taken at the zero balance row the label was last emptied at: its only stored row, or — when it was moved before — the one zero row named by the label's last movement (book = 0). A label never stocked (no balance row), a label a split/merge/manufacturing transformation consumed (its kg live on in its outputs; a surplus would count the same steel twice) and several candidate rows stay `inventory_stock_count_position_conflict`. An approved surplus puts the label back in stock through the same `CountAdjustment`. `CK_StockCounts_State` allows `BookKg >= 0` (`AllowInventoryZeroBookStockCounts`; its `Down` refuses (THROW 51748) while a zero-book count exists, forward fix) | `CountedPositionAsync`, `InventoryDbContext.StockCountStateCheck` | store + SQL |
+| **SAT-D329:** a movement the ledger refuses (negative physical stock — an over-issue, a stopped transaction) leaves the label's kg and version untouched, so the label is never locked by it: the next issue, and a count at the unchanged version, go through | `StockLedger.Apply` (refuses before any write) | ledger + SQL test |
 | A reason is mandatory (≤ 1000, trimmed); counted kg is canonical, ≥ 0, ≤ 3 decimals and on the company's approved kg profile at the count date | `ParseStockCount`, `InventoryKilogramScale` | store (400) |
 | Recording changes no stock and bumps no label version; a zero difference closes at once (`NoDifference`) | `InventoryStore.StockCounts.cs` | store |
 | The difference is final only after a decision under `inventory.stock-count.approve`; recording needs `inventory.stock-count.record`; both company-wide, measured fresh twice before the single owner transaction | `InventoryStockCountCommandService` | command (403/503) |
@@ -419,8 +421,17 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
   time (DEC-SET-001 snapshot), not a code constant.
 - `INV-R21-REASON-LIST-01`: no closed reason list is decided (DEC-STK-007 names "sebep" only); the reason is free
   text. A closed list, if decided, is an additive `ReasonCode` beside the text.
-- Out of this slice: counting a label with no stored stock ("found stock"), a whole-location count sheet, transfer
-  (R20, INV-R20-R21-01 Q1) and cost/valuation of the adjustment (OPEN-008).
+- Out of this slice: a whole-location count sheet and transfer (R20, INV-R20-R21-01 Q1).
+- **Cost of the adjustment (SAT-D331, SAT-D334; STK-S22 partial):** the pure rule is `StockCountCostCalculator`
+  (domain). A surplus is valued at the location/product moving-average cost and leaves the average unchanged; a
+  position at zero stock uses its last average (SAT-D296); an unreadable or never-recorded position leaves the cost
+  "hesaplanamadı" while the surplus is still added — for every surplus, not only a label shown at 0. A shortage is
+  valued at the current average; an unreadable or never-recorded average stops the deduction ("hesaplanamadı").
+  SAT-D331 (5) makes this wait for the average-cost ledger to be wired to stock movements, which no slice has done
+  yet: until then the approval posts its `CountAdjustment` with cost `NotCalculated` (as before) and does not apply the
+  shortage stop, because every position would read "no source" and every shortage would be refused. Wiring the rule
+  into `DecideStockCountAsync` (read port `IInventoryAverageCostReadPortV1`, base currency for `CostResult.Known`) is
+  the follow-up of that ledger wiring.
 
 **Central publication (coordinator):** register `inventory.stock-count.record` and `inventory.stock-count.approve`
 (company-wide) in `ErpPermissions`; `builder.Services.AddInventoryStockCounts();` and `app.MapInventoryStockCountEndpoints();`
@@ -579,12 +590,63 @@ Refs: KLN-D20, KLN-D25 (6)/(7), KLN-D27, LOJ-D10, LOJ-D11.
   writing. No gate port, a failing read or a malformed answer is a code-less 503.
 - **Migration.** `AddInventoryTransferDispatchCancellation` adds the column (default Off) with
   `CK_TransferDispatches_SourceScaleSetting`, both tables, widens `CK_Transfers_State` to status 5 and
-  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51471) while a kind 11 movement, a cancellation or closure row,
+  `CK_Movements_Kind` to 11. Its `Down` refuses (THROW 51823) while a kind 11 movement, a cancellation or closure row,
   a non-Off stored setting or a cancelled transfer exists (forward fix).
 - **Not decided here (NEEDS-SINAN, fail-closed):** the cost golden of the reverse movement (transfers post no cost
   today), whether an unreadable reading should ever be persisted, whether dispatch should refuse an unreadable
   setting, and the disposition snapshot bucket of a cancellation (counted as other inbound kg today). The real
   Settings and Logistics/e-İrsaliye producers are those owners' integration work.
+
+### STK-S7 — reverse transfer of an accepted transfer (KLN-D22)
+
+- **Rule:** an accepted transfer is never cancelled. `POST /api/v1/inventory/transfers/{transferId}/reverse` plans a NEW
+  transfer from the original destination (location and custodian) back to the original source, under
+  `inventory.stock-transfer.write` (no new permission name). The reason (max 500, no control characters) and the link to
+  the original transfer and to each accepted original line are mandatory; `inventory.TransferReversals` and
+  `inventory.TransferReversalLines` hold that link. The reverse transfer moves stock only through the ordinary dispatch
+  and acceptance commands; planning writes no balance, movement or average cost row.
+- **Refusals:** original not PartiallyAccepted/Accepted/Closed → 409 `inventory_transfer_reverse_original_not_accepted`;
+  an original line that was not accepted → 409 `_line_not_accepted`; a receipt excess still waiting for its decision →
+  409 `_overage_pending`; a line already being brought back by a dispatched, not cancelled reverse transfer → 409
+  `_line_already_reversed` (an undispatched reverse plan is inert and does not block); missing reason → 422
+  `_reason_required`; the original source no longer an active destination → 422 `inventory_transfer_destination_*`.
+- **Idempotency:** command row `inventory.transfer.reverse.v1`; the same key or the same reverse transfer id with the
+  same payload replays the stored result, a different payload is 409 `inventory_transfer_idempotency_conflict`. Audit
+  `Inventory.Transfer` (Reverse, `inventory.transfer.reverse-planned.v1`).
+- **Read:** `GET /api/v1/inventory/transfers/{transferId}/reversal-facts` (balances read) answers the link this transfer
+  reverses and the reverse transfers that point at it, with their status.
+- **Migration:** `AddInventoryTransferReversals` creates the two link tables. Its `Down` refuses (THROW 51722) while any
+  link row exists, then drops (forward fix).
+- **Not covered:** returning a pending label by reverse transfer (KLN-D23 (2)(b)).
+
+### STK-SC34-a — receipt follow-ups (KLN-D90, KLN-D91, KLN-D92, KLN-D97, KLN-D98)
+
+- **Shortage cost (KLN-D90).** `AverageCostCalculator.ValueTransferReceiptShortage` values the KLN-D21 fire at the
+  dispatch unit cost, never the moving average at receipt; an unknown or zero dispatch cost has no value, and the
+  value is left unrounded for the Finance accounting-entry spec. Transfers post nothing to the cost ledger yet
+  (KLN-D64 (2)) and the dispatch unit cost is not stored, so no movement path calls the rule; no accounting entry is
+  written until ledger posting opens (account mapping is NEEDS-SPEC, Finance).
+- **Multi-block label (KLN-D91).** A label dispatched in more than one block/lot bucket is received only with its full
+  dispatched kilograms; any difference is 409 `inventory_transfer_receipt_multi_block_full_only` (replaces
+  `inventory_transfer_receipt_split_undecided`), checked before the excess-reason rules, never split over buckets.
+- **Personas (KLN-D92).** `inventory.stock-transfer.loss-record`: Depo Sorumlusu; `overage-approve` and `loss-approve`:
+  Stok/Depo Müdürü and Genel Müdür. A declaration for the grant-time human gate, not a grant: no role, no user, no
+  seed. Maker≠approver stays enforced by the service.
+- **Renewed loss request (KLN-D97).** Loss requests and decisions are numbered per line (`RequestNumber`, from 1). A
+  rejected request stays as it was; `RequestLoss` on the same line opens the next number (not before the rejection,
+  maker≠approver and audit as before). An undecided request blocks a second one (409
+  `inventory_transfer_loss_already_requested`; one undecided request per line is the reversible implementation reading
+  of KLN-D97); an approved one is terminal. `DecideLoss` takes an optional `requestNumber` (absent = 1, so a stale
+  decision never lands on a newer request; the hash includes it only when sent, so old keys still replay). A line is
+  written off at most once (filtered unique index on `[Decision] = 1`). The overage side is not renewed here: a
+  corrected overage request needs a permission and a quantity bound that are not decided (NEEDS-SINAN).
+- **Cancel while a loss request is pending (KLN-D98).** `cancel-dispatch` answers 409
+  `inventory_transfer_cancel_loss_request_pending` before any owner is asked, and the writer re-checks it in its own
+  transaction; the cancel never withdraws the request. An approved write-off still answers
+  `inventory_transfer_state_conflict`. A withdraw command does not exist yet (its permission is NEEDS-SINAN).
+- **Migration.** `AddInventoryTransferLossRequestNumbers` adds `RequestNumber` (existing rows 1) to both loss tables,
+  widens both keys, adds `CK_TransferLossRequests_RequestNumber` and the one-approval-per-line filtered unique index.
+  Its `Down` refuses (THROW 51811) while a renewed request or its decision exists (forward fix).
 
 ## Movement kinds and rollback signal (reference)
 
@@ -637,7 +699,10 @@ Refs: DEC-PRDCT-003, DEC-PRDCT-007, URT-D8, URT-D14.
   separate production status `UsableRemnant` (`inventory.Labels.ProductionStatus` = 1, null for every other label);
   the result echoes it as `ProductionStatus`. It is descriptive only (no movement, block, disposal or sellability
   effect; sellability stays with DEC-PRDCT-007), written once at label creation and not in the label's modifiable
-  columns, so a later manual reclassification keeps it. Split/merge children do not inherit it. A non-remnant output
+  columns, so a later manual reclassification keeps it. Split/merge outputs inherit it by KLN-D46 (in force per KLN-D63
+  and KLN-D86, which voids the SC21 "inheritance stays open" wording): every split child of a remnant label is
+  `UsableRemnant`; a merge result is `UsableRemnant` only when every source is, and null for mixed sources
+  (`InventoryLabelTransformation.InheritedProductionStatus`, read from the stored sources). A non-remnant output
   hashes its idempotency payload exactly as before; a remnant output also binds the effective classification. The
   field is not on the HTTP label reads yet.
 - **Migration:** `WidenInventoryLabelTransformationKindToManufacturing` widens `CK_LabelTransformations_Kind` to

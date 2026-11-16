@@ -11,9 +11,11 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 /// <summary>
-/// ST-05 / AT-037 (DEC-STK-007): record a count of one stocked label, and decide its difference once.
+/// ST-05 / AT-037 (DEC-STK-007): record a count of one label, and decide its difference once.
 /// <list type="bullet">
-/// <item><b>Record:</b> the label at the version the counter saw, holding stock in exactly one stored position.
+/// <item><b>Record:</b> the label at the version the counter saw, holding stock in exactly one stored position, or
+/// (SAT-D330, STK-S22) shown at 0 at the one position it was last emptied at; a label a transformation consumed is
+/// not counted.
 /// The book kg, the position and the counted kg are kept with the mandatory reason. No stock changes, no label
 /// version is bumped: a count is evidence, not an effect. A zero difference closes at once
 /// (<c>NoDifference</c>).</item>
@@ -86,16 +88,13 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             throw StockCountError(409, InventoryStockCountCodesV1.LabelVersionConflict);
         }
 
-        var balances = await dbContext.Balances.AsNoTracking()
-            .Where(row => row.LabelId == label.Id && row.QuantityKg > 0m)
-            .ToListAsync(cancellationToken);
+        var balance = await CountedPositionAsync(label.Id, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
-        if (balances.Count != 1)
+        if (balance is null)
         {
             throw StockCountError(409, InventoryStockCountCodesV1.PositionConflict);
         }
 
-        var balance = balances[0];
         if (balance.ProductId != label.ProductId)
         {
             throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
@@ -107,7 +106,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             count = new StockCount(request.CountId, companyId,
                 Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                     balance.CustodianId, balance.LocationId, IdentityOnly(label), balance.Block),
-                Kilograms.Positive(balance.QuantityKg), counted, request.CountedAtUtc, reason);
+                Kilograms.Of(balance.QuantityKg), counted, request.CountedAtUtc, reason);
         }
         catch (InventoryRuleException exception)
         {
@@ -597,13 +596,77 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             return new StockCount(row.Id, row.CompanyId,
                 Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId, row.LocationId,
                     IdentityOnly(label), row.Block),
-                Kilograms.Positive(row.BookKg), Kilograms.Of(row.CountedKg), row.CountedAtUtc, row.Reason);
+                Kilograms.Of(row.BookKg), Kilograms.Of(row.CountedKg), row.CountedAtUtc, row.Reason);
         }
         catch (InventoryRuleException exception)
         {
             throw StockCountError(503, InventoryStockCountCodesV1.Unavailable, exception);
         }
     }
+
+    /// <summary>
+    /// The one stored position a count of the label is taken at, or null when there is none to name.
+    /// <list type="bullet">
+    /// <item>A label holding stock in exactly one position is counted there; stock in several positions is a conflict.</item>
+    /// <item>SAT-D330 (STK-S22): a label the system shows at 0 may be counted at the position it was last emptied at
+    /// (its zero balance row): its only stored position, or, when it was moved before, the zero position named by the
+    /// last movement that touched the label. No other position is guessed: several candidates are a conflict.</item>
+    /// <item>A label that a split, merge or manufacturing transformation consumed is not counted again: its kilograms
+    /// live on in its output labels, so a surplus on it would count the same steel twice.</item>
+    /// </list>
+    /// </summary>
+    private async Task<BalanceRow?> CountedPositionAsync(Guid labelId, CancellationToken cancellationToken)
+    {
+        var balances = await dbContext.Balances.AsNoTracking()
+            .Where(row => row.LabelId == labelId)
+            .ToListAsync(cancellationToken);
+        var stocked = balances.Where(row => row.QuantityKg > 0m).ToList();
+        if (stocked.Count > 0)
+        {
+            return stocked.Count == 1 ? stocked[0] : null;
+        }
+
+        if (balances.Count == 0
+            || await dbContext.LabelTransformationInputs.AsNoTracking()
+                .AnyAsync(row => row.LabelId == labelId, cancellationToken))
+        {
+            return null;
+        }
+
+        if (balances.Count == 1)
+        {
+            return balances[0];
+        }
+
+        var lastLines = await (
+                from line in dbContext.MovementLines.AsNoTracking()
+                join movement in dbContext.Movements.AsNoTracking() on line.MovementId equals movement.Id
+                where line.LabelId == labelId
+                select new { movement.RecordedAtUtc, Line = line })
+            .ToListAsync(cancellationToken);
+        if (lastLines.Count == 0)
+        {
+            return null;
+        }
+
+        var lastRecordedAt = lastLines.Max(candidate => candidate.RecordedAtUtc);
+        var named = balances
+            .Where(balance => lastLines.Any(candidate => candidate.RecordedAtUtc == lastRecordedAt
+                && SamePosition(balance, candidate.Line)))
+            .ToList();
+        return named.Count == 1 ? named[0] : null;
+    }
+
+    private static bool SamePosition(BalanceRow balance, MovementLineRow line) =>
+        balance.CompanyId == line.CompanyId
+        && balance.OwnerKind == line.OwnerKind
+        && balance.OwnerId == line.OwnerId
+        && balance.CustodianKind == line.CustodianKind
+        && balance.CustodianId == line.CustodianId
+        && balance.LocationId == line.LocationId
+        && balance.LabelId == line.LabelId
+        && balance.ProductId == line.ProductId
+        && balance.Block == line.Block;
 
     private static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision)
     {

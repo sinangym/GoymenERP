@@ -38,8 +38,9 @@ public sealed class InventoryProductSimilarityFactsHostTests
             (mapped.ProductVersion, mapped.ProductCode, mapped.ProductName, mapped.SimilarityKey,
                 mapped.ThicknessMm, mapped.WidthMm, mapped.LengthMm));
         var unknown = Assert.Single(facts, fact => fact.ProductId == second.ProductId);
-        Assert.Equal(((string?)null, (string?)null, (string?)null),
-            (unknown.ProductCode, unknown.ProductName, unknown.SimilarityKey));
+        Assert.Equal("SYN-COAT-A", mapped.CoatingCode);
+        Assert.Equal(((string?)null, (string?)null, (string?)null, (string?)null),
+            (unknown.ProductCode, unknown.ProductName, unknown.SimilarityKey, unknown.CoatingCode));
     }
 
     [Theory]
@@ -120,7 +121,8 @@ public sealed class InventoryProductSimilarityFactsHostTests
             key,
             key is null ? null : 1.25m,
             key is null ? null : 1250m,
-            null);
+            null,
+            key is null ? null : "SYN-COAT-A");
 
     private sealed class ProductFacts(
         Func<ProductStockSimilarityQueryV1, ProductStockSimilarityBatchV1> answer)

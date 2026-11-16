@@ -21,6 +21,8 @@ public sealed record InventorySimilarityScoreV1(decimal MaximumDeviation, decima
 /// <list type="bullet">
 /// <item>No tolerance configured (null) — nothing is similar; only the same product is suggested (KLN-D40).</item>
 /// <item>Both products must have accepted facts and the same similarity key (material, quality, product type).</item>
+/// <item>KLN-D95: both products must state a coating and the coatings must be equal (ordinal); a different or missing
+/// coating is never similar, whatever the measures.</item>
 /// <item>Thickness, width and length are each compared with their own symmetric ± percentage. A dimension missing on
 /// either side does not enter the comparison; when no dimension can be compared the product is not suggested.</item>
 /// <item>The same product is never "similar" to itself here; the same-product path does not use this rule.</item>
@@ -44,7 +46,9 @@ public static class InventorySimilarProductCalculatorV1
 
         if (requested.ProductId == candidate.ProductId
             || requested.SimilarityKey is null || candidate.SimilarityKey is null
-            || !string.Equals(requested.SimilarityKey, candidate.SimilarityKey, StringComparison.Ordinal))
+            || !string.Equals(requested.SimilarityKey, candidate.SimilarityKey, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(requested.CoatingCode) || string.IsNullOrWhiteSpace(candidate.CoatingCode)
+            || !string.Equals(requested.CoatingCode, candidate.CoatingCode, StringComparison.Ordinal))
         {
             return null;
         }

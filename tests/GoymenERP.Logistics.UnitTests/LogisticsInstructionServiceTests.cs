@@ -565,12 +565,14 @@ public sealed partial class LogisticsInstructionServiceTests
         public FakeOrderLines OrderLines { get; init; } = new();
         public FakeSettings Settings { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        // STK-S27: the Sales risk gate answers within the limit unless a test says otherwise; null is an unregistered port.
+        public FakeRiskGate? RiskGate { get; set; } = new();
         public LogisticsInstructionServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, CreatePermission);
 
         public LogisticsInstructionService Service(ILogisticsRealizationTransactionRunnerV1? runner = null)
         {
             return new LogisticsInstructionService(Company, User, Authority, new FixedCorrelation(), Accounts, OrderLines,
-                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner);
+                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner, RiskGate);
         }
 
         public void ResetOwnerCalls()
@@ -774,7 +776,7 @@ public sealed partial class LogisticsInstructionServiceTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeStore : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
+    private sealed partial class FakeStore : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<StoredLoadingInstruction> _instructions = [];

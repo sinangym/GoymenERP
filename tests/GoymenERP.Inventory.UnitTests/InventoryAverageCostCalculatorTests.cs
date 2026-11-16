@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using static GoymenERP.Modules.Inventory.Domain.Costing.AverageCostMovementKind;
 using static GoymenERP.Modules.Inventory.Domain.Costing.AverageCostUnreadableReason;
@@ -175,6 +176,47 @@ public sealed class InventoryAverageCostCalculatorTests
     }
 
     [Fact]
+    public void A_transfer_receipt_shortage_is_valued_at_the_dispatch_unit_cost_not_the_average_at_receipt()
+    {
+        // KLN-D90: dispatched at 10.5714/kg; the moving average at receipt may since be 12, which is never used.
+        var valuation = AverageCostCalculator.ValueTransferReceiptShortage(2.5m, 10.5714m);
+
+        Assert.True(valuation.IsKnown);
+        Assert.Equal((2.5m, (decimal?)10.5714m, (decimal?)26.4285m),
+            (valuation.QuantityKg, valuation.UnitCostPerKg, valuation.Value));
+    }
+
+    [Fact]
+    public void A_transfer_receipt_shortage_value_is_left_unrounded_for_the_finance_posting_spec()
+    {
+        var valuation = AverageCostCalculator.ValueTransferReceiptShortage(0.333m, 10.5714m);
+
+        Assert.Equal(3.5202762m, valuation.Value);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    public void A_transfer_receipt_shortage_without_a_known_dispatch_cost_has_no_value(string? dispatchUnitCost)
+    {
+        decimal? cost = dispatchUnitCost is null ? null : decimal.Parse(dispatchUnitCost, CultureInfo.InvariantCulture);
+
+        var valuation = AverageCostCalculator.ValueTransferReceiptShortage(4m, cost);
+
+        Assert.False(valuation.IsKnown);
+        Assert.Equal((4m, (decimal?)null, (decimal?)null),
+            (valuation.QuantityKg, valuation.UnitCostPerKg, valuation.Value));
+    }
+
+    [Fact]
+    public void A_transfer_receipt_shortage_refuses_a_non_positive_quantity_or_a_negative_dispatch_cost()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ValueTransferReceiptShortage(0m, 10m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ValueTransferReceiptShortage(-1m, 10m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.ValueTransferReceiptShortage(1m, -0.01m));
+    }
+
+    [Fact]
     public void A_cancelled_dispatch_without_a_known_dispatch_cost_leaves_the_source_unreadable_not_at_its_own_average()
     {
         var known = AverageCostCalculator.ApplyTransferDispatchCancel(
@@ -310,6 +352,50 @@ public sealed class InventoryAverageCostCalculatorTests
             AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m, 8m, IsBaseCurrency: false)).UnreadableReason);
         Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(held, new(PurchaseReturn, 1m, 5m, -1m)));
         Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.Apply(held, new(CustomerReturn, 1m, 5m, -1m)));
+    }
+
+    [Fact]
+    public void The_purchase_return_cost_difference_check_answers_exactly_where_the_ledger_step_turns_unreadable()
+    {
+        // SAT-D371 / SAT-D306 (c): the refusal predicate and the ledger step read one rule. Each row: held kg, held
+        // average, returned kg, return cost. SENTETIK figures.
+        (decimal HeldKg, decimal Average, decimal Kg, decimal Cost)[] cases =
+        [
+            (150m, 11m, 50m, 13m), // (1650 - 650) / 100 = 10: no difference.
+            (3m, 10m, 1m, 11m), // remaining value 19 over 2 kg: no difference.
+            (5m, 8m, 5m, 8m), // empties at the average: no left-over value.
+            (5m, 8m, 5m, 9m), // empties with a left-over value of -5: difference.
+            (5m, 8m, 5m, 7m), // empties with a left-over value of 5: difference.
+            (10m, 2m, 5m, 5m), // remaining value -5 with stock left: difference.
+            (10m, 2m, 5m, 4m), // remaining value exactly 0 with stock left: difference.
+        ];
+        foreach (var (heldKg, average, kg, cost) in cases)
+        {
+            var held = AverageCostPosition.Known(heldKg, average);
+            var stepIsUnreadable = AverageCostCalculator.Apply(held, new(PurchaseReturn, kg, heldKg, cost)).Status
+                == AverageCostStatus.Unreadable;
+            Assert.Equal(stepIsUnreadable, AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, kg, cost));
+        }
+
+        Assert.False(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(150m, 11m), 50m, 13m));
+        Assert.True(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(5m, 8m), 5m, 9m));
+        Assert.True(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(10m, 2m), 5m, 4m));
+    }
+
+    [Fact]
+    public void The_purchase_return_cost_difference_check_has_no_figure_without_a_readable_covering_position()
+    {
+        // An unreadable position or a return larger than the position keeps its own rule; nothing is measured here.
+        Assert.False(AverageCostCalculator.PurchaseReturnLeavesCostDifference(
+            AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return), 1m, 8m));
+        Assert.False(AverageCostCalculator.PurchaseReturnLeavesCostDifference(AverageCostPosition.Known(5m, 8m), 6m, 1m));
+
+        // An unknown cost is never passed in as zero, and a return moves a positive quantity.
+        var held = AverageCostPosition.Known(5m, 8m);
+        Assert.Throws<ArgumentNullException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(null!, 1m, 8m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, 0m, 8m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, 1m, 0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AverageCostCalculator.PurchaseReturnLeavesCostDifference(held, 1m, -1m));
     }
 
     [Fact]

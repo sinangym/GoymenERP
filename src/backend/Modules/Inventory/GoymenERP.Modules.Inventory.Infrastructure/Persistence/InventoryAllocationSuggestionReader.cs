@@ -13,8 +13,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// company-filtered free positions. Untracked and side-effect free; the create command re-checks every rule in its own
 /// transaction. A label is offered only when it has exactly one free position, that position is company-owned and
 /// company-held (the create's own rule), and its free kilograms minus active allocations are positive — so a suggestion
-/// can never lead to negative stock. The line's own product comes first; only when it has no such label are similar
-/// products (Settings tolerance) searched, closest first.
+/// can never lead to negative stock. The line's own product comes first, closest to the requested kilograms first when
+/// the user stated them (KLN-D99); only when it has no such label are similar products (Settings tolerance) searched,
+/// closest first. Nothing is selected for the user.
 /// </summary>
 internal sealed class InventoryAllocationSuggestionReader(
     InventoryDbContext dbContext,
@@ -52,7 +53,14 @@ internal sealed class InventoryAllocationSuggestionReader(
         var same = await EligibleAsync(companyId, query.ProductId, sameProduct: true, cancellationToken);
         if (same.Labels.Count > 0 || tolerance is null)
         {
-            var sameItems = same.Labels
+            // KLN-D99: with a requested quantity the line's own labels are listed closest to it first (ties by label
+            // code); the user still picks by hand. Without one the window's label-code order is kept.
+            var ordered = query.RequestedKg is { } requestedKg
+                ? same.Labels.OrderBy(label => label, Comparer<EligibleLabel>.Create((left, right) =>
+                    InventoryLabelQuantityProximityV1.Compare(
+                        left.UnreservedKg, left.Code, right.UnreservedKg, right.Code, requestedKg)))
+                : same.Labels.AsEnumerable();
+            var sameItems = ordered
                 .Select(label => Item(label, null, InventoryAllocationSuggestionKindsV1.SameProduct, null))
                 .ToList();
             return Answer(query, companyId, mode, aiState, same.Truncated, sameItems);
@@ -144,7 +152,8 @@ internal sealed class InventoryAllocationSuggestionReader(
             mode,
             aiState,
             truncated || cut,
-            [.. items.Take(InventoryAllocationSuggestionLimitsV1.MaximumSuggestions)]);
+            [.. items.Take(InventoryAllocationSuggestionLimitsV1.MaximumSuggestions)],
+            query.RequestedKg?.ToString());
     }
 
     private static InventoryAllocationSuggestionV1 Item(

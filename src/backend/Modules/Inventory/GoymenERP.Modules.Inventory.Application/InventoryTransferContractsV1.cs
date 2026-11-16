@@ -309,6 +309,12 @@ public static class InventoryTransferCodesV1
     public const string CancelWindowClosed = "inventory_transfer_cancel_window_closed";
     public const string CancelWindowUnreadable = "inventory_transfer_cancel_window_unreadable";
     public const string CancelConfirmationMissing = "inventory_transfer_cancel_confirmation_missing";
+
+    /// <summary>
+    /// KLN-D98: the dispatch cannot be cancelled while one of its lines carries an undecided loss request. The request
+    /// is approved, rejected or withdrawn first; the cancel never withdraws it on its own.
+    /// </summary>
+    public const string CancelLossRequestPending = "inventory_transfer_cancel_loss_request_pending";
 }
 
 /// <summary>The fixed owner kind stored on a B-22a dispatch row; it is never read from the request.</summary>

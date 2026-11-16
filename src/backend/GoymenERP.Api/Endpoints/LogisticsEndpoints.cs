@@ -375,7 +375,11 @@ public static class LogisticsEndpoints
                 InventoryDefiniteShipmentCodesV1.AllocationState, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch,
                 InventoryDefiniteShipmentCodesV1.AllocationInsufficient, InventoryDefiniteShipmentCodesV1.LabelNotReleasable,
                 InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, InventoryDefiniteShipmentCodesV1.OwnerNotCompany,
-                InventoryDefiniteShipmentCodesV1.IdempotencyConflict, InventoryDefiniteShipmentCodesV1.ConcurrentChange)
+                InventoryDefiniteShipmentCodesV1.IdempotencyConflict, InventoryDefiniteShipmentCodesV1.ConcurrentChange,
+                // STK-S27 (L-1..L-7, FNS-D30, SAT-D310, SAT-D285): the customer risk gate's terminal stops; a gate that
+                // cannot be read is a code-less 503 that records nothing.
+                LogisticsShipmentRiskGateCodesV1.OverLimit, LogisticsShipmentRiskGateCodesV1.CreditLimitNotSet,
+                LogisticsShipmentRiskGateCodesV1.RiskUnavailable, LogisticsShipmentRiskGateCodesV1.ExceptionUsed)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

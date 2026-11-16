@@ -2,6 +2,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 
@@ -274,7 +275,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     {
         var fixture = Fixture(Granted(), Granted(), Granted());
 
-        var answer = await fixture.Service.SuggestAsync(OrderId, LineId, CancellationToken.None);
+        var answer = await fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None);
 
         Assert.Equal(new InventoryAllocationSuggestionQueryV1(OrderId, LineId, ProductId, "7"),
             fixture.Suggestions.Query);
@@ -290,7 +291,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         var fixture = Fixture();
 
         var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
-            fixture.Service.SuggestAsync(OrderId, Guid.Empty, CancellationToken.None));
+            fixture.Service.SuggestAsync(OrderId, Guid.Empty, null, CancellationToken.None));
 
         Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed),
             (exception.Status, exception.Code));
@@ -304,7 +305,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         var fixture = Fixture(Granted(), Granted(), PermissionScope.Denied);
 
         var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
-            fixture.Service.SuggestAsync(OrderId, LineId, CancellationToken.None));
+            fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None));
 
         Assert.Equal(StatusCodes.Status403Forbidden, exception.Status);
         Assert.NotNull(fixture.Suggestions.Query);
@@ -317,7 +318,47 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         fixture.Suggestions.Answer = fixture.Suggestions.Answer with { CompanyId = CompanyB };
 
         var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
-            fixture.Service.SuggestAsync(OrderId, LineId, CancellationToken.None));
+            fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, exception.Status);
+    }
+
+    [Fact]
+    public async Task The_requested_kilograms_reach_the_reader_and_must_be_echoed_back()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        var requested = Kilograms.Positive(12.5m);
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { RequestedKg = "12.5" };
+
+        var answer = await fixture.Service.SuggestAsync(OrderId, LineId, requested, CancellationToken.None);
+
+        Assert.Equal(new InventoryAllocationSuggestionQueryV1(OrderId, LineId, ProductId, "7", requested),
+            fixture.Suggestions.Query);
+        Assert.Equal("12.5", answer.RequestedKg);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("12.4")]
+    public async Task A_suggestion_answer_for_another_requested_quantity_is_never_returned(string? echoed)
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { RequestedKg = echoed };
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, LineId, Kilograms.Positive(12.5m), CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, exception.Status);
+    }
+
+    [Fact]
+    public async Task An_answer_echoing_a_quantity_that_was_never_requested_is_never_returned()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { RequestedKg = "1" };
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None));
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, exception.Status);
     }
@@ -437,7 +478,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
 
         public InventoryAllocationSuggestionsV1 Answer { get; set; } = new(
             CompanyA, OrderId, LineId, ProductId, "7", InventorySimilarProductModesV1.SameProductOnly,
-            InventoryAllocationAiSuggestionStatesV1.Disabled, false, []);
+            InventoryAllocationAiSuggestionStatesV1.Disabled, false, [], null);
 
         public Task<InventoryAllocationSuggestionsV1> ReadAsync(
             InventoryAllocationSuggestionQueryV1 query,

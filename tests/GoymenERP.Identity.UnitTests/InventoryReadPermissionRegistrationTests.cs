@@ -38,6 +38,10 @@ public sealed class InventoryReadPermissionRegistrationTests
         // grants are two different disposable browser test actors.
         ErpPermissions.InventoryStockCountRecord,
         ErpPermissions.InventoryStockCountApprove,
+        // SAT-D304 / SAT-D372: the opening-stock cost submit and approve names, two separate names (giren ≠
+        // onaylayan); registered only, no shipped actor holds either.
+        ErpPermissions.InventoryOpeningCostSubmit,
+        ErpPermissions.InventoryOpeningCostApprove,
     };
 
     [Fact]
@@ -51,6 +55,8 @@ public sealed class InventoryReadPermissionRegistrationTests
         Assert.Equal("inventory.label-classification.write", ErpPermissions.InventoryLabelClassificationWrite);
         Assert.Equal("inventory.stock-count.record", ErpPermissions.InventoryStockCountRecord);
         Assert.Equal("inventory.stock-count.approve", ErpPermissions.InventoryStockCountApprove);
+        Assert.Equal("inventory.opening-cost.submit", ErpPermissions.InventoryOpeningCostSubmit);
+        Assert.Equal("inventory.opening-cost.approve", ErpPermissions.InventoryOpeningCostApprove);
     }
 
     [Theory]

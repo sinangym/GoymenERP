@@ -76,6 +76,74 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
     }
 
     [Fact]
+    public async Task Structural_and_painted_rows_publish_their_KLN_D87_fields_exactly_and_no_estimated_unit_weight()
+    {
+        var structural = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.StructuralProfile, length: 12000m) with
+            {
+                ProfileSeries = ProductProfileSeriesV1.Ipe, ProfileSize = "200",
+            },
+        };
+        var structuralSnapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(
+            (await structural.Service().ReadAsync(Selection, default)).Snapshot);
+        Assert.Equal(new ProductManufacturingDimensionV2(ProductManufacturingDimensionSourceV2.Stored, "1",
+                ProductDimensionSectionKindsV1.StructuralProfile, null, null, 12000m, null, null, null, "IPE", "200"),
+            structuralSnapshot.Dimension);
+        Assert.Equal(new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.None, null),
+            structuralSnapshot.UnitWeight);
+
+        var painted = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.PaintedErwTube, outerDiameter: 48.3m, wall: 2.6m) with
+            {
+                SurfaceFinish = "RAL 7016",
+            },
+        };
+        var paintedSnapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(
+            (await painted.Service().ReadAsync(Selection, default)).Snapshot);
+        Assert.Equal(("RAL 7016", (string?)null, (string?)null, (decimal?)null), (paintedSnapshot.Dimension.SurfaceFinish,
+            paintedSnapshot.Dimension.ProfileSeries, paintedSnapshot.Dimension.ProfileSize, paintedSnapshot.Dimension.MeshSpacingMm));
+
+        var mesh = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.WeldedMesh, width: 2150m, length: 5000m, outerDiameter: 5m) with
+            {
+                MeshSpacingMm = 150m,
+            },
+        };
+        var meshSnapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(
+            (await mesh.Service().ReadAsync(Selection, default)).Snapshot);
+        Assert.Equal(150m, meshSnapshot.Dimension.MeshSpacingMm);
+        Assert.Null(meshSnapshot.UnitWeight.KgPerMetre);
+    }
+
+    [Theory]
+    [InlineData("structural-without-size")]
+    [InlineData("painted-without-surface")]
+    [InlineData("tube-with-series")]
+    [InlineData("mesh-wire-too-thick")]
+    public async Task Stored_KLN_D87_row_that_breaks_its_rule_is_an_integrity_fault(string fault)
+    {
+        var row = fault switch
+        {
+            "structural-without-size" => Found(ProductDimensionSectionKindsV1.StructuralProfile) with { ProfileSeries = "IPE" },
+            "painted-without-surface" => Found(ProductDimensionSectionKindsV1.PaintedErwProfile, width: 40m, height: 20m, wall: 2m),
+            "tube-with-series" => Found(ProductDimensionSectionKindsV1.ErwTube, outerDiameter: 48.3m, wall: 2.6m) with
+            {
+                ProfileSeries = "IPE", ProfileSize = "200",
+            },
+            _ => Found(ProductDimensionSectionKindsV1.WeldedMesh, width: 2150m, length: 5000m, outerDiameter: 150m) with
+            {
+                MeshSpacingMm = 150m,
+            },
+        };
+        var world = new World { Row = row };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => world.Service().ReadAsync(Selection, default));
+    }
+
+    [Fact]
     public async Task Product_without_a_row_is_no_source_with_version_zero_and_never_a_zero_measure()
     {
         var world = new World { Row = ProductDimensionReadV1.Without(ProductDimensionOutcomeV1.NoSource) };
@@ -321,6 +389,58 @@ public sealed class ProductManufacturingTechnicalSnapshotV2Tests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => world.Service().ReadAsync(Selection, cancellation.Token));
         Assert.Equal(0, world.Authorization.Calls);
+    }
+
+    [Fact]
+    public async Task Profile_whose_table_holds_both_directions_with_different_kg_per_metre_is_a_table_conflict_without_a_snapshot()
+    {
+        // URN-D19: the read port names the conflict; V2 answers the explicit field error and never one of the two values.
+        var world = new World
+        {
+            Row = Found(ProductDimensionSectionKindsV1.Profile, width: 40m, height: 60m, wall: 3m, version: 2) with
+            {
+                KgPerMetreSourceLabel = "SENTETIK KATALOG",
+                KgPerMetreTableVersion = 4,
+                KgPerMetreConflict = true,
+            },
+        };
+
+        var result = await world.Service().ReadAsync(Selection, default);
+
+        Assert.Null(result.Snapshot);
+        Assert.Equal(new ProductFieldError(ProductManufacturingTechnicalSnapshotCodesV2.UnitWeightField,
+            ProductManufacturingTechnicalSnapshotCodesV2.UnitWeightTableConflict), Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Conflicting_lookup_that_still_carries_a_kg_per_metre_is_an_integrity_fault()
+    {
+        var row = ProfileRow(version: 1) with { KgPerMetreConflict = true };
+
+        Assert.Throws<InvalidOperationException>(() => ProductManufacturingTechnicalSnapshotServiceV2.Interpret(row));
+    }
+
+    [Fact]
+    public void Verified_kg_per_metre_of_the_fason_check_is_only_the_company_table_value()
+    {
+        // URN-D20: the table value (answered as ProductMaster) is the single verified kg/m; anything else fails closed.
+        Assert.True(ProductVerifiedUnitWeightV2.TryRequire(
+            new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, 1.75m),
+            out var kgPerMetre, out var accepted));
+        Assert.Equal((1.75m, (string?)null), (kgPerMetre, accepted));
+
+        foreach (var unitWeight in new[]
+                 {
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.None, null),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ManualVerified, 1.75m),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.GeometricEstimate, 1.75m),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, null),
+                     new ProductManufacturingUnitWeightV2(ProductManufacturingUnitWeightSourceV2.ProductMaster, 0m),
+                 })
+        {
+            Assert.False(ProductVerifiedUnitWeightV2.TryRequire(unitWeight, out var none, out var refusal));
+            Assert.Equal((0m, ProductManufacturingTechnicalSnapshotCodesV2.VerifiedUnitWeightMissing), (none, refusal));
+        }
     }
 
     [Fact]

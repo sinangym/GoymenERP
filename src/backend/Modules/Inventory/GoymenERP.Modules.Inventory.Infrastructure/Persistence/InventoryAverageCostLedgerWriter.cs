@@ -22,6 +22,10 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// unreadable for good (<see cref="AverageCostUnreadableReason.LedgerStockMismatch"/> is sticky). The receipt, issue and
 /// transfer paths are wired together once that port exists (reported as NEEDS-SINAN / a message to Purchasing).
 /// </para>
+/// <para>
+/// The one caller today is the approved opening cost (SAT-D304, <see cref="StageOpeningCostAsync"/>): it opens a position
+/// the ledger never tracked and never changes a stored one.
+/// </para>
 /// </summary>
 internal sealed class InventoryAverageCostLedgerWriter(
     InventoryDbContext dbContext, ICompanyContext companyContext, TimeProvider timeProvider)
@@ -69,6 +73,31 @@ internal sealed class InventoryAverageCostLedgerWriter(
         Stage(sourceRow, companyId, sourceLocationId, productId, result.Source);
         Stage(targetRow, companyId, targetLocationId, productId, result.Target);
         return result;
+    }
+
+    /// <summary>
+    /// SAT-D304: stages the approved opening cost of a position the ledger never tracked, costing
+    /// <paramref name="stockOnHandKg"/> (measured as <see cref="InventoryAverageCostLedgerRows.CostedStock"/> measures it)
+    /// at <paramref name="unitCostPerStockKg"/>, and returns the new row's id and position. A position with any ledger
+    /// state, staged or stored, is refused by the core (<see cref="AverageCostCalculator.ApplyOpeningCost"/>); the
+    /// caller checks first, and the unique position index refuses a concurrent opener at the save.
+    /// </summary>
+    public async Task<(Guid PositionId, AverageCostPosition Position)> StageOpeningCostAsync(
+        Guid locationId,
+        Guid productId,
+        decimal stockOnHandKg,
+        decimal unitCostPerStockKg,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireCompany();
+        RequireIdentity(locationId, productId);
+        var row = await TrackedRowAsync(companyId, locationId, productId, cancellationToken);
+        var after = AverageCostCalculator.ApplyOpeningCost(
+            row is null ? null : InventoryAverageCostLedgerRows.PositionOf(row), stockOnHandKg, unitCostPerStockKg);
+        Stage(row, companyId, locationId, productId, after);
+        var staged = dbContext.AverageCostLedger.Local.Single(candidate => candidate.CompanyId == companyId
+            && candidate.LocationId == locationId && candidate.ProductId == productId);
+        return (staged.Id, after);
     }
 
     private Guid RequireCompany()

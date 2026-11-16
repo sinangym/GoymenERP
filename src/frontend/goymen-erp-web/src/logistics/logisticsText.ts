@@ -248,6 +248,14 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.dispatchNoteState]:
     'İrsaliyenin durumu bu işleme uygun değil (ör. zaten onaylanmış, iptal edilmiş ya da e-İrsaliye numarası zaten kayıtlı); hiçbir şey değişmedi.',
   [LOGISTICS_PROBLEM_CODE.eDispatchNumberInUse]: 'Bu e-İrsaliye numarası şirketin başka bir irsaliyesinde kayıtlı; numara kaydedilmedi.',
+  [LOGISTICS_PROBLEM_CODE.shipmentRiskOverLimit]:
+    'Müşteri risk limiti aşıldı; geçerli tek sevk istisnası olmadan kesin sevk kaydedilmez.',
+  [LOGISTICS_PROBLEM_CODE.shipmentRiskCreditLimitNotSet]:
+    'Müşterinin geçerli kredi limiti tanımlı değil; geçerli tek sevk istisnası olmadan kesin sevk kaydedilmez.',
+  [LOGISTICS_PROBLEM_CODE.shipmentRiskUnavailable]:
+    'Müşteri riski okunamadı; geçerli tek sevk istisnası olmadan kesin sevk kaydedilmez.',
+  [LOGISTICS_PROBLEM_CODE.shipmentRiskExceptionUsed]:
+    'Bu siparişin tek sevk istisnası başka bir kesin sevkte kullanıldı; yeni istisna talebi ve onayı gerekir.',
   [LOGISTICS_PROBLEM_CODE.sameKeyPayloadMismatch]:
     'Aynı işlem anahtarı farklı bir içerikle kullanılmış; bu gönderim uygulanmadı.',
   [LOGISTICS_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',

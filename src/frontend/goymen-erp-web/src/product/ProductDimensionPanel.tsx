@@ -6,7 +6,8 @@
  * session (401), a missing card (404), an unwired provider (503) and a failed read each say so instead of "girilmemiş".
  * The form checks the shape only to help the person; the server and the database hold the rule. URN-D16 (STK-S37R): the kg/m is
  * not an input; the panel shows the acting company's table value with its source label and table version, or that the table
- * holds none, and reads the server's refusal of a profile the table does not hold.
+ * holds none, and reads the server's refusal of a profile the table does not hold. KLN-D87 (STK-SC33-b): every KLN-D48 section
+ * family is selectable with its own fields (the series/size of a structural profile, the mesh spacing, the painted ERW surface).
  */
 
 import { useState, type FormEvent } from 'react'
@@ -14,18 +15,25 @@ import { useQuery } from '@tanstack/react-query'
 import {
   DIMENSION_MEASURES,
   DIMENSION_PROBLEM,
+  DIMENSION_TEXTS,
   PRODUCT_SECTION_KINDS,
+  PROFILE_SERIES,
+  SECTION_FIELDS,
   SECTION_MEASURES,
   SECTION_TABLE_WEIGHT,
+  WALL_OUTERS,
   fetchDimension,
+  isTextValue,
   parseMeasure,
   setDimension,
   type DimensionMeasure,
   type DimensionMeasures,
+  type DimensionTextField,
+  type DimensionTexts,
   type ProductDimensionView,
   type ProductSectionKind,
 } from './dimensionApi'
-import { DIMENSION_TEXT, MEASURE_LABEL, SECTION_KIND_LABEL } from './dimensionText'
+import { DIMENSION_TEXT, MEASURE_LABEL, SECTION_KIND_LABEL, TEXT_FIELD_LABEL } from './dimensionText'
 import styles from './ProductDetailPage.module.css'
 
 const HEADING_ID = 'product-dimension-heading'
@@ -106,6 +114,12 @@ export function ProductDimensionPanel({
               <dd>{String(view.measures[measure])}</dd>
             </div>
           ))}
+          {DIMENSION_TEXTS.filter((field) => view.texts[field] !== null).map((field) => (
+            <div key={field}>
+              <dt>{TEXT_FIELD_LABEL[field]}</dt>
+              <dd>{view.texts[field]}</dd>
+            </div>
+          ))}
           {view.tableWeight !== null ? (
             <>
               <div>
@@ -127,7 +141,9 @@ export function ProductDimensionPanel({
               <dd data-testid="product-dimension-kg-per-metre-missing">
                 {SECTION_TABLE_WEIGHT[view.sectionKind] === 'required'
                   ? DIMENSION_TEXT.kgPerMetreMissing
-                  : DIMENSION_TEXT.kgPerMetreTubeMissing}
+                  : SECTION_TABLE_WEIGHT[view.sectionKind] === 'standard'
+                    ? DIMENSION_TEXT.kgPerMetreStandardMissing
+                    : DIMENSION_TEXT.kgPerMetreTubeMissing}
               </dd>
             </div>
           )}
@@ -156,17 +172,23 @@ export function ProductDimensionPanel({
   )
 }
 
-type Draft = Record<DimensionMeasure, string>
+type Draft = Record<DimensionMeasure | DimensionTextField, string>
 
 function draftOf(view: ProductDimensionView): Draft {
-  return Object.fromEntries(
-    DIMENSION_MEASURES.map((measure) => [measure, view.measures[measure] === null ? '' : String(view.measures[measure])]),
-  ) as Draft
+  return Object.fromEntries([
+    ...DIMENSION_MEASURES.map((measure) => [measure, view.measures[measure] === null ? '' : String(view.measures[measure])]),
+    ...DIMENSION_TEXTS.map((field) => [field, view.texts[field] ?? '']),
+  ]) as Draft
 }
 
-type Checked = { readonly ok: true; readonly measures: DimensionMeasures } | { readonly ok: false; readonly error: string }
+type Checked =
+  | { readonly ok: true; readonly measures: DimensionMeasures; readonly texts: DimensionTexts }
+  | { readonly ok: false; readonly error: string }
 
-/** The kind's measures from the draft; the others are sent as null, whatever was typed before the kind changed. */
+/**
+ * The kind's fields from the draft; the others are sent as null, whatever was typed before the kind changed. A text is sent as
+ * typed (never trimmed or re-cased): the server refuses one that does not match, as this check does.
+ */
 function check(kind: ProductSectionKind, draft: Draft): Checked {
   const measures = {} as Record<DimensionMeasure, number | null>
   for (const measure of DIMENSION_MEASURES) {
@@ -180,12 +202,29 @@ function check(kind: ProductSectionKind, draft: Draft): Checked {
     if (parsed.value === null && presence === 'required') return { ok: false, error: DIMENSION_TEXT.measureMissing }
     measures[measure] = parsed.value
   }
+  const texts = {} as Record<DimensionTextField, string | null>
+  for (const field of DIMENSION_TEXTS) {
+    const presence = SECTION_FIELDS[kind][field]
+    const value = draft[field]
+    if (presence === 'forbidden' || (value === '' && presence === 'optional')) {
+      texts[field] = null
+      continue
+    }
+    if (value === '') return { ok: false, error: DIMENSION_TEXT.measureMissing }
+    if (!isTextValue(field, value)) return { ok: false, error: DIMENSION_TEXT.textFormat }
+    texts[field] = value
+  }
   const wall = measures.wallThicknessMm
-  const outers = kind === 'RoundTube' ? [measures.outerDiameterMm] : kind === 'Profile' ? [measures.widthMm, measures.heightMm] : []
+  const outers = (WALL_OUTERS[kind] ?? []).map((outer) => measures[outer])
   if (wall !== null && outers.some((outer) => outer !== null && wall + wall > outer)) {
     return { ok: false, error: DIMENSION_TEXT.wallTooThick }
   }
-  return { ok: true, measures }
+  const wire = measures.outerDiameterMm
+  const spacing = measures.meshSpacingMm
+  if (kind === 'WeldedMesh' && wire !== null && spacing !== null && wire >= spacing) {
+    return { ok: false, error: DIMENSION_TEXT.wireTooThick }
+  }
+  return { ok: true, measures, texts }
 }
 
 function DimensionForm({
@@ -213,7 +252,9 @@ function DimensionForm({
       setError(checked.error)
       return
     }
-    const body = { expectedVersion: view.version, sectionKind: kind, ...checked.measures, reason: reason.trim() }
+    const body = {
+      expectedVersion: view.version, sectionKind: kind, ...checked.measures, ...checked.texts, reason: reason.trim(),
+    }
     const fingerprint = JSON.stringify(body)
     const key = pending !== null && pending.fingerprint === fingerprint ? pending.key : crypto.randomUUID()
     setBusy(true)
@@ -236,7 +277,8 @@ function DimensionForm({
         outcome.code === DIMENSION_PROBLEM.reasonRequired ? DIMENSION_TEXT.reasonRequired
           : outcome.code === DIMENSION_PROBLEM.measureInvalid ? DIMENSION_TEXT.measureInvalid
             : outcome.code === DIMENSION_PROBLEM.weightSourceMissing ? DIMENSION_TEXT.weightSourceMissing
-              : DIMENSION_TEXT.refused,
+              : outcome.code === DIMENSION_PROBLEM.weightSourceConflict ? DIMENSION_TEXT.weightSourceConflict
+                : DIMENSION_TEXT.refused,
       )
     }
   }
@@ -273,8 +315,44 @@ function DimensionForm({
             />
           </label>
         ))}
-      {kind === 'RoundTube' ? <p className={styles.note}>{DIMENSION_TEXT.tubeKgNote}</p> : null}
-      {kind === 'Profile' ? <p className={styles.note}>{DIMENSION_TEXT.profileWeightNote}</p> : null}
+      {kind === ''
+        ? null
+        : DIMENSION_TEXTS.filter((field) => SECTION_FIELDS[kind][field] !== 'forbidden').map((field) => (
+          <label key={field}>
+            {TEXT_FIELD_LABEL[field]}
+            {SECTION_FIELDS[kind][field] === 'optional' ? ` ${DIMENSION_TEXT.optional}` : ''}
+            {field === 'profileSeries' ? (
+              <select
+                required={SECTION_FIELDS[kind][field] === 'required'}
+                value={draft[field]}
+                onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
+              >
+                <option value="" disabled>
+                  {DIMENSION_TEXT.chooseSeries}
+                </option>
+                {PROFILE_SERIES.map((series) => (
+                  <option key={series} value={series}>
+                    {series}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                required={SECTION_FIELDS[kind][field] === 'required'}
+                value={draft[field]}
+                onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
+              />
+            )}
+          </label>
+        ))}
+      {kind !== '' && SECTION_TABLE_WEIGHT[kind] === 'optional' ? <p className={styles.note}>{DIMENSION_TEXT.tubeKgNote}</p> : null}
+      {kind !== '' && SECTION_TABLE_WEIGHT[kind] === 'required' ? (
+        <p className={styles.note}>{DIMENSION_TEXT.profileWeightNote}</p>
+      ) : null}
+      {kind !== '' && SECTION_TABLE_WEIGHT[kind] === 'standard' ? (
+        <p className={styles.note}>{DIMENSION_TEXT.structuralWeightNote}</p>
+      ) : null}
       <label>
         {DIMENSION_TEXT.reasonLabel}
         <textarea required rows={2} maxLength={4000} value={reason} onChange={(event) => setReason(event.target.value)} />

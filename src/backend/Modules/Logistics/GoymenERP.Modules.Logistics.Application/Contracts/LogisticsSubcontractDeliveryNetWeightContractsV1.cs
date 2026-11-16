@@ -7,11 +7,14 @@ namespace GoymenERP.Modules.Logistics.Application.Contracts;
 /// without a weighing cannot be recorded (LOJ-D12), so a missing record is <see cref="LogisticsSubcontractDeliveryNetWeightStatusV1.NoSource"/>,
 /// never zero.
 /// <para>
-/// Facts only. Logistics does not split, round or price: the proportional split by declared kilograms (SAT-D312, LOJ-D12),
-/// its residue and the money live only in the Sales invoice calculator, and which line quantity is the split denominator is
-/// the consumer's documented choice, not this port's. The answer therefore carries every per-line fact the split may need —
-/// the kilograms loaded at weighing time, the loaded, shipped and delivered totals, and each shipment share — without
-/// preferring one. Scrap is not billed (LOJ-D9); this port carries no scrap fact and invoices nothing.
+/// Facts only. Logistics does not split, round or price: the proportional split (SAT-D312), its residue and the money live
+/// only in the Sales invoice calculator. KLN-D89 fixes the split denominator: it is <see cref="LogisticsSubcontractDeliveryNetWeightV1.NetKg"/>,
+/// the net kilograms measured on the weighbridge at delivery. The declared (waybill) kilograms and the LOJ-D12 shipment-share
+/// kilograms — <see cref="LogisticsSubcontractDeliveryNetWeightLineV1.ShippedKg"/>, <see cref="LogisticsSubcontractDeliveryShipmentV1.ShippedKg"/>
+/// and the loaded totals — stay in the answer as facts but are never the denominator. A delivery without a weighing answers
+/// <see cref="LogisticsSubcontractDeliveryNetWeightStatusV1.NoSource"/>, and the consumer stops with an explicit code
+/// (KLN-D89 fail-closed); it never falls back to a declared kilogram. Scrap is not billed (LOJ-D9); this port carries no scrap
+/// fact and invoices nothing.
 /// </para>
 /// <para>
 /// The port is company-filtered, untracked and side-effect free: it creates no attempt, audit, share or version effect and

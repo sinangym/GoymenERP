@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Application.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
@@ -55,6 +56,17 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 
     internal DbSet<TransferOutgoingDocumentAttemptRow> TransferOutgoingDocumentAttempts => Set<TransferOutgoingDocumentAttemptRow>();
 
+    internal DbSet<WeighingDifferenceRecordRow> WeighingDifferences => Set<WeighingDifferenceRecordRow>();
+
+    internal DbSet<WeighingDifferenceProductRow> WeighingDifferenceProducts => Set<WeighingDifferenceProductRow>();
+
+    internal DbSet<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy => Set<WeighingDifferenceEnteredByRow>();
+
+    internal DbSet<WeighingDifferenceAttemptRow> WeighingDifferenceAttempts => Set<WeighingDifferenceAttemptRow>();
+    internal DbSet<ShipmentRiskExceptionUseRow> ShipmentRiskExceptionUses => Set<ShipmentRiskExceptionUseRow>();
+
+    internal DbSet<LogisticsOutboxMessageRow> OutboxMessages => Set<LogisticsOutboxMessageRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -72,6 +84,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
+        ConfigureWeighingDifferences(modelBuilder);
+        ConfigureShipmentRiskGate(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -494,6 +508,175 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// STK-S24: the sales weighing-difference record, one per dispatch note. SQL Server holds its shape: the status follows the
+    /// decision (no approval needed → recorded at version 1; approval needed → pending at version 1, approved at version 2 with
+    /// the approver), the bands are all present (band level evaluated) or all absent (not evaluated), the difference is scale −
+    /// note, and no excess means no approval.
+    /// </summary>
+    private void ConfigureWeighingDifferences(ModelBuilder modelBuilder)
+    {
+        var record = modelBuilder.Entity<WeighingDifferenceRecordRow>();
+        record.ToTable("WeighingDifferences", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_WeighingDifferences_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [RecordId] <> {EmptyGuid} AND [InstructionId] <> {EmptyGuid} "
+                + $"AND [DispatchNoteId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_WeighingDifferences_Quantities",
+                "[TheoreticalKg] > 0 AND [ScaleKg] >= 0 AND [TotalExcessKg] >= 0 "
+                + "AND [DifferenceKg] = [ScaleKg] - [TheoreticalKg]");
+            table.HasCheckConstraint("CK_WeighingDifferences_Bands",
+                "([BandLevel] = 0 AND [WarningBandPercent] IS NULL AND [ApprovalBandPercent] IS NULL AND [BlockBandPercent] IS NULL) "
+                + "OR ([BandLevel] BETWEEN 1 AND 4 AND [WarningBandPercent] > 0 AND [ApprovalBandPercent] > [WarningBandPercent] "
+                + "AND [BlockBandPercent] > [ApprovalBandPercent])");
+            table.HasCheckConstraint("CK_WeighingDifferences_Decision",
+                "([Decision] = 1 AND [TotalExcessKg] = 0) OR ([Decision] = 2 AND [TotalExcessKg] > 0 "
+                + "AND [ApprovalRatePercent] IS NOT NULL) OR ([Decision] = 3 AND [TotalExcessKg] > 0)");
+            table.HasCheckConstraint("CK_WeighingDifferences_Rate",
+                "[ApprovalRatePercent] IS NULL OR ([ApprovalRatePercent] > 0 AND [ApprovalRatePercent] <= 100)");
+            table.HasCheckConstraint("CK_WeighingDifferences_State",
+                "([Status] = 1 AND [Version] = 1 AND [Decision] IN (1, 2) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR "
+                + "([Status] = 2 AND [Version] = 1 AND [Decision] = 3 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR "
+                + "([Status] = 3 AND [Version] = 2 AND [Decision] = 3 AND [EnteredByComplete] = 1 "
+                + "AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)");
+            table.HasCheckConstraint("CK_WeighingDifferences_Actors",
+                "LEN([RecordedBy]) > 0 AND ([ApprovedBy] IS NULL OR LEN([ApprovedBy]) > 0)");
+        });
+        record.HasKey(x => new { x.CompanyId, x.RecordId });
+        record.HasIndex(x => new { x.CompanyId, x.DispatchNoteId }).IsUnique()
+            .HasDatabaseName("UX_WeighingDifferences_DispatchNoteId");
+        record.Property(x => x.Version).IsConcurrencyToken();
+        record.Property(x => x.RowVersion).IsRowVersion();
+        record.Property(x => x.TheoreticalKg).HasPrecision(18, 3);
+        record.Property(x => x.ScaleKg).HasPrecision(18, 3);
+        record.Property(x => x.DifferenceKg).HasPrecision(18, 3);
+        record.Property(x => x.TotalExcessKg).HasPrecision(18, 3);
+        record.Property(x => x.WarningBandPercent).HasPrecision(9, WeighingDifferencePercentScale);
+        record.Property(x => x.ApprovalBandPercent).HasPrecision(9, WeighingDifferencePercentScale);
+        record.Property(x => x.BlockBandPercent).HasPrecision(9, WeighingDifferencePercentScale);
+        record.Property(x => x.ApprovalRatePercent).HasPrecision(9, WeighingDifferencePercentScale);
+        record.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        record.Property(x => x.ApprovedBy).HasMaxLength(128);
+        record.HasOne<DispatchNoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId })
+            .OnDelete(DeleteBehavior.Restrict);
+        record.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var product = modelBuilder.Entity<WeighingDifferenceProductRow>();
+        product.ToTable("WeighingDifferenceProducts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_WeighingDifferenceProducts_Identity",
+                $"[RecordId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [Ordinal] >= 1 AND [Ordinal] <= 200");
+            table.HasCheckConstraint("CK_WeighingDifferenceProducts_Quantities",
+                "[NoteKg] > 0 AND [ScaleKg] >= 0 AND [RemainingPhysicalKg] >= 0 AND [PhysicallyCoveredKg] >= 0 "
+                + "AND [ExcessKg] >= 0 AND [DifferenceKg] = [ScaleKg] - [NoteKg] "
+                + "AND [PhysicallyCoveredKg] <= [RemainingPhysicalKg] "
+                + "AND [PhysicallyCoveredKg] + [ExcessKg] = CASE WHEN [DifferenceKg] > 0 THEN [DifferenceKg] ELSE 0 END");
+            table.HasCheckConstraint("CK_WeighingDifferenceProducts_Target",
+                "([ExcessKg] = 0 AND [TargetLineNo] IS NULL) OR ([ExcessKg] > 0 AND [TargetLineNo] >= 1)");
+        });
+        product.HasKey(x => new { x.CompanyId, x.RecordId, x.Ordinal });
+        product.HasIndex(x => new { x.CompanyId, x.RecordId, x.ProductId }).IsUnique()
+            .HasDatabaseName("UX_WeighingDifferenceProducts_ProductId");
+        product.Property(x => x.NoteKg).HasPrecision(18, 3);
+        product.Property(x => x.ScaleKg).HasPrecision(18, 3);
+        product.Property(x => x.DifferenceKg).HasPrecision(18, 3);
+        product.Property(x => x.RemainingPhysicalKg).HasPrecision(18, 3);
+        product.Property(x => x.PhysicallyCoveredKg).HasPrecision(18, 3);
+        product.Property(x => x.ExcessKg).HasPrecision(18, 3);
+        product.HasOne<WeighingDifferenceRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RecordId }).OnDelete(DeleteBehavior.Restrict);
+        product.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var enteredBy = modelBuilder.Entity<WeighingDifferenceEnteredByRow>();
+        enteredBy.ToTable("WeighingDifferenceEnteredBy", Schema, table =>
+            table.HasCheckConstraint("CK_WeighingDifferenceEnteredBy_Actor",
+                $"[RecordId] <> {EmptyGuid} AND LEN([ActorId]) > 0"));
+        enteredBy.HasKey(x => new { x.CompanyId, x.RecordId, x.ActorId });
+        enteredBy.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        enteredBy.HasOne<WeighingDifferenceRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RecordId }).OnDelete(DeleteBehavior.Restrict);
+        enteredBy.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<WeighingDifferenceAttemptRow>();
+        attempt.ToTable("WeighingDifferenceAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_WeighingDifferenceAttempts_Identity",
+                $"[RecordId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_WeighingDifferenceAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_WeighingDifferenceAttempts_Result", "ISJSON([ResultJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false)
+            .UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<WeighingDifferenceRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RecordId }).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>The decimals a stored weighing-difference percentage (rate, band) keeps; a setting with more is not stored rounded.</summary>
+    public const int WeighingDifferencePercentScale =
+        GoymenERP.Modules.Logistics.Domain.WeighingDifferences.WeighingDifferenceCalculator.PercentDecimals;
+
+    /// <summary>STK-S27: a consumed exception names a real order, shipment, instruction, a number from 1 and its recorder.</summary>
+    internal const string ShipmentRiskExceptionUseCheck =
+        "[ExceptionNo] >= 1 AND [SalesOrderId] <> " + EmptyGuid + " AND [ShipmentId] <> " + EmptyGuid
+        + " AND [InstructionId] <> " + EmptyGuid + " AND LEN([RecordedBy]) > 0";
+
+    /// <summary>STK-S27: an outbox row has identities, a schema version from 1, a correlation id and a JSON payload.</summary>
+    internal const string OutboxEnvelopeCheck =
+        "[EventId] <> " + EmptyGuid + " AND [SubjectId] <> " + EmptyGuid + " AND [SchemaVersion] >= 1 "
+        + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1";
+
+    /// <summary>STK-S27 (LOJ-D19): only the declared definite-shipment events are stored.</summary>
+    internal const string OutboxEventTypeCheck =
+        "[EventType] IN ('" + LogisticsDefiniteShipmentOutboxV1.RecordedEventType + "', '"
+        + LogisticsDefiniteShipmentOutboxV1.CancelledEventType + "')";
+
+    /// <summary>
+    /// STK-S27 (L-4, LOJ-D19): the single-use record of a consumed risk exception and the Logistics outbox, both append only
+    /// and written in the shipment's save. A consumed exception is unique per (company, order, number) and a shipment
+    /// consumes at most one; an outbox row is unique per (company, event type, subject) and ordered by its rowversion.
+    /// </summary>
+    private void ConfigureShipmentRiskGate(ModelBuilder modelBuilder)
+    {
+        var use = modelBuilder.Entity<ShipmentRiskExceptionUseRow>();
+        use.ToTable("ShipmentRiskExceptionUses", Schema, table =>
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUses_Identity", ShipmentRiskExceptionUseCheck));
+        use.HasKey(x => new { x.CompanyId, x.SalesOrderId, x.ExceptionNo });
+        use.HasIndex(x => new { x.CompanyId, x.ShipmentId }).IsUnique().HasDatabaseName("UX_ShipmentRiskExceptionUses_ShipmentId");
+        use.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        use.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        use.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var outbox = modelBuilder.Entity<LogisticsOutboxMessageRow>();
+        outbox.ToTable("OutboxMessages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope", OutboxEnvelopeCheck);
+            table.HasCheckConstraint("CK_OutboxMessages_EventType", OutboxEventTypeCheck);
+        });
+        outbox.HasKey(x => x.EventId);
+        outbox.Property(x => x.EventId).ValueGeneratedNever();
+        outbox.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        outbox.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        outbox.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        outbox.Property(x => x.CausationId).HasMaxLength(128);
+        outbox.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        outbox.HasIndex(x => new { x.CompanyId, x.EventType, x.SubjectId }).IsUnique().HasDatabaseName("UX_OutboxMessages_Subject");
+        outbox.HasIndex(x => new { x.CompanyId, x.Position }).HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
+        outbox.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        outbox.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         LogisticsAuditEventTenantGuard.Validate(this, companyContext);
@@ -550,6 +733,12 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(TransferOutgoingDocumentRow.EffectiveBy), nameof(TransferOutgoingDocumentRow.EffectiveAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancelledBy), nameof(TransferOutgoingDocumentRow.CancelledAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancellationReason),
+                    ],
+                    // STK-S24: only the approval moves; the evaluation, products, actors and attempts are append only.
+                    WeighingDifferenceRecordRow =>
+                    [
+                        nameof(WeighingDifferenceRecordRow.Status), nameof(WeighingDifferenceRecordRow.Version),
+                        nameof(WeighingDifferenceRecordRow.ApprovedBy), nameof(WeighingDifferenceRecordRow.ApprovedAtUtc),
                     ],
                     _ => [],
                 };
@@ -644,6 +833,19 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                     || (int)documentVersion.CurrentValue! != (int)documentVersion.OriginalValue! + 1
                     || (int)documentStatus.CurrentValue! <= (int)documentStatus.OriginalValue!)
                     throw new InvalidOperationException("Transfer cikis belgesi yalniz ileri durum ve tek surum adimiyla ilerler.");
+                break;
+            case WeighingDifferenceRecordRow:
+                var differenceStatus = entry.Property(nameof(WeighingDifferenceRecordRow.Status));
+                var differenceVersion = entry.Property(nameof(WeighingDifferenceRecordRow.Version));
+                var approvedBy = entry.Property(nameof(WeighingDifferenceRecordRow.ApprovedBy));
+                var approvedAt = entry.Property(nameof(WeighingDifferenceRecordRow.ApprovedAtUtc));
+                if (!differenceStatus.IsModified || (int)differenceStatus.OriginalValue! != 2
+                    || (int)differenceStatus.CurrentValue! != 3
+                    || !differenceVersion.IsModified || (int)differenceVersion.OriginalValue! != 1
+                    || (int)differenceVersion.CurrentValue! != 2
+                    || !approvedBy.IsModified || approvedBy.OriginalValue is not null || approvedBy.CurrentValue is null
+                    || !approvedAt.IsModified || approvedAt.OriginalValue is not null || approvedAt.CurrentValue is null)
+                    throw new InvalidOperationException("Kantar farkı kaydı yalnız onay bekliyor durumundan bir kez onaylanır.");
                 break;
         }
     }

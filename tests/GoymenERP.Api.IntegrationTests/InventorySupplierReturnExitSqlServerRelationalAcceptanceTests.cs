@@ -117,9 +117,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await AssertSupplierReturnRefused(run, SupplierReturnRequest(receipt, BlockState.Blocked, "0.5", null),
             SupplierReturnMetadata(run), 409, InventorySupplierReturnExitCodesV1.StockNotAvailable);
 
+        // KLN-D93: an exit that would eat into an active allocation is refused with its own code and never releases it.
         await AllocateSupplierReturnLabelAsync(run, receipt.LabelId, 0.5m);
         await AssertSupplierReturnRefused(run, SupplierReturnRequest(receipt, BlockState.Free, "1", null),
-            SupplierReturnMetadata(run), 409, InventorySupplierReturnExitCodesV1.StockNotAvailable);
+            SupplierReturnMetadata(run), 409, InventorySupplierReturnExitCodesV1.StockAllocated);
+        Assert.Equal(0.5m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(RemainingKg) FROM inventory.Allocations WHERE LabelId = @label AND Status = @active",
+            ("@label", receipt.LabelId), ("@active", (int)StockAllocationStatus.Active)));
         Assert.Equal(1m, await LabelBlockKgAsync(run, receipt.LabelId, BlockState.Free));
 
         await StageSupplierReturnAsync(run, SupplierReturnRequest(receipt, BlockState.Free, "0.5", null));
@@ -130,6 +134,47 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             FROM inventory.Movements m JOIN inventory.MovementLines l ON l.MovementId = m.Id
             WHERE m.Kind = @kind AND m.SourceId = @receipt;
             """, ("@kind", (int)StockMovementKind.SupplierReturnExit), ("@receipt", receipt.MovementId)));
+    }
+
+    [SqlServerFact]
+    public async Task Supplier_return_exit_refuses_a_cost_difference_against_a_readable_average_and_writes_nothing()
+    {
+        // SAT-D371 (completes SAT-D306 (c)): until the Finance accounting-voucher spec names the account, a return whose
+        // original cost would leave a cost difference against the readable moving average is refused; a return without
+        // a difference proceeds. The ledger is read only, never written by the exit. SENTETIK figures.
+        await using var run = await Run.StartAsync();
+        var receipt = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        Assert.Equal(4m, await run.ScalarAsync<decimal>(
+            """
+            SELECT SUM(QuantityKg) FROM inventory.Balances
+            WHERE LocationId = @location AND ProductId = @product AND OwnerKind = @company AND OwnerId = @owner;
+            """,
+            ("@location", receipt.LocationId), ("@product", receipt.ProductId),
+            ("@company", (int)StockPartyKind.Company), ("@owner", CompanyA)));
+        await InsertKnownAverageCostAsync(run, CompanyA, receipt.LocationId, receipt.ProductId, 4m, 10m);
+
+        // 4 kg at 10 hold 40: 1 kg leaving at 50 leaves -10 with stock left; 4 kg at 12 leave -8 at zero stock.
+        await AssertSupplierReturnRefused(run, SupplierReturnRequest(receipt, BlockState.Free, "1", "50"),
+            SupplierReturnMetadata(run), 409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+        await AssertSupplierReturnRefused(run, SupplierReturnRequest(receipt, BlockState.Free, "4", "12"),
+            SupplierReturnMetadata(run), 409, InventorySupplierReturnExitCodesV1.CostDifferenceUnposted);
+        Assert.Equal(4m, await LabelBlockKgAsync(run, receipt.LabelId, BlockState.Free));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = @kind", ("@kind", (int)StockMovementKind.SupplierReturnExit)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName = @name",
+            ("@name", InventorySupplierReturnExitContractV1.CommandName)));
+
+        // (40 - 1 * 10) / 3 = 10: no difference, so the return proceeds under the existing rules.
+        await StageSupplierReturnAsync(run, SupplierReturnRequest(receipt, BlockState.Free, "1", "10"));
+        Assert.Equal(3m, await LabelBlockKgAsync(run, receipt.LabelId, BlockState.Free));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            """
+            SELECT COUNT(*) FROM inventory.AverageCostLedger
+            WHERE CompanyId = @company AND LocationId = @location AND ProductId = @product
+              AND Version = 1 AND QuantityKg = 4 AND AverageCostPerKg = 10;
+            """,
+            ("@company", CompanyA), ("@location", receipt.LocationId), ("@product", receipt.ProductId)));
     }
 
     [SqlServerFact]

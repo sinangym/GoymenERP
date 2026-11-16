@@ -49,17 +49,36 @@ public sealed class ProductDimensionTests
             && check.Sql == ProductPriceListDbContext.DimensionShapeCheck);
         Assert.Contains(row.GetCheckConstraints(), check => check.Name == "CK_ProductCardDimensions_Measures"
             && check.Sql == ProductPriceListDbContext.DimensionMeasureCheck);
+        Assert.Contains(row.GetCheckConstraints(), check => check.Name == "CK_ProductCardDimensions_Texts"
+            && check.Sql == ProductPriceListDbContext.DimensionTextCheck);
         foreach (var millimetre in new[]
                  {
                      nameof(ProductCardDimensionRow.ThicknessMm), nameof(ProductCardDimensionRow.WidthMm),
                      nameof(ProductCardDimensionRow.LengthMm), nameof(ProductCardDimensionRow.HeightMm),
                      nameof(ProductCardDimensionRow.OuterDiameterMm), nameof(ProductCardDimensionRow.WallThicknessMm),
+                     nameof(ProductCardDimensionRow.MeshSpacingMm),
                  })
         {
             var property = row.FindProperty(millimetre)!;
             Assert.True(property.IsNullable);
             Assert.Equal((18, ProductDimensionInputLimitsV1.MillimetreDecimals), (property.GetPrecision(), property.GetScale()));
         }
+
+        // KLN-D87: the series, size designation and surface texts are nullable, sized by the contract limits.
+        foreach (var (name, length) in new[]
+                 {
+                     (nameof(ProductCardDimensionRow.ProfileSeries), ProductDimensionInputLimitsV1.ProfileSeriesMaximumLength),
+                     (nameof(ProductCardDimensionRow.ProfileSize), ProductDimensionInputLimitsV1.ProfileSizeMaximumLength),
+                     (nameof(ProductCardDimensionRow.SurfaceFinish), ProductDimensionInputLimitsV1.SurfaceFinishMaximumLength),
+                 })
+        {
+            var property = row.FindProperty(name)!;
+            Assert.True(property.IsNullable);
+            Assert.Equal(length, property.GetMaxLength());
+        }
+
+        Assert.Equal(ProductDimensionInputLimitsV1.SectionKindMaximumLength,
+            row.FindProperty(nameof(ProductCardDimensionRow.SectionKind))!.GetMaxLength());
 
         var kg = row.FindProperty(nameof(ProductCardDimensionRow.KgPerMetre))!;
         Assert.Equal((18, ProductDimensionInputLimitsV1.KgPerMetreDecimals), (kg.GetPrecision(), kg.GetScale()));
@@ -78,8 +97,9 @@ public sealed class ProductDimensionTests
     public void The_dimension_migration_precedes_the_kg_per_metre_table_and_its_Down_refuses_first_with_51290()
     {
         using var context = Context();
-        Assert.Equal(["AddProductCardDimensions", "AddProductProfileWeightImports"],
-            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(["AddProductCardDimensions", "AddProductProfileWeightImports", "AddProductPackageStandards",
+                "AddProductSectionFamilies"],
+            context.Database.GetMigrations().TakeLast(4).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductCardDimensions();
@@ -92,6 +112,30 @@ public sealed class ProductDimensionTests
         var table = Assert.Single(migration.UpOperations.OfType<CreateTableOperation>(),
             operation => operation.Name == "ProductCardDimensions");
         Assert.Contains(table.CheckConstraints, check => check.Name == "CK_ProductCardDimensions_Shape");
+    }
+
+    [Fact]
+    public void The_section_families_migration_is_the_last_one_and_its_Down_refuses_first_with_51737()
+    {
+        using var context = Context();
+        Assert.Equal("AddProductSectionFamilies", context.Database.GetMigrations().Last().Split('_', 2)[1]);
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var migration = new AddProductSectionFamilies();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51737", guard, StringComparison.Ordinal);
+        Assert.Contains("[product].[ProductCardDimensions]", guard, StringComparison.Ordinal);
+        Assert.Contains("[product].[ProductProfileWeightLines]", guard, StringComparison.Ordinal);
+        Assert.Contains("is not rolled back (forward fix)", guard, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+        Assert.Contains(migration.UpOperations.OfType<AddCheckConstraintOperation>(),
+            operation => operation.Name == "CK_ProductCardDimensions_Shape" && operation.Sql == ProductPriceListDbContext.DimensionShapeCheck);
+        Assert.Contains(migration.UpOperations.OfType<AddCheckConstraintOperation>(),
+            operation => operation.Name == "CK_ProductCardDimensions_Texts" && operation.Sql == ProductPriceListDbContext.DimensionTextCheck);
+        Assert.Contains(migration.UpOperations.OfType<AddCheckConstraintOperation>(),
+            operation => operation.Name == "CK_ProductProfileWeightLines_Shape"
+                && operation.Sql == ProductPriceListDbContext.ProfileWeightLineShapeCheck);
     }
 
     [Fact]
@@ -154,17 +198,129 @@ public sealed class ProductDimensionTests
         Assert.Equal(accepted, measures is not null);
     }
 
-    [Fact]
-    public void Four_section_kinds_are_offered_and_the_request_carries_no_kg_per_metre()
+    // KLN-D87: the new families; text fields are never trimmed or re-cased, the wire must be thinner than the mesh spacing.
+    [Theory]
+    [InlineData("EqualAngle", "5", "50", null, null, null, null, null, null, null, null, true)]
+    [InlineData("EqualAngle", "5", "50", "6000", null, null, null, null, null, null, null, true)]
+    [InlineData("EqualAngle", "50", "50", null, null, null, null, null, null, null, null, false)]
+    [InlineData("UnequalAngle", "5", "60", null, "40", null, null, null, null, null, null, true)]
+    [InlineData("UnequalAngle", "5", "60", null, null, null, null, null, null, null, null, false)]
+    [InlineData("FlatBar", "10", "10", null, null, null, null, null, null, null, null, true)]
+    [InlineData("NarrowFlatBar", "11", "10", null, null, null, null, null, null, null, null, false)]
+    [InlineData("RoundBar", null, null, "3000", null, "20", null, null, null, null, null, true)]
+    [InlineData("RoundBar", null, null, null, null, "20", "2", null, null, null, null, false)]
+    [InlineData("SquareBar", null, "20", null, null, null, null, null, null, null, null, true)]
+    [InlineData("HexBar", null, "17", null, null, null, null, null, null, null, null, true)]
+    [InlineData("TeeBar", "5", "40", null, "40", null, null, null, null, null, null, true)]
+    [InlineData("TeeBar", "40", "40", null, "40", null, null, null, null, null, null, false)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "IPE", "200", null, true)]
+    [InlineData("StructuralProfile", null, null, "12000", null, null, null, null, "UPN", "100A", null, true)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "HEB", "22.5", null, true)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "NPU", "200", null, false)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "ipe", "200", null, false)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "IPE", "200a", null, false)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "IPE", " 200", null, false)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "IPE", "12345678901234567", null, false)]
+    [InlineData("StructuralProfile", null, null, null, null, null, null, null, "IPE", null, null, false)]
+    [InlineData("StructuralProfile", null, "100", null, null, null, null, null, "IPE", "200", null, false)]
+    [InlineData("Profile", null, "40", null, "20", null, "2", null, "IPE", "200", null, false)]
+    [InlineData("Rebar", null, null, "12000", null, null, "12", null, null, null, null, false)]
+    [InlineData("Rebar", null, null, "12000", null, "12", null, null, null, null, null, true)]
+    [InlineData("WireRod", null, null, null, null, "5.5", null, null, null, null, null, true)]
+    [InlineData("WireRod", null, null, "1000", null, "5.5", null, null, null, null, null, false)]
+    [InlineData("WeldedMesh", null, "2150", "5000", null, "5", null, "150", null, null, null, true)]
+    [InlineData("WeldedMesh", null, "2150", "5000", null, "150", null, "150", null, null, null, false)]
+    [InlineData("WeldedMesh", null, "2150", "5000", null, "5", null, null, null, null, null, false)]
+    [InlineData("ChequeredSheet", "3", "1250", "2500", null, null, null, null, null, null, null, true)]
+    [InlineData("PerforatedSheet", "1", "1000", "2000", null, null, null, null, null, null, null, true)]
+    [InlineData("CorrugatedSheet", "0.5", "1000", null, null, null, null, null, null, null, null, false)]
+    [InlineData("ErwTube", null, null, null, null, "48.3", "2.6", null, null, null, null, true)]
+    [InlineData("ErwTube", null, null, null, null, "48.3", "2.6", null, null, null, "RAL 7016", false)]
+    [InlineData("PaintedErwTube", null, null, null, null, "48.3", "2.6", null, null, null, "RAL 7016", true)]
+    [InlineData("PaintedErwTube", null, null, null, null, "48.3", "2.6", null, null, null, null, false)]
+    [InlineData("PaintedErwTube", null, null, null, null, "48.3", "2.6", null, null, null, " RAL 7016", false)]
+    [InlineData("PaintedErwTube", null, null, null, null, "48.3", "2.6", null, null, null, "", false)]
+    [InlineData("ErwProfile", null, "40", null, "20", null, "2", null, null, null, null, true)]
+    [InlineData("ErwProfile", null, "40", null, "3", null, "2", null, null, null, null, false)]
+    [InlineData("PaintedErwProfile", null, "40", null, "20", null, "2", null, null, null, "Siyah fırın boya", true)]
+    [InlineData("Sheet", "2", "1250", "2500", null, null, null, null, null, null, "RAL 7016", false)]
+    [InlineData("Coil", "0.5", "1000", null, null, null, null, "100", null, null, null, false)]
+    public void The_section_families_accept_exactly_their_fields_and_the_texts_are_never_rewritten(string kind, string? thickness,
+        string? width, string? length, string? height, string? diameter, string? wall, string? mesh, string? series, string? size,
+        string? surface, bool accepted)
     {
-        Assert.Equal(["Sheet", "Coil", "RoundTube", "Profile"], ProductDimensionSectionKindsV1.All);
+        var request = new SetProductDimensionRequestV1("0", kind, D(thickness), D(width), D(length), D(height), D(diameter), D(wall),
+            "SENTETIK gerekçe", series, size, D(mesh), surface);
+
+        var refusal = ProductDimensionShape.Refusal(request, out var measures);
+
+        Assert.Equal(accepted, refusal is null);
+        if (accepted)
+        {
+            Assert.Equal((series, size, surface), (measures!.ProfileSeries, measures.ProfileSize, measures.SurfaceFinish));
+        }
+        else
+        {
+            Assert.Null(measures);
+        }
+    }
+
+    [Fact]
+    public void The_twenty_three_section_kinds_are_offered_one_rule_each_and_the_request_carries_no_kg_per_metre()
+    {
+        Assert.Equal(
+            [
+                "Sheet", "Coil", "RoundTube", "Profile", "EqualAngle", "UnequalAngle", "FlatBar", "NarrowFlatBar", "RoundBar",
+                "SquareBar", "HexBar", "TeeBar", "StructuralProfile", "Rebar", "WireRod", "WeldedMesh", "ChequeredSheet",
+                "PerforatedSheet", "CorrugatedSheet", "ErwTube", "PaintedErwTube", "ErwProfile", "PaintedErwProfile",
+            ],
+            ProductDimensionSectionKindsV1.All);
+        Assert.Equal(ProductDimensionSectionKindsV1.All, ProductDimensionShape.Rules.Select(rule => rule.SectionKind));
+        Assert.All(ProductDimensionSectionKindsV1.All, kind =>
+            Assert.True(kind.Length <= ProductDimensionInputLimitsV1.SectionKindMaximumLength));
         Assert.DoesNotContain(typeof(SetProductDimensionRequestV1).GetProperties(),
             property => property.Name.Contains("Kg", StringComparison.OrdinalIgnoreCase));
+
+        // The database check is built from the same table: one disjunct per kind, and only round tube / profile may keep the
+        // legacy kg/m column value (KLN-D86/D87 never widen it).
+        var check = ProductPriceListDbContext.DimensionShapeCheck;
+        Assert.Equal(ProductDimensionShape.SqlCheck(), check);
+        Assert.All(ProductDimensionSectionKindsV1.All, kind =>
+            Assert.Contains($"([SectionKind] = '{kind}' AND", check, StringComparison.Ordinal));
+        Assert.Equal([ProductDimensionSectionKindsV1.RoundTube, ProductDimensionSectionKindsV1.Profile],
+            ProductDimensionShape.Rules.Where(rule => rule.LegacyKgPerMetre).Select(rule => rule.SectionKind));
+        Assert.Equal(["UPN", "NPI", "IPE", "HEA", "HEB", "HEM"], ProductProfileSeriesV1.All);
+    }
+
+    [Fact]
+    public void The_weight_table_source_is_chosen_per_kind_and_only_profiles_demand_one()
+    {
+        // URN-D16 / KLN-D87: ERW kinds read the round tube / profile rows, a structural profile its own rows; every other family
+        // has no table source yet (its kg/m stays unavailable, fail-closed, KLN-D66).
+        var expected = new Dictionary<string, string?>
+        {
+            ["RoundTube"] = "RoundTube", ["ErwTube"] = "RoundTube", ["PaintedErwTube"] = "RoundTube",
+            ["Profile"] = "Profile", ["ErwProfile"] = "Profile", ["PaintedErwProfile"] = "Profile",
+            ["StructuralProfile"] = "StructuralProfile",
+        };
+        foreach (var kind in ProductDimensionSectionKindsV1.All)
+        {
+            Assert.Equal(expected.GetValueOrDefault(kind), ProductDimensionSectionKindsV1.WeightTableKind(kind));
+            Assert.Equal(expected.GetValueOrDefault(kind) == "Profile", ProductDimensionSectionKindsV1.RequiresTableWeight(kind));
+        }
+
+        Assert.Null(ProductDimensionSectionKindsV1.WeightTableKind(null));
+        Assert.Null(ProductDimensionSectionKindsV1.WeightTableKind("profile"));
     }
 
     [Fact]
     public void The_canonical_measures_do_not_depend_on_trailing_zeros()
     {
+        var mesh = new SetProductDimensionRequestV1("0", ProductDimensionSectionKindsV1.WeldedMesh, null, 2150.0m, 5000m, null, 5.00m,
+            null, "r", MeshSpacingMm: 150.000m);
+        Assert.Null(ProductDimensionShape.Refusal(mesh, out var meshMeasures));
+        Assert.Equal("150", meshMeasures!.MeshSpacingMm!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         var typed = new SetProductDimensionRequestV1("0", ProductDimensionSectionKindsV1.Coil, 1.500m, 1000.000m, null, null, null,
             null, "r");
         var plain = typed with { ThicknessMm = 1.5m, WidthMm = 1000m };

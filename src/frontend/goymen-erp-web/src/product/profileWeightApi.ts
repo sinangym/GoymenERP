@@ -5,12 +5,14 @@
  * server resolves it. The import sends the WHOLE file (base64) with a mandatory source label and reason, the expected version
  * and one caller-owned `Idempotency-Key` (kept for a retry after an unknown outcome); the server reads the rows, keeps the file
  * in the document vault and refuses fail-closed (503) while no vault or scanner can take it. Nothing is parsed or rounded here.
+ * KLN-D87 (STK-SC33-b): a table may also hold structural profile rows keyed by the standard series and size designation (no
+ * measure); the source and version of that standard table are not chosen here — whichever source-labelled file is imported.
  */
 
-import { PRODUCT_SECTION_KINDS, type ProductSectionKind } from './dimensionApi'
+import { PRODUCT_SECTION_KINDS, isTextValue, type ProductSectionKind } from './dimensionApi'
 
-/** The two kinds the table serves (`ProductProfileWeightRowV1.SectionKind`). */
-export const TABLE_SECTION_KINDS = ['Profile', 'RoundTube'] as const satisfies readonly ProductSectionKind[]
+/** The kinds the table serves (`ProductProfileWeightRowV1.SectionKind`; the ERW kinds read the profile / round tube rows). */
+export const TABLE_SECTION_KINDS = ['Profile', 'RoundTube', 'StructuralProfile'] as const satisfies readonly ProductSectionKind[]
 export type TableSectionKind = (typeof TABLE_SECTION_KINDS)[number]
 
 /**
@@ -26,6 +28,8 @@ export const PROFILE_WEIGHT_LIMITS = {
   workbookFileExtension: '.xlsx',
   workbookContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   header: 'sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre',
+  /** KLN-D87: the header with the structural profile series and size designation. */
+  extendedHeader: 'sectionKind;widthMm;heightMm;outerDiameterMm;wallThicknessMm;kgPerMetre;profileSeries;profileSize',
 } as const
 
 export const PROFILE_WEIGHT_PROBLEM = {
@@ -48,8 +52,12 @@ export interface ProfileWeightRow {
   readonly widthMm: number | null
   readonly heightMm: number | null
   readonly outerDiameterMm: number | null
-  readonly wallThicknessMm: number
+  /** Null exactly on a structural profile row. */
+  readonly wallThicknessMm: number | null
   readonly kgPerMetre: number
+  /** KLN-D87: set exactly on a structural profile row. */
+  readonly profileSeries: string | null
+  readonly profileSize: string | null
 }
 
 export interface ProfileWeightImported {
@@ -124,7 +132,9 @@ const TABLE_VIEW_KEYS = [
 const IMPORTED_KEYS = ['sourceLabel', 'fileName', 'fileSha256', 'documentId', 'importedAtUtc', 'importedBy'] as const
 
 /** `ProductProfileWeightRowV1`'s members. */
-const ROW_KEYS = ['sectionKind', 'widthMm', 'heightMm', 'outerDiameterMm', 'wallThicknessMm', 'kgPerMetre'] as const
+const ROW_KEYS = [
+  'sectionKind', 'widthMm', 'heightMm', 'outerDiameterMm', 'wallThicknessMm', 'kgPerMetre', 'profileSeries', 'profileSize',
+] as const
 
 function decodeRow(raw: unknown): ProfileWeightRow | null {
   if (!isRecord(raw) || !hasExactKeys(raw, ROW_KEYS)) return null
@@ -132,19 +142,28 @@ function decodeRow(raw: unknown): ProfileWeightRow | null {
   if (!TABLE_SECTION_KINDS.includes(kind as TableSectionKind) || !PRODUCT_SECTION_KINDS.includes(kind as ProductSectionKind)) {
     return null
   }
-  if (!isPositiveNumber(raw.wallThicknessMm) || !isPositiveNumber(raw.kgPerMetre)) return null
-  const { widthMm, heightMm, outerDiameterMm } = raw
-  const shapeFits = kind === 'Profile'
-    ? isPositiveNumber(widthMm) && isPositiveNumber(heightMm) && outerDiameterMm === null
-    : isPositiveNumber(outerDiameterMm) && widthMm === null && heightMm === null
-  if (!shapeFits) return null
+  if (!isPositiveNumber(raw.kgPerMetre)) return null
+  const { widthMm, heightMm, outerDiameterMm, wallThicknessMm, profileSeries, profileSize } = raw
+  const structural = kind === 'StructuralProfile'
+  const textsFit = structural
+    ? typeof profileSeries === 'string' && isTextValue('profileSeries', profileSeries)
+      && typeof profileSize === 'string' && isTextValue('profileSize', profileSize)
+    : profileSeries === null && profileSize === null
+  const shapeFits = structural
+    ? widthMm === null && heightMm === null && outerDiameterMm === null && wallThicknessMm === null
+    : isPositiveNumber(wallThicknessMm) && (kind === 'Profile'
+      ? isPositiveNumber(widthMm) && isPositiveNumber(heightMm) && outerDiameterMm === null
+      : isPositiveNumber(outerDiameterMm) && widthMm === null && heightMm === null)
+  if (!shapeFits || !textsFit) return null
   return {
     sectionKind: kind as TableSectionKind,
     widthMm: widthMm as number | null,
     heightMm: heightMm as number | null,
     outerDiameterMm: outerDiameterMm as number | null,
-    wallThicknessMm: raw.wallThicknessMm,
+    wallThicknessMm: wallThicknessMm as number | null,
     kgPerMetre: raw.kgPerMetre,
+    profileSeries: profileSeries as string | null,
+    profileSize: profileSize as string | null,
   }
 }
 

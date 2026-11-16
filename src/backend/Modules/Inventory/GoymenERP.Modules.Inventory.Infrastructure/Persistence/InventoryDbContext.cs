@@ -44,6 +44,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     /// <summary>B-22a: a proved dispatch stores a positive Logistics document version; legacy rows stay null.</summary>
     internal const string TransferDispatchDocumentVersionCheck = "[DocumentVersion] IS NULL OR [DocumentVersion] >= 1";
 
+    /// <summary>KLN-D97: loss requests are numbered per transfer line from 1. Compared by the persistence-model test.</summary>
+    internal const string TransferLossRequestNumberCheck = "[RequestNumber] >= 1";
+
+    /// <summary>KLN-D23 (c), KLN-D97: a line is written off at most once, whatever number its approved request has.</summary>
+    internal const string TransferLossApprovalFilter = "[Decision] = 1";
+
     /// <summary>KLN-D25 (7)(f): Off, On or Unreadable (<see cref="Domain.Transfers.InventoryTransferSourceScaleSetting"/>).</summary>
     internal const string TransferDispatchSourceScaleSettingCheck = "[SourceScaleSettingAtDispatch] IN (1, 2, 3)";
 
@@ -62,6 +68,15 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         "[Version] >= 1 AND (([Status] = 1 AND [UnreadableReason] IS NULL AND [QuantityKg] IS NOT NULL AND [QuantityKg] >= 0 "
         + "AND [AverageCostPerKg] IS NOT NULL AND [AverageCostPerKg] >= 0) "
         + "OR ([Status] = 2 AND [UnreadableReason] IS NOT NULL AND [UnreadableReason] BETWEEN 1 AND 9 AND [QuantityKg] IS NULL AND [AverageCostPerKg] IS NULL))";
+
+    /// <summary>
+    /// ST-05 / SAT-D330 (STK-S22): a counted label's stored position and kilograms. The book may be zero: a label the
+    /// system shows at 0 but that physically stands may be counted, and only an approved surplus adds it back to stock.
+    /// The counted kilograms may be zero (the piece is gone). Compared by the persistence-model test.
+    /// </summary>
+    internal const string StockCountStateCheck =
+        "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
+        + "AND [BookKg] >= 0 AND [CountedKg] >= 0";
 
     /// <summary>
     /// B-03: Split (1), Merge (2) and Manufacturing (3, an output label's descent from its order's net-issued input
@@ -120,6 +135,19 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "AND [FutureAllocationId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000'";
 
+    /// <summary>KLN-D22: a reverse transfer names a real original transfer that is not itself.</summary>
+    internal const string TransferReversalIdentityCheck =
+        "[OriginalTransferId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalTransferId] <> [TransferId]";
+
+    /// <summary>KLN-D22 (3): the reason of a reverse transfer is mandatory; the recorded envelope is complete.</summary>
+    internal const string TransferReversalTextCheck =
+        "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+        + "AND LEN([CorrelationId]) > 0";
+
+    /// <summary>KLN-D22: a reverse transfer line names a real original line of another transfer.</summary>
+    internal const string TransferReversalLineIdentityCheck =
+        "[OriginalLineId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalTransferId] <> [TransferId]";
+
     /// <summary>
     /// F017-c: Converted (1) names its physical allocation and positive kilograms and no failure; LinkFailed (2) names a failure
     /// and no physical allocation. The quantity is always positive.
@@ -175,6 +203,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<StockScrapDecisionRow> StockScrapDecisions => Set<StockScrapDecisionRow>();
 
+    internal DbSet<OpeningCostRow> OpeningCosts => Set<OpeningCostRow>();
+
+    internal DbSet<OpeningCostDecisionRow> OpeningCostDecisions => Set<OpeningCostDecisionRow>();
+
     internal DbSet<InventoryTransferRow> Transfers => Set<InventoryTransferRow>();
 
     internal DbSet<InventoryTransferLineRow> TransferLines => Set<InventoryTransferLineRow>();
@@ -201,6 +233,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     internal DbSet<InventoryTransferLossRequestRow> TransferLossRequests => Set<InventoryTransferLossRequestRow>();
 
     internal DbSet<InventoryTransferLossDecisionRow> TransferLossDecisions => Set<InventoryTransferLossDecisionRow>();
+
+    internal DbSet<InventoryTransferReversalRow> TransferReversals => Set<InventoryTransferReversalRow>();
+
+    internal DbSet<InventoryTransferReversalLineRow> TransferReversalLines => Set<InventoryTransferReversalLineRow>();
 
     internal DbSet<FutureSupplyAllocationRow> FutureSupplyAllocations => Set<FutureSupplyAllocationRow>();
 
@@ -230,6 +266,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureCommands(modelBuilder);
         ConfigureStockCounts(modelBuilder);
         ConfigureStockScraps(modelBuilder);
+        ConfigureOpeningCosts(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
         ConfigureFutureSupply(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -825,9 +862,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_StockCounts_State",
-                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
-                + "AND [BookKg] > 0 AND [CountedKg] >= 0");
+            table.HasCheckConstraint("CK_StockCounts_State", StockCountStateCheck);
             table.HasCheckConstraint("CK_StockCounts_Text",
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");
@@ -941,6 +976,63 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .OnDelete(DeleteBehavior.Restrict);
         decision.HasOne<MovementRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// SAT-D304 opening-stock cost: a submission of one (location, product) unit cost and at most one decision on it. A
+    /// submission names its company's location (by (company, id)); the product is another module's record, referenced by
+    /// identity only. The cost is positive at the ledger's precision; an approval keeps the positive stock it costed, a
+    /// rejection none. Both are append-only; the cost ledger row an approval opens is the ledger's own.
+    /// </summary>
+    private void ConfigureOpeningCosts(ModelBuilder modelBuilder)
+    {
+        var openingCost = modelBuilder.Entity<OpeningCostRow>();
+        openingCost.ToTable("OpeningCosts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningCosts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OpeningCosts_Cost", "[UnitCostPerKg] > 0");
+            table.HasCheckConstraint("CK_OpeningCosts_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        openingCost.HasKey(x => x.Id);
+        openingCost.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        openingCost.Property(x => x.Id).ValueGeneratedNever();
+        openingCost.Property(x => x.UnitCostPerKg).HasPrecision(18, 4);
+        openingCost.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        openingCost.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        openingCost.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        openingCost.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        openingCost.HasIndex(x => new { x.CompanyId, x.LocationId, x.ProductId, x.RecordedAtUtc, x.Id });
+        openingCost.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LocationOf(openingCost);
+        openingCost.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<OpeningCostDecisionRow>();
+        decision.ToTable("OpeningCostDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningCostDecisions_Decision",
+                "([Decision] = 1 AND [CostedStockKg] IS NOT NULL AND [CostedStockKg] > 0) "
+                + "OR ([Decision] = 2 AND [CostedStockKg] IS NULL)");
+            table.HasCheckConstraint("CK_OpeningCostDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.OpeningCostId });
+        decision.Property(x => x.CostedStockKg).HasPrecision(18, 3);
+        decision.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        decision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasOne<OpeningCostRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpeningCostId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -1104,11 +1196,13 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         acceptance.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
         ConfigureInventoryTransferReceipts(modelBuilder);
+        ConfigureInventoryTransferReversals(modelBuilder);
     }
 
     /// <summary>
-    /// B-22c receipt facts (KLN-D21/KLN-D23/KLN-D24). Every row is immutable and keyed by its transfer line; the
-    /// kilogram identity, the shortage movement and the excess reason are enforced by the table itself.
+    /// B-22c receipt facts (KLN-D21/KLN-D23/KLN-D24). Every row is immutable and keyed by its transfer line (loss
+    /// requests and their decisions also by the per-line request number, KLN-D97); the kilogram identity, the shortage
+    /// movement and the excess reason are enforced by the table itself.
     /// </summary>
     private void ConfigureInventoryTransferReceipts(ModelBuilder modelBuilder)
     {
@@ -1183,10 +1277,13 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
         var lossRequest = modelBuilder.Entity<InventoryTransferLossRequestRow>();
         lossRequest.ToTable("TransferLossRequests", Schema, table =>
+        {
             table.HasCheckConstraint("CK_TransferLossRequests_Text",
                 "LEN(LTRIM(RTRIM([Explanation]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
-                + "AND LEN([CorrelationId]) > 0"));
-        lossRequest.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+                + "AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_TransferLossRequests_RequestNumber", TransferLossRequestNumberCheck);
+        });
+        lossRequest.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
         lossRequest.Property(x => x.Explanation)
             .HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength).IsRequired();
         lossRequest.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
@@ -1206,7 +1303,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
                 + "AND LEN([CorrelationId]) > 0");
         });
-        lossDecision.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        lossDecision.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber });
         lossDecision.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReceiptApiV1.MaximumTextLength)
             .IsRequired();
         lossDecision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
@@ -1215,15 +1312,64 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         lossDecision.HasIndex(x => new { x.CompanyId, x.MovementId })
             .IsUnique()
             .HasFilter("[MovementId] IS NOT NULL");
+        lossDecision.HasIndex(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .IsUnique()
+            .HasFilter(TransferLossApprovalFilter);
         lossDecision.HasOne<InventoryTransferLossRequestRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId })
-            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId, x.RequestNumber })
             .OnDelete(DeleteBehavior.Restrict);
         lossDecision.HasOne<MovementRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.MovementId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         lossDecision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// KLN-D22 reverse transfer links. The reverse transfer is an ordinary transfer row; this link adds the mandatory
+    /// reason and the original transfer. Each reverse line points at an ACCEPTED original line (the foreign key targets
+    /// the acceptance), so the database refuses a link to a line that was never accepted. Every row is immutable.
+    /// </summary>
+    private void ConfigureInventoryTransferReversals(ModelBuilder modelBuilder)
+    {
+        var reversal = modelBuilder.Entity<InventoryTransferReversalRow>();
+        reversal.ToTable("TransferReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferReversals_Identity", TransferReversalIdentityCheck);
+            table.HasCheckConstraint("CK_TransferReversals_Text", TransferReversalTextCheck);
+        });
+        reversal.HasKey(x => new { x.CompanyId, x.TransferId });
+        reversal.HasAlternateKey(x => new { x.CompanyId, x.TransferId, x.OriginalTransferId });
+        reversal.Property(x => x.Reason).HasMaxLength(Application.InventoryTransferReverseApiV1.MaximumReasonLength)
+            .IsRequired();
+        reversal.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        reversal.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        reversal.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        reversal.HasIndex(x => new { x.CompanyId, x.OriginalTransferId });
+        TransferOf(reversal);
+        reversal.HasOne<InventoryTransferRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalTransferId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        reversal.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<InventoryTransferReversalLineRow>();
+        line.ToTable("TransferReversalLines", Schema, table =>
+            table.HasCheckConstraint("CK_TransferReversalLines_Identity", TransferReversalLineIdentityCheck));
+        line.HasKey(x => new { x.CompanyId, x.TransferId, x.LineId });
+        line.HasIndex(x => new { x.CompanyId, x.TransferId, x.OriginalLineId }).IsUnique();
+        line.HasIndex(x => new { x.CompanyId, x.OriginalTransferId, x.OriginalLineId });
+        TransferLineOf(line);
+        line.HasOne<InventoryTransferReversalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TransferId, x.OriginalTransferId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.OriginalTransferId })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasOne<InventoryTransferAcceptanceRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalTransferId, x.OriginalLineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.TransferId, x.LineId })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void TransferOf<TEntity>(EntityTypeBuilder<TEntity> entity)

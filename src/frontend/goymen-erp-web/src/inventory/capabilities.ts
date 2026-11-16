@@ -37,6 +37,25 @@ export const INVENTORY_MOVEMENT_TIMELINE_ROUTE = '/stok/hareketler' as const
  */
 export const INVENTORY_SHORTAGE_WARNINGS_ROUTE = '/stok/eksik-uyarilari' as const
 
+/**
+ * STK-S33 (KLN-D44, KLN-D41) cross-module label trace and label search. Reached from a label detail, never the sidebar; it
+ * rides the existing `inventory.stock-positions.list` capability (labels + balances read, the label-detail permissions)
+ * and adds no name of its own. The API re-measures both reads on every request.
+ */
+export const INVENTORY_LABEL_TRACE_ROUTE = '/stok/etiket-izi' as const
+/** URL search parameters of the trace route: the label identity and the direction (`ileri` / `geri`). */
+export const LABEL_TRACE_LABEL_PARAM = 'etiket' as const
+export const LABEL_TRACE_DIRECTION_PARAM = 'yon' as const
+export const LABEL_TRACE_DIRECTION_PARAM_VALUE = { forward: 'ileri', backward: 'geri' } as const
+
+export function inventoryLabelTracePath(labelId: string, direction: 'forward' | 'backward'): string {
+  const query = new URLSearchParams({
+    [LABEL_TRACE_LABEL_PARAM]: labelId,
+    [LABEL_TRACE_DIRECTION_PARAM]: LABEL_TRACE_DIRECTION_PARAM_VALUE[direction],
+  })
+  return `${INVENTORY_LABEL_TRACE_ROUTE}?${query.toString()}`
+}
+
 /** Router state a label detail hands the timeline so its return link reopens the same label (and its ST-01 filter). */
 export interface MovementTimelineEntryState {
   readonly movementTimelineFromLabelId: string

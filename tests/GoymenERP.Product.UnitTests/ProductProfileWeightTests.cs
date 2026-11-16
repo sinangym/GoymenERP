@@ -103,6 +103,54 @@ public sealed class ProductProfileWeightTests
     }
 
     [Fact]
+    public void The_extended_header_adds_structural_profile_rows_keyed_by_series_and_size()
+    {
+        Assert.Equal(Header + ";profileSeries;profileSize", ProductProfileWeightFileFormatV1.ExtendedHeader);
+        var file = ProductProfileWeightFileFormatV1.ExtendedHeader + "\n"
+            + "StructuralProfile;;;;;22.4;IPE;200\n"
+            + "StructuralProfile;;;;;22.40;UPN;200\n"
+            + "StructuralProfile;;;;;10.6;HEB;100A\n"
+            + "Profile;40;20;;2;1.72;;\n"
+            + "RoundTube;;;48.3;2.6;2.93;;\n";
+
+        var refusal = ProductProfileWeightFile.Refusal(Encoding.UTF8.GetBytes(file), out var rows);
+
+        Assert.Null(refusal);
+        Assert.Equal(5, rows.Count);
+        Assert.Equal(new ProductProfileWeightRowV1("StructuralProfile", null, null, null, null, 22.4m, "IPE", "200"), rows[0]);
+        Assert.Equal(("UPN", "200"), (rows[1].ProfileSeries, rows[1].ProfileSize));
+        Assert.Equal("22.4", rows[1].KgPerMetre.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(new ProductProfileWeightRowV1("Profile", 40m, 20m, null, 2m, 1.72m), rows[3]);
+        Assert.Equal((null, null), (rows[4].ProfileSeries, rows[4].ProfileSize));
+    }
+
+    [Theory]
+    // A structural row is accepted only under the extended header.
+    [InlineData(Header + "\nStructuralProfile;;;;;22.4\n", "Satır 2")]
+    // Extended header: eight fields, the known series, an exact size designation, no measure.
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;IPE\n", "8 alan")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;NPU;200\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;ipe;200\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;IPE;200a\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;IPE;\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;IPE;12345678901234567\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;100;;;;22.4;IPE;200\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;;IPE;200\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nProfile;40;20;;2;1.72;IPE;200\n", "Satır 2")]
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nEqualAngle;;;;;1.72;;\n", "Satır 2")]
+    // One row per series and size (the kg/m does not make a new key).
+    [InlineData(ProductProfileWeightFileFormatV1.ExtendedHeader + "\nStructuralProfile;;;;;22.4;IPE;200\nStructuralProfile;;;;;22.5;IPE;200\n",
+        "Satır 3")]
+    public void An_invalid_structural_row_is_refused_whole_with_its_reason(string file, string expected)
+    {
+        var refusal = ProductProfileWeightFile.Refusal(Encoding.UTF8.GetBytes(file), out var rows);
+
+        Assert.NotNull(refusal);
+        Assert.Contains(expected, refusal, StringComparison.Ordinal);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
     public void A_file_that_is_not_utf8_or_holds_too_many_rows_is_refused()
     {
         byte[] notUtf8 = [.. Encoding.UTF8.GetBytes(Header + "\nProfile;40;20;;2;1.72"), 0xFF, (byte)'\n'];
@@ -144,6 +192,15 @@ public sealed class ProductProfileWeightTests
         var measures = Assert.Single(line.GetIndexes(), index => index.GetDatabaseName() == "UX_ProductProfileWeightLines_Measures");
         Assert.True(measures.IsUnique);
         Assert.Null(measures.GetFilter());
+        // KLN-D87: a structural row is keyed by its series and size designation; it has no wall, so the wall is nullable.
+        Assert.Equal(["ProfileSeries", "ProfileSize"], measures.Properties.TakeLast(2).Select(property => property.Name));
+        Assert.True(line.FindProperty(nameof(ProductProfileWeightLineRow.WallThicknessMm))!.IsNullable);
+        Assert.Equal(ProductDimensionInputLimitsV1.SectionKindMaximumLength,
+            line.FindProperty(nameof(ProductProfileWeightLineRow.SectionKind))!.GetMaxLength());
+        Assert.Equal(ProductDimensionInputLimitsV1.ProfileSeriesMaximumLength,
+            line.FindProperty(nameof(ProductProfileWeightLineRow.ProfileSeries))!.GetMaxLength());
+        Assert.Equal(ProductDimensionInputLimitsV1.ProfileSizeMaximumLength,
+            line.FindProperty(nameof(ProductProfileWeightLineRow.ProfileSize))!.GetMaxLength());
         foreach (var millimetre in new[]
                  {
                      nameof(ProductProfileWeightLineRow.WidthMm), nameof(ProductProfileWeightLineRow.HeightMm),
@@ -174,10 +231,11 @@ public sealed class ProductProfileWeightTests
     }
 
     [Fact]
-    public void The_kg_per_metre_migration_is_the_last_one_and_its_Down_refuses_first_with_51483()
+    public void The_kg_per_metre_migration_precedes_the_package_standard_and_section_family_migrations_and_its_Down_refuses_first_with_51483()
     {
         using var context = Context();
-        Assert.Equal("AddProductProfileWeightImports", context.Database.GetMigrations().Last().Split('_', 2)[1]);
+        Assert.Equal(["AddProductProfileWeightImports", "AddProductPackageStandards", "AddProductSectionFamilies"],
+            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductProfileWeightImports();
@@ -191,8 +249,10 @@ public sealed class ProductProfileWeightTests
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
         Assert.Contains(migration.UpOperations.OfType<CreateTableOperation>(),
             operation => operation.Name == "ProductProfileWeightLines");
-        Assert.Contains(migration.UpOperations.OfType<AddCheckConstraintOperation>(),
-            operation => operation.Name == "CK_ProductCardDimensions_Shape" && operation.Sql == ProductPriceListDbContext.DimensionShapeCheck);
+        // KLN-D87 replaced the card shape check in AddProductSectionFamilies; this migration keeps its own four-kind text.
+        var shape = Assert.Single(migration.UpOperations.OfType<AddCheckConstraintOperation>(),
+            operation => operation.Name == "CK_ProductCardDimensions_Shape");
+        Assert.DoesNotContain("StructuralProfile", shape.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

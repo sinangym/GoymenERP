@@ -255,7 +255,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
           {pendingCreate === null ? (
             <AllocationSuggestionList key={`suggestions-${pickerGeneration}`} scope={scope} lineId={line.lineId}
               lineProductText={`${line.productCode} — ${line.productName}`} disabled={busy || page.searchWindowFull}
-              selected={selectedLabel} onSelect={setSelectedLabel} />
+              requestedKg={quantityKg} selected={selectedLabel} onSelect={setSelectedLabel} />
           ) : null}
           {pendingCreate === null && selectedLabel?.isSubstitute === true ? (
             <p className={styles.notice} data-tone="unknown" data-testid={`sales-allocation-substitute-${line.lineId}`}>

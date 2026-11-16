@@ -65,6 +65,12 @@ public static class ProductPriceListRegistration
         // "vault unavailable" and nothing is imported.
         services.TryAddScoped<IProductProfileWeightFileVaultV1, UnavailableProductProfileWeightFileVault>();
         services.AddScoped<IProductProfileWeightTableServiceV1>(CreateProfileWeightTableService);
+        // B-08 / BS-10 (STK-S12): the company's package standard table and its read port for Sales and Production (same context).
+        services.AddScoped(CreatePackageStandardService);
+        services.AddScoped<IProductPackageStandardServiceV2>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        services.AddScoped<IProductPackageStandardReaderV2>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
         return services;
     }
 
@@ -128,6 +134,14 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<TimeProvider>(),
         // URN-D21: the Settings group-level file size record; absent → the decided 5 MB starting value.
         serviceProvider.GetService<IProductProfileWeightImportLimitSourceV1>());
+
+    private static ProductPackageStandardService CreatePackageStandardService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),

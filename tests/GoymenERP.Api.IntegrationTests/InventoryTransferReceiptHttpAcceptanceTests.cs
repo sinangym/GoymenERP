@@ -171,7 +171,7 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
     [Theory]
     [InlineData("receive", 422, InventoryTransferReceiptCodesV1.OverageReasonRequired)]
     [InlineData("receive", 422, InventoryTransferReceiptCodesV1.OverageReasonNotAllowed)]
-    [InlineData("receive", 409, InventoryTransferReceiptCodesV1.SplitUndecided)]
+    [InlineData("receive", 409, InventoryTransferReceiptCodesV1.MultiBlockFullReceiptOnly)]
     [InlineData("receive", 409, InventoryTransferReceiptCodesV1.LossPending)]
     [InlineData("overage", 409, InventoryTransferReceiptCodesV1.SelfApproval)]
     [InlineData("overage", 409, InventoryTransferReceiptCodesV1.OverageNotPending)]

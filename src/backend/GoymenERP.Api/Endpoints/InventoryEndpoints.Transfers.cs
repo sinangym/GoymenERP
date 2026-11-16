@@ -199,7 +199,47 @@ public static partial class InventoryEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // LOJ-D20: the read-only list of dispatches whose source scale setting could not be read ("kontrol edilemedi").
+        // A literal route; the transfer-id routes carry a guid constraint, so the two never collide.
+        endpoints.MapGet(InventoryTransferScaleCheckReviewApiV1.Path, async (
+                HttpContext httpContext,
+                IInventoryTransferScaleCheckReviewQueryV1 review,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadScaleCheckReviewLimit(httpContext.Request.Query, out var limit))
+                {
+                    return OpeningProblem(StatusCodes.Status400BadRequest, InventoryTransferCodesV1.ValidationFailed, correlation);
+                }
+
+                try
+                {
+                    return Results.Json(await review.ListNotCheckedAsync(limit, cancellationToken), TransferJson);
+                }
+                catch (InventoryTransferException exception)
+                {
+                    return exception.Status switch
+                    {
+                        StatusCodes.Status400BadRequest when exception.Code == InventoryTransferCodesV1.ValidationFailed =>
+                            OpeningProblem(exception.Status, exception.Code, correlation),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            Results.Problem(statusCode: exception.Status),
+                        _ => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+            })
+            .RequireAuthorization(ErpPermissions.InventoryBalancesRead)
+            .RequireCompanyContext()
+            .WithName("ListInventoryTransferScaleCheckReviewV1")
+            .WithTags("Inventory")
+            .Produces<InventoryTransferScaleCheckReviewPageV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryTransferCodesV1.ValidationFailed)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         MapInventoryTransferReceiptEndpoints(endpoints);
+        MapInventoryTransferReverseEndpoints(endpoints);
     }
 
     /// <summary>
@@ -510,6 +550,33 @@ public static partial class InventoryEndpoints
         }
     }
 
+    /// <summary>
+    /// LOJ-D20 query: only an optional single <c>limit</c> made of ASCII digits; an unknown or repeated key, or a value
+    /// that is not a whole number, is a 400 (the range is the query service's).
+    /// </summary>
+    internal static bool TryReadScaleCheckReviewLimit(IQueryCollection query, out int? limit)
+    {
+        limit = null;
+        if (query.Keys.Any(name => name is not "limit") || query.Any(parameter => parameter.Value.Count != 1))
+        {
+            return false;
+        }
+
+        if (!query.TryGetValue("limit", out var raw))
+        {
+            return true;
+        }
+
+        var text = raw.ToString();
+        if (text.Length is 0 or > 9 || !text.All(char.IsAsciiDigit))
+        {
+            return false;
+        }
+
+        limit = int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        return true;
+    }
+
     private static readonly JsonSerializerOptions TransferJson = new(JsonSerializerDefaults.Web);
 
     /// <summary>The closed problem codes each published transfer operation can answer with a code.</summary>
@@ -575,6 +642,7 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.CancelWindowClosed,
                 InventoryTransferCodesV1.CancelWindowUnreadable,
                 InventoryTransferCodesV1.CancelConfirmationMissing,
+                InventoryTransferCodesV1.CancelLossRequestPending,
             },
             new HashSet<string>(StringComparer.Ordinal));
 
@@ -592,7 +660,7 @@ public static partial class InventoryEndpoints
                 InventoryTransferCodesV1.TransferStateConflict,
                 InventoryTransferCodesV1.LabelVersionConflict,
                 InventoryTransferCodesV1.SourcePositionConflict,
-                InventoryTransferReceiptCodesV1.SplitUndecided,
+                InventoryTransferReceiptCodesV1.MultiBlockFullReceiptOnly,
                 InventoryTransferReceiptCodesV1.LossPending,
             },
             new HashSet<string>(StringComparer.Ordinal)

@@ -390,6 +390,15 @@ export const LOGISTICS_PROBLEM_CODE = {
   shipmentNotFound: 'logistics_shipment_not_found',
   dispatchNoteState: 'logistics_dispatch_note_state',
   eDispatchNumberInUse: 'logistics_e_dispatch_number_in_use',
+  /**
+   * STK-S27 (L-1..L-7): the Sales owner's customer risk gate stopped the definite shipment. Each is a recorded terminal
+   * refusal; the field error `riskException` carries the exception status the gate read. Nothing was shipped.
+   */
+  shipmentRiskOverLimit: 'logistics_shipment_risk_over_limit',
+  shipmentRiskCreditLimitNotSet: 'logistics_shipment_risk_credit_limit_not_set',
+  shipmentRiskUnavailable: 'logistics_shipment_risk_unavailable',
+  /** STK-S27 (L-4): the order's single-shipment risk exception was already consumed by another definite shipment. */
+  shipmentRiskExceptionUsed: 'logistics_shipment_risk_exception_used',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',

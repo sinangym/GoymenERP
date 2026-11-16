@@ -302,12 +302,22 @@ builder.Services.AddScoped<IInventoryStockProductFilterV1, InventoryStockProduct
 // STK-S30 (KLN-D39/D70): the Product owner's similarity facts behind label suggestions and the substitute check.
 builder.Services.AddScoped<IInventoryProductSimilarityFactsV1, InventoryProductSimilarityFactsHost>();
 builder.Services.AddScoped<IInventoryStockOwnerDisplaySourceV1, InventoryStockOwnerDisplayHost>();
+// STK-S25 (BS-1, SAT-D295): the Purchasing owner's supplier invoice rate behind the foreign-currency average cost.
+builder.Services.AddScoped<IInventoryPurchaseInvoiceCostRateSourceV1, InventoryPurchaseInvoiceCostRateHost>();
 builder.Services.AddInventoryMovementTimelineCursor(
     builder.Configuration["Inventory:StockPositionCursorSigningKeyBase64"]);
 builder.Services.AddInventoryParentRollReferences();
 builder.Services.AddInventoryPhysicalAllocationReads();
 // R19: the label genealogy writer/reader and the fenced split/merge command behind the published route.
 builder.Services.AddInventoryLabelGenealogy();
+// STK-S33 (KLN-D44/KLN-D41): the cross-module label trace under the label-detail permissions (no new permission). The host
+// adapters of the production, party and supplier-search owners replace the trace's not-answered defaults, so they are added
+// before the trace's TryAdd registrations; Logistics answers a shipment line's customer through its own read port.
+builder.Services.AddScoped<IInventoryLabelTraceProductionSourceV1, InventoryLabelTraceProductionHostSource>();
+builder.Services.AddScoped<IInventoryLabelTracePartySourceV1, InventoryLabelTracePartyHostSource>();
+builder.Services.AddScoped<IInventoryLabelTraceSupplierSearchSourceV1, InventoryLabelTraceSupplierSearchHostSource>();
+builder.Services.AddLogisticsShipmentCustomerRead();
+builder.Services.AddInventoryLabelTrace();
 // Label classification is an Inventory-owned, versioned command. Central registers only the reviewed
 // permission identity and binds the existing scoped store/command; this grants no actor access.
 builder.Services.AddScoped(_ => new InventoryLabelClassificationAuthorityV1(
@@ -319,6 +329,8 @@ builder.Services.AddScoped<IInventoryLabelClassificationCommandV1, InventoryLabe
 builder.Services.AddInventoryStockCounts();
 // ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
 builder.Services.AddInventoryStockScraps();
+// SAT-D304 / SAT-D372: the opening-stock cost submit/decide commands (giren ≠ onaylayan) behind the published routes.
+builder.Services.AddInventoryOpeningCosts();
 // D-05: read-only Inventory pending approvals composed into the existing Work inbox.
 builder.Services.AddInventoryPendingApprovalReads();
 // B-22a: the stock transfer plan/dispatch commands and the transfer read behind the published routes, with the
@@ -384,6 +396,10 @@ builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerRet
 builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
 builder.Services.AddScoped<ILogisticsTransferOutgoingDocumentScopeV1, LogisticsTransferOutgoingDocumentScope>();
 builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, InventoryTransferOutgoingDocumentProofAdapter>();
+// STK-S24: the weighing-difference fence and the read-only physical stock seam over Inventory. The Settings rate/band port
+// keeps Logistics's fail-closed default until Settings publishes those values.
+builder.Services.AddScoped<ILogisticsWeighingDifferenceScopeV1, LogisticsWeighingDifferenceScope>();
+builder.Services.AddScoped<ILogisticsWeighingDifferenceStockReadPortV1, InventoryWeighingDifferenceStockAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -448,6 +464,8 @@ builder.Services.AddWorkModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
+// STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
+builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
@@ -536,6 +554,7 @@ app.MapProductPriceListEndpoints();
 app.MapProductItemTypeEndpoints();
 app.MapProductDimensionEndpoints();
 app.MapProductProfileWeightTableEndpoints();
+app.MapProductPackageStandardEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();

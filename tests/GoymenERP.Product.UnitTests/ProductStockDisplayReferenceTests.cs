@@ -452,6 +452,7 @@ public sealed class ProductStockDisplayReferenceTests
                 first.LengthMm));
         Assert.NotNull(first.SimilarityKey);
         Assert.Equal(first.SimilarityKey, second.SimilarityKey);
+        Assert.Equal(("none", "none"), (first.CoatingCode, second.CoatingCode));
         Assert.Equal((1.3m, 1300m), (second.ThicknessMm, second.WidthMm));
         Assert.NotNull(third.SimilarityKey);
         Assert.NotEqual(first.SimilarityKey, third.SimilarityKey);
@@ -459,6 +460,7 @@ public sealed class ProductStockDisplayReferenceTests
         {
             Assert.Null(item.Identity);
             Assert.Null(item.SimilarityKey);
+            Assert.Null(item.CoatingCode);
             Assert.Equal(((decimal?)null, (decimal?)null, (decimal?)null), (item.ThicknessMm, item.WidthMm, item.LengthMm));
         });
         Assert.Equal((FirstId, "6"), (stale.ProductId, stale.ExpectedProductVersion));
@@ -476,6 +478,7 @@ public sealed class ProductStockDisplayReferenceTests
 
         Assert.Equal("P-1", item.Identity!.Code);
         Assert.Null(item.SimilarityKey);
+        Assert.Null(item.CoatingCode);
         Assert.Equal(((decimal?)null, (decimal?)null), (item.ThicknessMm, item.WidthMm));
     }
 
@@ -525,6 +528,32 @@ public sealed class ProductStockDisplayReferenceTests
         Assert.NotEqual(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX52D", "none")));
         Assert.NotEqual(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX51D", "z")));
         Assert.EndsWith("6:coating4:none7:quality5:DX51D", key, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_coating_code_is_read_from_the_template_coating_field_and_is_null_when_not_stated()
+    {
+        var template = Assert.Single(Definition().Templates);
+        ProductReferences References(JsonElement? coating)
+        {
+            var attributes = new Dictionary<string, JsonElement>
+            {
+                ["quality"] = JsonSerializer.SerializeToElement("DX51D"),
+            };
+            if (coating.HasValue) attributes["coating"] = coating.Value;
+            return new(TemplateId, "7", attributes);
+        }
+
+        Assert.Equal("z", ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement("z"))));
+        Assert.Equal("none", ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement("none"))));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(template, References(null)));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement(" "))));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement(7))));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(template, new ProductReferences(TemplateId, "7")));
     }
 
     private static void AssertResult(ProductStockDisplayResultV1 item, Guid id, string version,

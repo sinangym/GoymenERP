@@ -34,6 +34,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(InventoryTransferReceiptRow), typeof(InventoryTransferOverageDecisionRow),
             typeof(InventoryTransferLossRequestRow), typeof(InventoryTransferLossDecisionRow),
             typeof(FutureSupplyConversionRow),
+            typeof(InventoryTransferReversalRow), typeof(InventoryTransferReversalLineRow),
         ];
 
     [Fact]
@@ -200,7 +201,15 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryFutureSupplyAllocations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferDispatchCancellation", StringComparison.Ordinal));
-        Assert.Equal("AddInventorySupplierReturnExit", context.Database.GetMigrations().Last()[15..]);
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventorySupplierReturnExit", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryTransferReversals", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AllowInventoryZeroBookStockCounts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryTransferLossRequestNumbers", StringComparison.Ordinal));
+        Assert.Equal("AddInventoryOpeningCosts", context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -273,6 +282,9 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-stock-scrap")]
     [InlineData("delete-stock-scrap")]
     [InlineData("edit-stock-scrap-decision")]
+    [InlineData("edit-opening-cost")]
+    [InlineData("delete-opening-cost")]
+    [InlineData("edit-opening-cost-decision")]
     [InlineData("edit-allocation-change")]
     [InlineData("delete-allocation-change")]
     [InlineData("edit-allocation-label")]
@@ -374,6 +386,20 @@ public sealed class InventoryPersistenceModelTests
                     CompanyId = CompanyA, ScrapId = Guid.NewGuid(), Decision = 2, Reason = "SYN-REJECT",
                     PayloadHash = new string('0', 64), DecidedAtUtc = At, DecidedBy = "synthetic", CorrelationId = "synthetic",
                 }).Decision = 1;
+                break;
+            case "edit-opening-cost":
+                // SAT-D304 opening cost: a submitted cost is never rewritten; a wrong one is rejected and entered again.
+                Attach(context, OpeningCost()).UnitCostPerKg = 1m;
+                break;
+            case "delete-opening-cost":
+                context.OpeningCosts.Remove(Attach(context, OpeningCost()));
+                break;
+            case "edit-opening-cost-decision":
+                Attach(context, new OpeningCostDecisionRow
+                {
+                    CompanyId = CompanyA, OpeningCostId = Guid.NewGuid(), Decision = 2, Reason = "SYN-REJECT",
+                    PayloadHash = new string('0', 64), DecidedAtUtc = At, DecidedBy = "synthetic", CorrelationId = "synthetic",
+                }).CostedStockKg = 1m;
                 break;
             case "edit-allocation-change":
                 // INV-AL-1 change: the history of a resize or move is evidence; it is never rewritten.
@@ -622,7 +648,7 @@ public sealed class InventoryPersistenceModelTests
         Assert.True(cancellations.FindProperty("EDispatchConfirmationVersion")!.IsNullable);
 
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
-        Assert.Contains("THROW 51471", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51823", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[Kind] = 11", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[TransferDispatchCancellations]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[TransferDispatchCancelClosures]", guard.Sql, StringComparison.Ordinal);
@@ -656,9 +682,18 @@ public sealed class InventoryPersistenceModelTests
             Assert.Single(transfers.GetCheckConstraints(), check => check.Name == "CK_Transfers_State").Sql,
             StringComparison.Ordinal);
 
-        foreach (var entity in new[] { receipts, overageDecisions, lossRequests, lossDecisions })
+        foreach (var entity in new[] { receipts, overageDecisions })
         {
             Assert.Equal(["CompanyId", "TransferId", "LineId"],
+                entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
+            Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+        }
+
+        // KLN-D97 (AddInventoryTransferLossRequestNumbers): loss requests and decisions are also keyed by the per-line
+        // request number.
+        foreach (var entity in new[] { lossRequests, lossDecisions })
+        {
+            Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
                 entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
             Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
         }
@@ -704,6 +739,84 @@ public sealed class InventoryPersistenceModelTests
     }
 
     [Fact]
+    public void The_loss_request_number_migration_widens_both_keys_keeps_one_approval_per_line_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferLossRequestNumbers();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var lossRequests = model.FindEntityType(typeof(InventoryTransferLossRequestRow))!;
+        var lossDecisions = model.FindEntityType(typeof(InventoryTransferLossDecisionRow))!;
+
+        Assert.Equal((false, false), (lossRequests.FindProperty("RequestNumber")!.IsNullable,
+            lossDecisions.FindProperty("RequestNumber")!.IsNullable));
+        Assert.Equal("[RequestNumber] >= 1", InventoryDbContext.TransferLossRequestNumberCheck);
+        Assert.Equal(InventoryDbContext.TransferLossRequestNumberCheck,
+            Assert.Single(lossRequests.GetCheckConstraints(),
+                check => check.Name == "CK_TransferLossRequests_RequestNumber").Sql);
+        var request = Assert.Single(lossDecisions.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLossRequestRow));
+        Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
+            request.Properties.Select(property => property.Name));
+        Assert.Equal(["CompanyId", "TransferId", "LineId", "RequestNumber"],
+            request.PrincipalKey.Properties.Select(property => property.Name));
+        // KLN-D23 (c): a line is written off at most once, whatever number its approved request has.
+        Assert.Equal("[Decision] = 1", InventoryDbContext.TransferLossApprovalFilter);
+        Assert.Contains(lossDecisions.GetIndexes(), index => index.IsUnique
+            && index.GetFilter() == InventoryDbContext.TransferLossApprovalFilter
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId", "LineId"]));
+
+        var added = migration.UpOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>().ToArray();
+        Assert.Equal(["TransferLossRequests", "TransferLossDecisions"], added.Select(column => column.Table));
+        Assert.All(added, column => Assert.Equal(("RequestNumber", false, (object?)1),
+            (column.Name, column.IsNullable, column.DefaultValue)));
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51811", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossRequests] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferLossDecisions] WHERE [RequestNumber] > 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_opening_cost_migration_adds_company_scoped_append_only_tables_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryOpeningCosts();
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model;
+
+        // SAT-D304: a positive cost (a missing one is "yok", never zero) at the ledger's internal scale.
+        var openingCost = design.FindEntityType(typeof(OpeningCostRow))!;
+        Assert.Equal("[UnitCostPerKg] > 0",
+            Assert.Single(openingCost.GetCheckConstraints(), check => check.Name == "CK_OpeningCosts_Cost").Sql);
+        Assert.Equal((18, 4), (openingCost.FindProperty(nameof(OpeningCostRow.UnitCostPerKg))!.GetPrecision(),
+            openingCost.FindProperty(nameof(OpeningCostRow.UnitCostPerKg))!.GetScale()));
+        Assert.Contains(openingCost.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrganizationLocationReference)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LocationId"]));
+        Assert.Equal(["CompanyId", "Id"], openingCost.GetKeys().Single(key => !key.IsPrimaryKey())
+            .Properties.Select(property => property.Name));
+
+        // One decision per submission; an approval names the positive stock it costed, a rejection none.
+        var decision = design.FindEntityType(typeof(OpeningCostDecisionRow))!;
+        Assert.Equal(["CompanyId", "OpeningCostId"], decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OpeningCostRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OpeningCostId"])
+            && key.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "Id"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Equal("([Decision] = 1 AND [CostedStockKg] IS NOT NULL AND [CostedStockKg] > 0) OR ([Decision] = 2 AND [CostedStockKg] IS NULL)",
+            Assert.Single(decision.GetCheckConstraints(), check => check.Name == "CK_OpeningCostDecisions_Decision").Sql);
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51712", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[OpeningCosts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[OpeningCostDecisions]", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(["OpeningCostDecisions", "OpeningCosts"], migration.DownOperations
+            .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>().Select(operation => operation.Name));
+    }
+
+    [Fact]
     public void The_supplier_return_exit_migration_widens_the_movement_kind_check_and_its_Down_refuses_first()
     {
         var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventorySupplierReturnExit();
@@ -725,6 +838,93 @@ public sealed class InventoryPersistenceModelTests
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);
         Assert.Equal("[Kind] BETWEEN 1 AND 14", narrowed.Sql);
+    }
+
+    [Fact]
+    public void The_transfer_reversal_link_carries_the_reviewed_checks_keys_and_indexes_and_its_Down_refuses_first()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferReversals();
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var reversals = model.FindEntityType(typeof(InventoryTransferReversalRow))!;
+        var lines = model.FindEntityType(typeof(InventoryTransferReversalLineRow))!;
+
+        Assert.Equal(("TransferReversals", "TransferReversalLines"), (reversals.GetTableName(), lines.GetTableName()));
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["CK_TransferReversals_Identity"] = InventoryDbContext.TransferReversalIdentityCheck,
+                ["CK_TransferReversals_Text"] = InventoryDbContext.TransferReversalTextCheck,
+            },
+            reversals.GetCheckConstraints().ToDictionary(check => check.Name!, check => (string?)check.Sql));
+        Assert.Equal(InventoryDbContext.TransferReversalLineIdentityCheck,
+            Assert.Single(lines.GetCheckConstraints(), check => check.Name == "CK_TransferReversalLines_Identity").Sql);
+        Assert.Equal(new[] { "CompanyId", "TransferId" },
+            reversals.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(new[] { "CompanyId", "TransferId", "LineId" },
+            lines.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(GoymenERP.Modules.Inventory.Application.InventoryTransferReverseApiV1.MaximumReasonLength,
+            reversals.FindProperty(nameof(InventoryTransferReversalRow.Reason))!.GetMaxLength());
+        Assert.Contains(reversals.GetIndexes(), index => !index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OriginalTransferId"]));
+        // One reverse transfer brings one original line back at most once.
+        Assert.Contains(lines.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "TransferId", "OriginalLineId"]));
+        Assert.Contains(lines.GetIndexes(), index => !index.IsUnique
+            && index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "OriginalTransferId", "OriginalLineId"]));
+
+        // The reverse transfer is a real transfer of the same company, and so is the original.
+        Assert.Contains(reversals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Contains(reversals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OriginalTransferId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+        // A reverse line is a line of its reverse transfer, belongs to that link's original, and names an ACCEPTED line.
+        Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferLineRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransferId", "LineId"]));
+        Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferReversalRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "TransferId", "OriginalTransferId"]));
+        Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(InventoryTransferAcceptanceRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "OriginalTransferId", "OriginalLineId"])
+            && key.PrincipalKey.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "TransferId", "LineId"])
+            && key.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51722", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[TransferReversals]", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void The_zero_book_stock_count_migration_relaxes_only_the_book_check_and_its_Down_refuses_first()
+    {
+        // SAT-D330 (STK-S22): a label shown at 0 is countable, so a stored count's book may be 0.
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AllowInventoryZeroBookStockCounts();
+        using var context = Context();
+        var counts = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(StockCountRow))!;
+
+        Assert.Equal(InventoryDbContext.StockCountStateCheck,
+            Assert.Single(counts.GetCheckConstraints(), check => check.Name == "CK_StockCounts_State").Sql);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51748", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[StockCounts]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[BookKg] = 0", guard.Sql, StringComparison.Ordinal);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var relaxed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.UpOperations[^1]);
+        Assert.Equal(("CK_StockCounts_State", InventoryDbContext.StockCountStateCheck), (relaxed.Name, relaxed.Sql));
+        var restored = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
+            migration.DownOperations[^1]);
+        Assert.Equal(InventoryDbContext.StockCountStateCheck.Replace("[BookKg] >= 0", "[BookKg] > 0", StringComparison.Ordinal),
+            restored.Sql);
     }
 
     [Fact]
@@ -886,6 +1086,20 @@ public sealed class InventoryPersistenceModelTests
     private static LabelRow Label() => new()
     {
         Id = Guid.NewGuid(), CompanyId = CompanyA, Code = "SYN-L", ProductId = BandProduct, LotId = Lot1, Version = 1,
+    };
+
+    private static OpeningCostRow OpeningCost() => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = CompanyA,
+        LocationId = Warehouse1,
+        ProductId = BandProduct,
+        UnitCostPerKg = 12.5m,
+        Reason = "SYN-OPENING",
+        PayloadHash = new string('0', 64),
+        RecordedAtUtc = At,
+        RecordedBy = "synthetic",
+        CorrelationId = "synthetic",
     };
 
     private static BalanceRow Balance() => new()

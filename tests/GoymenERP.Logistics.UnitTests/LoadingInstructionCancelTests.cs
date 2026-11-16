@@ -4,7 +4,10 @@ using GoymenERP.Modules.Logistics.Domain.Quantities;
 
 namespace GoymenERP.Logistics.UnitTests;
 
-/// <summary>F-020 (LOJ-D6..D8): cancelling an instruction keeps everything, marks who/when/why, and refuses once a shipment exists.</summary>
+/// <summary>
+/// F-020 (LOJ-D6..D8): cancelling an instruction keeps everything, marks who/when/why, and refuses once a shipment exists.
+/// LOJ-D18: the cancel leaves the line allocations in place (release is a separate Inventory operation).
+/// </summary>
 public sealed class LoadingInstructionCancelTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 11, 12, 9, 0, 0, TimeSpan.FromHours(3));
@@ -47,6 +50,25 @@ public sealed class LoadingInstructionCancelTests
         Assert.Equal(LoadingInstructionStatus.Cancelled, instruction.Status);
         Assert.Single(instruction.Shares);
         Assert.Equal(Kg(4_000m), line.LoadedQuantity);
+    }
+
+    [Fact]
+    public void Cancelling_an_issued_instruction_keeps_every_line_allocation_id_and_a_new_instruction_may_name_it_again()
+    {
+        // LOJ-D18: the cancel does not release the physical allocation; it stays with the Sales order.
+        var allocation = Guid.NewGuid();
+        var source = new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0);
+        var instruction = LoadingInstruction.Create(Guid.NewGuid(), Company, Customer, Account, T0);
+        var line = instruction.AddLine(1, Guid.NewGuid(), source, Guid.NewGuid(), KgUnit, allocation, Kg(6_000m), T0);
+        instruction.Issue(2, T0);
+        instruction.CancelInstruction(3, "user-1", "plan değişti", T1);
+
+        Assert.Equal((LoadingInstructionStatus.Cancelled, allocation), (instruction.Status, line.AllocationId));
+        Assert.Equal(allocation, Assert.Single(instruction.Lines).AllocationId);
+
+        var next = LoadingInstruction.Create(Guid.NewGuid(), Company, Customer, Account, T1);
+        var reused = next.AddLine(1, Guid.NewGuid(), source, Guid.NewGuid(), KgUnit, allocation, Kg(6_000m), T1);
+        Assert.Equal(allocation, reused.AllocationId);
     }
 
     [Fact]

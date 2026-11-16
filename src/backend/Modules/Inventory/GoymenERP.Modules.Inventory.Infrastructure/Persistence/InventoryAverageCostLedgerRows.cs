@@ -11,15 +11,18 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 internal static class InventoryAverageCostLedgerRows
 {
     /// <summary>
-    /// The physical stock the purchase average is weighted by (SAT-D347 "depodaki eldeki kg"): the company's own goods
-    /// (owner = the resolved company), whoever holds them, free and blocked alike (a block does not move goods). Goods a
-    /// counterparty owns never had a purchase cost of this company, so they are not part of its average. That reading of
-    /// "eldeki kg" is the author's (reversible; reported with the slice).
+    /// The physical stock the purchase average is weighted by (SAT-D347 "depodaki eldeki kg", KLN-D84 "yalnız şirketin
+    /// kendi malı olan stok, eldeki kg ile; emanet ve fason stok ağırlığa girmez"): the company's own goods (owner = the
+    /// resolved company) that the company itself holds (custodian = the resolved company), free and blocked alike (a block
+    /// does not move goods). Goods a counterparty owns (consignment held for others) never had a purchase cost of this
+    /// company, and the company's goods a counterparty holds (at a subcontractor or in consignment elsewhere) are not on
+    /// hand, so neither weighs (KLN-D84).
     /// </summary>
     public static IQueryable<BalanceRow> CostedStock(InventoryDbContext dbContext, Guid companyId, Guid productId) =>
         dbContext.Balances.AsNoTracking()
             .Where(balance => balance.CompanyId == companyId && balance.ProductId == productId
                 && balance.OwnerKind == (int)StockPartyKind.Company && balance.OwnerId == companyId
+                && balance.CustodianKind == (int)StockPartyKind.Company && balance.CustodianId == companyId
                 && balance.QuantityKg > 0m);
 
     /// <summary>A stored row as the cost core's position. A row the schema checks forbid fails closed, never a figure.</summary>
