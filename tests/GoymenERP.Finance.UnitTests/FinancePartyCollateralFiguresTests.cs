@@ -8,7 +8,7 @@ namespace GoymenERP.Finance.UnitTests;
 /// rate / 100, exact and per currency; anything Finance cannot read exactly makes the whole figure unavailable. The
 /// documentary risk counts every customer instrument that is neither collected nor returned. F018 §L3: the held
 /// collateral at its recorded amount and the utilization (the open receivables taken from the weighted collateral, per
-/// currency, failing closed across currencies). SENTETIK / NOT_ENV.
+/// currency; collateral in another currency is zero cover, FNS-D74). SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class FinancePartyCollateralFiguresTests
 {
@@ -225,12 +225,18 @@ public sealed class FinancePartyCollateralFiguresTests
     }
 
     [Fact]
-    public void A_leftover_in_one_currency_beside_an_uncovered_receivable_in_another_has_no_decided_rule_and_is_unavailable()
+    public void Collateral_in_another_currency_is_zero_cover_and_the_utilization_stays_available()
     {
+        // FNS-D74: dollar collateral never covers a lira receivable; nothing is used and that is a recorded zero.
         var figure = FinancePartyCollateralFigures.Utilization(Available((Lira, "900")), Available((Dollar, "20")));
 
-        Assert.Equal((false, 0, FinancePartyCollateralFigures.UtilizationCurrencyRuleNotSet),
-            (figure.IsAvailable, figure.Amounts.Count, figure.ReasonCode));
+        Assert.Equal((true, 0, (string?)null), (figure.IsAvailable, figure.Amounts.Count, figure.ReasonCode));
+
+        // A leftover in one currency beside an uncovered receivable in another: each currency answers on its own.
+        var mixed = FinancePartyCollateralFigures.Utilization(Available((Lira, "900"), (Dollar, "5")),
+            Available((Lira, "100"), (Dollar, "20")));
+        Assert.True(mixed.IsAvailable);
+        Assert.Equal([(Lira, "100"), (Dollar, "5")], mixed.Amounts.Select(amount => (amount.CurrencyId, amount.Amount)));
     }
 
     [Fact]
