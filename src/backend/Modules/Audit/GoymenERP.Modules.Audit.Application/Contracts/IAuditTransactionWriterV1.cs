@@ -9,6 +9,9 @@ namespace GoymenERP.Modules.Audit.Application.Contracts;
 /// </summary>
 public interface IAuditTransactionWriterV1
 {
+    /// <summary>Whether this scope already holds drafts owned by an earlier caller attempt.</summary>
+    bool HasPendingDrafts { get; }
+
     Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default);
 
     /// <summary>Discards drafts of an aborted attempt; it never changes persisted audit rows.</summary>

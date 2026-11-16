@@ -8,8 +8,11 @@ namespace GoymenERP.Modules.Inventory.Application;
 /// general line's active future supply allocations in order and each consumed part becomes a physical <c>sales.order-line</c>
 /// allocation on the new label. The future allocation and the physical allocation are linked by id
 /// (<c>inventory.FutureSupplyConversions</c>). No HTTP route, OpenAPI entry or permission is declared here: only the goods receipt
-/// host calls the port, after its own permission check, inside its own transaction; the protected receipt contracts
-/// (<c>IPurchaseGoodsReceiptTransactionV1</c>, <see cref="IInventoryGoodsReceiptParticipantV1"/>) do not change.
+/// host calls the port, after its own permission check, inside its own transaction. BEFORE any acceptance stage takes a purchase
+/// lock, the host resolves Purchasing's general line, reads its active future allocations, locks their complete Sales-line union
+/// ascending, then its purchase-line union ascending, and re-reads a subset of the prelocked allocation set. Growth discards the
+/// prewrite transaction and prepares afresh; a business callback is never retried. This shares serialization with physical and
+/// future allocation creators on OTHER purchase lines and prevents an interleaved physical+future demand-cap read.
 /// </summary>
 public static class InventoryGoodsReceiptFutureSupplyV1
 {

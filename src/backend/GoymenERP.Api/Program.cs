@@ -252,6 +252,7 @@ builder.Services.AddSettingsModule(
 // KIM-S19 (B-13): Finance's opening period reader answers from the Settings company policy registry. Finance registers its
 // fail-closed default with TryAddScoped, so the host replaces it here; any failure still answers "not available".
 builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceOpeningPeriodReader, SettingsFinanceOpeningPeriodReader>());
+builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceCollateralTypeCatalogReader, SettingsFinanceCollateralTypeCatalogReader>());
 
 static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
     new SalesReferenceReadHandler(
@@ -386,6 +387,7 @@ builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost
 // the Settings limit administration reads people and their company memberships from the Identity owner, both through
 // central adapters (no module reads another's tables).
 builder.Services.AddScoped<ISalesDiscountLimitGroupSourceV1, SalesDiscountLimitGroupHost>();
+builder.Services.AddScoped<ISalesContractDiscountLimitSourceV1, SettingsSalesContractDiscountLimitHost>();
 builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHost>();
 // KIM-D39: the Settings segregation of duties owner reads "exactly one active user in the company" from the Identity owner
 // through this central adapter (Settings reads no Identity table).
@@ -493,6 +495,8 @@ builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
 builder.Services.AddSalesRiskExceptionUsageInbox();
+builder.Services.AddCompanySetupMessaging();
+builder.Services.AddCompanyLifecycleAuthorizationGate();
 // SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
 builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
@@ -610,6 +614,7 @@ app.MapSettingsCompanyPolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
 app.MapSettingsWorkCenterCapacityEndpoints();
 app.MapSettingsReferenceListEndpoints();
+app.MapSettingsCollateralTypeEndpoints();
 app.MapSettingsBankCsvMappingEndpoints();
 app.MapSettingsSalesQuoteAndEInvoicePolicyEndpoints();
 app.MapSettingsExchangeRateEndpoints();

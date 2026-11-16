@@ -592,7 +592,7 @@ public sealed partial class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             var service = new ReversalProposalService(dbContext, companyContext, user, new SyntheticPermissions(),
                 new SyntheticOpenPeriodRule(), new FinanceAllocationReversalGate(dbContext, companyContext, user), collector,
                 new FinanceReversalEnvelopes(Envelope(ReversalProposalService.ProposeCommand),
-                    Envelope(ReversalProposalService.ApproveCommand)), TimeProvider.System);
+                    Envelope(ReversalProposalService.ApproveCommand)), TimeProvider.System, new InternalLedgerTreasuryBalanceGuard(dbContext, companyContext));
             return new Scope<IReversalProposalService>(dbContext, service,
                 new FinanceContext(CompanyA, actor, $"ledger-reversal-{Guid.NewGuid():N}", null));
         }

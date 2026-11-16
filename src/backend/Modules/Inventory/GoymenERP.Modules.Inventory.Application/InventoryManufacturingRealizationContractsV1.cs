@@ -204,11 +204,13 @@ public static class InventoryManufacturingRealizationCodesV1
 public sealed class InventoryManufacturingRealizationException : Exception
 {
     private InventoryManufacturingRealizationException(int status, string code,
-        InventoryManufacturingStockShortfallV1? stockShortfall) : base(code)
+        InventoryManufacturingStockShortfallV1? stockShortfall,
+        InventoryManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null) : base(code)
     {
         Status = status;
         Code = code;
         StockShortfall = stockShortfall;
+        PlanAllocationShortfall = planAllocationShortfall;
     }
 
     public int Status { get; }
@@ -220,6 +222,18 @@ public sealed class InventoryManufacturingRealizationException : Exception
     /// refusal, and on this one when the detail could not be built; the code alone stays the stable reason.
     /// </summary>
     public InventoryManufacturingStockShortfallV1? StockShortfall { get; }
+
+    /// <summary>Only a verified single-position plan-allocation insufficient-free-stock refusal carries this measurement.</summary>
+    public InventoryManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; }
+
+    public static InventoryManufacturingRealizationException RefusedPlanAllocation(int status, string code,
+        InventoryManufacturingPlanAllocationShortfallV1 shortfall)
+    {
+        ArgumentNullException.ThrowIfNull(shortfall);
+        return status == 409 && code == InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock
+            ? new(status, code, stockShortfall: null, planAllocationShortfall: shortfall)
+            : throw new InvalidOperationException("Only the plan-allocation free-stock refusal carries this shortfall.");
+    }
 
     public static InventoryManufacturingRealizationException Refused(int status, string code) =>
         InventoryManufacturingRealizationCodesV1.IsDefined(status, code)

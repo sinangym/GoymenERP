@@ -82,3 +82,12 @@
 - `GET /api/v1/organization/company/tax-id/corrections` lists the resolved company's corrections (either tax-id permission company-wide; `canApply` = approve). `POST …/corrections/{id}/apply` `{expectedVersion}` → 204 (permission `organization.company.tax-id.approve`) writes the corrected VKN (or clears it) and closes the correction in one transaction, with one audit event `organization.company.tax-id.correction-applied.v1`: SYSTEM actor (the staging source), before `{OldVkn, NewVkn, Source}`, approver in the payload.
 - Problem codes: 409 `…_correction_not_pending`, `…_correction_stale` (the company VKN moved since staging); 422 `organization_company_tax_id_in_use`.
 - Down guard **51877** refuses while any correction is `Applied` (forward fix); pending-only rows roll back freely.
+
+
+### KIM-S5 company setup (KIM-D18/D20/D21; source PARTIAL)
+
+- Generated migration `20261116185536_AddCompanySetupLifecycleAndMessaging`: owner inbox/outbox and lifecycle source; Up DDL only. Existing companies remain Active.
+- Down first refuses with **51945** while company setup lifecycle/history would lose meaning (forward fix). No database application was performed.
+- Only the two exact setup events pass the pending-company dispatcher gate; business events stay held. Dispatcher activation remains human-owned.
+- Company opening authority scope is still a decision gate. No opening endpoint, production grant or seed was added; source is not a usable opening workflow.
+- Unit/contract and real SQL facts are written; runtime acceptance is NOT_RUN.

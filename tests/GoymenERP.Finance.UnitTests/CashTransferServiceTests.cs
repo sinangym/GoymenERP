@@ -350,12 +350,12 @@ public sealed class CashTransferServiceTests
     }
 
     [Fact]
-    public async Task Committed_transfer_makes_the_cash_account_balance_unavailable_for_passivation()
+    public async Task Passivation_reader_never_claims_zero_from_an_unprotected_InMemory_read()
     {
         await using var run = await Run.StartAsync();
         await using (var before = run.Context())
         {
-            Assert.Equal(CashAccountBalanceState.Zero, await new TreasuryMovementAwareCashAccountBalanceReader(before)
+            Assert.Equal(CashAccountBalanceState.Unavailable, await new TreasuryMovementAwareCashAccountBalanceReader(before, ResolvedCompany(Company))
                 .ReadAsync(Company, CashLira, CancellationToken.None));
         }
 
@@ -367,12 +367,19 @@ public sealed class CashTransferServiceTests
         }
 
         await using var after = run.Context();
-        var reader = new TreasuryMovementAwareCashAccountBalanceReader(after);
+        var reader = new TreasuryMovementAwareCashAccountBalanceReader(after, ResolvedCompany(Company));
         Assert.Equal(CashAccountBalanceState.Unavailable, await reader.ReadAsync(Company, CashLira,
             CancellationToken.None));
-        Assert.Equal(CashAccountBalanceState.Zero, await reader.ReadAsync(Company, CashEuro, CancellationToken.None));
+        Assert.Equal(CashAccountBalanceState.Unavailable, await reader.ReadAsync(Company, CashEuro, CancellationToken.None));
         Assert.Equal(CashAccountBalanceState.Unavailable, await reader.ReadAsync(Guid.Empty, CashEuro,
             CancellationToken.None));
+    }
+
+    private static CompanyContext ResolvedCompany(Guid id)
+    {
+        var company = new CompanyContext();
+        company.Set(id);
+        return company;
     }
 
     private static CommandMetadata Key(string value) => new(value);

@@ -113,7 +113,8 @@ function installServer() {
       return json({ source: { companyId: COMPANY, purchaseOrderId: ORDER, purchaseOrderLineId: LINE, purchaseOrderVersion: '3',
         productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: '2026-09-25' },
       locations: [{ locationId: LOCATION, locationCode: 'D-01', locationName: 'Mal Kabul', siteName: 'Fabrika' }],
-      searchWindowFull: false })
+      searchWindowFull: false, futureSupply: { companyId: COMPANY, purchaseOrderId: ORDER, purchaseOrderGeneralLineId: LINE,
+        unitId: UNIT, activeAllocatedQuantity: '0' } })
     }
     if (url.includes('/quantity-comparison')) return json({ code: 'not_found' }, 404)
     if (url.endsWith('/goods-receipts')) return json({ items: server.receipts, searchWindowFull: false })

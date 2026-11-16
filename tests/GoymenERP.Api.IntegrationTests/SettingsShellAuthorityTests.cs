@@ -77,8 +77,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(14, declarations.Count);
-        Assert.Equal("1.6", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(24, declarations.Count);
+        Assert.Equal("1.11", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -146,6 +146,10 @@ public sealed class SettingsShellAuthorityTests
                 SettingsWorkCenterCapacityPermissionManifestV1.Manage),
             ("settings.reference-lists.manage", "/ayarlar/referans-listeleri", "AY-RFL-01",
                 SettingsReferenceListPermissionManifestV1.PurchasingListsManage),
+            ("settings.sales-contract-discount-limit.manage", "/ayarlar/sozlesme-iskonto-siniri", "AY-SIS-01",
+                SettingsSalesContractDiscountLimitPermissionsV1.Manage),
+            ("settings.collateral-types.manage", "/ayarlar/teminat-turleri", "AY-TMT-01",
+                SettingsCollateralTypePermissionsV1.Manage),
             ("settings.production-reference-lists.manage", "/ayarlar/uretim-referans-listeleri", "AY-URL-01",
                 SettingsReferenceListPermissionManifestV1.ProductionListsManage),
         ];

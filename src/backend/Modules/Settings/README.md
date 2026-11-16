@@ -972,3 +972,41 @@ company fail-closed reads, authority, expected version, replay, audit, malformed
 case. The screen and decoder cases are `FinanceOpeningPeriodPage.test.tsx` and `financeOpeningPeriodContract.test.ts`.
 These are source evidence; all test execution remains reserved for final train acceptance. The other policy editors and
 the number-series provider remain unfinished.
+
+## Collateral type catalog (KIM-SC32-a)
+
+FNS-D31/D70, FNS-D68 and KLN-D109: `/ayarlar/teminat-turleri` maintains the company's explicit collateral classes and
+exact rate text. No row is seeded. Explicit type creation records the decided initial rate 100; later reasoned versions
+can rename, change rate or deactivate. Inactive types remain readable for existing collateral. Cheques and notes are
+excluded by the closed kind contract. `settings.collateral-types.manage` is registered only; no role or user receives it.
+The API host replaces Finance's unavailable catalog with the Settings owner's company-fenced reader. New commands append
+Audit through its owner port in the same transaction, before the Settings save; the legacy Settings interceptor receives
+no pending draft for these writes. Audit failure rolls back business rows and the terminal idempotency answer.
+
+EF-generated migration `20261116181354_AddCollateralTypeCatalog` creates the two company-keyed tables with no data/defaults.
+Down guard **51941** runs first and refuses while either table contains rows (forward fix); an empty catalog can roll back.
+`SettingsAppendOnlyWriteGuardTests` also covers the existing company-policy, finance-mapping and reference-list row fences.
+Unit, model, real-SQL, strict decoder and screen test sources accompany the change; execution remains **NOT_RUN**.
+
+## Separate contract discount limit (KIM-SC32-b)
+
+SAT-D346/D358/D364(1), KLN-D109: `sales.contract-discount-limit` is a distinct company policy key with nullable
+`PercentValue` (decimal(7,4)); it never reuses an order discount group. No row is seeded and no default is installed.
+The Settings owner answers null/version 0 until a person explicitly records a reasoned version. The API host registers
+`ISalesContractDiscountLimitSourceV1` over that owner port: missing is null, denied remains denied, and an unreadable or
+malformed source is unavailable. Thus Sales retains its existing "every discount needs approval" behavior when unset.
+Consumer reads require company access and the caller's Sales fence; editor authority is separate.
+
+`settings.sales-contract-discount-limit.manage` is registration only, with no role/person name gate, grant or Critical
+change. `/ayarlar/sozlesme-iskonto-siniri` uses the real API, an initially blank editor, full version history, strict decoder
+and same-key retry after an unknown outcome. The generic policy metadata/reason/idempotency/concurrency path is reused;
+only this new key uses the Audit owner's explicit same-transaction append before the Settings save. Old policy commands
+keep their existing interceptor path.
+
+EF-generated `20261116182730_AddSalesContractDiscountLimit` adds one nullable column, extends the key/value CHECKs and
+forward-fixes the collateral rate CHECK to compare exact decimal text. No numeric conversion, rounding, new scale limit,
+backfill or historical rewrite is performed. Leading zeros and fractions longer than 38 digits stay valid within the
+published 64-character collateral transport bound. **51942** is the first Down operation and refuses while the new key,
+its value, or collateral rate text incompatible with the previous CHECK exists. Empty/old-compatible stores may roll back.
+The earlier catalog migration remains unchanged. Snapshot/model, permissions, adapter failure/null/zero, foreign company,
+replay, Audit-owner rollback/retry and real-SQL CHECK/Down test sources accompany the screen/decoder cases; **NOT_RUN**.

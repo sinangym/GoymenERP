@@ -172,7 +172,8 @@ public interface IPurchaseLabelCodeRegisterReadPortV1
 /// </summary>
 public interface IPurchaseGoodsReceiptBatchTransactionV1
 {
-    Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseGoodsReceiptBatchParticipantsV1, CancellationToken, Task<T>> operation,
+    Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target,
+        Func<IPurchaseGoodsReceiptBatchParticipantsV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default);
 }
 

@@ -28,6 +28,7 @@ export const INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY = 'inventory.stock-scrap.a
 
 export const INVENTORY_STOCK_POSITIONS_ROUTE = '/stok/pozisyonlar' as const
 export const INVENTORY_TRANSFERS_ROUTE = '/stok/transferler' as const
+export const INVENTORY_TRANSFER_CANCEL_CAPABILITY = 'inventory.stock-transfer.cancel' as const
 
 /**
  * ST-04 company movement timeline. Reached from a label detail, never the sidebar; it rides the existing

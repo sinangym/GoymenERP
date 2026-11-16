@@ -256,6 +256,8 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_reversal_has_allocations: 'Bu kaynağa dağıtım bağlı; ters kayıt onaylanamaz.',
   finance_allocation_rule_unavailable: 'Dağıtım durumu doğrulanamadı; ters kayıt onayı kapalı.',
   finance_period_rule_unavailable: 'Ters kayıt dönemi doğrulanamadı; onay kapalı.',
+  finance_treasury_balance_unavailable: 'Hesabın güncel bakiyesi doğrulanamadı; kayıt yapılmadı.',
+  finance_treasury_balance_insufficient: 'Hesabın güncel bakiyesi bu işlem için yeterli değil; kayıt yapılmadı.',
   finance_period_not_open: 'Ters kayıt işlem tarihi açık bir muhasebe dönemine ait değil.',
   finance_reversal_before_receipt: 'Ters kayıt tarihi tahsilat tarihinden önce olamaz.',
   // API-23 (manual bank payment reversal)

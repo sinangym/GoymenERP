@@ -21,7 +21,8 @@ public sealed partial class PurchasingService
         var envelope = Envelope(scope, metadata, permission!);
         try
         {
-            return await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
+            return await runner.ExecuteAsync(scope.CompanyId, new(orderId, lineId, request.ExpectedPurchaseOrderVersion),
+                request.AcceptanceId, envelope, async (participants, token) =>
             {
                 var original = await GuardedAsync(scope, permission,
                     () => participants.ReadOriginalAsync(request.AcceptanceId, envelope, token), token);
@@ -94,9 +95,22 @@ public sealed partial class PurchasingService
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw new PurchasingServiceException(exception.StatusCode, exception.Code);
         }
-        catch (PurchasingStoreException exception) { throw Store(exception); }
+        catch (PurchasingStoreException exception)
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw Store(exception);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            // Host preparation can refuse before any GuardedAsync callback read/stage. Recheck the original command's
+            // authority/company before disclosing that owner/lock failure; never invoke beforeCommit an extra time.
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<PurchaseGoodsReceiptOptionsV1> GetGoodsReceiptOptionsAsync(Guid orderId, Guid lineId,
@@ -111,7 +125,10 @@ public sealed partial class PurchasingService
             || answer.Locations.Any(location => location is null || location.LocationId == Guid.Empty
                 || string.IsNullOrWhiteSpace(location.LocationCode) || string.IsNullOrWhiteSpace(location.LocationName)
                 || string.IsNullOrWhiteSpace(location.SiteName))
-            || answer.Locations.Select(location => location.LocationId).Distinct().Count() != answer.Locations.Count)
+            || answer.Locations.Select(location => location.LocationId).Distinct().Count() != answer.Locations.Count
+            || answer.FutureSupply is not { } future || future.CompanyId != scope.CompanyId
+            || future.PurchaseOrderId != orderId || future.PurchaseOrderGeneralLineId != source.PurchaseOrderGeneralLineId
+            || future.UnitId != source.UnitId || !ReceiptNonNegativeQuantity(future.ActiveAllocatedQuantity))
         {
             throw ReceiptSourceInvalid();
         }
@@ -207,7 +224,15 @@ public sealed partial class PurchasingService
             ?? throw new PurchasingServiceException(404, "not_found");
         if (stored.Order.Status != PurchaseOrderStatus.Approved) throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.OrderStateConflict);
         return new(scope.CompanyId, orderId, lineId, stored.Order.Version.ToString(CultureInfo.InvariantCulture),
-            line.ProductId, VersionOf(stored.ProductVersionsByLineId, lineId), line.UnitId, stored.EffectiveOn);
+            line.ProductId, VersionOf(stored.ProductVersionsByLineId, lineId), line.UnitId, stored.EffectiveOn)
+        {
+            PurchaseOrderGeneralLineId = line.Kind switch
+            {
+                PurchaseOrderLineKind.General when line.ParentLineId is null => line.Id,
+                PurchaseOrderLineKind.Technical when line.ParentLineId is { } parent && parent != Guid.Empty => parent,
+                _ => throw ReceiptSourceInvalid(),
+            },
+        };
     }
 
     private static void RequireOriginalReceipt(Guid companyId, Guid orderId, Guid lineId, RecordPurchaseGoodsReceiptV1 request,

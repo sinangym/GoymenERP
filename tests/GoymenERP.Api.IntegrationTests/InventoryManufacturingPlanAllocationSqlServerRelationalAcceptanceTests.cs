@@ -98,6 +98,46 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Plan_allocation_refusal_reports_the_verified_position_and_all_demands_reserved_kg_and_rolls_back_prior_inputs()
+    {
+        await using var run = await Run.StartAsync();
+        var fits = await SeedManufacturingParentAsync(run, "SYN-PLAN-SHORTFALL-FITS", 40m);
+        var held = await SeedManufacturingParentAsync(run, "SYN-PLAN-SHORTFALL-HELD", 10m);
+        await CommitPlanAllocationAsync(run, PlanRequest(Guid.NewGuid(), CompanyLine(held.Label.Id, "2", "7.125")),
+            ManufacturingMetadata(run, "plan-shortfall-held"));
+        var plan = Guid.NewGuid();
+        var refused = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() => CommitPlanAllocationAsync(run,
+            PlanRequest(plan, CompanyLine(fits.Label.Id, "2", "1"), CompanyLine(held.Label.Id, "3", "3")),
+            ManufacturingMetadata(run, "plan-shortfall-rejected")));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock), (refused.Status, refused.Code));
+        var detail = Assert.IsType<InventoryManufacturingPlanAllocationShortfallV1>(refused.PlanAllocationShortfall);
+        Assert.Equal((CompanyA, plan, held.Label.Id, held.Label.ProductId, "3", 1),
+            (detail.CompanyId, detail.PlanId, detail.LabelId, detail.ProductId, detail.LabelVersion, detail.FreePositionCount));
+        Assert.Equal(("3", "10", "7.125", "2.875", "0.125"),
+            (detail.RequestedKg, detail.FreePhysicalKg, detail.ReservedKg, detail.AvailableKg, detail.MissingKg));
+        Assert.Null(refused.StockShortfall);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE DemandId=@plan", ("@plan", plan)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId=@plan", ("@plan", plan)));
+        Assert.Equal(2L, await LabelVersionAsync(run, fits.Label.Id));
+        Assert.Equal(3L, await LabelVersionAsync(run, held.Label.Id));
+    }
+
+    [SqlServerFact]
+    public async Task Plan_allocation_without_a_verified_free_position_preserves_its_refusal_without_fabricated_kg_detail()
+    {
+        await using var run = await Run.StartAsync();
+        var blocked = await SeedManufacturingParentAsync(run, "SYN-PLAN-SHORTFALL-NO-POSITION", 10m);
+        await BlockManufacturingParentAsync(run, blocked, 10m);
+        var version = await LabelVersionAsync(run, blocked.Label.Id);
+        var refused = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() => CommitPlanAllocationAsync(run,
+            PlanRequest(Guid.NewGuid(), CompanyLine(blocked.Label.Id, version.ToString(System.Globalization.CultureInfo.InvariantCulture), "1")),
+            ManufacturingMetadata(run, "plan-shortfall-no-position")));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock), (refused.Status, refused.Code));
+        Assert.Null(refused.PlanAllocationShortfall);
+        Assert.Null(refused.StockShortfall);
+    }
+
+    [SqlServerFact]
     public async Task Customer_owned_stock_is_allocated_only_to_the_input_planned_for_that_customer()
     {
         await using var run = await Run.StartAsync();
@@ -336,6 +376,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var error = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
             participant.StagePlanInputAllocationAsync(request, metadata));
         Assert.Equal((status, code), (error.Status, error.Code));
+        if (code != InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock)
+            Assert.Null(error.PlanAllocationShortfall);
         await transaction.RollbackAsync();
     }
 }

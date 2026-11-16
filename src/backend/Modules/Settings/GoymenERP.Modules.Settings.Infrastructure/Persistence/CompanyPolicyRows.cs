@@ -17,6 +17,9 @@ internal sealed class CompanyPolicyVersionRow
     /// <summary><c>manufacturing.due-date-buffer</c>: working days (≥ 0).</summary>
     public int? WholeNumberValue { get; set; }
 
+    /// <summary>Separate sales.contract-discount-limit percentage; null for every other key.</summary>
+    public decimal? PercentValue { get; set; }
+
     public bool? VatApplies { get; set; }
     public decimal? VatPercent { get; set; }
     public string? ExemptionCode { get; set; }

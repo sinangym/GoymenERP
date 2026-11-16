@@ -10,6 +10,7 @@ using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
@@ -41,7 +42,8 @@ public sealed class CashTransferService(
     IAuditEventCollector auditEvents,
     CashTransferBinding binding,
     CashTransferAuditEnvelopes envelopes,
-    TimeProvider timeProvider) : ICashTransferService
+    TimeProvider timeProvider,
+    IAuditTransactionWriterV1? auditOwner = null) : ICashTransferService
 {
     public const string CommitCommand = "finance.cash-transfer.commit";
 
@@ -53,6 +55,21 @@ public sealed class CashTransferService(
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
     public async Task<CashTransferPreviewResult> PreviewAsync(
+        FinanceContext context,
+        CashTransferPreparation preparation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (!SameContext(context)) return Preview(new Refusal(CommandOutcome.Denied, []));
+        if (await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken) is { } denied)
+            return Preview(denied);
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => PreviewTreasuryCoreAsync(context, preparation, cancellationToken),
+            async () => Preview(await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken)
+                ?? new Refusal(CommandOutcome.Unavailable, [Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)])), auditOwner, cancellationToken);
+    }
+
+    private async Task<CashTransferPreviewResult> PreviewTreasuryCoreAsync(
         FinanceContext context,
         CashTransferPreparation preparation,
         CancellationToken cancellationToken)
@@ -72,6 +89,22 @@ public sealed class CashTransferService(
     }
 
     public async Task<CashTransferCommandResult> CommitAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        CommitCashTransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (!SameContext(context)) return Refused(context, CommandOutcome.Denied);
+        if (await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken) is { } denied)
+            return Refused(context, denied);
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => CommitTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () => Refused(context, await FenceAsync(context, FinanceAction.CommitCashTransfer, cancellationToken)
+                ?? new Refusal(CommandOutcome.Unavailable, [Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)])), auditOwner, cancellationToken);
+    }
+
+    private async Task<CashTransferCommandResult> CommitTreasuryCoreAsync(
         FinanceContext context,
         CommandMetadata metadata,
         CommitCashTransferRequest request,
@@ -399,6 +432,7 @@ public sealed class CashTransferService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, action, keyHash, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
@@ -629,30 +663,27 @@ public sealed class UnavailableCurrencyExchangeRateRule : IFinanceCurrencyExchan
 }
 
 /// <summary>
-/// The cash account passivation balance seam once a transfer can move money into or out of a cash account: a recorded
-/// cash expense payment or a committed transfer naming the cash account on either leg means the balance is no longer
-/// provably zero, so the reading is Unavailable (passivation refused); an account with no recorded cash movement
-/// still reads Zero. Only Finance's own rows of the server-resolved company are read.
+/// FNS-D102: passivation reads the same internal ledger, including approved openings.
+/// Zero is proven only under the caller's serializable Finance transaction. Missing
+/// account/currency, invalid facts or an unprotected read remain Unavailable.
 /// </summary>
-public sealed class TreasuryMovementAwareCashAccountBalanceReader(FinanceDbContext dbContext)
-    : IFinanceCashAccountBalanceReader
+public sealed class TreasuryMovementAwareCashAccountBalanceReader(
+    FinanceDbContext dbContext, ICompanyContext companyContext) : IFinanceCashAccountBalanceReader
 {
     public async Task<CashAccountBalanceState> ReadAsync(
-        Guid companyId,
-        Guid cashAccountId,
-        CancellationToken cancellationToken)
+        Guid companyId, Guid cashAccountId, CancellationToken cancellationToken)
     {
-        if (companyId == Guid.Empty || cashAccountId == Guid.Empty) return CashAccountBalanceState.Unavailable;
-        var paid = await dbContext.ExpensePayments.AsNoTracking().AnyAsync(row =>
-            row.CompanyId == companyId && row.SourceKind == ExpensePaymentSourceKinds.Cash
-            && row.TreasuryAccountId == cashAccountId && row.Status == ExpensePaymentStatuses.Recorded,
-            cancellationToken);
-        if (paid) return CashAccountBalanceState.Unavailable;
-        var transferred = await dbContext.CashTransfers.AsNoTracking().AnyAsync(row =>
-            row.CompanyId == companyId
-            && ((row.SourceKind == CashTransferAccountKinds.Cash && row.SourceAccountId == cashAccountId)
-                || (row.TargetKind == CashTransferAccountKinds.Cash && row.TargetAccountId == cashAccountId)),
-            cancellationToken);
-        return transferred ? CashAccountBalanceState.Unavailable : CashAccountBalanceState.Zero;
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId || companyId == Guid.Empty
+            || cashAccountId == Guid.Empty || !dbContext.Database.IsRelational()
+            || dbContext.Database.CurrentTransaction?.GetDbTransaction().IsolationLevel != System.Data.IsolationLevel.Serializable)
+            return CashAccountBalanceState.Unavailable;
+        var currency = await dbContext.CashAccounts.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.Id == cashAccountId)
+            .Select(row => (Guid?)row.CurrencyId).SingleOrDefaultAsync(cancellationToken);
+        if (currency is null) return CashAccountBalanceState.Unavailable;
+        var balance = await new FinanceTreasuryLedger(dbContext, companyContext)
+            .ReadAsync(companyId, ExpensePaymentSourceKind.Cash, cashAccountId, currency.Value, cancellationToken);
+        return balance is null ? CashAccountBalanceState.Unavailable
+            : balance.IsZero ? CashAccountBalanceState.Zero : CashAccountBalanceState.NotZero;
     }
 }

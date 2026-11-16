@@ -44,6 +44,10 @@ export const GOODS_RECEIPT_TEXT = {
   detailFree: 'Serbest',
   detailBlocked: 'Blokeli',
   futureSupplyReleasedHeading: 'Gelecek tedarik ayrımı bırakıldı',
+  futureSupplyHeading: 'Bu alış satırındaki gelecek ayırma',
+  futureSupplyNone: 'Bu genel alış satırında aktif gelecek ayırma yok.',
+  futureSupplyAllocated: (quantity: string) => `Aktif ayrılmış miktar: ${quantity} (sipariş birimi).`,
+  futureSupplyAdvisory: 'Genel satırın anlık bilgisidir; teknik dilimlerin kabulü de bu satırdan karşılanır. Kesin çevrim mal kabul kaydında yeniden kontrol edilir.',
   futureSupplyReleasedNote: 'Mal kabul kaydedildi ve geri alınmadı. Etiket bağı kurulamayan satış ayrımlarının kalan miktarının tamamı bırakıldı; satış satırı yeniden ayrılabilir. Bırakma denetime yazıldı.',
   futureSupplyReleasedItem: (quantity: string, reason: string) => `Bırakılan kalan ayrım: ${quantity} (sipariş birimi) — ${reason}`,
   futureSupplyReleaseReason: {

@@ -8,6 +8,8 @@ using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -38,7 +40,8 @@ internal sealed class SettingsCompanyPolicyAdministration(
     IErpAuthorityRevalidationService revalidation,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    ILogger<SettingsCompanyPolicyAdministration> logger) : ISettingsCompanyPolicyAdministrationV1
+    ILogger<SettingsCompanyPolicyAdministration> logger,
+    IAuditTransactionWriterV1? auditWriter = null) : ISettingsCompanyPolicyAdministrationV1, ISettingsSalesContractDiscountLimitAdministrationV1
 {
     private const int CommandExecutionSchemaVersion = 1;
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -66,6 +69,49 @@ internal sealed class SettingsCompanyPolicyAdministration(
         "settings.sales-subcontract-tax-default.recorded.v1",
         "Settings.SalesSubcontractTaxDefault",
         "Satış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
+
+    private static readonly KeySpec SalesContractDiscountLimit = new(
+        CompanyPolicyKeysV1.SalesContractDiscountLimit,
+        SettingsSalesContractDiscountLimitPermissionsV1.Manage,
+        "settings.sales-contract-discount-limit.record.v1",
+        "settings.sales-contract-discount-limit.recorded.v1",
+        "Settings.SalesContractDiscountLimit",
+        "Sözleşme iskonto sınırı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
+
+    public async Task<SalesContractDiscountLimitViewV1> GetSalesContractDiscountLimitAsync(CancellationToken cancellationToken = default)
+    {
+        var (companyId, rows) = await ReadHistoryAsync(SalesContractDiscountLimit, cancellationToken);
+        var versions = rows.Select(row => new SalesContractDiscountLimitVersionViewV1(Text(row.Version),
+            TaxMasterCalculatorV1.Format(ContractRate(row)), row.RecordedBy, row.RecordedAtUtc, row.Reason)).ToArray();
+        return new(companyId, versions.FirstOrDefault()?.LimitPercent, Text(rows.FirstOrDefault()?.Version ?? 0), versions);
+    }
+
+    public async Task<CompanyPolicyCommandResultV1> RecordSalesContractDiscountLimitAsync(RecordSalesContractDiscountLimitRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (auditWriter is null) throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
+        try
+        {
+            if (!TaxMasterCalculatorV1.TryParsePercent(request.LimitPercent, allowZero: true, out var rate))
+                return await RecordAsync(SalesContractDiscountLimit, request.ExpectedVersion, request.Reason, metadata,
+                    Answers.Invalid("Sözleşme iskonto sınırı 0–100 arasında, en çok 4 ondalıklı oran olmalıdır."), null, cancellationToken);
+            return await RecordAsync(SalesContractDiscountLimit, request.ExpectedVersion, request.Reason, metadata, null,
+                new Change(new { LimitPercent = rate }, current => current is not null && ContractRate(current) == rate,
+                    null, row => row.PercentValue = rate,
+                    current => new { LimitPercent = rate, PreviousLimitPercent = current is null ? (decimal?)null : ContractRate(current) }), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not UnauthorizedAccessException
+            and not SettingsPrerequisiteException)
+        { throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable); }
+        finally { auditWriter.DiscardPending(); database.ChangeTracker.Clear(); }
+    }
+
+    private static decimal ContractRate(CompanyPolicyVersionRow row) =>
+        row.PercentValue is { } rate && rate >= 0 && rate <= 100 && decimal.Round(rate, 4) == rate
+            && row.BooleanValue is null && row.WholeNumberValue is null && row.VatApplies is null && row.VatPercent is null
+            && row.ExemptionCode is null && row.WithholdingApplies is null && row.WithholdingPercent is null && row.WithholdingCode is null
+        ? rate : throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProfileInvalid);
 
     public async Task<FinanceOpeningPeriodViewV1> GetFinanceOpeningPeriodAsync(CancellationToken cancellationToken = default)
     {
@@ -374,6 +420,21 @@ internal sealed class SettingsCompanyPolicyAdministration(
         }
     }
 
+    private async Task RequireReplayStillAsync(KeySpec spec, SettingsCommandMetadataV1 metadata,
+        CancellationToken cancellationToken)
+    {
+        RequireOriginalIdentity();
+        await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
+        RequireOriginalIdentity();
+
+        void RequireOriginalIdentity()
+        {
+            if (!currentUser.IsAuthenticated || !companyContext.IsResolved || companyContext.CompanyId != metadata.CompanyId
+                || !string.Equals(currentUser.UserId, metadata.ActorId, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException();
+        }
+    }
+
     /// <summary>A read of the store; an unreadable store is <c>settings_provider_unavailable</c> (503), never a 500.</summary>
     private static async Task<T> ReadAsync<T>(Func<Task<T>> read)
     {
@@ -462,6 +523,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
                 throw;
             }
 
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Replay(winner, requestHash, metadata);
         }
     }
@@ -475,6 +537,8 @@ internal sealed class SettingsCompanyPolicyAdministration(
         CancellationToken cancellationToken)
     {
         AddExecution(spec, answer, keyHash, requestHash, metadata);
+        if (spec.Key == CompanyPolicyKeysV1.SalesContractDiscountLimit)
+            return await SaveContractChangeOwnedAsync(spec, answer, keyHash, requestHash, metadata, onConflict, cancellationToken);
         try
         {
             await database.SaveChangesAsync(cancellationToken);
@@ -486,11 +550,41 @@ internal sealed class SettingsCompanyPolicyAdministration(
             var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
             if (winner is not null)
             {
+                await RequireReplayStillAsync(spec, metadata, cancellationToken);
                 return Replay(winner, requestHash, metadata);
             }
 
             return await StoreRefusalAsync(spec, onConflict, keyHash, requestHash, metadata, cancellationToken);
         }
+    }
+
+    private async Task<CompanyPolicyCommandResultV1> SaveContractChangeOwnedAsync(KeySpec spec,
+        CompanyPolicyCommandAnswerV1 answer, string keyHash, string requestHash, SettingsCommandMetadataV1 metadata,
+        CompanyPolicyCommandAnswerV1 onConflict, CancellationToken cancellationToken)
+    {
+        if (auditWriter is null) throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.ProviderUnavailable);
+        var conflict = false;
+        await using (var transaction = await database.Database.BeginTransactionAsync(cancellationToken))
+        {
+            // The owner clears the collector BEFORE Settings' legacy interceptor can attach Audit rows.
+            await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+            await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
+            try { await database.SaveChangesAsync(cancellationToken); }
+            catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
+            { conflict = true; }
+            if (conflict) await transaction.RollbackAsync(CancellationToken.None);
+            else await transaction.CommitAsync(cancellationToken);
+        }
+        if (!conflict) return new(answer, false, metadata.CorrelationId);
+        database.ChangeTracker.Clear();
+        var winner = await FindExecutionAsync(spec, keyHash, cancellationToken);
+        if (winner is not null)
+        {
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
+            return Replay(winner, requestHash, metadata);
+        }
+        await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
+        return await StoreRefusalAsync(spec, onConflict, keyHash, requestHash, metadata, cancellationToken);
     }
 
     private static string Outcome(CompanyPolicyCommandAnswerV1 answer) => answer.Code ?? answer.StatusCode switch

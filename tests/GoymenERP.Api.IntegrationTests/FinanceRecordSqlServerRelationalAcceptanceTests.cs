@@ -1620,7 +1620,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new FinanceReversalEnvelopes(
                     new FinanceAuditEnvelope(ReversalProposalService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ReversalProposalService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, new InternalLedgerTreasuryBalanceGuard(dbContext, companyContext));
             return new ReversalServiceScope(dbContext, service,
                 new FinanceContext(company, actor, correlation ?? $"fin-t06-{Guid.NewGuid():N}", null));
         }

@@ -77,9 +77,8 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         // API-30: the cash account (kasa) master; a definition only, audited with the roles of its own permission.
         services.AddScoped<IFinanceCashAccountMaster>(CreateCashAccountService);
-        // The balance seam of passivation. FNS-D25 lets cash leave a cash account (a recorded cash expense
-        // payment) and FNS-D24 moves cash into or out of one (a committed transfer), so the reader that sees both is
-        // registered first; the expense-only reader and the no-movement default stay behind it.
+        // FNS-D102: the real internal ledger, including approved openings, protects passivation in the
+        // same serializable transaction. The historical fail-closed fallback types are never preferred.
         services.TryAddScoped<IFinanceCashAccountBalanceReader, TreasuryMovementAwareCashAccountBalanceReader>();
         services.TryAddScoped<IFinanceCashAccountBalanceReader, ExpensePaymentAwareCashAccountBalanceReader>();
         services.TryAddScoped<IFinanceCashAccountBalanceReader, NoCashMovementBalanceReader>();
@@ -93,7 +92,7 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
         // FIN-S9 (FNS-D23): the opening balances, proposed and approved by two people while the Settings opening period
         // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and
-        // decision fails closed and the period is never assumed open. An approved opening moves no money.
+        // decision fails closed and the period is never assumed open. Approval records one opening ledger movement.
         services.TryAddScoped<IFinanceOpeningPeriodReader, UnavailableFinanceOpeningPeriodReader>();
         services.AddScoped<IFinanceOpeningBalanceService>(CreateOpeningBalanceService);
         // FIN-SC47 (FNS-D87/FNS-D88/FNS-D93/FNS-D94): the credit account with its imported plan; no grant.
@@ -105,10 +104,10 @@ public static class FinanceModuleExtensions
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
         services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
-        // FNS-D25 (API-25): the payment not tied to a party. One expense item; the record is fail-closed until a
-        // treasury balance source registers its guard (FNS-D11).
+        // FNS-D25 (API-25): one expense item. FNS-D102 uses the internal ledger, protected together with
+        // each outgoing record in a serializable Finance transaction; unavailable never means sufficient.
         services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
-        services.TryAddScoped<IFinanceTreasuryBalanceGuard, UnavailableTreasuryBalanceGuard>();
+        services.TryAddScoped<IFinanceTreasuryBalanceGuard, InternalLedgerTreasuryBalanceGuard>();
         services.AddScoped<IExpensePaymentService>(CreateExpensePaymentService);
         // FNS-D24 (API-32/34): the transfer between two treasury accounts, one record for both legs. The currency
         // exchange is fail-closed until its rate rule is decided (NEEDS-SINAN); every commit needs the treasury
@@ -221,7 +220,8 @@ public static class FinanceModuleExtensions
                 Envelope(provider, ErpPermissions.FinanceCashAccountReactivationApprove, permissions,
                     FinanceAction.ApproveCashAccountReactivation)),
             provider.GetRequiredService<IFinanceCashAccountBalanceReader>(),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static FinancePartyCreditLimitService CreatePartyCreditLimitService(IServiceProvider provider)
@@ -284,7 +284,9 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeOpeningBalance),
                 Envelope(provider, ErpPermissions.FinanceOpeningBalancesApprove, permissions,
                     FinanceAction.ApproveOpeningBalance)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static FinanceCreditAccountService CreateCreditAccountService(IServiceProvider provider)
@@ -341,7 +343,9 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeReversal),
                 Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
                     FinanceAction.ApproveReversal)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static PaymentReversalProposalService CreatePaymentReversalProposalService(IServiceProvider provider)
@@ -384,7 +388,8 @@ public static class FinanceModuleExtensions
                 Envelope(provider, FinancePermissionNames.ManualBankPaymentRecord, permissions,
                     FinanceAction.RecordManualBankPayment)),
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>());
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static ExpensePaymentService CreateExpensePaymentService(IServiceProvider provider)
@@ -410,7 +415,8 @@ public static class FinanceModuleExtensions
                     FinanceAction.ApproveExpensePayment),
                 Envelope(provider, FinancePermissionNames.ExpensePaymentRecord, permissions,
                     FinanceAction.RecordExpensePayment)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static CashTransferService CreateCashTransferService(IServiceProvider provider)
@@ -432,7 +438,8 @@ public static class FinanceModuleExtensions
             new CashTransferAuditEnvelopes(
                 Envelope(provider, FinancePermissionNames.CashTransferCommit, permissions,
                     FinanceAction.CommitCashTransfer)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static FinanceAllocationService CreateAllocationService(IServiceProvider provider)

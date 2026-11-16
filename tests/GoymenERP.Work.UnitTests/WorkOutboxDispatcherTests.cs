@@ -418,6 +418,41 @@ public sealed class WorkOutboxDispatcherTests
         public void Advance(TimeSpan by) => now += by;
     }
 
+    [Fact]
+    public async Task Pending_companies_hold_business_events_without_delivery_or_cursor_progress_and_active_setup_releases_them()
+    {
+        var harness = new Harness(Defaults);
+        harness.Lifecycle.State = CompanyLifecycleStateV1.SetupPending;
+        harness.Source.Add(CompanyA, Message(CompanyA, 1));
+        var consumer = harness.AddConsumer("pending-business");
+        await harness.RunAsync();
+        Assert.Empty(consumer.Handled);
+        Assert.Empty(await harness.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+        harness.Lifecycle.State = CompanyLifecycleStateV1.Active;
+        await harness.RunAsync();
+        Assert.Single(consumer.Handled);
+    }
+    [Fact]
+    public async Task An_unavailable_lifecycle_holds_business_events_and_never_moves_the_source_cursor()
+    {
+        var harness = new Harness(Defaults); harness.Lifecycle.Unavailable = true;
+        harness.Source.Add(CompanyA, Message(CompanyA, 1));
+        var consumer = harness.AddConsumer("unavailable-business");
+        await harness.RunAsync();
+        Assert.Empty(consumer.Handled);
+        Assert.Empty(await harness.Db(CompanyA).OutboxSourceCursors.ToListAsync());
+    }
+    [Fact]
+    public void Only_the_two_exact_owner_event_pairs_are_setup_deliveries()
+    {
+        var first = Message(CompanyA, 1) with { SourceName = OrganizationCompanyOpenedV1.SourceName, EventType = OrganizationCompanyOpenedV1.EventType };
+        Assert.True(WorkOutboxDispatcher.IsSetupDelivery(first));
+        Assert.True(WorkOutboxDispatcher.IsSetupDelivery(first with { SourceName = IdentityCompanyFirstAdminAssignedV1.SourceName, EventType = IdentityCompanyFirstAdminAssignedV1.EventType }));
+        Assert.False(WorkOutboxDispatcher.IsSetupDelivery(first with { SourceName = "foreign" }));
+        Assert.False(WorkOutboxDispatcher.IsSetupDelivery(first with { SchemaVersion = 2 }));
+        Assert.False(WorkOutboxDispatcher.IsSetupDelivery(Message(CompanyA, 1)));
+    }
+
     private sealed class FakeSource : IOutboxSourceV1
     {
         private readonly Dictionary<Guid, List<OutboxMessageEnvelopeV1>> byCompany = [];
@@ -520,6 +555,7 @@ public sealed class WorkOutboxDispatcherTests
             if (registerDirectory)
             {
                 services.AddSingleton<IOutboxCompanyDirectoryV1>(new Directory([CompanyA, CompanyB]));
+                services.AddSingleton<ICompanyLifecycleReadPortV1>(Lifecycle);
             }
 
             provider = services.BuildServiceProvider();
@@ -528,6 +564,7 @@ public sealed class WorkOutboxDispatcherTests
                 NullLogger<WorkOutboxDispatcher>.Instance);
         }
 
+        public TestCompanyLifecycleReader Lifecycle { get; } = new();
         public ManualTime Time { get; }
         public FakeSource Source { get; }
         public FailingSaves Saves { get; } = new();

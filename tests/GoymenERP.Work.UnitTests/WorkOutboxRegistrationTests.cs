@@ -394,6 +394,7 @@ public sealed class WorkOutboxRegistrationTests
             services.AddScoped<ICompanyContext, CompanyContext>();
             services.AddDbContext<WorkDbContext>(o => o.UseInMemoryDatabase(database));
             services.AddSingleton<IOutboxCompanyDirectoryV1>(new Directory([CompanyA, CompanyB]));
+            services.AddSingleton<ICompanyLifecycleReadPortV1>(new TestCompanyLifecycleReader());
             register(services);
             provider = services.BuildServiceProvider();
             dispatcher = new WorkOutboxDispatcher(

@@ -27,23 +27,25 @@ public sealed partial class SettingsDbContext
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Identity", $"[CompanyId] <> {emptyGuid} AND [Version] > 0");
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Key",
                 "[PolicyKey] IN ('finance.opening-period', 'manufacturing.due-date-buffer', "
-                + "'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default')");
+                + "'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default', 'sales.contract-discount-limit')");
             // Each key fills only its own columns: a boolean (opening period), whole working days ≥ 0 (due-date buffer), or
             // the SAT-D381 tax default shape (VAT above 0 up to 100 without an exemption code, or no VAT and no withholding;
             // withholding above 0 up to 100 with an optional code, or neither).
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Value",
-                "([PolicyKey] = 'finance.opening-period' AND [BooleanValue] IS NOT NULL AND [WholeNumberValue] IS NULL AND "
+                "([PolicyKey] = 'finance.opening-period' AND [PercentValue] IS NULL AND [BooleanValue] IS NOT NULL AND [WholeNumberValue] IS NULL AND "
                 + noTax + ") "
-                + "OR ([PolicyKey] = 'manufacturing.due-date-buffer' AND [BooleanValue] IS NULL "
+                + "OR ([PolicyKey] = 'manufacturing.due-date-buffer' AND [PercentValue] IS NULL AND [BooleanValue] IS NULL "
                 + "AND [WholeNumberValue] IS NOT NULL AND [WholeNumberValue] >= 0 AND " + noTax + ") "
                 + "OR ([PolicyKey] IN ('sales.subcontract-tax-default', 'purchasing.subcontract-tax-default') "
-                + "AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL "
+                + "AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL "
                 + "AND [VatApplies] IS NOT NULL AND [WithholdingApplies] IS NOT NULL "
                 + "AND (([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] > 0 AND [VatPercent] <= 100 "
                 + "AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL AND [WithholdingApplies] = 0)) "
                 + "AND (([WithholdingApplies] = 1 AND [WithholdingPercent] IS NOT NULL AND [WithholdingPercent] > 0 "
                 + "AND [WithholdingPercent] <= 100) "
-                + "OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL)))");
+                + "OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL))) "
+                + "OR ([PolicyKey] = 'sales.contract-discount-limit' AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL "
+                + "AND [PercentValue] IS NOT NULL AND [PercentValue] >= 0 AND [PercentValue] <= 100 AND " + noTax + ")");
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Codes",
                 "([ExemptionCode] IS NULL OR (LEN([ExemptionCode]) BETWEEN 1 AND 16 AND [ExemptionCode] NOT LIKE '%[^A-Z0-9]%')) "
                 + "AND ([WithholdingCode] IS NULL OR (LEN([WithholdingCode]) BETWEEN 1 AND 16 "
@@ -53,6 +55,7 @@ public sealed partial class SettingsDbContext
         });
         policy.HasKey(x => new { x.CompanyId, x.PolicyKey, x.Version });
         policy.Property(x => x.PolicyKey).HasMaxLength(64).IsUnicode(false).UseCollation(binaryCollation);
+        policy.Property(x => x.PercentValue).HasPrecision(7, 4);
         policy.Property(x => x.VatPercent).HasPrecision(7, 4);
         policy.Property(x => x.WithholdingPercent).HasPrecision(7, 4);
         policy.Property(x => x.ExemptionCode).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
