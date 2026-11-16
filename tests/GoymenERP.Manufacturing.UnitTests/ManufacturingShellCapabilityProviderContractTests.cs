@@ -25,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.12"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(19, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.13"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(20, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -35,7 +35,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.True(declaration.ImplementationAvailable);
+            Assert.Equal(declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId, declaration.ImplementationAvailable);
         }
 
         var exceptionApproval = Assert.Single(declarations,
@@ -104,6 +104,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsCorrect]);
         AssertControl(declarations, detail, "manufacturing.orders.cancel",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCancel]);
+        AssertControl(declarations, detail with { ImplementationAvailable = false }, "manufacturing.orders.reopen",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersReopen, ErpPermissions.AccountingPeriodsRead]);
         AssertControl(declarations, detail, "manufacturing.orders.facts",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord]);
         AssertControl(declarations, detail, "manufacturing.orders.close",

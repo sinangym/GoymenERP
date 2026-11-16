@@ -285,14 +285,19 @@ public sealed record RollBalanceViewV1(
 /// <summary>Only in the basis the plan declared; otherwise <c>Basis</c> is null (unavailable, never 0).</summary>
 public sealed record RemainingTargetViewV1(string? Basis, string? TargetKg, string? AchievedKg, string? RemainingKg);
 
-/// <summary>Cost is a status only in this slice: every output is <c>NotCalculated</c>.</summary>
+/// <summary>URT-D32/D56: the prior close and its separate reasoned reopening; retained through every later correction.</summary>
+public sealed record OrderReopeningViewV1(long ClosedOrderVersion, Guid ClosedByUserId, DateTimeOffset ClosedAtUtc,
+    long ReopenedOrderVersion, Guid ReopenedByUserId, DateTimeOffset ReopenedAtUtc, string Reason);
+
+/// <summary>Cost is a status only in this view; separate versioned cost reads carry figures.</summary>
 public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc,
     DateOnly? DueDate = null, long DueDateRevision = 0, DateOnly? PlanDueDate = null, bool DueDateDiffersFromPlan = false,
     string? CancellationReason = null, Guid? CancelledByUserId = null, DateTimeOffset? CancelledAtUtc = null,
-    IReadOnlyList<ManufacturingOutputLineReferenceV1>? OutputLines = null);
+    IReadOnlyList<ManufacturingOutputLineReferenceV1>? OutputLines = null,
+    IReadOnlyList<OrderReopeningViewV1>? Reopenings = null);
 
 /// <summary>
 /// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
@@ -537,7 +542,10 @@ public sealed partial class ManufacturingCommandService(
     IInventoryLabelDispositionReadPortV1? inputDisposition = null,
     ISettingsManufacturingDueDateBufferProviderV1? companyDueDateBuffer = null,
     IManufacturingPlanPriorityStore? planPriorities = null,
-    IManufacturingWorkCenterQueueOrderingStore? queueOrdering = null)
+    IManufacturingWorkCenterQueueOrderingStore? queueOrdering = null,
+    IManufacturingOrderReopeningStoreV1? orderReopenings = null,
+    GoymenERP.Modules.Accounting.Application.Contracts.IAccountingPeriodStatusPortV1? accountingPeriods = null,
+    IManufacturingOrderReopeningInventoryPortV1? reopeningInventory = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -3281,7 +3289,10 @@ public sealed partial class ManufacturingCommandService(
             order.DueDate, order.DueDateRevision, order.PlanDueDate, order.DueDateDiffersFromPlan,
             order.CancellationReason, order.CancelledByUserId, order.CancelledAtUtc,
             [.. order.PlannedOutputLines.Append(PlanOutputLineReference.ClassLine).Select(line =>
-                new ManufacturingOutputLineReferenceV1(line.Kind.ToString(), line.SlitLineSequence, line.CutLineId))]);
+                new ManufacturingOutputLineReferenceV1(line.Kind.ToString(), line.SlitLineSequence, line.CutLineId))],
+            [.. order.Reopenings.Select(reopening => new OrderReopeningViewV1(reopening.ClosedOrderVersion,
+                reopening.ClosedByUserId, reopening.ClosedAtUtc, reopening.ReopenedOrderVersion,
+                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason))]);
     }
 
     /// <summary>

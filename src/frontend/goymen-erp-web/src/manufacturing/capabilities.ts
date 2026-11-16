@@ -79,6 +79,8 @@ export const MANUFACTURING_CAPABILITY = {
    * `hasCapability` answers false and no cancel control is drawn until that contract is merged and published.
    */
   orderCancel: 'manufacturing.orders.cancel',
+  /** URT-D32/D77: enabled once the real enlisted Inventory cost-generation participant is connected. */
+  orderReopen: 'manufacturing.orders.reopen',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */

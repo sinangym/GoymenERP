@@ -25,7 +25,7 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
-            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
+            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(OrderReopeningRow), typeof(FactRow), typeof(OutputReversalRow),
             typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(PlanPriorityVersionRow),
             typeof(WorkCenterQueueVersionRow), typeof(WorkCenterQueueEntryRow), typeof(CommandRow)];
 
@@ -659,7 +659,7 @@ public sealed class ManufacturingPersistenceModelTests
         var model = context.GetService<IDesignTimeModel>().Model;
         var decision = model.FindEntityType(typeof(OrderClosureDecisionRow))!;
 
-        Assert.Equal(["CompanyId", "OrderId"],
+        Assert.Equal(["CompanyId", "OrderId", "OrderVersion"],
             decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrderRow)
             && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OrderId"])

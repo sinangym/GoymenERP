@@ -321,6 +321,10 @@ function decodeOutputLine(value: unknown): ManufacturingOutputLineReference | nu
   return null
 }
 
+export interface OrderReopeningHistory {
+  readonly closedOrderVersion: number; readonly closedByUserId: string; readonly closedAtUtc: string
+  readonly reopenedOrderVersion: number; readonly reopenedByUserId: string; readonly reopenedAtUtc: string; readonly reason: string
+}
 export interface ProductionOrderView {
   readonly orderId: string
   readonly companyId: string
@@ -352,6 +356,7 @@ export interface ProductionOrderView {
   readonly cancellationReason?: string | null
   readonly cancelledByUserId?: string | null
   readonly cancelledAtUtc?: string | null
+  readonly reopenings?: readonly OrderReopeningHistory[]
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -1146,6 +1151,8 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
   const cancellationComplete = cancellationReason !== null && cancelledByUserId !== null && cancelledAtUtc !== null
   if (body.status === 'Cancelled' ? !cancellationComplete || closedAtUtc !== null || closedByUserId !== null
     : cancellationReason !== null || cancelledByUserId !== null || cancelledAtUtc !== null) return null
+  const reopenings = decodeOrderReopenings(body.reopenings, orderVersion)
+  if (reopenings === null) return null
   // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
   if (dueDateRevision > 0 && dueDate === null) return null
   // The flag is the server's, but it never contradicts the two days it was computed from.
@@ -1178,7 +1185,25 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     cancellationReason,
     cancelledByUserId,
     cancelledAtUtc,
+    reopenings,
   }
+}
+
+function decodeOrderReopenings(value: unknown, orderVersion: number): OrderReopeningHistory[] | null {
+  if (value === undefined || value === null) return [] // Legacy ADR-011 answers had no reopening member.
+  if (!Array.isArray(value)) return null
+  const result: OrderReopeningHistory[] = []; let previousVersion = 0
+  for (const row of value) {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) return null
+    const v = row as Record<string, unknown>
+    if (!Number.isSafeInteger(v.closedOrderVersion) || (v.closedOrderVersion as number) < 2 || (v.closedOrderVersion as number) <= previousVersion
+      || v.reopenedOrderVersion !== (v.closedOrderVersion as number) + 1 || (v.reopenedOrderVersion as number) > orderVersion
+      || nullableGuid(v.closedByUserId) == null || nullableGuid(v.reopenedByUserId) == null
+      || nullableInstant(v.closedAtUtc) == null || nullableInstant(v.reopenedAtUtc) == null
+      || !boundedSnapshotText(v.reason, 256)) return null
+    result.push(v as unknown as OrderReopeningHistory); previousVersion = v.reopenedOrderVersion as number
+  }
+  return result
 }
 
 /** An absent or null member is null; anything but a calendar day is malformed (undefined). */

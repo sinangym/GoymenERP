@@ -1381,6 +1381,8 @@ public sealed partial class ManufacturingStore(
         var decisions = await dbContext.OrderClosureDecisions.AsNoTracking()
             .Where(decision => ids.Contains(decision.OrderId))
             .ToListAsync(cancellationToken);
+        var reopenings = await dbContext.OrderReopenings.AsNoTracking()
+            .Where(reopening => ids.Contains(reopening.OrderId)).ToListAsync(cancellationToken);
         // F-009 D2: the reversals recorded before each close and the plan output lines their declarations bind to.
         var reversals = await dbContext.OutputReversals.AsNoTracking()
             .Where(reversal => ids.Contains(reversal.OrderId))
@@ -1396,10 +1398,10 @@ public sealed partial class ManufacturingStore(
             var orderInputs = inputs.Where(input => input.OrderId == row.Id).OrderBy(input => input.Sequence).ToList();
             var orderFacts = facts.Where(fact => fact.OrderId == row.Id).ToList();
             orders.Add(RestoreOrder(row, orderInputs, kind => orderFacts.Where(fact => fact.Kind == (int)kind),
-                decisions.SingleOrDefault(decision => decision.OrderId == row.Id),
+                decisions.SingleOrDefault(decision => decision.OrderId == row.Id && decision.OrderVersion == row.Version - 1),
                 reversals.Where(reversal => reversal.OrderId == row.Id).ToList(),
                 outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
-                planDueDates.GetValueOrDefault(row.PlanId)));
+                planDueDates.GetValueOrDefault(row.PlanId), reopenings.Where(reopening => reopening.OrderId == row.Id).ToArray()));
         }
 
         var last = page[^1];
@@ -1755,7 +1757,10 @@ public sealed partial class ManufacturingStore(
             .Where(fact => fact.OrderId == row.Id)
             .ToListAsync(cancellationToken);
         var closureDecision = await dbContext.OrderClosureDecisions.AsNoTracking()
-            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id, cancellationToken);
+            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id && row.Status == (int)OrderStatus.Closed
+                && decision.OrderVersion == row.Version - 1, cancellationToken);
+        var reopenings = await dbContext.OrderReopenings.AsNoTracking()
+            .Where(reopening => reopening.OrderId == row.Id).ToListAsync(cancellationToken);
         var reversals = await dbContext.OutputReversals.AsNoTracking()
             .Where(reversal => reversal.OrderId == row.Id)
             .ToListAsync(cancellationToken);
@@ -1767,7 +1772,7 @@ public sealed partial class ManufacturingStore(
         {
             return RestoreOrder(row, inputs, Of, closureDecision, reversals,
                 outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
-                planDueDates.GetValueOrDefault(row.PlanId));
+                planDueDates.GetValueOrDefault(row.PlanId), reopenings);
         }
         catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
         {
@@ -1803,7 +1808,7 @@ public sealed partial class ManufacturingStore(
     private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
         Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision,
         IReadOnlyList<OutputReversalRow> reversals, IReadOnlyList<PlanOutputLineReference> plannedOutputLines,
-        DateOnly? planDueDate)
+        DateOnly? planDueDate, IReadOnlyList<OrderReopeningRow>? reopenings = null)
     {
         var (policy, approval) = RestoreClosureDecision(closureDecision);
         if (reversals.Any(reversal => reversal.OutputKind != (int)FactKind.OutputDeclaration))
@@ -1833,7 +1838,10 @@ public sealed partial class ManufacturingStore(
             reversals.Select(reversal => new OutputReversal(reversal.Id, reversal.OutputId, new Kilograms(reversal.MassKg),
                 reversal.Reason, reversal.OccurredAtUtc)),
             row.DueDate, row.DueDateRevision, planDueDate,
-            row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason);
+            row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason,
+            reopenings?.Select(reopening => new ProductionOrderReopeningV1(reopening.ClosedOrderVersion,
+                reopening.ClosedByUserId, reopening.ClosedAtUtc, reopening.ReopenedOrderVersion,
+                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason)));
     }
 
     /// <summary>

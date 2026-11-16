@@ -264,6 +264,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
         ConfigurePlanReapprovals(modelBuilder);
         ConfigurePlanPriorityVersions(modelBuilder);
         ConfigureManualQueues(modelBuilder);
+        ConfigureReopenings(modelBuilder);
         ConfigurePlanInputAllocations(modelBuilder);
         ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
@@ -814,7 +815,7 @@ public sealed partial class ManufacturingDbContext(DbContextOptions<Manufacturin
                 + "AND [ApprovalPolicyVersion] IS NOT NULL AND [ApprovalPolicyVersion] = [PolicyVersion] "
                 + "AND [ApprovedAtUtc] IS NOT NULL)");
         });
-        entity.HasKey(x => new { x.CompanyId, x.OrderId });
+        entity.HasKey(x => new { x.CompanyId, x.OrderId, x.OrderVersion });
         entity.Property(x => x.MaximumFirePercent).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.PolicySource).HasMaxLength(16).IsUnicode(false);
         entity.Property(x => x.MassBalanceDifferenceTolerancePercent).HasMaxLength(64).IsUnicode(false);

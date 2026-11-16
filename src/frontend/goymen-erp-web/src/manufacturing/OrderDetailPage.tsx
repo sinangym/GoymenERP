@@ -80,6 +80,7 @@ import { OrderCostPanel } from './OrderCostPanel'
 import { OrderLineagePanel } from './OrderLineagePanel'
 import { OutputCorrectionSection } from './OutputCorrectionSection'
 import { OrderCancelSection } from './OrderCancelSection'
+import { OrderReopenSection } from './OrderReopenSection'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -159,6 +160,7 @@ export function OrderDetailPage() {
 }
 
 function OrderDetail({ namespace }: { readonly namespace: string | null }) {
+  const [reopenLocked, setReopenLocked] = useState(false)
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const { orderId } = useParams()
@@ -269,7 +271,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         orderId={order.orderId}
         orderVersion={order.version}
       />
-      {canRecord ? (
+      {canRecord && !reopenLocked ? (
         <FactSection
           order={order}
           namespace={namespace ?? 'no-context'}
@@ -281,7 +283,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canCorrectOutput ? (
+      {canCorrectOutput && !reopenLocked ? (
         <OutputCorrectionSection
           order={order}
           namespace={namespace ?? 'no-context'}
@@ -291,7 +293,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canChangeDueDate ? (
+      {canChangeDueDate && !reopenLocked ? (
         <OrderDueDateSection
           key={`${order.orderId}:${order.dueDateRevision}`}
           order={order}
@@ -299,7 +301,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canClose ? (
+      {canClose && !reopenLocked ? (
         <CloseSection
           order={order}
           companyId={activeCompanyId ?? ''}
@@ -307,9 +309,12 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canCancel ? (
+      {canCancel && !reopenLocked ? (
         <OrderCancelSection order={order} companyId={activeCompanyId ?? ''} onRefresh={refresh} />
       ) : null}
+      <OrderReopenSection key={`${namespace}:${order.orderId}`} order={order} companyId={activeCompanyId ?? ''}
+        namespace={namespace ?? 'no-context'} allowed={hasCapability(shell, MANUFACTURING_CAPABILITY.orderReopen)}
+        blocked={query.isFetching || recallPendingFact(storeKey) !== null} onRefresh={refresh} onLocked={setReopenLocked} />
     </Frame>
   )
 }
