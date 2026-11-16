@@ -208,4 +208,3 @@ function SubcontractInvoiceSummary({ detail }: { readonly detail: SubcontractInv
     </div>
   )
 }
-
