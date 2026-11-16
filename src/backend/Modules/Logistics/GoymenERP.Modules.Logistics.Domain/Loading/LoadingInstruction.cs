@@ -165,8 +165,13 @@ public sealed class LoadingInstruction
     /// <summary>
     /// F-020 (LOJ-D6..D8): cancels a Draft or Issued instruction with a reason while no shipment is recorded. Nothing is deleted: the
     /// lines, shares, weighing and dispatch notes stay as they are and the cancel marks (who, when, why) are kept on the instruction.
-    /// Loaded-but-not-shipped quantity is released by the status itself (no shipment, so no stock movement); a recorded shipment
-    /// share refuses the cancel. A cancelled instruction cannot be cancelled again or changed.
+    /// Loaded-but-not-shipped quantity leaves the instruction's plan by the status itself (no shipment, so no stock movement); a
+    /// recorded shipment share refuses the cancel. A cancelled instruction cannot be cancelled again or changed.
+    /// <para>
+    /// LOJ-D18: the cancel does not release the physical allocation the lines name (<see cref="LoadingInstructionLine.AllocationId"/>).
+    /// The allocation stays with the Sales order and a new instruction may name the same goods (the same allocation id) again;
+    /// releasing it is a separate, audited Inventory operation (DEC-STK-005), never a side effect of this cancel.
+    /// </para>
     /// </summary>
     public void CancelInstruction(long expectedVersion, string cancelledBy, string reason, DateTimeOffset now)
     {

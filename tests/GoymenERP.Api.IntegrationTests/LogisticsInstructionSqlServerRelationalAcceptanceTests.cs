@@ -1101,6 +1101,9 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
         public ILogisticsOrderLineProgressReader Progress { get; } = new LogisticsOrderLineProgressReader(dbContext, company);
 
+        public ILogisticsSalesOrderPlannedQuantityReadPortV1 PlannedQuantity { get; } =
+            new LogisticsSalesOrderPlannedQuantityReadPort(dbContext, company);
+
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
