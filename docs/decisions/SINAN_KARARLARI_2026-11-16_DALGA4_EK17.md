@@ -6,7 +6,8 @@ Bu belge önceki karar dosyalarını silmez. Şu kararları ekler: URN-D22 ve UR
 - büyük dosyanın açık hata koduyla reddi;
 - Ayarlar'da grup düzeyi kayıt;
 - denetim kaydı;
-- Admin persona dağılımı.
+- persona dağılımı: Ayarlar'daki sınırı yalnız Admin (Sistem Yöneticisi) değiştirir. Bu dağılım Sinan'ın teyidine
+  dayanır (SINAN-CEVAP 39, 16 Kasım 2026, Issue #66 yorumu 6910907285; EK13'te teyit 39.4).
 
 Diğer önceki kararlar da aynen geçerlidir.
 
@@ -33,8 +34,8 @@ işaretleri soranındır.
 
 ## Sınırlar
 
-- Bu belge yeni izin adı açmaz ve rol/grant ataması yapmaz. Ayarlar kaydını kimin değiştireceği URN-D21'deki
-  gibidir (Admin persona dağılımı); grant ataması insanda kalır.
+- Bu belge yeni izin adı açmaz ve rol/grant ataması yapmaz. Ayarlar kaydını yalnız Admin (Sistem Yöneticisi)
+  değiştirir (URN-D21; kaynak SINAN-CEVAP 39). Grant ataması insanda kalır.
 - Platformun genel dosya yükleme üst sınırının değeri bu kararla seçilmez ve değişmez.
 - İnsan kapıları değişmez:
   - deployment, environment ve secret;
