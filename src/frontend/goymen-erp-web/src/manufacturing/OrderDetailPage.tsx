@@ -77,6 +77,8 @@ import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OrderCostTracePanel } from './OrderCostTracePanel'
 import { OrderCostPanel } from './OrderCostPanel'
 import { OrderLineagePanel } from './OrderLineagePanel'
+import { OutputCorrectionSection } from './OutputCorrectionSection'
+import { OrderCancelSection } from './OrderCancelSection'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -173,6 +175,9 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   const canChangeDueDate = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDueDate)
   // URT-S19 (API-42): the cost trace is read under the reports grant, a control of its own; no write follows from it.
   const canReadCostTrace = hasCapability(shell, MANUFACTURING_CAPABILITY.orderCostTrace)
+  // F-009 D6: correcting a recorded output and cancelling the order are authorities of their own, each a control.
+  const canCorrectOutput = hasCapability(shell, MANUFACTURING_CAPABILITY.orderOutputCorrection)
+  const canCancel = hasCapability(shell, MANUFACTURING_CAPABILITY.orderCancel)
   const storeKey = pendingFactKey(
     shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
@@ -274,6 +279,16 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
+      {canCorrectOutput ? (
+        <OutputCorrectionSection
+          order={order}
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
+          companyId={activeCompanyId ?? ''}
+          canReadInventoryLabel={canReadInventoryLabel}
+          onRefresh={refresh}
+        />
+      ) : null}
       {canChangeDueDate ? (
         <OrderDueDateSection
           key={`${order.orderId}:${order.dueDateRevision}`}
@@ -289,6 +304,9 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           canApproveException={canApproveCloseException}
           onRefresh={refresh}
         />
+      ) : null}
+      {canCancel ? (
+        <OrderCancelSection order={order} companyId={activeCompanyId ?? ''} onRefresh={refresh} />
       ) : null}
     </Frame>
   )

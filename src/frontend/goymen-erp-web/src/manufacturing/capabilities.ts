@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY SIXTEEN IDS. They map onto the permissions the server enforces separately
+ * WHY EIGHTEEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -19,6 +19,8 @@
  *   manufacturing.orders.close-exception-approve <- manufacturing.orders.close-exception.approve
  *   manufacturing.orders.due-date <- manufacturing.orders.read + manufacturing.orders.write (URT-D66: the order termin)
  *   manufacturing.orders.cost-trace <- manufacturing.orders.read + manufacturing.reports.read (URT-S19: the cost trace)
+ *   manufacturing.orders.output-correction <- manufacturing.orders.read + manufacturing.facts.correct (F-009 D6, UI-14)
+ *   manufacturing.orders.cancel <- manufacturing.orders.read + manufacturing.orders.cancel (F-009 D6; see orderCancel)
  *   manufacturing.plans.create  <- manufacturing.plans.write
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
@@ -64,6 +66,19 @@ export const MANUFACTURING_CAPABILITY = {
    * registered and granted to no role, so until a grant exists the registry publishes it to nobody and no trace is read.
    */
   orderCostTrace: 'manufacturing.orders.cost-trace',
+  /**
+   * F-009 D6 (UI-14, API-25): correct a recorded output declaration INSIDE the order screen with an append-only
+   * reversal. Not a route — a control. Its permission (`manufacturing.facts.correct`, URT-S2) is registered and granted
+   * to no role; the shell provider must publish this id (permission-capability-registration). Until it does
+   * `hasCapability` answers false and no correction form is drawn.
+   */
+  orderOutputCorrection: 'manufacturing.orders.output-correction',
+  /**
+   * F-009 D6 (URT-D33): cancel an order with nothing left on it INSIDE the order screen. Not a route — a control. The
+   * endpoint and its permission (`manufacturing.orders.cancel`) are URT-S4's; no provider publishes this id, so
+   * `hasCapability` answers false and no cancel control is drawn until that contract is merged and published.
+   */
+  orderCancel: 'manufacturing.orders.cancel',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */
