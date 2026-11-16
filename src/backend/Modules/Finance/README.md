@@ -651,7 +651,7 @@ of OPEN-009 stays open), the Cari-side ownership check of party/account (F018 N-
 | One step (FNS-D57) | Recording, changing and releasing each take effect in one save, with no proposer/approver and no amount threshold. Every change writes the old and the new values to the audit (`finance.collateral.recorded.v1` / `changed.v1` / `released.v1`, approval context `FNS-D57`, direct). A release is a reverse record carrying its reason; nothing is deleted |
 | Record | `finance.PartyCollaterals`: per collateral a revision chain (record = 1, each change or release the next); status Effective / Superseded; kind Record / Change / Release. Direction is `Received` (customer collateral); exact decimal text amount (`CK_PartyCollaterals_Payload`: positive), currency, Settings type id, validity dates. At most one effective revision per collateral (`UX_PartyCollaterals_Live`, filtered) and one row per revision (`UX_PartyCollaterals_Revision`) |
 | Types and rates (FNS-D31) | Settings owns the collateral types and their rates (0–100, exact decimal). Finance reads them through `IFinanceCollateralTypeCatalogReader`; the default `UnavailableFinanceCollateralTypeCatalogReader` answers Unavailable, so until Settings registers its adapter recording refuses (`collateral_type_catalog_unavailable`) and a held collateral's weighted figure is Unavailable. A cheque or promissory-note class is never a collateral type: the server refuses it (`collateral_type_is_instrument`). The rate is read at READ time, never copied into the record |
-| Weighted collateral | `FinancePartyCollateralFigures` (one calculator for the account view and the Sales port): amount x rate / 100, exact, per currency, never converted; anything Finance cannot read exactly makes the whole figure Unavailable (never a partial sum, never an assumed rate). The collateral haircut is OPEN-010 (open): none is applied. The read date is the server's UTC calendar date |
+| Weighted collateral | `FinancePartyCollateralFigures` (one calculator for the account view and the Sales port): amount x rate / 100, exact, per currency, never converted; anything Finance cannot read exactly makes the whole figure Unavailable (never a partial sum, never an assumed rate). The collateral haircut is OPEN-010 (open): none is applied. The read date is the company business day (FNS-D75, Europe/Istanbul; no UTC fallback — without it the read fails closed with `finance_business_day_unavailable`) |
 | Documentary risk (FNS-D58) | Customer instruments of the account whose status is neither Collected nor ReturnedToCustomer, per currency; an unknown status is Unavailable; shown separately, **never added to gross risk**. Withheld without `finance.customer-instrument.read` and `finance.customer-instrument.amount.read` |
 | Idempotency / audit | `finance.PartyCollateralCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event; the same key replays the first answer with its original correlation id; another payload under the same key is an `IdempotencyConflict`; a stale revision is a recorded `VersionConflict` |
 | Sales port | `FinanceSalesPartyRiskReadPortV1` now answers the collateral figure from this master (weighted, per currency) instead of `NoSource`; a catalog that cannot answer is `Unavailable`. The port shape is unchanged; the documentary risk is not part of it (an L3 field is a Sales contract decision) |
@@ -660,6 +660,18 @@ of OPEN-009 stays open), the Cari-side ownership check of party/account (F018 N-
 
 Not in this slice: the Settings collateral type catalog adapter (so FIN-S2 is partial until it exists), persona grants, a haircut
 (OPEN-010 stays open), the Cari-side ownership check of party/account (F018 N-2), and a documentary-risk field on the Sales port.
+
+## FIN-SC33: collateral currency, business-day read date, official invoice sources — FNS-D74, FNS-D75, FNS-D76
+
+| Part | What |
+|---|---|
+| Same currency (FNS-D74) | `FinancePartyCollateralFigures.Utilization` takes per currency the smaller of the open receivables and the weighted collateral of that same currency. Collateral in another currency is zero cover, never converted at a rate; the utilization stays Available (a recorded zero), never "hesaplanamadı". The Cari panel shows every currency on its own line and says so |
+| Business day (FNS-D75) | `FinanceBusinessDay` dates the collateral validity, the credit panel `AsOf` and the Sales risk port on the company business day (Europe/Istanbul). If the time zone cannot be resolved the read fails closed (`finance_business_day_unavailable`); there is no UTC fallback |
+| Two sources (FNS-D76) | `FinanceOfficialInvoiceSourceComparison` compares an approved manual record with the imported document of the same invoice; the approved manual record wins (KLN-D104) and the admission writes the differing fields as a warning to the audit trail; neither record is changed |
+
+Not in this slice: the import answer to the Sales read port with the TL field (FNS-D89), the pending-manual-record note and
+the difference warning on invoice detail and at manual approval (FNS-D90, KLN-D104) — FIN-SC36; the cost conversion at the
+order rate (FNS-D73) is the Production/Stock cost calculator's, not Finance's.
 
 ## F-019 / API-11 v2: customer return acceptance (müşteri iadesi kabulü)
 
