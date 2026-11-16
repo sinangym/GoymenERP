@@ -21,14 +21,21 @@ namespace GoymenERP.Identity.UnitTests;
 public sealed class IdentityPersistenceModelTests
 {
     [Fact]
-    public void The_ID_3_migration_is_the_last_one_and_the_snapshot_matches_the_model()
+    public void The_identity_audit_ownership_migration_is_the_last_one_and_the_snapshot_matches_the_model()
     {
         using var context = Context();
 
         Assert.Equal(
-            ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow"],
-            context.Database.GetMigrations().TakeLast(3));
+            ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow",
+                "20261116164010_RemoveIdentityAuditTableMapping"],
+            context.Database.GetMigrations().TakeLast(4));
         Assert.False(context.Database.HasPendingModelChanges());
+        Assert.Null(context.Model.FindEntityType("GoymenERP.Modules.Audit.Domain.Events.AuditEvent"));
+        // Audit was excluded from Identity migrations already. The generated ownership
+        // snapshot update neither creates nor drops the Audit owner's table or data.
+        var ownership = new RemoveIdentityAuditTableMapping();
+        Assert.Empty(ownership.UpOperations);
+        Assert.Empty(ownership.DownOperations);
     }
 
     [Fact]

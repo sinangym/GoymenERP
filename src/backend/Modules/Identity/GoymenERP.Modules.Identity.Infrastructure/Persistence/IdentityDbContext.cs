@@ -1,4 +1,3 @@
-using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Approvals;
@@ -118,7 +117,6 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         ConfigureCompanyReference(modelBuilder);
         modelBuilder.ConfigureProductMasterAssignment();
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
-        modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
     }
 
     private static void ConfigureBootstrapState(ModelBuilder modelBuilder)

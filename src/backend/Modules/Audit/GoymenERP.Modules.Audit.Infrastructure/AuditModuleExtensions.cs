@@ -41,6 +41,7 @@ public static class AuditModuleExtensions
         services.AddScoped<AuditEventCollector>();
         services.AddScoped<IAuditEventCollector>(provider =>
             provider.GetRequiredService<AuditEventCollector>());
+        services.AddScoped<IAuditTransactionWriterV1, AuditTransactionWriterV1>();
         services.AddScoped<AuditSaveChangesInterceptor>();
         services.AddScoped<IAuditQueryService, AuditQueryService>();
         services.AddSingleton(refusedAttemptRetention);

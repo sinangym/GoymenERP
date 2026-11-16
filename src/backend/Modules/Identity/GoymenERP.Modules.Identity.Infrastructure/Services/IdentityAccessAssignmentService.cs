@@ -27,6 +27,7 @@ internal sealed partial class IdentityAccessAssignmentService(
     IErpAuthorizationService authorization,
     IErpAuthorityRevalidationService revalidation,
     IAuditEventCollector auditEvents,
+    IAuditTransactionWriterV1 auditWriter,
     IRefusedAttemptRecorderV1 refusedAttempts,
     ISecurityEventWriterV1 securityEvents,
     TimeProvider timeProvider,

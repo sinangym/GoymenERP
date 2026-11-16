@@ -51,8 +51,8 @@ public static class IdentityModuleExtensions
 
         services.Configure<IdentitySeedOptions>(
             configuration.GetSection(IdentitySeedOptions.SectionName));
-        // ID-3: the host adds the audit interceptor here, so a role assignment, revocation or Critical request decision
-        // and its canonical audit events share one SaveChanges, as for every module.
+        // ID-3: Identity owns its state; canonical audit writes use the Audit owner's
+        // transaction port. This context never maps or writes another module's Audit table.
         services.AddDbContext<IdentityDbContext>((serviceProvider, options) =>
         {
             options.UseSqlServer(
