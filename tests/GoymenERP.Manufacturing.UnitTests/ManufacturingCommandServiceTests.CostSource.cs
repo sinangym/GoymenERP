@@ -8,6 +8,56 @@ namespace GoymenERP.Manufacturing.UnitTests;
 public sealed partial class ManufacturingCommandServiceTests
 {
     [Fact]
+    public async Task Usd_cost_uses_original_usd_issue_stamps_and_the_actual_scrap_weighing_day_rate_without_changing_tl()
+    {
+        var fixture = new Fixture(); var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(90m), At);
+        var weighedAt = DateTimeOffset.Parse("2026-09-30T22:30:00Z");
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.Scrap, new Kilograms(10m), weighedAt);
+        order.Close(order.Version, Actor, weighedAt.AddDays(1));
+        var movements = new CostMovementOwner(order);
+        movements.Snapshot = movements.Snapshot with { Issues = [movements.Snapshot.Issues[0] with { StampedUnitCostUsd = 1m, UsdStampVersion = "synthetic-usd-stamp:3" }] };
+        var prices = new CostPrices { Entries = [MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new(2026, 10), new(2m), "synthetic-author", weighedAt)] };
+        var rates = new CostUsdRateOwner(40m);
+        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, movements, new CostPolicyOwner(), prices, rates);
+        var read = await source.ReadAsync(Company, order.Id, CancellationToken.None);
+        Assert.Equal(new DateOnly(2026, 10, 1), Assert.Single(rates.Days));
+        Assert.Equal(2m, Assert.Single(read.Input!.Cost.ScrapWeighings).Price.TlPerKg);
+        Assert.Equal(0.05m, Assert.Single(read.UsdInput!.Cost.ScrapWeighings).Price.TlPerKg);
+        Assert.Equal(1m, Assert.Single(read.UsdInput.Cost.Issues).UnitCostPerKg);
+        var usd = ProductionCostRoundingCalculatorV1.Round(read.UsdInput);
+        Assert.Equal((1.1056m, 100m, 100m), (usd.RecordedCostPerKg!.Value, usd.InputTotalTl!.Value, usd.DistributedTotalTl!.Value));
+        var tl = ProductionCostRoundingCalculatorV1.Round(read.Input);
+        Assert.Equal((1000m, 1000m), (tl.InputTotalTl!.Value, tl.DistributedTotalTl!.Value));
+    }
+
+    [Fact]
+    public async Task A_usd_scrap_conversion_overflow_makes_only_usd_unavailable_and_preserves_the_readable_tl_cost()
+    {
+        var fixture = new Fixture(); var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(90m), At);
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.Scrap, new Kilograms(10m), At);
+        order.Close(order.Version, Actor, At.AddDays(1));
+        var month = ManufacturingBusinessDay.DateOf(At); var movements = new CostMovementOwner(order);
+        var prices = new CostPrices { Entries = [MonthlyScrapPrice.Record(Guid.NewGuid(), Company, new(month.Year, month.Month), new(10m), "synthetic-author", At)] };
+        var source = new ManufacturingCostCompositionSourceV1(fixture.CompanyContext, fixture.Store, movements, new CostPolicyOwner(), prices,
+            new CostUsdRateOwner(0.0000000000000000000000000001m));
+        var read = await source.ReadAsync(Company, order.Id, CancellationToken.None);
+        Assert.Equal(ManufacturingScrapCostDistributionSourceStatusV1.Found, read.Status); Assert.Null(read.UsdInput);
+        Assert.Equal("scrap_usd_exchange_rate_unavailable", read.UsdUnavailableReason);
+        Assert.Equal(ProductionReceiptCostStatus.Value, ProductionCostRoundingCalculatorV1.Round(read.Input!).Status);
+    }
+
+    private sealed class CostUsdRateOwner(decimal rate) : IManufacturingScrapUsdRateReadPortV1
+    {
+        public List<DateOnly> Days { get; } = [];
+        public Task<ManufacturingScrapUsdRateSnapshotV1?> ReadAsync(Guid companyId, DateOnly weighingDay, CancellationToken cancellationToken)
+        { Days.Add(weighingDay); return Task.FromResult<ManufacturingScrapUsdRateSnapshotV1?>(new(companyId, weighingDay, weighingDay, rate, Guid.NewGuid(), "synthetic-rate:5", "Tcmb")); }
+    }
+
+    [Fact]
     public async Task Cost_source_joins_real_fact_and_movement_identities_and_keeps_the_policy_and_input_provenance()
     {
         var fixture = new Fixture(); var order = await fixture.BalancedOrderAsync(); order.Close(order.Version, Actor, At.AddDays(1));

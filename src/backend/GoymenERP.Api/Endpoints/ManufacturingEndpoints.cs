@@ -982,6 +982,15 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/orders/{orderId:guid}/production-cost-usd", async (Guid orderId, ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+            {
+                SetPrivateNoStore(http.Response.Headers);
+                return ToHttpResult(http, await service.GetProductionUsdCostAsync(orderId, token), location: null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderProductionUsdCostV1").Produces<ManufacturingProductionUsdCostViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         group.MapGet("/orders/{orderId:guid}/cost-generations", async (Guid orderId, ManufacturingCommandService service,
                 HttpContext http, CancellationToken token) =>
             {

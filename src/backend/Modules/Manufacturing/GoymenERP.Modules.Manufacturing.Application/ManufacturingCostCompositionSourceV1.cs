@@ -148,8 +148,13 @@ public sealed class ManufacturingCostCompositionSourceV1(ICompanyContext company
                 if (fx is null || fx.CompanyId != companyId || fx.WeighingDay != day || fx.TryPerUsd <= 0
                     || fx.RecordId == Guid.Empty || string.IsNullOrWhiteSpace(fx.RecordVersion))
                 { usdReasons.Add("scrap_usd_exchange_rate_unavailable"); continue; }
-                usdSnapshots.Add(fx);
-                usdWeighings.Add(weighing with { Price = new(ScrapPriceReadStatus.Value, weighing.Price.TlPerKg!.Value / fx.TryPerUsd) });
+                try
+                {
+                    var priceUsd = weighing.Price.TlPerKg!.Value / fx.TryPerUsd;
+                    usdSnapshots.Add(fx);
+                    usdWeighings.Add(weighing with { Price = new(ScrapPriceReadStatus.Value, priceUsd) });
+                }
+                catch (OverflowException) { usdReasons.Add("scrap_usd_exchange_rate_unavailable"); }
             }
             if (usdReasons.Count == 0) usdInput = new(cost with { Issues = usdIssues, ScrapWeighings = usdWeighings }, outputInputs);
             return new(ManufacturingScrapCostDistributionSourceStatusV1.Found, companyId, orderId, input)

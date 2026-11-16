@@ -548,7 +548,8 @@ public sealed partial class ManufacturingCommandService(
     GoymenERP.Modules.Accounting.Application.Contracts.IAccountingPeriodStatusPortV1? accountingPeriods = null,
     IManufacturingOrderReopeningInventoryPortV1? reopeningInventory = null,
     IManufacturingCostGenerationStoreV1? costGenerations = null,
-    IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null)
+    IManufacturingClosedOrderCostRecognitionPortV1? costRecognition = null,
+    IManufacturingScrapCostDistributionSourceV1? costSource = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the

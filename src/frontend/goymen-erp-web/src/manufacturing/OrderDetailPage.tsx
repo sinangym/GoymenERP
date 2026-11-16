@@ -78,6 +78,7 @@ import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OrderCostTracePanel } from './OrderCostTracePanel'
 import { OrderCostPanel } from './OrderCostPanel'
 import { CostGenerationPanel } from './CostGenerationPanel'
+import { OrderUsdCostPanel } from './OrderUsdCostPanel'
 import { OrderLineagePanel } from './OrderLineagePanel'
 import { OutputCorrectionSection } from './OutputCorrectionSection'
 import { OrderCancelSection } from './OrderCancelSection'
@@ -266,7 +267,10 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           orderVersion={order.version}
         />
       ) : null}
-      {canReadCostTrace ? <CostGenerationPanel key={`${namespace}:${order.orderId}`} namespace={namespace ?? 'no-context'}
+      {canReadCostTrace && order.status === 'Closed' ? <OrderUsdCostPanel namespace={namespace ?? 'no-context'} routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version} /> : null}
+      {canReadCostTrace && (order.status === 'Closed' || (order.reopenings?.length ?? 0) > 0) ? <CostGenerationPanel key={`${namespace}:${order.orderId}`} namespace={namespace ?? 'no-context'}
+        routeEntryGeneration={shell.routeEntryGeneration}
         companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version} closed={order.status === 'Closed'}
         canRecognize={canClose && !reopenLocked} onRefresh={refresh} /> : null}
       <OrderLineagePanel
