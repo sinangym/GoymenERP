@@ -928,7 +928,17 @@ nothing, opens no document and writes no other module's record.
   the Istanbul time zone it throws, so the gate fails closed. Logistics does not consume it yet: no Logistics connection or port is
   opened here (SAT-D209). Contract for the gate (EK56 SAT-D285): one shipment consumes an approved exception and a cancelled
   shipment lapses it (new request and approval needed); the gate applies both on top of the port's answer. How Sales learns of
-  consumption or cancellation stays NEEDS-SINAN (SAT-D285, SAT-D209).
+  consumption or cancellation is LOJ-D19 (SINAN-CEVAP 33): through the inbox, see the next item.
+- **Usage mirror (LOJ-D19, SAT-D285):** `SalesLogisticsShipmentInboxConsumer` (consumer `sales.risk-exception-usage`, source
+  `logistics`, events `logistics.definite-shipment.recorded.v1` / `.cancelled.v1`, version 1; the names are the board's draft and
+  stay reversible) records, once and append-only, that a shipment used an exception (Consumed) or that such a shipment was
+  cancelled (Dropped) in `sales.ShipmentRiskExceptionUsages` (PK company + shipment + kind, `UX_ShipmentRiskExceptionUsages_Exception`
+  = one usage of each kind per exception, FK to the exception) with the audit `sales.order.risk-exception.consumed.v1` /
+  `dropped.v1` (Integration actor, the event's correlation/causation, idempotency key `<source>:<event id>`). A Dropped usage makes
+  the exception read as Lapsed, so a new request is admitted. Single use itself stays the Logistics gate's (SAT-D285); an unknown,
+  unapproved, other-instruction or other-shipment exception is a permanent (poison) failure, a lost race a retry. Migration
+  `20261116001237_AddShipmentRiskExceptionUsages`: the trigger refuses any change (51487); the forward-fix `Down` refuses with
+  51488 while a usage exists. The consumer is NOT registered with the dispatcher until the Logistics outbox source exists.
 - **UI:** the S-04 panel `SalesOrderRiskExceptions` lists the exceptions (detail capability), shows the request form only with the
   request capability, approve / reject only on a pending exception with the approve capability and "Geri çek" only on the signed-in
   user's own pending exception with the request capability; an unknown outcome (network error, 502/503/504) keeps its key and is

@@ -287,6 +287,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-07 (ADR-011 §2): the risk exception commands' own attempt records (append-only).</summary>
     internal DbSet<ShipmentRiskExceptionAttemptRow> ShipmentRiskExceptionAttempts => Set<ShipmentRiskExceptionAttemptRow>();
 
+    /// <summary>LOJ-D19, SAT-D285: the append-only mirror of the Logistics usages of the single-shipment risk exceptions.</summary>
+    internal DbSet<ShipmentRiskExceptionUsageRow> ShipmentRiskExceptionUsages => Set<ShipmentRiskExceptionUsageRow>();
+
     /// <summary>API-40 (SAT-D288…SAT-D294): the recorded customer return invoices (the approval axis is the only change).</summary>
     internal DbSet<CustomerReturnRow> CustomerReturns => Set<CustomerReturnRow>();
 
@@ -339,6 +342,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>TR_ShipmentRiskExceptionAttempts_Guard (API-07): an attempt row is append-only (THROW 51253).</summary>
     internal const string ShipmentRiskExceptionAttemptGuardTrigger = "TR_ShipmentRiskExceptionAttempts_Guard";
+
+    /// <summary>TR_ShipmentRiskExceptionUsages_Guard (LOJ-D19): a mirrored usage row is append-only (THROW 51487; Down guard 51488).</summary>
+    internal const string ShipmentRiskExceptionUsageGuardTrigger = "TR_ShipmentRiskExceptionUsages_Guard";
+
+    /// <summary>CK_ShipmentRiskExceptionUsages_Kind (SAT-D285): consumed (1) or dropped by the shipment's cancellation (2).</summary>
+    internal const string ShipmentRiskExceptionUsageKindConstraint = "[Kind] IN (1, 2)";
+
+    /// <summary>The longest Work outbox source name a mirrored usage keeps (the inbox source name's bound).</summary>
+    internal const int ShipmentRiskExceptionUsageSourceNameLength = 64;
 
     /// <summary>UX_ShipmentRiskExceptions_PendingShipment (SAT-D154): at most one pending exception per shipment of an order.</summary>
     internal const string PendingShipmentRiskExceptionFilter = "[State] = 1";
@@ -1916,6 +1928,34 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // LOJ-D19, SAT-D285: the Logistics usage mirror; one row per shipment and kind, one shipment per exception and kind.
+        var usage = modelBuilder.Entity<ShipmentRiskExceptionUsageRow>();
+        usage.ToTable("ShipmentRiskExceptionUsages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ExceptionId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceEventId] <> '00000000-0000-0000-0000-000000000000' AND [ExceptionNo] >= 1");
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Kind", ShipmentRiskExceptionUsageKindConstraint);
+            table.HasCheckConstraint("CK_ShipmentRiskExceptionUsages_Text", "LEN([SourceName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasTrigger(ShipmentRiskExceptionUsageGuardTrigger);
+        });
+        usage.HasKey(x => new { x.CompanyId, x.ShipmentId, x.Kind });
+        usage.Property(x => x.SourceName).HasMaxLength(ShipmentRiskExceptionUsageSourceNameLength).UseCollation(IdentityCollation)
+            .IsRequired();
+        usage.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        usage.Property(x => x.CausationId).HasMaxLength(128);
+        usage.HasIndex(x => new { x.CompanyId, x.ExceptionId, x.Kind }).IsUnique()
+            .HasDatabaseName("UX_ShipmentRiskExceptionUsages_Exception");
+        usage.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        usage.HasOne<ShipmentRiskExceptionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ExceptionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        usage.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // API-40 (SAT-D288…SAT-D294): the recorded customer return invoices and their attempts.
@@ -2239,6 +2279,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(ShipmentRiskExceptionRow.ValidOn), nameof(ShipmentRiskExceptionRow.UpdatedAtUtc),
                     ],
                     ShipmentRiskExceptionAttemptRow => [],
+                    ShipmentRiskExceptionUsageRow => [],
                     // API-40 (SAT-D290): a customer return moves only along its approval axis, one allowed step (checked below);
                     // the header, the customer's document, the lines and the totals never change; its attempts are APPEND-ONLY.
                     CustomerReturnRow =>
