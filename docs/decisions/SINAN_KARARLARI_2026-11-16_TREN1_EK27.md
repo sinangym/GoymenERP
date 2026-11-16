@@ -15,11 +15,13 @@ GitHub'a bizzat yazdığı yorumlar veya bağımsız insan imzaları olarak sunu
 - [5 takip cevabının aktarımı](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6926298700).
 - [6 somut sıra örneğinin sorusu](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6926698594)
   ve [son cevabın aktarımı](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6926992238).
+- [2 irsaliye kapsamı takip sorusu](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6928299699)
+  ve [kesinleşmiş belge / teorik dağılım cevabının aktarımı](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6928456459).
 
 “(Önerilen)” işaretleri soruyu hazırlayana aittir. Aşağıdaki seçenek açıklamaları
 **pencere metnidir; GitHub'da tam seçenek metninin kaydı yoktur**. Ajanın GitHub
-özetindeki bir kapsam açıklaması ayrıca kullanıcı kararı sayılmaz. Özellikle 2'de
-irsaliye kapsamı kesinleştirilmez; aşağıdaki NEEDS-SINAN sorusuyla ayrı bırakılır.
+özetindeki bir kapsam açıklaması ayrıca kullanıcı kararı sayılmaz. Özellikle 2'nin
+ilk cevabındaki irsaliye belirsizliği, aşağıdaki ayrı takip cevabıyla netleşir.
 
 ### Serbest cevaplar (sözcüğü sözcüğüne)
 
@@ -39,12 +41,17 @@ irsaliye kapsamı kesinleştirilmez; aşağıdaki NEEDS-SINAN sorusuyla ayrı b�
 
 > Bu kapsamı uygula, bunun yapılıyor olma sebebi zaten muhsebesel ve vergisel, gerekiyorsa bunu araştır
 
+2 irsaliye kapsamı takip cevabı:
+
+> Kesinleşmiş irsaliye veya fatura (eirsaliye e fatura gibi ettn no su olan gerçekten kesilmiş) varsa kesinleşmiş irsaliye veya fatura(eirsaliye e fatura gibi ettn no su olan gerçekten kesilmiş) göre, eğer kesinleşmiş irsaliye yoksa teorik kg a göre oranlasın, daha sonra irsaliye ve fatura kesme işi sistemden gönderilince burdaki dağılımı kullacanağız, şuanda sistemden kesilmedipi için dışarda kesileni içeri alırken dışarda kesileni esas alıcaz, daha sonra sistemden kesileceği zaman bu teorik kg oranlı dağıtım işimize yarayacak
+
 ## Soru ve cevaplar
 
 | # | Soru | Cevap | Seçilen seçeneğin açıklaması ve seçilmeyen seçenekler |
 |---|---|---|---|
 | 1 / BELGE-Q1 | Siparişin otomatik TCMB döviz satış kuru hangi güne ait olmalı? | Ortak cevapta **1-A**. | **A (Önerilen):** SAT-D54/SAT-D170'teki kesin önceki iş günü ve arife algoritması. Seçilmeyen **B:** doğrudan işlem tarihinin yayını. |
-| 2 / BELGE-Q2 | Kg farkı dağıtımının fatura/irsaliye kapsamı ve artık kuralı nedir? | Ortak cevapta **2-A ama teorik kg lara göre oranlamak mantıklı**. | **Pencere metni, GitHub'da tam seçenek kaydı yok:** A (Önerilen), SAT-D409 yalnız faturada teorik kg oranlı dağıtım; irsaliyede SAT-D322'nin tamamını en ağır satıra yazma kuralı sürer; faturada yuvarlama artığı eşit en ağır satırlar içinde ilk satıra yazılır. B, farklı kapsam/artık kuralını açıklama. Kullanıcının teorik kg vurgusunun irsaliyeyi de kapsayıp kapsamadığı **NEEDS-SINAN**; pencere veya ajan özetiyle seçim kesinleştirilmez. |
+| 2 / BELGE-Q2 | Kg farkı dağıtımının fatura/irsaliye kapsamı ve artık kuralı nedir? | Ortak cevapta **2-A ama teorik kg lara göre oranlamak mantıklı**. | **Pencere metni, GitHub'da tam seçenek kaydı yok:** A (Önerilen), SAT-D409 yalnız faturada teorik kg oranlı dağıtım; irsaliyede SAT-D322'nin tamamını en ağır satıra yazma kuralı sürer; faturada yuvarlama artığı eşit en ağır satırlar içinde ilk satıra yazılır. B, farklı kapsam/artık kuralını açıklama. Bu ilk cevabın irsaliye kapsamı yalnız pencere/ajan özetiyle kesinleştirilmedi; aşağıdaki takip sorusuna verilen cevap esas alındı. |
+| 2 takip | İrsaliyedeki kantar kg farkı da satırların teorik kg oranına göre mi dağıtılsın, yoksa irsaliyede eski SAT-D322 kuralı olan farkın tamamını en ağır satıra yazma yöntemi mi kalsın? Faturada teorik kg oranına göre dağıtım kararınız kesin; yalnız irsaliye kapsamını netleştiriyoruz. | Yukarıdaki **“Kesinleşmiş irsaliye veya fatura…”** cevabı. | Yeni bir A/B seçimi varsayılmadı; kullanıcı kesinleşmiş gerçek belgeye dayanan koşullu kuralı tarif etti. Gerçekten kesilmiş ETTN'li irsaliye/fatura varsa o belgenin kg dağılımı; böyle bir belge yoksa teorik kg oranlı dağılım. Gelecekte sistemden kesim bu dağılımı kullanır. |
 | 3 / BELGE-Q3 | Önek+yıl+sıra ve yıllık sıfırlama alış siparişini de kapsıyor mu? | Ortak cevapta **3-A**. | **A (Önerilen):** alış siparişini de kapsar, ALS-D36 eski algoritmasının yerini alır. Seçilmeyen **B:** alış siparişi hariçtir. |
 | 4 / BELGE-Q4 | Bildirimleri 90 gün sonra pasifleştirme süresi değiştirilebilir mi? | Ortak cevapta **4-A**. | **A (Önerilen):** 90 gün, Ayarlar'dan değiştirilebilir başlangıç değeridir. Seçilmeyen **B:** sabit 90 gündür. Her iki seçenekte kalıcı silme yapılmaz. |
 | 5 / BELGE-Q5 | SMM hesabında ticari mal=621 / mamul=620 ayrımı hangi ürün alanından okunmalı? | Ortak cevaptaki **5-önerini uygula** ve devamındaki satır bazlı değişiklik isteği. | Öneri: ürün kartında açık ticari mal/mamul sınıfı; mevcut uygun alan varsa adını belirtme; satın alma/üretim hareketinden tahmin etmeme. Numaralı başka seçenek verilmedi. |
@@ -62,7 +69,7 @@ irsaliye kapsamı kesinleştirilmez; aşağıdaki NEEDS-SINAN sorusuyla ayrı b�
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | FNS-D111 | Sipariş otomatik kuru; **FNS-D98'i günceller**, FNS-D79 ve SAT-D54/SAT-D170 ile aynı algoritmayı seçer | BELGE-Q1 yanıtında kesin önceki iş günü ve arife algoritması seçildi. Bu seçim, EK23 FNS-D98'deki **“işlem tarihindeki kur”** hükmüyle çelişen kısmın yerine geçer; işlem tarihinin doğrudan yayını kullanılmaz. Döviz satış türü korunur. Bu hüküm diğer olayların kur tarihini kendiliğinden değiştirmez. | Sipariş otomatik kur kaynağı, FNS-D98, BELGE-Q1 |
-| SAT-D421 | Fatura kg dağıtımı; **SAT-D409'u fatura tarafında netleştirir** | Faturada fark teorik kg oranında dağıtılır. Fatura yuvarlama artığı eşit en ağır satırlar içinde ilk satıra gider. İrsaliyede de oranlama yapılıp yapılmayacağı bu cevapla kesinleştirilmez; SAT-D322 (3)–(4) ile ilişkisi **NEEDS-SINAN** kalır. | Fatura deterministic kg hesabı, BELGE-Q2; irsaliye kapsamı açık soru |
+| SAT-D421 | Kesinleşmiş belge ve teorik kg dağılımı; **SAT-D409'u ve SAT-D322 (3)–(4)'ü bu koşullu kapsamda günceller** | Gerçekten kesilmiş, kesinleşmiş ETTN'li irsaliye veya fatura varsa dışarıda kesilen belge içeri alınırken o belgedeki kg dağılımı esas alınır; teorik oranla yeniden dağıtılmaz. Böyle bir kesinleşmiş belge yoksa irsaliye/fatura için teorik kg oranında dağılım hesaplanır. Fatura hesabında yuvarlama artığının eşit en ağır satırlar içinde ilk satıra verilmesi, hesaplanan dağılım için korunur; dış belgenin satırları bu kuralla değiştirilmez. İleride sistemden irsaliye/fatura kesilirken hesaplanan dağılım kullanılır. Bu cevap dış belge kesim akışını etkinleştirmez. | Dış irsaliye/fatura içe alma, deterministic kg hesabı, gelecekteki belge kesim girdisi, BELGE-Q2 |
 | KIM-D55 | N-12 kapsamı; **KIM-D53'ü netleştirir ve ALS-D36'nın eski alış siparişi numara algoritmasını günceller** | Önek + yıl + sıra ve yıllık sıfırlama alış siparişini de kapsar. Alış siparişi için ALS-D36'nın eski algoritması bu yeni biçimin dışında sürdürülmez. | Şirket belge numara serileri, alış siparişi, KIM-S19, BELGE-Q3 |
 | KLN-D115 | Bildirim süresi; **KLN-D114'ü netleştirir**, KLN-D111 ile Ayarlar bağını korur | Pasifleştirme için 90 gün, Ayarlar'dan değiştirilebilir başlangıç değeridir. Kalıcı silme yoktur; denetim kaydı bildirimin pasifleştirilmesiyle silinmez. Başka retention/imha politikası seçilmez. | Bildirim deposu, süre ayarı, BELGE-Q4 |
 | SAT-D422 | SMM sınıfı ve satır düzeltmesi; **SAT-D419'u tamamlar**, SAT-D420'nin mevcut Finans eşleme yetkisini korur | Ürün kartında açık ticari mal/mamul sınıfı kullanılır; satın alma/üretim hareketinden tahmin edilmez. SAT-D419 varsayılanları ticari mal 621, mamul 620 olarak sürer. Kesinleşmiş faturada her satırın ticari mal/mamul sınıfı ve SMM hesabı siparişten/fatura genelinden bağımsız, stokta kalmasına bakılmadan değiştirilebilir. Bu işlem tutar, miktar, vergi ve fiziksel stoğu değiştirmez. Önceki muhasebe kaydı korunur; gerekiyorsa açık dönemde ters kayıt+düzeltme kaydı oluşur. Finans eşleme ayarını değiştirme yetkisi ile bu satır düzeltmesinin yetkisi birbirine otomatik eşitlenmez. | Ürün sınıfı, fatura satırı muhasebe snapshot'ı ve düzeltme kaydı, BELGE-Q5 |
@@ -93,12 +100,14 @@ vergi belgesini değiştirme yetkisi bu araştırmadan çıkarılmaz.
 
 ## Sınırlar
 
-- **NEEDS-SINAN:** İrsaliyedeki kantar kg farkı da teorik kg oranıyla mı dağıtılsın,
-  yoksa SAT-D322 (3)–(4) uyarınca tamamı en ağır satıra mı yazılsın? Soru
-  [Issue #1189'da kaydedildi](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6928299699).
-  Yanıt gelmeden seçenek seçilmez; SAT-D421 yalnız fatura tarafını kesinleştirir.
+- BELGE-Q2 irsaliye takip sorusuna gelen cevap SAT-D421'de kaydedildi; bu dar sorunun
+  NEEDS-SINAN kaydı artık cevaplanmıştır. Bir `OPEN-*` kaydı kapatılmaz. İlk cevaptan
+  koşulsuz bir irsaliye yöntemi çıkarılmadı; son cevaptaki gerçek belge önceliği korunur.
+  İki kesinleşmiş belge birbiriyle çelişirse hangisinin üstün olduğu veya yeni bir
+  irsaliye yuvarlama/artık kuralı bu cevaptan çıkarılmaz. ETTN alanının yalnız dolu
+  olması, belgenin gerçekten kesilmiş olduğunun doğrulanması yerine geçmez.
 - **Uygulama okuması (karar alıntısı değildir):** BELGE-Q1–Q5, 6–9 ve 5/6 takip
-  cevapları yukarıdaki dar kapsamla kaydedilir; BELGE-Q2'nin irsaliye kapsamı açıktır;
+  cevapları yukarıdaki dar kapsamla kaydedilir;
   teknik kaynağın yokluğu veya eksik test bu cevapları uygulama kabulüne dönüştürmez.
 - **NEEDS-SINAN:** Kesinleşmiş fatura satırının muhasebe sınıfı/SMM hesabı düzeltmesini
   hangi mevcut yetki sahibinin gireceği ve ayrı onay gerekip gerekmediği bu cevaplarda
