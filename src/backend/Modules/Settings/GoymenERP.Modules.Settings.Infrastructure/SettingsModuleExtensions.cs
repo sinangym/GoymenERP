@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.ExchangeRates;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -31,6 +32,7 @@ public static class SettingsModuleExtensions
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ISettingsPhysicalUnitSemanticsV1, ApprovedSettingsPhysicalUnitSemanticsV1>();
         // SAT-D61…D64: the Sales policy port keeps the approved catalog for every read and adds the company's limit-group
         // store for the discount limit (SettingsSalesPolicyProviderV1 states the precedence; a contradiction fails closed).
         services.Replace(ServiceDescriptor.Scoped<ISettingsSalesPolicyProviderV1, SettingsSalesPolicyProviderV1>());
