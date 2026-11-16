@@ -5,6 +5,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Application.Outbox;
 using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
@@ -24,7 +25,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
 /// </summary>
 public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
-    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
+    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1, ILogisticsShipmentRiskGateStoreV1
 {
     private const string EntityType = "Logistics.LoadingInstruction";
     private const int ActorMaximumLength = 128;
@@ -253,7 +254,22 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     public async Task<LogisticsStoreResult?> MutateInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
         CancellationToken cancellationToken = default) =>
-        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, cancellationToken);
+        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, null, cancellationToken);
+
+    public async Task<LogisticsStoreResult?> MutateInstructionWithShipmentRiskGateAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsShipmentRiskGateFactsV1 gate, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(gate);
+        if (gate.ShipmentId == Guid.Empty || gate.SalesOrderId == Guid.Empty || gate.LoadingInstructionId != instructionId
+            || gate.RiskExceptionNo is < 1 || string.IsNullOrWhiteSpace(gate.Result) || string.IsNullOrWhiteSpace(gate.ExceptionStatus)
+            || string.IsNullOrWhiteSpace(gate.ContractVersion))
+        {
+            throw new ArgumentException("Risk kapısı olgusu bu talimatın kesin sevkini, siparişini ve sonucunu adlandırır.", nameof(gate));
+        }
+
+        return await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, gate, cancellationToken);
+    }
 
     public async Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
         string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
@@ -263,7 +279,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         // transaction is already disposed (rolled back) when this filter runs, so the loser gets the same refusal.
         try
         {
-            return await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, cancellationToken);
+            return await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, null,
+                cancellationToken);
         }
         catch (Exception exception) when (IsDeadlockVictim(exception))
         {
@@ -273,7 +290,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
 
     private async Task<LogisticsStoreResult?> MutateInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
-        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, CancellationToken cancellationToken)
+        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, LogisticsShipmentRiskGateFactsV1? shipmentRiskGate,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -374,6 +392,26 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             // one (recorded under the key), never a unique-key race answered as concurrent_change.
             dbContext.ChangeTracker.Clear();
             throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateDispatchNoteId, "Bu irsaliye kimliği şirketin başka bir talimatında kullanılıyor.");
+        }
+
+        if (shipmentRiskGate is not null)
+        {
+            // STK-S27: the gate was read for exactly this definite shipment; any other outcome is a programming error.
+            if (instruction.Shares.Count != sharesBefore + 1 || instruction.Shares[^1] is not { Kind: LoadingShareKind.Shipped } gatedShare
+                || gatedShare.ShareId != shipmentRiskGate.ShipmentId
+                || instruction.Lines.Single(candidate => candidate.Id == gatedShare.LineId).Source.OrderId != shipmentRiskGate.SalesOrderId)
+            {
+                throw new InvalidOperationException("Risk kapısı olgusu yalnız okunduğu kesin sevkle birlikte kaydedilir.");
+            }
+
+            if (shipmentRiskGate.RiskExceptionNo is { } exceptionNo
+                && await dbContext.ShipmentRiskExceptionUses.AsNoTracking().AnyAsync(use => use.SalesOrderId == shipmentRiskGate.SalesOrderId
+                    && use.ExceptionNo == exceptionNo, cancellationToken))
+            {
+                // L-4 / SAT-D285 (1): single use. The same terminal refusal under the key, never a unique-key race answer.
+                dbContext.ChangeTracker.Clear();
+                throw new LogisticsRuleException(LogisticsShipmentRiskGateCodesV1.ExceptionUsed, LogisticsShipmentRiskGateTextsV1.ExceptionUsed);
+            }
         }
 
         DispatchNoteDraft? changedNote = notesChanged.Length == 1 ? instruction.DispatchNotes[notesChanged[0]] : null;
@@ -480,13 +518,18 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             WriteDispatchNoteStep(noteRows.Single(candidate => candidate.DispatchNoteId == changedNote.DispatchNoteId), changedNote, noteLineRows, actorId);
         }
 
+        if (shipmentRiskGate is not null)
+        {
+            AddShipmentRiskGateRows(companyId, instruction.Id, shipmentRiskGate, envelope, actorId, now);
+        }
+
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
         // LOJ-D17 (2): an unload difference is a warning written to the audit record, never a refusal.
         var reason = unloadAdded && instruction.UnloadWeighing is { DifferenceWarning: true } && !string.IsNullOrWhiteSpace(audit.WarningReason)
             ? audit.WarningReason
             : audit.Reason;
         Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
-            MutationSnapshot(instruction, aggregateLoadLimit), reason);
+            WithShipmentRiskGate(MutationSnapshot(instruction, aggregateLoadLimit), shipmentRiskGate), reason);
         await SaveAsync(cancellationToken);
         if (aggregateTransaction is not null)
         {
@@ -654,6 +697,63 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         where row.SourceOrderId == orderId && row.SourceOrderLineId == orderLineId && row.UnitId == unitId
             && owner.Status != (int)LoadingInstructionStatus.Cancelled
         select row;
+
+    /// <summary>
+    /// STK-S27: the consumed exception's single-use row (when an exception carried a stop) and the definite-shipment outbox event,
+    /// added to this write's save. The payload carries no amount (SAT-D162); the exception id is reserved and null.
+    /// </summary>
+    private void AddShipmentRiskGateRows(Guid companyId, Guid instructionId, LogisticsShipmentRiskGateFactsV1 gate,
+        LogisticsWriteEnvelope envelope, string actorId, DateTimeOffset now)
+    {
+        if (gate.RiskExceptionNo is { } exceptionNo)
+        {
+            dbContext.ShipmentRiskExceptionUses.Add(new ShipmentRiskExceptionUseRow
+            {
+                CompanyId = companyId,
+                SalesOrderId = gate.SalesOrderId,
+                ExceptionNo = exceptionNo,
+                ShipmentId = gate.ShipmentId,
+                InstructionId = instructionId,
+                RecordedBy = actorId,
+                RecordedAtUtc = now,
+            });
+        }
+
+        var payload = new LogisticsDefiniteShipmentEventV1(companyId, gate.ShipmentId, gate.SalesOrderId, instructionId, gate.RiskExceptionNo,
+            null);
+        dbContext.OutboxMessages.Add(new LogisticsOutboxMessageRow
+        {
+            EventId = Guid.NewGuid(),
+            CompanyId = companyId,
+            EventType = LogisticsDefiniteShipmentOutboxV1.RecordedEventType,
+            SchemaVersion = LogisticsDefiniteShipmentOutboxV1.Version,
+            SubjectId = gate.ShipmentId,
+            PayloadJson = JsonSerializer.Serialize(payload, Json),
+            OccurredAtUtc = now,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            CausationId = string.IsNullOrWhiteSpace(envelope.CausationId) ? null : envelope.CausationId.Trim(),
+        });
+    }
+
+    /// <summary>STK-S27: the after-snapshot also names what the risk gate let through (result, reason, exception; no amount).</summary>
+    private static string WithShipmentRiskGate(string snapshot, LogisticsShipmentRiskGateFactsV1? gate)
+    {
+        if (gate is null)
+        {
+            return snapshot;
+        }
+
+        using var document = JsonDocument.Parse(snapshot);
+        return JsonSerializer.Serialize(new
+        {
+            snapshot = document.RootElement.Clone(),
+            shipmentRiskGate = new
+            {
+                gate.ShipmentId, gate.SalesOrderId, gate.LoadingInstructionId, gate.Result, gate.HoldReason, gate.ExceptionStatus,
+                gate.RiskExceptionNo, gate.ContractVersion,
+            },
+        }, Json);
+    }
 
     private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)
     {

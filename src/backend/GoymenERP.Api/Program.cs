@@ -436,6 +436,8 @@ builder.Services.AddWorkModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
+// STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
+builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).

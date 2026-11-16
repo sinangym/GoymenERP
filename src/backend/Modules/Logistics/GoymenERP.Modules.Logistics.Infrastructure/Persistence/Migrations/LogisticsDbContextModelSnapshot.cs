@@ -174,6 +174,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
 
+                    b.HasIndex("CompanyId", "Outcome", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true);
+
                     b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
 
                     b.ToTable("AuditEvents", "audit", t =>
@@ -824,6 +827,66 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsOutboxMessageRow", b =>
+                {
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("EventId");
+
+                    b.HasIndex("CompanyId", "Position")
+                        .HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
+
+                    b.HasIndex("CompanyId", "EventType", "SubjectId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OutboxMessages_Subject");
+
+                    b.ToTable("OutboxMessages", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutboxMessages_Envelope", "[EventId] <> '00000000-0000-0000-0000-000000000000' AND [SubjectId] <> '00000000-0000-0000-0000-000000000000' AND [SchemaVersion] >= 1 AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+
+                            t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] IN ('logistics.definite-shipment.recorded.v1', 'logistics.definite-shipment.cancelled.v1')");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", b =>
                 {
                     b.Property<Guid>("Id")
@@ -835,6 +898,46 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.ToTable("Companies", "organization", t =>
                         {
                             t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.ShipmentRiskExceptionUseRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SalesOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ExceptionNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("InstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "SalesOrderId", "ExceptionNo");
+
+                    b.HasIndex("CompanyId", "InstructionId");
+
+                    b.HasIndex("CompanyId", "ShipmentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ShipmentRiskExceptionUses_ShipmentId");
+
+                    b.ToTable("ShipmentRiskExceptionUses", "logistics", t =>
+                        {
+                            t.HasCheckConstraint("CK_ShipmentRiskExceptionUses_Identity", "[ExceptionNo] >= 1 AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' AND [ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [InstructionId] <> '00000000-0000-0000-0000-000000000000' AND LEN([RecordedBy]) > 0");
                         });
                 });
 
@@ -1200,6 +1303,25 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingShareRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InstructionId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsOutboxMessageRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.ShipmentRiskExceptionUseRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
                         .WithMany()
