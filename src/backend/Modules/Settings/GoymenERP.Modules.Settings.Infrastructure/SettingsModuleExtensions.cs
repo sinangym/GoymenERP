@@ -81,6 +81,11 @@ public static class SettingsModuleExtensions
         // center reference port is composed by the API host over the Organization owner's read (none composed: fail closed).
         services.AddScoped<ISettingsWorkCenterCapacityAdministrationV1, SettingsWorkCenterCapacityAdministration>();
         services.AddScoped<ISettingsWorkCenterCapacityProviderV1, SettingsWorkCenterCapacityProviderV1>();
+        // API-98/B-14 (KIM-D49, KIM-D51): the company's reference lists (expense/service types, paint colors, scrap kinds),
+        // their administration and the read port the purchasing, stock/logistics, production and finance modules consume.
+        // Nothing is seeded: every list starts empty; the operation type list is not opened.
+        services.AddScoped<ISettingsReferenceListAdministrationV1, SettingsReferenceListAdministration>();
+        services.AddScoped<ISettingsReferenceListReaderV1, SettingsReferenceListReaderV1>();
         // B-13 (ADR-SET-002): the company policy registry. One provider answers every read port of the registry; the number
         // series port (ISettingsNumberSeriesProviderV1) stays unregistered until its policy is decided (NEEDS-SINAN N-12).
         services.AddScoped<ISettingsCompanyPolicyAdministrationV1, SettingsCompanyPolicyAdministration>();

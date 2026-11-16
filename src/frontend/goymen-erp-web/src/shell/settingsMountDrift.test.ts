@@ -25,8 +25,8 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(settings?.entries).toContain(CAPABILITY.settingsSalesDiscountLimits)
   })
 
-  it('mounts the nine static routes', () => {
-    expect(settingsRoutes).toHaveLength(9)
+  it('mounts the eleven static routes', () => {
+    expect(settingsRoutes).toHaveLength(11)
     expect(matchRoutes(settingsRoutes, '/ayarlar/iskonto-limitleri')?.at(-1)?.route.path).toBe('ayarlar/iskonto-limitleri')
     expect(matchRoutes(settingsRoutes, '/ayarlar/vergi')?.at(-1)?.route.path).toBe('ayarlar/vergi')
     expect(matchRoutes(settingsRoutes, '/ayarlar/kurlar')?.at(-1)?.route.path).toBe('ayarlar/kurlar')
@@ -41,6 +41,10 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(matchRoutes(settingsRoutes, '/ayarlar/birim-profilleri')?.at(-1)?.route.path).toBe('ayarlar/birim-profilleri')
     expect(matchRoutes(settingsRoutes, '/ayarlar/is-merkezi-kapasitesi')?.at(-1)?.route.path).toBe(
       'ayarlar/is-merkezi-kapasitesi',
+    )
+    expect(matchRoutes(settingsRoutes, '/ayarlar/referans-listeleri')?.at(-1)?.route.path).toBe('ayarlar/referans-listeleri')
+    expect(matchRoutes(settingsRoutes, '/ayarlar/uretim-referans-listeleri')?.at(-1)?.route.path).toBe(
+      'ayarlar/uretim-referans-listeleri',
     )
   })
 
@@ -128,5 +132,25 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(entries.indexOf(shellId)).toBeLessThan(entries.indexOf(CAPABILITY.identityAssignmentsList))
     expect(entries.at(-1)).toBe('inventory.opening-stock.record')
     expect(SETTINGS_CAPABILITY.workCenterCapacity).toBe('settings.work-center-capacities.manage')
+  })
+
+  it('mirrors the API-98/B-14 reference list ids, routes and labels, one Ana Veriler entry each after the units', () => {
+    const entries = NAV_GROUPS.find((group) => group.id === 'settings')?.entries ?? []
+    const pairs = [
+      [CAPABILITY.settingsPurchasingReferenceLists, SETTINGS_CAPABILITY.purchasingReferenceLists],
+      [CAPABILITY.settingsProductionReferenceLists, SETTINGS_CAPABILITY.productionReferenceLists],
+    ] as const
+    for (const [shellId, settingsId] of pairs) {
+      expect(shellId).toBe(settingsId)
+      expect(CAPABILITY_ROUTE[shellId]).toBe(SETTINGS_ROUTE[settingsId])
+      expect(CAPABILITY_NAV_LABEL[shellId]).toBe(SETTINGS_NAV_LABEL[settingsId])
+      expect(NAV_CAPABILITIES.filter((item) => item === shellId)).toHaveLength(1)
+      expect(entries.filter((item) => item === shellId)).toHaveLength(1)
+      expect(entries.indexOf(shellId)).toBeGreaterThan(entries.indexOf(CAPABILITY.settingsUnitProfiles))
+      expect(entries.indexOf(shellId)).toBeLessThan(entries.indexOf(CAPABILITY.settingsExchangeRates))
+    }
+    expect(entries.at(-1)).toBe('inventory.opening-stock.record')
+    expect(SETTINGS_CAPABILITY.purchasingReferenceLists).toBe('settings.reference-lists.manage')
+    expect(SETTINGS_CAPABILITY.productionReferenceLists).toBe('settings.production-reference-lists.manage')
   })
 })

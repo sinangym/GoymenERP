@@ -884,3 +884,25 @@ permissive value. Nothing is seeded.
 | Routes | `GET` and `POST .../versions` under `/api/v1/settings/company-policies/` for `finance-opening-period`, `manufacturing-due-date-buffer` and `sales-subcontract-tax-default`. POST returns 204. |
 | Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). One save with the execution row and one audit event. Terminal refusals (409, 422) are stored and replay. |
 | Evidence | Unit: `CompanyPolicyRulesV1Tests`. Model: `SettingsCompanyPolicyPersistenceModelTests`. Names: `SettingsCompanyPolicyPermissionRegistrationTests`. Adapter: `SettingsFinanceOpeningPeriodReaderTests`. No real-SQL acceptance test yet. |
+
+## Reference lists — expense type, service type, paint color, scrap kind (API-98, B-14; ALS-D79, BS-10, KIM-D49, KIM-D51)
+
+The company's reference lists are versioned Settings records. The purchasing, stock/logistics, production and finance modules
+read them through `ISettingsReferenceListReaderV1`. Every list starts empty and nothing is seeded. Only the expense type,
+service type, paint color and scrap kind lists are open. The operation type list is not opened: it has no route, no write and
+no stored kind, and the reader answers it as not enabled. The service type list holds service types only, so the sales
+subcontract ("satış fasonu", an operation type value) is outside it by construction.
+
+| Part | What |
+|---|---|
+| Tables | `ReferenceListEntries`, keyed by (`CompanyId`, `EntryId`) with a unique (`CompanyId`, `Kind`, `Code`), holds the list kind (`ExpenseType`, `ServiceType`, `PaintColor`, `ScrapKind`; binary collation) and the code (1–32 of `A–Z 0–9 . _ -`, starting with a letter or digit). `ReferenceListEntryVersions`, keyed by (`CompanyId`, `EntryId`, `Version`), holds the name (≤ 200), active flag, who recorded it, when and why. Both are under the company filter. Version rows are insert-only and the latest is in force. The code never changes. CHECK constraints hold the shape. |
+| Migration | `AddReferenceListEntries` (dotnet ef, pure DDL Up). `Down` refuses with `THROW 51886` while any entry or version exists (forward fix). An empty store rolls back freely. |
+| Port | `ISettingsReferenceListReaderV1.ListAsync(companyId, kind)` returns `SettingsReferenceListV1` with every entry `{Id, Code, Name, Active, Version}` by code, and `Enabled = false` with no entries for a list that is not open. `GetAsync(companyId, kind, entryId)` answers `Found`, `NotFound`, `Inactive` or `Unavailable`. A list read gives `settings_access_denied`, `settings_provider_unavailable` or `settings_profile_invalid`; a lookup turns store and data errors into `Unavailable`. Neither falls back to a default. The consumer applies its own permission. |
+| Names | `settings.reference-lists.manage` (expense and service types; decided editors Satınalma Müdürü and Admin) and `settings.production-reference-lists.manage` (paint colors and scrap kinds; editor NEEDS-SINAN). Both are registered, company-wide, not Critical and **granted to no role** (human gate). |
+| Routes | Under `/api/v1/settings/reference-lists/`: `expense-types`, `service-types`, `paint-colors`, `scrap-kinds`. `GET /{list}` lists the entries. `POST /{list}/entries` (204) adds an active entry; a code already in the list is 409. `POST /{list}/entries/{entryId}/versions` (204) renames, deactivates or reactivates an entry; an unknown entry is 404. |
+| Commands | Each command takes an Idempotency-Key and a reason (≤ 4000); a new version also takes the entry's expected version. One save with the execution row and one audit event (`settings.reference-list-entry.created.v1` / `.recorded.v1`, entity = entry id). Terminal refusals (404, 409) are stored and replay. An unchanged entry is a stored no-op without audit. There is no hard delete. |
+| Screens | Ayarlar → Masraf ve hizmet tipleri (`/ayarlar/referans-listeleri`, AY-RFL-01) and Ayarlar → Boya rengi ve hurda türü (`/ayarlar/uretim-referans-listeleri`, AY-URL-01). Each screen shows its two lists with an add form and a per-entry edit form. It suggests no entry. |
+| Evidence | Unit: `ReferenceListRulesV1Tests`. Model: `SettingsReferenceListPersistenceModelTests`. Names: `SettingsShellAuthorityTests`. Screen: `ReferenceListPage.test.tsx`. No real-SQL acceptance test yet. |
+
+Open: who edits the paint color and scrap kind lists (NEEDS-SINAN), the operation type list (not opened), and any further
+expense structure beyond code and name (NEEDS-SINAN).

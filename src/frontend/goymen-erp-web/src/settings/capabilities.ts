@@ -1,7 +1,7 @@
 /**
  * SAT-D61…D70 — the Ayarlar screen of the Sales discount limit groups, their limits and the person → group bindings.
  *
- * Mirrors `SettingsShellCapabilityProvider` exactly (provider 1.5: eight route capabilities, each on its own server permission,
+ * Mirrors `SettingsShellCapabilityProvider` exactly (provider 1.6: eleven route capabilities, each on its own server permission,
  * and the exchange rate screen's three command controls). The first,
  * `settings.sales-discount-limits.manage`, company-wide, in one company (not Critical; granted to no role — SAT-D65/D69,
  * a human gate). Listing the id here grants nothing: an ungranted capability closes the route onto the neutral
@@ -52,6 +52,17 @@ export const SETTINGS_CAPABILITY = {
    * granted to no role here; the production manager is a persona note only).
    */
   workCenterCapacity: 'settings.work-center-capacities.manage',
+  /**
+   * API-98, KIM-D49 (provider 1.6): route `/ayarlar/referans-listeleri`, the company's expense type and service type lists on
+   * their own name `settings.reference-lists.manage` (company-wide, not Critical, granted to no role here; the purchasing
+   * manager and Admin are the decided editors, a note for the human grant only).
+   */
+  purchasingReferenceLists: 'settings.reference-lists.manage',
+  /**
+   * B-14, KIM-D51 (provider 1.6): route `/ayarlar/uretim-referans-listeleri`, the company's paint color and scrap kind lists
+   * on their own name `settings.production-reference-lists.manage` (company-wide, not Critical, granted to no role here).
+   */
+  productionReferenceLists: 'settings.production-reference-lists.manage',
 } as const
 
 /**
@@ -77,6 +88,8 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.unitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [SETTINGS_CAPABILITY.unitProfiles]: '/ayarlar/birim-profilleri',
   [SETTINGS_CAPABILITY.workCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
+  [SETTINGS_CAPABILITY.purchasingReferenceLists]: '/ayarlar/referans-listeleri',
+  [SETTINGS_CAPABILITY.productionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
@@ -89,4 +102,6 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.unitConversionPolicy]: 'Birim çevrim politikası',
   [SETTINGS_CAPABILITY.unitProfiles]: 'Birim profilleri',
   [SETTINGS_CAPABILITY.workCenterCapacity]: 'İş merkezi kapasitesi',
+  [SETTINGS_CAPABILITY.purchasingReferenceLists]: 'Masraf ve hizmet tipleri',
+  [SETTINGS_CAPABILITY.productionReferenceLists]: 'Boya rengi ve hurda türü',
 }

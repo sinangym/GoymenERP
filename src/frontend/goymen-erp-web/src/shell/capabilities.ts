@@ -335,6 +335,16 @@ export const CAPABILITY = {
    * role here.
    */
   settingsWorkCenterCapacity: 'settings.work-center-capacities.manage',
+  /**
+   * API-98, KIM-D49 Ayarlar > Masraf ve hizmet tipleri: the company's expense type and service type lists (no seed). Route
+   * `/ayarlar/referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
+   */
+  settingsPurchasingReferenceLists: 'settings.reference-lists.manage',
+  /**
+   * B-14, KIM-D51 Ayarlar > Boya rengi ve hurda türü: the company's paint color and scrap kind lists (no seed). Route
+   * `/ayarlar/uretim-referans-listeleri`, owner Settings 1.6; one non-Critical name, granted to no role here.
+   */
+  settingsProductionReferenceLists: 'settings.production-reference-lists.manage',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -470,6 +480,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsUnitConversionPolicy]: '/ayarlar/birim-cevrim-politikasi',
   [CAPABILITY.settingsUnitProfiles]: '/ayarlar/birim-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
+  [CAPABILITY.settingsPurchasingReferenceLists]: '/ayarlar/referans-listeleri',
+  [CAPABILITY.settingsProductionReferenceLists]: '/ayarlar/uretim-referans-listeleri',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
