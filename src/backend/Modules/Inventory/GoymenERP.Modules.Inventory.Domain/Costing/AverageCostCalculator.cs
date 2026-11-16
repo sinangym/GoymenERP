@@ -22,9 +22,11 @@ public sealed record AverageCostTransferDispatchCancelResult(AverageCostPosition
 /// reading of that decision (reversible).</item>
 /// <item>Stock never goes below zero (SAT-D318 (1)) and no recovery-from-negative formula is written (SAT-D323 (2)): an
 /// issue that would breach this answers <see cref="AverageCostUnreadableReason.NegativeStock"/>, fail-closed (the decision
-/// file's author reading; see that reason). Unit conversion and foreign currency are decided (SAT-D298, BS-1) but not
-/// implemented in this core yet: they answer <see cref="AverageCostStatus.Unreadable"/> with their
-/// <see cref="AverageCostUnreadableReason"/>; nothing is guessed.</item>
+/// file's author reading; see that reason). Unit conversion is decided (SAT-D298) but not implemented in this core yet: it
+/// answers <see cref="AverageCostStatus.Unreadable"/> with its <see cref="AverageCostUnreadableReason"/>; nothing is guessed.
+/// A foreign-currency cost (BS-1) is converted to TL before this core with the supplier invoice's official rate (the
+/// application's rate resolver); while that rate is not recorded the cost arrives as foreign and the position answers
+/// <see cref="AverageCostUnreadableReason.ForeignCurrency"/>, sticky, with no provisional rate.</item>
 /// <item>SAT-D303: a customer return enters at the original issue's unit cost and blends like a receipt.</item>
 /// <item>SAT-D306: a purchase return leaves at the original purchase line's unit cost:
 /// <c>round4((q·a − Δ·c) / (q − Δ))</c>. A residual value at zero stock, or a non-positive remaining value, would need a

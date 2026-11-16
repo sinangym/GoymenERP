@@ -49,7 +49,11 @@ public enum AverageCostUnreadableReason
     /// <summary>OPEN-INV-AVGCOST-UNIT-CONVERSION (NEEDS-SINAN): the cost is not per stock kilogram.</summary>
     UnitConversion = 2,
 
-    /// <summary>OPEN-INV-AVGCOST-FX (NEEDS-SINAN): rate and date for a foreign-currency cost are not decided.</summary>
+    /// <summary>
+    /// BS-1: a foreign-currency purchase cost whose TL value is not known yet. TL converts only with the supplier invoice's
+    /// official rate; until the invoice is recorded the TL cost is Unavailable (no provisional rate, no correction movement).
+    /// Sticky like every reason: how a later invoice reopens the position is not decided here.
+    /// </summary>
     ForeignCurrency = 3,
 
     /// <summary>
