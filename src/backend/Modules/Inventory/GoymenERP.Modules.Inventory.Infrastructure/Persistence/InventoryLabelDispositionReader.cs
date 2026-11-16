@@ -128,7 +128,7 @@ internal static class InventoryLabelDispositionReader
         StockMovementKind.Issue or StockMovementKind.Scrap or StockMovementKind.TransferDispatch
             or StockMovementKind.ManufacturingOutputReversal
             or StockMovementKind.TransferReceiptShortage
-            or StockMovementKind.SupplierReturnExit => direction == StockDirection.Out,
+            or StockMovementKind.SupplierReturnExit or StockMovementKind.PurchaseAcceptanceReversal => direction == StockDirection.Out,
         _ => true,
     };
 

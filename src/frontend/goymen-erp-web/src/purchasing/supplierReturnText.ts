@@ -24,6 +24,10 @@ export const SUPPLIER_RETURN_TEXT = {
   decidedBy: 'Karar veren',
   decidedAtUtc: 'Karar zamanı (UTC)',
   decisionReason: 'Red gerekçesi',
+  undoQuantity: 'Geri alınan kabul (alış biriminde)',
+  expectedOrderVersion: 'Girişteki sipariş sürümü',
+  replacementExpected: 'Yenisi bekleniyor',
+  definitiveReturn: 'Kesin iade',
 } as const
 
 export const SUPPLIER_RETURN_STATUS_TEXT: Readonly<Record<string, string>> = {

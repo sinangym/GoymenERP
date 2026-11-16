@@ -65,6 +65,17 @@ describe('supplier return decoder (B-19; SAT-D306, SAT-D393, ALS-D91)', () => {
     expect(decodeSupplierReturn(supplierReturn({ ...pending, status: 'Recorded' }), COMPANY, ORDER)).toBeNull()
   })
 
+  it('accepts replacement only with an exact purchase quantity and explicit expected order version', () => {
+    const metadata = { expectedPurchaseOrderVersion: '4', undoQuantity: '2', replacementExpected: true }
+    expect(decodeSupplierReturn(supplierReturn(metadata), COMPANY, ORDER)).toEqual(supplierReturn(metadata))
+    expect(decodeSupplierReturn(supplierReturn({ ...metadata, replacementExpected: false }), COMPANY, ORDER)).not.toBeNull()
+    for (const broken of [{ undoQuantity: '2' }, { expectedPurchaseOrderVersion: '4' },
+      { ...metadata, expectedPurchaseOrderVersion: '04' }, { ...metadata, undoQuantity: '2.000' },
+      { ...metadata, undoQuantity: '0' }, { ...metadata, undoQuantity: null }]) {
+      expect(decodeSupplierReturn(supplierReturn(broken), COMPANY, ORDER)).toBeNull()
+    }
+  })
+
   it('refuses a page with a duplicate return, a bad item or an extra key', () => {
     expect(decodeSupplierReturnPage({ items: [supplierReturn(), supplierReturn()], searchWindowFull: false }, COMPANY, ORDER)).toBeNull()
     expect(decodeSupplierReturnPage({ items: [supplierReturn({ companyId: OTHER })], searchWindowFull: false }, COMPANY, ORDER))

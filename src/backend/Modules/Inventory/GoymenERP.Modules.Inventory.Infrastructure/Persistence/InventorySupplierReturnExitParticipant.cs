@@ -442,8 +442,10 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
     private async Task<decimal> ReturnedQuantityAsync(ReceiptTrace receipt, CancellationToken cancellationToken)
     {
         var movements = await context.Movements.AsNoTracking().Where(row =>
-            row.Kind == (int)StockMovementKind.SupplierReturnExit
-            && row.SourceKind == InventorySupplierReturnExitContractV1.SourceKind
+            (row.Kind == (int)StockMovementKind.SupplierReturnExit
+                && row.SourceKind == InventorySupplierReturnExitContractV1.SourceKind
+                || row.Kind == (int)StockMovementKind.PurchaseAcceptanceReversal
+                && row.SourceKind == InventoryGoodsReceiptReversalCodesV1.SourceKind)
             && row.SourceId == receipt.MovementId).ToListAsync(cancellationToken);
         if (movements.Count == 0)
         {

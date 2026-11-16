@@ -75,6 +75,11 @@ function ReturnFacts({ item, index }: { readonly item: SupplierReturn; readonly 
       <div><dt>{T.version}</dt><dd>{item.version}</dd></div>
       <div><dt>{T.sourceBlock}</dt><dd>{SUPPLIER_RETURN_SOURCE_BLOCK_TEXT[item.sourceBlock] ?? item.sourceBlock}</dd></div>
       <div><dt>{T.quantityKg}</dt><dd className={styles.number}>{item.quantityKg}</dd></div>
+      {item.undoQuantity !== undefined ? <>
+        <div><dt>{T.undoQuantity}</dt><dd className={styles.number}>{item.undoQuantity}</dd></div>
+        <div><dt>{T.expectedOrderVersion}</dt><dd>{item.expectedPurchaseOrderVersion}</dd></div>
+        <div><dt>{T.replacementExpected}</dt><dd>{item.replacementExpected ? T.replacementExpected : T.definitiveReturn}</dd></div>
+      </> : null}
       <div><dt>{T.costBasis}</dt><dd>{SUPPLIER_RETURN_COST_BASIS_TEXT[item.costBasis] ?? item.costBasis}</dd></div>
       <div><dt>{T.unitCost}</dt><dd className={styles.number}>{item.unitCostTryPerKg}</dd></div>
       <div><dt>{T.reason}</dt><dd>{item.reason}</dd></div>
