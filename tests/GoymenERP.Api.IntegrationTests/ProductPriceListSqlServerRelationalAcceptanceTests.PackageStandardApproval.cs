@@ -22,6 +22,41 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
     private const int PackageApprovalRollbackRefusal = 51872;
 
     [SqlServerFact]
+    public async Task Draft_products_are_refused_by_import_and_edit_and_legacy_options_cannot_allow_the_preparer_to_approve()
+    {
+        await using var run = await Run.StartAsync();
+        var code = await run.ScalarAsync<string>("SELECT Code FROM product.Products WHERE Id = @id", ProductId);
+        var clock = new FixedClock(PackageClockNow);
+        await run.ExecuteAsync("UPDATE product.Products SET Lifecycle = 0 WHERE Id = @id", ProductId);
+        await using (var scope = run.Request())
+        {
+            var service = PackageService(scope, run.CreatorActorId, clock);
+            var import = await service.ImportAsync(PackageImportRequest("0", code, "12"),
+                PackageMetadata(run.CreatorActorId, "package-draft-import"));
+            Assert.Equal((400, ProductPackageStandardProblemCodesV2.FileInvalid), (import.Answer.StatusCode, import.Answer.Code));
+            var edit = await service.SetAsync(ProductId, new("0", 12, "SENTETIK taslak"),
+                PackageMetadata(run.CreatorActorId, "package-draft-edit"));
+            Assert.Equal((409, ProductPackageStandardProblemCodesV3.ProductInactive), (edit.Answer.StatusCode, edit.Answer.Code));
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.ProductPackageStandardVersions"));
+        await run.ExecuteAsync("UPDATE product.Products SET Lifecycle = 1 WHERE Id = @id", ProductId);
+        await using (var scope = run.Request())
+        {
+            var service = new ProductPackageStandardService(scope.Context, scope.CompanyContext, new User(run.CreatorActorId),
+                new Granted(), ScopeAudit(scope), clock, null, new ProductPackageStandardApprovalOptionsV3(true));
+            Assert.Equal(204, (await service.SetAsync(ProductId, new("0", 12, "SENTETIK etkin"),
+                PackageMetadata(run.CreatorActorId, "package-active-edit"))).Answer.StatusCode);
+            var approval = await service.ApproveAsync(1, new("2026-11-16", "SENTETIK kendi onayı"),
+                PackageMetadata(run.CreatorActorId, "package-self-approve"));
+            Assert.Equal((409, ProductPackageStandardProblemCodesV3.PreparerCannotDecide),
+                (approval.Answer.StatusCode, approval.Answer.Code));
+            Assert.True((await service.ApproveAsync(1, new("2026-11-16", "SENTETIK kendi onayı"),
+                PackageMetadata(run.CreatorActorId, "package-self-approve"))).IsReplay);
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.ProductPackageStandardDecisions"));
+    }
+
+    [SqlServerFact]
     public async Task The_package_standard_approval_migrations_Down_passes_on_an_empty_store_and_refuses_while_a_kept_file_exists()
     {
         await using var run = await Run.StartAsync();

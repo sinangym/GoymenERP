@@ -89,8 +89,8 @@ public static class ProductPackageStandardListLimitsV3
 }
 
 /// <summary>
-/// Whether the person who prepared a version may also decide it. Not decided (NEEDS-SINAN); the default is the closed answer
-/// (the preparer may not decide). Hosts may only bind it from reviewed configuration.
+/// Legacy constructor compatibility. SAT-D416 forbids the preparer from deciding the same version; the service always
+/// enforces that decision even if an older host supplies true. No configuration grants an exception.
 /// </summary>
 public sealed record ProductPackageStandardApprovalOptionsV3(bool PreparerMayDecide)
 {

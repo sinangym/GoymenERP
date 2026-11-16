@@ -55,7 +55,7 @@ internal sealed partial class ProductPackageStandardService(
     internal const string RejectCommandName = "product.package-standards.reject.v3";
     private const string EntityType = "Product.PackageStandardTable";
     private const string ImportFileEntityType = "Product.PackageStandardImportFile";
-    private const int ProductInactive = (int)Domain.Products.ProductLifecycle.Inactive;
+    private const int ProductActive = (int)Domain.Products.ProductLifecycle.Active;
 
     // Product codes are resolved in bounded batches so that one query never carries an unbounded parameter list.
     private const int CodeLookupBatchSize = 500;
@@ -235,10 +235,10 @@ internal sealed partial class ProductPackageStandardService(
                 "İstenen ürün kartı yok."), keyHash, requestHash, metadata, cancellationToken);
         }
 
-        if (pieces is not null && lifecycle == ProductInactive)
+        if (pieces is not null && lifecycle != ProductActive)
         {
             return await StoreAsync(commandName, Problem(409, ProductPackageStandardProblemCodesV3.ProductInactive,
-                "Ürün pasif.", "Pasif ürün kartına paket standardı yazılmaz."), keyHash, requestHash, metadata,
+                "Ürün etkin değil.", "Paket standardı yalnız aktif ürüne yazılır; taslak ve pasif ürünler kullanılamaz."), keyHash, requestHash, metadata,
                 cancellationToken);
         }
 
@@ -421,7 +421,7 @@ internal sealed partial class ProductPackageStandardService(
                 }
 
                 ids.Add(product.Id);
-                if (product.Lifecycle == ProductInactive)
+                if (product.Lifecycle != ProductActive)
                 {
                     inactive.Add(product.Id);
                 }
@@ -449,7 +449,7 @@ internal sealed partial class ProductPackageStandardService(
             if (inactive.Contains(ids[0]))
             {
                 errors.Add(ProductPackageStandardWorkbook.RowError(row.RowNumber,
-                    $"'{row.ProductCode}' ürünü pasif; pasif ürüne paket standardı yazılmaz."));
+                    $"'{row.ProductCode}' ürünü etkin değil; taslak ve pasif ürüne paket standardı yazılmaz."));
                 continue;
             }
 
