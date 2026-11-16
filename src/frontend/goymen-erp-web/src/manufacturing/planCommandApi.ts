@@ -25,6 +25,7 @@ export interface SlittingSpecRequest {
     readonly count: number
   }[]
   readonly windingTargetKg: string | null
+  readonly netUsableWidthMm?: string | null
 }
 
 /**
@@ -140,6 +141,7 @@ function sameSlittingSpec(plan: ProductionPlanView, request: Pick<SavePlanReques
   const sent = request.slittingSpec ?? null
   if (sent === null) return plan.slittingSpec === null
   if (plan.slittingSpec === null || plan.slittingSpec.lines.length !== sent.lines.length) return false
+  if (plan.slittingSpec.netUsableWidthMm !== (sent.netUsableWidthMm == null ? null : canonicalKilograms(sent.netUsableWidthMm))) return false
   if ((plan.slittingSpec.windingTargetKg ?? null) !== (sent.windingTargetKg === null
     ? null
     : canonicalKilograms(sent.windingTargetKg))) return false
@@ -969,7 +971,7 @@ export async function revisePlan(
     plan === null ||
     plan.planId !== planId ||
     plan.companyId !== companyId ||
-    plan.status !== 'Draft' ||
+    (plan.status !== 'Draft' && !(plan.status === 'Approved' && plan.requiresReapproval === true)) ||
     plan.version !== request.expectedVersion + 1 ||
     plan.workCenterId !== request.workCenterId ||
     !sameInputs(plan, request) ||

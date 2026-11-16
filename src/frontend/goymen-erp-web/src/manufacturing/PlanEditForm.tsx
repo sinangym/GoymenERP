@@ -153,6 +153,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
   const [reason, setReason] = useState('')
   // M01.3: the stored lines as authored rows (same ids, order and values); a null plan starts with none.
   const [cutLines, setCutLines] = useState<readonly CutToLengthLineDraft[]>(() => cutToLengthDrafts(current.cutToLengthSpec))
+  const released = plan.requiresReapproval === true
   const storedCut = current.cutToLengthSpec !== null
   const cutEditable = plan.process === 'CutToLength' || storedCut
   // A stored definition is always sent (an empty one is refused, never a clear); a plan without one sends rows only
@@ -203,7 +204,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
 
   // AT-061 / AT-062: the same button-less backend preview as the create form, for the content being edited. It writes
   // nothing and never gates the revision below (the reason is not part of what is calculated).
-  const preview = usePlanPreview(companyId, planPreviewInput(
+  const previewInput = planPreviewInput(
     workCenterId,
     rows.map((row) => ({
       parentRollId: row.parentRollId,
@@ -216,7 +217,16 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     targetKg,
     undefined,
     cutInput,
-  ), authBoundary)
+  )
+  const preview = usePlanPreview(companyId, previewInput.type === 'ready' ? {
+    type: 'ready',
+    request: {
+      ...previewInput.request,
+      ...(plan.slittingSpec === null ? {} : { slittingSpec: plan.slittingSpec }),
+      ...(current.lineSpeedMetresPerMinute === null ? {} : { lineSpeedMetresPerMinute: current.lineSpeedMetresPerMinute }),
+      ...(current.processSpec === null ? {} : { processSpec: current.processSpec }),
+    },
+  } : previewInput, authBoundary)
 
   function labelOf(parentRollId: string): string {
     return rows.find((row) => row.parentRollId === parentRollId)?.labelCode ?? parentRollId
@@ -236,7 +246,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
           parentRollId: candidate.labelId,
           labelCode: candidate.labelCode,
           labelVersion: candidate.labelVersion,
-          commercialContext: null,
+          commercialContext: released ? current.inputs[0].commercialContext : null,
           plannedKg: '',
         }]
       }
@@ -302,10 +312,11 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
 
   return (
     <section className={styles.commandCard} aria-labelledby="manufacturing-plan-edit-heading">
-      <h2 id="manufacturing-plan-edit-heading">{PLAN_EDIT_TEXT.formHeading}</h2>
+      <h2 id="manufacturing-plan-edit-heading">{released ? PLAN_EDIT_TEXT.recalculateHeading : PLAN_EDIT_TEXT.formHeading}</h2>
+      {released ? <p className={styles.note}>{PLAN_EDIT_TEXT.recalculateNote}</p> : null}
       {formError === null ? null : <p className={styles.error} role="alert">{formError}</p>}
       <form className={styles.form} onSubmit={submit} noValidate>
-        <fieldset disabled={busy}>
+        <fieldset disabled={busy || released}>
           <legend>{PLAN_FORM_TEXT.workCenter}</legend>
           <p className={styles.note}>{PLAN_EDIT_TEXT.processNote(plan.process)}</p>
           {workCenters.type === 'loading' ? <p role="status">{PLAN_FORM_TEXT.workCentersLoading}</p> : null}
@@ -424,7 +435,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
           ) : null}
         </fieldset>
 
-        <fieldset disabled={busy}>
+        <fieldset disabled={busy || released}>
           <legend>{PLAN_FORM_TEXT.optionalTarget}</legend>
           <div className={styles.formGrid}>
             <label htmlFor="plan-edit-target-basis">{PLAN_FORM_TEXT.targetBasis}</label>
@@ -443,7 +454,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         </fieldset>
 
         {cutEditable ? (
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy || released}>
             <legend>{CUT_LINE_TEXT.legend}</legend>
             <CutToLengthLinesEditor idPrefix="plan-edit-cut" lines={cutLines} onChange={setCutLines} keepOne={storedCut} />
           </fieldset>

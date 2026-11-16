@@ -83,7 +83,7 @@ public sealed class OrderCancellationTests
         var plan = ApprovedPlan();
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
         order.Issue(Roll, Kg(400m));
-        var output = order.Declare(Roll, OutputClass.GoodProduct, Kg(150m));
+        var output = order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, Kg(150m), OrderSteps.Next(), PlanOutputLineReference.ClassLine);
         order.ReverseOutput(order.Version, Guid.NewGuid(), output.OutputId, Kg(150m), "Tartım hatası", OrderSteps.Next());
         order.MeasureWip(Roll, Kg(0m));
         order.Return(Roll, Kg(400m));
@@ -113,9 +113,9 @@ public sealed class OrderCancellationTests
     {
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), ApprovedPlan());
         order.Issue(Roll, Kg(400m));
-        var output = order.Declare(Roll, OutputClass.GoodProduct, Kg(150m));
+        var output = order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, Kg(150m), OrderSteps.Next(), PlanOutputLineReference.ClassLine);
         order.ReverseOutput(order.Version, Guid.NewGuid(), output.OutputId, Kg(100m), "Tartım hatası", OrderSteps.Next());
-        order.Return(Roll, Kg(400m));
+        order.Return(Roll, Kg(350m));
 
         var refusal = Assert.Throws<ManufacturingRuleException>(
             () => order.Cancel(order.Version, Canceller, CancelledAt, Reason));
@@ -329,4 +329,48 @@ public sealed class OrderCancellationTests
             () => ProductionOrder.FromApprovedPlan(Guid.NewGuid(), restored));
         Assert.Equal(ManufacturingRuleCodes.PlanReapprovalRequired, refusal.Code);
     }
+    [Fact]
+    public void A_released_plan_changes_labels_and_replays_the_revision_between_release_and_reapproval()
+    {
+        var (plan, cancelledOrder) = CancelledOrder();
+        var originalInputs = plan.Inputs.ToArray();
+        var firstSnapshot = plan.ParameterSnapshot;
+        var newRoll = Guid.NewGuid();
+        plan.Revise(plan.Version, WorkCenter, ManufacturingProcess.Paint,
+            [new PlannedInput(newRoll, Kg(800m), 17)], null);
+        var revision = new PlanRevisionContent(WorkCenter, plan.Inputs.ToArray(), null, PlanVersion: plan.Version);
+        plan.Reapprove(plan.Version, Reapprover, ReapprovedAt, Settings(), null);
+        var secondOrder = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
+        var restored = ProductionPlan.Restore(plan.Id, Company, WorkCenter, ManufacturingProcess.Paint,
+            originalInputs, null, Planner, ApprovedAt, plan.Version, revisions: [revision],
+            parameterSnapshot: firstSnapshot, orderId: secondOrder.Id, requestedDueDate: plan.RequestedDueDate,
+            dueDateRevision: plan.DueDateRevision, orderReleases: plan.OrderReleases, reapprovals: plan.Reapprovals);
+
+        Assert.Equal(plan.Version, restored.Version);
+        Assert.Equal(newRoll, Assert.Single(restored.Inputs).ParentRollId);
+        Assert.Equal(Roll, Assert.Single(cancelledOrder.PlannedInputs).ParentRollId);
+        Assert.Equal(newRoll, Assert.Single(secondOrder.PlannedInputs).ParentRollId);
+        Assert.Equal((Planner, ApprovedAt, firstSnapshot),
+            (restored.ApprovedByUserId, restored.ApprovedAtUtc, restored.ParameterSnapshot));
+        Assert.Equal(plan.OrderReleases, restored.OrderReleases);
+        Assert.Equal(plan.Reapprovals, restored.Reapprovals);
+        Assert.Equal(1, restored.RevisionCount);
+    }
+
+    [Fact]
+    public void A_released_plan_refuses_changes_of_owner_or_its_original_fixed_content_without_mutating()
+    {
+        var (plan, _) = CancelledOrder();
+        var before = plan.Version;
+        var commercial = new PlanCommercialContextSnapshotV1(Guid.NewGuid(), Guid.NewGuid(), "1", "1");
+        var changedOwner = Assert.Throws<ManufacturingRuleException>(() => plan.Revise(before, WorkCenter,
+            ManufacturingProcess.Paint, [new PlannedInput(Guid.NewGuid(), Kg(800m), 17, commercialContext: commercial)], null));
+        var changedWorkCenter = Assert.Throws<ManufacturingRuleException>(() => plan.Revise(before, Guid.NewGuid(),
+            ManufacturingProcess.Paint, [new PlannedInput(Guid.NewGuid(), Kg(800m), 17)], null));
+
+        Assert.Equal(ManufacturingRuleCodes.PlanSalesOrderPartyMismatch, changedOwner.Code);
+        Assert.Equal(ManufacturingRuleCodes.PlanReapprovalSettingsChanged, changedWorkCenter.Code);
+        Assert.Equal((before, 0, Roll), (plan.Version, plan.RevisionCount, Assert.Single(plan.Inputs).ParentRollId));
+    }
+
 }

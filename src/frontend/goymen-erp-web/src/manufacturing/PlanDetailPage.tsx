@@ -196,7 +196,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.approvedRefreshed })
       return
     }
-    if (isCurrent && expectation.kind === 'revised' && fresh.status === 'Draft' && fresh.version === expectation.revised.version) {
+    if (isCurrent && expectation.kind === 'revised' && fresh.status === expectation.revised.status && fresh.requiresReapproval === expectation.revised.requiresReapproval && fresh.version === expectation.revised.version) {
       // The history is read again too: the reopened plan shows the change and where it came from.
       queryClient.setQueryData(queryKey, refreshed)
       await queryClient.invalidateQueries({ queryKey: historyKey })
@@ -366,8 +366,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const unresolved = attempt.phase === 'unknown' && allowed(attempt.pending.snapshot.kind)
   // The edit starts from the plan's current content: the last history entry, of exactly the version shown.
   const current = history === null ? null : currentRevision(history)
-  const editable = plan.status === 'Draft' && canEdit && plan.slittingSpec === null
-  const editReady = current !== null && current.planVersion === plan.version
+  const editable = canEdit && (plan.status === 'Draft' || (plan.status === 'Approved' && plan.requiresReapproval === true))
+  const editReady = current !== null && (current.planVersion === plan.version || plan.requiresReapproval === true)
   // U2-d (URT-D2): the preparer of the current version may not approve or reject it. A null preparer is unknown, so
   // the controls stay and the server decides (422 manufacturing_plan_self_approval).
   const selfPrepared = plan.preparedBy !== null && actorId !== null
@@ -582,7 +582,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
               )
             ) : null}
             {plan.status === 'Approved' && canEdit ? <p className={styles.note}>{PLAN_EDIT_TEXT.approvedNote}</p> : null}
-            {plan.status === 'Draft' && canEdit && plan.slittingSpec !== null ? <p className={styles.note}>{PLAN_EDIT_TEXT.specNote}</p> : null}
+
             {plan.status === 'Draft' && canApprove && selfPrepared ? (
               <p className={styles.note}>{PLAN_DETAIL_TEXT.selfApprovalNote}</p>
             ) : null}

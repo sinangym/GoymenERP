@@ -95,16 +95,17 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void A_plan_with_a_slitting_spec_is_not_revised_while_its_coil_balance_is_open()
+    public void A_draft_with_a_slitting_spec_can_change_its_inputs_and_keeps_its_original_cut_definition()
     {
+        var spec = new SlittingSpec([new SlitLine(150m, 4)]);
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
-            Inputs(RollA, 1000m), null, new SlittingSpec([new SlitLine(150m, 4)]));
+            Inputs(RollA, 1000m), null, spec);
 
-        var refused = Assert.Throws<ManufacturingRuleException>(() =>
-            plan.Revise(1, WorkCenter, ManufacturingProcess.Slitting, Inputs(RollA, 900m), null));
+        plan.Revise(1, WorkCenter, ManufacturingProcess.Slitting, Inputs(RollB, 900m), null);
 
-        Assert.Equal(ManufacturingRuleCodes.PlanSlittingSpecFixed, refused.Code);
-        AssertUnchanged(plan);
+        Assert.Equal((2L, 1, PlanStatus.Draft), (plan.Version, plan.RevisionCount, plan.Status));
+        Assert.Equal(RollB, Assert.Single(plan.Inputs).ParentRollId);
+        Assert.Same(spec, plan.Spec);
     }
 
     [Fact]

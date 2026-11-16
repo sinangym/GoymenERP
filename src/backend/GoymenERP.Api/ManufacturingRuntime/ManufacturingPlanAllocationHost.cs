@@ -25,7 +25,8 @@ internal sealed class ManufacturingPlanAllocationHost(
     ManufacturingStore plans,
     ICompanyContext companyContext,
     ISettingsPrerequisiteProvider settings,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IInventoryManufacturingPlanAllocationReadPortV1? allocationState = null)
     : IManufacturingPlanAllocationPortV1
 {
     public const string AllocationReason = "manufacturing.plan-approved";
@@ -40,11 +41,7 @@ internal sealed class ManufacturingPlanAllocationHost(
             var before = await plans.FindPlanAsync(planId, token);
             if (before?.RequiresReapproval == true)
             {
-                // D5: a legacy plan approved without allocation provenance must not gain a new generation silently.
-                // This runs inside RunAsync's host transaction; Inventory also rejects any still-active old generation.
-                foreach (var input in before.Inputs)
-                    if (await plans.FindPlanInputAllocationAsync(planId, input.ParentRollId, token) is null)
-                        throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+                await RequireReleasedHistoryAsync(before, token);
             }
             return await approve(token);
         }
@@ -105,6 +102,43 @@ internal sealed class ManufacturingPlanAllocationHost(
 
             await plans.RecordPlanInputAllocationsAsync(plan.Id, plan.Version, recorded, timeProvider.GetUtcNow(), token);
         }, cancellationToken);
+    }
+
+    public Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken) =>
+        RunAsync(planId, async token =>
+        {
+            var before = await plans.FindPlanAsync(planId, token);
+            if (before is null || !before.RequiresReapproval || allocationState is null)
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+            await RequireReleasedHistoryAsync(before, token);
+            return await write(token);
+        }, metadata, (_, _, _, _, _) => Task.CompletedTask, cancellationToken);
+
+    private async Task RequireReleasedHistoryAsync(Modules.Manufacturing.Domain.Plans.ProductionPlan plan,
+        CancellationToken token)
+    {
+        // A revised plan may now name different labels. Provenance belongs to the last cancelled order's immutable
+        // inputs, not the new selection; a legacy order without that generation remains unavailable.
+        var release = plan.OrderReleases.LastOrDefault();
+        var order = release is null ? null : await plans.FindOrderAsync(release.OrderId, token);
+        if (order is null || order.PlanId != plan.Id || order.CompanyId != plan.CompanyId
+            || order.Status != Modules.Manufacturing.Domain.Orders.OrderStatus.Cancelled || allocationState is null)
+            throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        var allocations = await allocationState.GetForPlanAsync(plan.Id, token);
+        if (allocations.Count == 0 || allocations.Any(allocation => allocation.PlanId != plan.Id
+                || !Enum.IsDefined(allocation.Status)))
+            throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        foreach (var input in order.PlannedInputs)
+        {
+            var recorded = await plans.FindPlanInputAllocationAsync(plan.Id, input.ParentRollId, token);
+            if (recorded is null || !allocations.Any(allocation => allocation.AllocationId == recorded.AllocationId
+                    && allocation.LabelId == input.ParentRollId))
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        }
+        if (allocations.Any(allocation => allocation.Status == InventoryManufacturingPlanAllocationStatusV1.Active))
+            throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Conflict,
+                InventoryManufacturingRealizationCodesV1.ConcurrentChange);
     }
 
     public Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,

@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -55,4 +57,31 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.True(released.RequiresReapproval);
         Assert.Equal(2L, cancelled.Version);
     }
+    [SqlServerFact]
+    public async Task A_cancelled_orders_plan_revision_roundtrips_new_labels_without_rewriting_the_cancelled_order_or_first_approval()
+    {
+        await using var run = await Run.StartAsync();
+        var (original, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Corrections.CancelOrderAsync(orderId, 1, run.Actor, At.AddHours(1), "SENTETIK yeniden hesap", Metadata(run));
+            var released = (await store.Plans.FindPlanAsync(original.Id))!;
+            await store.Revisions.RevisePlanContentAsync(released.Id, released.Version, released.WorkCenterId,
+                released.Process, [new PlannedInput(RollB, Kg(800m), 19)], released.Target,
+                released.CutToLengthSpec, released.LineSpeedMetresPerMinute, "SENTETIK yeni etiket", Metadata(run),
+                processSpec: released.ProcessSpec);
+        }
+        await using var fresh = run.Store(CompanyA);
+        var revised = (await fresh.Plans.FindPlanAsync(original.Id))!;
+        var cancelled = (await fresh.Orders.FindOrderAsync(orderId))!;
+        Assert.True(revised.RequiresReapproval);
+        Assert.Equal(4L, revised.Version);
+        Assert.Equal(RollB, Assert.Single(revised.Inputs).ParentRollId);
+        Assert.Equal(new[] { RollA, RollB }, cancelled.PlannedInputs.Select(input => input.ParentRollId));
+        Assert.Equal((original.ApprovedByUserId, original.ApprovedAtUtc), (revised.ApprovedByUserId, revised.ApprovedAtUtc));
+        var history = (await fresh.Revisions.ListPlanRevisionsAsync(original.Id))!;
+        Assert.Equal(new long[] { 1, 4 }, history.Select(revision => revision.PlanVersion));
+        Assert.Equal("SENTETIK yeni etiket", history[1].Reason);
+    }
+
 }

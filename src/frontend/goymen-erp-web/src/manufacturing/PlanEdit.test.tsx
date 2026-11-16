@@ -167,6 +167,19 @@ async function openEditForm(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole('option', { name: /DL-2/ })
 }
 
+it('opens a released plan for label recalculation and keeps the first approval content read only', async () => {
+  const user = userEvent.setup()
+  const stored = server(undefined, [planRevision()], plan({ status: 'Approved', version: 3,
+    approvedByUserId: APPROVER, approvedAtUtc: '2026-09-27T09:00:00Z', requiresReapproval: true }))
+  installFetch({ capabilities: EDITOR_CAPABILITIES, respond: stored.respond })
+  renderAt(`/uretim/plan/${PLAN}`)
+  await user.click(await screen.findByRole('button', { name: 'Planı düzenle' }))
+  expect(screen.getByRole('heading', { name: 'Planı yeniden hesapla' })).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'İş merkezi' }).closest('fieldset')?.disabled).toBe(true)
+  expect(screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` }).closest('fieldset')?.disabled).toBe(false)
+  expect(screen.queryByRole('button', { name: 'Üretim emri aç' })).toBeNull()
+})
+
 describe('plan edit on the detail screen', () => {
   it('edits the draft as a whole, re-reads the plan and its history, and the reopened plan shows the change', async () => {
     const user = userEvent.setup()
@@ -643,8 +656,8 @@ describe('plan edit on the detail screen', () => {
 
   it.each([
     ['manufacturing_plan_process_fixed', 'Seçilen iş merkezi planın sürecini (Slitting) yürütmüyor; planın süreci değişmez.'],
-    ['manufacturing_plan_not_draft', 'Plan artık taslak değil (onaylandı ya da emir açtı); onaylı plan düzenlenmez.'],
-    ['manufacturing_plan_slitting_spec_fixed', 'Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).'],
+    ['manufacturing_plan_not_draft', 'Plan bu durumda düzenlenemez. Taslak veya emri iptal edildikten sonra yeniden onay bekleyen bir plan açın.'],
+    ['manufacturing_plan_slitting_spec_fixed', 'Dilme satırları korunur; yeni ana rulo ve kg değerleri sunucuda yeniden hesaplanır.'],
   ])('a %s refusal is explained and nothing is claimed as saved', async (code, message) => {
     const user = userEvent.setup()
     const fake = server(() => problem(422, { code }))

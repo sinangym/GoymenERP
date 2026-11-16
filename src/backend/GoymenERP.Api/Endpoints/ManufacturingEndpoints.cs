@@ -112,6 +112,7 @@ public static class ManufacturingEndpoints
         InventoryParentRollCodesV1.NoPhysicalPosition,
         // Üretim U2-a: the slitting spec's net usable width is wider than a planned parent coil.
         ManufacturingRuleCodes.PlanNetWidthExceedsParent,
+        ManufacturingRuleCodes.PlanLabelNotUsable,
     ];
 
     // Üretim U3-a (URT-D21, URT-D3, B-01): the approval allocates the plan's inputs in Inventory with the approval, at the
@@ -284,6 +285,10 @@ public static class ManufacturingEndpoints
         .. SavePlanUnprocessableCodes,
         ManufacturingRuleCodes.PlanProcessFixed,
         ManufacturingRuleCodes.PlanSlittingSpecFixed,
+        ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
+        ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
+        ManufacturingRuleCodes.PlanEngineRefused,
+        ManufacturingRuleCodes.PlanWindingDoesNotFit,
         ManufacturingRuleCodes.PlanRevisionNoChange,
     ];
 

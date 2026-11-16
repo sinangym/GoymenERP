@@ -528,7 +528,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingInventoryOutputCorrectionPortV1? outputCorrections = null,
     IManufacturingOrderCancellationStore? orderCancellations = null,
     IManufacturingPlanReapprovalStore? planReapprovals = null,
-    ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null)
+    ISettingsWorkCenterCapacityProviderV1? workCenterCapacities = null,
+    IInventoryFreeQuantityReadPortV1? freeQuantity = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -790,7 +791,8 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var verified = await VerifyPlanContentAsync(
-                    inputs, targetKg, permission, companyId, actorId, cancellationToken);
+                    inputs, targetKg, permission, companyId, actorId, cancellationToken,
+                    enforceCurrentMassBound: current.RequiresReapproval);
                 if (verified.Refusal is not null)
                 {
                     return Refusal<PlanViewV1>(verified.Refusal);
@@ -803,16 +805,32 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(parameters.Refusal);
                 }
 
+                if (current.RequiresReapproval && !PlanParameterSnapshotV1.SameSettingsAs(current.ParameterSnapshot,
+                        parameters.Snapshot))
+                    return new(ManufacturingApiStatus.Unprocessable, null, false, ManufacturingRuleCodes.PlanReapprovalSettingsChanged);
+                if (current.RequiresReapproval && current.Spec is not null)
+                {
+                    var candidate = new ProductionPlan(current.Id, companyId, request.WorkCenterId, process.Value,
+                        PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass), current.Spec,
+                        BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value, processSpec.Value);
+                    SlittingApprovalGate.Require(candidate, SlittingPlanParameters.FromCaptured(candidate.Inputs,
+                        current.ParameterSnapshot, candidate.Inputs.ToDictionary(input => input.ParentRollId, _ => true)));
+                }
                 reviseParameters = parameters.Snapshot;
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
-                var revised = await planRevisions.RevisePlanContentAsync(planId, request.ExpectedVersion,
-                    request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
+                Task<ProductionPlan> Write(CancellationToken token) => planRevisions.RevisePlanContentAsync(planId,
+                    request.ExpectedVersion, request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
                     Target(request.Target, verified.TargetMass), BuildCutToLengthSpec(content.CutToLengthSpec),
-                    lineSpeed.Value, reason, metadata, cancellationToken, processSpec.Value);
+                    lineSpeed.Value, reason, metadata, token, processSpec.Value);
+                if (current.RequiresReapproval && planAllocations is null)
+                    return new(ManufacturingApiStatus.Unavailable, null, false, ManufacturingPlanAllocationCodesV1.Incomplete);
+                var revised = current.RequiresReapproval
+                    ? await planAllocations!.WriteReleasedPlanAsync(planId, Write, metadata, cancellationToken)
+                    : await Write(cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok,
                     PlanView(revised, reviseParameters), false, null);
             }, stored => PlanView((ProductionPlan)stored, reviseParameters), cancellationToken);
@@ -1209,7 +1227,7 @@ public sealed partial class ManufacturingCommandService(
     private async Task<(List<VerifiedPlanInput> Inputs, Kilograms? TargetMass,
         ManufacturingApiResult<object>? Refusal)> VerifyPlanContentAsync(
         List<ParsedPlanInput> inputs, decimal? targetKg, string permission, Guid companyId, Guid actorId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool enforceCurrentMassBound = false)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
         var planned = new List<VerifiedPlanInput>();
@@ -1235,6 +1253,33 @@ public sealed partial class ManufacturingCommandService(
             if (reference.Refusal is not null)
             {
                 return (planned, null, reference.Refusal);
+            }
+
+            if (enforceCurrentMassBound)
+            {
+                if (freeQuantity is null)
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                InventoryFreeQuantityReadV1 free;
+                try { free = await freeQuantity.GetAsync(companyId, input.ParentRollId, cancellationToken); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception)
+                {
+                    if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } refusedFence)
+                        return (planned, null, refusedFence);
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                }
+                if (await FenceCapturedAsync<object>(permission, companyId, actorId, cancellationToken) is { } fence)
+                    return (planned, null, fence);
+                if (free is null || free.Status != InventoryLabelDispositionStatusV1.Value || free.Value is not { } available
+                    || available.CompanyId != companyId || available.LabelId != input.ParentRollId
+                    || !decimal.TryParse(available.FreeKg, NumberStyles.AllowDecimalPoint,
+                        CultureInfo.InvariantCulture, out var freeKg) || freeKg < 0)
+                    return (planned, null, new(ManufacturingApiStatus.Unavailable, null, false, InventoryParentRollCodesV1.Unavailable));
+                if (available.LabelVersion != input.ExpectedLabelVersion)
+                    return (planned, null, new(ManufacturingApiStatus.Conflict, null, false, InventoryParentRollCodesV1.VersionConflict));
+                if (mass.Value.Value > freeKg || available.FreePositionCount != 1)
+                    return (planned, null, new(ManufacturingApiStatus.Unprocessable, null, false,
+                        ManufacturingRuleCodes.PlanLabelNotUsable, $"inputs[{index}].plannedKg"));
             }
 
             var technical = await ReadTechnicalSnapshotAsync(reference.Reference!, today,

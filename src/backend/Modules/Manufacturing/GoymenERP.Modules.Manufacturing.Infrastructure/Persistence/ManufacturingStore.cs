@@ -487,7 +487,8 @@ public sealed partial class ManufacturingStore(
         // U2-d (URT-D2): the reviser prepared the plan's new version; the approval and the rejection refuse that user.
         plan.RecordPreparer(revisedBy);
 
-        if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
+        if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId
+                && order.Status != (int)OrderStatus.Cancelled, cancellationToken))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
                 "Emir açmış plan düzenlenmez; aşağı akış etkisi vardır.");
