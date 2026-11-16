@@ -11,7 +11,7 @@ public sealed class SettingsAppendOnlyWriteGuardTests
     {
         await using var database = Create(TestCompanyIds.CompanyA);
         foreach (var row in Rows(TestCompanyIds.CompanyA)) database.Add(row);
-        Assert.Equal(6, await database.SaveChangesAsync());
+        Assert.Equal(7, await database.SaveChangesAsync());
         Assert.Equal(0, await database.SaveChangesAsync());
         database.Add(new CollateralTypeVersionRow { CompanyId = TestCompanyIds.CompanyA, EntryId = EntryId, Version = 2, Name = "Second", RatePercent = "85", RecordedBy = "synthetic", Reason = "synthetic" });
         Assert.Equal(1, await database.SaveChangesAsync());
@@ -58,6 +58,7 @@ public sealed class SettingsAppendOnlyWriteGuardTests
     private static IEnumerable<object> Rows(Guid company)
     {
         yield return new CompanyPolicyVersionRow { CompanyId = company, PolicyKey = "finance.opening-period", Version = 1, BooleanValue = false, RecordedBy = "synthetic", Reason = "synthetic" };
+        yield return new CompanyPolicyVersionRow { CompanyId = company, PolicyKey = "sales.contract-discount-limit", Version = 1, PercentValue = 0, RecordedBy = "synthetic", Reason = "synthetic" };
         yield return new FinanceCreditAccountMappingVersionRow { CompanyId = company, Purpose = 1, Version = 1, LedgerAccountCode = "300", RecordedBy = "synthetic", Reason = "synthetic" };
         yield return new ReferenceListEntryRow { CompanyId = company, EntryId = EntryId, Kind = "ExpenseType", Code = "SYNTHETIC", CreatedBy = "synthetic" };
         yield return new ReferenceListEntryVersionRow { CompanyId = company, EntryId = EntryId, Version = 1, Name = "Synthetic", RecordedBy = "synthetic", Reason = "synthetic" };

@@ -9,6 +9,7 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  salesContractDiscountLimit: 'settings.sales-contract-discount-limit.manage',
   collateralTypes: 'settings.collateral-types.manage',
   financeOpeningPeriod: 'settings.finance-opening-period.manage',
   manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
@@ -89,6 +90,7 @@ export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
 } as const
 
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.salesContractDiscountLimit]: '/ayarlar/sozlesme-iskonto-siniri',
   [SETTINGS_CAPABILITY.collateralTypes]: '/ayarlar/teminat-turleri',
   [SETTINGS_CAPABILITY.financeOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
   [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
@@ -108,6 +110,7 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.salesContractDiscountLimit]: 'Sözleşme iskonto sınırı',
   [SETTINGS_CAPABILITY.collateralTypes]: 'Teminat türleri ve oranları',
   [SETTINGS_CAPABILITY.financeOpeningPeriod]: 'Finans açılış dönemi',
   [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',

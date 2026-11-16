@@ -1,3 +1,4 @@
+import { SalesContractDiscountLimitPage } from './SalesContractDiscountLimitPage'
 import { CollateralTypesPage } from './CollateralTypesPage'
 /**
  * The Settings route table, spread into `shell/router.tsx` (before the catch-all). Each entry is wrapped in
@@ -23,6 +24,10 @@ import { ManufacturingProfilePage } from './ManufacturingProfilePage'
 import { FinanceOpeningPeriodPage } from './FinanceOpeningPeriodPage'
 
 export const settingsRoutes: RouteObject[] = [
+  {
+    path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesContractDiscountLimit].slice(1),
+    element: <CapabilityRoute capability={SETTINGS_CAPABILITY.salesContractDiscountLimit}><SalesContractDiscountLimitPage /></CapabilityRoute>,
+  },
   {
     path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.collateralTypes].slice(1),
     element: <CapabilityRoute capability={SETTINGS_CAPABILITY.collateralTypes}><CollateralTypesPage /></CapabilityRoute>,

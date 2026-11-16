@@ -42,6 +42,10 @@ public sealed class SettingsCollateralTypePersistenceModelTests
         Assert.Empty(entry.GetSeedData()); Assert.Empty(version.GetSeedData());
         Assert.All(entry.GetProperties().Concat(version.GetProperties()), property => { Assert.Null(property.GetDefaultValue()); Assert.Null(property.GetDefaultValueSql()); });
         Assert.Equal(64, version.FindProperty("RatePercent")!.GetMaxLength());
+        Assert.Equal("Latin1_General_100_BIN2", version.FindProperty("RatePercent")!.GetCollation());
+        Assert.Equal(SettingsDbContext.CollateralRateCheck, version.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCollateralTypeVersions_RateText").Sql);
+        Assert.DoesNotContain("TRY_CONVERT", SettingsDbContext.CollateralRateCheck, StringComparison.Ordinal);
+        Assert.Contains("PATINDEX", SettingsDbContext.CollateralRateCheck, StringComparison.Ordinal);
         var kind = Assert.Single(entry.GetCheckConstraints(), check => check.Name == "CK_SettingsCollateralTypes_Kind").Sql;
         Assert.All(Enum.GetNames<SettingsCollateralKindV1>(), name => Assert.Contains("'" + name + "'", kind, StringComparison.Ordinal));
         Assert.DoesNotContain("Cheque", kind, StringComparison.Ordinal); Assert.DoesNotContain("Note", kind, StringComparison.Ordinal);

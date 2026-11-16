@@ -6,7 +6,13 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 public sealed partial class SettingsDbContext
 {
     internal const string CollateralKindCheck = "[Kind] IN ('BankGuaranteedPayment','Dbs','GuaranteeLetter','CreditCard','Vinov','Mortgage')";
-    internal const string CollateralRateCheck = "LEN([RatePercent]) BETWEEN 1 AND 64 AND [RatePercent] NOT LIKE '%[^0-9.]%' AND LEFT([RatePercent], 1) <> '.' AND RIGHT([RatePercent], 1) <> '.' AND LEN([RatePercent]) - LEN(REPLACE([RatePercent], '.', '')) <= 1 AND (TRY_CONVERT(int, LEFT([RatePercent], CHARINDEX('.', [RatePercent] + '.') - 1)) BETWEEN 0 AND 99 OR [RatePercent] = '100')";
+    private const string CollateralRateInteger = "LEFT([RatePercent], CHARINDEX('.', [RatePercent] + '.') - 1)";
+    private const string CollateralRateSignificantInteger = "SUBSTRING(" + CollateralRateInteger
+        + ", PATINDEX('%[^0]%', " + CollateralRateInteger + " + '1'), 64)";
+    internal const string CollateralRateCheck = "LEN([RatePercent]) BETWEEN 1 AND 64 AND [RatePercent] NOT LIKE '%[^0-9.]%' AND LEFT([RatePercent], 1) <> '.' AND RIGHT([RatePercent], 1) <> '.' AND LEN([RatePercent]) - LEN(REPLACE([RatePercent], '.', '')) <= 1 AND (LEN("
+        + CollateralRateSignificantInteger + ") <= 2 OR (" + CollateralRateSignificantInteger
+        + " = '100' AND REPLACE(SUBSTRING([RatePercent], CHARINDEX('.', [RatePercent] + '.') + 1, 64), '0', '') = ''))";
+
     internal DbSet<CollateralTypeRow> CollateralTypes => Set<CollateralTypeRow>();
     internal DbSet<CollateralTypeVersionRow> CollateralTypeVersions => Set<CollateralTypeVersionRow>();
 

@@ -1486,6 +1486,9 @@ public static class ErpPermissions
     /// user receives it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
     // FNS-D70/FNS-D68/KLN-D109: registration only, human grant gate.
+    // SAT-D358/KLN-D109: separate setting, registered only; no persona is hardcoded or granted.
+    public const string SettingsSalesContractDiscountLimitManage = "settings.sales-contract-discount-limit.manage";
+
     public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
 
     public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
@@ -1844,6 +1847,7 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
             SettingsReferenceListsManage,
@@ -2116,6 +2120,7 @@ public static class ErpPermissions
             SettingsWorkCenterCapacitiesManage,
             SettingsBankCsvMappingsManage,
             SettingsSegregationOfDutiesManage,
+            SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
             SettingsReferenceListsManage,

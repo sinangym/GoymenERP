@@ -61,7 +61,7 @@ internal sealed class SettingsCollateralTypeAdministration(
         {
             var latest = Latest(snapshot);
             return new SettingsCollateralTypeViewV1(snapshot.Entry.EntryId, snapshot.Entry.Code, latest.Name,
-                Enum.Parse<SettingsCollateralKindV1>(snapshot.Entry.Kind), latest.Active, latest.RatePercent, Text(latest.Version), latest.RecordedBy, latest.RecordedAtUtc);
+                Enum.Parse<SettingsCollateralKindV1>(snapshot.Entry.Kind), latest.Active, Rate(latest), Text(latest.Version), latest.RecordedBy, latest.RecordedAtUtc);
         }).ToArray();
         return new SettingsCollateralTypesViewV1(companyId, entries);
     }
@@ -212,7 +212,7 @@ internal sealed class SettingsCollateralTypeAdministration(
                 Answers.VersionConflict(), keyHash, requestHash, metadata, cancellationToken));
         }
 
-        if (current.Active == active && string.Equals(current.Name, name, StringComparison.Ordinal) && current.RatePercent == rate)
+        if (current.Active == active && string.Equals(current.Name, name, StringComparison.Ordinal) && Rate(current) == rate)
         {
             await RequireStillAsync(permission, companyId, cancellationToken);
             return Done("record", metadata, kindCode, entryId, await StoreRefusalAsync(RecordCommandName,
@@ -256,9 +256,12 @@ internal sealed class SettingsCollateralTypeAdministration(
         snapshot.Latest is { Version: > 0 } latest && ReferenceListRulesV1.IsStoredName(latest.Name)
             && ReferenceListRulesV1.IsCode(snapshot.Entry.Code)
             && Enum.TryParse<SettingsCollateralKindV1>(snapshot.Entry.Kind, out var kind) && CollateralTypeRulesV1.IsKind(kind)
-            && CollateralTypeRulesV1.TryRate(latest.RatePercent, out var rate) && rate == latest.RatePercent
+            && CollateralTypeRulesV1.TryRate(latest.RatePercent, out var rate)
             ? latest
             : throw new SettingsPrerequisiteException(SettingsCollateralTypeProblemCodesV1.ProfileInvalid);
+
+    private static string Rate(CollateralTypeVersionRow row) => CollateralTypeRulesV1.TryRate(row.RatePercent, out var rate)
+        ? rate : throw new SettingsPrerequisiteException(SettingsCollateralTypeProblemCodesV1.ProfileInvalid);
 
     private Guid RequireContextCompany()
     {

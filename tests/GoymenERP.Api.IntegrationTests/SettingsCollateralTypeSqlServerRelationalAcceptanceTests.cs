@@ -30,6 +30,33 @@ public sealed class SettingsCollateralTypeSqlServerRelationalAcceptanceTests
     private const string Manage = SettingsCollateralTypePermissionsV1.Manage;
 
     [SqlServerFact]
+    public async Task Collateral_rate_CHECK_preserves_leading_zeros_and_long_exact_fractions_without_overflow_or_rounding_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        using var editor = run.Client(await run.GrantAsync(TestUsers.CompanyA, CompanyA, Manage), CompanyA);
+        await run.CommandAsync(editor, Root, "rate-check", new CreateSettingsCollateralTypeRequestV1("RATE", "Synthetic", SettingsCollateralKindV1.Mortgage, "Synthetic"));
+        var entry = Assert.Single((await run.ReadAsync(editor, Root)).Entries);
+        var previousShapeGuard = Assert.IsType<SqlOperation>(new AddSalesContractDiscountLimit().DownOperations[0]).Sql;
+        await run.ExecuteAsync(previousShapeGuard); // Initial 100 is representable by the old schema.
+        var version = 1;
+        foreach (var rate in new[] { "000100.000", new string('0', 64), "0." + new string('0', 60) + "1", "99." + new string('9', 61) })
+        {
+            version++;
+            await run.ExecuteAsync($"INSERT INTO [settings].[CollateralTypeVersions] ([CompanyId],[EntryId],[Version],[Name],[Active],[RatePercent],[RecordedAtUtc],[RecordedBy],[Reason]) VALUES ('{CompanyA:D}','{entry.Id:D}',{version},N'Synthetic',1,'{rate}',SYSUTCDATETIME(),N'Synthetic',N'Synthetic')");
+        }
+        foreach (var rate in new[] { "100." + new string('0', 59) + "1", new string('9', 64), "101", "100.1", "1,5", "+1" })
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync($"INSERT INTO [settings].[CollateralTypeVersions] ([CompanyId],[EntryId],[Version],[Name],[Active],[RatePercent],[RecordedAtUtc],[RecordedBy],[Reason]) VALUES ('{CompanyA:D}','{entry.Id:D}',99,N'Synthetic',1,'{rate}',SYSUTCDATETIME(),N'Synthetic',N'Synthetic')"));
+            Assert.Equal(547, refused.Number);
+        }
+        Assert.Equal("99." + new string('9', 61), Assert.Single((await run.ReadAsync(editor, Root)).Entries).RatePercent);
+        // Reads normalize a view only; the original history is untouched.
+        Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM [settings].[CollateralTypeVersions] WHERE [RatePercent] = '000100.000'"));
+        var guarded = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(previousShapeGuard));
+        Assert.Equal(51942, guarded.Number);
+    }
+
+    [SqlServerFact]
     public async Task Collateral_types_preserve_company_replay_immutable_kind_exact_rates_and_inactive_consumer_reads_on_real_sql()
     {
         await using var run = await HostRun.StartAsync();

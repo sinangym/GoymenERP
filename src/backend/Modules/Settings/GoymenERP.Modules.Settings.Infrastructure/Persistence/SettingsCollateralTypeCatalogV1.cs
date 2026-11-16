@@ -56,12 +56,12 @@ public sealed class SettingsCollateralTypeCatalogV1 : ISettingsCollateralTypeCat
             || !ReferenceListRulesV1.IsCode(entry.Code)
             || latest.Version <= 0
             || !ReferenceListRulesV1.IsStoredName(latest.Name)
-            || !CollateralTypeRulesV1.TryRate(latest.RatePercent, out var rate) || rate != latest.RatePercent)
+            || !CollateralTypeRulesV1.TryRate(latest.RatePercent, out var rate))
         {
             return null;
         }
 
-        return new SettingsCollateralTypeViewV1(entry.EntryId, entry.Code, latest.Name, kind, latest.Active, latest.RatePercent,
+        return new SettingsCollateralTypeViewV1(entry.EntryId, entry.Code, latest.Name, kind, latest.Active, rate,
             latest.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), latest.RecordedBy, latest.RecordedAtUtc);
     }
 

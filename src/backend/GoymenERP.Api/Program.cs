@@ -387,6 +387,7 @@ builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost
 // the Settings limit administration reads people and their company memberships from the Identity owner, both through
 // central adapters (no module reads another's tables).
 builder.Services.AddScoped<ISalesDiscountLimitGroupSourceV1, SalesDiscountLimitGroupHost>();
+builder.Services.AddScoped<ISalesContractDiscountLimitSourceV1, SettingsSalesContractDiscountLimitHost>();
 builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHost>();
 // KIM-D39: the Settings segregation of duties owner reads "exactly one active user in the company" from the Identity owner
 // through this central adapter (Settings reads no Identity table).
