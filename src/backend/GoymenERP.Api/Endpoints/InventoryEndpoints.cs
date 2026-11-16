@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 
@@ -1124,7 +1125,7 @@ public static partial class InventoryEndpoints
             {
                 SetPrivateNoStore(httpContext.Response);
                 if (!TryReadAllocationSuggestionQuery(httpContext.Request.Query, out var salesOrderId,
-                        out var salesOrderLineId))
+                        out var salesOrderLineId, out var requestedKg))
                 {
                     return AllocationProblem(StatusCodes.Status400BadRequest,
                         InventoryAllocationCodesV1.ValidationFailed, correlation);
@@ -1132,7 +1133,8 @@ public static partial class InventoryEndpoints
 
                 try
                 {
-                    return Results.Ok(await service.SuggestAsync(salesOrderId, salesOrderLineId, cancellationToken));
+                    return Results.Ok(await service.SuggestAsync(
+                        salesOrderId, salesOrderLineId, requestedKg, cancellationToken));
                 }
                 catch (InventoryPhysicalAllocationHostException exception)
                 {
@@ -1494,21 +1496,44 @@ public static partial class InventoryEndpoints
         return true;
     }
 
+    /// <summary>
+    /// The suggestion query: exactly one order id and one line id, plus an optional single <c>requestedKg</c> (KLN-D99),
+    /// the kilograms the user typed, which only orders the line's own labels closest first. Unknown keys, repeated
+    /// keys and a malformed or non-positive quantity are refused.
+    /// </summary>
     private static bool TryReadAllocationSuggestionQuery(
         IQueryCollection query,
         out Guid salesOrderId,
-        out Guid salesOrderLineId)
+        out Guid salesOrderLineId,
+        out Kilograms? requestedKg)
     {
         salesOrderId = Guid.Empty;
         salesOrderLineId = Guid.Empty;
-        return !query.Keys.Any(name => name is not "salesOrderId" and not "salesOrderLineId")
-            && query.All(parameter => parameter.Value.Count == 1)
-            && query.TryGetValue("salesOrderId", out var salesOrderValues)
-            && Guid.TryParseExact(salesOrderValues[0], "D", out salesOrderId)
-            && salesOrderId != Guid.Empty
-            && query.TryGetValue("salesOrderLineId", out var salesOrderLineValues)
-            && Guid.TryParseExact(salesOrderLineValues[0], "D", out salesOrderLineId)
-            && salesOrderLineId != Guid.Empty;
+        requestedKg = null;
+        if (query.Keys.Any(name => name is not "salesOrderId" and not "salesOrderLineId" and not "requestedKg")
+            || !query.All(parameter => parameter.Value.Count == 1)
+            || !query.TryGetValue("salesOrderId", out var salesOrderValues)
+            || !Guid.TryParseExact(salesOrderValues[0], "D", out salesOrderId)
+            || salesOrderId == Guid.Empty
+            || !query.TryGetValue("salesOrderLineId", out var salesOrderLineValues)
+            || !Guid.TryParseExact(salesOrderLineValues[0], "D", out salesOrderLineId)
+            || salesOrderLineId == Guid.Empty)
+        {
+            return false;
+        }
+
+        if (!query.TryGetValue("requestedKg", out var requestedValues))
+        {
+            return true;
+        }
+
+        if (!InventoryLabelQuantityProximityV1.TryParseRequestedKg(requestedValues[0], out var parsed))
+        {
+            return false;
+        }
+
+        requestedKg = parsed;
+        return true;
     }
 
     private static IResult PhysicalAllocationReadProblem(int statusCode, string? code = null) => code is null

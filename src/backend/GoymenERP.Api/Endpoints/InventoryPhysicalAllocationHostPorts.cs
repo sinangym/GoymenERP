@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
@@ -93,11 +94,13 @@ public sealed class InventoryPhysicalAllocationHostService(
     /// KLN-D34/D39 (STK-S30): the label suggestions for one approved Sales line. The same fences as a create (fresh
     /// authority before and after the Sales owner read; the line must still be approved), then the Inventory reader
     /// answers for the line's own product and version, never for caller-supplied product facts. Authority is measured
-    /// once more after the read so a revocation in flight never sees the answer.
+    /// once more after the read so a revocation in flight never sees the answer. <paramref name="requestedKg"/> is the
+    /// kilograms the user typed (KLN-D99): it only orders the line's own labels closest first and must be echoed back.
     /// </summary>
     public async Task<InventoryAllocationSuggestionsV1> SuggestAsync(
         Guid salesOrderId,
         Guid salesOrderLineId,
+        Kilograms? requestedKg,
         CancellationToken cancellationToken)
     {
         var scope = await RequireAsync(cancellationToken);
@@ -109,12 +112,14 @@ public sealed class InventoryPhysicalAllocationHostService(
 
         var (line, finalScope) = await ApprovedLineAsync(scope, salesOrderId, salesOrderLineId, cancellationToken);
         var answer = await suggestions.ReadAsync(
-            new InventoryAllocationSuggestionQueryV1(salesOrderId, salesOrderLineId, line.ProductId, line.ProductVersion),
+            new InventoryAllocationSuggestionQueryV1(
+                salesOrderId, salesOrderLineId, line.ProductId, line.ProductVersion, requestedKg),
             cancellationToken);
         await RequireStillAsync(finalScope, cancellationToken);
         if (answer.CompanyId != finalScope.CompanyId || answer.SalesOrderId != salesOrderId
             || answer.SalesOrderLineId != salesOrderLineId || answer.ProductId != line.ProductId
-            || !string.Equals(answer.ProductVersion, line.ProductVersion, StringComparison.Ordinal))
+            || !string.Equals(answer.ProductVersion, line.ProductVersion, StringComparison.Ordinal)
+            || !string.Equals(answer.RequestedKg, requestedKg?.ToString(), StringComparison.Ordinal))
         {
             throw new InventoryPhysicalAllocationHostException(StatusCodes.Status503ServiceUnavailable);
         }

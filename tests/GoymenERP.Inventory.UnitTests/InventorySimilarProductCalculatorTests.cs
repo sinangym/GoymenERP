@@ -3,7 +3,7 @@ using GoymenERP.Modules.Inventory.Application;
 namespace GoymenERP.Inventory.UnitTests;
 
 /// <summary>
-/// KLN-D70 / ASSUMPTION-STK-SIMILAR-ORDER-1: the one deterministic "benzer ürün" rule. Tolerances here are synthetic
+/// KLN-D70 / KLN-D95 / ASSUMPTION-STK-SIMILAR-ORDER-1: the one deterministic "benzer ürün" rule. Tolerances here are synthetic
 /// test inputs; the real values live only in company Settings.
 /// </summary>
 public sealed class InventorySimilarProductCalculatorTests
@@ -38,6 +38,21 @@ public sealed class InventorySimilarProductCalculatorTests
             Facts(Candidate, 1m, 100m, null, key: null), TenPercent));
         Assert.Null(InventorySimilarProductCalculatorV1.Evaluate(Facts(Requested, 1m, 100m, null),
             Facts(Requested, 1m, 100m, null), TenPercent));
+    }
+
+    [Fact]
+    public void A_different_or_missing_coating_is_never_similar_even_with_equal_key_and_measures()
+    {
+        Assert.NotNull(InventorySimilarProductCalculatorV1.Evaluate(Facts(Requested, 1m, 100m, null),
+            Facts(Candidate, 1m, 100m, null), TenPercent));
+        Assert.Null(InventorySimilarProductCalculatorV1.Evaluate(Facts(Requested, 1m, 100m, null),
+            Facts(Candidate, 1m, 100m, null, coating: "SYN-COAT-B"), TenPercent));
+        Assert.Null(InventorySimilarProductCalculatorV1.Evaluate(Facts(Requested, 1m, 100m, null),
+            Facts(Candidate, 1m, 100m, null, coating: "syn-coat-a"), TenPercent));
+        Assert.Null(InventorySimilarProductCalculatorV1.Evaluate(Facts(Requested, 1m, 100m, null),
+            Facts(Candidate, 1m, 100m, null, coating: null), TenPercent));
+        Assert.Null(InventorySimilarProductCalculatorV1.Evaluate(Facts(Requested, 1m, 100m, null, coating: " "),
+            Facts(Candidate, 1m, 100m, null, coating: " "), TenPercent));
     }
 
     [Fact]
@@ -88,6 +103,7 @@ public sealed class InventorySimilarProductCalculatorTests
         decimal? thickness,
         decimal? width,
         decimal? length,
-        string? key = "synthetic-key") =>
-        new(productId, "1", "SYN-P", "Sentetik ürün", key, thickness, width, length);
+        string? key = "synthetic-key",
+        string? coating = "SYN-COAT-A") =>
+        new(productId, "1", "SYN-P", "Sentetik ürün", key, thickness, width, length, coating);
 }

@@ -83,7 +83,8 @@ public sealed class InventoryProductSimilarityFactsHost(
                 item.SimilarityKey,
                 item.ThicknessMm,
                 item.WidthMm,
-                item.LengthMm));
+                item.LengthMm,
+                item.CoatingCode));
         }
 
         return facts;

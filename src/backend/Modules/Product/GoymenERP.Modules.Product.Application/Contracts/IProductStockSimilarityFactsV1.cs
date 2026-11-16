@@ -25,7 +25,9 @@ public sealed record ProductStockSimilarityBatchV1(
 /// is an opaque key, equal exactly when two products share the family (Cins/Tür/Tip), the template release and every
 /// controlled (dictionary) attribute value, among them the quality; it is null when the accepted technical facts are
 /// incomplete. Measures are the card's nominal millimetres; <see cref="LengthMm"/> is null when the template has no
-/// length role.
+/// length role. <see cref="CoatingCode"/> is the stored code of the template's coating field (KLN-D95: a similar product
+/// must carry the same coating), published separately so the consumer can check it explicitly; it is null whenever the
+/// similarity key is null or the coating is not stated.
 /// </summary>
 public sealed record ProductStockSimilarityResultV1(
     Guid ProductId,
@@ -34,4 +36,5 @@ public sealed record ProductStockSimilarityResultV1(
     string? SimilarityKey,
     decimal? ThicknessMm,
     decimal? WidthMm,
-    decimal? LengthMm);
+    decimal? LengthMm,
+    string? CoatingCode);

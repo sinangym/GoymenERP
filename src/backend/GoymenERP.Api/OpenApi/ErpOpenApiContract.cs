@@ -908,6 +908,12 @@ public static partial class ErpOpenApiContract
             AddInventoryPhysicalAllocationReadParameters(operation);
         }
 
+        // KLN-D34/D99: the suggestion route reads its query by hand; requestedKg only orders labels closest first.
+        if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationSuggestionsV1", StringComparison.Ordinal))
+        {
+            AddInventoryPhysicalAllocationSuggestionParameters(operation);
+        }
+
         // AT-055 (#518 P2): the Sales order's dispatch notes are read for exactly one REQUIRED uuid; the route reads it by hand.
         if (string.Equals(operation.OperationId, "GetSalesOrderDispatchNotesV1", StringComparison.Ordinal))
         {
@@ -1661,6 +1667,34 @@ public static partial class ErpOpenApiContract
                 Maximum = "100",
             },
             "Maximum allocation rows; default 100, range 1..100.");
+    }
+
+    private static void AddInventoryPhysicalAllocationSuggestionParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "salesOrderId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "salesOrderLineId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order line identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "requestedKg",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Pattern = "^[0-9]+(\\.[0-9]{1,3})?$",
+                MaxLength = GoymenERP.Modules.Inventory.Application.InventoryLabelQuantityProximityV1
+                    .MaximumRequestedKgTextLength,
+            },
+            "Optional positive kilograms the user typed (KLN-D99); the line's own labels are listed closest to it "
+            + "first, ties by label code. Nothing is selected automatically.");
     }
 
     private static void AddInventoryProductCandidateParameters(OpenApiOperation operation)
