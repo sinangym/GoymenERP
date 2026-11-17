@@ -1,23 +1,28 @@
 using GoymenERP.Modules.Identity.Domain.CompanySetup;
 using GoymenERP.Modules.Identity.Domain.Approvals;
 using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.BuildingBlocks.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Identity.Infrastructure.Persistence;
 public sealed partial class IdentityDbContext
 {
     internal const string CompanySetupReceiptIdentityCheck = "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND LEN([PayloadHash]) = 64 AND [PayloadHash] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9A-F]%'";
-    private (Guid Company, Guid User, Guid Role)? companyOpenerProof;
-    internal IDisposable BeginCompanyOpenerWrite(Guid companyId, Guid userId, Guid roleId)
+    private (Guid Company, Guid Actor, Guid User, Guid Role)? firstAdminProof;
+    internal IDisposable BeginSelectedFirstAdminWrite(Guid companyId, Guid userId, Guid roleId,
+        CompanySetupGroupAuthoritySnapshotV1 authority)
     {
-        if (companyOpenerProof is not null || Database.CurrentTransaction is null || companyContext is not { IsResolved: true }
-            || companyContext.CompanyId != companyId) throw new InvalidOperationException("Company opener proof requires the locked owner transaction.");
-        companyOpenerProof = (companyId, userId, roleId);
-        return new CompanyOpenerLease(this);
+        if (firstAdminProof is not null || Database.CurrentTransaction is null || companyContext is not { IsResolved: true }
+            || companyContext.CompanyId != companyId || userId == Guid.Empty || roleId == Guid.Empty
+            || !authority.IsGranted || authority.Operation != CompanySetupGroupOperationV1.AssignFirstAdmin
+            || authority.ActorUserId == Guid.Empty || string.IsNullOrWhiteSpace(authority.Revision))
+            throw new InvalidOperationException("First Admin proof requires group authority and the locked owner transaction.");
+        firstAdminProof = (companyId, authority.ActorUserId, userId, roleId);
+        return new FirstAdminLease(this);
     }
-    private sealed class CompanyOpenerLease(IdentityDbContext owner) : IDisposable
+    private sealed class FirstAdminLease(IdentityDbContext owner) : IDisposable
     {
-        public void Dispose() => owner.companyOpenerProof = null;
+        public void Dispose() => owner.firstAdminProof = null;
     }
     public DbSet<CompanySetupInboxReceipt> CompanySetupInboxReceipts => Set<CompanySetupInboxReceipt>();
     private Guid CompanySetupCompanyId => companyContext is { IsResolved: true } ? companyContext.CompanyId : Guid.Empty;
@@ -32,20 +37,22 @@ public sealed partial class IdentityDbContext
     }
     private void ApplyCompanySetupWriteGuards()
     {
+        ApplyCompanySetupAuthorityWriteGuards();
         foreach (var entry in ChangeTracker.Entries<AccessGrantRequest>().Where(x => x.State is EntityState.Added or EntityState.Modified
-            && x.Entity.ApprovalMode == AccessGrantApprovalMode.CompanyOpener))
+            && x.Entity.ApprovalMode is AccessGrantApprovalMode.CompanyOpener or AccessGrantApprovalMode.CompanySetupAuthority))
         {
             var request = entry.Entity;
+            if (request.ApprovalMode == AccessGrantApprovalMode.CompanyOpener)
+                throw new InvalidOperationException("KIM-D56 forbids new automatic company-opener approvals; historical rows remain unchanged.");
             if (companyContext is not { IsResolved: true } || request.CompanyId != companyContext.CompanyId
-                || request.RequestedByUserId != request.TargetUserId || request.DecidedByUserId != request.TargetUserId
+                || request.DecidedByUserId != request.RequestedByUserId
                 || request.ValidUntilUtc is not null || Database.CurrentTransaction is null
-                || companyOpenerProof != (request.CompanyId, request.TargetUserId, request.RoleId)
-                || !ChangeTracker.Entries<CompanySetupInboxReceipt>().Any(x => x.State == EntityState.Added && x.Entity.CompanyId == request.CompanyId)
+                || firstAdminProof != (request.CompanyId, request.RequestedByUserId, request.TargetUserId, request.RoleId)
                 || !ChangeTracker.Entries<RoleAssignment>().Any(x => x.State == EntityState.Added
                     && x.Entity.Id == request.ResultingRoleAssignmentId && x.Entity.CompanyId == request.CompanyId
                     && x.Entity.RoleId == request.RoleId && x.Entity.UserId == request.TargetUserId && x.Entity.ValidUntilUtc is null
                     && x.Entity.Scopes.Any(scope => scope.ScopeType == AccessScopeType.Company && scope.ScopeId == request.CompanyId)))
-                throw new InvalidOperationException("Company opener approval requires the company inbox and its indefinite assignment in one transaction.");
+                throw new InvalidOperationException("Explicit first Admin approval requires its authorized actor and selected indefinite assignment in one transaction.");
         }
         foreach (var entry in ChangeTracker.Entries<GoymenERP.Modules.Identity.Domain.Outbox.IdentityOutboxMessage>()
             .Where(x => x.State is not (EntityState.Unchanged or EntityState.Detached)

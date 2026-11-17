@@ -31,7 +31,8 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
                     credential.SecurityStamp,
                     user.IsActive,
                     credential.TemporaryPasswordExpiresAtUtc,
-                    credential.TemporaryPasswordConsumedAtUtc))
+                    credential.TemporaryPasswordConsumedAtUtc,
+                    credential.TwoFactorEnabled))
             .SingleOrDefaultAsync(cancellationToken);
 
     public async Task<bool> TryRecordFailedAccessAsync(
@@ -182,6 +183,7 @@ internal sealed class SqlLocalCredentialStore(IdentityDbContext dbContext) : ILo
             credential.UserId == userId
             && credential.PasswordHash == passwordHash
             && credential.SecurityStamp == securityStamp
+            && credential.TwoFactorEnabled == read.TwoFactorEnabled
             && credential.TemporaryPasswordIssuedAtUtc == temporaryPasswordIssuedAtUtc);
     }
 }

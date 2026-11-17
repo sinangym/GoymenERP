@@ -1,0 +1,5 @@
+.page { max-width: 58rem; margin: 2rem auto; padding: 1rem; color: var(--color-text, #172332); }
+.section { margin-block: 1.5rem; padding: 1rem; border: 1px solid var(--color-border, #c5ced9); border-radius: .4rem; }
+.form { display: grid; gap: 1rem; max-width: 40rem; }
+.form input, .form select, .form textarea { width: 100%; box-sizing: border-box; padding: .55rem; font: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem; }

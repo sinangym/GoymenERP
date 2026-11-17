@@ -39,7 +39,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.11";
+    public const string OwnerContractVersion = "1.12";
 
     public const string ManufacturingParametersCapabilityId = ManufacturingParameterProfileActionsV1.Read;
     public const string ManufacturingParametersRoutePath = "/ayarlar/uretim-parametre-profilleri";
@@ -172,6 +172,18 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
                 "/ayarlar/finans-acilis-donemi", "AY-FAD-01", ShellCapabilityRoutePrecedence.Static,
                 ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
                 [SettingsCompanyPolicyPermissionManifestV1.FinanceOpeningPeriodManage], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(SettingsOperationalPolicyPermissionsV1.ScrapCostManage, SettingsOperationalPolicyPermissionsV1.ScrapCostManage,
+                "/ayarlar/fire-maliyet-katilimi", "AY-FMK-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsOperationalPolicyPermissionsV1.ScrapCostManage], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(SettingsOperationalPolicyPermissionsV1.NotificationRetentionManage, SettingsOperationalPolicyPermissionsV1.NotificationRetentionManage,
+                "/ayarlar/bildirim-etkinlik-suresi", "AY-BES-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsOperationalPolicyPermissionsV1.NotificationRetentionManage], ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(SettingsDocumentNumberSeriesPermissionsV1.Manage, SettingsDocumentNumberSeriesPermissionsV1.Manage,
+                "/ayarlar/belge-numara-serileri", "AY-BNS-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [SettingsDocumentNumberSeriesPermissionsV1.Manage], ImplementationAvailable: true),
             parameters,
             parameters with { CapabilityId = ManufacturingParameterProfileActionsV1.Prepare,
                 ParentCapabilityId = ManufacturingParametersCapabilityId,

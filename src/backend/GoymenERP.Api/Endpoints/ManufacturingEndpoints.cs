@@ -4,6 +4,7 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
@@ -103,6 +104,7 @@ public static class ManufacturingEndpoints
         .. ConflictCodes,
         InventoryParentRollCodesV1.VersionConflict,
         InventoryParentRollCodesV1.ReadConflict,
+        ManufacturingPaintCodesV1.VersionConflict,
     ];
 
     private static readonly string[] SavePlanUnprocessableCodes =
@@ -113,6 +115,8 @@ public static class ManufacturingEndpoints
         // Üretim U2-a: the slitting spec's net usable width is wider than a planned parent coil.
         ManufacturingRuleCodes.PlanNetWidthExceedsParent,
         ManufacturingRuleCodes.PlanLabelNotUsable,
+        ManufacturingPaintCodesV1.Required,
+        ManufacturingPaintCodesV1.Ineligible,
     ];
 
     // Üretim U3-a (URT-D21, URT-D3, B-01): the approval allocates the plan's inputs in Inventory with the approval, at the
@@ -152,6 +156,8 @@ public static class ManufacturingEndpoints
     private static readonly string[] ApprovePlanUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingPaintCodesV1.Required,
+        ManufacturingPaintCodesV1.Ineligible,
         ManufacturingRuleCodes.PlanSelfApproval,
         ManufacturingRuleCodes.PlanDueDateRequired,
         ManufacturingRuleCodes.DueDateInPast,
@@ -270,6 +276,8 @@ public static class ManufacturingEndpoints
     private static readonly string[] ReapprovePlanUnprocessableCodes =
     [
         .. ManufacturingProblemCodes.Unprocessable,
+        ManufacturingPaintCodesV1.Required,
+        ManufacturingPaintCodesV1.Ineligible,
         ManufacturingRuleCodes.PlanCancelled,
         ManufacturingRuleCodes.PlanOrderExists,
         ManufacturingRuleCodes.PlanSelfApproval,
@@ -297,6 +305,24 @@ public static class ManufacturingEndpoints
         var group = endpoints.MapGroup("/api/v1/manufacturing")
             .RequireAuthorization()
             .WithTags("Manufacturing");
+
+        group.MapGet("/references/paint-selections", async (HttpContext context,
+                ICompanyContext company, CancellationToken cancellationToken, [FromServices] IManufacturingPaintSelectionSourceV1? source = null) =>
+            {
+                SetPrivateNoStore(context.Response.Headers);
+                if (context.Request.Query.Keys.Any(key => key != "q") || context.Request.Query["q"].Count > 1)
+                    return Problem(400, ManufacturingApiCodes.RequestInvalid, null);
+                if (source is null) return Results.Problem(statusCode: 503);
+                try { return Results.Ok(await source.ListAsync(company.CompanyId, context.Request.Query["q"].FirstOrDefault(), cancellationToken)); }
+                catch (OperationCanceledException) { throw; }
+                catch (UnauthorizedAccessException) { return Results.Problem(statusCode: 403); }
+                catch (ArgumentException) { return Problem(400, ManufacturingApiCodes.RequestInvalid, null); }
+                catch (Exception) { return Results.Problem(statusCode: 503); }
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansWrite)
+            .WithName("GetManufacturingPaintSelectionsV1")
+            .Produces<ManufacturingPaintCatalogV1>(200).ProducesErpBadRequest(ManufacturingApiCodes.RequestInvalid)
+            .ProducesErpAuthenticatedProblems().ProducesErpServiceUnavailable();
 
         group.MapGet("/references/output-products", async (
                 HttpContext httpContext,
@@ -608,6 +634,29 @@ public static class ManufacturingEndpoints
             .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
             .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, ManufacturingRuleCodes.PlanCancelled,
                 "manufacturing_plan_priority_reason_required", "manufacturing_plan_priority_unchanged"])
+            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
+
+        group.MapPost("/plans/{planId:guid}/work-center-queue/reorder", async (Guid planId,
+                MoveManufacturingQueuePlanRequestV1 request, ManufacturingCommandService service,
+                HttpContext httpContext, CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.MoveQueuePlanAsync(planId, request, key, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansReorder)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("MoveManufacturingWorkCenterQueuePlanV1").Accepts<MoveManufacturingQueuePlanRequestV1>("application/json")
+            .Produces<PlanWorkCenterQueueViewV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, "manufacturing_queue_member_invalid", "manufacturing_queue_unchanged"])
+            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
+
+        group.MapPost("/orders/{orderId:guid}/reopening", async (Guid orderId, ReopenManufacturingOrderRequestV1 request,
+                ManufacturingCommandService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ReopenOrderAsync(orderId, request, key, cancellationToken)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersReopen)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ReopenManufacturingOrderV1").Accepts<ReopenManufacturingOrderRequestV1>("application/json")
+            .Produces<OrderViewV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, "manufacturing_order_not_closed", "manufacturing_order_reopen_period_not_open"])
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
 
         // URT-D99/D107: the same server queue used by termin calculation, including its non-blocking over-plan flag.
@@ -958,6 +1007,57 @@ public static class ManufacturingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/orders/{orderId:guid}/non-kg-inputs", async (Guid orderId, ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+            {
+                SetPrivateNoStore(http.Response.Headers);
+                return ToHttpResult(http, await service.GetNonKgInputsAsync(orderId, token), null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderNonKgInputsV1").Produces<ManufacturingNonKgInputHistoryV1>()
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/orders/{orderId:guid}/non-kg-inputs", async (Guid orderId, RecordManufacturingNonKgInputRequestV1 request,
+                ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+            await WriteAsync(http, key => service.RecordNonKgInputAsync(orderId, request, key, token)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("RecordManufacturingOrderNonKgInputV1").Accepts<RecordManufacturingNonKgInputRequestV1>("application/json")
+            .Produces<ManufacturingNonKgInputHistoryV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes).ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/orders/{orderId:guid}/production-cost-usd", async (Guid orderId, ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+            {
+                SetPrivateNoStore(http.Response.Headers);
+                return ToHttpResult(http, await service.GetProductionUsdCostAsync(orderId, token), location: null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderProductionUsdCostV1").Produces<ManufacturingProductionUsdCostViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/orders/{orderId:guid}/cost-generations", async (Guid orderId, ManufacturingCommandService service,
+                HttpContext http, CancellationToken token) =>
+            {
+                SetPrivateNoStore(http.Response.Headers);
+                return ToHttpResult(http, await service.GetCostGenerationsAsync(orderId, token), location: null);
+            })
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderCostGenerationsV1")
+            .Produces<ManufacturingCostGenerationHistoryV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/orders/{orderId:guid}/cost-recognition", async (Guid orderId, RecognizeManufacturingOrderCostRequestV1 request,
+                ManufacturingCommandService service, HttpContext http, CancellationToken token) =>
+                await WriteAsync(http, key => service.RecognizeCostAsync(orderId, request, key, token)))
+            .RequireCompanyContext().RequireAuthorization(ErpPermissions.ManufacturingOrdersClose)
+            .WithName("RecognizeManufacturingOrderCostV1")
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .Accepts<RecognizeManufacturingOrderCostRequestV1>("application/json")
+            .Produces<ManufacturingCostGenerationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody().ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(ConflictCodes).ProducesErpUnprocessableEntity(ManufacturingProblemCodes.Unprocessable)
+            .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
         // URT-S17 (SAT-D317): the order's production cost as the production cost port version 2 records it — the kg cost,
         // the TL per line, the rounding remainder, the currency lines and the inputs that keep the cost from being computed.

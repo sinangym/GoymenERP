@@ -36,7 +36,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
     IErpAuthorityRevalidationService revalidation,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    ILogger<SettingsManufacturingProfileAdministration> logger)
+    ILogger<SettingsManufacturingProfileAdministration> logger,
+    IAuditTransactionWriterV1? auditWriter = null)
     : ISettingsManufacturingParameterProfileAdministrationV1, ISettingsManufacturingToleranceProfileAdministrationV1
 {
     private const int CommandExecutionSchemaVersion = 1;
@@ -151,8 +152,9 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
     /// <summary>Stores a refusal (no business change) as the key's terminal answer; a same-key winner replays.</summary>
     private async Task<ManufacturingProfileCommandResultV1> StoreRefusalAsync(string commandName,
         ManufacturingProfileCommandAnswerV1 answer, string keyHash, string requestHash, SettingsCommandMetadataV1 metadata,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Func<Task>? revalidate = null)
     {
+        if (revalidate is not null) await revalidate();
         database.ChangeTracker.Clear();
         AddExecution(commandName, answer, keyHash, requestHash, metadata);
         try
@@ -164,6 +166,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
+            if (revalidate is not null) await revalidate();
             if (winner is null)
             {
                 throw new SettingsPrerequisiteException(ManufacturingProfileProblemCodesV1.ProviderUnavailable);
@@ -247,6 +250,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
 
     private static string AuditDescription(string eventType) => eventType switch
     {
+        BaselineTransferredEvent => "Üretim başlangıç profilleri değerleri değiştirilmeden aktarıldı",
         ParameterPreparedEvent => "Üretim parametre profili taslağı hazırlandı; gerekçe kayıt içeriğindedir",
         ParameterApprovedEvent => "Üretim parametre profili onaylandı; gerekçe kayıt içeriğindedir",
         ParameterPublishedEvent => "Üretim parametre profili yayımlandı; gerekçe kayıt içeriğindedir",

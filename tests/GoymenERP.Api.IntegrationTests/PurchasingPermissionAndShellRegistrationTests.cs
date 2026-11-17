@@ -89,7 +89,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(13, purchasing.Length);
+        Assert.Equal(14, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
@@ -99,12 +99,14 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.DetailCapabilityId,
             PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId,
             PurchasingShellCapabilityProvider.RequestApproveCapabilityId,
             PurchasingShellCapabilityProvider.RequestCreateCapabilityId,
             PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
             PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
             PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierReturnCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
@@ -133,6 +135,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(
             [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
             goodsReceipt.RequiredPermissions);
+        var supplierReturn = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.SupplierReturnCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, supplierReturn.ParentCapabilityId);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
+            supplierReturn.RequiredPermissions);
 
         var requestDetail = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestDetailCapabilityId).Declaration;

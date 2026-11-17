@@ -10,6 +10,9 @@ public interface IFounderRecoveryConsole
     /// <summary><see langword="false"/> when stdin is redirected (<c>cmd &lt; file</c> or a pipe): the command refuses.</summary>
     bool IsInteractive { get; }
 
+    /// <summary>Runtime operator declaration; no OS identity is inferred from ERP roles or emitted to application logs.</summary>
+    FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration();
+
     /// <summary>Reads the new password without echoing it.</summary>
     string? ReadNewPassword();
 
@@ -39,9 +42,11 @@ public sealed record FounderRecoveryConfirmation(
     string FounderUserName,
     string? DatabaseServer,
     string? DatabaseCatalog,
-    IReadOnlyList<FounderRecoveryCompany> Companies);
+    IReadOnlyList<FounderRecoveryCompany> Companies,
+    FounderRecoveryOperatorDeclaration Operator);
 
 public sealed record FounderRecoveryCompany(Guid CompanyId, string Code, string LegalName);
+public sealed record FounderRecoveryOperatorDeclaration(string OperatingSystemUser, string MachineName);
 
 public enum FounderRecoveryStatus
 {
@@ -89,6 +94,8 @@ public enum FounderRecoveryStatus
 
     /// <summary>The fail-closed success security event could not be written; the transaction was rolled back.</summary>
     SecurityEventRefused = 15,
+    AuditRefused = 16,
+    OperatorDeclarationMissing = 17,
 }
 
 /// <summary>Stable English refusal codes (spec ID-2r proposals); the terminal text is Turkish and separate.</summary>
@@ -108,11 +115,15 @@ public static class FounderRecoveryRefusalCodes
     public const string PolicyViolation = "identity.founder_recovery.policy_violation";
     public const string NotConfirmed = "identity.founder_recovery.not_confirmed";
     public const string SecurityEventRefused = "identity.founder_recovery.security_event_refused";
+    public const string AuditRefused = "identity.founder_recovery.audit_refused";
+    public const string OperatorDeclarationMissing = "identity.founder_recovery.operator_declaration_missing";
 
     /// <summary>The code of a refusal; <see langword="null"/> for <see cref="FounderRecoveryStatus.Completed"/>.</summary>
     public static string? Of(FounderRecoveryStatus status) => status switch
     {
         FounderRecoveryStatus.Completed => null,
+        FounderRecoveryStatus.AuditRefused => AuditRefused,
+        FounderRecoveryStatus.OperatorDeclarationMissing => OperatorDeclarationMissing,
         FounderRecoveryStatus.SubcommandRequired => SubcommandRequired,
         FounderRecoveryStatus.NotBootstrapped => NotBootstrapped,
         FounderRecoveryStatus.FounderNotFound => FounderNotFound,

@@ -24,17 +24,32 @@ public sealed class SettingsMoneyProfilePrerequisiteProvider(SettingsDbContext d
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId) || !companyContext.IsResolved
             || companyContext.CompanyId == Guid.Empty || !currentUser.CanAccessCompany(companyContext.CompanyId))
             throw new SettingsPrerequisiteException("settings_access_denied");
+        var company = companyContext.CompanyId;
+        var actor = currentUser.UserId;
         MoneyProfileVersionRow[] rows;
         try { rows = await MoneyProfileReads.LoadAsync(database, currencyId, operation, cancellationToken); }
         catch (Exception exception) when (exception is not OperationCanceledException and not SettingsPrerequisiteException)
         { throw new SettingsPrerequisiteException("settings_provider_unavailable"); }
-        if (rows.Length == 0) return await inner.GetMoneyProfileAsync(currencyId, operation, effectiveOn, cancellationToken);
-        MoneyProfileReads.Validate(rows, companyContext.CompanyId, currencyId, operation);
+        RequireSame(company, actor);
+        if (rows.Length == 0)
+        {
+            var baseline = await inner.GetMoneyProfileAsync(currencyId, operation, effectiveOn, cancellationToken);
+            RequireSame(company, actor);
+            return baseline;
+        }
+        MoneyProfileReads.Validate(rows, company, currencyId, operation);
         var entry = SalesPolicyTimelineV1.For(MoneyProfileReads.Timeline(rows), effectiveOn)
             ?? throw new SettingsPrerequisiteException("settings_profile_invalid");
         var row = entry.Value;
         return new MoneyProfileV1(row.CompanyId, row.CurrencyId, row.CurrencyCode, operation,
             new ProfileVersionV1(row.ProfileId, row.Version), row.Scale, row.IsActive, entry.EffectiveFrom,
             entry.EffectiveThrough, row.UnitPriceScale);
+    }
+
+    private void RequireSame(Guid company, string actor)
+    {
+        if (!companyContext.IsResolved || companyContext.CompanyId != company || !currentUser.IsAuthenticated
+            || currentUser.UserId != actor || !currentUser.CanAccessCompany(company))
+            throw new SettingsPrerequisiteException("settings_access_denied");
     }
 }

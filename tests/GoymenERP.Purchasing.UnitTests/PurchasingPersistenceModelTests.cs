@@ -67,7 +67,7 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains(orderLines.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseOrderLines_SourceRequestLine");
         // A1-3 (master INV-006) and API-11: the cancelled and the closed remainders are inside the shares bound.
         Assert.Contains(orderLines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares"
-            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]", StringComparison.Ordinal)
+            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] + [DefinitiveReturned] <= [Ordered]", StringComparison.Ordinal)
             && check.Sql.Contains("[Cancelled] >= 0", StringComparison.Ordinal));
         Assert.Equal((3, 3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
             orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale(),
@@ -144,8 +144,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.8", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(13, declarations.Count);
+        Assert.Equal("1.9", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(14, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -202,7 +202,7 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(12, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(14, PurchasingPermissionManifestV1.Names.Count);
         // ALC-S3 (ALS-D83/D85): the release name measures the link drop and the drop-and-cancel / drop-and-close commands; no shell
         // control (the screen lives under the order detail capability).
         Assert.Contains("purchasing.future-allocation.release", PurchasingPermissionManifestV1.Names);
@@ -271,8 +271,10 @@ public sealed class PurchasingPersistenceModelTests
                 "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
                 "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure",
                 "20261115184944_AddPurchaseGoodsReceiptBatches", "20261116104436_AddPurchaseOrderExchangeRate",
-                "20261116113129_AddPurchaseSupplierReturns"],
-            context.Database.GetMigrations().TakeLast(11));
+                "20261116113129_AddPurchaseSupplierReturns", "20261116213347_AddPurchaseReceiptAdjustments",
+                "20261116215806_AddPurchaseSupplierReturnResponseSnapshots", "20261116222957_AddPurchaseReceiptAdjustmentBatches",
+                "20261117002600_AddPurchaseOrderDocumentNumbers", "20261117072202_AddPurchaseSupplierRevisions"],
+            context.Database.GetMigrations().TakeLast(16));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;

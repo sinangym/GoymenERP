@@ -1000,6 +1000,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
     private sealed class StoreScope(ManufacturingDbContext dbContext, ManufacturingStore store) : IAsyncDisposable
     {
+        public ManufacturingDbContext Context => dbContext;
         public IManufacturingPlanStore Plans => store;
         public IManufacturingOrderStore Orders => store;
         public IManufacturingPlanRevisionStore Revisions => store;

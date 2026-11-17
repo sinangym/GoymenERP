@@ -13,6 +13,9 @@ internal sealed class ConsoleFounderRecoveryConsole(TextWriter prompts, string e
 
     public bool IsInteractive => !Console.IsInputRedirected;
 
+    public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration() => IsInteractive
+        ? new(Environment.UserName, Environment.MachineName) : null;
+
     public string? ReadNewPassword() => secretReader.ReadSecret(FounderRecoveryTexts.PasswordPrompt);
 
     public string? ReadNewPasswordConfirmation() =>
@@ -22,6 +25,7 @@ internal sealed class ConsoleFounderRecoveryConsole(TextWriter prompts, string e
     {
         ArgumentNullException.ThrowIfNull(confirmation);
         prompts.WriteLine(FounderRecoveryTexts.ConfirmationHeader);
+        prompts.WriteLine(FounderRecoveryTexts.Operator(confirmation.Operator));
         prompts.WriteLine(FounderRecoveryTexts.Environment(environmentName));
         prompts.WriteLine(FounderRecoveryTexts.Database(confirmation.DatabaseServer, confirmation.DatabaseCatalog));
         prompts.WriteLine(FounderRecoveryTexts.Operation(confirmation.Subcommand));

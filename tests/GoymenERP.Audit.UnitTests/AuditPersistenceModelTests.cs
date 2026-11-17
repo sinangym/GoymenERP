@@ -19,14 +19,15 @@ public sealed class AuditPersistenceModelTests
     private const string OutcomeIndexName = "IX_AuditEvents_CompanyId_Outcome_OccurredAtUtc_Id";
 
     [Fact]
-    public void The_outcome_query_index_migration_is_the_last_one_and_the_snapshot_matches_the_model()
+    public void The_reviewed_audit_migration_chain_preserves_the_outcome_index_and_matches_the_snapshot()
     {
         using var context = Context();
 
         Assert.Equal(
             ["20260827160529_InitialAudit", "20260912173914_AddGlobalProductAuditSubject",
-                "20261115121446_AddAuditOutcomeQueryIndex"],
-            context.Database.GetMigrations().TakeLast(3));
+                "20261115121446_AddAuditOutcomeQueryIndex", "20261116220434_AddTypedFounderRecoverySystemAudit",
+                "20261117003912_AddLocalCredentialSelfServiceAudit"],
+            context.Database.GetMigrations().TakeLast(5));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

@@ -98,8 +98,8 @@ public sealed class ProductDimensionTests
     {
         using var context = Context();
         Assert.Equal(["AddProductCardDimensions", "AddProductProfileWeightImports", "AddProductPackageStandards",
-                "AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles"],
-            context.Database.GetMigrations().TakeLast(5).Select(name => name.Split('_', 2)[1]));
+                "AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles", "AddProductPaintMemberships"],
+            context.Database.GetMigrations().TakeLast(6).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductCardDimensions();
@@ -118,8 +118,8 @@ public sealed class ProductDimensionTests
     public void The_section_families_migration_precedes_the_package_standard_approval_and_its_Down_refuses_first_with_51737()
     {
         using var context = Context();
-        Assert.Equal(["AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles"],
-            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(["AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles", "AddProductPaintMemberships"],
+            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductSectionFamilies();

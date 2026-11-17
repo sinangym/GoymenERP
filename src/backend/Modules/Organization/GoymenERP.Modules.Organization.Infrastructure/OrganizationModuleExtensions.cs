@@ -49,6 +49,7 @@ public static class OrganizationModuleExtensions
         services.AddScoped<ICompanyLifecycleReadPortV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());
         services.AddScoped<IOutboxCompanyDirectoryV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());
         services.AddScoped<OrganizationCompanySetupInboxConsumer>();
+        services.AddScoped<IOrganizationCompanyOpeningV1, OrganizationCompanyOpeningV1>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IOrganizationMasterDataService, OrganizationMasterDataService>();
         // B-15 calendar master: the same command protocol and helpers as the master edit (one partial class).

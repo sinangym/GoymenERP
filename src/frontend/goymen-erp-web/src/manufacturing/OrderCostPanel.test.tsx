@@ -55,6 +55,18 @@ afterEach(() => {
 })
 
 describe('order cost', () => {
+  it('displays an exact weighted entry rate as its server fraction without a rounded conversion', async () => {
+    const original = availableOrderCost()
+    const line = { issueMovementId: 'b0000000-0000-4000-8000-000000000002', currencyId: 'c0000000-0000-4000-8000-000000000001',
+      foreignUnitCostPerKg: '2', exchangeRate: null, exchangeRateRatio: { numerator: '100', denominator: '3' },
+      tlUnitCostPerKg: '10', keptKilograms: '2', foreignAmount: '4' }
+    stub({ cost: () => json({ ...original, currencyLines: [line] }) })
+    renderAt(PATH)
+    const panel = await screen.findByRole('region', { name: HEADING })
+    expect(await within(panel).findByText('100/3')).toBeTruthy()
+    expect(within(panel).queryByText('33.3333')).toBeNull()
+  })
+
   it('says the cost cannot be computed while no cost source is bound, never a zero', async () => {
     const recorded = stub({})
     renderAt(PATH)

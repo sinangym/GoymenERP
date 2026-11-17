@@ -352,6 +352,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                     b.Property<bool?>("SellableValue")
                         .HasColumnType("bit");
 
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
                     b.HasKey("Id");
 
                     b.ToTable("Products", "product", t =>
@@ -1102,6 +1105,146 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.ToTable("PaintMembershipAttempts", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaintMembershipAttempts_State", "LEN([CommandName]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson], OBJECT) = 1 AND [StatusCode] IN (200,400,404,409,422) AND DATEPART(TZOFFSET,[CreatedAtUtc]) = 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("MembershipVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("RecordedProductVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Version", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("CompanyId", "MembershipVersion");
+
+                    b.HasIndex("CompanyId", "ProductId", "Version");
+
+                    b.ToTable("PaintMembershipLines", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaintMembershipLines_State", "[ProductId] <> '00000000-0000-0000-0000-000000000000' AND [MembershipVersion] >= 1 AND [MembershipVersion] <= [Version] AND [RecordedProductVersion] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FileSha256")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("SourceLabel")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.ToTable("PaintMembershipVersions", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_PaintMembershipVersions_State", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND [SourceKind] IN ('Import','Edit') AND LEN([SourceLabel]) > 0 AND LEN([Reason]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND DATEPART(TZOFFSET,[CreatedAtUtc]) = 0 AND (([SourceKind] = 'Import' AND [FileName] IS NOT NULL AND LEN([FileName]) > 0 AND LEN([FileSha256]) = 64 AND [FileSha256] IS NOT NULL) OR ([SourceKind] = 'Edit' AND [FileName] IS NULL AND [FileSha256] IS NULL))");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1461,6 +1604,45 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .WithMany()
                         .HasForeignKey("EditedProductId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipLineRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListProductReference", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "MembershipVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductPaintMembershipVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductProfileWeightAttemptRow", b =>

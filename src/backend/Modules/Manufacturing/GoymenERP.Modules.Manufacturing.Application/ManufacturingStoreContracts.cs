@@ -438,7 +438,7 @@ public interface IManufacturingOrderStore
 /// approved). The order and the remaining kg are the domain's (<c>ProductionWorkCenterQueueOrderV1</c>).
 /// </summary>
 public sealed record ManufacturingWorkCenterQueue(IReadOnlyList<ProductionQueueEntryV1> Queued,
-    ProductionQueueEntryV1 Target, bool TargetIsQueued = true);
+    ProductionQueueEntryV1 Target, bool TargetIsQueued = true, long QueueRevision = 0, IReadOnlyList<Guid>? StoredOrder = null);
 
 /// <summary>
 /// URT-SC33 (URT-D86): reads the queue of a work center for the termin suggestion. A port of its own, beside

@@ -255,6 +255,13 @@ export const CAPABILITY = {
    * FIN-S9 (FNS-D23) Açılış Bakiyeleri. Its propose and approve are CONTROLS of this list, never routes.
    */
   financeOpeningBalancesList: 'finance.opening-balances.list',
+  financeCreditsWorkspace: 'finance.credits.workspace',
+  financeOfficialInvoicesRecord: 'finance.official-sales-invoices.record',
+  financeOfficialInvoicesApprove: 'finance.official-sales-invoices.approve',
+  accountingCostDifferencePrepare: 'accounting.manufacturing-cost-differences.prepare',
+  accountingCostDifferenceApprove: 'accounting.manufacturing-cost-differences.approve',
+  identityUsersManage: 'identity.users.manage',
+  productPaintMemberships: 'paint-memberships.manage',
   /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
   accountingPeriodsList: 'accounting.periods.list',
   /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
@@ -333,6 +340,9 @@ export const CAPABILITY = {
   settingsSalesContractDiscountLimit: 'settings.sales-contract-discount-limit.manage',
   settingsCollateralTypes: 'settings.collateral-types.manage',
   settingsFinanceOpeningPeriod: 'settings.finance-opening-period.manage',
+  settingsManufacturingScrapCost: 'settings.manufacturing-scrap-cost.manage',
+  settingsNotificationRetention: 'settings.notification-retention.manage',
+  settingsDocumentNumberSeries: 'settings.document-number-series.manage',
   settingsManufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   settingsManufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /**
@@ -462,6 +472,13 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
+  [CAPABILITY.financeCreditsWorkspace]: '/finans/krediler',
+  [CAPABILITY.financeOfficialInvoicesRecord]: '/finans/resmi-satis-faturalari',
+  [CAPABILITY.financeOfficialInvoicesApprove]: '/finans/resmi-satis-faturasi-onaylari',
+  [CAPABILITY.accountingCostDifferencePrepare]: '/muhasebe/uretim-maliyet-farklari',
+  [CAPABILITY.accountingCostDifferenceApprove]: '/muhasebe/uretim-maliyet-farki-onay',
+  [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
+  [CAPABILITY.productPaintMemberships]: '/boya-urunleri',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
@@ -489,6 +506,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsSalesContractDiscountLimit]: '/ayarlar/sozlesme-iskonto-siniri',
   [CAPABILITY.settingsCollateralTypes]: '/ayarlar/teminat-turleri',
   [CAPABILITY.settingsFinanceOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
+  [CAPABILITY.settingsManufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
+  [CAPABILITY.settingsNotificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
+  [CAPABILITY.settingsDocumentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [CAPABILITY.settingsManufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [CAPABILITY.settingsManufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',

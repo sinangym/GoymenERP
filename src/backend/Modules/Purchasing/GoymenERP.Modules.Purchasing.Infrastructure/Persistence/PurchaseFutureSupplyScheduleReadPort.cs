@@ -50,9 +50,10 @@ internal sealed class PurchaseFutureSupplyScheduleReadPort(IPurchasingStore stor
             return Missing(PurchaseFutureSupplyScheduleOutcomeV1.Unreadable);
         }
 
-        var accepted = line.AcceptedQuantity.Value + stored.Order.Lines
+        // Definitive returns remain fulfilled commitment; only a replacement-expected return reopens unreceived supply.
+        var accepted = line.AcceptedQuantity.Value + line.DefinitiveReturnQuantity.Value + stored.Order.Lines
             .Where(candidate => candidate.ParentLineId == lineId && candidate.Kind == PurchaseOrderLineKind.Technical)
-            .Sum(candidate => candidate.AcceptedQuantity.Value);
+            .Sum(candidate => candidate.AcceptedQuantity.Value + candidate.DefinitiveReturnQuantity.Value);
         if (accepted < 0m || accepted > line.Quantity.Value)
         {
             return Missing(PurchaseFutureSupplyScheduleOutcomeV1.Unreadable);

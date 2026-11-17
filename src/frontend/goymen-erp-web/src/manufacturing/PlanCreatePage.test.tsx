@@ -84,6 +84,7 @@ function installPlanApi(options: {
   readonly failFirstSave?: boolean
   readonly commitThenLoseFirstSave?: boolean
   readonly refuseFirstSave?: boolean
+  readonly physicalCapRefusal?: boolean
   readonly candidates?: () => unknown
   readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
   readonly capabilities?: readonly string[]
@@ -122,6 +123,9 @@ function installPlanApi(options: {
         if (options.failFirstSave && saves === 1) throw new TypeError('connection lost')
         if (options.refuseFirstSave && saves === 1) {
           return problem(409, { code: 'inventory_label_version_conflict' })
+        }
+        if (options.physicalCapRefusal && saves === 1) {
+          return problem(422, { code: 'manufacturing_plan_label_not_usable', field: 'inputs[0].plannedKg' })
         }
         const request = JSON.parse(init.body as string) as {
           planId: string
@@ -192,6 +196,28 @@ afterEach(() => {
 })
 
 describe('plan create and reopen', () => {
+  it('shows the server physical-total refusal, keeps the mass editable, and sends a corrected plan with a new key', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ physicalCapRefusal: true })
+    renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    const mass = screen.getByLabelText('LBL-0007 planlanan kg')
+    await user.clear(mass)
+    await user.type(mass, '1200.501')
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+
+    expect(await screen.findByText(/etiketin tüm pozisyonlarındaki güncel fiziksel toplamını aşıyor/)).toBeTruthy()
+    expect(mass.hasAttribute('disabled')).toBe(false)
+    expect(saveRequests(recorded)[0].body).toMatchObject({ inputs: [{ plannedKg: '1200.501', expectedLabelVersion: '7' }] })
+    await user.clear(mass)
+    await user.type(mass, '1000')
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const [first, second] = saveRequests(recorded)
+    expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toMatchObject({ inputs: [{ plannedKg: '1000', expectedLabelVersion: '7' }] })
+  })
+
   it('selects real work-center and Inventory facts, saves frozen label version, then reopens with GET', async () => {
     const user = userEvent.setup()
     const recorded = installPlanApi()

@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// check, the idle and absolute session limits, the login rate limit and the closed mode, plus KIM-S24: the shipped
 /// KIM-D29 rate limit, the KIM-D30 logout that renews the stamp and the KIM-D31 antiforgery header. SENTETIK users only.
 /// </summary>
-public sealed class LocalAccountSessionApiTests
+public sealed partial class LocalAccountSessionApiTests
 {
     private const string LoginPath = "/api/v1/identity/session/login";
     private const string LogoutPath = "/api/v1/identity/session/logout";

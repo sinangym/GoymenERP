@@ -338,6 +338,8 @@ public sealed partial class InventoryStore(
         // The domain decides; nothing below runs for a refused movement.
         ledger.Apply(movement);
 
+        await StageMovementCostsAsync(movement, metadata, cancellationToken);
+
         foreach (var position in movement.Lines.Select(line => line.Position).Distinct())
         {
             var quantity = ledger.QuantityAt(position).Value;

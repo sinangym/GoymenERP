@@ -9,6 +9,7 @@ export const PURCHASING_CAPABILITY = {
   orderCreate: 'purchasing.orders.create',
   orderDetail: 'purchasing.orders.detail',
   orderApprove: 'purchasing.orders.approve',
+  supplierReturnRecord: 'purchasing.supplier-returns.record',
   /** A1-3 (plan API-10/UI-05): the order remainder cancellation, a child control of the order detail. */
   orderCancel: 'purchasing.orders.cancel',
   /**
@@ -16,6 +17,7 @@ export const PURCHASING_CAPABILITY = {
    * `purchasing.orders.revise` (name registered only; the grant is a human gate).
    */
   orderLineScheduleWrite: 'purchasing.orders.line-schedule.write',
+  orderSupplierRevise: 'purchasing.orders.supplier-revise',
 } as const
 
 export type PurchasingCapabilityId =

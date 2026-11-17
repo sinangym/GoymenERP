@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ICompanyContext companyContext)
+public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "inventory";
@@ -168,6 +168,16 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         + "OR ([Outcome] = 2 AND [PhysicalAllocationId] IS NULL AND [PhysicalQuantityKg] IS NULL "
         + "AND [FailureReason] IS NOT NULL AND LEN([FailureReason]) > 0))";
 
+    internal const string GoodsReceiptReversalIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' AND [AcceptanceId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [MovementId] <> [OriginalMovementId] AND [Kind] IN (1, 2)";
+    internal const string GoodsReceiptReversalTextCheck =
+        "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0";
+    internal const string FutureSupplyConversionReversalQuantityCheck =
+        "[UndoneQuantity] > 0 AND [UndoneKg] > 0 AND [ReopenedQuantity] >= 0 "
+        + "AND [OverflowReleasedQuantity] >= 0 AND [UnheldQuantity] >= 0 "
+        + "AND [ReopenedQuantity] + [OverflowReleasedQuantity] + [UnheldQuantity] = [UndoneQuantity]";
+
     internal DbSet<LotRow> Lots => Set<LotRow>();
 
     internal DbSet<LabelRow> Labels => Set<LabelRow>();
@@ -257,6 +267,9 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<FutureSupplyConversionRow> FutureSupplyConversions => Set<FutureSupplyConversionRow>();
 
+    internal DbSet<GoodsReceiptReversalRow> GoodsReceiptReversals => Set<GoodsReceiptReversalRow>();
+    internal DbSet<FutureSupplyConversionReversalRow> FutureSupplyConversionReversals => Set<FutureSupplyConversionReversalRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -274,6 +287,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureAllocations(modelBuilder);
         ConfigureAllocationChanges(modelBuilder);
         ConfigureAverageCostLedger(modelBuilder);
+        ConfigureMovementCosting(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
@@ -282,6 +296,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureOpeningCosts(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
         ConfigureFutureSupply(modelBuilder);
+        ConfigureGoodsReceiptReversals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -487,7 +502,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 15");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 16");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -779,6 +794,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2").IsRequired();
         entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
+        entity.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        entity.HasIndex(x => new { x.CompanyId, x.Position }).HasDatabaseName("IX_OutboxMessages_CompanyId_Position");
         entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
             .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -1549,6 +1566,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             table.HasCheckConstraint("CK_FutureSupplyConversions_Outcome", FutureSupplyConversionOutcomeCheck);
         });
         conversion.HasKey(x => x.Id);
+        conversion.HasAlternateKey(x => new { x.CompanyId, x.Id });
         conversion.Property(x => x.Id).ValueGeneratedNever();
         conversion.Property(x => x.Quantity).HasPrecision(18, 3);
         conversion.Property(x => x.PhysicalQuantityKg).HasPrecision(18, 3);
@@ -1575,6 +1593,44 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         conversion.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         conversion.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureGoodsReceiptReversals(ModelBuilder modelBuilder)
+    {
+        var receipt = modelBuilder.Entity<GoodsReceiptReversalRow>();
+        receipt.ToTable("GoodsReceiptReversals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_GoodsReceiptReversals_Identity", GoodsReceiptReversalIdentityCheck);
+            table.HasCheckConstraint("CK_GoodsReceiptReversals_Quantity", "[QuantityKg] > 0");
+            table.HasCheckConstraint("CK_GoodsReceiptReversals_Text", GoodsReceiptReversalTextCheck);
+        });
+        receipt.HasKey(row => new { row.CompanyId, row.Id });
+        receipt.Property(row => row.QuantityKg).HasPrecision(18, 3);
+        receipt.Property(row => row.Reason).HasMaxLength(1000);
+        receipt.Property(row => row.RecordedBy).HasMaxLength(128);
+        receipt.Property(row => row.CorrelationId).HasMaxLength(128);
+        receipt.HasIndex(row => new { row.CompanyId, row.AcceptanceId });
+        receipt.HasIndex(row => new { row.CompanyId, row.MovementId }).IsUnique();
+        MovementOf(receipt);
+        receipt.HasOne<MovementRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.OriginalMovementId })
+            .HasPrincipalKey(row => new { row.CompanyId, row.Id }).OnDelete(DeleteBehavior.Restrict);
+        LabelOf(receipt);
+        receipt.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
+
+        var conversion = modelBuilder.Entity<FutureSupplyConversionReversalRow>();
+        conversion.ToTable("FutureSupplyConversionReversals", Schema, table =>
+            table.HasCheckConstraint("CK_FutureSupplyConversionReversals_Quantity", FutureSupplyConversionReversalQuantityCheck));
+        conversion.HasKey(row => new { row.CompanyId, row.ReversalId, row.ConversionId });
+        foreach (var property in new[] { nameof(FutureSupplyConversionReversalRow.UndoneQuantity),
+                     nameof(FutureSupplyConversionReversalRow.UndoneKg), nameof(FutureSupplyConversionReversalRow.ReopenedQuantity),
+                     nameof(FutureSupplyConversionReversalRow.OverflowReleasedQuantity), nameof(FutureSupplyConversionReversalRow.UnheldQuantity) })
+            conversion.Property<decimal>(property).HasPrecision(18, 3);
+        conversion.HasOne<GoodsReceiptReversalRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.ReversalId })
+            .OnDelete(DeleteBehavior.Restrict);
+        conversion.HasOne<FutureSupplyConversionRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.ConversionId })
+            .HasPrincipalKey(row => new { row.CompanyId, row.Id }).OnDelete(DeleteBehavior.Restrict);
+        conversion.HasIndex(row => new { row.CompanyId, row.ConversionId });
+        conversion.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
     }
 
     private void ApplyWriteGuards()
@@ -1618,6 +1674,23 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                         nameof(AverageCostLedgerRow.Status), nameof(AverageCostLedgerRow.UnreadableReason),
                         nameof(AverageCostLedgerRow.QuantityKg), nameof(AverageCostLedgerRow.AverageCostPerKg),
                         nameof(AverageCostLedgerRow.Version), nameof(AverageCostLedgerRow.UpdatedAtUtc),
+                    ],
+                    CurrencyAverageCostLedgerRow =>
+                    [
+                        nameof(CurrencyAverageCostLedgerRow.Status), nameof(CurrencyAverageCostLedgerRow.UnreadableReason),
+                        nameof(CurrencyAverageCostLedgerRow.QuantityKg), nameof(CurrencyAverageCostLedgerRow.AverageCostPerKg),
+                        nameof(CurrencyAverageCostLedgerRow.Version), nameof(CurrencyAverageCostLedgerRow.UpdatedAtUtc),
+                    ],
+                    ExactCostPoolRow =>
+                    [
+                        nameof(ExactCostPoolRow.Status), nameof(ExactCostPoolRow.UnreadableReason),
+                        nameof(ExactCostPoolRow.QuantityRatioJson), nameof(ExactCostPoolRow.AverageCostPerKg),
+                        nameof(ExactCostPoolRow.Version), nameof(ExactCostPoolRow.UpdatedAtUtc),
+                    ],
+                    ManufacturingCostGenerationRow =>
+                    [
+                        nameof(ManufacturingCostGenerationRow.Version), nameof(ManufacturingCostGenerationRow.State),
+                        nameof(ManufacturingCostGenerationRow.LastResultJson), nameof(ManufacturingCostGenerationRow.UpdatedAtUtc),
                     ],
                     AllocationRow =>
                     [

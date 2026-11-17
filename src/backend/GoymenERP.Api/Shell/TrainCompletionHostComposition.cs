@@ -1,0 +1,61 @@
+using GoymenERP.Api.FinanceRuntime;
+using GoymenERP.Api.InventoryRuntime;
+using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.ManufacturingRuntime;
+using GoymenERP.Api.PurchasingRuntime;
+using GoymenERP.Api.WorkRuntime;
+using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Application.Inbox;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Infrastructure.Outbox;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Work.Infrastructure;
+
+namespace GoymenERP.Api.Shell;
+
+/// <summary>W8 owner composition. Registration creates neither records nor grants and does not enable dispatch.</summary>
+public static class TrainCompletionHostComposition
+{
+    public static IServiceCollection AddTrainCompletionOwnerBindings(this IServiceCollection services)
+    {
+        services.AddFinanceCreditLenderOwnerRead();
+        services.AddScoped<IPurchasingPartyAccountPortV2>(provider =>
+            (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());
+        services.AddProductPurchaseUnitConversion(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
+        services.AddScoped<IInventoryProductUnitConversionSourceV1, ProductOwnerInventoryUnitConversionSource>();
+        services.AddScoped<IManufacturingPaintSelectionSourceV1, ManufacturingPaintSelectionSourceV1>();
+        services.AddScoped<PurchaseReceiptAdjustmentParticipantFactoryV1>(provider => (connection, transaction, company, token) =>
+            PurchaseReceiptAdjustmentParticipant.EnlistAsync(connection, transaction, company,
+                provider.GetRequiredService<IAuditEventCollector>(), provider.GetRequiredService<IAuditTransactionWriterV1>(), token));
+        services.AddScoped<PurchaseReceiptAdjustmentBatchParticipantFactoryV1>(provider => (connection, transaction, company, token) =>
+            PurchaseReceiptAdjustmentParticipant.EnlistBatchAsync(connection, transaction, company,
+                provider.GetRequiredService<IAuditEventCollector>(), provider.GetRequiredService<IAuditTransactionWriterV1>(), token));
+        services.AddScoped<PurchaseReceiptReversalHost>();
+        services.AddScoped<IPurchaseReceiptReversalTransactionV1>(provider => provider.GetRequiredService<PurchaseReceiptReversalHost>());
+        services.AddScoped<IPurchaseReceiptReversalBatchTransactionV1>(provider => provider.GetRequiredService<PurchaseReceiptReversalHost>());
+
+        services.AddWorkOutboxEventSource<InventoryOutboxEventSource>(InventoryOutboxContractV1.SourceName,
+            new(InventoryFutureAllocationReleasedOutboxV1.EventType, 1),
+            new(InventoryOutboxContractV1.ManufacturingCostDifferenceProposed, InventoryOutboxContractV1.ManufacturingCostDifferenceSchemaVersion));
+        services.AddWorkOutboxEventSource<PurchasingOutboxEventSource>(AccountingPurchaseInvoiceFinalizedInboxV1.SourceName,
+            new(PurchasingOrderLineRevivedEventV1.EventType, 1),
+            new(AccountingPurchaseInvoiceFinalizedInboxV1.EventType, AccountingPurchaseInvoiceFinalizedInboxV1.Version));
+        services.AddWorkOutboxEventSource<FinanceCreditOutboxEventSourceV1>(CreditMovementProposalInboxV1.SourceName,
+            new WorkOutboxEventTypeV1(CreditMovementProposalInboxV1.EventType, 1));
+        services.AddWorkNotificationHostV1(InventoryOutboxContractV1.SourceName, AccountingPurchaseInvoiceFinalizedInboxV1.SourceName);
+        services.AddWorkInboxConsumer<ManufacturingCostDifferenceInboxConsumerV1>(ManufacturingCostDifferenceInboxV1.ConsumerName,
+            ManufacturingCostDifferenceInboxV1.Subscriptions.ToArray());
+        services.AddWorkInboxConsumer<CreditMovementProposalInboxConsumerV1>(CreditMovementProposalInboxV1.ConsumerName,
+            CreditMovementProposalInboxV1.Subscriptions.ToArray());
+        services.AddWorkInboxConsumer<AccountingPurchaseInvoiceFinalizedInboxConsumer>(AccountingPurchaseInvoiceFinalizedInboxV1.ConsumerName,
+            AccountingPurchaseInvoiceFinalizedInboxV1.Subscriptions.ToArray());
+        return services;
+    }
+}

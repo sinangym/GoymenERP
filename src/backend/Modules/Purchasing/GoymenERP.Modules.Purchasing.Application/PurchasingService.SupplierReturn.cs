@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// order; Inventory resolves the label and leaves stock at the original purchase line's unit cost. SAT-D392: that cost is the
 /// invoice's unit cost — when it is readable the exit is staged at once. SAT-D393: when it is not, the return carries a manual
 /// unit cost and waits; nothing leaves stock until the exception is approved under <c>purchasing.orders.approve</c> (SAT-D396),
-/// in ONE host transaction with Inventory's exit. ALS-D91: the order quantity is not reopened.
+/// in ONE host transaction with Inventory's exit. ALS-D91/D92 and F017-e: an explicitly measured purchase-unit undo uses the
+/// genuine owner adjustment; only replacement-expected quantity reopens, without reviving previously released allocations.
 /// </summary>
 public sealed partial class PurchasingService
 {
@@ -32,23 +33,23 @@ public sealed partial class PurchasingService
         try { PurchaseSupplierReturnJsonV1.ValidateCreate(request); }
         catch (JsonException) { throw new PurchasingServiceException(400, "validation_failed"); }
         var returns = returnStore ?? throw ReturnUnavailable();
-        var runner = returnTransactions ?? throw ReturnUnavailable();
+        var adjustsReceipt = request.ExpectedPurchaseOrderVersion is not null;
         const string command = PurchaseSupplierReturnCommandsV1.CreateV1;
         var requestHash = PurchasingRequestHash.Compute(command, orderId, new { request });
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindReturnReplayAsync(scope, permission, returns, envelope, requestHash, command, cancellationToken);
         if (replay is not null) return await ReturnReplayedAsync(scope, permission, returns, orderId, replay, cancellationToken);
 
-        if (request.ReplacementExpected)
+        if (request.ReplacementExpected && !adjustsReceipt)
         {
-            // ALS-D91: a replacement-expected return reopens the order quantity; that variant is not offered yet (ALS-D92 deferred).
+            // No purchase-unit quantity is inferred from measured stock kilograms on a legacy request.
             throw new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.ReplacementUnsupported,
                 [new("replacementExpected", PurchaseSupplierReturnCodesV1.ReplacementUnsupported)]);
         }
 
         var stored = await GuardedAsync(scope, permission, () => store.FindOrderAsync(orderId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
-        if (stored.Order.Status != PurchaseOrderStatus.Approved)
+        if (!adjustsReceipt && stored.Order.Status != PurchaseOrderStatus.Approved)
         {
             throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.OrderStateConflict);
         }
@@ -92,8 +93,10 @@ public sealed partial class PurchasingService
         }
 
         var draft = new PurchaseSupplierReturnDraft(request.ReturnId, request.ReturnLineId, orderId, lineId, request.GoodsAcceptanceId,
-            request.InventoryMovementId, status, request.SourceBlock, ParseKg(request.QuantityKg), basis, unitCost, ReplacementExpected: false,
-            request.Reason.Trim(), request.OccurredAtUtc);
+            request.InventoryMovementId, status, request.SourceBlock, ParseKg(request.QuantityKg), basis, unitCost, request.ReplacementExpected,
+            request.Reason.Trim(), request.OccurredAtUtc,
+            request.ExpectedPurchaseOrderVersion is null ? null : long.Parse(request.ExpectedPurchaseOrderVersion, CultureInfo.InvariantCulture),
+            request.UndoQuantity is null ? null : ParseKg(request.UndoQuantity));
         try
         {
             StoredPurchaseSupplierReturn saved;
@@ -103,8 +106,15 @@ public sealed partial class PurchasingService
                 await RequireStillAsync(scope, permission, cancellationToken);
                 saved = await returns.SaveNewAsync(draft, envelope, requestHash, command, cancellationToken);
             }
+            else if (adjustsReceipt)
+            {
+                saved = await StageReturnAdjustmentAsync(scope, permission, draft, draft.ExpectedPurchaseOrderVersion,
+                    envelope, requestHash, command, token => returns.SaveNewAsync(draft, envelope, requestHash, command, token),
+                    cancellationToken);
+            }
             else
             {
+                var runner = returnTransactions ?? throw ReturnUnavailable();
                 saved = await runner.ExecuteAsync(scope.CompanyId, async (exit, token) =>
                 {
                     await StageReturnExitAsync(scope, exit, draft, envelope, token);
@@ -121,7 +131,19 @@ public sealed partial class PurchasingService
         }
         catch (PurchasingStoreException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw Store(exception);
+        }
+        catch (PurchasingServiceException exception) when (!exception.IsReplay && ReceiptReversalTerminal(exception))
+        {
+            return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
+                new(exception.Status, exception.Code, exception.Errors), cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
         }
     }
 
@@ -184,6 +206,8 @@ public sealed partial class PurchasingService
         var stored = await GuardedAsync(scope, permission, () => returns.FindAsync(orderId, returnId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
         stored = RequireOwnReturn(scope, orderId, stored);
+        if (request.ExpectedPurchaseOrderVersion is not null && (!approve || stored.Return.ExpectedPurchaseOrderVersion is null))
+            throw new PurchasingServiceException(400, "validation_failed");
         var supplierReturn = new PurchaseSupplierReturn(returnId, stored.Return.Status, stored.Version, stored.RequestedBy);
         var allowSameActor = (returnPolicy ?? PurchaseSupplierReturnPolicyV1.Default).AllowSameActorCostExceptionDecision;
         var actor = scope.ActorId.Trim();
@@ -221,6 +245,16 @@ public sealed partial class PurchasingService
                 await RequireStillAsync(scope, permission, cancellationToken);
                 saved = await returns.SaveDecisionAsync(orderId, supplierReturn, expectedVersion, envelope, requestHash, command, cancellationToken);
             }
+            else if (stored.Return.ExpectedPurchaseOrderVersion is not null)
+            {
+                // The immutable request keeps its original version. A later approval may name a fresh expected order version
+                // explicitly; the current server version is never substituted silently.
+                var orderVersion = request.ExpectedPurchaseOrderVersion is null ? stored.Return.ExpectedPurchaseOrderVersion
+                    : ParseVersion(request.ExpectedPurchaseOrderVersion);
+                saved = await StageReturnAdjustmentAsync(scope, permission, stored.Return, orderVersion, envelope, requestHash,
+                    command, token => returns.SaveDecisionAsync(orderId, supplierReturn, expectedVersion, envelope,
+                        requestHash, command, token), cancellationToken);
+            }
             else
             {
                 var runner = returnTransactions ?? throw ReturnUnavailable();
@@ -240,8 +274,36 @@ public sealed partial class PurchasingService
         }
         catch (PurchasingStoreException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw Store(exception);
         }
+        catch (PurchasingServiceException exception) when (!exception.IsReplay && ReceiptReversalTerminal(exception))
+        {
+            return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
+                new(exception.Status, exception.Code, exception.Errors), cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
+        }
+    }
+
+    private async Task<StoredPurchaseSupplierReturn> StageReturnAdjustmentAsync(Scope scope, string? permission,
+        PurchaseSupplierReturnDraft draft, long? expectedOrderVersion, PurchasingWriteEnvelope envelope,
+        string requestHash, string command, Func<CancellationToken, Task<StoredPurchaseSupplierReturn>> writeReturn,
+        CancellationToken cancellationToken)
+    {
+        if (expectedOrderVersion is null || draft.UndoQuantity is null) throw ReturnUnavailable();
+        var runner = receiptReversals ?? throw ReturnUnavailable();
+        var request = new ReversePurchaseReceiptV1(expectedOrderVersion.Value.ToString(CultureInfo.InvariantCulture),
+            draft.ReturnId, draft.ReturnLineId, draft.InventoryMovementId, Kg(draft.UndoQuantity.Value), Kg(draft.QuantityKg),
+            draft.SourceBlock, draft.Reason.Trim(), draft.OccurredAtUtc);
+        var write = new PurchaseReceiptReversalWriteV1(draft.PurchaseOrderId, draft.GoodsAcceptanceId, request,
+            IsSupplierReturn: true, draft.ReplacementExpected, UnitCostText(draft.UnitCostTryPerKg), command, requestHash);
+        return await runner.ExecuteWithWriteAsync(scope.CompanyId, write, envelope,
+            (_, token) => writeReturn(token), token => RequireStillAsync(scope, permission, token), cancellationToken);
     }
 
     /// <summary>
@@ -301,6 +363,12 @@ public sealed partial class PurchasingService
         }
 
         if (replay.ReturnId is not { } returnId) throw new PurchasingServiceException(503, "service_unavailable");
+        if (replay.Original is { } original)
+        {
+            if (original.Return.ReturnId != returnId) throw ReturnUnavailable();
+            return new(ReturnView(RequireOwnReturn(scope, orderId, original)), IsReplay: true, replay.OriginalCorrelationId);
+        }
+        // Legacy attempts have no immutable snapshot. They remain readable without inventing a historical response.
         var stored = await GuardedAsync(scope, permission, () => returns.FindAsync(orderId, returnId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(503, "service_unavailable");
         return new(ReturnView(RequireOwnReturn(scope, orderId, stored)), IsReplay: true, replay.OriginalCorrelationId);
@@ -338,7 +406,8 @@ public sealed partial class PurchasingService
         return new(stored.CompanyId, item.ReturnId, item.ReturnLineId, item.PurchaseOrderId, item.PurchaseOrderLineId, item.GoodsAcceptanceId,
             item.InventoryMovementId, item.Status.ToString(), stored.Version.ToString(CultureInfo.InvariantCulture), item.SourceBlock,
             Kg(item.QuantityKg), item.CostBasis.ToString(), UnitCostText(item.UnitCostTryPerKg), item.ReplacementExpected, item.Reason,
-            item.OccurredAtUtc, stored.RequestedBy, stored.RequestedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason);
+            item.OccurredAtUtc, stored.RequestedBy, stored.RequestedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason,
+            item.ExpectedPurchaseOrderVersion?.ToString(CultureInfo.InvariantCulture), item.UndoQuantity is { } undo ? Kg(undo) : null);
     }
 
     private static string UnitCostText(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);

@@ -1,3 +1,4 @@
+import { paintSelectionFailureText } from './paintSelectionText'
 /**
  * MFG-PLAN create and detail screen text, in Turkish and in its own file. The edit form's own words and the plan
  * history stay in `./planEditText.ts`; the preview's in `./planPreviewText.ts`. `PLAN_FORM_TEXT` is what the create
@@ -6,6 +7,9 @@
  * A pending command whose slot cannot be read, or that cannot be bound to the session, is named as such: nothing is
  * sent from the screen and the saved plans stay readable.
  */
+
+export const PLAN_PHYSICAL_MASS_REFUSAL =
+  'Planlanan kg, etiketin tüm pozisyonlarındaki güncel fiziksel toplamını aşıyor. Etiketi yeniden okuyup kg değerini düzeltin.'
 
 export const PLAN_FORM_TEXT = {
   eyebrow: 'ÜRETİM PLANI',
@@ -105,9 +109,12 @@ export const PLAN_CREATE_TEXT = {
 
 /** The plan save's refusal, in the user's terms. */
 export function saveFailureText(status: number, code: string | null): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   if (status === 401 || status === 403) return 'Plan kaydetme yetkiniz artık geçerli değil.'
   if (status === 404) return 'Seçilen ana rulo veya şirket bağlamı artık bulunamıyor.'
   if (status === 409) return `Seçilen kayıtların sürümü veya yazma durumu değişti (${code ?? 'conflict'}).`
+  if (status === 422 && code === 'manufacturing_plan_label_not_usable') return PLAN_PHYSICAL_MASS_REFUSAL
   if (status === 422) return `Plan girdisi kabul edilmedi (${code ?? 'rule_refusal'}).`
   return `Plan kaydedilmedi (${code ?? status}).`
 }
@@ -192,6 +199,8 @@ type LifecycleKind = 'approve' | 'create-order' | 'reject' | 'cancel'
 
 /** An approval's or order creation's refusal, in the user's terms (a revision's is `revisionFailureText`). */
 export function lifecycleFailureText(kind: LifecycleKind, status: number, code: string | null): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   const subject = kind === 'approve' ? 'Plan onayı'
     : kind === 'reject' ? 'Plan reddi'
       : kind === 'cancel' ? 'Plan iptali'

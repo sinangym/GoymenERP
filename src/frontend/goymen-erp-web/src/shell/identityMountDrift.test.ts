@@ -7,6 +7,9 @@ import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabiliti
 
 describe('shell ↔ Identity access-view contract', () => {
   it('mirrors the owner ids, routes and labels, with exactly one navigation entry', () => {
+    expect(CAPABILITY.identityUsersManage).toBe(IDENTITY_CAPABILITY.userManagement)
+    expect(CAPABILITY_ROUTE[CAPABILITY.identityUsersManage]).toBe(IDENTITY_ROUTE[IDENTITY_CAPABILITY.userManagement])
+    expect(NAV_CAPABILITIES.filter((item) => item === CAPABILITY.identityUsersManage)).toHaveLength(1)
     expect(CAPABILITY.identityAssignmentsList).toBe(IDENTITY_CAPABILITY.accessList)
     expect(CAPABILITY.identityRolesDetail).toBe(IDENTITY_CAPABILITY.roleDetail)
     expect(CAPABILITY_ROUTE[CAPABILITY.identityAssignmentsList]).toBe(IDENTITY_ROUTE[IDENTITY_CAPABILITY.accessList])
@@ -20,7 +23,9 @@ describe('shell ↔ Identity access-view contract', () => {
   })
 
   it('mounts the static list before the parameterized role card', () => {
-    expect(identityRoutes).toHaveLength(2)
+    expect(identityRoutes).toHaveLength(4)
+    expect(matchRoutes(identityRoutes, '/hesap/iki-asamali-dogrulama')?.at(-1)?.route.path).toBe('hesap/iki-asamali-dogrulama')
+    expect(matchRoutes(identityRoutes, '/ayarlar/kullanicilar')?.at(-1)?.route.path).toBe(IDENTITY_ROUTE[IDENTITY_CAPABILITY.userManagement].slice(1))
     expect(matchRoutes(identityRoutes, '/ayarlar/kullanicilar-ve-yetkiler')?.at(-1)?.route.path).toBe(
       IDENTITY_ROUTE[IDENTITY_CAPABILITY.accessList].slice(1),
     )

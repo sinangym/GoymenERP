@@ -108,7 +108,7 @@ public sealed partial class SalesInvoiceService(
         }
 
         // SAT-S13 (SAT-D389 / SAT-D405, SAT-D319 (6), SAT-D322 (1)): every note of a ready share waits on its weighing difference.
-        await AddWeighingDifferenceWaitsAsync(scope, prepared, reasons, cancellationToken);
+        var invoiceKilograms = await AddWeighingDifferenceWaitsAsync(scope, prepared, reasons, cancellationToken);
 
         if (reasons.Count == 0)
         {
@@ -132,8 +132,8 @@ public sealed partial class SalesInvoiceService(
             first.Basis.MoneyProfileId, first.Basis.MoneyProfileVersion, first.Basis.MoneyScale, businessDate, rate);
         var inputs = prepared.Select(item => new SalesInvoiceShareInput(Guid.NewGuid(), item.Share.ShipmentId, item.Share.DispatchNoteId,
             item.Share.SystemNumber, item.Share.NoteLineNo, item.ShipmentDate, item.Share.SalesOrderId, item.Share.SalesOrderLineId,
-            item.Basis.Revision, item.Share.ProductId, item.Share.UnitId, item.Share.Quantity,
-            item.Share.Quantity.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!)).ToList();
+            item.Basis.Revision, item.Share.ProductId, item.Share.UnitId, invoiceKilograms[item.Share.ShipmentId],
+            invoiceKilograms[item.Share.ShipmentId].ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!)).ToList();
         var invoiceId = Guid.NewGuid();
 
         await RequireStillAsync(scope, WritePermission, cancellationToken);
