@@ -227,3 +227,22 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   oluşturma hataları düzeltildi. Runtime test/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
 - **PARTIAL devam:** uygulama/HTTP/UI ve gerçek import akışı henüz bu adaptöre bağlı değil;
   Finans kabulü uçtan uca tamamlandı sayılmaz. Önceki checkpoint'in kalanları geçerlidir.
+
+### FIN-S13 / ALC-SC47 — yetki çitli fatura komutları ve HTTP
+
+- Gerçek Purchasing invoice store üzerinden okuma, fark onayı, kesinleştirme ve ayrı
+  Finans kabulü tekrarı bağlandı. Komut iznine ek olarak güncel fiyat okuma yetkisi
+  ölçülür; şirket/aktör/yetki yeniden doğrulanır. Hazırlayan kendi farkını onaylayamaz.
+- Kesinleşmiş alış kaydı commit edildikten sonra Finans çağrılır. Bilinmeyen/ret cevap
+  açık bekleyen durumu korur; olumlu cevap ayrı idempotent revision ile kaydedilir.
+  Farklı aktörün tekrarında sabit kabul kimliği ve resmi payload korunur. Çağrı sırasında
+  yetki kaybı başarı yanıtı vermez. Bozuk owner geçmişi 503; client şirketi ve kanonik
+  olmayan sürüm reddedilir. Para/miktar HTTP'de tam string olarak taşınır.
+- Birim, HTTP ve iki gerçek SQL fact kaynağı yazıldı. SQL fact'leri Purchasing'in
+  commit sınırını gerçek SQL'de ölçmek üzere yazılmıştır; Finans tarafı sentetik probe'dur,
+  gerçek Finans uçtan uca kabulü olarak sunulmaz. API, Purchasing.UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0; `git diff --check` exit 0.
+  OpenAPI üretimi derlemede kapalıdır. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- **PARTIAL:** gerçek dosya importu, kabul/fiyat/kur/Ayarlar eşleştirme komutu, ekran
+  girişleri ve masraf/hizmet owner bağı hâlâ açıktır. Yeni migration veya izin yoktur.
+  OpenAPI/ilişkisel envanter/pin üretimi merkezi entegrasyonda yapılacaktır.
