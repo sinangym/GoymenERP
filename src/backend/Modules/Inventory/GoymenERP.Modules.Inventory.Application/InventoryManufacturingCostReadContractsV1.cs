@@ -21,7 +21,8 @@ public sealed record InventoryMovementCostStampV1(InventoryMovementCostStampStat
 /// </summary>
 public sealed record InventoryIssueCostCurrencyV1(InventoryIssueCostCurrencyStatusV1 Status,
     Guid? OriginalCurrencyId, decimal? ForeignUnitCostPerKg, decimal? ExchangeRate,
-    string SourceVersion, string? Reason, InventoryExactCostRatioV1? ForeignUnitCostRatio = null);
+    string SourceVersion, string? Reason, InventoryExactCostRatioV1? ForeignUnitCostRatio = null,
+    InventoryExactCostRatioV1? ExchangeRateRatio = null);
 
 public sealed record InventoryManufacturingCostIssueV1(Guid FactId, Guid MovementId, string SourceKind,
     StockMovementKind MovementKind, Guid ParentLabelId, Guid ProductId, string ProductVersion, decimal QuantityKg,

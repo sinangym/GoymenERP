@@ -1,19 +1,14 @@
 using GoymenERP.BuildingBlocks.Monetary;
+using GoymenERP.Modules.Inventory.Domain.Costing;
+using System.Text.Json;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
-/// FNS-D77/D78 (STK-SC36-b): the dry read port for the approved rate stored on the goods receipt where a label's material first
-/// entered stock. A non-order conversion (FNS-D83 priority: order rate, then this first-receipt rate, then "hesaplanamadı")
-/// asks it per label; a multi-input production order (FNS-D78) asks it once per input label, so every input keeps its own
-/// first-receipt rate. Reading writes nothing and never guesses: whatever cannot be answered from a recorded rate is
-/// <see cref="InventoryFirstReceiptExchangeRateStatusV1.Unavailable"/> with a stable reason, never a fallback rate.
-/// <para>
-/// The first entry is the label's earliest <c>Receipt</c> movement line (by occurrence, then recording, then movement id). A
-/// label that never had a receipt of its own follows its split lineage to the single parent label; a label made from several
-/// inputs (merge, manufacturing) is ambiguous and answers
-/// <see cref="InventoryFirstReceiptExchangeRateReasonsV1.LineageAmbiguous"/> (which input's rate counts is not decided).
-/// </para>
+/// FNS-D77/D78/D103/D104: immutable first-entry FX, captured automatically with the genuine goods acceptance.
+/// Splits retain their parent's evidence; merges use exact kg-weighted rates of the same directed currency pair.
+/// Manufacturing creates new material and does not borrow its inputs' single rate. Missing owner facts remain unavailable.
+/// Reading writes nothing; neither current rates nor supplier-invoice stock-cost FX replace the first-entry snapshot.
 /// </summary>
 public interface IInventoryFirstReceiptExchangeRateReadPortV1
 {
@@ -54,8 +49,11 @@ public static class InventoryFirstReceiptExchangeRateReasonsV1
     /// <summary>The stored facts cannot be trusted (lineage deeper than the bound, inconsistent rows); fail-closed.</summary>
     public const string Unreadable = "first_receipt_unreadable";
 
+    public const string CurrencyPairMismatch = "first_receipt_currency_pair_mismatch";
+    public const string RateNotRequired = "first_receipt_rate_not_required";
+
     public static IReadOnlyList<string> All { get; } =
-        [FirstEntryNotGoodsReceipt, RateNotRecorded, LineageAmbiguous, NoStockEntry, Unreadable];
+        [FirstEntryNotGoodsReceipt, RateNotRecorded, LineageAmbiguous, NoStockEntry, Unreadable, CurrencyPairMismatch, RateNotRequired];
 }
 
 /// <summary>
@@ -73,7 +71,8 @@ public sealed record InventoryFirstReceiptExchangeRateV1
         Guid labelId,
         InventoryFirstReceiptEntryV1? entry,
         ExchangeRate? rate,
-        string? unavailableReason)
+        string? unavailableReason, InventoryExactCostRatioV1? rateRatio = null, Guid? sourceCurrencyId = null,
+        Guid? targetCurrencyId = null, string? sourceVersion = null, IReadOnlyList<InventoryFirstReceiptRateSourceV1>? sources = null)
     {
         Status = status;
         CompanyId = companyId;
@@ -81,6 +80,11 @@ public sealed record InventoryFirstReceiptExchangeRateV1
         Entry = entry;
         Rate = rate;
         UnavailableReason = unavailableReason;
+        RateRatio = rateRatio;
+        SourceCurrencyId = sourceCurrencyId;
+        TargetCurrencyId = targetCurrencyId;
+        SourceVersion = sourceVersion;
+        Sources = sources ?? [];
     }
 
     public InventoryFirstReceiptExchangeRateStatusV1 Status { get; }
@@ -95,6 +99,14 @@ public sealed record InventoryFirstReceiptExchangeRateV1
     public ExchangeRate? Rate { get; }
 
     public string? UnavailableReason { get; }
+
+    /// <summary>Authoritative exact rate. Rate is null when the exact result has no finite decimal representation.</summary>
+    public InventoryExactCostRatioV1? RateRatio { get; }
+    public Guid? SourceCurrencyId { get; }
+    public Guid? TargetCurrencyId { get; }
+    public string? SourceVersion { get; }
+    /// <summary>Actual first receipts and their exact material shares, never a fictitious single receipt for a merge.</summary>
+    public IReadOnlyList<InventoryFirstReceiptRateSourceV1> Sources { get; }
 
     /// <summary>No such label in <paramref name="companyId"/>.</summary>
     public static InventoryFirstReceiptExchangeRateV1 NotFound(Guid companyId, Guid labelId)
@@ -143,7 +155,49 @@ public sealed record InventoryFirstReceiptExchangeRateV1
             throw new ArgumentException("İlk mal kabul kuru boş olamaz.", nameof(rate));
         }
 
-        return new(InventoryFirstReceiptExchangeRateStatusV1.Rated, companyId, labelId, entry, rate, null);
+        return new(InventoryFirstReceiptExchangeRateStatusV1.Rated, companyId, labelId, entry, rate, null,
+            InventoryExactCostRatioV1.From(ExactCostRatio.Of(rate.Rate)), rate.SourceCurrencyId, rate.TargetCurrencyId);
+    }
+
+    /// <summary>Owner-proved exact result, with a normalized, bounded list of actual receipt sources.</summary>
+    public static InventoryFirstReceiptExchangeRateV1 RatedExact(Guid companyId, Guid labelId, Guid sourceCurrencyId,
+        Guid targetCurrencyId, InventoryExactCostRatioV1 rateRatio, string sourceVersion,
+        IReadOnlyList<InventoryFirstReceiptRateSourceV1> sources)
+    {
+        RequireIdentity(companyId, labelId);
+        ArgumentNullException.ThrowIfNull(sources);
+        if (sourceCurrencyId == Guid.Empty || targetCurrencyId == Guid.Empty || sourceCurrencyId == targetCurrencyId
+            || string.IsNullOrWhiteSpace(sourceVersion) || sources.Count is 0 or > WeightedFirstReceiptExchangeRateCalculator.MaximumInputs)
+            throw new ArgumentException("İlk giriş kuru kaynakları geçersiz.");
+        var rate = rateRatio.Value();
+        var totalShare = ExactCostRatio.Of(0m);
+        var weighted = ExactCostRatio.Of(0m);
+        var movements = new HashSet<Guid>();
+        foreach (var source in sources)
+        {
+            if (source is null || source.Entry is null || source.Snapshot is null
+                || source.Entry.GoodsAcceptanceId is null || !movements.Add(source.Entry.MovementId)
+                || source.Snapshot.CompanyId != companyId || source.Snapshot.AcceptanceId != source.Entry.GoodsAcceptanceId
+                || source.Snapshot.PurchaseOrderId == Guid.Empty || source.Snapshot.PurchaseOrderVersion is not > 0
+                || source.Snapshot.State != InventoryFirstEntryRateStateV1.Rated
+                || source.Snapshot.SourceCurrencyId != sourceCurrencyId || source.Snapshot.TargetCurrencyId != targetCurrencyId
+                || source.Snapshot.Reason is not null || string.IsNullOrWhiteSpace(source.Snapshot.SourceVersion)
+                || source.Snapshot.SourceKind is not (InventoryFirstEntryRateSourcesV1.ApprovedPurchaseOrder or InventoryFirstEntryRateSourcesV1.EntryDayTcmb))
+                throw new ArgumentException("İlk giriş kuru kaynak kimliği uyuşmuyor.");
+            using var evidence = JsonDocument.Parse(source.Snapshot.EvidenceJson);
+            if (evidence.RootElement.ValueKind != JsonValueKind.Object) throw new ArgumentException("İlk giriş kuru kanıtı geçersiz.");
+            var share = source.MaterialShare.Value();
+            var actualRate = InventoryExactCostRatioV1.Resolve(source.Snapshot.Rate, source.Snapshot.RateRatio);
+            if (share.Sign <= 0 || actualRate.Sign <= 0) throw new ArgumentException("İlk giriş kuru payı geçersiz.");
+            totalShare = totalShare.Add(share);
+            weighted = weighted.Add(share.Multiply(actualRate));
+        }
+        if (rate.Sign <= 0 || totalShare.CompareTo(ExactCostRatio.Of(1m)) != 0 || rate.CompareTo(weighted) != 0)
+            throw new ArgumentException("İlk giriş kuru pay toplamı uyuşmuyor.");
+        ExchangeRate? scalar = rate.TryToDecimal(out var exact) ? ExchangeRate.Of(sourceCurrencyId, targetCurrencyId, exact) : null;
+        return new(InventoryFirstReceiptExchangeRateStatusV1.Rated, companyId, labelId,
+            sources.Count == 1 ? sources[0].Entry : null, scalar, null, rateRatio, sourceCurrencyId, targetCurrencyId,
+            sourceVersion, sources.ToArray());
     }
 
     private static void RequireIdentity(Guid companyId, Guid labelId)
@@ -197,3 +251,7 @@ public sealed record InventoryFirstReceiptEntryV1
 
     public Guid? CostCurrencyId { get; }
 }
+
+/// <summary>One immutable receipt's material share in the requested label; shares sum exactly to one.</summary>
+public sealed record InventoryFirstReceiptRateSourceV1(InventoryFirstReceiptEntryV1 Entry,
+    InventoryExactCostRatioV1 MaterialShare, InventoryFirstEntryRateV1 Snapshot);
