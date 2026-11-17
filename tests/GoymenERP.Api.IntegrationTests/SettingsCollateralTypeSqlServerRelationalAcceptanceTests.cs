@@ -22,7 +22,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class SettingsCollateralTypeSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsCollateralTypeSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
