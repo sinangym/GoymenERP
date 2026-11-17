@@ -30,8 +30,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             // Run the REAL owner and its SQL writes first. Only the final failure is injected; no successful owner is mocked.
             services.RemoveAll<ManufacturingInventoryCostGenerationFactoryV1>();
             services.AddScoped<ManufacturingInventoryCostGenerationFactoryV1>(provider => async (connection, transaction, companyId, audit, writer, token) =>
-                new FailAfterGenerationStage(await InventoryManufacturingCostGenerationParticipant.EnlistAsync(
-                    connection, transaction, companyId, audit, writer, token, provider.GetRequiredService<TimeProvider>())));
+            {
+                Assert.Equal(System.Data.IsolationLevel.Serializable, transaction.IsolationLevel);
+                return new FailAfterGenerationStage(await InventoryManufacturingCostGenerationParticipant.EnlistAsync(
+                    connection, transaction, companyId, audit, writer, token, provider.GetRequiredService<TimeProvider>()));
+            });
         }));
         using (var failing = broken.CreateClient())
         {
