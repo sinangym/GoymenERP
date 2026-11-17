@@ -32,6 +32,46 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class SettingsShellAuthorityTests
 {
     [Fact]
+    public void Finance_policy_routes_use_registered_prepare_and_publish_purposes_without_enabling_staged_screens()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        var ids = new[]
+        {
+            SettingsShellCapabilityProvider.FinancePolicyPrepareCapabilityId,
+            SettingsShellCapabilityProvider.CashDifferencePolicyCapabilityId,
+            SettingsShellCapabilityProvider.BankInstitutionsCapabilityId,
+            SettingsShellCapabilityProvider.CollateralRatePolicyCapabilityId,
+        };
+        foreach (var id in ids)
+        {
+            var route = Assert.Single(declarations, candidate => candidate.CapabilityId == id);
+            Assert.Equal([ErpPermissions.SettingsPoliciesPrepare], route.RequiredPermissions);
+            Assert.Null(route.ParentCapabilityId);
+            Assert.False(route.ImplementationAvailable);
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, route.ContextRequirement);
+            Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, route.ScopeRequirement);
+        }
+        var prepare = Assert.Single(declarations,
+            item => item.CapabilityId == SettingsShellCapabilityProvider.FinancePolicyPrepareCapabilityId);
+        foreach (var item in new[]
+        {
+            (SettingsShellCapabilityProvider.FinancePolicyPublishCapabilityId,
+                new[] { ErpPermissions.SettingsPoliciesPrepare, ErpPermissions.SettingsPoliciesPublish }),
+            (SettingsShellCapabilityProvider.FinancePolicyPublishCriticalCapabilityId,
+                new[] { ErpPermissions.SettingsPoliciesPrepare, ErpPermissions.SettingsPoliciesPublish,
+                    ErpPermissions.SettingsPoliciesPublishCritical }),
+        })
+        {
+            var control = Assert.Single(declarations, candidate => candidate.CapabilityId == item.Item1);
+            Assert.Equal(item.Item2, control.RequiredPermissions);
+            Assert.Equal(prepare.CapabilityId, control.ParentCapabilityId);
+            Assert.Equal((prepare.RoutePath, prepare.ScreenId), (control.RoutePath, control.ScreenId));
+            Assert.False(control.ImplementationAvailable);
+            Assert.DoesNotContain(ErpPermissions.SettingsPoliciesApprove, control.RequiredPermissions);
+        }
+    }
+
+    [Fact]
     public void Subcontract_tax_screens_keep_existing_sales_and_purchasing_approval_authorities_separate()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
@@ -100,8 +140,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(38, declarations.Count);
-        Assert.Equal("1.16", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(44, declarations.Count);
+        Assert.Equal("1.17", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 

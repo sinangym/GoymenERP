@@ -647,6 +647,7 @@ app.MapSettingsUnitProfileEndpoints();
 app.MapSettingsMoneyProfileEndpoints();
 app.MapSettingsSegregationOfDutiesPolicyEndpoints();
 app.MapSettingsCompanyPolicyEndpoints();
+app.MapSettingsFinancePolicyEndpoints();
 app.MapSettingsLoginRateLimitEndpoints();
 app.MapSettingsWorkCenterCapacityEndpoints();
 app.MapSettingsReferenceListEndpoints();

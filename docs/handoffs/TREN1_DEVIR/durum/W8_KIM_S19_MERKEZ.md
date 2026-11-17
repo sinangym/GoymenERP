@@ -1,0 +1,9 @@
+# W8 KIM-S19 merkez bağlantısı
+
+- Kaynak kapsamı No133, K6, FNS-D31/D70/D75 ve kullanıcının eşik dahil/kasa-para birimi başına tutar/bitişe kalan gün/açık banka seçimi cevaplarıdır. Yeni sayısal eşik veya oran seçilmez.
+- Ayarlar gerçek politika yazımı, Identity'nin minimal rol kanıtı, Finance'in minimal kasa kanıtı ve Finance teminat politika adaptörü merkez `AddSettingsFinancePolicyRuntime` ile bağlandı. `MapSettingsFinancePolicyEndpoints` dört typed aileyi ve önizlemeleri ana uygulamada map eder.
+- Dört gerçek ekran: finans onay politikaları, kasa sayım fark politikaları, banka kurumları ve teminat oran politikaları. Her route mevcut `settings.policies.prepare` şirket geneli yetkisini kullanır; yayım kontrolü Prepare+Publish, finans matrisinin ek kontrolü Prepare+Publish+PublishCritical gerektirir. Approve yalnız kayıttır; ayrı onay adımı eklenmedi. Grant/rol/Critical sınıfı değiştirilmedi.
+- Shell provider1.17'nin altı yeni deklarasyonu staged `ImplementationAvailable:false` kalır. Merkezi route/nav ve ekran içi teknik capability adları eşleştirildi; yeni ERP izin adı yoktur. Yetki ve şirket çiti backend'de ayrıca ölçülür.
+- Gerçek EF kaynakları `20261117220044_AddFinancePolicyFamilies` ve `20261117220054_AddCollateralBankProof` merkezde; Down51807/51808 veri kaybını reddeder. Designer/snapshot üreticidendir, DB apply veya backfill yoktur. Ham guard yüzeyleri son K3 review bekler; allowlist genişletilmedi.
+- Kaynak deklarasyon/route/izin testleri güncellendi. Yeni gerçek SQL fact adları gerçek kaynaklardan sıralı ilişkisel envantere eklendi; testler çalıştırılmadı.
+- Owner `364e915f1` backend API/Settings.Unit/Finance.Unit/Sales.Unit/Integration ve iki EF üretimi exit0 kanıtını `41a4e0a56` raporunda korur; owner TSC kaydı yoktur, NOT_RUN. Bu merkez delta için birleşik kaynak derlemeleri **QUEUED**. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Plan durumu derlemelerden sonra güncellenecek.

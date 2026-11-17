@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { matchRoutes } from 'react-router'
 import {
   SETTINGS_CAPABILITY,
+  SETTINGS_FINANCE_POLICY_CONTROL,
   SETTINGS_EXCHANGE_RATE_CONTROL,
   SETTINGS_NAV_LABEL,
   SETTINGS_ROUTE,
@@ -10,8 +11,28 @@ import { settingsRoutes } from '../settings/settingsRoutes'
 import { NAV_CAPABILITIES } from './AppShell'
 import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabilities'
 import { NAV_GROUPS } from './navigation'
+import { FINANCE_POLICY_CAPS } from '../settings/financePolicyContract'
 
 describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', () => {
+  it('mounts the four finance policy families with registered purpose controls and matching menu labels', () => {
+    expect(SETTINGS_CAPABILITY.financePolicies).toBe(FINANCE_POLICY_CAPS.prepare)
+    expect(SETTINGS_FINANCE_POLICY_CONTROL.publish).toBe(FINANCE_POLICY_CAPS.publish)
+    expect(SETTINGS_FINANCE_POLICY_CONTROL.publishCritical).toBe(FINANCE_POLICY_CAPS.publishCritical)
+    for (const [id, ownerId] of [
+      [CAPABILITY.settingsFinancePolicies, SETTINGS_CAPABILITY.financePolicies],
+      [CAPABILITY.settingsCashDifferencePolicies, SETTINGS_CAPABILITY.cashDifferencePolicies],
+      [CAPABILITY.settingsBankInstitutions, SETTINGS_CAPABILITY.bankInstitutions],
+      [CAPABILITY.settingsCollateralRatePolicies, SETTINGS_CAPABILITY.collateralRatePolicies],
+    ] as const) {
+      expect(id).toBe(ownerId)
+      expect(CAPABILITY_ROUTE[id]).toBe(SETTINGS_ROUTE[ownerId])
+      expect(CAPABILITY_NAV_LABEL[id]).toBe(SETTINGS_NAV_LABEL[ownerId])
+      expect(NAV_CAPABILITIES).toContain(id)
+      expect(matchRoutes(settingsRoutes, SETTINGS_ROUTE[ownerId])?.at(-1)?.route.path).toBe(SETTINGS_ROUTE[ownerId].slice(1))
+      expect(settingsRoutes.filter(route => route.path === SETTINGS_ROUTE[ownerId].slice(1))).toHaveLength(1)
+    }
+  })
+
   it('keeps sales and purchasing subcontract tax settings on distinct routes and menu entries', () => {
     for (const [id, ownerId, path] of [
       [CAPABILITY.settingsSalesSubcontractTax, SETTINGS_CAPABILITY.salesSubcontractTax, '/ayarlar/satis-fason-vergi-varsayilani'],
