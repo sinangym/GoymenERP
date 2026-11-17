@@ -200,3 +200,24 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   derlemeleri exit 0, uyarı/hata 0 aldı. Birleşik merkez TypeScript exit 0;
   son merkez provider/authority-test kaynaklarının C# derlemesi sıradadır.
   Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; kaynak DONE sayısı artırılmadı.
+
+## Sıralı devam ve tartı/fatura claim kaynağı
+
+- ALS-D105 merkez birleşimiyle API, Settings/Purchasing/Sales UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0 aldı. İki Ayarlar
+  ekranının önceki merkez TypeScript derlemesi exit 0'dır.
+- `f8f39bbc9` / rapor `4c6aaa3e1` ile fiyat taşımayan Sales claim reader ve
+  gerçek Lojistik işlem içi yeniden okuması alındı. Merkez Sales.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0; index Down round-trip fact kaynağı da
+  bu derlemeye dahildir. Runtime kabulü **NOT_RUN**; tartı düzeltme host'unun
+  claim bağlaması ve kesinleşmiş iptal zinciri halen açıktır.
+- EF `20261117135232_AddSubcontractInvoiceClaimRange` yalnız index ekler/kaldırır;
+  veri kaybı yok, yeni THROW yok, DB uygulaması yok. İki yeni borrowed read-context
+  construction kaynağı K3 incelemesine bırakıldı; guard allowlist genişletilmedi.
+- Paralel yürütücüler sonlandı; kalan kaynak işi tek yazarla sırayla sürer.
+  STK-S3 / STK-S29 yarım kaynakları korunur; migration/host/PDF bağlantısı
+  tamamlanmış sayılmaz. Üretim completion V2 kanıtı henüz yazılmadı.
+- Ana plan ALC-S7 ve ALC-S8 için PLANNED yerine gerçek PARTIAL durumuna geçirildi.
+  **135 DONE (%77,6), 25 PARTIAL, 14 diğer açık; toplam 174, açık 39**.
+  Kaynak kodun ilerlemesi tam dilim DONE veya runtime kabulü diye sayılmadı.
+  W8 son pakettir; yeni dalga yok. Pinler ve tren FF henüz tamamlanmadı.
