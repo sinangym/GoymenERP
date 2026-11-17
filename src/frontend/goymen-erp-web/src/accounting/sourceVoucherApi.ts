@@ -1,16 +1,18 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
+import { decodeJournalReversalProposal, type JournalReversalProposal } from './journalReversalContract'
 
 export interface SourceVoucher {
   readonly id: string; readonly companyId: string; readonly documentKind: 'sales-invoice' | 'purchase-invoice'
   readonly sourceDocumentId: string; readonly invoiceId: string; readonly finalizedVersion: number
   readonly sourceActorId: string; readonly partyId: string; readonly documentCurrencyId: string
   readonly exchangeRate: string | null; readonly documentDate: string; readonly dueDate: string | null
-  readonly status: 'AwaitingApproval' | 'PeriodWaiting' | 'Posted' | 'Cancelled' | 'CancellationReversalPending'
+  readonly status: 'AwaitingApproval' | 'PeriodWaiting' | 'Posted' | 'Cancelled' | 'CancellationReversalPending' | 'CancelledByReversal'
   readonly version: number; readonly mappingVersion: number; readonly periodId: string | null
   readonly journalId: string | null; readonly approvedBy: string | null; readonly approvedAtUtc: string | null
   readonly cancellationReason: string | null; readonly officialInvoiceNo: string | null; readonly functionalPayable: string
+  readonly cancellationId?: string | null; readonly reversalProposal?: JournalReversalProposal | null
   readonly lines: readonly { readonly lineNumber: number; readonly mappingKey: string; readonly side: 1 | 2
     readonly accountId: string; readonly functionalAmount: string; readonly sourceLineNumber: number | null
     readonly vatRateCode: string | null; readonly accountCode: string | null; readonly accountName: string | null }[]
@@ -33,7 +35,7 @@ export function decodeSourceVoucher(body: unknown, company: string): SourceVouch
     || !['id', 'sourceDocumentId', 'invoiceId', 'sourceActorId', 'partyId', 'documentCurrencyId'].every(key => guid(body[key]))
     || !['finalizedVersion', 'version', 'mappingVersion'].every(key => positive(body[key]))
     || !['sales-invoice', 'purchase-invoice'].includes(body.documentKind as string)
-    || !['AwaitingApproval', 'PeriodWaiting', 'Posted', 'Cancelled', 'CancellationReversalPending'].includes(body.status as string)
+    || !['AwaitingApproval', 'PeriodWaiting', 'Posted', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)
     || typeof body.documentDate !== 'string' || !isDateOnly(body.documentDate)
     || body.dueDate !== null && (typeof body.dueDate !== 'string' || !isDateOnly(body.dueDate))
     || body.exchangeRate !== null && (!amount(body.exchangeRate) || /^0(\.0+)?$/.test(body.exchangeRate))
@@ -45,13 +47,53 @@ export function decodeSourceVoucher(body: unknown, company: string): SourceVouch
       || line.sourceLineNumber !== null && !positive(line.sourceLineNumber)
       || !nullableText(line.vatRateCode) || !nullableText(line.accountCode) || !nullableText(line.accountName))) return null
   if (new Set(body.lines.map(line => line.lineNumber)).size !== body.lines.length) return null
-  const posted = body.status === 'Posted' || body.status === 'CancellationReversalPending'
+  const posted = ['Posted', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)
   if (posted ? !guid(body.journalId) || body.journalId.toLowerCase() !== (body.id as string).toLowerCase()
       || !guid(body.approvedBy) || body.approvedBy.toLowerCase() === (body.sourceActorId as string).toLowerCase()
       || !guid(body.periodId) || typeof body.approvedAtUtc !== 'string' || !Number.isFinite(Date.parse(body.approvedAtUtc))
     : body.journalId !== null || body.approvedBy !== null || body.approvedAtUtc !== null) return null
-  if (['Cancelled', 'CancellationReversalPending'].includes(body.status as string) !== (body.cancellationReason !== null)) return null
+  if (['Cancelled', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string) !== (body.cancellationReason !== null)) return null
+  if (body.cancellationId !== undefined && !nullableGuid(body.cancellationId)) return null
+  if (body.cancellationId != null && body.cancellationReason === null) return null
+  if (body.reversalProposal != null) {
+    const proposal = decodeJournalReversalProposal(body.reversalProposal, company)
+    if (proposal === null || !guid(body.cancellationId) || !guid(body.journalId)
+      || proposal.sourceJournalId.toLowerCase() !== body.journalId.toLowerCase()
+      || !['CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)
+      || (proposal.status === 'Approved') !== (body.status === 'CancelledByReversal')) return null
+  } else if (body.status === 'CancelledByReversal') return null
   return body as unknown as SourceVoucher
+}
+
+export interface SourceVoucherReversalAttempt {
+  readonly id: string; readonly key: string
+  readonly request: { readonly expectedVersion: number; readonly proposalId: string; readonly periodId: string
+    readonly transactionDate: string; readonly accountingDate: string; readonly valueDate: string | null; readonly reason: string }
+}
+export async function proposeSourceVoucherReversal(company: string, attempt: SourceVoucherReversalAttempt): Promise<SourceVoucherOutcome> {
+  try {
+    const response = await fetch(`${base}/${encodeURIComponent(attempt.id)}/cancellation-reversal-proposals`, {
+      method: 'POST', headers: { ...devHeaders(), 'X-Company-Id': company, 'Content-Type': 'application/json', 'Idempotency-Key': attempt.key },
+      body: JSON.stringify(attempt.request) })
+    const body: unknown = await response.json().catch(() => null)
+    if (response.status === 200) {
+      const value = decodeSourceVoucher(body, company); const proposal = value?.reversalProposal
+      return value !== null && value.id.toLowerCase() === attempt.id.toLowerCase() && value.status === 'CancellationReversalPending'
+        && value.version === attempt.request.expectedVersion + 1 && proposal?.status === 'Pending'
+        && proposal.proposalId.toLowerCase() === attempt.request.proposalId.toLowerCase()
+        && proposal.periodId.toLowerCase() === attempt.request.periodId.toLowerCase()
+        && proposal.transactionDate === attempt.request.transactionDate && proposal.accountingDate === attempt.request.accountingDate
+        && proposal.valueDate === attempt.request.valueDate && proposal.reason === attempt.request.reason.trim()
+        ? { type: 'applied', value } : { type: 'unknown' }
+    }
+    const code = rec(body) && typeof body.code === 'string' ? body.code : null
+    const refusal = code !== null && (codes.has(code) || ['source_voucher_reversal_not_proposable',
+      'source_voucher_reversal_period_not_open', 'source_voucher_source_conflict',
+      'accounting_journal_reversal_proposal_content_conflict', 'accounting_journal_reversal_source_journal_not_found',
+      'accounting_journal_reversal_period_not_found'].includes(code))
+    return [400, 401, 403, 404, 415].includes(response.status) || [409, 422].includes(response.status) && refusal
+      ? { type: 'refused', status: response.status, code } : { type: 'unknown' }
+  } catch { return { type: 'unknown' } }
 }
 
 export async function fetchSourceVouchers(company: string, signal?: AbortSignal): Promise<ViewOutcome<readonly SourceVoucher[]>> {

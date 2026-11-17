@@ -37,6 +37,20 @@ public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherSto
         new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Invalid, null, false,
             AccountingApiCodes.RequestInvalid, "expectedVersion"));
 
+    public Task<AccountingApiResult<AccountingSourceVoucherViewV1>> ProposeCancellationReversalAsync(Guid id,
+        ProposeAccountingSourceVoucherReversalV1 request, string key, CancellationToken cancellationToken = default)
+    {
+        if (id == Guid.Empty || request.ExpectedVersion < 1) return InvalidVersionOrIdentity();
+        if (request.ProposalId == Guid.Empty || request.PeriodId == Guid.Empty || request.TransactionDate == default
+            || request.AccountingDate == default || request.ValueDate is { } valueDate && valueDate == default
+            || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > AccountingJournalReversalPolicyV1.ReasonMaximumLength)
+            return Task.FromResult(new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Invalid, null, false,
+                AccountingApiCodes.RequestInvalid));
+        return Run("cancellation-reversal.propose", AccountingJournalReversalPermissionNamesV1.Propose,
+            new { id, request }, key, (actor, fence, metadata) =>
+                store.ProposeCancellationReversalAsync(id, request, actor, fence, metadata, cancellationToken), cancellationToken);
+    }
+
     private async Task<AccountingApiResult<AccountingSourceVoucherViewV1>> Run(string action, string permission, object payload,
         string key, Func<Guid, Func<CancellationToken, Task>, AccountingCommandMetadata, Task<AccountingSourceVoucherViewV1>> write,
         CancellationToken cancellationToken)
@@ -105,13 +119,14 @@ public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherSto
                 if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
                 return await Terminal(new(AccountingApiStatus.NotFound, null, false, null));
             }
-            if (exception.Code == "source_voucher_not_approvable")
+            if (exception.Code is "source_voucher_not_approvable" or "source_voucher_reversal_not_proposable")
                 return await Terminal(new(AccountingApiStatus.Conflict, null, false, exception.Code));
             return new(exception.Code switch
             {
                 AccountingStoreCodes.CompanyContextMismatch or "source_voucher_approval_refused" => AccountingApiStatus.Denied,
                 "source_voucher_not_found" => AccountingApiStatus.NotFound,
                 "source_voucher_source_changed" or "source_voucher_source_conflict" or "source_voucher_posting_conflict" => AccountingApiStatus.Conflict,
+                AccountingJournalReversalStoreCodesV1.ContentConflict => AccountingApiStatus.Conflict,
                 "source_voucher_tl_currency_unavailable" => AccountingApiStatus.Unavailable,
                 _ => AccountingApiStatus.Unprocessable,
             }, null, false, exception.Code);
