@@ -5,6 +5,7 @@ using System.Text.Json;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -13,7 +14,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
 {
     private readonly HashSet<Guid> firstCostFencedLabels = [];
 
-    private async Task<InventoryPurchaseFirstCostRecognitionV1> RecognizeFirstCostAsync(
+    private async Task<FirstCostReceiptPlan> PrepareFirstCostAsync(
         InventoryPurchaseInvoiceCostProjectionV1 source, InventoryPurchaseInvoiceCostReceiptV1 share,
         Guid movementId, Guid rootLabelId, Guid receiptLocationId, string receiptQuantityKg, MovementCostStampRow stamp, CancellationToken token)
     {
@@ -73,29 +74,6 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
             prerequisites.LocationCodes[x.Key.LocationId], share.InvoiceLineNo,
             x.Aggregate(ExactCostRatio.Of(0m), (sum, position) => sum.Add(position.Quantity)))).ToArray();
         var invoicedKg = ExactCostRatio.Of(acceptedKg).Multiply(share.MatchedQuantity).Divide(share.AcceptedQuantity);
-        var split = PurchaseFirstCostAllocationCalculator.Allocate(share.TlNetShare.Value(), ExactCostRatio.Of(acceptedKg),
-            invoicedKg, lineage.NetShippedKg, stockShares, profile.Scale);
-        var positions = new List<InventoryPurchaseFirstCostPositionV1>();
-        foreach (var allocated in split.Stock)
-        {
-            var location = Guid.Parse(allocated.Key);
-            var included = physical.Single(x => x.Key.LocationId == location).Key.Included;
-            var actualEffect = ExactCostRatio.Of(0m);
-            long version = 0;
-            if (included)
-            {
-                var pool = await InventoryStore.ReadCostPoolAsync(db, company, location, share.ProductId, Tl, token);
-                RequireCompany(source.CompanyId);
-                if (!pool.IsConsistent) throw Unavailable("purchase_invoice_cost_first_pool_unavailable");
-                var before = pool.ExactPosition ?? new ExactAverageCostPool(ExactCostRatio.Of(0m), 0m);
-                var after = before.Add(allocated.InvoicedQuantityKg, allocated.TlValue);
-                if (after.AverageCostPerKg >= 100_000_000_000_000m) throw Unavailable("purchase_invoice_cost_pool_overflow");
-                version = await InventoryStore.WriteCostPoolAsync(db, company, clock, location, share.ProductId, Tl, pool, after, token);
-                actualEffect = after.Value.Subtract(before.Value);
-            }
-            positions.Add(new(location, prerequisites.LocationCodes[location], Ratio(allocated.InvoicedQuantityKg),
-                Ratio(allocated.TlValue), Ratio(actualEffect), Ratio(included ? actualEffect.Subtract(allocated.TlValue) : ExactCostRatio.Of(0m)), version, included));
-        }
         var physicalSource = new InventoryPurchaseFirstCostPhysicalSourceV1(PurchaseFirstCostAllocationCalculator.Version,
             source.CompanyId, share.AcceptanceId, share.InvoiceLineId, share.InvoiceLineNo, movementId, rootLabelId,
             share.ProductId, share.MatchedQuantity, share.AcceptedQuantity, "receipt-root-proportional",
@@ -110,10 +88,59 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
                 shipment.Returns.Select(item => new InventoryPurchaseFirstCostReturnV1(item.ReturnId, item.MovementId,
                     item.LineNumber, item.SourceIssueMovementId, item.QuantityKg, item.RecordedAtUtc)).ToArray(), shipment.RecordedAtUtc)).ToArray());
         var physicalJson = JsonSerializer.Serialize(physicalSource, Json);
-        return new(PurchaseFirstCostAllocationCalculator.Version, share.AcceptanceId, share.InvoiceLineId, share.InvoiceLineNo,
-            movementId, rootLabelId, share.ProductId, receiptLocationId, share.MatchedQuantity, share.AcceptedQuantity, Ratio(ExactCostRatio.Of(acceptedKg)),
-            Ratio(invoicedKg), share.TlNetShare, Ratio(split.ConsumedQuantityKg), split.ConsumedTlAmount,
-            Ratio(split.ConsumedExactTlAmount), Ratio(split.ConsumedRoundingResidue), profile.CurrencyId, identity.ProfileId, identity.Version,
-            profile.Scale, source.InvoiceDate, physicalJson, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(physicalJson))), positions);
+        var consumedKg = lineage.NetShippedKg.Multiply(invoicedKg).Divide(acceptedKg);
+        var consumedExact = share.TlNetShare.Value().Multiply(lineage.NetShippedKg).Divide(acceptedKg);
+        return new(share, profile, new(share.AcceptanceId, movementId, rootLabelId, receiptLocationId,
+            share.MatchedQuantity, share.AcceptedQuantity, Ratio(ExactCostRatio.Of(acceptedKg)), Ratio(invoicedKg),
+            share.TlNetShare, Ratio(consumedKg), Ratio(consumedExact), physicalJson,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(physicalJson)))),
+            new(share.TlNetShare.Value(), ExactCostRatio.Of(acceptedKg), invoicedKg, lineage.NetShippedKg, stockShares),
+            physical.ToDictionary(x => x.Key.LocationId, x => x.Key.Included));
+    }
+
+    private sealed record FirstCostReceiptPlan(InventoryPurchaseInvoiceCostReceiptV1 Share, MoneyProfileV1 Profile,
+        InventoryPurchaseFirstCostReceiptV1 Receipt, PurchaseFirstCostReceiptShare Allocation,
+        IReadOnlyDictionary<Guid, bool> Included);
+
+    private async Task<InventoryPurchaseFirstCostRecognitionV1> RecognizeFirstCostLineAsync(
+        InventoryPurchaseInvoiceCostProjectionV1 source, IReadOnlyList<FirstCostReceiptPlan> plans, CancellationToken token)
+    {
+        var first = plans[0]; var profile = first.Profile;
+        if (plans.Any(x => x.Share.InvoiceLineId != first.Share.InvoiceLineId || x.Share.InvoiceLineNo != first.Share.InvoiceLineNo
+            || x.Share.ProductId != first.Share.ProductId || x.Profile != profile))
+            throw Unavailable("purchase_invoice_cost_first_line_source_conflict");
+        var locations = plans.SelectMany(x => x.Included).GroupBy(x => x.Key).ToArray();
+        if (locations.Any(x => x.Select(value => value.Value).Distinct().Count() != 1))
+            throw Unavailable("purchase_invoice_cost_first_position_ambiguous");
+        var includedByLocation = locations.ToDictionary(x => x.Key, x => x.First().Value);
+        var codes = plans.SelectMany(x => x.Allocation.Stock).GroupBy(x => x.Key)
+            .ToDictionary(x => x.Key, x => x.First().LocationCode);
+        var split = PurchaseFirstCostAllocationCalculator.AllocateLine(plans.Select(x => x.Allocation).ToArray(), profile.Scale);
+        var positions = new List<InventoryPurchaseFirstCostPositionV1>();
+        foreach (var allocated in split.Stock)
+        {
+            var location = Guid.Parse(allocated.Key);
+            var included = includedByLocation[location];
+            var actualEffect = ExactCostRatio.Of(0m); long version = 0;
+            if (included)
+            {
+                var pool = await InventoryStore.ReadCostPoolAsync(db, company, location, first.Share.ProductId, Tl, token);
+                RequireCompany(source.CompanyId);
+                if (!pool.IsConsistent) throw Unavailable("purchase_invoice_cost_first_pool_unavailable");
+                var before = pool.ExactPosition ?? new ExactAverageCostPool(ExactCostRatio.Of(0m), 0m);
+                var after = before.Add(allocated.InvoicedQuantityKg, allocated.TlValue);
+                if (after.AverageCostPerKg >= 100_000_000_000_000m) throw Unavailable("purchase_invoice_cost_pool_overflow");
+                version = await InventoryStore.WriteCostPoolAsync(db, company, clock, location, first.Share.ProductId, Tl, pool, after, token);
+                actualEffect = after.Value.Subtract(before.Value);
+            }
+            positions.Add(new(location, codes[allocated.Key], Ratio(allocated.InvoicedQuantityKg), Ratio(allocated.TlValue),
+                Ratio(actualEffect), Ratio(included ? actualEffect.Subtract(allocated.TlValue) : ExactCostRatio.Of(0m)), version, included));
+        }
+        var invoiceValue = plans.Aggregate(ExactCostRatio.Of(0m), (sum, x) => sum.Add(x.Allocation.InvoiceTlValue));
+        return new(PurchaseFirstCostAllocationCalculator.Version, first.Share.InvoiceLineId, first.Share.InvoiceLineNo,
+            first.Share.ProductId, Ratio(split.InvoicedQuantityKg), Ratio(invoiceValue), Ratio(split.ConsumedQuantityKg),
+            split.ConsumedTlAmount, Ratio(split.ConsumedExactTlAmount), Ratio(split.ConsumedRoundingResidue), profile.CurrencyId,
+            profile.Profile.ProfileId, profile.Profile.Version, profile.Scale, source.InvoiceDate,
+            plans.OrderBy(x => x.Share.AcceptanceId).Select(x => x.Receipt).ToArray(), positions);
     }
 }

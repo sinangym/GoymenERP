@@ -6,6 +6,10 @@ public sealed record PurchaseFirstCostStockShare(string Key, string LocationCode
 public sealed record PurchaseFirstCostStockValue(string Key, ExactCostRatio InvoicedQuantityKg,
     ExactCostRatio TlValue);
 
+public sealed record PurchaseFirstCostReceiptShare(ExactCostRatio InvoiceTlValue,
+    ExactCostRatio AcceptedPhysicalKg, ExactCostRatio InvoicedPhysicalKg, ExactCostRatio NetShippedKg,
+    IReadOnlyList<PurchaseFirstCostStockShare> Stock);
+
 public sealed record PurchaseFirstCostAllocation(ExactCostRatio InvoicedQuantityKg,
     ExactCostRatio ConsumedQuantityKg, decimal ConsumedTlAmount, ExactCostRatio ConsumedExactTlAmount,
     ExactCostRatio ConsumedRoundingResidue, IReadOnlyList<PurchaseFirstCostStockValue> Stock);
@@ -21,43 +25,68 @@ public static class PurchaseFirstCostAllocationCalculator
 
     public static PurchaseFirstCostAllocation Allocate(ExactCostRatio invoiceTlValue,
         ExactCostRatio acceptedPhysicalKg, ExactCostRatio invoicedPhysicalKg,
-        ExactCostRatio netShippedKg, IReadOnlyList<PurchaseFirstCostStockShare> stock, int moneyScale)
-    {
-        ArgumentNullException.ThrowIfNull(invoiceTlValue);
-        ArgumentNullException.ThrowIfNull(stock);
-        if (invoiceTlValue.Sign < 0 || acceptedPhysicalKg.Sign <= 0 || invoicedPhysicalKg.Sign <= 0
-            || invoicedPhysicalKg.CompareTo(acceptedPhysicalKg) > 0 || netShippedKg.Sign < 0
-            || moneyScale is < 0 or > 28 || stock.Count > 65536
-            || stock.Any(x => x is null || string.IsNullOrWhiteSpace(x.Key)
-                || string.IsNullOrWhiteSpace(x.LocationCode) || x.SourceLine < 1 || x.RootQuantityKg.Sign <= 0)
-            || stock.Select(x => x.Key).Distinct(StringComparer.Ordinal).Count() != stock.Count)
-            throw new ArgumentException("The first purchase-cost source is invalid.");
+        ExactCostRatio netShippedKg, IReadOnlyList<PurchaseFirstCostStockShare> stock, int moneyScale) =>
+        AllocateLine([new(invoiceTlValue, acceptedPhysicalKg, invoicedPhysicalKg, netShippedKg, stock)], moneyScale);
 
+    /// <summary>One original invoice line can cover several actual receipts. Sum its exact consumed
+    /// cost before rounding. Pool shares retain their own receipt's exact cost basis; only the final
+    /// conserved monetary residue follows the decided kg/source-line/location priority.</summary>
+    public static PurchaseFirstCostAllocation AllocateLine(IReadOnlyList<PurchaseFirstCostReceiptShare> receipts,
+        int moneyScale)
+    {
+        ArgumentNullException.ThrowIfNull(receipts);
+        if (moneyScale is < 0 or > 28 || receipts.Count is < 1 or > 10000)
+            throw new ArgumentException("The first purchase-cost source is invalid.");
         var zero = ExactCostRatio.Of(0m);
-        var remaining = stock.Aggregate(zero, (sum, x) => sum.Add(x.RootQuantityKg));
-        if (remaining.Add(netShippedKg).CompareTo(acceptedPhysicalKg) != 0)
-            throw new ArgumentException("The receipt's physical source does not reconcile.");
-        var fraction = invoicedPhysicalKg.Divide(acceptedPhysicalKg);
-        var consumedKg = netShippedKg.Multiply(fraction);
-        var consumedExact = invoiceTlValue.Multiply(netShippedKg).Divide(acceptedPhysicalKg);
-        var consumedRounded = consumedExact.Round(moneyScale);
-        // A sub-minor source with stock remaining must not allocate more than its total.
-        // Preserve the actual signed rounding residue instead of inventing a negative stock value.
-        var consumedValue = ExactCostRatio.Of(consumedRounded);
-        if (remaining.Sign > 0 && consumedValue.CompareTo(invoiceTlValue) > 0)
+        var invoiceTotal = zero; var invoicedTotal = zero; var consumedKg = zero; var consumedExact = zero;
+        var positions = new Dictionary<string, (string Code, int Line, ExactCostRatio Kg, ExactCostRatio Value)>(StringComparer.Ordinal);
+        foreach (var receipt in receipts)
         {
-            consumedRounded = invoiceTlValue.Round(moneyScale);
+            if (receipt is null || receipt.InvoiceTlValue is null || receipt.AcceptedPhysicalKg is null
+                || receipt.InvoicedPhysicalKg is null || receipt.NetShippedKg is null || receipt.Stock is null
+                || receipt.InvoiceTlValue.Sign < 0 || receipt.AcceptedPhysicalKg.Sign <= 0
+                || receipt.InvoicedPhysicalKg.Sign <= 0 || receipt.InvoicedPhysicalKg.CompareTo(receipt.AcceptedPhysicalKg) > 0
+                || receipt.NetShippedKg.Sign < 0 || receipt.Stock.Count > 65536
+                || receipt.Stock.Any(x => x is null || string.IsNullOrWhiteSpace(x.Key)
+                    || string.IsNullOrWhiteSpace(x.LocationCode) || x.SourceLine < 1 || x.RootQuantityKg is null || x.RootQuantityKg.Sign <= 0)
+                || receipt.Stock.Select(x => x.Key).Distinct(StringComparer.Ordinal).Count() != receipt.Stock.Count)
+                throw new ArgumentException("The first purchase-cost source is invalid.");
+            var remaining = receipt.Stock.Aggregate(zero, (sum, x) => sum.Add(x.RootQuantityKg));
+            if (remaining.Add(receipt.NetShippedKg).CompareTo(receipt.AcceptedPhysicalKg) != 0)
+                throw new ArgumentException("The receipt's physical source does not reconcile.");
+            var fraction = receipt.InvoicedPhysicalKg.Divide(receipt.AcceptedPhysicalKg);
+            invoiceTotal = invoiceTotal.Add(receipt.InvoiceTlValue);
+            invoicedTotal = invoicedTotal.Add(receipt.InvoicedPhysicalKg);
+            consumedKg = consumedKg.Add(receipt.NetShippedKg.Multiply(fraction));
+            consumedExact = consumedExact.Add(receipt.InvoiceTlValue.Multiply(receipt.NetShippedKg).Divide(receipt.AcceptedPhysicalKg));
+            foreach (var stock in receipt.Stock)
+            {
+                var quantity = stock.RootQuantityKg.Multiply(fraction);
+                var value = receipt.InvoiceTlValue.Multiply(stock.RootQuantityKg).Divide(receipt.AcceptedPhysicalKg);
+                if (positions.TryGetValue(stock.Key, out var prior))
+                {
+                    if (prior.Code != stock.LocationCode) throw new ArgumentException("A stock position has conflicting location codes.");
+                    positions[stock.Key] = (prior.Code, Math.Min(prior.Line, stock.SourceLine), prior.Kg.Add(quantity), prior.Value.Add(value));
+                }
+                else positions.Add(stock.Key, (stock.LocationCode, stock.SourceLine, quantity, value));
+            }
+        }
+        var consumedRounded = consumedExact.Round(moneyScale);
+        var consumedValue = ExactCostRatio.Of(consumedRounded);
+        if (positions.Count > 0 && consumedValue.CompareTo(invoiceTotal) > 0)
+        {
+            consumedRounded = invoiceTotal.Round(moneyScale);
             consumedValue = ExactCostRatio.Of(consumedRounded);
-            if (consumedValue.CompareTo(invoiceTlValue) > 0)
+            if (consumedValue.CompareTo(invoiceTotal) > 0)
                 throw new InvalidOperationException("The invoice source cannot fund the rounded consumed share.");
         }
-        var stockTotal = remaining.Sign == 0 ? zero : invoiceTlValue.Subtract(consumedValue);
-        var values = stock.Select(x => invoiceTlValue.Sign == 0 ? zero
-            : ExactCostRatio.Of(stockTotal.Multiply(x.RootQuantityKg).Divide(remaining).Round(moneyScale))).ToArray();
+        var stockTotal = positions.Count == 0 ? zero : invoiceTotal.Subtract(consumedValue);
+        var shares = positions.OrderBy(x => x.Key, StringComparer.Ordinal).ToArray();
+        var values = shares.Select(x => ExactCostRatio.Of(x.Value.Value.Round(moneyScale))).ToArray();
         var residual = stockTotal.Subtract(values.Aggregate(zero, (sum, x) => sum.Add(x)));
-        var priority = Enumerable.Range(0, stock.Count).OrderByDescending(i => stock[i].RootQuantityKg,
+        var priority = Enumerable.Range(0, shares.Length).OrderByDescending(i => shares[i].Value.Kg,
                 Comparer<ExactCostRatio>.Create((left, right) => left.CompareTo(right)))
-            .ThenBy(i => stock[i].SourceLine).ThenBy(i => stock[i].LocationCode, StringComparer.Ordinal).ToArray();
+            .ThenBy(i => shares[i].Value.Line).ThenBy(i => shares[i].Value.Code, StringComparer.Ordinal).ToArray();
         foreach (var index in priority)
         {
             if (residual.Sign == 0) break;
@@ -66,8 +95,7 @@ public static class PurchaseFirstCostAllocationCalculator
             else { residual = corrected; values[index] = zero; }
         }
         if (residual.Sign != 0) throw new InvalidOperationException("The stock cost residual is not conserved.");
-        return new(invoicedPhysicalKg, consumedKg, consumedRounded, consumedExact,
-            consumedExact.Subtract(consumedValue), stock.Select((x, i) =>
-                new PurchaseFirstCostStockValue(x.Key, x.RootQuantityKg.Multiply(fraction), values[i])).ToArray());
+        return new(invoicedTotal, consumedKg, consumedRounded, consumedExact, consumedExact.Subtract(consumedValue),
+            shares.Select((x, i) => new PurchaseFirstCostStockValue(x.Key, x.Value.Kg, values[i])).ToArray());
     }
 }

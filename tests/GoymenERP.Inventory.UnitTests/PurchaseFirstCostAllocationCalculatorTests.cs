@@ -66,6 +66,42 @@ public sealed class PurchaseFirstCostAllocationCalculatorTests
         Assert.Throws<ArgumentException>(() => Split(100m, 1m, 2m, 1m));
     }
 
+    [Fact]
+    public void Two_half_cent_receipts_of_one_invoice_line_round_the_consumed_total_only_once()
+    {
+        var result = PurchaseFirstCostAllocationCalculator.AllocateLine([
+            new(Q(.005m), Q(1m), Q(1m), Q(1m), []),
+            new(Q(.005m), Q(1m), Q(1m), Q(1m), [])], 2);
+        Assert.Equal(.01m, result.ConsumedTlAmount);
+        Equal(.01m, result.ConsumedExactTlAmount);
+        Equal(0m, result.ConsumedRoundingResidue);
+        Assert.Empty(result.Stock);
+    }
+
+    [Fact]
+    public void Invoice_line_aggregation_preserves_each_receipts_price_before_conserving_the_stock_residue()
+    {
+        var result = PurchaseFirstCostAllocationCalculator.AllocateLine([
+            new(Q(10m), Q(2m), Q(2m), Q(1m), [new("A", "A", 1, Q(1m))]),
+            new(Q(30m), Q(2m), Q(2m), Q(1m), [new("B", "B", 1, Q(1m))])], 2);
+        Assert.Equal(20m, result.ConsumedTlAmount);
+        Equal(5m, result.Stock.Single(x => x.Key == "A").TlValue);
+        Equal(15m, result.Stock.Single(x => x.Key == "B").TlValue);
+        Conserves(40m, result);
+    }
+
+    [Fact]
+    public void Multiple_receipts_in_the_same_real_position_form_one_stock_pool_addition()
+    {
+        var result = PurchaseFirstCostAllocationCalculator.AllocateLine([
+            new(Q(.005m), Q(1m), Q(1m), Q(0m), [new("A", "A", 1, Q(1m))]),
+            new(Q(.005m), Q(1m), Q(1m), Q(0m), [new("A", "A", 1, Q(1m))])], 2);
+        var position = Assert.Single(result.Stock);
+        Equal(2m, position.InvoicedQuantityKg);
+        Equal(.01m, position.TlValue);
+        Conserves(.01m, result);
+    }
+
     private static PurchaseFirstCostAllocation Split(decimal value, decimal accepted, decimal invoiced, decimal shipped,
         params PurchaseFirstCostStockShare[] stock) => PurchaseFirstCostAllocationCalculator.Allocate(
             Q(value), Q(accepted), Q(invoiced), Q(shipped), stock, 2);
