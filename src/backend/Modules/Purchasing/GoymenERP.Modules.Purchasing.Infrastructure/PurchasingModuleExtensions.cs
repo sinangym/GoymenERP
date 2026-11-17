@@ -46,6 +46,7 @@ public static class PurchasingModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PurchasingStore>();
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<PurchaseUnitVerifier>();
         services.TryAddSingleton(new PurchasingServiceBindings());
         services.AddScoped<PurchasingService>(CreatePurchasingService);
