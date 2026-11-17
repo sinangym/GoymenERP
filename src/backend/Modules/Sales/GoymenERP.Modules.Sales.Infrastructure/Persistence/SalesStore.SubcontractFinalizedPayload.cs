@@ -13,6 +13,7 @@ public sealed partial class SalesStore
         return JsonSerializer.Serialize(new
         {
             invoiceId = invoice.Id,
+            officialInvoiceNo = invoice.Match!.OfficialNo,
             invoice.DocumentNo,
             version = invoice.Version,
             finalization.AdmissionId,

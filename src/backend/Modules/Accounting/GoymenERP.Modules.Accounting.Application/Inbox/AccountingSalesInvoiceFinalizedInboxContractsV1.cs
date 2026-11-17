@@ -81,7 +81,8 @@ public sealed record AccountingSalesInvoiceFinalizedEventV1(
     decimal? FunctionalWithholding,
     IReadOnlyList<AccountingSalesInvoiceFinalizedLineV1?>? Lines,
     DateOnly? InvoiceDate,
-    string? FinalizedBy);
+    string? FinalizedBy,
+    string? OfficialInvoiceNo = null);
 
 /// <summary>
 /// A delivery Accounting could not answer yet (the port was unavailable or a mapping is still waiting: "eşleme bekliyor"). An

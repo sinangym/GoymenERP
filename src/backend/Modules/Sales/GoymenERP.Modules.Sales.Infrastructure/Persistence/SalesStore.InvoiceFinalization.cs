@@ -253,6 +253,7 @@ public sealed partial class SalesStore
             invoice.CompanyId,
             invoice.Header.BusinessDate,
             invoiceDate = invoice.Match!.InvoiceDate,
+            officialInvoiceNo = invoice.Match.OfficialNo,
             finalization.FinalizedBy,
             rateDay = invoice.Header.Rate?.RateDay,
             functionalCurrencyId = invoice.Header.Rate?.FunctionalCurrencyId,

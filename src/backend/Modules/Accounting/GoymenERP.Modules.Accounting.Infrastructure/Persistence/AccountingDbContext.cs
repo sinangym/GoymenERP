@@ -139,6 +139,7 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
         ConfigureSourceDocumentAdmissions(modelBuilder);
         ConfigureSourceDocumentVoucherDrafts(modelBuilder);
         ConfigureSourceDocumentVoucherDraftLines(modelBuilder);
+        ConfigureSourceInvoiceCancellations(modelBuilder);
         ConfigureManufacturingCostDifferences(modelBuilder);
         ConfigureCreditMovementProposals(modelBuilder);
         ConfigureFinanceJournalSources(modelBuilder);
@@ -644,7 +645,8 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
                 + "AND [SourceDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceActorId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 1 AND [MappingVersion] >= 1");
-            table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Status", "[Status] = 1");
+            table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Status",
+                SourceVoucherLifecycleStatusCheck);
             table.HasCheckConstraint("CK_SourceDocumentVoucherDrafts_Amounts",
                 "[DocumentNet] >= 0 AND [DocumentVat] >= 0 AND [DocumentWithholding] >= 0 AND [DocumentPayable] >= 0 "
                 + "AND [FunctionalNet] >= 0 AND [FunctionalVat] >= 0 AND [FunctionalWithholding] >= 0 AND [FunctionalPayable] >= 0 "
@@ -655,6 +657,7 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.DocumentKind).HasMaxLength(32).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ExchangeRate).HasMaxLength(40).IsUnicode(false);
+        entity.Property(x => x.OfficialInvoiceNo).HasMaxLength(256);
         entity.Property(x => x.DocumentDate).HasColumnType("date");
         entity.Property(x => x.DueDate).HasColumnType("date");
         entity.Property(x => x.DocumentNet).HasPrecision(38, 18);
@@ -669,6 +672,10 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => new { x.CompanyId, x.SourceDocumentId }).IsUnique()
             .HasDatabaseName("UX_SourceDocumentVoucherDrafts_Source");
+        entity.HasOne<JournalRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.JournalId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PeriodRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.PeriodId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -726,9 +733,11 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
             if (entry.State == EntityState.Modified)
             {
                 if (entry.Entity is ManufacturingCostDifferenceRow difference) ValidateCostDifferenceChange(entry, difference);
+                if (entry.Entity is AccountingSourceDocumentVoucherDraftRow voucher) ValidateSourceVoucherChange(entry, voucher);
                 string[] allowed = entry.Entity switch
                 {
                     ManufacturingCostDifferenceRow => CostDifferenceMutableFields,
+                    AccountingSourceDocumentVoucherDraftRow => SourceVoucherMutableFields,
                     PeriodCalendarRow => [nameof(PeriodCalendarRow.UpdatedAtUtc)],
                     // Ö4: a proposal changes only by its approval, an open period only by its close.
                     PeriodRow => [nameof(PeriodRow.Status), nameof(PeriodRow.ApprovedByUserId), nameof(PeriodRow.ApprovedAtUtc),
