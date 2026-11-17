@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Monetary;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Purchasing.Domain.Invoices;
 
@@ -21,13 +22,15 @@ public sealed record PurchaseInvoiceAmounts(decimal Net, decimal Vat, decimal Wi
 
 public sealed record PurchaseInvoiceLine(Guid Id, int LineNo, Guid ProductId, Guid UnitId, decimal Quantity,
     string ItemType, string LinePurpose, decimal VatPercent, PurchaseInvoiceAmounts Amounts,
-    PurchaseInvoiceAmounts? FunctionalAmounts);
+    PurchaseInvoiceAmounts? FunctionalAmounts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null);
 
 /// <summary>Owner-read receipt facts, including the price/quantity and daily control FX used in the three-way check.
 /// These are persisted with the match, not accepted as authoritative client input.</summary>
 public sealed record PurchaseInvoiceReceiptMatch(Guid CompanyId, Guid InvoiceLineId, Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
     long OrderVersion, Guid SupplierPartyId, Guid CompanyAccountId, Guid CurrencyId, Guid UnitId,
-    decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn);
+    decimal Quantity, decimal ExpectedNet, decimal? ControlRate, DateOnly AcceptedOn,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null);
 
 /// <summary>The actual Settings version used for comparison. Null policy means unavailable, never zero tolerance.</summary>
 public sealed record PurchaseInvoiceVariancePolicy(Guid Id, long Version, decimal AmountTolerance, decimal RateTolerance);
@@ -119,7 +122,9 @@ public sealed class PurchaseIncomingInvoice
             throw new ArgumentException("Fatura satır kimlikleri ve sıraları tekil olmalıdır.");
         foreach (var line in frozenLines)
         {
-            if (line.Id == Guid.Empty || line.LineNo < 1 || line.ProductId == Guid.Empty || line.UnitId == Guid.Empty || line.Quantity <= 0
+            if (line.Id == Guid.Empty || line.LineNo < 1 || line.UnitId == Guid.Empty || line.Quantity <= 0
+                || (line.ServiceTypeId is { } service ? service == Guid.Empty || line.ProductId != Guid.Empty
+                    || line.ItemType != "Service" || line.LinePurpose != "service" : line.ProductId == Guid.Empty)
                 || line.Quantity > MaximumStoredQuantity
                 || decimal.Round(line.Quantity, MaximumStoredScale) != line.Quantity
                 || line.VatPercent is < 0 or > 100 || string.IsNullOrWhiteSpace(line.ItemType) || line.ItemType.Length > 128
@@ -171,7 +176,8 @@ public sealed class PurchaseIncomingInvoice
                 || (OfficialRate.HasValue ? item.ControlRate is not > 0 : item.ControlRate is not null))
                 throw new PurchasingRuleException(SourceMismatch, "Kabul kaynağı faturanın carisi, para birimi veya kuruyla uyuşmuyor.");
             var line = Lines.SingleOrDefault(line => line.Id == item.InvoiceLineId);
-            if (line is null || line.UnitId != item.UnitId) throw new PurchasingRuleException(SourceMismatch, "Fatura ve kabul birimleri uyuşmuyor.");
+            if (line is null || line.UnitId != item.UnitId || line.ServiceTypeId != item.ServiceTypeId)
+                throw new PurchasingRuleException(SourceMismatch, "Fatura ve kabul birimleri veya kalem kaynakları uyuşmuyor.");
             if (OfficialRate is { } rate && Math.Abs(rate - item.ControlRate!.Value) > policy.RateTolerance)
                 differences.Add(new(line.Id, "ExchangeRate", item.ControlRate.Value, rate));
         }

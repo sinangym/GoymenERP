@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Purchasing.Domain.Invoices;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
 public sealed record PurchaseInvoiceAmountsViewV1(string Net, string Vat, string Withholding, string Payable);
 public sealed record PurchaseInvoiceLineViewV1(Guid Id, int LineNo, Guid ProductId, Guid UnitId, string Quantity,
-    string ItemType, string LinePurpose, string VatPercent, PurchaseInvoiceAmountsViewV1 Amounts, PurchaseInvoiceAmountsViewV1? FunctionalAmounts);
+    string ItemType, string LinePurpose, string VatPercent, PurchaseInvoiceAmountsViewV1 Amounts, PurchaseInvoiceAmountsViewV1? FunctionalAmounts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null);
 public sealed record PurchaseInvoiceVarianceViewV1(Guid InvoiceLineId, string Kind, string Expected, string Actual);
 public sealed record PurchaseIncomingInvoiceViewV1(Guid Id, Guid CompanyId, string Version, string Status,
     Guid SupplierPartyId, Guid CompanyAccountId, Guid CurrencyId, Guid FunctionalCurrencyId, int MoneyScale, int FunctionalScale,
@@ -30,7 +32,7 @@ public static class PurchaseIncomingInvoiceWireV1
             invoice.FunctionalAmounts is { } functional ? Amounts(functional, invoice.FunctionalScale) : null,
             invoice.Lines.Select(line => new PurchaseInvoiceLineViewV1(line.Id, line.LineNo, line.ProductId, line.UnitId, Text(line.Quantity),
                 line.ItemType, line.LinePurpose, Text(line.VatPercent), Amounts(line.Amounts, invoice.MoneyScale),
-                line.FunctionalAmounts is { } amounts ? Amounts(amounts, invoice.FunctionalScale) : null)).ToArray(),
+                line.FunctionalAmounts is { } amounts ? Amounts(amounts, invoice.FunctionalScale) : null, line.ServiceTypeId)).ToArray(),
             invoice.Variances.Select(item => new PurchaseInvoiceVarianceViewV1(item.InvoiceLineId, item.Kind, Text(item.Expected), Text(item.Actual))).ToArray(),
             invoice.VarianceDecision, invoice.FinalizedVersion is { } version ? Text(version) : null);
     }

@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 /// <summary>Reads only real Purchasing receipts/prices under the invoice store's order locks.
 /// ALS-D14's previous-business-day algorithm remains exclusively in the Settings resolver.</summary>
-public sealed class PurchaseIncomingInvoiceMatchSource(PurchasingDbContext context, ICompanyContext company,
+public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbContext context, ICompanyContext company,
     IPurchaseAcceptanceSourceV1 acceptances, IPurchaseOrderLineCostReadPortV1 prices,
     ISettingsPurchaseInvoiceVariancePolicyProviderV1 policies, ISettingsExchangeRateResolverV1 rates)
     : IPurchaseIncomingInvoiceMatchSourceV1
@@ -36,6 +36,8 @@ public sealed class PurchaseIncomingInvoiceMatchSource(PurchasingDbContext conte
             cancellationToken.ThrowIfCancellationRequested(); RequireScope(invoice.CompanyId);
             var line = invoice.Lines.SingleOrDefault(line => line.Id == item.InvoiceLineId) ?? throw Mismatch();
             var quantity = Quantity(item.Quantity);
+            if (line.ServiceTypeId is not null)
+            { matches.Add(await ReadServiceMatchAsync(invoice, line, item, quantity, cancellationToken)); continue; }
             PurchaseAcceptanceSourceV1? accepted;
             try { accepted = await acceptances.ReadAsync(item.PurchaseOrderId, item.AcceptanceId, cancellationToken); }
             catch (PurchaseAcceptanceParticipantException)

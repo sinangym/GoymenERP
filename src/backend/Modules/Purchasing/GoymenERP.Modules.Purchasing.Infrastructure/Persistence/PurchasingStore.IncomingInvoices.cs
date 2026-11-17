@@ -80,16 +80,18 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
         if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
         var company = RequireResolvedCompany();
-        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var owned = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var lockedOrders = orderIdsToLock.Distinct().OrderBy(value => value).ToArray();
         if (lockedOrders.Contains(Guid.Empty)) throw new ArgumentException("Sipariş kimliği boş olamaz.");
         var generalLineIds = await dbContext.OrderLines.AsNoTracking()
             .Where(line => lockedOrders.Contains(line.OrderId) && line.Kind == (int)PurchaseOrderLineKind.General)
             .Select(line => line.LineId).ToArrayAsync(cancellationToken);
+        var serviceLineIds = await dbContext.ServiceAcceptances.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
+            .Select(row => row.LineId).Distinct().ToArrayAsync(cancellationToken);
         try
         {
             await PurchaseLineSerializationLock.Bind(dbContext.Database.GetDbConnection(), owned.GetDbTransaction(), company)
-                .AcquireAllAsync(generalLineIds, cancellationToken);
+                .AcquireAllAsync(generalLineIds.Concat(serviceLineIds), cancellationToken);
         }
         catch (PurchaseLineBusyException exception)
         { throw Refused(PurchasingStoreCodes.LineBusy, "Sipariş satırı başka bir işlem tarafından kilitli; hiçbir şey kaydedilmedi.", exception); }
@@ -145,9 +147,12 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
     private async Task<Action> PrepareIncomingInvoiceReceiptBindingsAsync(PurchaseIncomingInvoice invoice, Guid[] lockedOrders, CancellationToken token)
     {
         var receipts = new List<PurchaseInvoiceReceiptBindingRow>();
+        var services = new List<PurchaseServiceInvoiceBindingRow>();
         foreach (var match in invoice.Matches)
         {
             if (!lockedOrders.Contains(match.OrderId)) throw new InvalidOperationException("Fatura bağı sipariş kilidi gerektirir.");
+            if (match.ServiceTypeId is not null)
+            { services.Add(await PrepareServiceInvoiceBindingAsync(invoice, match, token)); continue; }
             var order = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(row => row.Id == match.OrderId, token);
             var line = await dbContext.OrderLines.AsNoTracking().SingleOrDefaultAsync(row => row.OrderId == match.OrderId && row.LineId == match.OrderLineId, token);
             var receipt = await dbContext.Acceptances.AsNoTracking().SingleOrDefaultAsync(row => row.AcceptanceId == match.AcceptanceId, token);
@@ -169,13 +174,13 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
                 AcceptanceId = match.AcceptanceId, OrderId = match.OrderId, OrderLineId = match.OrderLineId, Quantity = match.Quantity,
             });
         }
-        var orders = invoice.Matches.DistinctBy(item => (item.InvoiceLineId, item.OrderLineId)).Select(match => new PurchaseInvoiceOrderBindingRow
+        var orders = invoice.Matches.Where(item => item.ServiceTypeId is null).DistinctBy(item => (item.InvoiceLineId, item.OrderLineId)).Select(match => new PurchaseInvoiceOrderBindingRow
             {
                 CompanyId = invoice.CompanyId, InvoiceId = invoice.Id, InvoiceLineId = match.InvoiceLineId,
                 OrderId = match.OrderId, OrderLineId = match.OrderLineId, OrderVersion = match.OrderVersion,
                 SupplierPartyId = invoice.SupplierPartyId, RecordedAtUtc = timeProvider.GetUtcNow(),
             }).ToArray();
-        return () => { dbContext.InvoiceReceiptBindings.AddRange(receipts); dbContext.InvoiceOrderBindings.AddRange(orders); };
+        return () => { dbContext.InvoiceReceiptBindings.AddRange(receipts); dbContext.InvoiceOrderBindings.AddRange(orders); dbContext.ServiceInvoiceBindings.AddRange(services); };
     }
 
     private void AddInvoiceRevision(PurchaseIncomingInvoiceSnapshot snapshot, string json, DateTimeOffset now) => dbContext.IncomingInvoiceRevisions.Add(new()
