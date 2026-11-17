@@ -52,6 +52,7 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
             || invoice.RecordedBy != envelope.ActorId.Trim()) throw new InvalidOperationException("Fatura kayıt kapsamı uyuşmuyor.");
         var now = timeProvider.GetUtcNow();
         var snapshot = PurchaseIncomingInvoiceSnapshot.Capture(invoice); var json = JsonSerializer.Serialize(snapshot, Json);
+        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await requireStillAuthorized(cancellationToken);
         dbContext.IncomingInvoices.Add(new()
         {
@@ -64,6 +65,8 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, "purchasing.incoming-invoice.recorded.v1", "Record",
             null, invoice.Version, "{}", json, "Resmî alış faturası içe aktarıldı");
         await SaveAsync(cancellationToken);
+        await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
+        await owned.CommitAsync(cancellationToken);
         return new(snapshot, null, false, envelope.CorrelationId.Trim());
     }
 
@@ -141,10 +144,21 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         await requireStillAuthorized(cancellationToken);
         var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
         if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
+        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await requireStillAuthorized(cancellationToken);
         AddInvoiceAttempt(RequireResolvedCompany(), command, envelope, requestHash, null, JsonSerializer.Serialize(refusal, Json), timeProvider.GetUtcNow());
         await SaveAsync(cancellationToken);
+        await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
+        await owned.CommitAsync(cancellationToken);
         return new(null, refusal, false, envelope.CorrelationId.Trim());
+    }
+
+    // A permission revoked while SQL saved is still a refusal: the owned transaction
+    // rolls back rows and audit together. Never keep its accepted tracker snapshot for reuse.
+    private async Task RequireIncomingInvoiceCommitAsync(Func<CancellationToken, Task> requireStillAuthorized, CancellationToken token)
+    {
+        try { await requireStillAuthorized(token); }
+        catch { dbContext.ChangeTracker.Clear(); throw; }
     }
 
     private async Task<Action> PrepareIncomingInvoiceReceiptBindingsAsync(PurchaseIncomingInvoice invoice, Guid[] lockedOrders, CancellationToken token)
