@@ -420,3 +420,47 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - Bu checkpoint ALC-S8 parasal eşleştirme kaynağını tamamlar. Merkezi tüketici/route
   entegrasyonu ve nihai runtime kabulü ayrı doğrulanacaktır; bütün tren için DONE
   veya bağımsız K3 kabulü iddiası değildir. ALC-S7 ALS-D105 takip işi ayrıca sürer.
+
+#### ALC-S7 ALS-D105 / SAT-D381 takip — iki tarafın gerçek vergi varsayılanı ve satır revizyonu
+
+- Kaynak commit: `e67f53fc75358fb9397dc754e36fe4c538621ed6`; fatura metadata bağımlılığı
+  `bc0524b5f5f197bac9e6bac9f3454fc77ef61d98`. Dayanaklar ALS-D105, SAT-D381,
+  ALS-D9 ve SAT-D105; en yeni yetki cevabı Issue #1189 aktarımı `6947126872`'dir.
+  Geri alınan iki yeni vergi izni cevabı uygulanmadı. Yeni ERP izin adı, manifest
+  kaydı, grant, rol ataması veya Critical sınıflaması yoktur.
+- Ayarlar satış ve alış varsayılanlarını ayrı gerçek şirketli sürüm geçmişinde saklar.
+  Satış yalnız mevcut `sales.orders.approve`, alış yalnız `purchasing.orders.approve`
+  çitindedir. Gerçek tarihli KDV/tevkifat oranı ve kod listeleri okunur; boş liste veya
+  kaydedilmemiş varsayılan gerçek kaynak yokluğudur, sıfır vergi başarısı değildir.
+  Sürüm/idempotency/Audit ve her owner await sonrası taze aktör/şirket/yetki korunur.
+- Alış fason satırı yalnız listeden kod seçerek ve gerekçe ile değişir. ALS-D9'daki
+  onaylı sipariş değişikliği kuralı uyarınca yeni taslak revizyon ve normal yeniden onay
+  gerekir; bu kural ALS-D18 fiyat hükmünden türetilmedi. Önceki kabul, fiyat, miktar,
+  malzeme ve beklenen çıktı kimlikleri korunur. Yeniden fiziksel onay gerekmemesinin
+  kanıtı istemcinin bir bayrağı değil, aynı owner Serializable işleminde okunan gerçek
+  immutable onaylı ServiceOrderRevisions kaydıdır. Başka şirket/sipariş/etiket bu kanıtı
+  kullanamaz. Vergi snapshot'ı kim/ne zaman/neden ve liste kaynak sürümünü taşır.
+- Satış fason default çözümü gerçek ayrı Sales company-policy kaydına bağlandı;
+  genel Service vergi kaydı onun yerine geçmez. Yeni tax-only komut mevcut Sales onay
+  yetkisiyle çalışır, fiyat yazma yetkisi vermez. Normal ürün vergisi/fiyat çiti korunur.
+  Onaylı vergi değişimi mevcut ReviseCommercial ile eski onaylı snapshot'ı arşivler ve
+  normal yeniden onay akışına girer. Gövdeye fiyat, CompanyId veya yetki eklenemez.
+- Gerçek hizmet kabulü eşleştirmesi onaylı alış fason vergi snapshot'ını typed metadata
+  olarak finalized event'e taşır; resmî gelen fatura fiyatı/vergi/tutarı yeniden hesaplanmaz.
+  Yeni alanlar trailing/null-omit olup eski mal/hizmet JSON ve hash yolu korunur.
+- Backend module DI ve mevcut endpoint mount'ları yeterlidir; yeni Program çağrısı yok.
+  Kök owner için iki teknik shell capability/ekran bağlantısı:
+  `settings.sales-subcontract-tax-default.manage` → `sales.orders.approve`,
+  `settings.purchasing-subcontract-tax-default.manage` → `purchasing.orders.approve`.
+  Bunlar ERP permission değildir. Component `SubcontractTaxDefaultPage` iki side ile
+  bağlanır; API yolları `/api/v1/settings/company-policies/{sales|purchasing}-subcontract-tax-default`.
+  Alış detayında mevcut service approval capability ve satış detayında mevcut orders
+  approve capability altında gerçek satır seçimi/listeler/unknown retry hazırdır.
+- API, Purchasing.UnitTests, Sales.UnitTests, Settings.UnitTests ve Api.IntegrationTests
+  son kaynak derlemeleri **exit0, 0 uyarı/0 hata**; `npx tsc -b` ve `git diff --check`
+  exit0. İlk API sabit adı, Integration xUnit assertion ve TSC Button type hataları dar
+  düzeltildi; son kaynak derlemeleri yukarıdaki sonuçtur. Unit, üç gerçek-SQL fact,
+  HTTP kötü gövde/replay, strict decoder ve DOM kaynakları yazıldı; runtime Unit/SQL/
+  HTTP/Vitest/browser/CI **NOT_RUN**. Yeni migration/THROW yoktur.
+- Kaynak checkpoint'i ALC-S7 vergi takip boşluğunu tamamlar. Merkezi shell/route/pin
+  entegrasyonu ve gerçek runtime kabulü ayrı kalır; bağımsız K3 imzası değildir.

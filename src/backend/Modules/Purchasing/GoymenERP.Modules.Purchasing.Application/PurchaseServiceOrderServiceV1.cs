@@ -9,11 +9,12 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Purchasing.Application;
 
 /// <summary>ALC-S7 / ALS-D29/D40, KIM-D49. All owner reads are fenced; no grant, physical receipt or assumed service catalog.</summary>
-public sealed class PurchaseServiceOrderServiceV1(ICompanyContext company, ICurrentUser user,
+public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, IPurchaseServiceOrderStoreV1 store, IPurchasingPartyAccountPortV2 parties,
     ISettingsReferenceListReaderV1 referenceLists, ISettingsPrerequisiteProvider profiles, ISettingsUnitIdentityCatalogV1 unitIdentities, TimeProvider clock,
     IPurchaseServiceOrderReferenceProofV1? physicalReferences = null,
-    ISettingsSubcontractTaxDefaultProviderV1? subcontractTax = null) : IPurchaseServiceOrderServiceV1
+    ISettingsSubcontractTaxDefaultProviderV1? subcontractTax = null,
+    ISettingsSubcontractTaxCatalogV1? taxCatalog = null) : IPurchaseServiceOrderServiceV1
 {
     private sealed record Scope(Guid Company, string Actor, IReadOnlyCollection<string> Roles);
     public async Task<PurchaseServiceOrderReferencesV1> ReferencesAsync(CancellationToken token = default)
@@ -116,15 +117,13 @@ public sealed class PurchaseServiceOrderServiceV1(ICompanyContext company, ICurr
                 }
                 // A price-only revision retains the original approved material identities. A later stock movement
                 // cannot invalidate already performed service or require the same label to be physically sent again.
-                if (value.PriceRevision == 0)
+                if (!await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
+                    () => store.HasApprovedPhysicalReferencesAsync(value, ct), ct))
                 {
-                    if (value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract)
-                    {
-                        var tax = await TaxAsync(scope, PurchasingPermissionManifestV1.OrdersApprove, ct);
-                        if (value.Lines.Any(line => line.Tax != tax)) throw new PurchaseServiceOrderException(PurchaseServiceOrder.VersionConflict);
-                    }
                     await VerifyPhysicalAsync(scope, PurchasingPermissionManifestV1.OrdersApprove, value.BusinessDate, value.Materials, value.ExpectedOutputs, ct);
                 }
+                if (value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract)
+                    await VerifyTaxSnapshotsAsync(scope, value, ct);
                 return PurchaseServiceOrder.Approve(value with { PartyVersion = supplier.PartyVersion, AccountVersion = supplier.AccountVersion },
                     Version(request.ExpectedVersion), scope.Actor, clock.GetUtcNow());
             }, token);
@@ -240,7 +239,7 @@ public sealed class PurchaseServiceOrderServiceV1(ICompanyContext company, ICurr
                 Text(line.AcceptedQuantity), prices && line.UnitPrice is { } p ? Text(p) : null,
                 prices && line.UnitPrice is { } unit ? Text(new PurchaseOrderLinePrice(unit, line.UnitId).LineAmount(line.Quantity, money)) : null,
                 line.Tax is not { } tax ? null : new(tax.VatApplies, tax.VatPercent is { } vat ? Text(vat) : null, tax.ExemptionCode,
-                    tax.WithholdingApplies, tax.WithholdingPercent is { } withheld ? Text(withheld) : null, tax.WithholdingCode, Text(tax.SettingsVersion)))).ToArray(),
+                    tax.WithholdingApplies, tax.WithholdingPercent is { } withheld ? Text(withheld) : null, tax.WithholdingCode, Text(tax.SettingsVersion), tax.Change))).ToArray(),
             value.Materials.Select(x => new PurchaseServiceMaterialInputV1(x.LabelId, x.LabelVersion, x.ProductId, x.ProductVersion, Text(x.QuantityKg))).ToArray(),
             value.ExpectedOutputs.Select(x => new PurchaseServiceOutputInputV1(x.ProductId, x.ProductVersion, Text(x.ExpectedQuantityKg))).ToArray(),
             value.Acceptances.Select(x => new PurchaseServiceAcceptanceViewV1(x.AcceptanceId, x.LineId, Text(x.Quantity), x.AcceptedOn, x.RecordedBy, x.Reason, x.RecordedAtUtc)).ToArray());

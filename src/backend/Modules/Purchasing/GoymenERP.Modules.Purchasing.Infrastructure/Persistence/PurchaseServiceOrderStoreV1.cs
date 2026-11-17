@@ -39,6 +39,40 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
         foreach (var row in rows) values.Add(await ReadAsync(row.OrderId, token) ?? throw new InvalidOperationException());
         if (Company() != scope) throw new InvalidOperationException(); return values;
     }
+    public async Task<bool> HasApprovedPhysicalReferencesAsync(PurchaseServiceOrderState order, CancellationToken token)
+    {
+        var scope = Company();
+        if (order.CompanyId != scope || order.OrderId == Guid.Empty || database.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("Fiziksel onay kanıtı aynı sahip işleminde okunur.");
+        var rows = await database.ServiceOrderRevisions.AsNoTracking().Where(x => x.OrderId == order.OrderId && x.Version < order.Version)
+            .OrderByDescending(x => x.Version).ToArrayAsync(token);
+        foreach (var row in rows)
+        {
+            var approved = Restore(row.SnapshotJson);
+            if (Company() != scope || row.CompanyId != scope || approved.CompanyId != scope || approved.OrderId != order.OrderId || approved.Version != row.Version)
+                throw new InvalidOperationException("Fiziksel onay geçmişi kapsamı uyuşmuyor.");
+            if (approved.Status == PurchaseServiceOrderStatus.Approved && approved.Kind == order.Kind
+                && approved.SupplierPartyId == order.SupplierPartyId && approved.CompanyAccountId == order.CompanyAccountId
+                && approved.Materials.SequenceEqual(order.Materials) && approved.ExpectedOutputs.SequenceEqual(order.ExpectedOutputs)) return true;
+        }
+        return false;
+    }
+    public async Task<bool> HasApprovedTaxSnapshotAsync(PurchaseServiceOrderState order, Guid lineId, CancellationToken token)
+    {
+        var scope = Company();
+        if (order.CompanyId != scope || database.Database.CurrentTransaction is null) throw new InvalidOperationException();
+        var line = order.Lines.Single(x => x.LineId == lineId);
+        var rows = await database.ServiceOrderRevisions.AsNoTracking().Where(x => x.OrderId == order.OrderId && x.Version < order.Version)
+            .OrderByDescending(x => x.Version).ToArrayAsync(token);
+        foreach (var row in rows)
+        {
+            var previous = Restore(row.SnapshotJson);
+            if (Company() != scope || row.CompanyId != scope || previous.CompanyId != scope || previous.OrderId != order.OrderId || previous.Version != row.Version)
+                throw new InvalidOperationException("Vergi onay geçmişi kapsamı uyuşmuyor.");
+            if (previous.Status == PurchaseServiceOrderStatus.Approved && previous.Lines.SingleOrDefault(x => x.LineId == lineId)?.Tax == line.Tax) return true;
+        }
+        return false;
+    }
     public async Task<PurchaseServiceOrderWriteV1?> ReplayAsync(string command, PurchasingWriteEnvelope envelope, string hash, CancellationToken token)
     {
         RequireEnvelope(command, envelope, hash); var scope = Company(); var key = Hash(envelope.IdempotencyKey);

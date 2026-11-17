@@ -17,7 +17,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// no owner): what the wire carries for each service answer. The service's own rules are unit-tested
 /// (<c>SalesDraftServiceTests</c>); the real host with the real store is the SQL Server class.
 /// </summary>
-public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
+public sealed partial class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
@@ -386,7 +386,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         return client;
     }
 
-    private sealed class StubDraftService : ISalesDraftService
+    private sealed partial class StubDraftService : ISalesDraftService
     {
         public List<string> Keys { get; } = [];
 

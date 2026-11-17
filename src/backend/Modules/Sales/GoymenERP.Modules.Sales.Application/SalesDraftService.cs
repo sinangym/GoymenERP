@@ -103,7 +103,9 @@ public sealed partial class SalesDraftService(
         // reads like the create permission (#276).
         var priced = CommercialFields(request);
         // MOD-03 → Sales (SAT-D93): a line tax change moves the line's amounts, so it is fenced like a price.
-        priced.AddRange(TaxChangeFields(request));
+        if (request.SubcontractService == true && request.Lines.Any(x => x.TaxOverride is not null))
+            scope = await WithSubcontractTaxAuthorityAsync(scope, cancellationToken);
+        else priced.AddRange(TaxChangeFields(request));
         if (priced.Count > 0)
         {
             await RequirePriceWriteAsync(scope, priced, cancellationToken);
@@ -614,6 +616,8 @@ public sealed partial class SalesDraftService(
                 async writeCancellationToken =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                    if (taxes?.RequiresSubcontractAuthority == true)
+                        await RequireStillAsync(scope, bindings.ApprovePermission, writeCancellationToken);
                 }, cancellationToken);
         }
         catch (SalesVersionConflictException exception)
@@ -1214,7 +1218,8 @@ public sealed partial class SalesDraftService(
         string ActorId,
         IReadOnlyCollection<string> RoleCodes,
         bool IsSalesSupport,
-        bool IsSystemRead = false);
+        bool IsSystemRead = false,
+        bool RequiresSubcontractTaxAuthority = false);
 
     /// <summary>
     /// The fence: capture server identity/company, read the active persona, then make the permission
@@ -1274,7 +1279,12 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
-        return current;
+        if (scope.RequiresSubcontractTaxAuthority)
+        {
+            var approval = await RequireAsync(bindings.ApprovePermission, cancellationToken);
+            if (approval.CompanyId != scope.CompanyId || approval.ActorId != scope.ActorId) throw new SalesDraftServiceException(403, "forbidden");
+        }
+        return current with { RequiresSubcontractTaxAuthority = scope.RequiresSubcontractTaxAuthority };
     }
 
     /// <summary>An awaited read is released only under the authority a success would need (the Product fence, #276).</summary>
