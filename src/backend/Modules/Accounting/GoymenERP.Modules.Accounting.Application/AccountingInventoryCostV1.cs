@@ -40,9 +40,14 @@ public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Gui
 public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
     Guid ProductId, decimal QuantityKg);
 
+/// <summary>Actual Sales cancellation proof must match this owner's existing tombstone before deferred attribution is accepted.</summary>
+public sealed record AccountingInventoryCostSourceCancellationV1(Guid CancellationId, Guid CancelledBy,
+    DateTimeOffset CancelledAtUtc, string Reason, string CancellationPayloadSha256);
+
 public sealed record AccountingInventoryCostSourceV1(Guid CompanyId, Guid EventId, AccountingInventoryCostKindV1 Kind,
     Guid InvoiceId, long InvoiceVersion, Guid AdmissionId, DateOnly InvoiceDate, string? OfficialInvoiceNumber,
-    Guid? FinalizedBy, string SourcePayloadSha256, IReadOnlyList<AccountingInventoryCostComponentV1> Components);
+    Guid? FinalizedBy, string SourcePayloadSha256, IReadOnlyList<AccountingInventoryCostComponentV1> Components,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostSourceCancellationV1? HistoricalCancellation = null);
 
 /// <summary>
 /// Projection is supplied by actual owner ports and a committed event. A missing immutable shipment stamp or

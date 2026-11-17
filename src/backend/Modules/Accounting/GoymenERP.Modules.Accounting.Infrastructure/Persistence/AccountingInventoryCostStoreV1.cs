@@ -56,6 +56,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             var source = await sources.ReadAsync(envelope, cancellationToken);
             RequireCompany(captured);
             AccountingInventoryCostSourceValidationV1.Require(envelope, source, captured);
+            await RequireHistoricalCancellation(source, cancellationToken);
             if (await db.InventoryCostSources.AnyAsync(x => x.Kind == (int)source.Kind && x.InvoiceId == source.InvoiceId
                 && x.InvoiceVersion == source.InvoiceVersion, cancellationToken)) throw Refuse("inventory_cost_source_conflict");
             db.InventoryCostSources.Add(new() { CompanyId = captured, EventId = source.EventId, Kind = (int)source.Kind,
@@ -81,6 +82,22 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             }
             return true;
         }, cancellationToken);
+    }
+
+    private async Task RequireHistoricalCancellation(AccountingInventoryCostSourceV1 source, CancellationToken token)
+    {
+        if (source.HistoricalCancellation is not { } expected) return;
+        var actual = await db.SourceInvoiceCancellations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.SourceDocumentId == source.AdmissionId, token);
+        RequireCompany(source.CompanyId);
+        if (actual is null)
+            throw new GoymenERP.Modules.Accounting.Application.Inbox.AccountingInvoiceJournalRetryException(
+                "inventory_cost_cancellation_receipt_pending", "Tarihsel maliyet payı için gerçek iptal kaydının alınması bekleniyor.");
+        if (actual.CompanyId != source.CompanyId || actual.DocumentKind != AccountingSourceDocumentKindsV1.SalesInvoice
+            || actual.InvoiceId != source.InvoiceId || actual.FinalizedVersion != source.InvoiceVersion
+            || actual.CancellationId != expected.CancellationId || actual.CancelledBy != expected.CancelledBy
+            || actual.CancelledAtUtc != expected.CancelledAtUtc || actual.Reason != expected.Reason)
+            throw Refuse("inventory_cost_cancellation_proof_invalid");
     }
 
     public async Task<IReadOnlyList<AccountingInventoryCostProposalV1>> ListAsync(AccountingInventoryCostKindV1 kind,

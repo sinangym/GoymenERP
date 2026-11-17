@@ -113,6 +113,10 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
     private sealed class FinalizedClaims(Fixture f, WorkInboxEventV1 envelope) : ISalesFinalizedShipmentClaimReadPortV1
     {
         public bool Cancelled { get; set; }
+        public bool Historical { get; set; }
+        public bool DuplicateHistory { get; set; }
+        public Guid CancellationId { get; } = Guid.NewGuid();
+        public Guid CancelledBy { get; } = Guid.NewGuid();
         public bool WrongEvent { get; set; }
         public int Calls { get; private set; }
         public async Task<SalesShipmentClaimBatchV1> ReadAsync(Guid companyId, IReadOnlyCollection<Guid> shipmentIds,
@@ -130,6 +134,16 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
                 WrongEvent ? Guid.NewGuid() : envelope.EventId, AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson),
                 envelope.OccurredAtUtc, lifecycle);
             await freshConsumerFence(cancellationToken);
+            if (Historical)
+            {
+                var at = envelope.OccurredAtUtc.AddMinutes(1);
+                lifecycle = new(source.InvoiceId, source.Version + 1, "OfficiallyCancelled", at, CancelledBy.ToString("D"), at);
+                var historical = new SalesHistoricalFinalizedShipmentClaimV1(claim with { Lifecycle = lifecycle },
+                    CancellationId, CancellationId, new string('A', 64), CancelledBy, at, "SENTETIK official cancellation");
+                return new(companyId, SalesShipmentClaimReadOutcomeV1.Available,
+                    [new(ship.ShipmentId, SalesShipmentClaimReadOutcomeV1.NotInvoiced, null, [lifecycle], "SENTETIK-history",
+                        HistoricalFinalizedClaims: DuplicateHistory ? [historical, historical] : [historical])], "SENTETIK-history-batch");
+            }
             return new(companyId, SalesShipmentClaimReadOutcomeV1.Available,
                 [new(ship.ShipmentId, SalesShipmentClaimReadOutcomeV1.Available, claim, [lifecycle], "SENTETIK-1")], "SENTETIK-batch-1");
         }

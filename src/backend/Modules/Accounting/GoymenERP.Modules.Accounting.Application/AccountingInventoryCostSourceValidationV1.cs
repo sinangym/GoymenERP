@@ -88,6 +88,12 @@ public static partial class AccountingInventoryCostSourceValidationV1
             || expectedKind == AccountingInventoryCostKindV1.PurchaseInvoiceDifference && source.Components.Count == 0)
             throw Invalid("inventory_cost_source_invalid");
         var identities = new HashSet<string>(StringComparer.Ordinal);
+        if (source.HistoricalCancellation is { } cancelled
+            && (expectedKind != AccountingInventoryCostKindV1.SalesInvoicedShipment || cancelled.CancellationId == Guid.Empty
+                || cancelled.CancelledBy == Guid.Empty || cancelled.CancelledAtUtc == default || cancelled.CancelledAtUtc.Offset != TimeSpan.Zero
+                || !Text(cancelled.Reason, 1000) || cancelled.CancellationPayloadSha256 is not { Length: 64 }
+                || !cancelled.CancellationPayloadSha256.All(Uri.IsHexDigit)))
+            throw Invalid("inventory_cost_cancellation_proof_invalid");
         var lineNumbers = new HashSet<int>();
         var firstAggregateLines = new HashSet<Guid>();
         var firstLegacyLines = new HashSet<Guid>();
