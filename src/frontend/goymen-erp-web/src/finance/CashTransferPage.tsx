@@ -428,6 +428,9 @@ function ExchangeFacts({ exchange }: { readonly exchange: CashTransferExchangeSn
     <div><dt>{T.rate}</dt><dd>{amountText(exchange.transactionRate)}</dd></div>
     <div><dt>{T.comparisonRate}</dt><dd>{amountText(exchange.comparisonRate)}</dd></div>
     <div><dt>{T.rateDeviation}</dt><dd>{amountText(exchange.rateDeviation)}</dd></div>
+    <div><dt>{T.sourceReferenceTl}</dt><dd>{exchange.sourceReferenceTl === undefined ? T.referenceNotRecorded : amountText(exchange.sourceReferenceTl.amount)}</dd></div>
+    <div><dt>{T.targetReferenceTl}</dt><dd>{exchange.targetReferenceTl === undefined ? T.referenceNotRecorded : amountText(exchange.targetReferenceTl.amount)}</dd></div>
+    <div><dt>{T.comparisonMeaning}</dt><dd>{T.referenceIsNotBookValue}</dd></div>
     <div><dt>{T.comparisonSourceDay}</dt><dd>{[exchange.sourceComparison, exchange.targetComparison]
       .filter((source) => source.source === 'Tcmb').map((source) => source.bulletinDate === null
         ? T.noValue : formatDate(source.bulletinDate)).join(' / ')}</dd></div>

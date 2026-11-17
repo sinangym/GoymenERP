@@ -647,7 +647,7 @@ public sealed class CashTransferService(
             || snapshot.TargetMoney != new MoneyText(row.TargetAmountText, row.TargetCurrencyId)
             || snapshot.SourceProfile != new ProfileReference(row.SourceProfileId, row.SourceProfileVersion)
             || snapshot.TargetProfile != new ProfileReference(row.TargetProfileId, row.TargetProfileVersion)
-            || snapshot.TransactionRate != row.RateText)
+            || snapshot.TransactionRate != row.RateText || !CashTransferExchangeCalculatorV1.HasValidTlReferences(snapshot))
             throw new InvalidOperationException("Bozdurma kaynak kanıtı aynı değişmez şirket ve para kaydına ait olmalıdır.");
         return snapshot;
     }
