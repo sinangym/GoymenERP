@@ -112,6 +112,7 @@ public sealed partial class SettingsFinancePolicyAdministration(
             database.ChangeTracker.Clear(); auditWriter.DiscardPending();
             await RequireAsync(scope, permissions, true, cancellationToken);
             var winner = await ReadAsync(() => FindAsync(command, key, cancellationToken));
+            await RequireAsync(scope, permissions, true, cancellationToken);
             if (winner is not null) return Replay(winner, hash, metadata);
             throw Unavailable();
         }
@@ -121,6 +122,7 @@ public sealed partial class SettingsFinancePolicyAdministration(
             database.ChangeTracker.Clear(); auditWriter.DiscardPending();
             await RequireAsync(scope, permissions, true, cancellationToken);
             var winner = await ReadAsync(() => FindAsync(command, key, cancellationToken));
+            await RequireAsync(scope, permissions, true, cancellationToken);
             if (winner is not null) return Replay(winner, hash, metadata);
             throw Unavailable();
         }
