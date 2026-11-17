@@ -74,7 +74,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                 new SyntheticPermissions(), new SyntheticBalance(TreasuryBalanceOutcome.Sufficient),
                 new UnavailableCurrencyExchangeRateRule(), new SyntheticSettings(CompanyA), new SyntheticOpenPeriod(), audit,
                 new(FinanceMoneyOperations.ManualBankPaymentV1),
-                new(new FinanceAuditEnvelope(FinancePermissionNames.CashTransferCommit, ["SENTETIK-FINANCE"], "Web")), TimeProvider.System);
+                new(new FinanceAuditEnvelope(FinancePermissionNames.CashTransferCommit, ["SENTETIK-FINANCE"], "Web")), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             var answer = await service.CommitAsync(new(CompanyA, Recorder, run.Correlation, "SENTETIK cause"),
                 Key("outbox-transfer"), request, CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, answer.Outcome);

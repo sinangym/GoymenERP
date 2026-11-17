@@ -22,6 +22,9 @@ public sealed record FinanceContext(Guid CompanyId, string ActorId, string Corre
 public sealed record CommandMetadata(string IdempotencyKey);
 public sealed record MoneyText(string Amount, Guid CurrencyId);
 public sealed record ProfileReference(string ProfileId, string Version);
+/// <summary>KIM-D53 / Q7. Actual committed record number and its frozen company format version.
+/// Missing on legacy sources; neither an external bank reference nor a draft number.</summary>
+public sealed record FinanceDocumentNumberV1(string Number, string FormatVersion);
 
 // DEC-FIN-014: Pos is present only for a customer POS collection (Money is then its GROSS amount). It is omitted from
 // the JSON when null, so a bank-transfer preparation keeps the exact #258 shape and the same ADR-011 payload hash.
@@ -153,7 +156,8 @@ public sealed record SourceDetail(SourceSummary Source, ProfileReference Profile
     string? Description, DateTimeOffset? RecordedAtUtc, Guid? ReversalSourceId, Guid? ReversesSourceId,
     UnallocatedView Unallocated,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionView? Pos = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceAllocationPositionV1>? AllocationPositions = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceAllocationPositionV1>? AllocationPositions = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceDocumentNumberV1? DocumentNumber = null);
 /// <summary>Exact available amount held by the original account or by an explicit, bounded balance transfer.</summary>
 public sealed record FinanceAllocationPositionV1(Guid PartyId, Guid CompanyAccountId, string AvailableAmount,
     string AssignmentVersion, Guid? TransferId);

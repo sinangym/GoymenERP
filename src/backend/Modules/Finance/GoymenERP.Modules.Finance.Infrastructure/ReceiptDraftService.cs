@@ -67,7 +67,8 @@ public sealed class ReceiptDraftService(
     TimeProvider timeProvider,
     FinanceAuditEnvelope? recordEnvelope = null,
     IFinanceRecordPeriodRule? periodRule = null,
-    IAuditTransactionWriterV1? auditOwner = null) : IManualReceiptService
+    IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceDocumentNumberReservationV1? documentNumbers = null) : IManualReceiptService
 {
     public const string SaveDraftCommand = "finance.manual-receipt.draft.save";
 
@@ -460,8 +461,13 @@ public sealed class ReceiptDraftService(
     {
         ArgumentNullException.ThrowIfNull(context);
         return FinanceTreasuryTransaction.ExecuteAsync(dbContext,
-            () => RecordCoreAsync(context, metadata, request, cancellationToken),
-            () => Task.FromResult(Refused(context, CommandOutcome.Unavailable)), auditOwner, cancellationToken);
+            async () =>
+            {
+                var result = await RecordCoreAsync(context, metadata, request, cancellationToken);
+                return result.Outcome == CommandOutcome.Succeeded
+                    ? await FenceAsync(context, FinanceAction.Record, request.DraftId, cancellationToken) ?? result : result;
+            },
+            () => Task.FromResult(Refused(context, CommandOutcome.Unavailable)), auditOwner, cancellationToken, result => result.Outcome == CommandOutcome.Succeeded);
     }
 
     private async Task<CommandResult> RecordCoreAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,
@@ -624,8 +630,17 @@ public sealed class ReceiptDraftService(
                     Issue("period", period.Code ?? RecordPeriodAnswer.RuleUnavailableCode));
         }
 
-        var versionBefore = row.Version;
         var before = DraftAudit(row);
+        var numbering = await FinanceDocumentNumbering.ReserveAsync(dbContext, documentNumbers, context, metadata,
+            recordEnvelope ?? envelope, SettingsFinanceDocumentPurposeV1.ManualReceiptRecord, row.Id, row.OccurredOn, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterNumber) return afterNumber;
+        if (numbering.Number is not { } number) return Refused(context,
+            numbering.Denied ? CommandOutcome.Denied : CommandOutcome.Unavailable,
+            Issue("documentNumber", numbering.Code ?? SettingsDocumentNumberSeriesProblemCodesV1.Unavailable));
+        row.DocumentNumber = number.Number;
+        row.DocumentNumberFormatVersion = number.FormatVersion;
+
+        var versionBefore = row.Version;
         row.Stage = ReceiptStages.Recorded;
         row.RecordedAtUtc = now;
         row.RecordedBy = context.ActorId;
@@ -888,7 +903,7 @@ public sealed class ReceiptDraftService(
             : new AmountView(disclosure, null);
         var amount = Shown(row.AmountText);
         var recorded = row.Stage == ReceiptStages.Recorded;
-        var summary = new SourceSummary(row.Id, row.CompanyId, row.Id.ToString("D"), VersionText(row.Version),
+        var summary = new SourceSummary(row.Id, row.CompanyId, row.DocumentNumber ?? row.Id.ToString("D"), VersionText(row.Version),
             reversalSourceId is not null ? SourceStage.Reversed : recorded ? SourceStage.Recorded : SourceStage.Draft,
             row.PartyId, row.CompanyAccountId, row.TreasuryAccountId, row.CurrencyId, row.OccurredOn, row.ValueOn, amount);
         // A draft has no allocation fact: unknown, never 0. A recorded source's unallocated amount is exact: its F-03
@@ -903,7 +918,7 @@ public sealed class ReceiptDraftService(
             : null;
         return new SourceDetail(summary, new ProfileReference(row.ProfileId, row.ProfileVersion), row.BankReference,
             row.Description, RecordedAtUtc: row.RecordedAtUtc, ReversalSourceId: reversalSourceId,
-            ReversesSourceId: reversesSourceId, unallocated, pos);
+            ReversesSourceId: reversesSourceId, unallocated, pos, DocumentNumber: FinanceDocumentNumbering.View(row));
     }
 
     /// <summary>Applies a FRESH amount decision to a result, so a replay never discloses more than now allowed.</summary>
@@ -975,6 +990,7 @@ public sealed class ReceiptDraftService(
     private static string DraftAudit(ReceiptDraftRow row) => JsonSerializer.Serialize(new
     {
         row.Id,
+        documentNumber = FinanceDocumentNumbering.View(row),
         version = VersionText(row.Version),
         stage = row.Stage == ReceiptStages.Recorded ? "Recorded" : "Draft",
         row.RecordedAtUtc,

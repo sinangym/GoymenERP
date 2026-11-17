@@ -1,3 +1,4 @@
+import { decodeFinanceDocumentNumber, type FinanceDocumentNumber } from './documentNumber'
 /**
  * FNS-D24 / API-32/34 — the treasury transfer wire contract (mirrors CashTransferV1.cs). A transfer between two
  * treasury accounts of the company, or a currency exchange between them at one rate, is ONE record carrying both
@@ -56,6 +57,7 @@ export interface CommitCashTransferRequest {
 }
 
 export interface CashTransferView {
+  readonly documentNumber?: FinanceDocumentNumber
   readonly id: string
   readonly companyId: string
   readonly preparation: CashTransferPreparation
@@ -312,7 +314,11 @@ function decodeExchange(value: unknown, preparation: CashTransferPreparation): C
 }
 
 export function decodeCashTransferView(value: unknown, companyId: string): Decoded<CashTransferView> {
-  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'exchange') ? [...VIEW_KEYS, 'exchange'] : VIEW_KEYS)) return FAIL
+  if (!isRecord(value)) return FAIL
+  const keys = Object.hasOwn(value, 'exchange') ? [...VIEW_KEYS, 'exchange'] : [...VIEW_KEYS]
+  if (!hasExactKeys(value, Object.hasOwn(value, 'documentNumber') ? [...keys, 'documentNumber'] : keys)) return FAIL
+  const documentNumber = decodeFinanceDocumentNumber(value.documentNumber)
+  if (documentNumber === null) return FAIL
   const preparation = decodeCashTransferPreparation(value.preparation, Object.hasOwn(value, 'exchange'))
   if (
     !isBoundUuid(value.id)
@@ -335,6 +341,7 @@ export function decodeCashTransferView(value: unknown, companyId: string): Decod
     recordedAtUtc: value.recordedAtUtc,
     transferConfirmed: true,
     version: value.version,
+    ...(documentNumber === undefined ? {} : { documentNumber }),
     ...(exchange === undefined ? {} : { exchange }),
   })
 }

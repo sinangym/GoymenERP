@@ -426,7 +426,7 @@ public sealed class ExpensePaymentServiceTests
                     Envelope(FinancePermissionNames.ExpensePaymentDraftSave),
                     Envelope(FinancePermissionNames.ExpensePaymentApprove),
                     Envelope(FinancePermissionNames.ExpensePaymentRecord)),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(context, service,
                 new FinanceContext(Company, actor, $"fns-d25-{Guid.NewGuid():N}", null));
         }

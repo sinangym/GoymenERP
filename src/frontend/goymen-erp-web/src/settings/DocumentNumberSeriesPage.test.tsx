@@ -24,3 +24,20 @@ describe('KIM-S19 document number format screen', () => {
     expect(commands(calls)[0].body).toEqual({ series: 4, expectedVersion: '0', prefix: 'ALI', sequenceDigits: 6, reason: 'SENTETIK biçim' })
   })
 })
+
+
+it('offers the two Finance series explicitly without publishing or seeding either', async () => {
+  const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.documentNumberSeries], respond: (url) => {
+    if (url.endsWith('/settings/company-policies/document-number-series/5')) return json({ companyId: COMPANY_A, series: 5, versions: [] })
+    if (url.endsWith('/settings/company-policies/document-number-series/6')) return json({ companyId: COMPANY_A, series: 6, versions: [] })
+    return undefined
+  } })
+  renderAt('/ayarlar/belge-numara-serileri'); const user = userEvent.setup()
+  const select = await screen.findByLabelText(T.series)
+  expect(screen.getByRole('option', { name: T.financeReceipt })).toHaveProperty('value', '5')
+  expect(screen.getByRole('option', { name: T.financeVoucher })).toHaveProperty('value', '6')
+  expect(select).toHaveProperty('value', '')
+  await user.selectOptions(select, '5'); await screen.findByText(T.missing)
+  await user.selectOptions(select, '6'); await screen.findByText(T.missing)
+  expect(commands(calls)).toHaveLength(0)
+})

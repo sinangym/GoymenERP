@@ -434,8 +434,12 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                    Guid.NewGuid().ToString("N"), new RecordRequest(sourceId, sourceVersion))))
         {
             Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
-            sourceVersion = (await Json(recorded)).GetProperty("resource").GetProperty("source")
-                .GetProperty("version").GetString()!;
+            var resource = (await Json(recorded)).GetProperty("resource");
+            sourceVersion = resource.GetProperty("source").GetProperty("version").GetString()!;
+            var number = resource.GetProperty("documentNumber");
+            Assert.StartsWith("MAK-2026-", number.GetProperty("number").GetString());
+            Assert.Equal("1", number.GetProperty("formatVersion").GetString());
+            Assert.Equal(number.GetProperty("number").GetString(), resource.GetProperty("source").GetProperty("sourceNumber").GetString());
         }
 
         // #66 round 20 (the API-23 date rule applied to FIN-T06): the reversal may not precede the receipt
@@ -1035,6 +1039,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal("Recorded", resource.GetProperty("status").GetString());
             Assert.Equal("3", resource.GetProperty("version").GetString());
             Assert.True(resource.GetProperty("bankResultConfirmed").GetBoolean());
+            Assert.StartsWith("DEK-2026-", resource.GetProperty("documentNumber").GetProperty("number").GetString());
+            Assert.Equal("1", resource.GetProperty("documentNumber").GetProperty("formatVersion").GetString());
         }
         using (var replayed = await decider.SendAsync(Post(
                    $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/record",
@@ -1468,6 +1474,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                     sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
                 .Options, companyContext);
             await context.Database.MigrateAsync();
+            await FinanceDocumentNumbersSqlFixture.PrepareAsync(factory.Services, CompanyA, CompanyB);
             return run;
         }
 

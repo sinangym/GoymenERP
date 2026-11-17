@@ -216,7 +216,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             var actualComposition = new SettingsFinanceCashExchangeRateRuleV1(profiles, rates, company, user, permission);
             var service = new CashTransferService(db, company, user, permission, new InternalLedgerTreasuryBalanceGuard(db, company),
                 actualComposition, profiles, new SyntheticOpenPeriod(), audit, new(FinanceMoneyOperations.CashTransferV1),
-                new(Envelope(FinancePermissionNames.CashTransferCommit)), TimeProvider.System);
+                new(Envelope(FinancePermissionNames.CashTransferCommit)), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new(db, service, new(companyId, Recorder, Correlation, null));
         }
 

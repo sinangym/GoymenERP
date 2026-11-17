@@ -1,3 +1,4 @@
+import { issueText as commonIssueText } from './financeText'
 /**
  * F-25 Masraf ödemeleri — every user-visible text of the screen (TEK-03): the payment not tied to a party
  * (FNS-D25). The expense item is shown by the label of the stable code the server sends; the record keeps only
@@ -140,5 +141,5 @@ const ISSUE_MESSAGE: Readonly<Record<string, string>> = {
 }
 
 export function issueMessage(code: string): string {
-  return ISSUE_MESSAGE[code] ?? `Sunucu isteği reddetti (${code}).`
+  return ISSUE_MESSAGE[code] ?? commonIssueText(code)
 }

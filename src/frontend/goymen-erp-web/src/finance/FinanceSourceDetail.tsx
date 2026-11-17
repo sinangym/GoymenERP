@@ -1,3 +1,4 @@
+import { FinanceDocumentNumberFacts } from './FinanceDocumentNumberFacts'
 /**
  * Source detail (`ReadResult<SourceDetail>`) with the two money commands kept APART:
  *  - Record (Draft only) — `{ draftId, expectedVersion }`; the server resolves the
@@ -163,6 +164,7 @@ export function FinanceSourceDetail({
     <div className={styles.detail}>
       <SourceStatus view={statusViewOf(data)} />
       <dl className={styles.facts}>
+        <FinanceDocumentNumberFacts number={data.documentNumber} kind="receipt" recorded={data.source.stage !== 'Draft'} />
         <Fact term={DETAIL.sourceNumber} value={sourceNumberShown(data.source.sourceNumber, data.source.id)} />
         <Fact term={DETAIL.occurredOn} value={data.source.occurredOn} />
         <Fact term={DETAIL.valueOn} value={data.source.valueOn} />

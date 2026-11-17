@@ -55,7 +55,8 @@ public sealed class CustomerInstrumentService(
     FinanceReceiptDraftBinding binding,
     CustomerInstrumentAuditEnvelopes envelopes,
     TimeProvider timeProvider,
-    IAuditTransactionWriterV1? auditOwner = null) : ICustomerInstrumentService
+    IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceDocumentNumberReservationV1? documentNumbers = null) : ICustomerInstrumentService
 {
     public const string ReceiveCommand = "finance.customer-instrument.receive";
     public const string StatusChangeCommand = "finance.customer-instrument.status-change";
@@ -313,8 +314,13 @@ public sealed class CustomerInstrumentService(
     {
         ArgumentNullException.ThrowIfNull(context);
         return FinanceTreasuryTransaction.ExecuteAsync(dbContext,
-            () => CollectCoreAsync(context, metadata, request, cancellationToken),
-            () => Task.FromResult(Refused(context, CommandOutcome.Unavailable)), auditOwner, cancellationToken);
+            async () =>
+            {
+                var result = await CollectCoreAsync(context, metadata, request, cancellationToken);
+                return result.Outcome == CommandOutcome.Succeeded
+                    ? await FenceAsync(context, FinanceAction.CollectCustomerInstrument, request.InstrumentId, cancellationToken) ?? result : result;
+            },
+            () => Task.FromResult(Refused(context, CommandOutcome.Unavailable)), auditOwner, cancellationToken, result => result.Outcome == CommandOutcome.Succeeded);
     }
 
     private async Task<CustomerInstrumentCommandResult> CollectCoreAsync(FinanceContext context, CommandMetadata metadata,
@@ -451,6 +457,15 @@ public sealed class CustomerInstrumentService(
             RecordedAtUtc = now,
             RecordedBy = context.ActorId,
         };
+        var numbering = await FinanceDocumentNumbering.ReserveAsync(dbContext, documentNumbers, context, metadata,
+            envelopes.Collect, SettingsFinanceDocumentPurposeV1.CustomerInstrumentCollect, source.Id, preparation.OccurredOn, cancellationToken);
+        if (await FenceAsync(context, action, row.Id, cancellationToken) is { } afterNumber) return afterNumber;
+        if (numbering.Number is not { } number) return Refused(context,
+            numbering.Denied ? CommandOutcome.Denied : CommandOutcome.Unavailable,
+            Issue("documentNumber", numbering.Code ?? SettingsDocumentNumberSeriesProblemCodesV1.Unavailable));
+        source.DocumentNumber = number.Number;
+        source.DocumentNumberFormatVersion = number.FormatVersion;
+
         ReceiptDraftService.Apply(source, preparation, now, context.ActorId);
         dbContext.ReceiptDrafts.Add(source);
         dbContext.MoneyEvents.Add(new MoneyEventRow
@@ -1051,6 +1066,7 @@ public sealed class CustomerInstrumentService(
         JsonSerializer.Serialize(new
         {
             source.Id,
+        documentNumber = FinanceDocumentNumbering.View(source),
             version = VersionText(source.Version),
             stage = "Recorded",
             source.RecordedAtUtc,

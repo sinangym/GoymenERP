@@ -76,7 +76,8 @@ public sealed record CashTransferView(
     DateTimeOffset RecordedAtUtc,
     bool TransferConfirmed,
     string Version,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CashTransferExchangeSnapshotV1? Exchange = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CashTransferExchangeSnapshotV1? Exchange = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceDocumentNumberV1? DocumentNumber = null);
 
 public sealed record CashTransferPage(
     Guid CompanyId,

@@ -569,7 +569,7 @@ public sealed class ManualBankPaymentServiceTests
                     Envelope(FinancePermissionNames.ManualBankPaymentApprove),
                     Envelope(FinancePermissionNames.ManualBankPaymentRecord)),
                 TimeProvider.System,
-                balanceGuard ?? new Balance(TreasuryBalanceOutcome.Sufficient));
+                balanceGuard ?? new Balance(TreasuryBalanceOutcome.Sufficient), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(context, service, new FinanceContext(Company, actor, $"r47-{Guid.NewGuid():N}", null),
                 company);
         }

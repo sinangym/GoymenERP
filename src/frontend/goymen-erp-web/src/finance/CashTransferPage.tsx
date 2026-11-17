@@ -1,3 +1,4 @@
+import { FinanceDocumentNumberFacts } from './FinanceDocumentNumberFacts'
 /**
  * F-32 — Finans → Virman ve döviz bozdurma (FNS-D24, API-32/34): money moved between two treasury accounts of the
  * company, or exchanged between two currencies at one rate, recorded as ONE transfer carrying both legs.
@@ -403,6 +404,7 @@ function TransferFacts({ transfer, codes, names }: {
 }) {
   const { preparation } = transfer
   return <dl className={styles.facts}>
+    <FinanceDocumentNumberFacts number={transfer.documentNumber} kind="voucher" />
     <div><dt>{T.columnKind}</dt><dd>{TRANSFER_KIND_LABEL[preparation.kind]}</dd></div>
     <div><dt>{T.columnSource}</dt><dd>{accountShown(preparation.sourceKind, preparation.sourceAccountId, names)}</dd></div>
     <div><dt>{T.columnSourceAmount}</dt>

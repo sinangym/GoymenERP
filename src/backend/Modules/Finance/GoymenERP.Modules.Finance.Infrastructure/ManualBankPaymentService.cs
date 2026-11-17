@@ -42,7 +42,8 @@ public sealed class ManualBankPaymentService(
     ManualBankPaymentAuditEnvelopes envelopes,
     TimeProvider timeProvider,
     IFinanceTreasuryBalanceGuard balanceGuard,
-    IAuditTransactionWriterV1? auditOwner = null) : IManualBankPaymentService
+    IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceDocumentNumberReservationV1? documentNumbers = null) : IManualBankPaymentService
 {
     public const string DraftCommand = "finance.manual-bank-payment.draft.save";
     public const string ApproveCommand = "finance.manual-bank-payment.approve";
@@ -217,9 +218,14 @@ public sealed class ManualBankPaymentService(
         if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken)
             is { } denied) return denied;
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
-            () => RecordTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () =>
+            {
+                var result = await RecordTreasuryCoreAsync(context, metadata, request, cancellationToken);
+                return result.Outcome == CommandOutcome.Succeeded
+                    ? await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken) ?? result : result;
+            },
             async () => await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken)
-                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken, result => result.Outcome == CommandOutcome.Succeeded);
     }
 
     private async Task<ManualBankPaymentCommandResult> RecordTreasuryCoreAsync(
@@ -304,6 +310,15 @@ public sealed class ManualBankPaymentService(
                 Issue("money.amount", TreasuryBalanceAnswer.InsufficientCode));
 
         var before = AuditJson(row);
+        var numbering = await FinanceDocumentNumbering.ReserveAsync(dbContext, documentNumbers, context, metadata,
+            envelopes.Record, SettingsFinanceDocumentPurposeV1.ManualBankPaymentRecord, row.Id, row.OccurredOn, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, row.Id, cancellationToken) is { } afterNumber) return afterNumber;
+        if (numbering.Number is not { } number) return Refused(context,
+            numbering.Denied ? CommandOutcome.Denied : CommandOutcome.Unavailable,
+            Issue("documentNumber", numbering.Code ?? SettingsDocumentNumberSeriesProblemCodesV1.Unavailable));
+        row.DocumentNumber = number.Number;
+        row.DocumentNumberFormatVersion = number.FormatVersion;
+
         var versionBefore = row.Version;
         row.Status = ManualBankPaymentStatuses.Recorded;
         row.RecordedBy = context.ActorId;
@@ -671,7 +686,7 @@ public sealed class ManualBankPaymentService(
             : null,
         row.PreparedBy, row.PreparedAtUtc,
         row.ApprovedBy, row.ApprovedAtUtc, row.RecordedBy, row.RecordedAtUtc, row.BankResultConfirmed,
-        VersionText(row.Version));
+        VersionText(row.Version), FinanceDocumentNumbering.View(row));
 
     private static ManualBankPaymentCommandResult Succeeded(FinanceContext context, ManualBankPaymentRow row) =>
         new ManualBankPaymentCommandResult(
@@ -706,6 +721,7 @@ public sealed class ManualBankPaymentService(
     private static string AuditJson(ManualBankPaymentRow row) => JsonSerializer.Serialize(new
     {
         row.Id,
+        documentNumber = FinanceDocumentNumbering.View(row),
         version = VersionText(row.Version),
         status = ToStatus(row.Status).ToString(),
         row.PartyId,

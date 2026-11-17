@@ -1,3 +1,4 @@
+import { issueText as commonIssueText } from './financeText'
 /**
  * F-32 Virman ve döviz bozdurma — every user-visible text of the screen (TEK-03). A transfer between two treasury
  * accounts, or a currency exchange between them, is ONE record carrying both legs (FNS-D24).
@@ -152,5 +153,5 @@ const ISSUE_MESSAGE: Readonly<Record<string, string>> = {
 }
 
 export function issueMessage(code: string): string {
-  return ISSUE_MESSAGE[code] ?? `Sunucu isteği reddetti (${code}).`
+  return ISSUE_MESSAGE[code] ?? commonIssueText(code)
 }

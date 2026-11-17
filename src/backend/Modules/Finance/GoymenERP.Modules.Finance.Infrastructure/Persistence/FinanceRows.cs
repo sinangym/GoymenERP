@@ -12,8 +12,10 @@ internal interface IFinanceTenantRow
 /// is the optimistic concurrency token and the lossless version the contract shows. The amount is
 /// the exact text that passed the Settings profile's scale; no database decimal is a money scale.
 /// </summary>
-internal sealed class ReceiptDraftRow : IFinanceTenantRow
+internal sealed class ReceiptDraftRow : IFinanceNumberedSource
 {
+    public string? DocumentNumber { get; set; }
+    public string? DocumentNumberFormatVersion { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public long Version { get; set; }
@@ -122,8 +124,10 @@ internal static class MoneyEventKinds
 }
 
 /// <summary>R47 manual outgoing bank payment, from preparation through a separately confirmed record.</summary>
-internal sealed class ManualBankPaymentRow : IFinanceTenantRow
+internal sealed class ManualBankPaymentRow : IFinanceNumberedSource
 {
+    public string? DocumentNumber { get; set; }
+    public string? DocumentNumberFormatVersion { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public long Version { get; set; }
