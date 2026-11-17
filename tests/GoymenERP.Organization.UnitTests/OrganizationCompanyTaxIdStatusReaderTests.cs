@@ -66,6 +66,62 @@ public sealed class OrganizationCompanyTaxIdStatusReaderTests
     }
 
     [Fact]
+    public async Task A_pending_clear_hides_its_current_old_value_until_clear_and_first_vkn_approval_complete()
+    {
+        const string oldValue = "1111111111";
+        var database = await SeedAsync(oldValue);
+        var correctionId = await StageAsync(database, PlaceholderCompany, oldValue, null);
+        Assert.Equal(new(PlaceholderCompany, OrganizationCompanyTaxIdStatusV1.NotEntered, null),
+            await Reader(database, Resolved(PlaceholderCompany)).ReadAsync(PlaceholderCompany));
+
+        await using (var context = Context(database, Resolved(PlaceholderCompany)))
+        {
+            var company = await context.Companies.SingleAsync(candidate => candidate.Id == PlaceholderCompany);
+            var correction = await context.CompanyTaxIdCorrections.SingleAsync(candidate => candidate.Id == correctionId);
+            correction.Apply(company, "SENTETIK-clear-approver", DateTimeOffset.UnixEpoch.AddHours(1));
+            await context.SaveChangesAsync();
+        }
+        Assert.Equal(new(PlaceholderCompany, OrganizationCompanyTaxIdStatusV1.NotEntered, null),
+            await Reader(database, Resolved(PlaceholderCompany)).ReadAsync(PlaceholderCompany));
+
+        await ApproveFirstVknAsync(database);
+        Assert.Equal(new(PlaceholderCompany, OrganizationCompanyTaxIdStatusV1.Entered, SyntheticApprovedVkn),
+            await Reader(database, Resolved(PlaceholderCompany)).ReadAsync(PlaceholderCompany));
+    }
+
+    [Fact]
+    public async Task A_stale_pending_clear_does_not_hide_a_subsequently_approved_vkn_or_another_company()
+    {
+        const string oldValue = "1111111111";
+        var database = await SeedAsync(oldValue);
+        var correctionId = await StageAsync(database, PlaceholderCompany, oldValue, null);
+        await ApproveFirstVknAsync(database);
+        await using (var context = Context(database, Resolved(PlaceholderCompany)))
+        {
+            var company = await context.Companies.SingleAsync(candidate => candidate.Id == PlaceholderCompany);
+            var pending = await context.CompanyTaxIdCorrections.SingleAsync(candidate => candidate.Id == correctionId);
+            Assert.True(pending.IsPending);
+            Assert.False(pending.IsCurrentFor(company));
+            // The flags did not decide the read: the first approved VKN is still entered on this existing company.
+            Assert.True(company.IsPlaceholder);
+            Assert.False(company.InvoiceCapable);
+        }
+        Assert.Equal(new(PlaceholderCompany, OrganizationCompanyTaxIdStatusV1.Entered, SyntheticApprovedVkn),
+            await Reader(database, Resolved(PlaceholderCompany)).ReadAsync(PlaceholderCompany));
+        Assert.Equal(new(CompanyWithVkn, OrganizationCompanyTaxIdStatusV1.Entered, SyntheticVkn),
+            await Reader(database, Resolved(CompanyWithVkn)).ReadAsync(CompanyWithVkn));
+    }
+
+    [Fact]
+    public async Task A_pending_real_replacement_keeps_the_current_normal_company_vkn_entered()
+    {
+        var database = await SeedAsync();
+        await StageAsync(database, CompanyWithVkn, SyntheticVkn, "9000000033");
+        Assert.Equal(new(CompanyWithVkn, OrganizationCompanyTaxIdStatusV1.Entered, SyntheticVkn),
+            await Reader(database, Resolved(CompanyWithVkn)).ReadAsync(CompanyWithVkn));
+    }
+
+    [Fact]
     public async Task An_unknown_company_is_not_found()
     {
         var database = await SeedAsync();
@@ -108,7 +164,7 @@ public sealed class OrganizationCompanyTaxIdStatusReaderTests
     private static OrganizationCompanyTaxIdStatusReader Reader(string database, ICompanyContext context) =>
         new(Context(database, context), context);
 
-    private static async Task<string> SeedAsync()
+    private static async Task<string> SeedAsync(string? placeholderVkn = null)
     {
         var database = $"organization-company-tax-id-status-{Guid.NewGuid():N}";
         // Company rows are created only by the bootstrap seed; the test opens the same narrow scope.
@@ -129,11 +185,33 @@ public sealed class OrganizationCompanyTaxIdStatusReaderTests
             PlaceholderCompany,
             "SYN-P",
             "Sentetik Yer Tutucu Şirket",
-            vkn: null,
+            vkn: placeholderVkn,
             isPlaceholder: true,
             invoiceCapable: false));
         await context.SaveChangesAsync();
         return database;
+    }
+
+    private static async Task<Guid> StageAsync(string database, Guid companyId, string stagedVkn, string? correctedVkn)
+    {
+        await using var context = Context(database, Resolved(companyId));
+        var company = await context.Companies.SingleAsync(candidate => candidate.Id == companyId);
+        var correction = new CompanyTaxIdCorrection(Guid.NewGuid(), companyId, "SENTETIK-staging-source",
+            stagedVkn, correctedVkn, company.Version, "SENTETIK staged correction", DateTimeOffset.UnixEpoch);
+        context.CompanyTaxIdCorrections.Add(correction);
+        await context.SaveChangesAsync();
+        return correction.Id;
+    }
+
+    private static async Task ApproveFirstVknAsync(string database)
+    {
+        await using var context = Context(database, Resolved(PlaceholderCompany));
+        var company = await context.Companies.SingleAsync(candidate => candidate.Id == PlaceholderCompany);
+        var request = new CompanyTaxIdChangeRequest(Guid.NewGuid(), company.Id, company.Vkn, SyntheticApprovedVkn,
+            company.Version, "SENTETIK first real VKN", "SENTETIK-maker", DateTimeOffset.UnixEpoch.AddHours(2));
+        request.Approve(company, "SENTETIK-checker", null, DateTimeOffset.UnixEpoch.AddHours(3));
+        context.CompanyTaxIdChangeRequests.Add(request);
+        await context.SaveChangesAsync();
     }
 
     private static CompanyContext Resolved(Guid companyId)
