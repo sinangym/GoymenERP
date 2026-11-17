@@ -3314,6 +3314,111 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.PurchaseInvoiceCostApplicationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AdmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("InvoiceVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("CompanyId", "SourceEventId");
+
+                    b.HasIndex("CompanyId", "AdmissionId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "InvoiceId")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseInvoiceCostApplications", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseInvoiceCostApplications_Envelope", "DATEPART(TZOFFSET,[OccurredAtUtc]) = 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseInvoiceCostApplications_Source", "[SourceEventId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [AdmissionId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceVersion] >= 1 AND LEN([SourceSha256]) = 64 AND ISJSON([SourceJson], OBJECT) = 1 AND ISJSON([ResultJson], OBJECT) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.PurchaseInvoiceReceiptCostEffectRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AcceptanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AcceptedQuantity")
+                        .IsRequired()
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MatchedQuantity")
+                        .IsRequired()
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MovementLineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "SourceEventId", "AcceptanceId");
+
+                    b.HasIndex("CompanyId", "AcceptanceId", "SourceEventId")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "MovementId", "MovementLineNumber");
+
+                    b.ToTable("PurchaseInvoiceReceiptCostEffects", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseInvoiceReceiptCostEffects_Quantity", "([MatchedQuantity] IS NULL OR (LEN([MatchedQuantity]) BETWEEN 1 AND 50 AND [MatchedQuantity] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9.]%' AND [MatchedQuantity] NOT LIKE '%.%.%' AND [MatchedQuantity] NOT LIKE '.%' AND [MatchedQuantity] NOT LIKE '%.' AND [MatchedQuantity] NOT LIKE '0[0-9]%' AND (CHARINDEX('.',[MatchedQuantity]) = 0 OR [MatchedQuantity] NOT LIKE '%0') AND LEN([MatchedQuantity]) = DATALENGTH([MatchedQuantity]) AND LEN(REPLACE([MatchedQuantity],'.','')) <= 29 AND (CHARINDEX('.',[MatchedQuantity]) = 0 OR LEN([MatchedQuantity]) - CHARINDEX('.',[MatchedQuantity]) <= 28) AND (LEN(REPLACE([MatchedQuantity],'.','')) < 29 OR REPLACE([MatchedQuantity],'.','') COLLATE Latin1_General_100_BIN2 <= '79228162514264337593543950335') AND TRY_CONVERT(decimal(38,18),[MatchedQuantity]) IS NOT NULL)) AND ([AcceptedQuantity] IS NULL OR (LEN([AcceptedQuantity]) BETWEEN 1 AND 50 AND [AcceptedQuantity] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9.]%' AND [AcceptedQuantity] NOT LIKE '%.%.%' AND [AcceptedQuantity] NOT LIKE '.%' AND [AcceptedQuantity] NOT LIKE '%.' AND [AcceptedQuantity] NOT LIKE '0[0-9]%' AND (CHARINDEX('.',[AcceptedQuantity]) = 0 OR [AcceptedQuantity] NOT LIKE '%0') AND LEN([AcceptedQuantity]) = DATALENGTH([AcceptedQuantity]) AND LEN(REPLACE([AcceptedQuantity],'.','')) <= 29 AND (CHARINDEX('.',[AcceptedQuantity]) = 0 OR LEN([AcceptedQuantity]) - CHARINDEX('.',[AcceptedQuantity]) <= 28) AND (LEN(REPLACE([AcceptedQuantity],'.','')) < 29 OR REPLACE([AcceptedQuantity],'.','') COLLATE Latin1_General_100_BIN2 <= '79228162514264337593543950335') AND TRY_CONVERT(decimal(38,18),[AcceptedQuantity]) IS NOT NULL)) AND TRY_CONVERT(decimal(38,18),[MatchedQuantity]) > 0 AND TRY_CONVERT(decimal(38,18),[AcceptedQuantity]) >= TRY_CONVERT(decimal(38,18),[MatchedQuantity])");
+
+                            t.HasCheckConstraint("CK_PurchaseInvoiceReceiptCostEffects_Source", "[AcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000' AND [MovementLineNumber] >= 1 AND ISJSON([ResultJson], OBJECT) = 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.SourceGrainRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -4411,6 +4516,30 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.MovementLineRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "MovementId", "LineNumber")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.PurchaseInvoiceCostApplicationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.PurchaseInvoiceReceiptCostEffectRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.PurchaseInvoiceCostApplicationRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SourceEventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.MovementLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "MovementId", "MovementLineNumber")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

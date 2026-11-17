@@ -29,7 +29,8 @@ public sealed class InventoryOutboxEventSource(InventoryDbContext db, ICompanyCo
         var rows = await db.OutboxMessages.AsNoTracking().Where(row => row.CompanyId == companyId && row.Position > after
             && row.Position < horizon && row.SchemaVersion == 1
             && (row.EventType == InventoryFutureAllocationReleasedOutboxV1.EventType
-                || row.EventType == InventoryOutboxContractV1.ManufacturingCostDifferenceProposed))
+                || row.EventType == InventoryOutboxContractV1.ManufacturingCostDifferenceProposed
+                || row.EventType == InventoryPurchaseInvoiceCostDifferenceV1.EventType))
             .OrderBy(row => row.Position).Take(maxCount).ToListAsync(cancellationToken);
         if (!SameCompany(companyId)) throw new InvalidOperationException("Inventory outbox company changed during read.");
         return rows.Select(row => new WorkOutboxEventV1(row.Id, row.CompanyId, row.EventType, row.SchemaVersion, row.PayloadJson,
