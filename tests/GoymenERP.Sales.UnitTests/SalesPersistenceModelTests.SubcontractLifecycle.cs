@@ -8,6 +8,21 @@ namespace GoymenERP.Sales.UnitTests;
 public sealed partial class SalesPersistenceModelTests
 {
     [Fact]
+    public void Subcontract_invoice_claim_range_migration_is_an_unfiltered_reversible_index_without_data_mutation()
+    {
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSubcontractInvoiceClaimRange();
+        var index = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateIndexOperation>(Assert.Single(migration.UpOperations));
+        Assert.Equal("IX_SubcontractServiceInvoices_ClaimRange", index.Name);
+        Assert.Equal("sales", index.Schema);
+        Assert.Equal("SubcontractServiceInvoices", index.Table);
+        Assert.Equal(["CompanyId", "LoadingInstructionId", "WeighingId"], index.Columns);
+        Assert.False(index.IsUnique);
+        Assert.Null(index.Filter);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropIndexOperation>(Assert.Single(migration.DownOperations));
+        Assert.Equal(index.Name, drop.Name);
+    }
+
+    [Fact]
     public void Subcontract_lifecycle_migration_preserves_existing_claims_and_guards_rollback_before_every_drop()
     {
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSubcontractInvoiceLifecycle();
@@ -43,6 +58,10 @@ public sealed partial class SalesPersistenceModelTests
         var header = model.FindEntityType(typeof(SubcontractServiceInvoiceRow))!;
         Assert.Contains(header.GetIndexes(), index => index.GetDatabaseName() == "UX_SubcontractServiceInvoices_Weighing"
             && index.IsUnique && index.GetFilter() == "[State] IN (1,2,3,6)");
+        var range = Assert.Single(header.GetIndexes(), index => index.GetDatabaseName() == "IX_SubcontractServiceInvoices_ClaimRange");
+        Assert.Null(range.GetFilter());
+        Assert.False(range.IsUnique);
+        Assert.Equal(["CompanyId", "LoadingInstructionId", "WeighingId"], range.Properties.Select(property => property.Name));
     }
 
     [Theory]

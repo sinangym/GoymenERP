@@ -2210,6 +2210,9 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
             .HasFilter("[State] IN (1,2,3,6)")
             .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing");
         invoice.HasIndex(x => new { x.CompanyId, x.SalesOrderId }).HasDatabaseName("IX_SubcontractServiceInvoices_Order");
+        // The Serializable owner claim reads all states, including an initially empty range.
+        invoice.HasIndex(x => new { x.CompanyId, x.LoadingInstructionId, x.WeighingId })
+            .HasDatabaseName("IX_SubcontractServiceInvoices_ClaimRange");
         invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         invoice.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

@@ -45,7 +45,8 @@ public sealed partial class SalesStore(
     SalesDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
+    TimeProvider timeProvider,
+    ISalesSubcontractWeighingCommitReadPortV1? subcontractWeighingCommitRead = null) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
 {
     private const string DraftEntityType = "Sales.OrderDraft";
     private const int ActorMaximumLength = 128;
