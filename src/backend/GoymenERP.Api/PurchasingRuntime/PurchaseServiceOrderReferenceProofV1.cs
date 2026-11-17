@@ -38,6 +38,7 @@ public sealed class PurchaseServiceOrderReferenceProofV1(IInventoryParentRollVal
             }
         }
         catch (InventoryParentRollException exception) { throw new PurchasingServiceException(exception.StatusCode, exception.Code); }
+        catch (ProductOperationException exception) { throw new PurchasingServiceException(exception.StatusCode, exception.Code); }
         void RequireCurrent()
         {
             if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(actor) || user.UserId != actor || !company.IsResolved

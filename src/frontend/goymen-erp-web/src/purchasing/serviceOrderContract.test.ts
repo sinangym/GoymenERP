@@ -24,4 +24,11 @@ describe('ALC-S7 strict owner contract (synthetic)', () => {
     expect(decodeServiceOrder({ ...value, kind: 'OwnMaterialSubcontract' }, serviceId(1))).toBeNull()
     expect(decodeServiceReceipt({ order: value, isReplay: true, originalCorrelationId: 'SENTETIK' }, serviceId(1), serviceId(2), false)).toBeNull()
   })
+  it('preserves an actual Purchasing tax snapshot and rejects malformed or incomplete source versions', () => {
+    const value = serviceFixture(), tax = { vatApplies: true, vatPercent: '20', exemptionCode: null, withholdingApplies: true,
+      withholdingPercent: '50', withholdingCode: 'SENTETIK', settingsVersion: '2' }
+    expect(decodeServiceOrder({ ...value, lines: [{ ...value.lines[0], tax }] }, serviceId(1))?.lines[0].tax).toEqual(tax)
+    expect(decodeServiceOrder({ ...value, lines: [{ ...value.lines[0], tax: { ...tax, settingsVersion: '0' } }] }, serviceId(1))).toBeNull()
+    expect(decodeServiceOrder({ ...value, lines: [{ ...value.lines[0], tax: { ...tax, withholdingCode: null } }] }, serviceId(1))).toBeNull()
+  })
 })

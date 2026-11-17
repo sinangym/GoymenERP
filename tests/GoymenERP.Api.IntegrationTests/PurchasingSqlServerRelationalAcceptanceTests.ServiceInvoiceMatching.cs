@@ -67,9 +67,50 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Empty((await foreignWorkspace.ListAsync(first.Source.OfficialNumber, 0)).Items);
     }
 
-    private static async Task<(PurchaseServiceOrderState Order, Guid Acceptance)> ServiceInvoiceAcceptanceAsync(Run run)
+    [SqlServerFact]
+    public async Task Service_price_completion_keeps_real_acceptance_history_and_matches_only_after_the_new_revision_is_approved()
+    {
+        await using var run = await Run.StartAsync();
+        var (order, acceptance) = await ServiceInvoiceAcceptanceAsync(run, unpriced: true);
+        var invoice = ServiceInvoice(run, order);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await ((IPurchasingIncomingInvoiceStoreV1)scope.Store).RecordIncomingInvoiceAsync(invoice,
+                run.Envelope("service-late-price-invoice"), Hash("service-late-price-invoice"), _ => Task.CompletedTask);
+            var service = InvoiceWorkflow(run, scope, new(_ => Task.CompletedTask), InvoiceMatchSource(scope, new()));
+            Assert.Equal(503, (await Assert.ThrowsAsync<PurchasingServiceException>(() => service.MatchAsync(invoice.Id,
+                new("1", [new(invoice.Lines[0].Id, order.OrderId, acceptance, "4")]),
+                new("SENTETIK-service-missing-price", run.Correlation, null, AcceptanceTime)))).Status);
+        }
+        await using (var scope = ServiceScope(run, CompanyA))
+        {
+            var result = await scope.Store.WriteAsync(order.OrderId, PurchaseServiceOrderCommandsV1.RevisePrices,
+                run.Envelope("service-later-price"), Hash("service-later-price"), "SENTETIK fiyat tamamlama",
+                (old, _) => Task.FromResult(PurchaseServiceOrder.RevisePrices(old!, 3,
+                    new Dictionary<Guid, decimal> { [order.Lines[0].LineId] = 2m }, "SENTETIK-price-preparer", "SENTETIK fiyat", old!.CreatedAtUtc)),
+                _ => Task.CompletedTask, default);
+            Assert.Equal(PurchaseServiceOrderStatus.Draft, result!.Order!.Status);
+            await scope.Store.WriteAsync(order.OrderId, PurchaseServiceOrderCommandsV1.Approve,
+                run.Envelope("service-later-reapproval"), Hash("service-later-reapproval"), "SENTETIK tekrar onay",
+                (old, _) => Task.FromResult(PurchaseServiceOrder.Approve(old!, 4, "SENTETIK-other-checker", old!.CreatedAtUtc)),
+                _ => Task.CompletedTask, default);
+        }
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = InvoiceWorkflow(run, scope, new(_ => Task.CompletedTask), InvoiceMatchSource(scope, new()));
+            Assert.Equal(PurchaseIncomingInvoiceStatus.Matched, (await service.MatchAsync(invoice.Id,
+                new("1", [new(invoice.Lines[0].Id, order.OrderId, acceptance, "4")]),
+                new("SENTETIK-service-real-price", run.Correlation, null, AcceptanceTime))).Invoice.Status);
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.ServiceAcceptances WHERE OrderId=@id", ("@id", order.OrderId)));
+        Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.ServiceOrderRevisions WHERE OrderId=@id", ("@id", order.OrderId)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+    }
+
+    private static async Task<(PurchaseServiceOrderState Order, Guid Acceptance)> ServiceInvoiceAcceptanceAsync(Run run, bool unpriced = false)
     {
         await using var scope = ServiceScope(run, CompanyA); var draft = ServiceDraft(run); var acceptance = Guid.NewGuid();
+        if (unpriced) draft = draft with { Lines = [draft.Lines[0] with { UnitPrice = null }] };
         await scope.Store.WriteAsync(draft.OrderId, PurchaseServiceOrderCommandsV1.Create, run.Envelope("service-source-" + draft.OrderId),
             Hash("service-source-" + draft.OrderId), "SENTETIK hizmet", (_, _) => Task.FromResult(draft), _ => Task.CompletedTask, default);
         await scope.Store.WriteAsync(draft.OrderId, PurchaseServiceOrderCommandsV1.Approve, run.Envelope("service-approve-" + draft.OrderId),

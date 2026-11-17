@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Purchasing.Domain.Orders;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Purchasing.Domain.Services;
 
@@ -6,7 +7,10 @@ public enum PurchaseServiceOrderKind { ServicePurchase = 1, OwnMaterialSubcontra
 public enum PurchaseServiceOrderStatus { Draft = 1, Approved = 2, Cancelled = 3 }
 public sealed record PurchaseServiceLine(Guid LineId, Guid ServiceTypeId, long ServiceTypeVersion, string ServiceName,
     Guid UnitId, string UnitCode, Guid UnitProfileId, long UnitProfileVersion, int UnitScale,
-    decimal Quantity, decimal? UnitPrice, decimal AcceptedQuantity);
+    decimal Quantity, decimal? UnitPrice, decimal AcceptedQuantity,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceTax? Tax = null);
+public sealed record PurchaseServiceTax(bool VatApplies, decimal? VatPercent, string? ExemptionCode,
+    bool WithholdingApplies, decimal? WithholdingPercent, string? WithholdingCode, long SettingsVersion);
 public sealed record PurchaseServiceMaterial(Guid LabelId, string LabelVersion, Guid ProductId, string ProductVersion, decimal QuantityKg);
 public sealed record PurchaseServiceOutput(Guid ProductId, string ProductVersion, decimal ExpectedQuantityKg);
 public sealed record PurchaseServiceAcceptance(Guid AcceptanceId, Guid LineId, decimal Quantity, DateOnly AcceptedOn,
@@ -19,7 +23,8 @@ public sealed record PurchaseServiceOrderState(Guid CompanyId, Guid OrderId, lon
     PurchaseServiceOrderStatus Status, Guid SupplierPartyId, Guid CompanyAccountId, string PartyVersion, string AccountVersion,
     DateOnly BusinessDate, string PreparedBy, string? ApprovedBy, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc,
     PurchaseServiceMoney Money, IReadOnlyList<PurchaseServiceLine> Lines, IReadOnlyList<PurchaseServiceMaterial> Materials,
-    IReadOnlyList<PurchaseServiceOutput> ExpectedOutputs, IReadOnlyList<PurchaseServiceAcceptance> Acceptances, string? DocumentNumber = null)
+    IReadOnlyList<PurchaseServiceOutput> ExpectedOutputs, IReadOnlyList<PurchaseServiceAcceptance> Acceptances, string? DocumentNumber = null,
+    int PriceRevision = 0)
 {
     public bool IsOpen => Status == PurchaseServiceOrderStatus.Approved && Lines.Any(x => x.AcceptedQuantity < x.Quantity);
 }
@@ -35,7 +40,7 @@ public static class PurchaseServiceOrder
     public static PurchaseServiceOrderState Create(PurchaseServiceOrderState value)
     {
         Validate(value);
-        if (value.Version != 1 || value.Status != PurchaseServiceOrderStatus.Draft || value.ApprovedBy is not null
+        if (value.Version != 1 || value.PriceRevision != 0 || value.Status != PurchaseServiceOrderStatus.Draft || value.ApprovedBy is not null
             || value.Acceptances.Count != 0 || value.Lines.Any(x => x.AcceptedQuantity != 0)) throw new ArgumentException("Yeni hizmet siparişi taslak olmalıdır.");
         return value;
     }
@@ -45,6 +50,8 @@ public static class PurchaseServiceOrder
         RequireVersion(value, expected); RequireActor(actor, now);
         if (value.Status != PurchaseServiceOrderStatus.Draft) throw new PurchaseServiceOrderException(StateConflict);
         if (value.PreparedBy == actor) throw new PurchaseServiceOrderException(SameActor);
+        if (value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract && value.Lines.Any(x => x.Tax is null))
+            throw new ArgumentException("Alış fason vergi kaynağı eksik.");
         return value with { Version = checked(value.Version + 1), Status = PurchaseServiceOrderStatus.Approved, ApprovedBy = actor, UpdatedAtUtc = now };
     }
 
@@ -64,11 +71,26 @@ public static class PurchaseServiceOrder
         Validate(result); return result;
     }
 
+    /// <summary>ALS-D18/D9: entering a later price creates a new draft revision; performed service and physical references remain historical facts.</summary>
+    public static PurchaseServiceOrderState RevisePrices(PurchaseServiceOrderState value, long expected,
+        IReadOnlyDictionary<Guid, decimal> prices, string actor, string reason, DateTimeOffset now)
+    {
+        RequireVersion(value, expected); RequireActor(actor, now); RequireReason(reason);
+        ArgumentNullException.ThrowIfNull(prices);
+        if (value.Status != PurchaseServiceOrderStatus.Approved) throw new PurchaseServiceOrderException(StateConflict);
+        if (prices.Count == 0 || prices.Any(x => value.Lines.All(line => line.LineId != x.Key))) throw new ArgumentException("Fiyat satırı geçersiz.");
+        if (prices.All(x => value.Lines.Single(line => line.LineId == x.Key).UnitPrice == x.Value)) throw new PurchaseServiceOrderException(StateConflict);
+        var result = value with { Version = checked(value.Version + 1), PriceRevision = checked(value.PriceRevision + 1),
+            Status = PurchaseServiceOrderStatus.Draft, PreparedBy = actor, ApprovedBy = null, UpdatedAtUtc = now,
+            Lines = value.Lines.Select(line => prices.TryGetValue(line.LineId, out var price) ? line with { UnitPrice = price } : line).ToArray() };
+        Validate(result); return result;
+    }
+
     public static void Validate(PurchaseServiceOrderState value)
     {
         ArgumentNullException.ThrowIfNull(value);
         if (value.CompanyId == Guid.Empty || value.OrderId == Guid.Empty || value.SupplierPartyId == Guid.Empty
-            || value.CompanyAccountId == Guid.Empty || value.Version < 1 || !Enum.IsDefined(value.Kind) || !Enum.IsDefined(value.Status)
+            || value.CompanyAccountId == Guid.Empty || value.BusinessDate == default || value.Version < 1 || value.PriceRevision < 0 || !Enum.IsDefined(value.Kind) || !Enum.IsDefined(value.Status)
             || string.IsNullOrWhiteSpace(value.PartyVersion) || string.IsNullOrWhiteSpace(value.AccountVersion)
             || value.Lines is not { Count: > 0 and <= 100 } || value.Materials is null || value.ExpectedOutputs is null || value.Acceptances is null)
             throw new ArgumentException("Hizmet siparişi kimliği veya kaynağı geçersiz.");
@@ -85,11 +107,19 @@ public static class PurchaseServiceOrder
                 || line.UnitPrice is { } p && (p < 0 || p >= 1_000_000_000_000_000_000m || decimal.Round(p, money.PriceScale) != p))
                 throw new ArgumentException("Hizmet miktarı veya fiyatı geçersiz.");
             if (line.UnitPrice is { } price) _ = new PurchaseOrderLinePrice(price, line.UnitId).LineAmount(line.Quantity, money);
+            if (line.Tax is { } tax && (tax.SettingsVersion < 1
+                || tax.VatApplies && tax.VatPercent is not (>= 0 and <= 100)
+                || !tax.VatApplies && (tax.VatPercent is not null || string.IsNullOrWhiteSpace(tax.ExemptionCode))
+                || tax.WithholdingApplies && (!tax.VatApplies || tax.WithholdingPercent is not (> 0 and <= 100) || string.IsNullOrWhiteSpace(tax.WithholdingCode))
+                || !tax.WithholdingApplies && (tax.WithholdingPercent is not null || tax.WithholdingCode is not null)))
+                throw new ArgumentException("Alış fason vergi görüntüsü geçersiz.");
             if (value.Acceptances.Where(x => x.LineId == line.LineId).Sum(x => x.Quantity) != line.AcceptedQuantity)
                 throw new ArgumentException("Hizmet kabul geçmişi toplamı uyuşmuyor.");
         }
         if (value.Status != PurchaseServiceOrderStatus.Draft && value.Status != PurchaseServiceOrderStatus.Cancelled && string.IsNullOrWhiteSpace(value.ApprovedBy))
             throw new ArgumentException("Onaylayan kaynağı yok.");
+        if (value.Status == PurchaseServiceOrderStatus.Approved && value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract
+            && value.Lines.Any(line => line.Tax is null)) throw new ArgumentException("Alış fason vergi kaynağı eksik.");
         if (value.Kind == PurchaseServiceOrderKind.ServicePurchase && (value.Materials.Count != 0 || value.ExpectedOutputs.Count != 0)
             || value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract && (value.Materials.Count == 0 || value.ExpectedOutputs.Count == 0))
             throw new ArgumentException("Hizmet ve kendi malı fason kapsamları karıştırılamaz.");

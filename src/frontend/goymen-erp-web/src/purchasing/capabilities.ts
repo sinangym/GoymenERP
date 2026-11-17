@@ -4,6 +4,7 @@ export const PURCHASING_CAPABILITY = {
   serviceOrderDetail: 'purchasing.service-orders.detail',
   serviceOrderApprove: 'purchasing.service-orders.approve',
   serviceOrderAccept: 'purchasing.service-orders.accept',
+  serviceOrderRevisePrices: 'purchasing.service-orders.prices-revise',
   invoiceList: 'purchasing.invoices.list',
   invoiceDetail: 'purchasing.invoices.detail',
   invoiceMatch: 'purchasing.invoices.match',
