@@ -521,6 +521,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<string>("ExchangeSnapshotJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
@@ -624,6 +627,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CashTransfers_Dates", "[ValueOn] IS NULL OR [ValueOn] >= [OccurredOn]");
 
                             t.HasCheckConstraint("CK_CashTransfers_DistinctAccounts", "NOT ([SourceKind] = [TargetKind] AND [SourceAccountId] = [TargetAccountId])");
+
+                            t.HasCheckConstraint("CK_CashTransfers_ExchangeSnapshot", "[ExchangeSnapshotJson] IS NULL OR ([Kind] = 1 AND ISJSON([ExchangeSnapshotJson]) = 1)");
 
                             t.HasCheckConstraint("CK_CashTransfers_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TargetAccountId] <> '00000000-0000-0000-0000-000000000000' AND [SourceCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [TargetCurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 

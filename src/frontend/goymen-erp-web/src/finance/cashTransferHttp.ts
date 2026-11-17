@@ -19,6 +19,7 @@ import {
   decodeCashTransferPreviewResult,
   type AccountContextRequest,
   type CashTransferAccountContext,
+  type CashTransferExchangeSnapshot,
   type CashTransferPage,
   type CashTransferPreparation,
   type CashTransferView,
@@ -95,7 +96,7 @@ export type UnknownReason = 'offline' | 'network-error' | 'service-unavailable' 
 // ---------------------------------------------------------------------------------------------------------------
 
 export type CashTransferPreviewOutcome =
-  | { readonly kind: 'accepted'; readonly preparation: CashTransferPreparation }
+  | { readonly kind: 'accepted'; readonly preparation: CashTransferPreparation; readonly exchange?: CashTransferExchangeSnapshot }
   | { readonly kind: 'refused'; readonly status: 400 | 401 | 403 | 415 | 422; readonly issues: readonly ValidationIssue[] }
   | { readonly kind: 'unknown'; readonly reason: UnknownReason }
 
@@ -155,7 +156,8 @@ export async function previewCashTransfer(companyId: string, preparation: CashTr
   const result = decoded.value
   if (response.status === 200) {
     return result.outcome === 'Succeeded' && samePreparation(result.preparation, preparation)
-      ? { kind: 'accepted', preparation: result.preparation }
+      && (result.exchange === undefined || result.exchange.companyId === companyId)
+      ? { kind: 'accepted', preparation: result.preparation, ...(result.exchange === undefined ? {} : { exchange: result.exchange }) }
       : { kind: 'unknown', reason: 'undecodable' }
   }
   return result.outcome === 'ValidationFailed'
@@ -245,7 +247,12 @@ export async function commitCashTransfer(
     return { kind: 'failed', status: response.status as 409 | 422, outcome: result.outcome, issues: result.issues }
   }
   // The record must be the transfer that was sent: the same legs, amounts, rate and dates.
-  if (!samePreparation(result.resource.preparation, body.preparation)) return { kind: 'unknown', reason: 'undecodable' }
+  const recorded = result.resource.preparation
+  const matches = samePreparation(recorded, body.preparation)
+    || body.preparation.kind === 'CurrencyExchange' && result.resource.exchange !== undefined
+      && result.resource.exchange.transactionRate === recorded.rate
+      && samePreparation({ ...recorded, rate: body.preparation.rate }, body.preparation)
+  if (!matches) return { kind: 'unknown', reason: 'undecodable' }
   return { kind: 'applied', resource: result.resource, replayed: result.isReplay }
 }
 

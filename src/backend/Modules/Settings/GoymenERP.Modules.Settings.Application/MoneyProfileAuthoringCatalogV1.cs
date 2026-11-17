@@ -8,6 +8,7 @@ namespace GoymenERP.Modules.Settings.Application;
 public static class MoneyProfileAuthoringCatalogV1
 {
     public const string CreditPlanOperation = "finance.credit-plan";
+    public const string CashTransferOperation = "finance.cash-transfer.v1";
     public static IReadOnlyList<MoneyCurrencyCandidateV1> Currencies { get; } = Array.AsReadOnly(new[]
     {
         new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "Türk lirası"),
@@ -32,7 +33,7 @@ public static class MoneyProfileAuthoringCatalogV1
         // gets its empty authoring target. A profile still has no value until a human records it.
         var operations = entries.SelectMany(entry => entry.Operations).Distinct(StringComparer.Ordinal);
         if (operations.Any(operation => operation.StartsWith("finance.", StringComparison.Ordinal)))
-            operations = operations.Append(CreditPlanOperation);
+            operations = operations.Append(CreditPlanOperation).Append(CashTransferOperation);
         return operations.Order(StringComparer.Ordinal).ToArray();
     }
 }

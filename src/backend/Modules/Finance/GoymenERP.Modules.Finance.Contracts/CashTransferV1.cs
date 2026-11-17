@@ -7,10 +7,9 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // FNS-D24 (SINAN_KARARLARI_2026-11-11_FINANS_F005.md; FINANS_HAZIRLIK_PLANI_v1.md §5.4 API-32/34): money moved between
 // two treasury accounts of the same company (kasa↔banka, banka↔banka, kasa↔kasa) is ONE record. A transfer in the same
 // currency carries the same amount on both legs; a currency exchange (döviz bozdurma / alış-satış) carries both amounts
-// and the transaction rate on the same record, never two separate movements. The decision does not choose the rate
-// source, the rate/amount consistency rule, the exchange difference or the accounting counterpart: the exchange
-// commit stays fail-closed behind IFinanceCurrencyExchangeRateRule until those are decided (NEEDS-SINAN), and every
-// commit needs the treasury balance guard to answer Sufficient (FNS-D11: refused, never clipped).
+// and the transaction rate on the same record, never two separate movements. FNS-D59 derives the transaction quote
+// from both actual amounts and retains a separate TCMB comparison. FNS-D63 does not choose an accounting counterpart.
+// An unavailable actual profile/rate source refuses; every commit also needs the real treasury balance guard.
 
 /// <summary>The kind of treasury account a transfer leg names.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<CashTransferAccountKind>))]
@@ -34,8 +33,8 @@ public enum CashTransferKind
 /// <summary>
 /// The full transfer. Each leg names its account, its amount in the account's currency and the approved Settings money
 /// profile that governs that amount. <paramref name="Rate"/> is the transaction rate as target units per ONE source
-/// unit, an exact positive decimal text; it is required for a currency exchange and must be null for a same-currency
-/// transfer, whose two amounts are the same text in the same currency.
+/// unit. It is null on a new request (FNS-D59: the backend calculates it); a legacy explicit quote must agree with the
+/// actual amount ratio. A same-currency transfer requires null and equal amount texts in the same currency.
 /// </summary>
 public sealed record CashTransferPreparation(
     CashTransferKind Kind,
@@ -66,7 +65,8 @@ public sealed record CommitCashTransferRequest(CashTransferPreparation Preparati
 public sealed record CashTransferPreviewResult(
     CommandOutcome Outcome,
     CashTransferPreparation? Preparation,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CashTransferExchangeSnapshotV1? Exchange = null);
 
 public sealed record CashTransferView(
     Guid Id,
@@ -75,7 +75,8 @@ public sealed record CashTransferView(
     string RecordedBy,
     DateTimeOffset RecordedAtUtc,
     bool TransferConfirmed,
-    string Version);
+    string Version,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CashTransferExchangeSnapshotV1? Exchange = null);
 
 public sealed record CashTransferPage(
     Guid CompanyId,
@@ -101,20 +102,19 @@ public sealed record CashTransferAccountContextView(
     ProfileReference Profile,
     DateOnly OccurredOn);
 
-public enum CurrencyExchangeRateOutcome { Unavailable, Consistent, Inconsistent }
+public enum CurrencyExchangeRateOutcome { Unavailable, Consistent, Inconsistent, Denied }
 
-public sealed record CurrencyExchangeRateAnswer(CurrencyExchangeRateOutcome Outcome, string? Code)
+public sealed record CurrencyExchangeRateAnswer(CurrencyExchangeRateOutcome Outcome, string? Code,
+    CashTransferExchangeSnapshotV1? Snapshot = null)
 {
     public const string UnavailableCode = "finance_exchange_rate_rule_unavailable";
     public const string InconsistentCode = "finance_exchange_rate_inconsistent";
 }
 
 /// <summary>
-/// FNS-D24: whether a currency exchange's rate and its two amounts agree, and whether the rate is admissible for the
-/// date (the rate source and any allowed deviation from the Settings rate record). None of this is decided yet
-/// (NEEDS-SINAN: rounding of target = source × rate, quote direction, rate source, tolerance); the registered default
-/// answers <see cref="CurrencyExchangeRateOutcome.Unavailable"/> and every exchange is refused (fail-closed). The
-/// rule is a deterministic backend calculator; screens never recompute it.
+/// FNS-D59/D62: actual Settings profiles and TCMB comparison evidence for both money legs. The actual target/source
+/// quote comes from the deterministic backend calculator; a TCMB deviation does not block. Missing composition or
+/// sources answer Unavailable. A successful answer must carry its bound immutable snapshot; screens never calculate it.
 /// </summary>
 public interface IFinanceCurrencyExchangeRateRule
 {
@@ -122,7 +122,7 @@ public interface IFinanceCurrencyExchangeRateRule
         FinanceContext context,
         MoneyText sourceMoney,
         MoneyText targetMoney,
-        string rate,
+        string? rate,
         DateOnly occurredOn,
         CancellationToken cancellationToken);
 }
@@ -222,9 +222,9 @@ public static class CashTransferValidator
         {
             if (sameCurrency)
                 issues.Add(new ValidationIssue("targetMoney.currencyId", "cash_transfer_currency_same"));
-            if (preparation.Rate is null)
-                issues.Add(new ValidationIssue("rate", "cash_transfer_rate_required"));
-            else if (!IsRateText(preparation.Rate))
+            // FNS-D59: the server derives the transaction quote from the two actual amounts. Legacy explicit quotes
+            // remain shape checked and must agree with the calculator; a new request need not calculate one itself.
+            if (preparation.Rate is not null && !IsRateText(preparation.Rate))
                 issues.Add(new ValidationIssue("rate", "cash_transfer_rate_invalid"));
         }
 

@@ -83,9 +83,11 @@ public sealed class CashTransferService(
             return Preview(new Refusal(CommandOutcome.ValidationFailed, [Issue("preparation", "identity_required")]));
         var shape = CashTransferValidator.ValidateShape(preparation);
         if (shape.Count > 0) return Preview(new Refusal(CommandOutcome.ValidationFailed, [.. shape]));
-        if (await CheckAsync(context, preparation, action, cancellationToken) is { } refusal) return Preview(refusal);
+        CashTransferExchangeSnapshotV1? exchange = null;
+        if (await CheckAsync(context, preparation, action, cancellationToken, snapshot => exchange = snapshot) is { } refusal)
+            return Preview(refusal);
         if (await FenceAsync(context, action, cancellationToken) is { } afterChecks) return Preview(afterChecks);
-        return new CashTransferPreviewResult(CommandOutcome.Succeeded, preparation, []);
+        return new CashTransferPreviewResult(CommandOutcome.Succeeded, preparation, [], exchange);
     }
 
     public async Task<CashTransferCommandResult> CommitAsync(
@@ -129,11 +131,14 @@ public sealed class CashTransferService(
         if (shape.Count > 0) return Refused(context, CommandOutcome.ValidationFailed, [.. shape]);
         var commitIssues = CashTransferValidator.ValidateCommit(request);
         if (commitIssues.Count > 0) return Refused(context, CommandOutcome.ValidationFailed, [.. commitIssues]);
-        if (await CheckAsync(context, request.Preparation, action, cancellationToken) is { } refusal)
+        CashTransferExchangeSnapshotV1? exchange = null;
+        if (await CheckAsync(context, request.Preparation, action, cancellationToken, snapshot => exchange = snapshot) is { } refusal)
             return Refused(context, refusal);
 
         var now = timeProvider.GetUtcNow();
-        var row = NewRow(context, request.Preparation, now);
+        var prepared = exchange is null ? request.Preparation : request.Preparation with { Rate = exchange.TransactionRate };
+        var row = NewRow(context, prepared, now);
+        row.ExchangeSnapshotJson = exchange is null ? null : JsonSerializer.Serialize(exchange, Json);
         dbContext.CashTransfers.Add(row);
         var result = new CashTransferCommandResult(CommandOutcome.Succeeded, View(row), IsReplay: false,
             context.CorrelationId, []);
@@ -267,7 +272,8 @@ public sealed class CashTransferService(
         FinanceContext context,
         CashTransferPreparation preparation,
         FinanceAction action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<CashTransferExchangeSnapshotV1>? captureExchange = null)
     {
         var sourceCurrency = await EligibleCurrencyAsync(preparation.SourceKind, preparation.SourceAccountId,
             cancellationToken);
@@ -291,13 +297,12 @@ public sealed class CashTransferService(
 
         if (preparation.Kind == CashTransferKind.CurrencyExchange)
         {
-            // FNS-D24: the rate source, the rate/amount consistency and the exchange difference are not decided; the
-            // registered rule answers Unavailable until they are (NEEDS-SINAN), so the exchange stays fail-closed.
+            // FNS-D59: the two actual amounts determine the quote. TCMB is comparison evidence only.
             CurrencyExchangeRateAnswer? rate;
             try
             {
                 rate = await exchangeRateRule.CheckAsync(context, preparation.SourceMoney, preparation.TargetMoney,
-                    preparation.Rate!, preparation.OccurredOn, cancellationToken);
+                    preparation.Rate, preparation.OccurredOn, cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -305,12 +310,32 @@ public sealed class CashTransferService(
             }
 
             if (await FenceAsync(context, action, cancellationToken) is { } afterRate) return afterRate;
+            if (rate?.Outcome == CurrencyExchangeRateOutcome.Denied)
+                return new Refusal(CommandOutcome.Denied, []);
             if (rate is null || rate.Outcome == CurrencyExchangeRateOutcome.Unavailable)
                 return new Refusal(CommandOutcome.Unavailable,
                     [Issue("rate", rate?.Code ?? CurrencyExchangeRateAnswer.UnavailableCode)]);
             if (rate.Outcome != CurrencyExchangeRateOutcome.Consistent)
                 return new Refusal(CommandOutcome.ValidationFailed,
                     [Issue("rate", rate.Code ?? CurrencyExchangeRateAnswer.InconsistentCode)]);
+            if (rate.Snapshot is not { } snapshot || snapshot.CompanyId != context.CompanyId
+                || snapshot.OccurredOn != preparation.OccurredOn || snapshot.SourceMoney != preparation.SourceMoney
+                || snapshot.TargetMoney != preparation.TargetMoney || snapshot.SourceProfile != preparation.SourceProfile
+                || snapshot.TargetProfile != preparation.TargetProfile)
+                return new Refusal(CommandOutcome.Unavailable, [Issue("rate", CurrencyExchangeRateAnswer.UnavailableCode)]);
+            try
+            {
+                var expected = CashTransferExchangeCalculatorV1.Calculate(context.CompanyId, preparation.OccurredOn,
+                    preparation.SourceMoney, preparation.TargetMoney, preparation.SourceProfile, preparation.TargetProfile,
+                    snapshot.SourceComparison, snapshot.TargetComparison);
+                if (expected != snapshot || snapshot.TransactionRate.Length > 29)
+                    return new Refusal(CommandOutcome.Unavailable, [Issue("rate", CurrencyExchangeRateAnswer.UnavailableCode)]);
+            }
+            catch (Exception ex) when (ex is ArgumentException or SettingsPrerequisiteException)
+            {
+                return new Refusal(CommandOutcome.Unavailable, [Issue("rate", CurrencyExchangeRateAnswer.UnavailableCode)]);
+            }
+            captureExchange?.Invoke(snapshot);
         }
 
         var period = await periodRule.CheckAsync(context, preparation.OccurredOn, preparation.ValueOn,
@@ -595,7 +620,22 @@ public sealed class CashTransferService(
 
     private static CashTransferView View(CashTransferRow row) => new CashTransferView(
         row.Id, row.CompanyId, Preparation(row), row.RecordedBy, row.RecordedAtUtc, row.TransferConfirmed,
-        VersionText(row.Version));
+        VersionText(row.Version), ReadExchange(row));
+
+    private static CashTransferExchangeSnapshotV1? ReadExchange(CashTransferRow row)
+    {
+        if (row.ExchangeSnapshotJson is null) return null; // Legacy rows are not backfilled from today's rates.
+        var snapshot = JsonSerializer.Deserialize<CashTransferExchangeSnapshotV1>(row.ExchangeSnapshotJson, Json)
+            ?? throw new InvalidOperationException("Bozdurma kaynak kanıtı okunamadı.");
+        if (row.Kind != CashTransferKinds.CurrencyExchange || snapshot.CompanyId != row.CompanyId
+            || snapshot.OccurredOn != row.OccurredOn || snapshot.SourceMoney != new MoneyText(row.SourceAmountText, row.SourceCurrencyId)
+            || snapshot.TargetMoney != new MoneyText(row.TargetAmountText, row.TargetCurrencyId)
+            || snapshot.SourceProfile != new ProfileReference(row.SourceProfileId, row.SourceProfileVersion)
+            || snapshot.TargetProfile != new ProfileReference(row.TargetProfileId, row.TargetProfileVersion)
+            || snapshot.TransactionRate != row.RateText)
+            throw new InvalidOperationException("Bozdurma kaynak kanıtı aynı değişmez şirket ve para kaydına ait olmalıdır.");
+        return snapshot;
+    }
 
     private static CashTransferPreviewResult Preview(Refusal refusal) =>
         new CashTransferPreviewResult(refusal.Outcome, null, refusal.Issues);
@@ -627,6 +667,7 @@ public sealed class CashTransferService(
             kind = ToAccountKind(row.SourceKind).ToString(),
             accountId = row.SourceAccountId,
             currencyId = row.SourceCurrencyId,
+            amount = row.SourceAmountText,
             profile = new { profileId = row.SourceProfileId, version = row.SourceProfileVersion },
         },
         target = new
@@ -634,21 +675,22 @@ public sealed class CashTransferService(
             kind = ToAccountKind(row.TargetKind).ToString(),
             accountId = row.TargetAccountId,
             currencyId = row.TargetCurrencyId,
+            amount = row.TargetAmountText,
             profile = new { profileId = row.TargetProfileId, version = row.TargetProfileVersion },
         },
         row.OccurredOn,
         row.ValueOn,
         row.RecordedBy,
         row.TransferConfirmed,
+        exchange = ReadExchange(row),
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
     private sealed record Refusal(CommandOutcome Outcome, ValidationIssue[] Issues);
 }
 
 /// <summary>
-/// FNS-D24 fail-closed default: the rate source, the rate/amount consistency (rounding, quote direction) and any
-/// allowed deviation are not decided, so no currency exchange can prove its rate. Every exchange is refused as
-/// unavailable until the decided rule is registered before this one (NEEDS-SINAN).
+/// Fail-closed composition default. A host must bind the actual Settings profile/TCMB source adapter;
+/// an absent owner source cannot be replaced by a constant quote or successful rule without evidence.
 /// </summary>
 public sealed class UnavailableCurrencyExchangeRateRule : IFinanceCurrencyExchangeRateRule
 {
@@ -656,7 +698,7 @@ public sealed class UnavailableCurrencyExchangeRateRule : IFinanceCurrencyExchan
         FinanceContext context,
         MoneyText sourceMoney,
         MoneyText targetMoney,
-        string rate,
+        string? rate,
         DateOnly occurredOn,
         CancellationToken cancellationToken)
     {
