@@ -4,7 +4,7 @@ using GoymenERP.Modules.Accounting.Domain.Periods;
 namespace GoymenERP.Modules.Accounting.Domain.Posting;
 
 /// <summary>SAT-D422/423: two balanced component corrections preserve the original journal and every commercial fact.</summary>
-public static class InvoiceLineCogsCorrection
+public static partial class InvoiceLineCogsCorrection
 {
     public static (Journal Reversing, Journal Replacement) Create(Journal source, decimal frozenAmount,
         Guid previousCogsAccountId, Guid counterAccountId, Guid newCogsAccountId, AccountingPeriod period,

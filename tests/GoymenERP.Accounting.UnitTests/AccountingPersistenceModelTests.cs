@@ -31,7 +31,28 @@ public sealed class AccountingPersistenceModelTests
         typeof(AccountingSourceInvoiceCancellationRow),
         typeof(ManufacturingCostDifferenceRow), typeof(CreditMovementProposalRow),
         typeof(InvoiceLineCogsProposalRow), typeof(InvoiceLineCogsRevisionRow),
+        typeof(ManufacturingCostAttributionRow), typeof(ManufacturingCostAttributionShareRow), typeof(InvoiceCogsEconomicClaimRow),
     ];
+
+    [Fact]
+    public void Posted_cost_shares_allow_two_output_roots_on_one_physical_line_but_the_initial_economic_claim_is_unique()
+    {
+        using var context = Context();
+        var shares = context.Model.FindEntityType(typeof(ManufacturingCostAttributionShareRow))!;
+        Assert.Equal(["CompanyId", "SourceEventId", "OutputId", "MovementId", "MovementLineNumber"],
+            shares.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        var lookup = Assert.Single(shares.GetIndexes(), x => x.Properties.Select(p => p.Name)
+            .SequenceEqual(["CompanyId", "MovementId", "MovementLineNumber"]));
+        Assert.False(lookup.IsUnique);
+        var claims = context.Model.FindEntityType(typeof(InvoiceCogsEconomicClaimRow))!;
+        Assert.Equal(["CompanyId", "MovementId", "MovementLineNumber"], claims.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.All(new[] { typeof(ManufacturingCostAttributionRow), typeof(ManufacturingCostAttributionShareRow), typeof(InvoiceCogsEconomicClaimRow) }, type =>
+        {
+            var entity = context.Model.FindEntityType(type)!;
+            Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
+            Assert.All(entity.GetIndexes().Where(x => x.IsUnique), index => Assert.Equal("CompanyId", index.Properties[0].Name));
+        });
+    }
 
     [Fact]
     public void Every_accounting_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -138,9 +159,23 @@ public sealed class AccountingPersistenceModelTests
         Assert.Equal(["20261117000534_AddManufacturingCostDifferenceProposals", "20261117005516_AddCreditMovementProposals",
                 "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
                 "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening",
-                "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals"],
-            context.Database.GetMigrations().TakeLast(8));
+                "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
+                "20261117190022_AddPostedManufacturingCostAttribution"],
+            context.Database.GetMigrations().TakeLast(9));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Posted_manufacturing_attribution_is_append_only_and_its_Down_protects_economic_claims_before_any_drop()
+    {
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddPostedManufacturingCostAttribution();
+        var down = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51800", down.Sql);
+        Assert.Contains("[InventoryCostProposals] WHERE [Status] = 5", down.Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        var guards = migration.UpOperations.OfType<SqlOperation>().ToArray();
+        Assert.Equal(3, guards.Length);
+        Assert.All(guards, guard => { Assert.Contains("THROW 51801", guard.Sql); Assert.Contains("THROW 51802", guard.Sql); });
     }
 
     [Fact]

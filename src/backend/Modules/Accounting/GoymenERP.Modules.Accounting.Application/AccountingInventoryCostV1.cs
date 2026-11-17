@@ -17,7 +17,14 @@ public sealed record AccountingInventoryCostRatioV1(string Numerator, string Den
 /// </summary>
 public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Guid ProductId,
     Guid? InvoiceLineId, int? InvoiceLineNumber, Guid? LocationId, AccountingInventoryCostRatioV1 SignedTlAmount,
-    string SourceProofJson, string SourceProofSha256);
+    string SourceProofJson, string SourceProofSha256,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<AccountingSalesPhysicalCostClaimV1>? SalesPhysicalClaims = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PostedManufacturingCostShareV1>? AlreadyPostedComponents = null);
+
+public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
+    Guid ProductId, decimal QuantityKg);
 
 public sealed record AccountingInventoryCostSourceV1(Guid CompanyId, Guid EventId, AccountingInventoryCostKindV1 Kind,
     Guid InvoiceId, long InvoiceVersion, Guid AdmissionId, DateOnly InvoiceDate, string? OfficialInvoiceNumber,

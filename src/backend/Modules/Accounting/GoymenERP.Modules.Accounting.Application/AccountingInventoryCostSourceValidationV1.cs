@@ -104,11 +104,33 @@ public static class AccountingInventoryCostSourceValidationV1
                     || component.LocationId is not null || amount < 0
                     || component.ComponentKey != AccountingInventoryCostTraceV1.SalesComponent(component.InvoiceLineId.Value))
                     throw Invalid("inventory_cost_line_invalid");
+                if (component.AlreadyPostedComponents is { } posted)
+                {
+                    if (component.SalesPhysicalClaims is not { Count: > 0 } physical || posted.Count is < 1 or > 10000
+                        || posted.Select(x => (x.SourceEventId, x.OutputId, x.Shipment.MovementId, x.Shipment.MovementLineNumber)).Distinct().Count() != posted.Count
+                        || posted.Any(x => x.CompanyId != companyId || x.SourceEventId == Guid.Empty || x.OutputId == Guid.Empty
+                            || x.JournalId == Guid.Empty || x.CurrencyId == Guid.Empty || x.CogsAccountId == Guid.Empty
+                            || x.CounterAccountId == Guid.Empty || x.CogsAccountId == x.CounterAccountId
+                            || x.Fingerprint != Sha256(JsonSerializer.Serialize(x with { Fingerprint = "" }, new JsonSerializerOptions(JsonSerializerDefaults.Web)))
+                            || !physical.Any(p => p.MovementId == x.Shipment.MovementId && p.MovementLineNumber == x.Shipment.MovementLineNumber
+                                && p.ShipmentId == x.Shipment.ShipmentId && p.ProductId == x.Shipment.ProductId && p.QuantityKg == x.Shipment.PhysicalQuantityKg)))
+                        throw Invalid("inventory_cost_attribution_invalid");
+                    var sum = AccountingInventoryCostAmountsV1.FromDecimal(0);
+                    foreach (var share in posted)
+                    {
+                        if (!decimal.TryParse(share.SignedAmount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                                CultureInfo.InvariantCulture, out var signed)) throw Invalid("inventory_cost_attribution_invalid");
+                        sum = AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(signed));
+                    }
+                    if (sum != component.SignedTlAmount) throw Invalid("inventory_cost_attribution_invalid");
+                }
             }
             else if (component.InvoiceLineId is not null || component.InvoiceLineNumber is not null || component.LocationId is null
                 || component.LocationId == Guid.Empty || amount == 0
                 || component.ComponentKey != AccountingInventoryCostTraceV1.PurchaseComponent(component.ProductId, component.LocationId.Value))
                 throw Invalid("inventory_cost_position_invalid");
+            else if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
+                throw Invalid("inventory_cost_attribution_invalid");
         }
     }
 

@@ -40,6 +40,9 @@ const guid = (value: unknown): value is string => typeof value === 'string'
   && value !== '00000000-0000-0000-0000-000000000000'
 const rec = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const decimal = (value: unknown): value is string => typeof value === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value)
+// Exact quantity text is rendered as supplied; the browser never divides or recomputes a physical share.
+const quantity = (value: unknown): value is string => typeof value === 'string'
+  && (/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value) || /^[1-9][0-9]* \/ [1-9][0-9]*$/.test(value))
 const nullableGuid = (value: unknown) => value === null || guid(value)
 const nullableDate = (value: unknown) => value === null || typeof value === 'string' && isDateOnly(value)
 
@@ -51,7 +54,8 @@ export function decodeCostDifference(body: unknown, company: string): CostDiffer
     || !decimal(body.signedTlDifference) || typeof body.sourceOccurredAtUtc !== 'string' || !Number.isFinite(Date.parse(body.sourceOccurredAtUtc))
     || !Array.isArray(body.outputs) || body.outputs.length === 0 || body.outputs.some(output => !rec(output)
       || !['outputId', 'receiptMovementId', 'labelId'].every(key => guid(output[key]))
-      || !['netQuantityKg', 'remainingQuantityKg', 'consumedQuantityKg', 'tlUnitCostPerKg', 'remainingTlValue', 'consumedTlDifference', 'originalTlAmount'].every(key => decimal(output[key]))
+      || !['netQuantityKg', 'remainingQuantityKg', 'consumedQuantityKg'].every(key => quantity(output[key]))
+      || !['tlUnitCostPerKg', 'remainingTlValue', 'consumedTlDifference', 'originalTlAmount'].every(key => decimal(output[key]))
       || output.usdUnitCostPerKg !== null && !decimal(output.usdUnitCostPerKg))
     || !['periodId', 'debitAccountId', 'creditAccountId', 'preparedBy', 'approvedBy', 'journalId'].every(key => nullableGuid(body[key]))
     || !nullableDate(body.accountingDate) || !nullableDate(body.transactionDate)

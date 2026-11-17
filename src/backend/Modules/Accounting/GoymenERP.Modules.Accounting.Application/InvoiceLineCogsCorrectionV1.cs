@@ -46,6 +46,11 @@ public sealed record InvoiceLineCogsPostedEvidenceV1(Guid CompanyId, Guid Invoic
     long FinalizedVersion, Guid JournalId, int CogsJournalLineNumber, int CounterJournalLineNumber,
     Guid CogsAccountId, Guid CounterAccountId, Guid CurrencyId, string Amount, string SourceFingerprint);
 
+public sealed record InvoiceLineCogsAttributedEvidenceV1(PostedManufacturingCostShareV1 Source,
+    Guid CurrentJournalId, Guid CurrentCogsAccountId, Guid CounterAccountId, string CurrentJournalTotal);
+public sealed record InvoiceLineCogsAttributedCorrectionV1(string AttributionFingerprint, Guid SourceJournalId,
+    Guid ReversingCorrectionJournalId, Guid ReplacementCorrectionJournalId);
+
 public sealed record InvoiceLineCogsAccountV1(Guid AccountId, string Code, string Name);
 public sealed record InvoiceLineCogsAccountPlanV1(Guid PackageId, long PackageVersion, long? CatalogVersion,
     string SourceVersion, string SourceSha256, InvoiceLineCogsAccountV1 Account);
@@ -57,7 +62,8 @@ public sealed record InvoiceLineCogsRevisionViewV1(long Version, Guid ProposalId
     InvoiceLineCogsClassificationV1 Classification, InvoiceLineCogsAccountPlanV1 AccountPlan,
     Guid PreparedBy, Guid ApprovedBy, DateTimeOffset ApprovedAtUtc, Guid PeriodId,
     DateOnly TransactionDate, DateOnly AccountingDate, Guid? ReversingCorrectionJournalId,
-    Guid? ReplacementCorrectionJournalId, string Reason);
+    Guid? ReplacementCorrectionJournalId, string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedCorrectionV1>? AttributedCorrections = null);
 
 public sealed record InvoiceLineCogsCorrectionViewV1(Guid ProposalId, Guid CompanyId, Guid InvoiceId,
     Guid InvoiceLineId, long FinalizedVersion, long Version, long ExpectedLineVersion, string Status,
@@ -65,13 +71,16 @@ public sealed record InvoiceLineCogsCorrectionViewV1(Guid ProposalId, Guid Compa
     Guid PeriodId, DateOnly TransactionDate, DateOnly AccountingDate, DateOnly? ValueDate,
     Guid PreparedBy, DateTimeOffset PreparedAtUtc, Guid? ApprovedBy, DateTimeOffset? ApprovedAtUtc,
     string Reason, InvoiceLineCogsPostedEvidenceV1? PostedEvidence,
-    Guid? ReversingCorrectionJournalId, Guid? ReplacementCorrectionJournalId);
+    Guid? ReversingCorrectionJournalId, Guid? ReplacementCorrectionJournalId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>? AttributedEvidence = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedCorrectionV1>? AttributedCorrections = null);
 
 public sealed record InvoiceLineCogsHistoryV1(Guid CompanyId, Guid InvoiceId, Guid InvoiceLineId,
     FinalizedInvoiceLineReferenceV1 Source, long LineVersion, InvoiceLineCogsRevisionViewV1? Current,
     IReadOnlyList<InvoiceLineCogsRevisionViewV1> Revisions, IReadOnlyList<InvoiceLineCogsCorrectionViewV1> Proposals,
     string PostingEvidenceState, InvoiceLineCogsPostedEvidenceV1? PostedEvidence,
-    InvoiceLineCogsProductReferenceV1? ProductReference = null);
+    InvoiceLineCogsProductReferenceV1? ProductReference = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>? AttributedEvidence = null);
 
 /// <summary>Today's Product default is reference data, never proof of the invoice line's former classification.</summary>
 public sealed record InvoiceLineCogsProductReferenceV1(Guid CompanyId, Guid ProductId, string Outcome,

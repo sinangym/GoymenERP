@@ -106,6 +106,8 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingSourceInvoiceCancellationPortV1, AccountingSourceInvoiceCancellationServiceV1>();
         services.AddScoped<AccountingApiService>();
         services.AddScoped<IManufacturingCostDifferenceStoreV1, ManufacturingCostDifferenceStoreV1>();
+        services.AddScoped<ManufacturingPostedCostAttributionStoreV1>();
+        services.AddScoped<IPostedManufacturingShipmentCostReaderV1>(provider => provider.GetRequiredService<ManufacturingPostedCostAttributionStoreV1>());
         services.AddScoped<ManufacturingCostDifferenceServiceV1>();
         services.AddScoped<IInvoiceLineCogsCorrectionStoreV1, InvoiceLineCogsCorrectionStoreV1>();
         services.AddScoped<InvoiceLineCogsCorrectionServiceV1>();
