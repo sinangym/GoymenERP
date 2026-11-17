@@ -276,8 +276,9 @@ public sealed class PurchasingPersistenceModelTests
                 "20261116113129_AddPurchaseSupplierReturns", "20261116213347_AddPurchaseReceiptAdjustments",
                 "20261116215806_AddPurchaseSupplierReturnResponseSnapshots", "20261116222957_AddPurchaseReceiptAdjustmentBatches",
                 "20261117002600_AddPurchaseOrderDocumentNumbers", "20261117072202_AddPurchaseSupplierRevisions",
-                "20261117084001_AddPurchaseIncomingInvoices", "20261117110054_AddPurchaseServiceOrders"],
-            context.Database.GetMigrations().TakeLast(18));
+                "20261117084001_AddPurchaseIncomingInvoices", "20261117110054_AddPurchaseServiceOrders",
+                "20261117112436_AddPurchaseInvoiceImportReservations"],
+            context.Database.GetMigrations().TakeLast(19));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;

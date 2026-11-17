@@ -476,3 +476,17 @@ ALS-D106 outgoing subcontract price units require the actual kilogram unit profi
 the actual Purchasing-side Settings tax source and preserve its version per line; no default means 503, never
 zero VAT, a Sales default or an assumed tax code. Purchasing tax-default administration and line overrides remain
 closed pending the explicit permission decision. Central Program/shell/OpenAPI/inventory composition is pending.
+# FIN-S13 / ALS-D7 — alış faturası dosyası önizlemesi
+
+XML/UBL 2.1, açık sütun eşlemeli CSV ve XLSX okuyucuları aynı kaynak sözleşmesini
+üretir; genel tablo eşlemesi Mikro'nun yerel biçim adaptörü olarak adlandırılmaz.
+Özgün tutar, para birimi, vergi kodu, tevkifat, kur amacı ve ödeme tarihi bilgileri
+korunur; tanımsız veya fazla hassasiyetli değerler yuvarlanarak kabul edilmez.
+Taranmış Documents sürümü/hash'i, şirket ve `purchasing.invoices.import` ile fiyat
+okuma yetkisi doğrulanır. Önizleme muhasebe kaydı veya Finance olayı üretmez.
+
+`20261117112436_AddPurchaseInvoiceImportReservations` EF üretimidir. Şirket kapsamlı,
+denetlenen ve idempotent rezervasyon belge sahibini oluşturur; kayıtlar değişmezdir.
+Down, kaynak kimliği varken önce `THROW 51996` ile durur. Birim, HTTP sözleşme,
+kalıcılık modeli ve gerçek SQL test kaynakları vardır. Cari/ürün/birim/vergi ve
+ödeme planı eşlemesiyle kayıt akışı tamamlanana kadar FIN-S13 PARTIAL kalır.
