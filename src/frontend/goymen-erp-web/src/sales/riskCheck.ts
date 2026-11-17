@@ -21,6 +21,7 @@
 
 import { salesDraftDetailPath, type DraftDetail } from './contract'
 import { isReferenceId, isVersionString } from './wirePrimitives'
+import { isDateOnly } from '../finance/dateOnly'
 
 /** API-06: the order's customer risk check (GET, under the draft read; amounts only with the price read). */
 export const salesDraftRiskCheckPath = (id: string) => `${salesDraftDetailPath(id)}/risk-check`
@@ -79,6 +80,20 @@ export interface RiskFigure {
   /** null: not available or withheld; [] is a recorded zero (the owner answered "nothing"). */
   readonly amounts: readonly RiskAmount[] | null
   readonly reasonCode: string | null
+  readonly policyProofs?: readonly RiskPolicyProof[]
+}
+export interface RiskPolicyProof {
+  readonly companyId: string
+  readonly collateralId: string
+  readonly collateralRevision: string
+  readonly collateralTypeId: string
+  readonly typeVersion: string
+  readonly bankInstitutionId: string | null
+  readonly bankSourceVersion: string | null
+  readonly ratePercent: string
+  readonly sourceVersion: string
+  readonly scope: 'Type' | 'TypeBank' | 'TypeBankRemainingDays' | 'Company'
+  readonly businessDate: string
 }
 
 export interface RiskTotals {
@@ -133,8 +148,34 @@ function decodeAmount(value: unknown): RiskAmount | null {
   return { currencyId: o.currencyId, amount: o.amount }
 }
 
-function decodeFigure(value: unknown, kind: RiskFigureKind, visible: boolean): RiskFigure | null {
-  const o = exact(value, ['kind', 'source', 'state', 'taxBasis', 'amounts', 'reasonCode'])
+function decodePolicyProofs(value: unknown, companyId: string): readonly RiskPolicyProof[] | null {
+  if (!Array.isArray(value) || value.length > 4096) return null
+  const result: RiskPolicyProof[] = []
+  const text = (v: unknown, maximum: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= maximum
+    && v.trim() === v && !/[\u0000-\u001f]/.test(v)
+  for (const item of value) {
+    const proof = exact(item, ['companyId', 'collateralId', 'collateralRevision', 'collateralTypeId', 'typeVersion',
+      'bankInstitutionId', 'bankSourceVersion', 'ratePercent', 'sourceVersion', 'scope', 'businessDate'])
+    if (proof === null || !isReferenceId(proof.companyId) || !sameId(proof.companyId, companyId)
+      || !isReferenceId(proof.collateralId) || result.some(x => sameId(x.collateralId, proof.collateralId as string))
+      || !isVersionString(proof.collateralRevision) || proof.collateralRevision === '0' || !isReferenceId(proof.collateralTypeId)
+      || !text(proof.typeVersion, 64) || !text(proof.sourceVersion, 256) || typeof proof.businessDate !== 'string' || !isDateOnly(proof.businessDate)
+      || !oneOf(['Type', 'TypeBank', 'TypeBankRemainingDays', 'Company'], proof.scope)
+      || !(proof.bankInstitutionId === null ? proof.bankSourceVersion === null
+        : isReferenceId(proof.bankInstitutionId) && text(proof.bankSourceVersion, 256))
+      || proof.bankInstitutionId === null && (proof.scope === 'TypeBank' || proof.scope === 'TypeBankRemainingDays')
+      || !isAmountText(proof.ratePercent)) return null
+    const [whole, fraction = ''] = proof.ratePercent.split('.')
+    if (whole.length > 3 || whole.length === 3 && (whole !== '100' || /[1-9]/.test(fraction))) return null
+    result.push(proof as unknown as RiskPolicyProof)
+  }
+  return result
+}
+
+function decodeFigure(value: unknown, kind: RiskFigureKind, visible: boolean, companyId: string): RiskFigure | null {
+  const extra = typeof value === 'object' && value !== null && Object.hasOwn(value, 'policyProofs')
+  const keys = ['kind', 'source', 'state', 'taxBasis', 'amounts', 'reasonCode']
+  const o = exact(value, extra ? [...keys, 'policyProofs'] : keys)
   if (o === null || o.kind !== kind || !isSource(o.source) || !oneOf(RISK_FIGURE_STATES, o.state)) return null
   const available = o.state === 'Available'
   if (available) {
@@ -155,9 +196,17 @@ function decodeFigure(value: unknown, kind: RiskFigureKind, visible: boolean): R
     // Not available, or withheld from this caller: an amount here is a leak or a contradiction — never shown.
     return null
   }
+  let policyProofs: readonly RiskPolicyProof[] | undefined
+  if (extra && o.policyProofs !== null) {
+    if (!visible || !available || kind !== RISK_FIGURE_KIND.collateral) return null
+    const proofs = decodePolicyProofs(o.policyProofs, companyId)
+    if (proofs === null) return null
+    policyProofs = proofs
+  }
   return {
     kind, source: o.source, state: o.state, taxBasis: o.taxBasis as RiskTaxBasis | null, amounts,
     reasonCode: o.reasonCode as string | null,
+    ...(policyProofs === undefined ? {} : { policyProofs }),
   }
 }
 
@@ -201,13 +250,13 @@ export function decodeRiskCheck(value: unknown, detail: DraftDetail): RiskCheck 
   if ((o.result === 'Unavailable') !== (reasons.length > 0)) return null
   const components: RiskFigure[] = []
   for (const [index, kind] of RISK_COMPONENT_KINDS.entries()) {
-    const figure = decodeFigure(o.components[index], kind, visible)
+    const figure = decodeFigure(o.components[index], kind, visible, detail.draft.companyId)
     if (figure === null) return null
     components.push(figure)
   }
-  const thisOrder = decodeFigure(o.thisOrder, RISK_FIGURE_KIND.thisOrder, visible)
-  const creditLimit = decodeFigure(o.creditLimit, RISK_FIGURE_KIND.creditLimit, visible)
-  const collateral = decodeFigure(o.collateral, RISK_FIGURE_KIND.collateral, visible)
+  const thisOrder = decodeFigure(o.thisOrder, RISK_FIGURE_KIND.thisOrder, visible, detail.draft.companyId)
+  const creditLimit = decodeFigure(o.creditLimit, RISK_FIGURE_KIND.creditLimit, visible, detail.draft.companyId)
+  const collateral = decodeFigure(o.collateral, RISK_FIGURE_KIND.collateral, visible, detail.draft.companyId)
   const inLocalCurrency = decodeTotals(o.inLocalCurrency, visible)
   const inLimitCurrency = decodeTotals(o.inLimitCurrency, visible)
   if (thisOrder === null || creditLimit === null || collateral === null || inLocalCurrency === undefined

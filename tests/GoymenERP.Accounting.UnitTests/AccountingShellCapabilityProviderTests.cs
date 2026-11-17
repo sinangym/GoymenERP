@@ -17,7 +17,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(28, declarations.Count);
+        Assert.Equal(29, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
@@ -53,6 +53,7 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.InvoicedShipmentPrepareCapabilityId,
                 AccountingShellCapabilityProvider.InvoicedShipmentApproveCapabilityId,
                 AccountingShellCapabilityProvider.InvoicedShipmentReverseCapabilityId,
+                AccountingShellCapabilityProvider.InvoicedShipmentReverseApproveCapabilityId,
                 AccountingShellCapabilityProvider.PurchaseCostPrepareCapabilityId,
                 AccountingShellCapabilityProvider.PurchaseCostApproveCapabilityId,
                 AccountingShellCapabilityProvider.PostingMappingsReadCapabilityId,
@@ -70,13 +71,15 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.9"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.10"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.invoiced-shipment-costs.prepare", "accounting.invoiced-shipment-costs.prepare", "/muhasebe/sevk-smm-hazirla",
                 "M-04-INVOICEDSHIPMENTPREPARE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftCreate]),
             ("accounting.invoiced-shipment-costs.approve", "accounting.invoiced-shipment-costs.approve", "/muhasebe/sevk-smm-onay",
                 "M-04-INVOICEDSHIPMENTAPPROVE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftApprove]),
+            ("accounting.invoiced-shipment-costs.reverse-approve", "accounting.invoiced-shipment-costs.reverse-approve", "/muhasebe/sevk-smm-ters-kayit-onay",
+                "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve]),
             ("accounting.invoiced-shipment-costs.reverse", "accounting.invoiced-shipment-costs.reverse", "/muhasebe/sevk-smm-ters-kayit",
                 "M-04-INVOICEDSHIPMENTREVERSE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose]),
             ("accounting.purchase-cost-differences.prepare", "accounting.purchase-cost-differences.prepare", "/muhasebe/alis-maliyet-farki-hazirla",

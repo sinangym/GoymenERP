@@ -4,6 +4,7 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Settings.Application;
 
 namespace GoymenERP.Modules.Sales.Application;
 
@@ -107,12 +108,13 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
         }
 
         string Text(decimal amount, Guid currencyId) => AmountText(amount, scales.TryGetValue(currencyId, out var scale) ? scale : null);
-        SalesDraftRiskFigureV1 Figure(string kind, string source, SalesRiskInput input) =>
+        SalesDraftRiskFigureV1 Figure(string kind, string source, SalesRiskInput input, IReadOnlyList<SalesPartyRiskPolicyProofV1>? proofs = null) =>
             new(kind, source, FigureState(input.State), input.State == SalesRiskInputState.Available ? input.TaxBasis?.ToString() : null,
                 visible && input.State == SalesRiskInputState.Available
                     ? [.. input.Amounts.Select(amount => new SalesDraftRiskAmountV1(amount.CurrencyId, Text(amount.Amount, amount.CurrencyId)))]
                     : null,
-                input.State == SalesRiskInputState.Available ? null : input.ReasonCode);
+                input.State == SalesRiskInputState.Available ? null : input.ReasonCode,
+                visible && input.State == SalesRiskInputState.Available ? proofs : null);
         SalesDraftRiskTotalsV1? Totals(SalesRiskTotals? totals) => totals is null
             ? null
             : new SalesDraftRiskTotalsV1(totals.Currency.CurrencyId,
@@ -142,7 +144,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
             ],
             Figure(SalesDraftRiskFigureKindsV1.ThisOrder, SalesDraftRiskSourcesV1.ThisOrder, thisOrder),
             Figure(SalesDraftRiskFigureKindsV1.CreditLimit, party.CreditLimitSource, party.CreditLimit),
-            Figure(SalesDraftRiskFigureKindsV1.Collateral, party.CollateralSource, party.Collateral));
+            Figure(SalesDraftRiskFigureKindsV1.Collateral, party.CollateralSource, party.Collateral, party.CollateralPolicyProofs));
     }
 
     /// <summary>
@@ -294,7 +296,7 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
     private sealed record PartyRiskInputs(
         SalesRiskInput OpenReceivables, string OpenReceivablesSource,
         SalesRiskInput CreditLimit, string CreditLimitSource,
-        SalesRiskInput Collateral, string CollateralSource);
+        SalesRiskInput Collateral, string CollateralSource, IReadOnlyList<SalesPartyRiskPolicyProofV1>? CollateralPolicyProofs = null);
 
     private static PartyRiskInputs PartyRiskUnavailable(string reasonCode)
     {
@@ -326,13 +328,36 @@ public sealed partial class SalesDraftService : ISalesOrderRiskOutcomeSource
         if (answer is null || answer.CompanyId != scope.CompanyId || answer.PartyId != draft.Header.PartyId
             || answer.CompanyAccountId != draft.Header.CompanyAccountId
             || !TryInput(answer.OpenReceivables, out var receivables) || !TryInput(answer.CreditLimit, out var limit)
-            || !TryInput(answer.Collateral, out var collateral))
+            || !TryInput(answer.Collateral, out var collateral)
+            || !ValidPolicyProofs(answer.Collateral, scope.CompanyId)
+            || answer.OpenReceivables.PolicyProofs is not null || answer.CreditLimit.PolicyProofs is not null)
         {
             return PartyRiskUnavailable(SalesDraftRiskReasonCodesV1.PartyRiskAnswerInvalid);
         }
 
         return new PartyRiskInputs(receivables, answer.OpenReceivables.Source, limit, answer.CreditLimit.Source,
-            collateral, answer.Collateral.Source);
+            collateral, answer.Collateral.Source, answer.Collateral.PolicyProofs);
+    }
+
+    private static bool ValidPolicyProofs(SalesPartyRiskFigureV1 figure, Guid companyId)
+    {
+        if (figure.PolicyProofs is null) return true; // legacy answer without new evidence
+        if (figure.State != SalesPartyRiskFigureStateV1.Available || figure.PolicyProofs.Count > 4096) return false;
+        var seen = new HashSet<Guid>();
+        foreach (var proof in figure.PolicyProofs)
+        {
+            if (proof is null || proof.CompanyId != companyId || proof.CollateralId == Guid.Empty || !seen.Add(proof.CollateralId)
+                || proof.CollateralTypeId == Guid.Empty || !long.TryParse(proof.CollateralRevision, NumberStyles.None, CultureInfo.InvariantCulture, out var revision)
+                || revision <= 0 || revision.ToString(CultureInfo.InvariantCulture) != proof.CollateralRevision
+                || string.IsNullOrWhiteSpace(proof.TypeVersion) || proof.TypeVersion.Length > 64
+                || string.IsNullOrWhiteSpace(proof.SourceVersion) || proof.SourceVersion.Length > 256
+                || proof.BusinessDate == DateOnly.MinValue || (proof.BankInstitutionId is null) != (proof.BankSourceVersion is null)
+                || proof.BankInstitutionId == Guid.Empty || proof.BankSourceVersion is { } bank && (string.IsNullOrWhiteSpace(bank) || bank.Length > 256)
+                || proof.Scope is not ("Company" or "Type" or "TypeBank" or "TypeBankRemainingDays")
+                || proof.BankInstitutionId is null && proof.Scope is "TypeBank" or "TypeBankRemainingDays"
+                || !CollateralTypeRulesV1.TryRate(proof.RatePercent, out var canonical) || canonical != proof.RatePercent) return false;
+        }
+        return true;
     }
 
     /// <summary>One owner figure as a calculator input; false for a malformed figure (no source name, no amount list, a null amount).</summary>

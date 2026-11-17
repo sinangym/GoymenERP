@@ -21,7 +21,8 @@ namespace GoymenERP.Api.AccountingRuntime;
 public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext company,
     ILogisticsInvoicedShipmentProofReadPortV1 logistics, IInventoryShipmentCostReadPortV1 inventory,
     IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null,
-    ISalesFinalizedShipmentClaimReadPortV1? salesClaims = null)
+    ISalesFinalizedShipmentClaimReadPortV1? salesClaims = null,
+    IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null)
     : IAccountingInventoryCostSourceReaderV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -73,6 +74,7 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
             var unposted = AccountingInventoryCostAmountsV1.FromDecimal(0m);
             var physicalClaims = new List<AccountingSalesPhysicalCostClaimV1>();
             var alreadyPosted = new List<PostedManufacturingCostShareV1>();
+            var alreadyPurchased = new List<PostedPurchaseCostShareV1>();
             var hasOriginalCost = false;
             foreach (var actual in stock.Lines)
             {
@@ -86,19 +88,34 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 physicalClaims.Add(new(claim.ShipmentId, stock.MovementId, actual.MovementLineNumber, actual.ProductId, actual.QuantityKg));
                 if (actual.Tl is { Status: InventoryMovementCostStampStatusV1.Unavailable })
                 {
-                    if (postedManufacturing is null) throw Pending("sales_cost_original_tl_unavailable");
-                    var posted = await postedManufacturing.ReadAsync(captured, claim.ShipmentId, stock.MovementId,
+                    var posted = postedManufacturing is null ? null : await postedManufacturing.ReadProvenSharesAsync(captured, claim.ShipmentId, stock.MovementId,
                         actual.MovementLineNumber, actual.ProductId, actual.QuantityKg,
                         _ => { SameCompany(captured); return Task.CompletedTask; }, cancellationToken);
                     SameCompany(captured);
-                    if (posted is null || posted.Shares.Count == 0 || posted.CompanyId != captured || posted.ShipmentId != claim.ShipmentId
+                    if (posted is not null && (posted.CompanyId != captured || posted.ShipmentId != claim.ShipmentId
                         || posted.MovementId != stock.MovementId || posted.MovementLineNumber != actual.MovementLineNumber
-                        || posted.ProductId != actual.ProductId || posted.QuantityKg != actual.QuantityKg)
+                        || posted.ProductId != actual.ProductId || posted.QuantityKg != actual.QuantityKg))
                         throw Pending("sales_cost_original_tl_unavailable");
-                    alreadyPosted.AddRange(posted.Shares);
-                    foreach (var share in posted.Shares)
+                    var purchase = postedPurchasing is null ? null : await postedPurchasing.ReadProvenSharesAsync(captured,
+                        claim.ShipmentId, stock.MovementId, actual.MovementLineNumber, actual.ProductId, actual.QuantityKg,
+                        _ => { SameCompany(captured); return Task.CompletedTask; }, cancellationToken);
+                    SameCompany(captured);
+                    if (purchase is not null && (purchase.CompanyId != captured || purchase.ShipmentId != claim.ShipmentId
+                        || purchase.MovementId != stock.MovementId || purchase.MovementLineNumber != actual.MovementLineNumber
+                        || purchase.ProductId != actual.ProductId || purchase.QuantityKg != actual.QuantityKg || purchase.HasPendingCandidate)
+                        || !PostedCostPhysicalCoverageV1.IsComplete(posted?.Shares ?? [], purchase?.Shares ?? []))
+                        throw Pending("sales_cost_original_tl_unavailable");
+                    alreadyPosted.AddRange(posted?.Shares ?? []);
+                    alreadyPurchased.AddRange(purchase?.Shares ?? []);
+                    foreach (var share in posted?.Shares ?? [])
                     {
                         if (!decimal.TryParse(share.SignedAmount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                                CultureInfo.InvariantCulture, out var signed)) throw Pending("sales_cost_posted_share_unavailable");
+                        total = AccountingInventoryCostAmountsV1.Add(total, AccountingInventoryCostAmountsV1.FromDecimal(signed));
+                    }
+                    foreach (var share in purchase?.Shares ?? [])
+                    {
+                        if (!decimal.TryParse(share.SignedAmount, NumberStyles.AllowDecimalPoint,
                                 CultureInfo.InvariantCulture, out var signed)) throw Pending("sales_cost_posted_share_unavailable");
                         total = AccountingInventoryCostAmountsV1.Add(total, AccountingInventoryCostAmountsV1.FromDecimal(signed));
                     }
@@ -119,7 +136,7 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 unposted = AccountingInventoryCostAmountsV1.Add(unposted, exactAmount);
                 hasOriginalCost = true;
             }
-            if (alreadyPosted.Count != 0)
+            if (alreadyPosted.Count != 0 || alreadyPurchased.Count != 0)
             {
                 if (salesClaims is null) throw Pending("sales_cost_owner_claim_unavailable");
                 var owned = await salesClaims.ReadAsync(captured, [claim.ShipmentId],
@@ -144,11 +161,13 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
             if (Proof(reread, claim, captured, commercialQuantity) != proof) throw Pending("sales_cost_logistics_proof_changed");
             var body = JsonSerializer.Serialize(new { source.CompanyId, source.InvoiceId, source.Version, source.AdmissionId,
                 line.LineId, line.LineNo, Claim = claim, Logistics = proof, Inventory = stock,
-                AlreadyPosted = alreadyPosted.Count == 0 ? null : alreadyPosted }, Json);
+                AlreadyPosted = alreadyPosted.Count == 0 ? null : alreadyPosted,
+                AlreadyPurchased = alreadyPurchased.Count == 0 ? null : alreadyPurchased }, Json);
             components.Add(new(AccountingInventoryCostTraceV1.SalesComponent(line.LineId), claim.ProductId, line.LineId,
                 line.LineNo, null, total, body, AccountingInventoryCostSourceValidationV1.Sha256(body), physicalClaims,
                 alreadyPosted.Count == 0 ? null : alreadyPosted,
-                UnpostedTlAmount: hasOriginalCost && alreadyPosted.Count != 0 ? unposted : null));
+                UnpostedTlAmount: hasOriginalCost && (alreadyPosted.Count != 0 || alreadyPurchased.Count != 0) ? unposted : null,
+                AlreadyPostedPurchaseComponents: alreadyPurchased.Count == 0 ? null : alreadyPurchased));
         }
         var result = new AccountingInventoryCostSourceV1(captured, envelope.EventId, AccountingInventoryCostKindV1.SalesInvoicedShipment,
             source.InvoiceId, source.Version, source.AdmissionId, source.InvoiceDate.Value, source.OfficialInvoiceNo, actor,

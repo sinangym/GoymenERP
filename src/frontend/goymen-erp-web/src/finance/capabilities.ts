@@ -65,6 +65,8 @@ export const FINANCE_CAPABILITY = {
   cashTransfersWorkspace: 'finance.cash-transfers.workspace',
   /** FNS-D24: the explicitly confirmed transfer record — the money fact (control of the workspace). */
   cashTransfersCommit: 'finance.cash-transfers.commit',
+  exchangeBookValuesPrepare: 'finance.cash-exchange-book-values.prepare',
+  exchangeBookValuesApprove: 'finance.cash-exchange-book-values.approve',
   officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
   officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
   allocationsList: 'finance.allocations.list',
@@ -115,6 +117,8 @@ export const FINANCE_ROUTE = {
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
   expensePayments: '/finans/masraf-odemeleri',
   cashTransfers: '/finans/virman',
+  exchangeBookValuesPrepare: '/finans/doviz-defter-degeri-hazirla',
+  exchangeBookValuesApprove: '/finans/doviz-defter-degeri-onaylari',
   officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
   officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
   allocationsList: '/finans/dagitimlar',

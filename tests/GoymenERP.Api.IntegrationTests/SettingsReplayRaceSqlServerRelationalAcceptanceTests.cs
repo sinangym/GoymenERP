@@ -18,7 +18,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Real SQL unique-key races through the actual administrations and Audit owner. Authority/context mutations are explicit
 /// synthetic port faults at the final winner read, not HTTP/Identity authorization acceptance evidence.
 /// </summary>
-public sealed class SettingsReplayRaceSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsReplayRaceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

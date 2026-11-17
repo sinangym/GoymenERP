@@ -17,7 +17,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <summary>Append-only line choices and component corrections, never a Sales/Inventory write or invoice-total reversal.</summary>
 public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICompanyContext company,
     IActiveAccountPlanReaderV1 accountPlans, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter,
-    TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null) : IInvoiceLineCogsCorrectionStoreV1
+    TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null,
+    IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null) : IInvoiceLineCogsCorrectionStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string Entity = "Accounting.InvoiceLineCogsCorrection";
@@ -75,7 +76,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         var history = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x.RevisionJson)).ToArray();
         var (state, evidence) = await Evidence(source, history.LastOrDefault(), cancellationToken);
         var attributed = await AttributedEvidence(source, cancellationToken);
-        if (attributed is { Count: > 0 })
+        var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
+        if (attributed is { Count: > 0 } || purchased is { Count: > 0 })
         {
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             await RequireMixedPosting(source, evidence, cancellationToken);
@@ -85,7 +87,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         return new(companyId, source.InvoiceId, source.InvoiceLineId, FinalizedInvoiceLineReferenceV1.From(source), history.LastOrDefault()?.Version ?? 0,
             history.LastOrDefault(), history, proposals.Select(x => approved.TryGetValue(x.Id, out var decision)
                 ? Decode<InvoiceLineCogsCorrectionViewV1>(decision.ViewJson) : Decode<InvoiceLineCogsCorrectionViewV1>(x.ViewJson)).ToArray(), state, evidence,
-                AttributedEvidence: attributed);
+                AttributedEvidence: attributed, PurchaseAttributedEvidence: purchased);
     }
 
     public async Task<InvoiceLineCogsCorrectionViewV1?> FindAsync(Guid proposalId, CancellationToken cancellationToken = default)
@@ -114,11 +116,13 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             var (state, evidence) = await Evidence(source, current, cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             var attributed = await AttributedEvidence(source, cancellationToken);
-            if (attributed is not null) await RequireMixedPosting(source, evidence, cancellationToken);
+            var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
+            if (attributed is not null || purchased is not null) await RequireMixedPosting(source, evidence, cancellationToken);
             var view = new InvoiceLineCogsCorrectionViewV1(request.ProposalId, source.CompanyId, source.InvoiceId,
                 source.InvoiceLineId, source.FinalizedVersion, 1, request.ExpectedLineVersion, "Prepared", request.Classification,
                 plan, request.PeriodId, request.TransactionDate, request.AccountingDate, request.ValueDate,
-                actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null, attributed);
+                actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null, attributed,
+                PurchaseAttributedEvidence: purchased);
             db.InvoiceLineCogsProposals.Add(new() { CompanyId = source.CompanyId, Id = request.ProposalId,
                 InvoiceId = source.InvoiceId, InvoiceLineId = source.InvoiceLineId, ExpectedLineVersion = request.ExpectedLineVersion,
                 PreparedBy = actorId, PreparedAtUtc = view.PreparedAtUtc, SourceJson = Encode(source), ViewJson = Encode(view) });
@@ -152,9 +156,12 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             if (Encode(evidence) != Encode(prepared.PostedEvidence)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             var attributed = await AttributedEvidence(source, cancellationToken);
+            var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
             if (Encode(attributed) != Encode(prepared.AttributedEvidence))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
-            if (attributed is not null) await RequireMixedPosting(source, evidence, cancellationToken);
+            if (Encode(purchased) != Encode(prepared.PurchaseAttributedEvidence))
+                throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
+            if (attributed is not null || purchased is not null) await RequireMixedPosting(source, evidence, cancellationToken);
             Guid? reverseId = null, replacementId = null;
             if (evidence is not null && evidence.CogsAccountId != prepared.AccountPlan.Account.AccountId)
             {
@@ -175,6 +182,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             }
             var now = clock.GetUtcNow();
             var attributedCorrections = await CorrectAttributed(attributed, prepared, period, metadata, cancellationToken);
+            var purchaseCorrections = await CorrectPurchaseAttributed(purchased, prepared, period, metadata, cancellationToken);
+            if (purchaseCorrections is not null) attributedCorrections = (attributedCorrections ?? []).Concat(purchaseCorrections).ToArray();
             var approved = prepared with { Version = 2, Status = "Approved", ApprovedBy = actorId, ApprovedAtUtc = now,
                 ReversingCorrectionJournalId = reverseId, ReplacementCorrectionJournalId = replacementId,
                 AttributedCorrections = attributedCorrections };
@@ -238,15 +247,15 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         finally { if (started) { db.ChangeTracker.Clear(); auditWriter.DiscardPending(); } }
     }
 
-    private IQueryable<InvoiceLineCogsRevisionRow> Revisions(FinalizedInvoiceLineSourceV1 source) => db.InvoiceLineCogsRevisions
+    private IQueryable<InvoiceLineCogsRevisionRow> Revisions(CogsEvidenceIdentityV1 source) => db.InvoiceLineCogsRevisions
         .Where(x => x.InvoiceId == source.InvoiceId && x.InvoiceLineId == source.InvoiceLineId);
-    private async Task<InvoiceLineCogsRevisionViewV1?> Latest(FinalizedInvoiceLineSourceV1 source, CancellationToken token)
+    private async Task<InvoiceLineCogsRevisionViewV1?> Latest(CogsEvidenceIdentityV1 source, CancellationToken token)
     {
         var row = await Revisions(source).AsNoTracking().OrderByDescending(x => x.Version).FirstOrDefaultAsync(token);
         return row is null ? null : Decode<InvoiceLineCogsRevisionViewV1>(row.RevisionJson);
     }
 
-    private async Task<(string State, InvoiceLineCogsPostedEvidenceV1? Evidence)> Evidence(FinalizedInvoiceLineSourceV1 source,
+    private async Task<(string State, InvoiceLineCogsPostedEvidenceV1? Evidence)> Evidence(CogsEvidenceIdentityV1 source,
         InvoiceLineCogsRevisionViewV1? current, CancellationToken token)
     {
         // Every query reads actual owner tables. No matching source facts is distinct from an unreadable/aggregate posting.
@@ -277,6 +286,13 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         var permitted = await Revisions(source).AsNoTracking().Select(x => x.RevisionJson).ToListAsync(token);
         var ownCorrections = permitted.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).SelectMany(x =>
             new[] { x.ReversingCorrectionJournalId, x.ReplacementCorrectionJournalId }).Where(x => x.HasValue).Select(x => x!.Value).ToHashSet();
+        if (source.CancellationRead)
+        {
+            var answered = await db.InventoryCostCancellationClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
+                && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion
+                && x.ReversingJournalId != null).Select(x => x.ReversingJournalId!.Value).ToListAsync(token);
+            ownCorrections.UnionWith(answered); // The cancellation reader separately verifies every immutable claim and journal.
+        }
         if (rows.Any(x => x.SourceId == source.InvoiceId && x.PostingPurpose == candidate.PostingPurpose && x.Id != candidate.Id
             && x.Kind != (int)JournalKind.Original && !ownCorrections.Contains(x.Id))) return ("Unreadable", null);
         return ("PostedCogs", new(source.CompanyId, source.InvoiceId, source.InvoiceLineId, source.FinalizedVersion,
@@ -284,7 +300,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             lines[0].Debit.ToString("0.############################", CultureInfo.InvariantCulture), source.Fingerprint));
     }
 
-    private static bool IsAnotherLineComponent(JournalRow row, FinalizedInvoiceLineSourceV1 source)
+    private static bool IsAnotherLineComponent(JournalRow row, CogsEvidenceIdentityV1 source)
     {
         if (row.SourceId != source.InvoiceId) return false;
         var pieces = row.PostingPurpose.Split(':');

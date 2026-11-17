@@ -8,20 +8,20 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 public sealed partial class InvoiceLineCogsCorrectionStoreV1
 {
-    private async Task<IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>?> AttributedEvidence(FinalizedInvoiceLineSourceV1 source,
+    private async Task<IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>?> AttributedEvidence(CogsEvidenceIdentityV1 source,
         CancellationToken token)
     {
         var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
             && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion).ToListAsync(token);
         RequireCompany(source.CompanyId);
-        if (claims.Count == 0 || claims.All(x => x.Origin == 1)) return null;
-        if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId)
-            || postedManufacturing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+        if (claims.Count == 0) return null;
+        if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId))
+            throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         var revisions = await Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token);
         RequireCompany(source.CompanyId);
         var prior = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).ToArray();
         var result = new List<InvoiceLineCogsAttributedEvidenceV1>();
-        foreach (var claim in claims.Where(x => x.Origin == 2))
+        foreach (var claim in claims)
         {
             var header = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == claim.SalesEventId, token)
                 ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
@@ -33,15 +33,11 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             if (recorded.CompanyId != source.CompanyId || recorded.InvoiceId != source.InvoiceId || recorded.AdmissionId != source.FinalizationAdmissionId
                 || recorded.InvoiceVersion != source.FinalizedVersion || recorded.EventId != claim.SalesEventId
                 || physical is null || physical.ProductId != source.ProductId || physical.ShipmentId != source.ShipmentId
-                || component?.AlreadyPostedComponents is not { Count: > 0 }
+                || component is null || claim.Origin == 2 && !component.HasPostedComponents
                 || claim.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(claim.ViewJson))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var actual = await postedManufacturing.ReadAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg,
-                _ => { RequireCompany(source.CompanyId); return Task.CompletedTask; }, token);
-            RequireCompany(source.CompanyId);
-            if (actual is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            foreach (var share in actual.Shares)
+            var actual = await ReadAttributedPhysical(source, claim, component, physical, token);
+            foreach (var share in actual.Manufacturing)
             {
                 var signed = decimal.Parse(share.SignedAmount, CultureInfo.InvariantCulture);
                 var corrected = prior.SelectMany(x => x.AttributedCorrections ?? []).LastOrDefault(x => x.AttributionFingerprint == share.Fingerprint);
@@ -73,22 +69,23 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         }
         if (result.Select(x => x.Source.Fingerprint).Distinct().Count() != result.Count)
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-        return result.OrderBy(x => x.Source.SourceEventId).ThenBy(x => x.Source.OutputId)
+        return result.Count == 0 ? null : result.OrderBy(x => x.Source.SourceEventId).ThenBy(x => x.Source.OutputId)
             .ThenBy(x => x.Source.Shipment.MovementId).ThenBy(x => x.Source.Shipment.MovementLineNumber).ToArray();
     }
 
     /// <summary>
-    /// A normal two-line journal and attributed aggregate shares coexist only when the actual initial proposal
-    /// proves disjoint physical origins. This does not weaken the ordinary journal's two-line proof.
+    /// A normal two-line journal and attributed aggregate shares coexist only with the actual initial proposal.
+    /// Original unavailable shares are disjoint; later deltas may affect the same proven known physical line.
+    /// This does not weaken the ordinary journal's two-line proof.
     /// </summary>
-    private async Task RequireMixedPosting(FinalizedInvoiceLineSourceV1 source, InvoiceLineCogsPostedEvidenceV1? evidence,
+    private async Task RequireMixedPosting(CogsEvidenceIdentityV1 source, InvoiceLineCogsPostedEvidenceV1? evidence,
         CancellationToken token)
     {
         if (evidence is null) return;
         var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
             && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion).ToListAsync(token);
         RequireCompany(source.CompanyId);
-        if (!claims.Any(x => x.Origin == 1) || !claims.Any(x => x.Origin == 2)
+        if (!claims.Any(x => x.Origin == 1)
             || claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId)
             || claims.Select(x => x.SalesEventId).Distinct().Count() != 1)
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
@@ -100,11 +97,11 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         var component = owner.Components.SingleOrDefault(x => x.InvoiceLineId == source.InvoiceLineId);
         if (owner.CompanyId != source.CompanyId || owner.InvoiceId != source.InvoiceId || owner.EventId != eventId
             || owner.AdmissionId != source.FinalizationAdmissionId || owner.InvoiceVersion != source.FinalizedVersion
-            || component is not { UnpostedTlAmount: { } unposted, AlreadyPostedComponents: { Count: > 0 } posted,
-                SalesPhysicalClaims: { } physical } || component.ProductId != source.ProductId || physical.Count != claims.Count
+            || component is not { SalesPhysicalClaims: { } physical } || component.ProductId != source.ProductId || physical.Count != claims.Count
             || claims.Any(c => !physical.Any(p => p.MovementId == c.MovementId && p.MovementLineNumber == c.MovementLineNumber
                 && p.ShipmentId == c.ShipmentId && p.ProductId == source.ProductId)
-                || (c.Origin == 2) != posted.Any(p => p.Shipment.MovementId == c.MovementId && p.Shipment.MovementLineNumber == c.MovementLineNumber)))
+                || (c.Origin == 2) != ((component.AlreadyPostedComponents ?? []).Any(p => p.Shipment.MovementId == c.MovementId && p.Shipment.MovementLineNumber == c.MovementLineNumber)
+                    || (component.AlreadyPostedPurchaseComponents ?? []).Any(p => p.MovementId == c.MovementId && p.MovementLineNumber == c.MovementLineNumber))))
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         foreach (var claim in claims)
         {
@@ -123,7 +120,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         if (accepted.CompanyId != source.CompanyId || accepted.EventId != eventId || accepted.InvoiceId != source.InvoiceId
             || accepted.AdmissionId != source.FinalizationAdmissionId || accepted.InvoiceVersion != source.FinalizedVersion
             || accepted.Status != "Posted" || Encode(accepted.Component) != Encode(component) || accepted.JournalId != rows[0].JournalId
-            || accepted.Preparation is not { Rounding: { } rounding } preparation || rounding.ExactSignedAmount != unposted
+            || accepted.Preparation is not { Rounding: { } rounding } preparation
+            || rounding.ExactSignedAmount != (component.UnpostedTlAmount ?? component.SignedTlAmount)
             || !AccountingInventoryCostRoundingV1Rules.TryResolve(component, preparation.CurrencyId, preparation.MoneyProfileId,
                 preparation.MoneyProfileVersion, preparation.MoneyScale, out _, out var expected) || expected != rounding
             || preparation.SignedAmount != evidence.Amount || preparation.CurrencyId != evidence.CurrencyId)

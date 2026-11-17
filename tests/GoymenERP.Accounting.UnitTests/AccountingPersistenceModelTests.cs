@@ -32,7 +32,23 @@ public sealed class AccountingPersistenceModelTests
         typeof(ManufacturingCostDifferenceRow), typeof(CreditMovementProposalRow),
         typeof(InvoiceLineCogsProposalRow), typeof(InvoiceLineCogsRevisionRow),
         typeof(ManufacturingCostAttributionRow), typeof(ManufacturingCostAttributionShareRow), typeof(InvoiceCogsEconomicClaimRow),
+        typeof(PurchaseCostAttributionSourceRow), typeof(PurchaseCostAttributionCandidateRow), typeof(PurchaseCostAttributionApprovalRow),
     ];
+
+    [Fact]
+    public void Purchase_cost_candidates_keep_real_receipt_roots_and_one_approval_per_actual_invoice_line_source()
+    {
+        using var context = Context();
+        var candidates = context.Model.FindEntityType(typeof(PurchaseCostAttributionCandidateRow))!;
+        Assert.Equal(["CompanyId", "SourceEventId", "InvoiceLineId", "AcceptanceId", "MovementId", "MovementLineNumber"],
+            candidates.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.False(Assert.Single(candidates.GetIndexes(), x => x.Properties.Select(p => p.Name)
+            .SequenceEqual(["CompanyId", "MovementId", "MovementLineNumber"])).IsUnique);
+        var approval = context.Model.FindEntityType(typeof(PurchaseCostAttributionApprovalRow))!;
+        Assert.Equal(["CompanyId", "SourceEventId", "InvoiceLineId"], approval.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.True(approval.FindProperty("JournalId")!.IsNullable);
+        Assert.All(approval.GetForeignKeys(), x => Assert.Equal(DeleteBehavior.Restrict, x.DeleteBehavior));
+    }
 
     [Fact]
     public void Posted_cost_shares_allow_two_output_roots_on_one_physical_line_but_the_initial_economic_claim_is_unique()
@@ -52,6 +68,28 @@ public sealed class AccountingPersistenceModelTests
             Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
             Assert.All(entity.GetIndexes().Where(x => x.IsUnique), index => Assert.Equal("CompanyId", index.Properties[0].Name));
         });
+    }
+
+    [Fact]
+    public void Purchase_cost_attribution_migration_is_append_only_and_refuses_rollback_before_any_evidence_is_dropped()
+    {
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddPostedPurchaseCostAttribution();
+        Assert.Equal(3, migration.UpOperations.OfType<CreateTableOperation>().Count());
+        var triggers = migration.UpOperations.OfType<SqlOperation>().ToArray();
+        Assert.Equal(3, triggers.Length);
+        Assert.All(triggers, sql =>
+        {
+            Assert.Contains("AFTER UPDATE, DELETE", sql.Sql);
+            Assert.Contains("THROW 51805", sql.Sql);
+            Assert.Contains("THROW 51806", sql.Sql);
+        });
+        var down = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51804", down.Sql);
+        Assert.Contains("PurchaseCostAttributionSources", down.Sql);
+        Assert.Contains("PurchaseCostAttributionCandidates", down.Sql);
+        Assert.Contains("PurchaseCostAttributionApprovals", down.Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(3, migration.DownOperations.OfType<DropTableOperation>().Count());
     }
 
     [Fact]
@@ -160,8 +198,10 @@ public sealed class AccountingPersistenceModelTests
                 "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
                 "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening",
                 "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
-                "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding"],
-            context.Database.GetMigrations().TakeLast(10));
+                "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding",
+                "20261117205436_AddPostedPurchaseCostAttribution", "20261117213704_AllowCashExchangeJournalSources",
+                "20261117223234_AddInventoryCostComponentCancellations"],
+            context.Database.GetMigrations().TakeLast(13));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

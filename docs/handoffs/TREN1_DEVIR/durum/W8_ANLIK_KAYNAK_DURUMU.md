@@ -1,7 +1,7 @@
 # W8 mevcut kaynak durumu — son paket
 
 - Son yayımlanan tren planı: **135/174 (%77,6)**.
-- Yerel entegrasyon planı: **165/174 (%94,8) kaynak DONE**, **9 açık**.
+- Yerel entegrasyon planı: **172/174 (%98,9) kaynak DONE**, **2 açık**.
 - Bu güncelleme yeni kapsam veya yeni dalga açmaz. W8 son pakettir.
 - İlk 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Tüm yeni değişikliklerin birleşik dalga derlemesi, pin üretimi ve hafif kontrolleri henüz tamamlanmadığı için tren fast-forward/push yapılmadı.
 - DONE kaynak kapsamıdır; Unit/gerçek SQL/HTTP/Vitest/browser/CI kabulü NOT_RUN. Sağlayıcı veya insan kapısı kapalı yüzey kullanılabilir sayılmaz.
@@ -29,13 +29,14 @@
 
 ## Açık işlerin kapanış sırası
 
-1. KIM-S19 gerçek makbuz/dekont numaralama: kaynak + gerçek EF hazır; son kaynak derleme zinciri sürüyor.
-2. SAT-SC34 gerçek ERP resmî iptal kaydı: owner derlemeleri başarılı; merkez host/route/subscription bağlantısı ve gerçek dış sağlayıcı sınırı korunacak.
-3. STK-S3 kullanılmayan fason ayırma: ayrı yetkili bırakma komutu yazılıyor.
-4. STK-SC36-a: ilk alış maliyetinde invoice-line başına tek yuvarlama, gerçek fiziksel source bağı, posted attribution/Mixed/SAT422 bağlantısı tamamlanacak.
-5. FIN-S14 gerçek muhasebe değeri/eşleme ve FIN-SC47-KREDI bileşen eşleme/fiş akışı tamamlanacak.
-6. Kalan kimlik/alış/satış dilimlerindeki tarihsel PARTIAL raporlar gerçek merkez tüketicileriyle eşleştirilecek; gerçek eksik varsa düzeltilecek. SAT-S12 için SAT-D265(5) bağımsız golden/main kapısı açıktır; ayrı tek istem hazırlanmıştır.
-7. Bütün kaynak kapsamı bittikten sonra birleşik derleme/pin/hafif kontroller, tren kaydı; ardından kullanıcının yetkilendirdiği son tam kabul koşumu ve tek taslak K3 PR. İnsan/sağlayıcı kapısı kod yüzdesine gizlenmez.
+1. KIM-S19 numaralama/açılış kaynağı hazır; matris/kasa aileleri owner checkpoint'inde, gerçek banka listesi/K6 açık seçim kaynağı yeni kullanıcı cevabıyla devam ediyor.
+2. STK-SC36-a tek invoice-line yuvarlama ve gerçek purchase attribution merkezde derlendi; alış payı SAT-D422 owner checkpoint'i alındı. Atıflı iptal, Known ilk fişe üretim delta bağlantısı ve tümü stok/iade gerçek sıfır kanıtı tamamlanacak.
+3. FIN-S14 belgeli gerçek kaynak defter değeri/farklı onay: Finance source checkpoint'i derleme/EF zincirinde, Accounting gerçek bileşen/eşleme köprüsü source çalışmasında. TCMB referansı muhasebe değeri sayılmaz; hedef yabancı dövizin gerçek TL kanıtı yoksa açık kalır.
+4. FIN-SC47-KREDI gerçek bileşen hesap eşlemesi ve onaylı fiş akışı tamamlanacak.
+5. SAT-S12 kaynak DONE: golden #1200 `dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f` iki DOCS imzasıyla main `3c1b47878447570210b933b83d874646f9c52e4b` oldu ve trene alındı. Ayrı uygulama `19ca53a17` gerçek TL bağı/sıfır maliyet korumasını muhafaza ederek golden koşulunu kabul eder. Sales.Unit kaynak derleme exit0/0 uyarı/hata. Son K3/runtime/production kapıları ayrıdır; kullanılabilirlik iddiası değildir.
+6. STK-S3 ayrı yetkili kullanılmayan ayırma komutu/route hazır; orijinal sekiz fason shell yüzeyi kendi staged kabul kanıtını bekler. Test kapısı atlanmaz.
+7. STK-S8 ve SAT-SC34 gerçek dış resmî belge sağlayıcısı yokluğunu açık korur. ERP iptal kaydı host/route/subscription kaynağı hazırdır; kanıt yokken resmî iptal olmuş gibi davranılmaz.
+8. Bütün kaynak kapsamı bittikten sonra birleşik derleme/pin/hafif kontroller, tren kaydı; ardından son tam kabul koşumu ve tek taslak K3 PR. İnsan/sağlayıcı kapısı kod yüzdesine gizlenmez.
 
 
 ## Tarihsel PARTIAL kayıtların gerçek merkez kaynağıyla kapanışı
@@ -60,3 +61,15 @@
 | SAT-S13 | `e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c` | Gerçek kantar özeti, kg taşıma ve tek fatura kuru/gün sınırı |
 
 KIM-S19'un numaralama/açılış zinciri hazırdır; geniş B-13 politikalarını yalnız OpeningPeriod portu var diye kapatmadık. OPEN-009/010 ve tanımlanmamış politikalar aynı sınırdadır. STK-S3 owner derlemeleri tamam; orijinal LOJ kapsamı kapanış kontrolü ayrıca sürüyor. SAT-S12 bağımsız golden/main kapısı ve gerçek sağlayıcı yokluğu kapsamdan gizlenmedi.
+
+## FIN-S13 özgün kaynak kapsamı kapanışı — 18 Kasım
+
+Fatura → 120/320 kaynak adaptörünün özgün B-04 kapsamı gerçek kodla doğrulandı; 166'ncı kaynak DONE budur. Kaynak commitleri `87fac44cd`, `fdc417b38`, `3044b80fb`, `d2c99cd81`, `118adcab2` merkez ancestry exit0; gerçek Program/Inbox/consumer/SourceVouchers route bağlantıları mevcut. Son birleşik `65618ac1e` derleme zinciri exit0. İlk SMM/üretim atfı FIN-S13'e eklenmedi; STK-SC36-a içinde kalır. Gerçek SQL/browser/CI ve aktivasyon kabulü NOT_RUN. Ayrıntı `W8_FIN13_KAYNAK_KAPANISI.md`.
+
+## Son kaynak kapanışı — dört dilim
+
+FIN-S14, FIN-SC47-KREDI, STK-S3 ve STK-S8 özgün kaynak kapsamları kapandı. Ayrıntı `W8_DORT_DILIM_KAYNAK_KAPANISI.md`. Yukarıdaki kapanış sırası tarihsel ilerlemeyi korur; güncel açık kaynaklar yalnız KIM-S19 (son fresh replay düzeltmesi), SAT-SC34 (gerçek faturalı/faturasız miktar) ve STK-SC36-a (atıflı iptal ve geç kaynak sıralaması). Birleşik son build/pin/hafif kontroller ve tren fast-forward ayrıca bekler.
+
+## Son birleşik kaynak kontrolü
+
+`15a634290` donuk kaynak zincirinde API, beş ilgili UnitTests projesi, Integration ve TypeScript derlemeleri exit0/0 uyarı/hata. KIM-S19 ve SAT-SC34 kaynak DONE. Son kayıtlı karar takibi denetimi, STK-S3 içindeki SAT-D417 uyarı/onay kaynağının eksikliğini doğruladı; dilim açıkça PARTIAL olarak yeniden açıldı. Güncel iki açık kaynak: STK-S3 (karar ayrıntısı #1189/6963231247) ve STK-SC36-a (tarihsel iptal/geç maliyet zinciri). Eski kapanış notları tarihsel checkpointlerdir. Ayrıntı `W8_KAYNAK_SON_KONTROL.md`.

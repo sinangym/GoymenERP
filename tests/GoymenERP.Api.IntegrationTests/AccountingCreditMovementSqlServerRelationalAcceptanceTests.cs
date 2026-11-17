@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Real SQL store, constraints and audit; Settings mapping response is explicitly synthetic and missing.</summary>
-public sealed class AccountingCreditMovementSqlServerRelationalAcceptanceTests
+public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
     public async Task Actual_Finance_event_creates_one_waiting_credit_proposal_with_null_TL_and_no_journal_and_Down_refuses_loss()
@@ -95,9 +95,12 @@ public sealed class AccountingCreditMovementSqlServerRelationalAcceptanceTests
     {
         public AccountingDbContext Db { get; }
         public CreditMovementProposalStoreV1 Store { get; }
+        public CompanyContext Company { get; }
+        public AuditEventCollector Audit { get; }
         public Scope(string connection, Guid id)
         {
             var company = new CompanyContext(); company.Set(id); var audit = new AuditEventCollector();
+            Company = company; Audit = audit;
             Db = new(new DbContextOptionsBuilder<AccountingDbContext>().UseSqlServer(connection,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", AccountingDbContext.Schema)).AddInterceptors(new AuditSaveChangesInterceptor(audit, company)).Options, company);
             Store = new(Db, company, new MissingMappings(), audit, TimeProvider.System);

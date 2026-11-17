@@ -93,7 +93,9 @@ public static class FinanceModuleExtensions
                 ? new SettingsFinanceCollateralTypeCatalogReaderV1(provider.GetRequiredService<ICompanyContext>(),
                     provider.GetRequiredService<ICurrentUser>(), catalog, provider.GetRequiredService<TimeProvider>())
                 : new UnavailableFinanceCollateralTypeCatalogReader());
-        services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
+        services.AddScoped(CreatePartyCollateralService);
+        services.AddScoped<IFinancePartyCollateralMaster>(provider => provider.GetRequiredService<FinancePartyCollateralService>());
+        services.AddScoped<IFinanceCollateralBankCandidatesV1>(provider => provider.GetRequiredService<FinancePartyCollateralService>());
         // FIN-S9 (FNS-D23): the opening balances, proposed and approved by two people while the Settings opening period
         // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and
         // decision fails closed and the period is never assumed open. Approval records one opening ledger movement.
@@ -169,14 +171,14 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<FinancePermissionPort>(),
             provider.GetRequiredService<IFinancePartyAccountPort>(),
             provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<IFinanceCollateralPolicyReaderV1>());
 
     private static FinanceSalesPartyRiskReadPortV1 CreateSalesPartyRiskReadPort(IServiceProvider provider) =>
         new FinanceSalesPartyRiskReadPortV1(
             provider.GetRequiredService<FinanceDbContext>(),
             provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<IFinanceCollateralPolicyReaderV1>());
 
     private static FinanceOfficialSalesInvoiceReadPortV1 CreateOfficialSalesInvoiceReadPort(IServiceProvider provider) =>
         new FinanceOfficialSalesInvoiceReadPortV1(
@@ -268,7 +270,8 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<IAuditEventCollector>(),
             new FinancePartyCollateralEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceCollateralsRecord, permissions, FinanceAction.RecordCollateral)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<IFinanceCollateralPolicyReaderV1>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static FinanceOpeningBalanceService CreateOpeningBalanceService(IServiceProvider provider)

@@ -31,6 +31,41 @@ describe('immutable received Finance source list', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status })))
     expect(await fetchFinanceJournalSources(company)).toMatchObject({ type: 'http', status })
   })
+  it('retains raw and approved exchange evidence without converting the original leg amounts', () => {
+    const original = financeSourcesBody().items[0]
+    const transfer = 'a0000000-0000-4000-8000-000000000020'
+    const foreign = 'a0000000-0000-4000-8000-000000000021'
+    const raw = { ...original, sourceId: transfer, sourceKind: 'finance.cash-exchange.recorded.v1', sourceVersion: '1',
+      cashExchange: { transferId: transfer, bookValueId: null, sourceCurrencyId: original.currencyId,
+        sourceAmount: original.amount, targetCurrencyId: foreign, targetAmount: '3300', sourceBookValueTl: null, postingState: 'SourceBookValuePending' } }
+    expect(decodeFinanceJournalSources({ companyId: company, items: [raw] }, company)?.items[0]).toEqual(raw)
+    const approved = { ...original, sourceKind: 'finance.cash-exchange.book-value-approved.v1', sourceVersion: '2', amount: '3100',
+      mappingStatus: 'BindingAvailable', preparationVersion: 'A'.repeat(64),
+      cashExchange: { transferId: transfer, bookValueId: original.sourceId, sourceCurrencyId: foreign,
+        sourceAmount: '100', targetCurrencyId: original.currencyId, targetAmount: '3300', sourceBookValueTl: '3100', postingState: 'ApprovedSourceBookValue' } }
+    expect(decodeFinanceJournalSources({ companyId: company, items: [approved] }, company)?.items[0]).toEqual(approved)
+    for (const changed of [
+      { ...raw, mappingStatus: 'BindingAvailable', preparationVersion: 'A'.repeat(64) },
+      { ...approved, cashExchange: { ...approved.cashExchange, bookValueId: transfer } },
+      { ...approved, cashExchange: { ...approved.cashExchange, sourceBookValueTl: '3200' } },
+      { ...approved, cashExchange: { ...approved.cashExchange, targetCurrencyId: foreign } },
+      { ...approved, cashExchange: { ...approved.cashExchange, postingState: 'TargetBookValueUnavailable' } },
+      { ...approved, cashExchange: null },
+    ]) expect(decodeFinanceJournalSources({ companyId: company, items: [changed] }, company)).toBeNull()
+    const targetUnknown = { ...approved, mappingStatus: 'BindingUnavailable', preparationVersion: null,
+      cashExchange: { ...approved.cashExchange, targetCurrencyId: 'a0000000-0000-4000-8000-000000000022', postingState: 'TargetBookValueUnavailable' } }
+    expect(decodeFinanceJournalSources({ companyId: company, items: [targetUnknown] }, company)?.items[0]).toEqual(targetUnknown)
+    const targetDocumented = { ...approved, cashExchange: { ...approved.cashExchange,
+      targetCurrencyId: targetUnknown.cashExchange.targetCurrencyId, targetAmount: '90', targetFunctionalValueTl: '3330' } }
+    expect(decodeFinanceJournalSources({ companyId: company, items: [targetDocumented] }, company)?.items[0]).toEqual(targetDocumented)
+    for (const changed of [
+      { ...targetDocumented, cashExchange: { ...targetDocumented.cashExchange, targetFunctionalValueTl: '0' } },
+      { ...targetDocumented, cashExchange: { ...targetDocumented.cashExchange, targetFunctionalValueTl: null } },
+      { ...targetDocumented, cashExchange: { ...targetDocumented.cashExchange, targetFunctionalValueTl: '1e2' } },
+      { ...targetUnknown, cashExchange: { ...targetUnknown.cashExchange, targetFunctionalValueTl: '3330' } },
+      { ...raw, cashExchange: { ...raw.cashExchange, targetFunctionalValueTl: '3330' } },
+    ]) expect(decodeFinanceJournalSources({ companyId: company, items: [changed] }, company)).toBeNull()
+  })
   it('keeps empty, malformed and offline distinct', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ companyId: company, items: [] })))
       .mockResolvedValueOnce(new Response('{}')).mockRejectedValueOnce(new Error('offline'))

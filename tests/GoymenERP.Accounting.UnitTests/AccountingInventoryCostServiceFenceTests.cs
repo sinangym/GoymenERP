@@ -12,6 +12,17 @@ public sealed class AccountingInventoryCostServiceFenceTests
     private static readonly Guid Actor = Guid.Parse("a5193000-0000-4000-8000-000000000002");
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Draft_create_or_reversal_propose_does_not_authorize_a_component_cancellation_approval(bool reversalReader)
+    {
+        var fixture = new Fixture(reversalReader);
+        var result = await fixture.Service.ApproveCancellationAsync(Guid.NewGuid(), new(3, 1), "SENTETIK-cancellation-key");
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Equal(AccountingJournalReversalPermissionNamesV1.Approve, Assert.Single(fixture.Authority.Reads));
+    }
+
+    [Theory]
     [InlineData("company", false)]
     [InlineData("actor", false)]
     [InlineData("membership", false)]
@@ -136,6 +147,9 @@ public sealed class AccountingInventoryCostServiceFenceTests
             long version, Guid actor, Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata,
             CancellationToken token = default) => throw new NotSupportedException();
         public Task<AccountingInventoryCostProposalV1> ProposeReversalAsync(Guid id, ProposeAccountingInventoryCostReversalV1 request,
+            Guid actor, Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata,
+            CancellationToken token = default) => throw new NotSupportedException();
+        public Task<AccountingInventoryCostProposalV1> ApproveCancellationAsync(Guid id, ApproveInventoryCostCancellationV1 request,
             Guid actor, Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata,
             CancellationToken token = default) => throw new NotSupportedException();
     }

@@ -467,6 +467,26 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
   source exists; an empty queue may roll back. Use a forward fix to retain financial provenance. Database apply and
   runtime SQL/browser/CI acceptance remain separate from source generation and compilation.
 
+### FIN-S14: actual exchange carrying value and exact journal components
+
+- `finance.cash-exchange.recorded.v1` and `finance.cash-exchange.book-value-approved.v1` enter the same immutable
+  company-filtered inbox queue. Receipt alone creates neither a draft nor a financial movement. The approved source
+  carries Finance's documented carrying TL value, separate preparer/approver and original transfer/document proof.
+- Preparation re-reads that real approved Finance source and the approved Accounting binding. The fixed posting
+  purpose is `finance.cash-exchange`; mapping keys are `cash-exchange.target-receipt` (Debit),
+  `cash-exchange.source-carrying` (Credit), and only the actual difference's `cash-exchange.realized-gain` (Credit)
+  or `cash-exchange.realized-loss` (Debit). Accounts are supplied solely by the approved mapping package. Missing
+  mappings remain unavailable. No TCMB reference amount is treated as a carrying or settlement amount.
+- For an actual TRY target, the received amount comes from the immutable transfer's `TargetMoney`. Both source
+  totals and individual mapping/side/amount components are exact backend constraints: a balanced but redistributed
+  draft is refused. The existing normal draft/open-period/posting flow is reused; its permission rules are unchanged.
+  Finance's carrying-value approval still requires different people. Credit-specific approval policy is separate.
+- A foreign-currency target remains `TargetBookValueUnavailable` until the separately documented and approved
+  target TL proof is implemented. The subsequent human decision authorizes that source, not inference from a quote.
+- EF-generated `20261117213704_AllowCashExchangeJournalSources` only widens the source-kind constraint. Down first
+  refuses with **THROW 51810** while either new source kind exists; empty or old-only queues can roll back. The SQL
+  guard awaits K3 review. No database apply, automatic dispatch, grant or runtime acceptance is implied.
+
 ## FIN-S13 / B-04: source voucher approval and cancellation ordering
 
 - Finalized Sales/Purchasing sources retain their real official invoice number when supplied; legacy sources keep a
@@ -605,3 +625,36 @@ EF migration `20261117194231_AddInventoryCostComponentRounding` widens only the 
 approved zero amounts. Down first refuses with **51803** while a rounded preparation, recorded owner-rounding
 snapshot or approved-zero version exists. Empty/legacy-only stores remain rollback-safe. The SQL guard is pending
 K3 review; no automatic guard allowlist was added and no database migration was applied.
+
+First purchase posted attribution uses the real invoice-line aggregate, receipt/root proofs and immutable physical
+shipments. Candidate evidence is captured in the same transaction as the source proposal. A different approver
+posts the one source total (or approves its rounded-zero proof without a journal), and the same transaction records
+each actual shipment share. Each shipment retains its exact cost; only rounding residue follows the approved
+largest-kg/earliest-recorded priority with a zero floor. Original-known and already-accounted manufacturing/purchase
+shares must jointly prove full physical coverage before Sales claims the cost. Pending or incomplete sources never
+become a zero cost, and no second SMM journal or physical movement is produced.
+
+EF-generated `20261117205436_AddPostedPurchaseCostAttribution` adds three company-scoped append-only tables.
+Down refuses any retained candidate/source/approval evidence with **51804**; update/delete triggers use
+**51805/51806**. These fixed migration SQL guards await K3 review and were not allowlisted. No database application
+or historical backfill occurred. Purchase-specific SAT-D422 correction now reads the actual approved purchase
+share, proposal, physical claim and current journal accounts. It corrects only that share in one transaction,
+leaving the original aggregate unchanged. Repeated corrections follow the share's actual latest replacement;
+approved rounded-zero shares can change classification without a fabricated journal. The existing two-line
+journal guard and different-approver rule are preserved. This binding needs the actual
+`IPostedPurchaseShipmentCostReaderV1` in the correction store composition. Source build and test sources do not
+constitute runtime acceptance; attributed cancellation and later manufacturing-delta composition remain separate
+technical follow-ups in the existing slice.
+
+Official invoice cancellation now prepares and separately approves only each actual posted cost component,
+including later manufacturing deltas, purchase attribution, current SAT-D422 replacement accounts, and real
+zero-share witnesses. The aggregate source journal is preserved. A zero witness records approval without a zero
+journal; a unique company/invoice-line/economic-component claim prevents a second reversal. Open period/date,
+current currency-profile representability, source revision and different preparer/approver are rechecked in the
+same Serializable owner transaction. Existing reversal permissions apply; generic whole-journal reversal is unchanged.
+
+EF-generated `20261117223234_AddInventoryCostComponentCancellations` adds two company-scoped append-only tables.
+Down first refuses retained preparation/approval/claim evidence with **51812**; update/delete triggers use
+**51813/51814**. Fixed migration SQL guards await K3 review; no guard allowlist or database application occurred.
+The historical ordering where official cancellation precedes first cost-source acceptance remains a separate
+technical continuation; this checkpoint does not claim its completion or runtime acceptance.

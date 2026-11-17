@@ -48,6 +48,8 @@ public sealed record InvoiceLineCogsPostedEvidenceV1(Guid CompanyId, Guid Invoic
 
 public sealed record InvoiceLineCogsAttributedEvidenceV1(PostedManufacturingCostShareV1 Source,
     Guid CurrentJournalId, Guid CurrentCogsAccountId, Guid CounterAccountId, string CurrentJournalTotal);
+public sealed record InvoiceLineCogsPurchaseAttributedEvidenceV1(PostedPurchaseCostShareV1 Source,
+    Guid? CurrentJournalId, Guid CurrentCogsAccountId, Guid CounterAccountId, string CurrentJournalTotal);
 public sealed record InvoiceLineCogsAttributedCorrectionV1(string AttributionFingerprint, Guid SourceJournalId,
     Guid ReversingCorrectionJournalId, Guid ReplacementCorrectionJournalId);
 
@@ -73,14 +75,16 @@ public sealed record InvoiceLineCogsCorrectionViewV1(Guid ProposalId, Guid Compa
     string Reason, InvoiceLineCogsPostedEvidenceV1? PostedEvidence,
     Guid? ReversingCorrectionJournalId, Guid? ReplacementCorrectionJournalId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>? AttributedEvidence = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedCorrectionV1>? AttributedCorrections = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedCorrectionV1>? AttributedCorrections = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>? PurchaseAttributedEvidence = null);
 
 public sealed record InvoiceLineCogsHistoryV1(Guid CompanyId, Guid InvoiceId, Guid InvoiceLineId,
     FinalizedInvoiceLineReferenceV1 Source, long LineVersion, InvoiceLineCogsRevisionViewV1? Current,
     IReadOnlyList<InvoiceLineCogsRevisionViewV1> Revisions, IReadOnlyList<InvoiceLineCogsCorrectionViewV1> Proposals,
     string PostingEvidenceState, InvoiceLineCogsPostedEvidenceV1? PostedEvidence,
     InvoiceLineCogsProductReferenceV1? ProductReference = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>? AttributedEvidence = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>? AttributedEvidence = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>? PurchaseAttributedEvidence = null);
 
 /// <summary>Today's Product default is reference data, never proof of the invoice line's former classification.</summary>
 public sealed record InvoiceLineCogsProductReferenceV1(Guid CompanyId, Guid ProductId, string Outcome,

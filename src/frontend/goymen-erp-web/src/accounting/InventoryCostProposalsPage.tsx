@@ -12,7 +12,7 @@ import { fetchInventoryCosts, fetchInventoryCostOptions, sendInventoryCost, type
   type InventoryCostKind, type InventoryCostOptions, type InventoryCostOutcome, type InventoryCostProposal } from './inventoryCostApi'
 import styles from './Accounting.module.css'
 
-interface Props { readonly kind: InventoryCostKind; readonly canPrepare: boolean; readonly canApprove: boolean; readonly canProposeReversal: boolean }
+interface Props { readonly kind: InventoryCostKind; readonly canPrepare: boolean; readonly canApprove: boolean; readonly canProposeReversal: boolean; readonly canApproveCancellation?: boolean }
 const pending = new Map<string, InventoryCostAttempt>()
 
 export function InventoryCostProposalsPage(props: Props) {
@@ -21,7 +21,7 @@ export function InventoryCostProposalsPage(props: Props) {
   return <Page key={`${namespace}:${shell.routeEntryGeneration}:${props.kind}`} {...props} namespace={namespace} />
 }
 
-function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: Props & { readonly namespace: string | null }) {
+function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCancellation = false, namespace }: Props & { readonly namespace: string | null }) {
   const shell = useShellState(); const boundary = useAuthBoundary(); const actor = shell.activeContext?.userId ?? ''
   const company = shell.activeContext?.companyId ?? ''; const single = namespace !== null && company !== '' && shell.activeContext?.scopeMode === 'single'
   // Authority/cache generations may change while a command's outcome is unknown. Keep its immutable retry
@@ -37,7 +37,8 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
       if (value.type === 'http' && [401, 403].includes(value.status)) boundary.report(value.status as 401 | 403, security)
       return value } })
   const frozen = sending || outcome?.type === 'unknown'
-  const maySend = (operation: InventoryCostAttempt['operation']) => operation === 'prepare' ? canPrepare : operation === 'approve' ? canApprove : canProposeReversal
+  const maySend = (operation: InventoryCostAttempt['operation']) => operation === 'prepare' ? canPrepare : operation === 'approve' ? canApprove
+    : operation === 'approve-cancellation' ? canApproveCancellation : canProposeReversal
   const send = async (next: InventoryCostAttempt, retry = false) => {
     if (inFlight.current || !maySend(next.operation) || outcome?.type === 'unknown' && !retry) return
     inFlight.current = true; pending.set(slot, next); setAttempt(next); setSending(true); setOutcome(null)
@@ -75,6 +76,9 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
         {row.component.alreadyPostedComponents ? <><p>{['AttributedCancellationPending', 'MixedCancellationPending'].includes(row.status) ? T.attributedPending : T.attributed}</p>
           <ul>{row.component.alreadyPostedComponents.map(share => <li key={share.fingerprint}>
             {T.attributedJournal}: {share.journalId} · {T.attributedAmount}: {share.signedAmount}</li>)}</ul></> : null}
+        {row.component.alreadyPostedPurchaseComponents ? <><p>{T.purchaseAttributed}</p>
+          <ul>{row.component.alreadyPostedPurchaseComponents.map(share => <li key={share.fingerprint}>
+            {T.attributedJournal}: {share.approval.journalId ?? T.purchaseRoundedZero} · {T.attributedAmount}: {share.signedAmount}</li>)}</ul></> : null}
         {row.component.signedTlAmount.numerator.startsWith('-') ? <p role="note">{T.negative}</p> : null}
         {row.preparation !== null ? <dl><dt>{T.classification}</dt><dd>{row.preparation.classification.classification === 1 ? T.trade : T.manufactured}</dd>
           <dt>{T.counter}</dt><dd>{row.preparation.counterAccount.code} · {row.preparation.counterAccount.name}</dd>
@@ -94,6 +98,20 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: P
             <p>{T.existingReversal}</p><Link to={journalReversalApprovalPath(row.reversalProposal.proposalId)}>{T.reversalApproval}</Link>
           </> : canProposeReversal ? <Preparation key={`${row.proposalId}:${row.version}:reverse`} row={row} company={company}
             namespace={namespace!} actor={actor} frozen={frozen} reverse send={next => void send(next)} /> : <p>{T.denied}</p>}
+        </> : null}
+        {['ComponentCancellationPending', 'ComponentCancellationPrepared', 'CancelledByComponentReversal'].includes(row.status) ? <>
+          <p>{T.componentCancellation}</p>
+          {row.componentCancellation ? <><p>{T.preparedDate}: {row.componentCancellation.accountingDate} · {T.reason}: {row.componentCancellation.reason}</p>
+            <ul>{row.componentCancellation.components.map(part => <li key={part.economicKey}>
+              {T.attributedAmount}: {part.signedAmount} · {part.sourceJournalId ? `${T.attributedJournal}: ${part.sourceJournalId}` : T.purchaseRoundedZero}
+              {part.reversingJournalId ? ` · ${T.componentReverseJournal}: ${part.reversingJournalId}` : ''}</li>)}</ul></> : null}
+          {canProposeReversal && row.status !== 'CancelledByComponentReversal' ? <Preparation
+            key={`${row.proposalId}:${row.componentCancellation?.version ?? 0}:component-reverse`} row={row} company={company}
+            namespace={namespace!} actor={actor} frozen={frozen} reverse send={next => void send(next)} /> : null}
+          {canApproveCancellation && row.status === 'ComponentCancellationPrepared' && row.componentCancellation ?
+            row.componentCancellation.preparedBy.toLowerCase() === actor.toLowerCase() ? <p>{T.own}</p>
+              : <button disabled={frozen} onClick={() => void send({ id: row.proposalId, kind, actor, operation: 'approve-cancellation', key: crypto.randomUUID(),
+                request: { expectedVersion: row.version, expectedCancellationVersion: row.componentCancellation!.version } })}>{T.componentApprove}</button> : null}
         </> : null}
       </> : null}
     </>}
@@ -123,7 +141,7 @@ function Preparation({ row, company, namespace, actor, frozen, reverse, send }: 
       || !reverse && !state.data.accounts.some(value => value.accountId === form.counterAccountId) || form.reason.trim() === '') { setInvalid(true); return }
     const common = { id: row.proposalId, kind: row.kind, actor, key: crypto.randomUUID() }
     const request = { expectedVersion: row.version, periodId: form.periodId, accountingDate: form.accountingDate, transactionDate: form.transactionDate, reason: form.reason.trim() }
-    send(reverse ? { ...common, operation: 'reverse', request: { ...request, proposalId: crypto.randomUUID() } }
+    send(reverse ? { ...common, operation: 'reverse', request: { ...request, proposalId: crypto.randomUUID(), expectedCancellationVersion: row.componentCancellation?.version ?? 0 } }
       : { ...common, operation: 'prepare', request: { ...request, counterAccountId: form.counterAccountId } })
   }
   if (state.kind !== 'ready') return <StateBlock state={state} subject={T.period} onRetry={() => void options.refetch()} />

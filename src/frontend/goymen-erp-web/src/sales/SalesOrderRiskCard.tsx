@@ -217,6 +217,13 @@ function RiskBody({ check, currencyName, showAmounts }: {
         </table>
       </div>
       <p className={pages.muted}>{T.collateralNote}</p>
+      {showAmounts && check.collateral.policyProofs !== undefined && check.collateral.policyProofs.length > 0
+        ? <details><summary>{T.collateralPolicyHeading}</summary><ul>
+            {check.collateral.policyProofs.map(proof => <li key={proof.collateralId}>
+              {T.collateralPolicy(proof.collateralRevision, proof.ratePercent, proof.sourceVersion, proof.businessDate)}
+              {proof.bankInstitutionId === null ? <p>{T.noBankPolicy}</p> : <p>{proof.bankSourceVersion}</p>}
+            </li>)}
+          </ul></details> : null}
 
       {check.reasons.length === 0 ? null : (
         <>

@@ -25,6 +25,7 @@ const ROUTED = [
   [CAPABILITY.accountingInvoicedShipmentPrepare, ACCOUNTING_CAPABILITY.invoicedShipmentPrepare, ACCOUNTING_ROUTE.invoicedShipmentPrepare],
   [CAPABILITY.accountingInvoicedShipmentApprove, ACCOUNTING_CAPABILITY.invoicedShipmentApprove, ACCOUNTING_ROUTE.invoicedShipmentApprove],
   [CAPABILITY.accountingInvoicedShipmentReverse, ACCOUNTING_CAPABILITY.invoicedShipmentReverse, ACCOUNTING_ROUTE.invoicedShipmentReverse],
+  [CAPABILITY.accountingInvoicedShipmentReverseApprove, ACCOUNTING_CAPABILITY.invoicedShipmentReverseApprove, ACCOUNTING_ROUTE.invoicedShipmentReverseApprove],
   [CAPABILITY.accountingPurchaseCostPrepare, ACCOUNTING_CAPABILITY.purchaseCostPrepare, ACCOUNTING_ROUTE.purchaseCostPrepare],
   [CAPABILITY.accountingPurchaseCostApprove, ACCOUNTING_CAPABILITY.purchaseCostApprove, ACCOUNTING_ROUTE.purchaseCostApprove],
   [CAPABILITY.accountingPostingMappingsRead, ACCOUNTING_CAPABILITY.postingMappingsRead, ACCOUNTING_ROUTE.postingMappings],

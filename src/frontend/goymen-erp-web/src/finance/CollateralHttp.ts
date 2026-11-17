@@ -27,6 +27,8 @@ import {
   decodeCollateralCurrencyCandidates,
   decodeCollateralHistoryPage,
   decodeCollateralTypeCandidates,
+  decodeCollateralBankCandidates,
+  type CollateralBankCandidates,
   type CollateralAccount,
   type CollateralChangeBody,
   type CollateralCommandResult,
@@ -46,6 +48,11 @@ export const collateralAccountUrl = (companyAccountId: string) =>
 export const collateralHistoryUrl = (companyAccountId: string) => `${collateralAccountUrl(companyAccountId)}/history`
 export const collateralTypeCandidatesUrl = () => `${API_BASE}${COLLATERALS_PATH}/type-candidates`
 export const collateralCurrencyCandidatesUrl = () => `${API_BASE}${COLLATERALS_PATH}/currency-candidates`
+export const collateralBankCandidatesUrl = () => `${API_BASE}${COLLATERALS_PATH}/bank-candidates`
+export function fetchCollateralBankCandidates(companyId: string, signal?: AbortSignal): Promise<ViewOutcome<CollateralBankCandidates>> {
+  if (!isBoundUuid(companyId)) return Promise.resolve({ type: 'malformed' })
+  return read(collateralBankCandidatesUrl(), companyId, body => decodeCollateralBankCandidates(body, companyId), signal)
+}
 
 async function read<T>(url: string, companyId: string, decode: (body: unknown) => Decoded<T>,
   signal?: AbortSignal): Promise<ViewOutcome<T>> {

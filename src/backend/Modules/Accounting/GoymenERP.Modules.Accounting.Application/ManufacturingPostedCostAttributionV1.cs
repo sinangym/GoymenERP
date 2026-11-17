@@ -39,4 +39,19 @@ public interface IPostedManufacturingShipmentCostReaderV1
     Task<PostedManufacturingShipmentCostV1?> ReadAsync(Guid companyId, Guid shipmentId, Guid movementId,
         int movementLineNumber, Guid productId, decimal quantityKg,
         Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default);
+
+    // Actual implementations may return a proved root subset for a consumer that combines purchase and production roots.
+    // Existing providers retain their stricter whole-line admission until they implement that evidence explicitly.
+    Task<PostedManufacturingShipmentCostV1?> ReadProvenSharesAsync(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default) =>
+        ReadAsync(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, freshConsumerFence, cancellationToken);
+
+    /// <summary>
+    /// Reads only actual posted deltas for a physical line whose original known cost is independently proven by
+    /// the consumer's completed initial source/claim. It cannot establish an unknown original cost or its coverage.
+    /// </summary>
+    Task<PostedManufacturingShipmentCostV1?> ReadPostedDeltasAsync(Guid companyId, Guid shipmentId, Guid movementId,
+        int movementLineNumber, Guid productId, decimal quantityKg,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default);
 }

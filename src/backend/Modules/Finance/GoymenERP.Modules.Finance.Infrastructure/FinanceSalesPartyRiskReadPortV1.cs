@@ -38,7 +38,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </list>
 /// </summary>
 internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext,
-    IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider)
+    IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider, IFinanceCollateralPolicyReaderV1? collateralPolicies = null)
     : ISalesPartyRiskReadPortV1
 {
     /// <summary>Without a Settings collateral type catalog: the collateral figure fails closed when any collateral is held.</summary>
@@ -111,7 +111,7 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil, asOf))
             ? await collateralTypes.ListAsync(companyId, asOf, cancellationToken)
             : null;
-        var figure = FinancePartyCollateralFigures.Weigh(inputs, catalog, asOf);
+        var figure = await FinanceCollateralPolicyFigures.WeighAsync(companyId, inputs, catalog, collateralPolicies, asOf, cancellationToken);
         if (!figure.IsAvailable)
         {
             return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
@@ -132,7 +132,9 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         }
 
         return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, CollateralSource, amounts,
-            IncludesTax: null, null);
+            IncludesTax: null, null, figure.PolicyProofs?.Select(x => new SalesPartyRiskPolicyProofV1(x.CompanyId, x.CollateralId,
+                x.CollateralRevision, x.CollateralTypeId, x.TypeVersion, x.BankInstitutionId, x.BankSourceVersion,
+                x.RatePercent, x.SourceVersion, x.Scope, x.BusinessDate)).ToArray());
     }
 
     /// <summary>

@@ -13,7 +13,9 @@ export const CREDIT_MOVEMENT_TEXT = {
 } as const
 export const CREDIT_POSTING_TEXT = {
   show: 'Muhasebe fiş önerilerini göster / yenile', subject: 'Kredi fiş önerisi', empty: 'Bu kredi için muhasebeye ulaşmış fiş önerisi bulunmuyor.',
-  waiting: 'Kesin fiş oluşmadı; eşleme bekliyor.', reversal: 'Ters kayıt önerisi', functional: 'TL',
-  reasons: { credit_mapping_details_pending_TK30: 'Kredi muhasebe eşlemesinin ayrıntısı karar bekliyor.', credit_mapping_missing: 'Hesap eşlemesi eksik.',
+  ready: 'Onaylı kaynak eşlemesi hazır. Muhasebe normal fiş ekranında Kredi hareketleri kaynağını seçin; farklı muhasebe yetkilisi onaylar.',
+  waiting: 'Kesin fiş oluşmadı; kaynak veya eşleme bekliyor.', reversal: 'Ters kayıt önerisi', functional: 'TL',
+  reasons: { credit_approved_source_package_missing: 'Onaylı bileşen eşlemesi, gerçek hareket veya para profili doğrulanamadı.',
+    credit_opening_journal_source_unavailable: 'Açılış veya ters açılış için uygun fiş kaynağı bulunmuyor; ikinci hareket oluşturulmaz.', credit_mapping_details_pending_TK30: 'Kaynak için onaylı bileşen eşleme paketi eksik.', credit_mapping_missing: 'Hesap eşlemesi eksik.',
     credit_functional_source_amount_missing: 'Kaynakta TL karşılığı eksik; sıfır veya hesaplanmış kur kullanılmaz.' },
 } as const

@@ -1,10 +1,57 @@
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Sales.UnitTests;
 
 public sealed partial class SalesDraftServiceTests
 {
+    [Fact]
+    public async Task SAT_S12_zero_owner_cost_is_unavailable_and_does_not_block_internal_approval()
+    {
+        var source = new MarginCostSource { Cost = 0m };
+        var world = new World { MarginCosts = source };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-zero-create"))).Detail;
+        var preview = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+        Assert.Equal("CostUnreadable", preview.UnavailableReason);
+        Assert.Null(preview.Amount);
+        Assert.Null(preview.Percent);
+
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("margin-zero-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-zero-approve"));
+
+        var draft = Assert.Single(world.Store.Drafts);
+        Assert.Equal(InternalApprovalState.Approved, draft.ApprovalState);
+        var pin = Assert.Single(draft.MarginCosts);
+        Assert.Equal(SalesLineMarginUnavailableReason.CostUnreadable, pin.UnavailableReason);
+        Assert.Null(pin.CostPerUnit);
+        Assert.Null(pin.CurrencyId);
+    }
+
+    [Fact]
+    public async Task SAT_S12_restored_zero_snapshot_is_not_rewritten_or_disclosed_as_one_hundred_percent()
+    {
+        var source = new MarginCostSource();
+        var world = new World { MarginCosts = source };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-zero-restored"))).Detail;
+        var draft = Assert.Single(world.Store.Drafts);
+        draft.Submit(draft.Version, Actor, DateTimeOffset.UtcNow);
+        draft.Approve(draft.Version, Actor, DateTimeOffset.UtcNow);
+        var line = draft.Lines[0];
+        var original = new SalesMarginCostSnapshot(line.Id, draft.Revision, line.Product.ProductId,
+            line.OrderUnit.UnitId, line.Quantity.Value, Currency, 0m, null,
+            "{\"syntheticRestoredZeroCost\":true}", DateTimeOffset.UtcNow);
+        draft.PinMarginCosts([original]);
+
+        var result = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+
+        Assert.Equal("CostUnreadable", result.UnavailableReason);
+        Assert.Null(result.Amount);
+        Assert.Null(result.Percent);
+        Assert.Equal(original, Assert.Single(draft.MarginCosts));
+        Assert.Equal(0, source.Reads);
+    }
+
     [Fact]
     public async Task SAT_S12_legacy_approved_line_is_not_backfilled_when_a_cost_provider_arrives()
     {
@@ -62,7 +109,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("9", [], []), Metadata("margin-reinstated-restore"));
         var pricing = await world.Service().GetDraftLinePricingAsync(approved.Id);
         var margin = Assert.Single(pricing.Margin.Lines!, item => item.LineId == lineId);
-        Assert.Equal("FormulaGoldenPending", margin.UnavailableReason);
+        Assert.Equal("SalesAmountUnavailable", margin.UnavailableReason);
         Assert.Equal(original, Assert.Single(draft.MarginCosts, item => item.LineId == lineId));
         Assert.Equal(reads, source.Reads);
     }
@@ -71,6 +118,7 @@ public sealed partial class SalesDraftServiceTests
     {
         public int Reads { get; private set; }
         public decimal Cost { get; set; } = 12.3456m;
+        public Guid CostCurrency { get; set; } = Currency;
         public Guid? WrongCompany { get; set; }
         public Action? OnRead { get; set; }
         public SalesLineMarginUnavailableReason? Reason { get; set; }
@@ -80,23 +128,60 @@ public sealed partial class SalesDraftServiceTests
             Reads++;
             OnRead?.Invoke();
             return Task.FromResult(new SalesMarginCostReadAnswerV1(1, WrongCompany ?? companyId, productId, unitId,
-                Reason is null ? Currency : null, Reason is null ? Cost : null, Reason, "{\"syntheticOwnerVersion\":17}"));
+                Reason is null ? CostCurrency : null, Reason is null ? Cost : null, Reason, "{\"syntheticOwnerVersion\":17}"));
         }
     }
 
     [Fact]
-    public async Task SAT_S12_live_cost_preview_is_not_persisted_and_independent_golden_gate_remains_closed()
+    public async Task SAT_S12_unpriced_live_cost_preview_stays_unavailable_without_persisting_or_disclosing_revoked_cost()
     {
         var source = new MarginCostSource();
         var world = new World { MarginCosts = source };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-preview"))).Detail;
         var pricing = await world.Service().GetDraftLinePricingAsync(created.Draft.Id);
-        Assert.Equal("FormulaGoldenPending", Assert.Single(pricing.Margin.Lines!).UnavailableReason);
+        Assert.Equal("SalesAmountUnavailable", Assert.Single(pricing.Margin.Lines!).UnavailableReason);
         Assert.Empty(Assert.Single(world.Store.Drafts).MarginCosts);
         Assert.Equal(1, source.Reads);
         world.Authority.Denied.Add(MarginReadPermission);
         Assert.Equal(SalesMarginDisclosure.Withheld, (await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Disclosure);
         Assert.Equal(1, source.Reads);
+    }
+
+    [Fact]
+    public async Task SAT_S12_reviewed_G01_reaches_the_actual_TL_preview_without_persisting_a_snapshot()
+    {
+        var tl = SettingsCurrencyIdentitiesV1.TurkishLira;
+        var source = new MarginCostSource { Cost = 7.1234m, CostCurrency = tl };
+        var world = new World { MarginCosts = source };
+        var request = Priced(unitPrice: "10", discount: null);
+        request = request with { CurrencyId = tl, Lines = [request.Lines[0] with { Quantity = "100" }] };
+        var created = (await world.Service().CreateDraftAsync(request, Metadata("margin-reviewed-g01"))).Detail;
+
+        var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+
+        Assert.Equal("Computed", margin.State);
+        Assert.Null(margin.UnavailableReason);
+        Assert.Equal("287.66", margin.Amount);
+        Assert.Equal(tl, margin.CurrencyId);
+        Assert.Equal("28.77", margin.Percent);
+        Assert.Empty(Assert.Single(world.Store.Drafts).MarginCosts);
+        Assert.Equal(1, source.Reads);
+    }
+
+    [Fact]
+    public async Task SAT_S12_foreign_priced_preview_stays_unavailable_after_the_golden_is_accepted()
+    {
+        var source = new MarginCostSource();
+        var world = new World { MarginCosts = source };
+        var request = Priced(discount: null);
+        var created = (await world.Service().CreateDraftAsync(request, Metadata("margin-reviewed-foreign"))).Detail;
+
+        var margin = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!);
+
+        Assert.Equal("CurrencyConversionUndecided", margin.UnavailableReason);
+        Assert.Null(margin.Amount);
+        Assert.Null(margin.Percent);
+        Assert.Empty(Assert.Single(world.Store.Drafts).MarginCosts);
     }
 
     [Fact]

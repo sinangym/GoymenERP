@@ -365,6 +365,9 @@ internal sealed class PartyCollateralRow : IFinanceTenantRow
     public int Kind { get; set; }
     public Guid CollateralTypeId { get; set; }
     public string CollateralTypeVersion { get; set; } = string.Empty;
+    public Guid? BankInstitutionId { get; set; }
+    public string? BankSourceVersion { get; set; }
+    public string? BankProofJson { get; set; }
     public Guid CurrencyId { get; set; }
     public string AmountText { get; set; } = string.Empty;
     public DateOnly ValidFrom { get; set; }

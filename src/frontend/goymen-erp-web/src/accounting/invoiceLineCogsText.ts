@@ -1,5 +1,6 @@
 export const INVOICE_LINE_COGS_TEXT = {
-  attributed: 'Bu satırın maliyeti mevcut onaylı üretim fişlerindeki gerçek sevk paylarına bağlıdır. Yalnız bu paylar için ters/düzeltme kaydı oluşur; toplam üretim fişi korunur.',
+  attributed: 'Bu satırın maliyeti mevcut onaylı fişlerdeki gerçek sevk paylarına bağlıdır. Yalnız bu paylar için ters/düzeltme kaydı oluşur; toplam kaynak fişi korunur.',
+  purchasePosted: 'Alış maliyetinden gelen onaylı pay', approvedWithoutJournal: 'Fiş oluşturmayan sıfır tutarlı onay',
   mixed: 'Bu satırın ilk SMM fişi ve daha önce muhasebeleşmiş sevk payları birlikte izlenir. Her bileşenin gerçek kayıtlı tutarı ve karşı hesabı korunarak düzeltilir.',
   title: 'Fatura satırı sınıfı ve SMM hesabı', subject: 'Fatura satırı muhasebe düzeltmesi',
   officialNumber: 'Resmî fatura numarası', find: 'Kesinleşmiş faturayı bul', line: 'Fatura satırı', open: 'Satırı aç',

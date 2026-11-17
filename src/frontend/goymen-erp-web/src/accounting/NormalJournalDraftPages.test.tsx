@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, normalDraftApprovalPath } from './capabilities'
 import { COMPANY_A, installFetch, json, renderAt, requestsFor } from './testHarness'
+import { decodeNormalJournalDraftSourcePreparation } from './contract'
 
 const COMPANY = COMPANY_A
 const DRAFT = 'a0000000-0000-4000-8000-000000000002'
@@ -67,6 +68,81 @@ afterEach(() => {
 })
 
 describe('normal journal source-bound creation', () => {
+  it('chooses an actual credit proposal and copies its approved component lines into the existing normal draft', async () => {
+    const mapped = preparation({ postingPurpose: 'finance.credit.drawdown', mappings: [
+      { mappingKey: 'credit.bank', side: 'Debit', accountId: ACCOUNT_1, accountCode: 'SENTETIK-1', accountName: 'Bank' },
+      { mappingKey: 'credit.component.principal', side: 'Credit', accountId: ACCOUNT_2, accountCode: 'SENTETIK-2', accountName: 'Principal' },
+    ], exactSourceLines: [{ mappingKey: 'credit.bank', side: 'Debit', amount: '100' },
+      { mappingKey: 'credit.component.principal', side: 'Credit', amount: '100' }] })
+    const recorded = installFetch({ capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_CAPABILITY.journalsList], respond: (url, init) => {
+      if (url.includes('/finance/manual-receipts')) return json(sourcePage())
+      if (url.endsWith('/credit-movement-proposals')) return json({ companyId: COMPANY, items: [{ proposalId: SOURCE, companyId: COMPANY,
+        status: 'ReadyForPreparation', mappingStatus: 'MappingReady', mappingVersion: null, waitingReasons: [], receivedAtUtc: '2026-11-18T09:00:00Z',
+        source: { eventId: SOURCE, companyId: COMPANY, movementId: DRAFT, creditAccountId: ACTOR, currencyId: CURRENCY, kind: 'Drawdown',
+          sourceDocument: { reference: 'SENTETIK-KREDI-1', documentDate: '2026-11-18', revision: '1' },
+          transactionDate: '2026-11-18', accountingDate: '2026-11-18', reversesMovementId: null, approvedBy: ACTOR, reason: 'SENTETIK source',
+          bankEffect: { bankAccountId: ACCOUNT_1, amount: '100', sourceReference: 'SENTETIK actual bank' },
+          components: [{ kind: 'principal', amount: '100', functionalAmount: null }] } }] })
+      if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json(mapped)
+      if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') return json(draft(), 201)
+      return undefined
+    } })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.change(await screen.findByLabelText('Kaynak grubu'), { target: { value: 'credit' } })
+    await screen.findByRole('option', { name: /SENTETIK-KREDI-1/ })
+    fireEvent.change(screen.getByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerçek kaynak ve onaylı hesap eşlemesinin fiş satırlarını kullan' }))
+    expect(screen.getAllByLabelText('Tutar').map(x => (x as HTMLInputElement).value)).toEqual(['100', '100'])
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-11-18' } })
+    fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-11-18' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
+    await waitFor(() => expect(requestsFor(recorded, '/normal-journal-drafts', 'POST')).toHaveLength(1))
+    expect(requestsFor(recorded, '/normal-journal-drafts', 'POST')[0].body).toMatchObject({ sourceId: SOURCE,
+      expectedPreparationVersion: PREPARATION, lines: [{ accountId: ACCOUNT_1, side: 'Debit', amount: '100' },
+        { accountId: ACCOUNT_2, side: 'Credit', amount: '100' }] })
+  })
+
+  it('decodes source component amounts only when their mapping and identity proof agree', () => {
+    const body = preparation({ exactSourceLines: [
+      { mappingKey: 'debit', side: 'Debit', amount: '100.01' },
+      { mappingKey: 'credit', side: 'Credit', amount: '100.01' },
+    ] })
+    expect(decodeNormalJournalDraftSourcePreparation(body, COMPANY, SOURCE)?.exactSourceLines?.[0].amount).toBe('100.01')
+    for (const lines of [null, [], [{ mappingKey: 'debit', side: 'Debit', amount: '0' }, { mappingKey: 'credit', side: 'Credit', amount: '1' }],
+      [{ mappingKey: 'debit', side: 'Credit', amount: '1' }, { mappingKey: 'credit', side: 'Credit', amount: '1' }],
+      [{ mappingKey: 'debit', side: 'Debit', amount: '1' }, { mappingKey: 'debit', side: 'Debit', amount: '1' }],
+      [{ mappingKey: 'debit', side: 'Debit', amount: '1', invented: true }, { mappingKey: 'credit', side: 'Credit', amount: '1' }],
+    ]) expect(decodeNormalJournalDraftSourcePreparation({ ...body, exactSourceLines: lines }, COMPANY, SOURCE)).toBeNull()
+  })
+
+  it('copies backend exact source components into mapped lines without calculating an exchange difference in the browser', async () => {
+    const gain = 'a0000000-0000-4000-8000-000000000099'
+    const mapped = preparation({ mappings: [
+      { mappingKey: 'target', side: 'Debit', accountId: ACCOUNT_1, accountCode: 'SENTETIK-1', accountName: 'Target' },
+      { mappingKey: 'source', side: 'Credit', accountId: ACCOUNT_2, accountCode: 'SENTETIK-2', accountName: 'Source' },
+      { mappingKey: 'gain', side: 'Credit', accountId: gain, accountCode: 'SENTETIK-3', accountName: 'Gain' },
+    ], exactSourceLines: [{ mappingKey: 'target', side: 'Debit', amount: '3300' },
+      { mappingKey: 'source', side: 'Credit', amount: '3100' }, { mappingKey: 'gain', side: 'Credit', amount: '200' }] })
+    const recorded = installFetch({ capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate], respond: (url, init) => {
+      if (url.includes('/finance/manual-receipts')) return json(sourcePage())
+      if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json(mapped)
+      if (url.endsWith('/normal-journal-drafts') && init?.method === 'POST') return json(draft(), 201)
+      return undefined
+    } })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    await selectRecordedSource()
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerçek kaynak ve onaylı hesap eşlemesinin fiş satırlarını kullan' }))
+    expect(screen.getAllByLabelText('Tutar').map(x => (x as HTMLInputElement).value)).toEqual(['3300', '3100', '200'])
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-24' } })
+    fireEvent.change(screen.getByLabelText('Muhasebe tarihi'), { target: { value: '2026-09-24' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
+    await waitFor(() => expect(requestsFor(recorded, '/normal-journal-drafts', 'POST')).toHaveLength(1))
+    expect(requestsFor(recorded, '/normal-journal-drafts', 'POST')[0].body).toMatchObject({ lines: [
+      { accountId: ACCOUNT_1, side: 'Debit', amount: '3300' }, { accountId: ACCOUNT_2, side: 'Credit', amount: '3100' },
+      { accountId: gain, side: 'Credit', amount: '200' },
+    ] })
+  })
+
   it('selects the received expense through Accounting and shows an unavailable binding without offering a draft', async () => {
     const recorded = installFetch({
       capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_CAPABILITY.journalsList],

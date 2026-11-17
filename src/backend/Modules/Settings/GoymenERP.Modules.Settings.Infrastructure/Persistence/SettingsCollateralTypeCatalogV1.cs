@@ -24,7 +24,7 @@ public sealed class SettingsCollateralTypeCatalogV1 : ISettingsCollateralTypeCat
     public async Task<SettingsCollateralTypesViewV1> ListAsync(Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        RequireAccess(companyId, cancellationToken);
+        var actor = RequireAccess(companyId, cancellationToken);
         CollateralTypeSnapshot[] snapshots;
         try
         {
@@ -35,6 +35,9 @@ public sealed class SettingsCollateralTypeCatalogV1 : ISettingsCollateralTypeCat
             throw new SettingsPrerequisiteException(SettingsCollateralTypeProblemCodesV1.ProviderUnavailable);
         }
 
+        // The owner's answer belongs to the actor and company captured before the asynchronous read. A consumer's
+        // additional fence does not replace this owner boundary, including when the store returned an empty catalog.
+        RequireSameAccess(companyId, actor, cancellationToken);
         var entries = new List<SettingsCollateralTypeViewV1>(snapshots.Length);
         foreach (var snapshot in snapshots)
         {
@@ -42,6 +45,7 @@ public sealed class SettingsCollateralTypeCatalogV1 : ISettingsCollateralTypeCat
                 ?? throw new SettingsPrerequisiteException(SettingsCollateralTypeProblemCodesV1.ProfileInvalid));
         }
 
+        RequireSameAccess(companyId, actor, cancellationToken);
         return new SettingsCollateralTypesViewV1(companyId, entries);
     }
 
@@ -69,13 +73,24 @@ public sealed class SettingsCollateralTypeCatalogV1 : ISettingsCollateralTypeCat
     /// Cancelled → <see cref="OperationCanceledException"/>; no access, or a requested company other than the server-resolved
     /// one → <c>settings_access_denied</c>.
     /// </summary>
-    private void RequireAccess(Guid companyId, CancellationToken cancellationToken)
+    private string RequireAccess(Guid companyId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!_currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(_currentUser.UserId)
+        var actor = _currentUser.UserId;
+        if (!_currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(actor)
             || !_companyContext.IsResolved || _companyContext.CompanyId == Guid.Empty
             || companyId != _companyContext.CompanyId
             || !_currentUser.CanAccessCompany(_companyContext.CompanyId))
+        {
+            throw new SettingsPrerequisiteException(SettingsCollateralTypeProblemCodesV1.AccessDenied);
+        }
+
+        return actor;
+    }
+
+    private void RequireSameAccess(Guid companyId, string actor, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(RequireAccess(companyId, cancellationToken), actor, StringComparison.Ordinal))
         {
             throw new SettingsPrerequisiteException(SettingsCollateralTypeProblemCodesV1.AccessDenied);
         }

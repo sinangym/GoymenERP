@@ -1,14 +1,17 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
 
 public sealed partial class SalesDraftService
 {
-    // SAT-D265(5): calculator test vectors are source evidence, not the independent golden acceptance.
-    // Kept closed until that exact decision artifact is in main; this is not an ERP activation setting.
-    private static bool MarginGoldenAccepted => false;
+    // SAT-D265(5): the independent golden is in main via PR1200, merge 3c1b47878447570210b933b83d874646f9c52e4b.
+    // This separate implementation change still requires the train's final exact-head K3 acceptance.
+    // It neither grants margin disclosure nor supplies missing costs, currencies or historical snapshots.
+    private static bool MarginGoldenAccepted => true;
 
     private static SalesMarginCostSnapshot? LastMarginCost(SalesOrderDraft draft, Guid lineId) =>
         draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)
@@ -72,6 +75,10 @@ public sealed partial class SalesDraftService
             result.Validate();
             using var proof = JsonDocument.Parse(result.SourceProof);
             if (proof.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException();
+            // Direct user answer 6960913297: an unreadable zero cost never becomes a 100% margin.
+            // Approval still pins an unavailable observation; it is not blocked by this display-only cost source.
+            if (result.UnavailableReason is null && result.CostPerUnit == 0m)
+                return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
             return result;
         }
         catch (Exception exception) when (exception is InvalidOperationException or JsonException or ArgumentException)
@@ -99,11 +106,11 @@ public sealed partial class SalesDraftService
                     ? UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing)
                     : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);
             var margin = cost.UnavailableReason is { } reason ? SalesLineMargin.Unavailable(reason)
+                : cost.CostPerUnit == 0m ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
                 : !MarginGoldenAccepted ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.FormulaGoldenPending)
-                : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
+                : CalculateMarginInTurkishLira(
                     totals.Lines.Single(item => item.LineId == line.Id).NetAmountBeforeSurcharge,
-                    line.OrderUnit.UnitId, line.Quantity.Value, cost.CurrencyId!.Value,
-                    SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId.Value, cost.UnitId)));
+                    line.OrderUnit.UnitId, line.Quantity.Value, cost);
             lines.Add(LineMargin(line.Id, line.LineNo, margin));
         }
         // Every slow owner read can revoke both disclosure names. Nothing is returned on a stale disclosure.
@@ -115,4 +122,13 @@ public sealed partial class SalesDraftService
         return new(SalesMarginDisclosure.Visible, SalesDraftMarginTextsV1.PurchaseCostOnly,
             draft.ApprovalState == InternalApprovalState.Approved ? SalesDraftMarginTextsV1.Snapshot : SalesDraftMarginTextsV1.Preview, lines);
     }
+
+    // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority.
+    // Foreign sale conversion remains undecided; the actual owner supplies TL cost or Unavailable.
+    internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
+        decimal quantity, SalesMarginCostSnapshot cost) => cost.CostPerUnit == 0m
+        ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
+        : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
+            netSale, orderUnitId, quantity, SettingsCurrencyIdentitiesV1.TurkishLira,
+            SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId)));
 }

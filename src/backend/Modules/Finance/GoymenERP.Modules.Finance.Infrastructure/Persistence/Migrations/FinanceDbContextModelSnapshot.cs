@@ -4170,6 +4170,18 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<Guid?>("BankInstitutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BankProofJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("BankSourceVersion")
+                        .HasMaxLength(256)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(256)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<Guid>("CollateralId")
                         .HasColumnType("uniqueidentifier");
 
@@ -4258,6 +4270,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PartyCollaterals", "finance", t =>
                         {
+                            t.HasCheckConstraint("CK_PartyCollaterals_BankProof", "([BankInstitutionId] IS NULL AND [BankSourceVersion] IS NULL AND [BankProofJson] IS NULL) OR ([BankInstitutionId] IS NOT NULL AND [BankInstitutionId] <> '00000000-0000-0000-0000-000000000000' AND [BankSourceVersion] IS NOT NULL AND LEN([BankSourceVersion]) > 0 AND [BankProofJson] IS NOT NULL AND ISJSON([BankProofJson]) = 1 AND JSON_VALUE([BankProofJson], '$.companyId') IS NOT NULL AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.companyId')) IS NOT NULL AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.companyId')) = [CompanyId] AND JSON_VALUE([BankProofJson], '$.bankInstitutionId') IS NOT NULL AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.bankInstitutionId')) IS NOT NULL AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.bankInstitutionId')) = [BankInstitutionId] AND JSON_VALUE([BankProofJson], '$.sourceVersion') IS NOT NULL AND JSON_VALUE([BankProofJson], '$.sourceVersion') COLLATE Latin1_General_100_BIN2 = [BankSourceVersion] AND JSON_VALUE([BankProofJson], '$.name') IS NOT NULL AND LEN(JSON_VALUE([BankProofJson], '$.name')) > 0 AND JSON_VALUE([BankProofJson], '$.eftCode') IS NOT NULL AND LEN(JSON_VALUE([BankProofJson], '$.eftCode')) > 0)");
+
                             t.HasCheckConstraint("CK_PartyCollaterals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CollateralId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CollateralTypeId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CollateralTypeVersion]) > 0 AND LEN([RecordedBy]) > 0");
 
                             t.HasCheckConstraint("CK_PartyCollaterals_Kind", "([Kind] = 1 AND [Revision] = 1 AND [ReleaseReason] IS NULL) OR ([Kind] = 2 AND [Revision] > 1 AND [ReleaseReason] IS NULL) OR ([Kind] = 3 AND [Revision] > 1 AND [ReleaseReason] IS NOT NULL AND LEN([ReleaseReason]) > 0)");

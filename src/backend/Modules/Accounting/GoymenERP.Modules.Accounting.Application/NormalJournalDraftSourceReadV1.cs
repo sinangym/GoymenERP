@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 
@@ -26,7 +27,8 @@ public sealed record NormalJournalDraftSourcePreparationV1(
     string PostingRuleVersion,
     string AccountPlanSourceVersion,
     string AccountPlanSourceSha256,
-    IReadOnlyList<NormalJournalDraftSourceMappingV1> Mappings)
+    IReadOnlyList<NormalJournalDraftSourceMappingV1> Mappings,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NormalJournalExactSourceLineV1>? ExactSourceLines = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -39,7 +41,8 @@ public sealed record NormalJournalDraftSourcePreparationV1(
             || source.CurrencyId == Guid.Empty || source.Rule.Mirror.CompanyId != companyId
             || !IsCanonical(source.SourceVersion) || !IsCanonical(source.OwnerProfileId)
             || !IsCanonical(source.OwnerProfileVersion)
-            || source.ExactSourceAmount is { } exact && !TryExactAmount(exact, out _))
+            || source.ExactSourceAmount is { } exact && !TryExactAmount(exact, out _)
+            || source.ExactSourceLines is { } exactLines && !NormalJournalExactSourceAmountsV1.Valid(exactLines))
         {
             return null;
         }
@@ -71,6 +74,8 @@ public sealed record NormalJournalDraftSourcePreparationV1(
         {
             return null;
         }
+        if (source.ExactSourceLines?.Any(line => mappings.Count(mapping => mapping.MappingKey == line.MappingKey
+                && mapping.Side == line.Side) != 1) == true) return null;
 
         var canonical = new
         {
@@ -101,6 +106,8 @@ public sealed record NormalJournalDraftSourcePreparationV1(
         var canonicalJson = source.ExactSourceAmount is null
             ? JsonSerializer.Serialize(canonical, Json)
             : JsonSerializer.Serialize(new { source = canonical, exactSourceAmount = source.ExactSourceAmount }, Json);
+        if (source.ExactSourceLines is not null)
+            canonicalJson = JsonSerializer.Serialize(new { sourceProof = canonicalJson, exactSourceLines = source.ExactSourceLines }, Json);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)));
         return new NormalJournalDraftSourcePreparationV1(
             companyId,
@@ -114,7 +121,7 @@ public sealed record NormalJournalDraftSourcePreparationV1(
             source.Rule.Version,
             source.Rule.Mirror.SourceVersion,
             source.Rule.Mirror.SourceSha256.ToUpperInvariant(),
-            mappings.AsReadOnly());
+            mappings.AsReadOnly(), source.ExactSourceLines);
     }
 
     public static bool IsPreparationVersion(string? value) => value is { Length: 64 }

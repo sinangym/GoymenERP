@@ -243,6 +243,8 @@ export const CAPABILITY = {
   financeExpensePaymentsWorkspace: 'finance.expense-payments.workspace',
   /** FNS-D24 (API-32/34) Virman ve Döviz Bozdurma. Its commit is a CONTROL of this workspace, never a route. */
   financeCashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  financeExchangeBookValuesPrepare: 'finance.cash-exchange-book-values.prepare',
+  financeExchangeBookValuesApprove: 'finance.cash-exchange-book-values.approve',
   /**
    * F-018 L1 (FNS-D27 / FNS-D46; one step, FNS-D57(3)) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
    */
@@ -269,6 +271,7 @@ export const CAPABILITY = {
   accountingInvoicedShipmentPrepare: 'accounting.invoiced-shipment-costs.prepare',
   accountingInvoicedShipmentApprove: 'accounting.invoiced-shipment-costs.approve',
   accountingInvoicedShipmentReverse: 'accounting.invoiced-shipment-costs.reverse',
+  accountingInvoicedShipmentReverseApprove: 'accounting.invoiced-shipment-costs.reverse-approve',
   accountingPurchaseCostPrepare: 'accounting.purchase-cost-differences.prepare',
   accountingPurchaseCostApprove: 'accounting.purchase-cost-differences.approve',
   identityUsersManage: 'identity.users.manage',
@@ -359,6 +362,10 @@ export const CAPABILITY = {
   settingsManufacturingScrapCost: 'settings.manufacturing-scrap-cost.manage',
   settingsNotificationRetention: 'settings.notification-retention.manage',
   settingsDocumentNumberSeries: 'settings.document-number-series.manage',
+  settingsFinancePolicies: 'settings.finance-policies.prepare',
+  settingsCashDifferencePolicies: 'settings.cash-count-difference-policies.prepare',
+  settingsBankInstitutions: 'settings.bank-institutions.prepare',
+  settingsCollateralRatePolicies: 'settings.collateral-rate-policies.prepare',
   settingsManufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   settingsManufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /**
@@ -512,6 +519,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeManualBankPaymentsDetail]: '/finans/odemeler/:paymentId',
   [CAPABILITY.financeExpensePaymentsWorkspace]: '/finans/masraf-odemeleri',
   [CAPABILITY.financeCashTransfersWorkspace]: '/finans/virman',
+  [CAPABILITY.financeExchangeBookValuesPrepare]: '/finans/doviz-defter-degeri-hazirla',
+  [CAPABILITY.financeExchangeBookValuesApprove]: '/finans/doviz-defter-degeri-onaylari',
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
@@ -528,6 +537,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingInvoicedShipmentPrepare]: '/muhasebe/sevk-smm-hazirla',
   [CAPABILITY.accountingInvoicedShipmentApprove]: '/muhasebe/sevk-smm-onay',
   [CAPABILITY.accountingInvoicedShipmentReverse]: '/muhasebe/sevk-smm-ters-kayit',
+  [CAPABILITY.accountingInvoicedShipmentReverseApprove]: '/muhasebe/sevk-smm-ters-kayit-onay',
   [CAPABILITY.accountingPurchaseCostPrepare]: '/muhasebe/alis-maliyet-farki-hazirla',
   [CAPABILITY.accountingPurchaseCostApprove]: '/muhasebe/alis-maliyet-farki-onay',
   [CAPABILITY.identityUsersManage]: '/ayarlar/kullanicilar',
@@ -567,6 +577,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.settingsManufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
   [CAPABILITY.settingsNotificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
   [CAPABILITY.settingsDocumentNumberSeries]: '/ayarlar/belge-numara-serileri',
+  [CAPABILITY.settingsFinancePolicies]: '/ayarlar/finans-onay-politikalari',
+  [CAPABILITY.settingsCashDifferencePolicies]: '/ayarlar/kasa-sayim-fark-politikalari',
+  [CAPABILITY.settingsBankInstitutions]: '/ayarlar/banka-kurumlari',
+  [CAPABILITY.settingsCollateralRatePolicies]: '/ayarlar/teminat-oran-politikalari',
   [CAPABILITY.settingsManufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [CAPABILITY.settingsManufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [CAPABILITY.settingsWorkCenterCapacity]: '/ayarlar/is-merkezi-kapasitesi',
