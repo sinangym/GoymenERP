@@ -165,8 +165,74 @@ export const FIELD_ERROR_TEXT: Record<ProductFieldCode, string> = {
 
 export const FIELD_ERROR_FALLBACK = 'Sunucu bu alanı reddetti.'
 
+/**
+ * The Product family rule codes (`ProductFamilyRequirementCodesV2`) the server sends on `references.attributes.{key}`
+ * and `references.*` paths. Words only: the rule itself (> 0 mm, at most three decimals, owner-listed values) stays on
+ * the server, and nothing here re-validates or rounds.
+ */
+export const FAMILY_FIELD_ERROR_TEXT: Readonly<Record<string, string>> = {
+  family_invalid_value: 'Değer geçersiz; sıfırdan büyük bir ölçü yazın.',
+  family_precision_exceeded: 'En çok üç ondalık basamak yazılabilir; değer yuvarlanmaz.',
+  family_not_controlled: 'Seçilen değer bu ürün ailesinin kontrollü listesinde yok.',
+  family_value_candidate: 'Aday değer bu alanda kullanılamaz.',
+  family_field_not_applicable: 'Bu alan bu ürün ailesi için geçerli değil.',
+  family_field_unknown: 'Bu alan ürün ailesinin teknik şablonunda yok.',
+  family_value_parent_mismatch: 'Seçilen değer üst seçimle uyuşmuyor.',
+  family_template_mismatch: 'Teknik şablon ürün ailesiyle uyuşmuyor.',
+  family_unit_path_mismatch: 'Birim seçimi ürün ailesinin kuralıyla uyuşmuyor.',
+  family_policy_unavailable: 'Ürün ailesi kuralları şu anda okunamıyor.',
+  family_policy_invalid: 'Ürün ailesi kuralları geçersiz.',
+}
+
 export function fieldErrorText(code: string): string {
-  return FIELD_ERROR_TEXT[code as ProductFieldCode] ?? FIELD_ERROR_FALLBACK
+  return FIELD_ERROR_TEXT[code as ProductFieldCode] ?? FAMILY_FIELD_ERROR_TEXT[code] ?? FIELD_ERROR_FALLBACK
+}
+
+/**
+ * P03.2: technical field names in Turkish. The template publishes a machine key (`length-mm`) and, for the fields the
+ * family rules know, a role (`thickness`/`width`/`length`/`quality`/`coating`); the person never reads the key. A
+ * card read carries only the key, so the accepted GDC template keys are named too. Anything else keeps its key rather
+ * than a guessed name. "Nominal" because it is the Product card's value — not a lot's measured size and not a cut line.
+ */
+export const TECHNICAL_ROLE_LABEL: Readonly<Record<string, string>> = {
+  thickness: 'Nominal kalınlık',
+  width: 'Nominal en',
+  length: 'Nominal boy',
+  quality: 'Kalite',
+  coating: 'Kaplama',
+}
+
+const TECHNICAL_KEY_ROLE: Readonly<Record<string, string>> = {
+  'thickness-mm': 'thickness',
+  'width-mm': 'width',
+  'length-mm': 'length',
+  'steel-grade': 'quality',
+  coating: 'coating',
+}
+
+const TECHNICAL_KEY_LABEL: Readonly<Record<string, string>> = {
+  'producer-grade': 'Üretici kalitesi',
+}
+
+/**
+ * The role a field is known by. Where the template is at hand its own role decides (a field without one has none);
+ * only a card read, which carries the key alone (`role` omitted), falls back to the accepted GDC key.
+ */
+export function technicalFieldRole(key: string, role?: string | null): string | null {
+  if (role !== undefined) return role !== null && TECHNICAL_ROLE_LABEL[role] !== undefined ? role : null
+  return TECHNICAL_KEY_ROLE[key] ?? null
+}
+
+export function technicalFieldLabel(key: string, role?: string | null): string {
+  const known = technicalFieldRole(key, role)
+  return (known === null ? undefined : TECHNICAL_ROLE_LABEL[known]) ?? TECHNICAL_KEY_LABEL[key] ?? key
+}
+
+const ATTRIBUTE_PATH = 'references.attributes.'
+
+/** A server field path in words: a technical attribute by its Turkish name, any other path as it was. */
+export function productFieldPathLabel(path: string): string {
+  return path.startsWith(ATTRIBUTE_PATH) ? technicalFieldLabel(path.slice(ATTRIBUTE_PATH.length)) : path
 }
 
 /**

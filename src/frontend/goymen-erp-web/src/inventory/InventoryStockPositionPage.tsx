@@ -21,7 +21,7 @@ import {
   type StockPositionFilters,
   type StockProductFamilyOption,
 } from './stockDisplayApi'
-import type { StockClassification, StockOwnerDisplay, StockOwnerDisplayRow as StockDisplayRow, StockPartyKind } from './stockDisplayContract'
+import type { StockClassification, StockLengthDisplayRow as StockDisplayRow, StockOwnerDisplay, StockPartyKind } from './stockDisplayContract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
