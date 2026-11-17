@@ -12,6 +12,22 @@ public static partial class PurchasingEndpoints
     private static void MapIncomingInvoices(IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup(PurchaseIncomingInvoiceWireV1.Path).WithTags("Purchasing").RequireAuthorization().RequireCompanyContext();
+        InvoiceWorkspaceRead(group.MapGet("", async (string? officialNumber, int? pageIndex, HttpContext context,
+            [FromServices] IPurchaseIncomingInvoiceWorkspaceV1 service, ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(context.Response);
+            if (context.Request.Query.Keys.Any(key => key is not ("officialNumber" or "pageIndex"))) return Problem(400, "validation_failed", correlation);
+            try { return Results.Json(await service.ListAsync(officialNumber, pageIndex ?? 0, token), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(context, exception, correlation); }
+        }).WithName("ListPurchaseIncomingInvoicesV1").Produces<PurchaseIncomingInvoicePageV1>());
+        InvoiceWorkspaceRead(group.MapGet("/{id:guid}/lines/{lineId:guid}/receipt-candidates", async (Guid id, Guid lineId, int? pageIndex,
+            HttpContext context, [FromServices] IPurchaseIncomingInvoiceWorkspaceV1 service, ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(context.Response);
+            if (context.Request.Query.Keys.Any(key => key != "pageIndex")) return Problem(400, "validation_failed", correlation);
+            try { return Results.Json(await service.CandidatesAsync(id, lineId, pageIndex ?? 0, token), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(context, exception, correlation); }
+        }).WithName("GetPurchaseInvoiceReceiptCandidatesV1").Produces<PurchaseInvoiceReceiptCandidatePageV1>());
         group.MapGet("/{id:guid}", async (Guid id, HttpContext context, [FromServices] IPurchaseIncomingInvoiceWorkflowV1 service,
             ICorrelationContext correlation, CancellationToken token) =>
         {
@@ -22,6 +38,11 @@ public static partial class PurchasingEndpoints
         }).WithName("GetPurchaseIncomingInvoiceV1").Produces<PurchaseIncomingInvoiceViewV1>()
             .ProducesErpBadRequest("validation_failed").ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
+        InvoiceMutation(group.MapPost("/{id:guid}/matching", (Guid id, HttpContext context,
+            [FromServices] IPurchaseIncomingInvoiceWorkflowV1 service, ICorrelationContext correlation, CancellationToken token) =>
+            MutateAsync(context, correlation, PurchaseIncomingInvoiceWireV1.ReadMatch,
+                async (request, metadata) => PurchaseIncomingInvoiceWireV1.Response(await service.MatchAsync(id, request, metadata, token)), token))
+            .WithName("MatchPurchaseIncomingInvoiceV1").Accepts<PurchaseIncomingInvoiceMatchRequestV1>("application/json"));
         InvoiceMutation(group.MapPost("/{id:guid}/variance-approval", (Guid id, HttpContext context,
             [FromServices] IPurchaseIncomingInvoiceWorkflowV1 service, ICorrelationContext correlation, CancellationToken token) =>
             MutateAsync(context, correlation, PurchaseIncomingInvoiceWireV1.ReadApproval,
@@ -44,6 +65,9 @@ public static partial class PurchasingEndpoints
         .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
         .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
             PurchasingProblemCodesV1.ConcurrentChange, PurchaseIncomingInvoice.StateConflict, PurchaseIncomingInvoice.MakerChecker,
-            PurchaseIncomingInvoice.MatchRequired, PurchaseIncomingInvoice.VarianceApprovalRequired)
+            PurchaseIncomingInvoice.MatchRequired, PurchaseIncomingInvoice.VarianceApprovalRequired, PurchaseIncomingInvoice.SourceMismatch)
         .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+    private static void InvoiceWorkspaceRead(RouteHandlerBuilder endpoint) => endpoint
+        .ProducesErpBadRequest("validation_failed").AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+        .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 }

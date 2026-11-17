@@ -13,6 +13,67 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
     private static readonly DateTimeOffset Now = new(2026, 11, 17, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task Matching_reads_owner_facts_under_the_selected_order_locks_and_replays_without_reading_them_again()
+    {
+        var world = new World(recorded: true); var orderId = Guid.NewGuid(); var acceptance = Guid.NewGuid();
+        var source = new MatchSource(world.Store); world.Matching = source;
+        var request = new PurchaseIncomingInvoiceMatchRequestV1("1", [new(world.Store.Current.Lines[0].Id, orderId, acceptance, "10")]);
+        var result = await world.Service().MatchAsync(world.Id, request, Metadata("match"));
+        Assert.Equal(PurchaseIncomingInvoiceStatus.Matched, result.Invoice.Status);
+        Assert.Equal(new[] { orderId }, world.Store.LastOrdersToLock);
+        Assert.Equal(acceptance, Assert.Single(result.Invoice.Matches).AcceptanceId);
+        Assert.True((await world.Service().MatchAsync(world.Id, request, Metadata("match"))).IsReplay);
+        Assert.Equal(1, source.Calls);
+        Assert.Empty(world.Finance.Offers);
+    }
+
+    [Fact]
+    public async Task Matching_without_its_real_source_cannot_substitute_client_prices_or_zero_tolerance()
+    {
+        var world = new World(recorded: true);
+        var request = new PurchaseIncomingInvoiceMatchRequestV1("1", [new(world.Store.Current.Lines[0].Id, Guid.NewGuid(), Guid.NewGuid(), "10")]);
+        var failure = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().MatchAsync(world.Id, request, Metadata("no-source")));
+        Assert.Equal(503, failure.Status);
+        Assert.Equal(PurchaseIncomingInvoiceStatus.Recorded, world.Store.Current.Status);
+        Assert.Empty(world.Store.Committed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Matching_rechecks_permission_after_both_a_successful_and_a_failed_source_read(bool fail)
+    {
+        var world = new World(recorded: true);
+        world.Matching = new MatchSource(world.Store) { BeforeRead = () =>
+        {
+            world.Authority.Denied = PurchaseIncomingInvoicePermissionNamesV1.Match;
+            if (fail) throw new InvalidOperationException("SENTETIK-provider-failure");
+        } };
+        var request = new PurchaseIncomingInvoiceMatchRequestV1("1",
+            [new(world.Store.Current.Lines[0].Id, Guid.NewGuid(), Guid.NewGuid(), "10")]);
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().MatchAsync(world.Id, request, Metadata("revoked")));
+        Assert.Equal(403, denied.Status);
+        Assert.Empty(world.Store.Committed);
+        Assert.Equal(PurchaseIncomingInvoiceStatus.Recorded, world.Store.Current.Status);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("01")]
+    [InlineData("1.0000001")]
+    [InlineData("1,5")]
+    public async Task Matching_rejects_noncanonical_or_unstorable_quantity_before_the_source(string quantity)
+    {
+        var world = new World(recorded: true); var source = new MatchSource(world.Store); world.Matching = source;
+        var request = new PurchaseIncomingInvoiceMatchRequestV1("1",
+            [new(world.Store.Current.Lines[0].Id, Guid.NewGuid(), Guid.NewGuid(), quantity)]);
+        var invalid = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().MatchAsync(world.Id, request, Metadata("invalid-quantity")));
+        Assert.Equal(400, invalid.Status);
+        Assert.Equal(0, source.Calls);
+        Assert.Empty(world.Store.Committed);
+    }
+
+    [Fact]
     public async Task Finalization_commits_before_Finance_and_replaying_the_key_does_not_offer_twice()
     {
         var world = new World();
@@ -145,24 +206,25 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
     private static PurchasingCommandMetadata Metadata(string key) => new("SENTETIK-" + key, "SENTETIK-correlation", "SENTETIK-cause", Now);
     private sealed class World
     {
-        public World(bool withVariance = false) { Company.Set(PurchaseIncomingInvoiceWorkflowTests.Company); Store = new(Invoice(withVariance)); }
+        public World(bool withVariance = false, bool recorded = false) { Company.Set(PurchaseIncomingInvoiceWorkflowTests.Company); Store = new(Invoice(withVariance, !recorded)); }
         public MutableCompany Company { get; } = new();
         public UserStub User { get; } = new();
         public Authority Authority { get; } = new();
         public Store Store { get; }
         public Finance Finance { get; } = new();
         public Diagnostics Diagnostics { get; } = new();
+        public IPurchaseIncomingInvoiceMatchSourceV1? Matching { get; set; }
         public Guid Id => Store.Current.Id;
-        public PurchaseIncomingInvoiceWorkflow Service() => new(Company, User, Authority, new Correlation(), Store, new Clock(), Finance, Diagnostics);
+        public PurchaseIncomingInvoiceWorkflow Service() => new(Company, User, Authority, new Correlation(), Store, new Clock(), Finance, Diagnostics, Matching);
     }
-    private static PurchaseIncomingInvoice Invoice(bool variance)
+    private static PurchaseIncomingInvoice Invoice(bool variance, bool matched = true)
     {
         var currency = Guid.NewGuid(); var unit = Guid.NewGuid(); var line = Guid.NewGuid();
         var invoice = PurchaseIncomingInvoice.Record(Guid.NewGuid(), Company, Guid.NewGuid(), Guid.NewGuid(), currency, currency, 2, 2, null,
             new(Guid.NewGuid(), 1, new string('a', 64), "SENTETIK-invoice", Guid.NewGuid(), new(2026, 11, 17)), new(100m, 20m, 0m), null,
             [new(line, 1, Guid.NewGuid(), unit, 10m, "material", "resale", 20m, new(100m, 20m, 0m), null)],
             [new(Guid.NewGuid(), Guid.NewGuid(), 1, new(2026, 12, 17), 120m, null)], "SENTETIK-preparer", Now);
-        invoice.Match(1, [new(Company, line, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1, invoice.SupplierPartyId,
+        if (matched) invoice.Match(1, [new(Company, line, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1, invoice.SupplierPartyId,
             invoice.CompanyAccountId, currency, unit, 10m, variance ? 99m : 100m, null, new(2026, 11, 16))],
             new(Guid.NewGuid(), 1, 0m, 0m), "SENTETIK-matcher");
         return invoice;
@@ -224,6 +286,7 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
         public Action? AfterRead { get; set; }
         public Exception? ReadFailure { get; set; }
         public PurchaseIncomingInvoiceSnapshot? ReadAnswer { get; set; }
+        public IReadOnlyList<Guid> LastOrdersToLock { get; private set; } = [];
         public List<string> Committed { get; } = [];
         private readonly Dictionary<(string Command, string Key), (string Hash, string Actor, PurchasingIncomingInvoiceWriteResult Result)> attempts = [];
         public Task<PurchaseIncomingInvoiceSnapshot?> FindIncomingInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default)
@@ -246,6 +309,7 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
             CancellationToken cancellationToken = default)
         {
             await requireStillAuthorized(cancellationToken);
+            LastOrdersToLock = orderIdsToLock;
             if (invoiceId != Current.Id) return null;
             InMutation = true;
             try
@@ -269,5 +333,21 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
         public Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice,
             PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task> requireStillAuthorized,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class MatchSource(Store owner) : IPurchaseIncomingInvoiceMatchSourceV1
+    {
+        public int Calls { get; private set; }
+        public Action? BeforeRead { get; init; }
+        public Task<PurchaseIncomingInvoiceMatchSourceV1> ReadAsync(PurchaseIncomingInvoice invoice,
+            IReadOnlyList<PurchaseInvoiceReceiptSelectionV1> selected, CancellationToken cancellationToken = default)
+        {
+            Assert.True(owner.InMutation); Calls++;
+            BeforeRead?.Invoke();
+            var item = Assert.Single(selected); var line = Assert.Single(invoice.Lines);
+            return Task.FromResult(new PurchaseIncomingInvoiceMatchSourceV1([new(Company, line.Id, item.AcceptanceId,
+                item.PurchaseOrderId, Guid.NewGuid(), 2, invoice.SupplierPartyId, invoice.CompanyAccountId, invoice.CurrencyId,
+                line.UnitId, 10m, 100m, null, new(2026, 11, 17))], new(Guid.NewGuid(), 1, 0m, 0m)));
+        }
     }
 }

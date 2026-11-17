@@ -246,3 +246,36 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - **PARTIAL:** gerçek dosya importu, kabul/fiyat/kur/Ayarlar eşleştirme komutu, ekran
   girişleri ve masraf/hizmet owner bağı hâlâ açıktır. Yeni migration veya izin yoktur.
   OpenAPI/ilişkisel envanter/pin üretimi merkezi entegrasyonda yapılacaktır.
+
+### FIN-S13 — gerçek kabul, fiyat ve toleransla eşleştirme
+
+- ALS-D8/D14/D15/D52/D63: istemci yalnız fatura satırı, alış siparişi, kabul kimliği ve
+  pay miktarı seçer. Fiyat, kur, tedarikçi ve tolerans istemciden alınmaz. Mevcut
+  Purchasing satır kilitleri altında gerçek kabul ve kayıtlı sipariş fiyatı okunur;
+  şirketin yayımlanmış Ayarlar toleransı sürümüyle saklanır. Kontrol kuru mevcut
+  Settings resolver'ından kabulün İstanbul iş gününe göre gelir; algoritma kopyalanmaz.
+- Eksik fiyat/politika/kur başarı sayılmaz. Aynı kabulün faturalandırılmış miktarı
+  tekrar kullanılamaz. Fiyat payları ortak exact calculator ile hesaplanır; tek fatura
+  satırının toplamı bir kez kayıtlı para ölçeğine yuvarlanır. Yetki kaybı kaynak
+  başarılı veya hatalı döndüğünde yeniden ölçülür.
+- Resmî numarayla şirket filtresi korunan sayfalı liste ve satır bazında gerçek,
+  faturalanmamış kabul adayları eklendi. Aday okuması rezervasyon değildir; komut
+  seçimi kilit altında tekrar doğrular. Kullanıcıdan teknik kimlik ezberlemesi
+  gerektirmeyen ekran girişinin owner kaynaklarıdır.
+- Birim, HTTP ve dört gerçek SQL fact kaynağı eklendi. SQL kaynaklarında gerçek
+  Purchasing kayıtları/fiyatları/işlem ve miktar bağları kullanılır; Settings yalnız
+  sentetik sözleşme fixture'ıdır, uçtan uca Settings kabulü iddia edilmez.
+- Resmî numarayla liste/detay ve gerçek kabul seçimi, fark onayı, kesinleştirme ve
+  Finans aktarımı tekrar deneme ekranları eklendi. Bilinmeyen yazma sonucu aynı
+  anahtar ve gövdeyle doğrulanır; şirket/aktör değişiminde eski veri gösterilmez.
+  Tutar, kur, tolerans ve pay toplamı ekranda yeniden hesaplanmaz. Beş capability
+  mevcut izinleri kullanarak kayıtlıdır; uygulama yayını kapalıdır (`staged`).
+- API, Purchasing.UnitTests ve Api.IntegrationTests kaynak derlemeleri exit 0,
+  uyarı/hata 0. Frontend `tsc -b` exit 0; sözleşme/HTTP/ekran
+  Vitest kaynakları yazılmıştır. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+  Yeni migration/izin yok. Dosya importu ve hizmet/masraf eşleştirme bağı
+  tamamlanmadan dilim **PARTIAL** kalır. Bu checkpoint native Mikro/UBL içe
+  aktarımının veya gerçek kullanıcı iş akışı kabulünün tamamlandığı anlamına gelmez.
+- Son shell assertion güncellemesi (20 bildirim, 15 eski yayında + 5 fatura staged)
+  merkezi Integration derlemesine dahildir; authority hash üreticisi entegrasyonda
+  çalışacaktır. Kayıt veya yayına alma yerine test beklentisi gerçek metadata ile hizalanmıştır.

@@ -2,12 +2,33 @@ using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Invoices;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
 public sealed class PurchaseIncomingInvoiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Receipt_share_prices_are_summed_exactly_then_rounded_once_for_the_invoice_line()
+    {
+        var invoice = Invoice(); var source = Match(invoice);
+        var first = source with { Quantity = 5m, ExpectedNet = CommercialLinePriceCalculator.ExactLineAmount(5m, 10.0004m, null, null, null, null) };
+        var second = source with { AcceptanceId = Guid.NewGuid(), Quantity = 5m,
+            ExpectedNet = CommercialLinePriceCalculator.ExactLineAmount(5m, 9.9988m, null, null, null, null) };
+        invoice.Match(1, [first, second], Policy(), "matcher");
+        Assert.Equal(50.002m, invoice.Matches[0].ExpectedNet);
+        Assert.Equal(49.994m, invoice.Matches[1].ExpectedNet);
+        Assert.Empty(invoice.Variances);
+    }
+
+    [Fact]
+    public void An_unrepresentable_receipt_share_never_silently_rounds_to_zero()
+    {
+        Assert.Throws<OverflowException>(() => CommercialLinePriceCalculator.ExactLineAmount(0.000001m,
+            0.0000000000000000000000000001m, null, null, null, null));
+    }
 
     [Fact]
     public void Foreign_official_amounts_are_preserved_even_when_the_control_rate_differs()

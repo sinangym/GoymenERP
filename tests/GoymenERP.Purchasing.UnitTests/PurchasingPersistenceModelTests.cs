@@ -144,9 +144,9 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.9", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(14, declarations.Count);
-        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
+        Assert.Equal("1.10", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(20, declarations.Count);
+        Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
             byId[PurchasingShellCapabilityProvider.RequestListCapabilityId].RoutePath);
@@ -202,16 +202,16 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(14, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(19, PurchasingPermissionManifestV1.Names.Count);
         // ALC-S3 (ALS-D83/D85): the release name measures the link drop and the drop-and-cancel / drop-and-close commands; no shell
         // control (the screen lives under the order detail capability).
         Assert.Contains("purchasing.future-allocation.release", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration =>
             declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.FutureAllocationRelease));
-        // ALC-S5 (B-19): the supplier return name measures the return create only (the cost exception uses orders.approve); no shell control yet.
+        // ALC-S5 (B-19): supplier return creation is a child control; cost exception uses orders.approve.
         Assert.Contains("purchasing.supplier-returns.record", PurchasingPermissionManifestV1.Names);
-        Assert.DoesNotContain(declarations, declaration =>
-            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.SupplierReturnsRecord));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
+            byId[PurchasingShellCapabilityProvider.SupplierReturnCapabilityId].RequiredPermissions);
         // ALC-S16 (KLN-D45): the variance approval name measures the bulk receipt approval and rejection only; no shell control yet.
         Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration =>
@@ -233,9 +233,10 @@ public sealed class PurchasingPersistenceModelTests
         var revised = Assert.Single(declarations,
             declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
         Assert.Equal(PurchasingShellCapabilityProvider.LineScheduleCapabilityId, revised.CapabilityId);
-        // A2a-1 (PRS-02): the price read governs disclosure only; no shell control or route is measured with it.
+        // Invoice screens disclose official amounts and require the existing price-read permission.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
-        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead));
+        Assert.All(declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead)),
+            declaration => Assert.StartsWith("purchasing.invoices.", declaration.CapabilityId));
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.orders.cancel", PurchasingPermissionManifestV1.Names);

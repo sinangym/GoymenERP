@@ -50,6 +50,14 @@ public static class PurchaseIncomingInvoiceWireV1
         if (string.IsNullOrWhiteSpace(result.Reason) || result.Reason.Length > 2000) throw new JsonException("Reason is required.");
         return result;
     }
+    public static PurchaseIncomingInvoiceMatchRequestV1 ReadMatch(string json)
+    {
+        var result = JsonSerializer.Deserialize<PurchaseIncomingInvoiceMatchRequestV1>(json, PurchasingJson.Options)
+            ?? throw new JsonException("Request is required.");
+        Version(result.ExpectedVersion);
+        if (result.Receipts is not { Count: > 0 }) throw new JsonException("Receipt shares are required.");
+        return result;
+    }
     private static void Version(string value)
     {
         if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var version) || version < 1

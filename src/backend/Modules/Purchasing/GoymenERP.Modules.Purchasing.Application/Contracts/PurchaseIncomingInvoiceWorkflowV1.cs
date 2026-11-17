@@ -12,6 +12,9 @@ public sealed record PurchaseIncomingInvoiceOperationResultV1(PurchaseIncomingIn
 public interface IPurchaseIncomingInvoiceWorkflowV1
 {
     Task<PurchaseIncomingInvoiceSnapshot> ReadAsync(Guid invoiceId, CancellationToken cancellationToken = default);
+    Task<PurchaseIncomingInvoiceOperationResultV1> MatchAsync(Guid invoiceId,
+        PurchaseIncomingInvoiceMatchRequestV1 request, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
     Task<PurchaseIncomingInvoiceOperationResultV1> ApproveVarianceAsync(Guid invoiceId,
         PurchaseIncomingInvoiceVarianceApprovalRequestV1 request, PurchasingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
