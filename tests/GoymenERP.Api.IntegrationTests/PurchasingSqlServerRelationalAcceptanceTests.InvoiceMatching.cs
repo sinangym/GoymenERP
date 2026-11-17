@@ -26,12 +26,14 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Empty(result.Invoice.Restore().Variances);
         Assert.Equal(40m, result.Invoice.Matches.Single().ExpectedNet);
         Assert.Equal(35m, result.Invoice.Matches.Single().ControlRate);
+        Assert.Equal(4m, result.Invoice.Matches.Single().AcceptedQuantity);
         Assert.Equal(policy.PolicyId, result.Invoice.Policy!.Id);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.InvoiceReceiptBindings WHERE InvoiceId=@id", ("@id", invoice.Id)));
         policy.Available = false;
         var replay = await service.MatchAsync(invoice.Id, request, metadata);
         Assert.True(replay.IsReplay);
         Assert.Equal(result.Invoice.Policy, replay.Invoice.Policy);
+        Assert.Equal(4m, replay.Invoice.Matches.Single().AcceptedQuantity);
         Assert.Equal(1, policy.PolicyReads);
     }
 
