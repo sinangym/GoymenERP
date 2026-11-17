@@ -46,6 +46,25 @@ describe('decodeProductHistory', () => {
     expect(history?.entries[0].changedFields).toEqual(['lifecycle'])
   })
 
+  it('keeps COGS changes in the card chain without inventing a card version increment', () => {
+    const history = decode({ entries: [edit({ operation: 'SetCogsClassification', versionAfter: '1', changedFields: ['cogsClassification'] }), historyEntry()] })
+    expect(history?.entries[0].operation).toEqual({ known: true, value: 'SetCogsClassification' })
+    expect(history?.entries[0].changedFields).toEqual(['cogsClassification'])
+    expect(history?.entries[0].versionBefore).toBe('1')
+    expect(history?.entries[0].versionAfter).toBe('1')
+  })
+
+  it.each(['2', '3'])('refuses a COGS event that changes card version to %s', (after) => {
+    expect(decode({ entries: [edit({ operation: 'SetCogsClassification', versionAfter: after, changedFields: ['cogsClassification'] }), historyEntry()] })).toBeNull()
+  })
+
+  it('chains a card edit after a COGS change and still refuses zero-step ordinary edits', () => {
+    const cogs = edit({ operation: 'SetCogsClassification', versionAfter: '1', changedFields: ['cogsClassification'] })
+    const later = edit({ eventId: 'eeeeeeee-0000-0000-0000-000000000003', occurredAtUtc: '2026-09-11T10:00:00Z' })
+    expect(decode({ entries: [later, cogs, historyEntry()] })?.entries).toHaveLength(3)
+    expect(decode({ entries: [edit({ versionAfter: '1' }), historyEntry()] })).toBeNull()
+  })
+
   it('keeps versions past 2^53 as exact strings and checks the step as integers', () => {
     const history = decode({ entries: cutPage(9007199254740993n), truncated: true })
     expect(history?.entries[0].versionAfter).toBe('9007199254740993')
