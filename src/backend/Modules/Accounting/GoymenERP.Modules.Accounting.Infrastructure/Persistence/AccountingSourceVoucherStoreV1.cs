@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
-public sealed class AccountingSourceVoucherStoreV1(AccountingDbContext db, AccountingStore posting,
+public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext db, AccountingStore posting,
     ICompanyContext company, IActiveAccountPlanReaderV1 accountPlans, ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector audit, TimeProvider clock) : IAccountingSourceVoucherStoreV1
 {
@@ -25,13 +25,15 @@ public sealed class AccountingSourceVoucherStoreV1(AccountingDbContext db, Accou
             .ThenBy(x => x.Id).ToListAsync(cancellationToken);
         var lines = await db.SourceDocumentVoucherDraftLines.AsNoTracking().OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
         var cancellations = await db.SourceInvoiceCancellations.AsNoTracking().ToListAsync(cancellationToken);
+        var reversals = await db.JournalReversalProposals.AsNoTracking().ToListAsync(cancellationToken);
         var plan = await accountPlans.ReadActiveAsync(cancellationToken);
         var periods = await db.Periods.AsNoTracking().Where(x => x.Status == 1).ToListAsync(cancellationToken);
         RequireCompany(companyId);
         return rows.Select(row =>
         {
-            var view = View(row, lines.Where(line => line.DraftId == row.Id),
-                cancellations.SingleOrDefault(x => x.SourceDocumentId == row.SourceDocumentId)?.Reason);
+            var cancellation = cancellations.SingleOrDefault(x => x.SourceDocumentId == row.SourceDocumentId);
+            var view = WithCancellation(View(row, lines.Where(line => line.DraftId == row.Id), cancellation?.Reason),
+                cancellation, reversals.Where(x => x.SourceJournalId == row.JournalId));
             return view with
             {
                 Status = row.Status == 1 ? periods.Any(x => x.StartsOn <= row.DocumentDate && x.EndsOn >= row.DocumentDate)
@@ -55,8 +57,10 @@ public sealed class AccountingSourceVoucherStoreV1(AccountingDbContext db, Accou
             .OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
         var cancellation = await db.SourceInvoiceCancellations.AsNoTracking()
             .SingleOrDefaultAsync(x => x.SourceDocumentId == row.SourceDocumentId, cancellationToken);
+        var reversals = await db.JournalReversalProposals.AsNoTracking().Where(x => x.SourceJournalId == row.JournalId)
+            .ToListAsync(cancellationToken);
         RequireCompany(companyId);
-        return View(row, lines, cancellation?.Reason);
+        return WithCancellation(View(row, lines, cancellation?.Reason), cancellation, reversals);
     }
 
     public async Task<AccountingSourceVoucherViewV1> ApproveAsync(Guid id, long expectedVersion, Guid actorId,

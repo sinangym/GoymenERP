@@ -30,5 +30,22 @@ public static partial class AccountingEndpoints
             .ProducesErpUnprocessableEntity("source_voucher_period_waiting", "source_voucher_account_plan_missing",
                 "source_voucher_account_not_in_plan", "source_voucher_amount_unaccepted", "source_voucher_posting_refused")
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+        group.MapPost("/source-vouchers/{id:guid}/cancellation-reversal-proposals", async (Guid id,
+            ProposeAccountingSourceVoucherReversalV1 request, AccountingSourceVoucherServiceV1 service,
+            HttpContext http, CancellationToken token) =>
+            await WriteAsync(http, key => service.ProposeCancellationReversalAsync(id, request, key, token)))
+            .RequireCompanyContext().RequireAuthorization(AccountingJournalReversalPermissionNamesV1.Propose)
+            .WithName("ProposeAccountingSourceVoucherCancellationReversalV1")
+            .Accepts<ProposeAccountingSourceVoucherReversalV1>("application/json")
+            .Produces<AccountingSourceVoucherViewV1>().WithIdempotencyContract(200, 404, 409)
+            .ProducesErpBadRequest(AccountingApiCodes.RequestInvalid).AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(AccountingApiCodes.VersionConflict, AccountingApiCodes.IdempotencyConflict,
+                AccountingStoreCodes.ConcurrentChange, "source_voucher_reversal_not_proposable",
+                "source_voucher_source_conflict", AccountingJournalReversalStoreCodesV1.ContentConflict)
+            .ProducesErpUnprocessableEntity("source_voucher_reversal_period_not_open",
+                AccountingJournalReversalStoreCodesV1.SourceJournalNotFound, AccountingJournalReversalStoreCodesV1.PeriodNotFound,
+                "source_voucher_posting_refused")
+            .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
     }
 }

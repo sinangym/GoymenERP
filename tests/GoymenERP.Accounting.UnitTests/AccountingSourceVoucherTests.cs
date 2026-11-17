@@ -87,6 +87,49 @@ public sealed class AccountingSourceVoucherTests
     }
 
     [Fact]
+    public async Task Source_cancellation_reversal_uses_the_existing_reversal_authority_and_replays_only_its_frozen_selection()
+    {
+        var f = new Fixture(); f.Authority.ExpectedPermission = AccountingJournalReversalPermissionNamesV1.Propose;
+        var request = new ProposeAccountingSourceVoucherReversalV1(2, Guid.NewGuid(), Guid.NewGuid(), new(2026, 12, 2), new(2026, 12, 3), null, "SENTETIK reversal");
+        var first = await f.Service.ProposeCancellationReversalAsync(Invoice, request, "SENTETIK-key");
+        var replay = await f.Service.ProposeCancellationReversalAsync(Invoice, request, "SENTETIK-key");
+        var changed = await f.Service.ProposeCancellationReversalAsync(Invoice, request with { AccountingDate = new(2026, 12, 4) }, "SENTETIK-key");
+        Assert.Equal(AccountingApiStatus.Ok, first.Status); Assert.True(replay.IsReplay);
+        Assert.Equal(AccountingApiCodes.IdempotencyConflict, changed.Code); Assert.Equal(1, f.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("company")]
+    [InlineData("permission")]
+    public async Task Cancellation_reversal_revalidates_actor_company_and_permission_before_any_proposal_write(string change)
+    {
+        var f = new Fixture(); f.Authority.ExpectedPermission = AccountingJournalReversalPermissionNamesV1.Propose;
+        f.Store.BeforeFence = () =>
+        {
+            if (change == "actor") f.User.UserId = Maker.ToString("D");
+            if (change == "company") f.Company.Set(Guid.NewGuid());
+            if (change == "permission") f.Authority.Granted = false;
+        };
+        var request = new ProposeAccountingSourceVoucherReversalV1(2, Guid.NewGuid(), Guid.NewGuid(), new(2026, 12, 2), new(2026, 12, 3), null, "SENTETIK reversal");
+        Assert.Equal(AccountingApiStatus.Denied, (await f.Service.ProposeCancellationReversalAsync(Invoice, request, "SENTETIK-key")).Status);
+        Assert.Equal(0, f.Store.Writes);
+    }
+
+    [Fact]
+    public async Task Cancellation_reversal_cannot_choose_a_missing_date_or_record_a_terminal_result_for_a_closed_period()
+    {
+        var f = new Fixture(); f.Authority.ExpectedPermission = AccountingJournalReversalPermissionNamesV1.Propose;
+        var request = new ProposeAccountingSourceVoucherReversalV1(2, Guid.NewGuid(), Guid.NewGuid(), new(2026, 12, 2), default, null, "SENTETIK reversal");
+        Assert.Equal(AccountingApiStatus.Invalid, (await f.Service.ProposeCancellationReversalAsync(Invoice, request, "SENTETIK-date")).Status);
+        Assert.Equal(0, f.Commands.Reads);
+        f.Store.Error = new AccountingStoreException("source_voucher_reversal_period_not_open", "SENTETIK");
+        Assert.Equal(AccountingApiStatus.Unprocessable, (await f.Service.ProposeCancellationReversalAsync(Invoice,
+            request with { AccountingDate = new(2026, 12, 3) }, "SENTETIK-closed")).Status);
+        Assert.Null(f.Commands.Record); Assert.Equal(0, f.Store.Writes);
+    }
+
+    [Fact]
     public void Cancellation_decoder_binds_original_admission_and_envelope_event_identity()
     {
         var id = Guid.NewGuid(); var payload = new AccountingSalesInvoiceCancelledEventV1(Company, id, Invoice,
@@ -115,6 +158,9 @@ public sealed class AccountingSourceVoucherTests
         public int Writes; public Action? BeforeFence; public Exception? Error;
         public Task<IReadOnlyList<AccountingSourceVoucherViewV1>> ListAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<AccountingSourceVoucherViewV1>>([]);
         public Task<AccountingSourceVoucherViewV1?> FindAsync(Guid id, CancellationToken token) => Task.FromResult<AccountingSourceVoucherViewV1?>(null);
+        public Task<AccountingSourceVoucherViewV1> ProposeCancellationReversalAsync(Guid id,
+            ProposeAccountingSourceVoucherReversalV1 request, Guid actor, Func<CancellationToken, Task> fence,
+            AccountingCommandMetadata metadata, CancellationToken token) => ApproveAsync(id, request.ExpectedVersion, actor, fence, metadata, token);
         public async Task<AccountingSourceVoucherViewV1> ApproveAsync(Guid id, long version, Guid actor,
             Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token)
         {
@@ -140,8 +186,9 @@ public sealed class AccountingSourceVoucherTests
     private sealed class Authority : IErpAuthorityRevalidationService
     {
         public bool Granted = true;
+        public string ExpectedPermission = NormalJournalPermissionNamesV1.DraftApprove;
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken token = default)
-        { Assert.Equal(NormalJournalPermissionNamesV1.DraftApprove, permission); return Task.FromResult(Granted
+        { Assert.Equal(ExpectedPermission, permission); return Task.FromResult(Granted
             ? new PermissionScope(true, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()) : PermissionScope.Denied); }
     }
     private sealed class Correlation : ICorrelationContext
