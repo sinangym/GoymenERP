@@ -48,10 +48,24 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                 ManufacturingInputRateProofV1? selected = null;
                 if (currency.Status is IssueCostCurrencyStatus.Converted or IssueCostCurrencyStatus.RateMissing)
                 {
-                    if (priorities is null) return null;
-                    selected = await priorities.ReadAsync(companyId, orderId, issue.FactId, issue.ParentLabelId, currency, cancellationToken);
-                    if (!InScope() || selected is null || string.IsNullOrWhiteSpace(selected.SourceVersion) || string.IsNullOrWhiteSpace(selected.EvidenceJson)) return null;
-                    if (!SelectedCurrency(currency, selected.Currency)) return null;
+                    try
+                    {
+                        if (priorities is not null)
+                            selected = await priorities.ReadAsync(companyId, orderId, issue.FactId, issue.ParentLabelId, currency, cancellationToken);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch { /* Cost readiness does not erase the owner-verified physical issue (URT-D67). */ }
+                    if (!InScope()) return null;
+                    if (selected is null)
+                    {
+                        // Keep actual movement identities, never the receipt/invoice quote as an order-rate fallback.
+                        // This is an unreadable cost input, not an available rate or a new physical-close refusal.
+                        selected = new(new(IssueCostCurrencyStatus.Unreadable, null, null, null),
+                            "manufacturing-input-rate-source-unreadable:v1", JsonSerializer.Serialize(new
+                            { reason = "manufacturing_input_rate_source_unreadable", recordedEntryProof = issue.Currency }));
+                    }
+                    if (string.IsNullOrWhiteSpace(selected.SourceVersion) || string.IsNullOrWhiteSpace(selected.EvidenceJson)) return null;
+                    if (selected.Currency.Status != IssueCostCurrencyStatus.Unreadable && !SelectedCurrency(currency, selected.Currency)) return null;
                     using var evidence = JsonDocument.Parse(selected.EvidenceJson);
                     if (evidence.RootElement.ValueKind != JsonValueKind.Object) return null;
                     currency = selected.Currency;
@@ -60,7 +74,7 @@ internal sealed class ManufacturingInventoryCostMovementReader(ICompanyContext c
                     : currency.Status == IssueCostCurrencyStatus.RateMissing && issue.Tl.UnitCostPerKg is null ? IssueCostReadStatus.Value
                     : issue.Tl.Status == InventoryMovementCostStampStatusV1.Known ? IssueCostReadStatus.Value : IssueCostReadStatus.Unreadable;
                 issues.Add(new(issue.FactId, issue.MovementId, issue.ParentLabelId, new(issue.QuantityKg), status,
-                    currency.Status == IssueCostCurrencyStatus.RateMissing ? null : issue.Tl.UnitCostPerKg, currency,
+                    currency.Status is IssueCostCurrencyStatus.RateMissing or IssueCostCurrencyStatus.Unreadable ? null : issue.Tl.UnitCostPerKg, currency,
                     issue.Tl.StampVersion + "/" + issue.Currency.SourceVersion + (selected is null ? "" : "/" + selected.SourceVersion),
                     issue.Usd.Status == InventoryMovementCostStampStatusV1.Known && issue.Usd.CurrencyId == ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")
                         ? issue.Usd.UnitCostPerKg : null,
