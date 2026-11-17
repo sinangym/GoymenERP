@@ -554,6 +554,8 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         {
             facts.OfficialNo,
             facts.Ettn,
+            facts.InvoiceDate,
+            facts.SourceProof,
             invoiceAmount = facts.InvoiceFunctionalAmount,
             officialAmount = facts.OfficialFunctionalAmount,
             facts.Difference,

@@ -14,7 +14,13 @@ public sealed record SalesOfficialInvoiceFacts(
     decimal PayableAmount,
     decimal PayableFunctionalAmount,
     decimal VatFunctionalAmount,
-    decimal WithholdingFunctionalAmount);
+    decimal WithholdingFunctionalAmount,
+    DateOnly? InvoiceDate = null,
+    SalesOfficialInvoiceSourceProofV1? SourceProof = null)
+{
+    public bool HasCompleteSourceProof(Guid companyId) => InvoiceDate is { } date && date != default
+        && SourceProof?.IsValidFor(companyId) == true;
+}
 
 /// <summary>
 /// SAT-D241: the VAT and the withholding TL equivalents of the invoice and the official document and their absolute differences, each
@@ -75,8 +81,13 @@ public sealed record SalesInvoiceMatchFacts(
     DateTimeOffset MatchedAtUtc,
     string? DifferenceApprovedBy,
     string? DifferenceReason,
-    SalesInvoiceTaxMatchFacts? Taxes)
+    SalesInvoiceTaxMatchFacts? Taxes,
+    DateOnly? InvoiceDate = null,
+    SalesOfficialInvoiceSourceProofV1? SourceProof = null)
 {
+    public bool HasCompleteSourceProof(Guid companyId) => InvoiceDate is { } date && date != default
+        && SourceProof?.IsValidFor(companyId) == true;
+
     public bool DifferenceWasApproved => DifferenceApprovedBy is not null;
 
     /// <summary>The largest of the recorded payable, VAT and withholding differences.</summary>
@@ -174,6 +185,12 @@ public sealed partial class SalesInvoice
             throw StateConflict("Fatura zaten resmî belgeyle eşleştirildi.");
         }
 
+        if (!official.HasCompleteSourceProof(CompanyId))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InvoiceMatchSourceProofRequired,
+                "Resmî fatura tarihi ve onaylı kaynak kanıtı olmadan eşleştirme kaydedilemez.");
+        }
+
         var evaluation = EvaluateMatch(official);
         if (!evaluation.ExactFieldsMatch)
         {
@@ -205,18 +222,19 @@ public sealed partial class SalesInvoice
 
         var facts = new SalesInvoiceMatchFacts(official.OfficialNo, official.Ettn, evaluation.InvoiceFunctionalAmount,
             evaluation.OfficialFunctionalAmount, evaluation.Difference, tolerance, actor, now.ToUniversalTime(), approver, reason,
-            evaluation.Taxes);
+            evaluation.Taxes, official.InvoiceDate, official.SourceProof);
         Match = facts;
         return facts;
     }
 
-    private static bool MatchIsConsistent(SalesInvoiceMatchFacts facts)
+    private bool MatchIsConsistent(SalesInvoiceMatchFacts facts)
     {
         var within = !facts.Exceeded;
         var approvalShape = within
             ? facts.DifferenceApprovedBy is null && facts.DifferenceReason is null
             : facts.DifferenceApprovedBy is not null && facts.DifferenceReason is not null;
         return facts.Difference >= 0m && facts.Tolerance >= 0m && approvalShape && facts.Taxes is not { IsConsistent: false }
-            && !string.IsNullOrWhiteSpace(facts.OfficialNo) && facts.Ettn.Length == EttnLength;
+            && !string.IsNullOrWhiteSpace(facts.OfficialNo) && facts.Ettn.Length == EttnLength
+            && ((facts.InvoiceDate is null && facts.SourceProof is null) || facts.HasCompleteSourceProof(CompanyId));
     }
 }
