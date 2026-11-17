@@ -130,9 +130,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(DISTINCT OutputId) FROM manufacturing.OutputLineageEdges WHERE OrderId=@order", ("@order", seed.OrderId)));
     }
 
-    private static async Task<CompletionV2Seed> SeedCompletionV2Async(Run run, string code)
+    private static async Task<CompletionV2Seed> SeedCompletionV2Async(Run run, string code, Guid? customerParty = null, Guid? customerAccount = null)
     {
-        var customer = Guid.NewGuid(); var account = Guid.NewGuid();
+        var customer = customerParty ?? Guid.NewGuid(); var account = customerAccount ?? Guid.NewGuid();
         var seed = await PrepareIssuedOrderAsync(run, code, 100m, StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA,
             new(customer, account, "SENTETIK-party-v1", "SENTETIK-account-v1"));
         ManufacturingInventoryOutputResult output;

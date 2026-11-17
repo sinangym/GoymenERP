@@ -35,11 +35,20 @@ public sealed record InventorySubcontractShipmentResultV1(Guid CompanyId, Guid L
 /// <summary>One whole attempt on the host's existing connection/transaction. Never commits borrowed handles.</summary>
 public interface IInventorySubcontractDeliveryParticipantV1 : IAsyncDisposable
 {
+    /// <summary>Price-free actual owner facts. Does not start a command or consume its one-attempt flag.</summary>
+    Task<InventorySubcontractLabelReadV1?> ReadLabelAsync(Guid labelId, CancellationToken cancellationToken = default);
     Task<InventorySubcontractReservationResultV1> ReserveAsync(InventorySubcontractReservationRequestV1 request,
         InventoryCommandMetadata metadata, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
     Task<InventorySubcontractShipmentResultV1> ShipAsync(InventorySubcontractShipmentRequestV1 request,
         InventoryCommandMetadata metadata, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 }
+
+public sealed record InventorySubcontractLabelReadV1(Guid CompanyId, Guid LabelId, string LabelCode, string LabelVersion,
+    Guid ProductId, string ProductVersion, bool IsReleasable,
+    IReadOnlyList<InventorySubcontractLabelPositionV1> Positions, IReadOnlyList<InventoryPhysicalAllocationViewV1> Allocations,
+    string SourceVersion);
+public sealed record InventorySubcontractLabelPositionV1(string OwnerKind, Guid OwnerId, string CustodianKind, Guid CustodianId,
+    Guid LocationId, string Block, string PhysicalKg, string ReservedKg, string AvailableKg);
 
 public static class InventorySubcontractDeliveryContractV1
 {
@@ -85,5 +94,5 @@ public static class InventorySubcontractDeliveryContractV1
     public static bool Text(string? value, int limit) => value is { Length: > 0 } && value.Length <= limit
         && value == value.Trim() && !value.Any(char.IsControl);
     public static InventoryDefiniteShipmentException Refused(int status, string code, Exception? inner = null) =>
-        InventoryDefiniteShipmentException.Refused(status, code, inner);
+        InventoryDefiniteShipmentException.RefusedSubcontract(status, code, inner);
 }

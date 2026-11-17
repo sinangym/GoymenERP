@@ -27,6 +27,9 @@ public static class LogisticsPermissionManifestV1
     /// </summary>
     public const string WeighingsRecord = "logistics.weighings.record";
 
+    /// <summary>LOJ-D13 / SAT-D378: reasoned, append-only correction after shipment, with no active invoice claim. Registration only.</summary>
+    public const string WeighingsCorrect = "logistics.weighings.correct";
+
     /// <summary>
     /// AT-025: read the SALES section of the operations work list (L-01 Sevk Edilebilir Siparişler) — the approved sales order
     /// lines with Logistics's own instructed / loaded / shipped / delivered totals, price-free (Sinan §4, #66 5738113623). Its
@@ -96,7 +99,7 @@ public static class LogisticsPermissionManifestV1
     public const string TransferOutgoingDocumentsRead = LogisticsTransferOutgoingDocumentPermissionsV1.Read;
 
     public static readonly IReadOnlyList<string> Names =
-        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
+        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, WeighingsCorrect, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
             DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision,
             WeighingDifferencesRecord, WeighingDifferencesApprove, WeighingDifferencesRead,
             TransferDeparturesRecord, TransferOutgoingDocumentsRead];
