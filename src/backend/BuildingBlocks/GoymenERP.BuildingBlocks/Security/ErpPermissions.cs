@@ -1322,6 +1322,13 @@ public static class ErpPermissions
     /// </summary>
     public const string PurchasingSupplierReturnsRecord = "purchasing.supplier-returns.record";
 
+    /// <summary>ALS-D7/D8/D44/D64 incoming-invoice operation names. Registration only; no grant, role or activation.</summary>
+    public const string PurchasingInvoicesRead = "purchasing.invoices.read";
+    public const string PurchasingInvoicesImport = "purchasing.invoices.import";
+    public const string PurchasingInvoicesMatch = "purchasing.invoices.match";
+    public const string PurchasingInvoicesApproveVariance = "purchasing.invoices.approve-variance";
+    public const string PurchasingInvoicesFinalize = "purchasing.invoices.finalize";
+
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
@@ -1794,6 +1801,11 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -2075,6 +2087,11 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

@@ -209,3 +209,21 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   ve masraf/hizmet satırının kendi gerçek owner bağlantıları henüz tamamlanmadı.
   Masraf satırı için yapay mal kabul üretilmez; ALC-S7/S8 bu checkpoint ile DONE değildir.
   Merkezi pin/ilişkisel envanter güncellemesi entegrasyon sırasındadır.
+
+### FIN-S13 / ALC-SC47 — resmi fatura kuru ve ayrı Finans kabul bağı
+
+- Gerçek kesinleşmiş alış faturalarının immutable revizyonları kabul bağı üzerinden okunur.
+  Tek resmi kurla tamamı faturalanmış kabul bu kuru sağlar; eksik kapsama, kesinleşmemiş
+  fatura veya bir kabulde farklı resmi kurlar açık bekleme nedenidir. Kur seçilmez veya
+  ortalanmaz. Kısmi maliyetin kesinleştirilmesi kararı ayrıca bekler; bu okuma onu seçmez.
+- Purchasing üreticisine özel Finans adaptörü gerçek açık-kalem kabul servisini çağırır.
+  Sales'in yetki/adaptör kaydı değiştirilmez. Güncel şirket, aktör ve kesinleştirme yetkisi
+  yeniden okunur; resmi tutarlar ve kesinleşmiş sürüm korunur. Farklı yetkilinin tekrarında
+  taşıma anahtarı değişse de aynı kabul kimliği ikinci borç üretimini önler.
+- Beş fatura izin adı yalnız kayıt olarak eklendi; grant, rol veya Critical değişikliği yok.
+  Birim, DI/yetki ve beş gerçek SQL test kaynağı eklendi. API, Purchasing.UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri son durumda exit 0, uyarı/hata 0.
+  Integration ilk derlemelerinde test yardımcısının ICompanyContext.Set ve IReadOnlySet
+  oluşturma hataları düzeltildi. Runtime test/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- **PARTIAL devam:** uygulama/HTTP/UI ve gerçek import akışı henüz bu adaptöre bağlı değil;
+  Finans kabulü uçtan uca tamamlandı sayılmaz. Önceki checkpoint'in kalanları geçerlidir.

@@ -179,6 +179,30 @@ public sealed class PurchaseIncomingInvoiceTests
 
     private static PurchaseInvoiceVariancePolicy Policy() => new(Guid.NewGuid(), 1, 0m, 0m);
 
+    [Fact]
+    public void Finance_offer_keeps_the_finalized_payload_when_acknowledged_and_changes_only_the_retry_actor_key()
+    {
+        var invoice = Invoice(foreign: true);
+        invoice.Match(1, [Match(invoice)], Policy(), "matcher");
+        invoice.Finalize(2, Guid.NewGuid(), "finalizer", Now);
+        var first = PurchaseIncomingInvoiceFinalizationV1.Finance(invoice, "finalizer", "correlation-1", "cause");
+        invoice.AcknowledgeFinance(3, invoice.AdmissionId!.Value, Now.AddMinutes(1));
+        var replay = PurchaseIncomingInvoiceFinalizationV1.Finance(invoice, "finalizer", "correlation-2", "cause");
+        Assert.Equal(first.IdempotencyKey, replay.IdempotencyKey);
+        Assert.Equal("3", replay.FinalizedVersion);
+        Assert.Equal(first.AdmissionId, replay.AdmissionId);
+        Assert.Equal("40", replay.OfficialRate);
+        Assert.Equal(first.Installments, replay.Installments);
+        Assert.Equal(("120.00", "4800.00"), (replay.Installments[0].Amount, replay.Installments[0].FunctionalAmount));
+        var another = PurchaseIncomingInvoiceFinalizationV1.Finance(invoice, "another-finalizer", "correlation-3", null);
+        Assert.NotEqual(first.IdempotencyKey, another.IdempotencyKey);
+        Assert.True(another.IdempotencyKey.Length <= 128);
+        Assert.Equal(first.AdmissionId, another.AdmissionId);
+        Assert.Equal(first.Installments, another.Installments);
+        Assert.Equal("another-finalizer", another.ActorId);
+        Assert.Equal("finalizer", invoice.FinalizedBy);
+    }
+
     [Theory]
     [InlineData("0.4999995")]
     [InlineData("0.5000005")]
