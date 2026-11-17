@@ -110,6 +110,13 @@ Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN
 - Birim test kaynakları ve gerçek SQL'de aktif/superseded paket, şirket sınırı, değişen kaynak sürümü ve belirsiz tür testi yazıldı. API, IntegrationTests ve Accounting.UnitTests kaynak derlemeleri exit 0, uyarı/hata 0. Yeni migration, THROW veya izin yok; runtime test/SQL/CI NOT_RUN.
 - FIN-S14 bütünü PARTIAL kalır: diğer B-28 kaynakları, gerçek outbox/host bağlantısı ve kullanıcı akışı bu kayıtla tamamlanmış sayılmaz.
 
+### FIN-S14 — gider ve aynı para birimli virman kaynak olayı
+
+- Dayanak: FNS-D14, FNS-D24/D25, FNS-D47/D60; `KALAN_MODULLER_HAZIRLIK_PLANI_v1` B-28 ve §6.1. Banka masrafı ve kredi faizi ödemesi FNS-D25'in mevcut tek Masraf kaynağından gelir; açıklamadan ayrı muhasebe türü veya hesap çıkarılmaz. FNS-D63'ün kur farkı hesap eşlemesi ile TK-30 kredi tahakkuk eşlemesi bu değişiklikte seçilmez.
+- Gerçek gider kaydının son komutu `finance.expense-payment.recorded.v1`, aynı para birimli gerçek virman komutu `finance.cash-transfer.recorded.v1` olayını kendi Finance outbox'ına aynı treasury işlemi içinde yazar. Her olay kaynak kimliği/sürümü, şirket, tam para metni/profili, kayıt/onay kanıtı ve correlation/causation bilgisini taşır. Virmanın iki bacağı tek kaynakta kalır; ikinci para veya muhasebe hareketi oluşturulmaz.
+- Üç birim ve iki gerçek SQL fact kaynağı eklendi; mevcut gerçek SQL hata/MARS geri alma testlerine outbox'ın da geri alınması ve aynı anahtarla tekrarın tek olay bırakması kontrolleri eklendi. Kaynak derlemeleri sıradadır; runtime birim/SQL/Vitest/browser/CI NOT_RUN.
+- Yeni migration/THROW/izin yok. Eski kayıtlara geriye dönük olay doldurulmaz. Mevcut dağıtıcı kapalı kalır. Accounting tüketicisi/kalıcı kaynak kuyruğu, merkez event manifesti ve kullanıcıya fiş hazırlama bağlantısı tamamlanmadığından FIN-S14 PARTIAL'dır; olayın yazılması muhasebe fişinin oluştuğu anlamına gelmez.
+
 
 ## FIN-SC36 — PARTIAL, gerçek Finans → Satış kaynak kanıtı
 
@@ -123,3 +130,28 @@ Kararlar: KLN-D102/D104, FNS-D76/D89/D90; bu kaynak checkpoint'i tüm dilimin ka
 - Birim, kalıcılık modeli, olay sözleşmesi, strict UI ve gerçek SQL fact kaynakları eklendi. Yeni SQL fact: `GoymenERP.Api.IntegrationTests.SalesInvoiceSqlServerRelationalAcceptanceTests.Official_match_source_proof_survives_reload_and_down_51982_refuses_without_losing_the_match`.
 - API, Sales.UnitTests, Finance.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/hata. Parametreler: `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false`. Sales.Unit eksik assets için yalnız mevcut yerel NuGet önbelleğinden restore edildi. Finance audit beklentisinin nullable permission türü merkez sözleşmesiyle hizalandı; test beklentisi gevşetilmedi.
 - TypeScript `tsc -b` exit 0; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve OpenAPI üretimi NOT_RUN. Program/Shell kayıtları, para politikaları, gerçek grant ve Finance STOP değişmedi.
+
+## FIN-S13 — PARTIAL, gerçek Sales outbox kaynağı
+
+Kararlar: FNS-D76, FNS-D89/D90 ve transactional outbox/inbox değişmezi.
+
+- `SalesOutboxEventSourceV1`, mevcut `sales` kaynak kimliğini ve `sales.invoice.finalized.v1` / `sales.return-invoice.finalized.v1` schema 1 olaylarını aynen taşır. Payload/olay kimliği, şirket, correlation ve causation yeniden üretilmez; para veya stok hareketi oluşturmaz.
+- SQL Server'ın ürettiği rowversion ile 20 haneli imleç kullanılır. Sabit `MIN_ACTIVE_ROWVERSION()` sorgusu, daha erken başlayıp henüz commit olmamış olayın sonraki commit tarafından atlanmasını engeller. Şirket filtresi korunur; iki okuma sonrası bağlam yeniden ölçülür. Bu metadata ham SQL yüzeyi **K3 review bekliyor**; guard izin listesine eklenmedi.
+- EF `20261117084843_AddSalesOutboxCommittedCursor` üretildi; şirket/imleç indeksi eklendi. Outbox kaydı varsa Down ilk adımda `THROW 51983` ile durur. Designer/snapshot üreticiden; mevcut append-only trigger korunur.
+- Kaynak beyanı, bozuk imleç, çözülmemiş şirket ve iptal test kaynakları; rowversion/snapshot/Down model testleri yazıldı. Gerçek SQL fact kaynakları önceki açık transaction/sonraki commit, rollback, şirket izolasyonu, aynı olayın değişmeden okunması ve 51983 veri korumasını kapsar.
+- Merkezi kayıtlar entegrasyonda eklenir: `AddWorkOutboxEventSource<SalesOutboxEventSourceV1>` ve mevcut `AccountingSalesInvoiceFinalizedInboxConsumer`. Dispatch/Accounting aktivasyonu, grant ve Finance STOP değişmedi.
+- API, Sales.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` kullanıldı. Runtime birim/SQL/CI ve OpenAPI üretimi NOT_RUN. FIN-S13 tüm üretici/tüketici akışının kabulü bu checkpoint ile tamamlanmış sayılmaz.
+
+## FNS-SC32 — PARTIAL, cari bakiye devri ve gerçek dağıtım bağlantısı
+
+Kararlar: KLN-D38/D71/D72/D76/D77; ayrıca kullanıcının devir sonrası eski belge farkının eski caride kalması ve yeni yetkili devir gerektirmesi cevabı.
+
+- Önizleme gerçek Cari sahibinden hukuki halef/mükerrer birleştirme bağını, şirket hesabını, pasif eski/aktif yeni cari ve sürümlerini okur. Tüm para birimlerinin gerçek bakiyesi ve mevcut dağıtılabilir kaynaklar aynı Finance serializable işlemi içinde tekrar okunur; döviz çevrimi veya yeni yuvarlama yoktur.
+- Tek immutable devir fişi, gerçek Belgeler sahibinin temiz/indirilebilir belge kimliği-sürümü-hash kanıtı, açık dönem içindeki seçilmiş tarih, gerekçe, idempotency ve audit ile kaydedilir. Yetki yalnız `finance.party-balance-transfers.record` kaydıdır; grant/Critical/rol verilmez, ikinci onay eklenmez.
+- Eski fatura/tahsilat/ödeme kimlikleri değişmez. Yalnız devredilen kullanılabilir tutar yeni carinin sınırlı tahsis payıdır. Tahsilat ve ödeme dağıtımı bu payı tüketir; bırakma kaydedilmiş dağıtımın carisine iade eder. Eski kaynağa sonraki fark otomatik halefe gitmez. Yeni MoneyEvent veya OutgoingMoneyEvent oluşmaz.
+- Cari ekstre/bakiye, açık kalem, tahsilat detayı ve kayıtlı ödeme dağıtım ekranı gerçek payları gösterir. Bilinmeyen yazma sonucu aynı anahtar ve donmuş içerikle sürer; bozuk/yabancı şirket cevabı başarı kabul edilmez. Eski nullable alanlar boşken eski dağıtım JSON/idempotency biçimi korunur.
+- EF `20261117093515_AddFinancePartyBalanceTransfers` üretildi: üç şirketli tablo, tahsilat/ödeme dağıtımlarında nullable cari çifti, şirketli FK ve optimistic concurrency. Up yalnız DDL; geçmiş veri backfill edilmez. Down ilk SQL işleminde fiş/pay/komut veya dolu dağıtım cari kanıtı varsa `THROW 51984` ile durur. Veritabanına uygulanmadı.
+- Birim/model/HTTP/strict istemci ve bileşen test kaynakları eklendi. Gerçek SQL fact kaynakları: yeniden açma/replay/şirket izolasyonu/Down koruması; aynı bakiyenin yarışan iki devirle çift taşınmaması; sonraki farkın eski caride kalması ve audit başarısızlığında bütün işlemin geri alınması. Runtime birim/SQL/Vitest/browser/CI NOT_RUN.
+- Merkez bağlantıları: `AddFinancePartyBalanceTransfersV1()` ve `MapFinancePartyBalanceTransfersV1()`, `PartyBalanceTransferPage` izinli mount'u; kayıtlı ödeme detayında `canReadAllocations` ve `canWriteAllocations` mevcut allocation capability'lerinden verilmelidir. Program/Shell/pin dosyalarına bu şeritte yazılmadı.
+- Merkezi mount, OpenAPI/recovery/migration guard/ilişkisel envanter üretimi ve gerçek SQL/browser kabulü tamamlanana kadar tüm dilim DONE değildir. Finance STOP ve production değişmedi; FIN-S17'nin ayrı açık dönem/kapanış geri alma soruları bu kayıtla cevaplanmış sayılmaz.
+- API, EF üretimi, Finance.UnitTests ve IntegrationTests son kaynak derlemeleri exit 0, uyarı/hata 0. `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` kullanıldı. Yeni test kaynaklarındaki nullable/analyzer ve TypeScript fixture derleme hataları düzeltildikten sonra TSC dahil son derlemeler exit 0; hiçbir test silinmedi veya atlanmadı. `git diff --check` exit 0. Bu kanıtlar test çalıştırma, OpenAPI veya canlı akış PASS anlamına gelmez.

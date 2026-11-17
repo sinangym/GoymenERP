@@ -44,6 +44,7 @@ public static partial class PurchasingEndpoints
         MapRequests(endpoints);
         MapOrders(endpoints);
         MapSupplierRevisions(endpoints);
+        MapIncomingInvoices(endpoints);
         MapCurrencyCandidates(endpoints);
         MapGoodsReceiptLabels(endpoints);
         return endpoints;
@@ -837,6 +838,7 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.IsReplay,
         PurchaseOrderResponse order => order.IsReplay,
+        PurchaseIncomingInvoiceCommandResponseV1 invoice => invoice.IsReplay,
         PurchaseFutureAllocationReleaseResponse release => release.IsReplay,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.IsReplay,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.IsReplay,
@@ -850,6 +852,7 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.OriginalCorrelationId,
         PurchaseOrderResponse order => order.OriginalCorrelationId,
+        PurchaseIncomingInvoiceCommandResponseV1 invoice => invoice.OriginalCorrelationId,
         PurchaseFutureAllocationReleaseResponse release => release.OriginalCorrelationId,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.OriginalCorrelationId,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.OriginalCorrelationId,

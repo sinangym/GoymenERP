@@ -17,7 +17,9 @@ public sealed record FinanceOfficialInvoiceOpenItemV1(
     string OutstandingAmount,
     DateOnly? DueOn,
     int Status,
-    string Version);
+    string Version,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<FinanceAllocationPositionV1>? AllocationPositions = null);
 
 public sealed record FinanceOfficialInvoiceAppliedBatchV1(
     Guid BatchId,

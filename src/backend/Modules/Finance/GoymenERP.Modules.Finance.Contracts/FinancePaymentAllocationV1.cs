@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 /// <summary>
@@ -13,7 +15,9 @@ public sealed record CreateFinancePaymentAllocationRequest(
     Guid OpenItemId,
     string ExpectedOpenItemVersion,
     string Amount,
-    string Reason);
+    string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationPartyId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationAccountId = null);
 
 public sealed record FinancePaymentAllocationView(
     Guid Id,
@@ -29,7 +33,9 @@ public sealed record FinancePaymentAllocationView(
     DateTimeOffset CreatedAtUtc,
     string? ReleasedBy,
     DateTimeOffset? ReleasedAtUtc,
-    string? ReleaseReason);
+    string? ReleaseReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationPartyId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AllocationAccountId = null);
 
 public sealed record FinancePaymentAllocationCommandResult(
     CommandOutcome Outcome,

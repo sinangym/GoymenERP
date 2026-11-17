@@ -31,6 +31,8 @@ export const PARTY_LEDGER_ENTRY_KINDS = [
   'OpeningBalanceCredit',
   'OpeningBalanceDebitReversal',
   'OpeningBalanceCreditReversal',
+  'BalanceTransferDebit',
+  'BalanceTransferCredit',
 ] as const
 export type PartyLedgerEntryKind = (typeof PARTY_LEDGER_ENTRY_KINDS)[number]
 export type PartyLedgerSide = 'Debit' | 'Credit'
@@ -163,6 +165,8 @@ const SIDE_OF: Readonly<Record<PartyLedgerEntryKind, PartyLedgerSide>> = {
   OpeningBalanceCredit: 'Credit',
   OpeningBalanceDebitReversal: 'Credit',
   OpeningBalanceCreditReversal: 'Debit',
+  BalanceTransferDebit: 'Debit',
+  BalanceTransferCredit: 'Credit',
 }
 
 /** A receivable or a payable open item (MOD-15): the two kinds that carry the invoice document and due date. */

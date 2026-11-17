@@ -12,6 +12,7 @@ import {
   type ManualBankPaymentView,
 } from './manualBankPaymentContract'
 import { PaymentReversalPanel } from './PaymentReversalPanel'
+import { PaymentAllocationPanel } from './PaymentAllocationPanel'
 
 export interface ManualBankPaymentEntryContext {
   readonly partyId: string
@@ -193,6 +194,8 @@ export function ManualBankPaymentDetailPage({
   canRecord,
   canReversePropose = false,
   canReverseApprove = false,
+  canReadAllocations = false,
+  canWriteAllocations = false,
   onOpen,
 }: CommonProps & {
   readonly actorId: string
@@ -202,6 +205,8 @@ export function ManualBankPaymentDetailPage({
   readonly canRecord: boolean
   readonly canReversePropose?: boolean
   readonly canReverseApprove?: boolean
+  readonly canReadAllocations?: boolean
+  readonly canWriteAllocations?: boolean
 }) {
   const port = useFinancePort()
   const [payment, setPayment] = useState<ManualBankPaymentView | null>(null)
@@ -392,6 +397,8 @@ export function ManualBankPaymentDetailPage({
       </> : null}
       {payment.status === 'Recorded'
         ? <button type="button" onClick={() => onOpen(payment.id)}>Kesin kaydı yeniden aç</button> : null}
+      {payment.status === 'Recorded' && canReadAllocations
+        ? <PaymentAllocationPanel paymentId={payment.id} canWrite={canWriteAllocations} /> : null}
       {payment.status === 'Recorded' && (canReversePropose || canReverseApprove)
         ? <PaymentReversalPanel payment={payment} canPropose={canReversePropose}
           canApprove={canReverseApprove} /> : null}

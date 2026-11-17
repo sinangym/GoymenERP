@@ -727,6 +727,12 @@ public static class ErpPermissions
     public const string FinancePartyLedgerRead = "finance.party-ledger.read";
     public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
 
+    /// <summary>
+    /// FNS-SC32, KLN-D72/D76: separately authorized complete party balance transfer in the resolved company.
+    /// Registered, not granted. Company-wide only; no new Critical classification or seeded assignment.
+    /// </summary>
+    public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
+
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
     public const string FinanceOpenItemsAmountRead = "finance.open-items.amount.read";
@@ -1316,6 +1322,13 @@ public static class ErpPermissions
     /// </summary>
     public const string PurchasingSupplierReturnsRecord = "purchasing.supplier-returns.record";
 
+    /// <summary>ALS-D7/D8/D44/D64 incoming-invoice operation names. Registration only; no grant, role or activation.</summary>
+    public const string PurchasingInvoicesRead = "purchasing.invoices.read";
+    public const string PurchasingInvoicesImport = "purchasing.invoices.import";
+    public const string PurchasingInvoicesMatch = "purchasing.invoices.match";
+    public const string PurchasingInvoicesApproveVariance = "purchasing.invoices.approve-variance";
+    public const string PurchasingInvoicesFinalize = "purchasing.invoices.finalize";
+
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
@@ -1437,6 +1450,9 @@ public static class ErpPermissions
     /// role, seed or user receives it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
     public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
+
+    /// <summary>ALS-D8/D15/D63: explicit company invoice-variance policy publication. Registered only; no grant or new Critical class.</summary>
+    public const string SettingsPurchaseInvoiceVariancePoliciesManage = "settings.purchase-invoice-variance-policies.manage";
 
     /// <summary>
     /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
@@ -1785,6 +1801,11 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -1852,6 +1873,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -1864,6 +1886,7 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
@@ -2064,6 +2087,11 @@ public static class ErpPermissions
             PurchasingGoodsReceiptsApproveOverdelivery,
             PurchasingFutureAllocationRelease,
             PurchasingSupplierReturnsRecord,
+            PurchasingInvoicesRead,
+            PurchasingInvoicesImport,
+            PurchasingInvoicesMatch,
+            PurchasingInvoicesApproveVariance,
+            PurchasingInvoicesFinalize,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -2131,6 +2159,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2143,6 +2172,7 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
