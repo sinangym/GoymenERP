@@ -111,6 +111,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigureReferenceLists(modelBuilder);
         ConfigureCollateralTypes(modelBuilder);
         ConfigureCompanyPolicies(modelBuilder);
+        ConfigurePurchaseInvoiceVariancePolicies(modelBuilder);
         ConfigureDocumentNumbers(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
@@ -665,6 +666,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
             }
 
             if (entry.State == EntityState.Modified && entry.Entity is CompanyPolicyVersionRow
+                or PurchaseInvoiceVariancePolicyRow
                 or FinanceCreditAccountMappingVersionRow or ReferenceListEntryRow or ReferenceListEntryVersionRow
                 or CollateralTypeRow or CollateralTypeVersionRow
                 or DocumentNumberFormatRow or DocumentNumberReservationRow or DocumentNumberCancellationRow
@@ -713,6 +715,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
                 MoneyProfileVersionRow row => row.CompanyId,
                 MoneyProfileBaselineTransferRow row => row.CompanyId,
                 CompanyPolicyVersionRow row => row.CompanyId,
+                PurchaseInvoiceVariancePolicyRow row => row.CompanyId,
                 FinanceCreditAccountMappingVersionRow row => row.CompanyId,
                 ReferenceListEntryRow row => row.CompanyId,
                 ReferenceListEntryVersionRow row => row.CompanyId,

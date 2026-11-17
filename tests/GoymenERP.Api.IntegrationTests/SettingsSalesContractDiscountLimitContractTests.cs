@@ -15,12 +15,13 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class SettingsSalesContractDiscountLimitContractTests
 {
     [Fact]
-    public void The_two_generated_Settings_migrations_are_last_and_the_snapshot_matches_the_current_model()
+    public void The_generated_Settings_registry_migrations_are_ordered_and_the_snapshot_matches_the_current_model()
     {
         using var database = new SettingsDbContext(new DbContextOptionsBuilder<SettingsDbContext>()
             .UseSqlServer("Server=model-only;Database=model-only;Trusted_Connection=True;TrustServerCertificate=True").Options, new CompanyContext());
-        Assert.Equal(["20261116181354_AddCollateralTypeCatalog", "20261116182730_AddSalesContractDiscountLimit"],
-            database.Database.GetMigrations().TakeLast(2));
+        Assert.Equal(["20261116181354_AddCollateralTypeCatalog", "20261116182730_AddSalesContractDiscountLimit",
+                "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers",
+                "20261117085524_AddPurchaseInvoiceVariancePolicies"], database.Database.GetMigrations().TakeLast(5));
         Assert.False(database.Database.HasPendingModelChanges());
     }
 

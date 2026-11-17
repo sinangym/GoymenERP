@@ -190,6 +190,9 @@ public static class ErpPermissions
     /// <summary>BS-10: explicit paint membership import and maintenance only. Name registration grants no role or actor.</summary>
     public const string ProductPaintMembershipsManage = "product.paint-memberships.manage";
 
+    /// <summary>SAT-D422 global Product card classification name only; company roles never authorize its owner operation.</summary>
+    public const string ProductCogsClassificationsManage = "product.cogs-classifications.manage";
+
     /// <summary>
     /// SAT-D382 (STK-SC36-c): the Product owner's name for approving (from an effective date) or rejecting the package standard
     /// version waiting for approval (<c>ProductPackageStandardPermissionsV3.Approve</c>). Registered, not granted: no role, seed
@@ -723,6 +726,12 @@ public static class ErpPermissions
     /// </summary>
     public const string FinancePartyLedgerRead = "finance.party-ledger.read";
     public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
+
+    /// <summary>
+    /// FNS-SC32, KLN-D72/D76: separately authorized complete party balance transfer in the resolved company.
+    /// Registered, not granted. Company-wide only; no new Critical classification or seeded assignment.
+    /// </summary>
+    public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
 
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
@@ -1435,6 +1444,9 @@ public static class ErpPermissions
     /// </summary>
     public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
 
+    /// <summary>ALS-D8/D15/D63: explicit company invoice-variance policy publication. Registered only; no grant or new Critical class.</summary>
+    public const string SettingsPurchaseInvoiceVariancePoliciesManage = "settings.purchase-invoice-variance-policies.manage";
+
     /// <summary>
     /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
     /// and the default scenario (SAT-D102) — transfer its reviewed compiled baseline once and record new versions
@@ -1672,6 +1684,7 @@ public static class ErpPermissions
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
             ProductPaintMembershipsManage,
+            ProductCogsClassificationsManage,
             ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -1848,6 +1861,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -1860,6 +1874,7 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
@@ -2127,6 +2142,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2139,6 +2155,7 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,

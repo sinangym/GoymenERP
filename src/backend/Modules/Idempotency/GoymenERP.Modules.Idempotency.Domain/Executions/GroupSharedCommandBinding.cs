@@ -30,6 +30,7 @@ public sealed record GroupSharedCommandKey
             // The Product owner's command names (ProductCommandIntent.DeactivateOperation / ReactivateOperation).
             GroupSharedMasterOperation.Deactivate => "product.card.deactivate.v1",
             GroupSharedMasterOperation.Reactivate => "product.card.reactivate.v1",
+            GroupSharedMasterOperation.SetCogsClassification => "product.card.cogs-classification.set.v1",
             _ => throw new ArgumentException("Unsupported shared command operation.", nameof(context)),
         };
         return new(commandName, keyHash);
@@ -48,7 +49,8 @@ public sealed record GroupSharedCommandKey
         RequireHash(keyHash);
         if (subject != "Product" || commandName is not
             ("product.draft.create.v1" or "product.draft.basic-edit.v1" or "product.card.activate.v1"
-                or "product.card.deactivate.v1" or "product.card.reactivate.v1"))
+                or "product.card.deactivate.v1" or "product.card.reactivate.v1"
+                or "product.card.cogs-classification.set.v1"))
             throw new ArgumentException("The stored shared command identity is not supported.");
         return new(commandName, keyHash);
     }

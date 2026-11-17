@@ -457,6 +457,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     private sealed class StoreScope(PurchasingDbContext dbContext, PurchasingStore store, IAsyncDisposable? numberScope = null) : IAsyncDisposable
     {
         public IPurchasingStore Store => store;
+        public PurchasingDbContext Context => dbContext;
 
         public async ValueTask DisposeAsync() { await dbContext.DisposeAsync(); if (numberScope is not null) await numberScope.DisposeAsync(); }
     }

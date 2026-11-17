@@ -144,6 +144,23 @@ public sealed class GroupSharedAuditEnvelopeTests
         Assert.Throws<ArgumentException>(() => GroupSharedAuditEventFactory.Create(Draft() with { IdempotencyKey = " key " }));
     }
 
+    [Theory]
+    [InlineData(1,1)] [InlineData(3,3)]
+    public void Explicit_cogs_classification_uses_its_own_global_operation_and_classification_revision(long before,long after)
+    {
+        var operation=GroupSharedMasterOperation.SetCogsClassification;
+        var data=GroupSharedAuditEventFactory.Create(new(
+            GroupSharedMasterCommandContext.FromServerDecision(new(true,GroupSharedMasterKind.Product,operation,Actor,Origin,"revision-1"),operation),
+            Product,"product.card.cogs-classification.changed.v1",before,after,"{}","{\"classification\":1}",
+            "SENTETIK explicit card classification","Web",null,null,"original-correlation",null,"request-key","None",null));
+        Assert.Equal(("SetCogsClassification","product.cogs-classifications.manage"),(data.Envelope.Operation,data.Envelope.PermissionCode));
+        data.ValidateIntegrity();
+        foreach(var changed in new[] { data.Envelope with { PermissionCode="product.draft.edit" },
+            data.Envelope with { EventType="product.card.activated.v1" },data.Envelope with { EntityVersionAfter=after+1 },
+            data.Envelope with { EntityVersionBefore=null },data.Envelope with { EntityVersionBefore=-1 } })
+            Assert.Throws<ArgumentException>(()=>GroupSharedAuditEventData.Create(changed));
+    }
+
     private static GroupSharedAuditEventDraft Draft() => new(
         GroupSharedMasterCommandContext.FromServerDecision(new(true, GroupSharedMasterKind.Product,
             GroupSharedMasterOperation.DraftCreate, Actor, Origin, "revision-1"), GroupSharedMasterOperation.DraftCreate),
