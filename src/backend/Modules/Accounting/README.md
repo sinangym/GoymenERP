@@ -422,3 +422,26 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
   browser walk accepts it (the staged-then-flip order).
 - **Not in this slice**: the M-05 "Boyutlar" (cost centre / project dimensions) have no backend or decision, and the
   plan is not edited here (the approved source catalog is the only way a plan becomes active).
+
+## SAT-D422 / SAT-D423: finalized invoice-line classification and COGS correction
+
+- The existing journal reversal proposer prepares an explicit line classification/account choice; a different existing
+  reversal approver approves it. The accountant selects the actual open period and dates (FNS-D112). No permission,
+  role, grant, account or current-date default is introduced. The Product card's current classification is reference data.
+- The actual Sales owner supplies immutable finalized invoice identities and a private commercial fingerprint. The
+  public official-number selector and history expose document/line references without commercial prices or proof JSON.
+  The invoice, its quantities, taxes, stock and original journal remain unchanged.
+- An actual posted COGS component must bind `SourceId = InvoiceId` and purpose
+  `sales-invoice-line-cogs:<invoiceLineId>:<finalizedVersion>` with its exact two lines and amount. An aggregate invoice
+  journal is not divided. A missing component is distinct from unreadable evidence. Where a component exists, two
+  balanced linked correction journals retain its exact amount; classification-only approval adds no journal.
+- Immutable proposals, approved line revisions, the command result and Audit-owner append share one owned Serializable
+  transaction. Company/actor/fresh authority, expected line version, source/plan version, maker-checker and open-period
+  fences are rechecked. Failed saves roll back; borrowed/ambient transactions and caller-owned pending state are refused
+  before cleanup. Historical choices are never updated or deleted.
+- `AddInvoiceLineCogsCorrections` creates only the two history tables and their keys/checks. Down's first operation
+  refuses with **THROW 51987** while either table contains history; an empty store can be rolled back. Use a forward fix
+  when history exists. No seed/backfill, database apply or production activation is part of this change.
+- The initial Sales SMM recognition trigger is still a human decision (#1189 / 6943887681). This correction does not
+  choose it or claim that an initial producer exists. The whole STK-SC36-a owner chain remains incomplete until that
+  producer and its immutable shipment-cost trace are bound. Source tests/builds are separate from runtime acceptance.

@@ -17,7 +17,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(16, declarations.Count);
+        Assert.Equal(18, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
@@ -46,6 +46,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.AccountPlanCapabilityId,
                 AccountingShellCapabilityProvider.CostDifferencePrepareCapabilityId,
                 AccountingShellCapabilityProvider.CostDifferenceApproveCapabilityId,
+                AccountingShellCapabilityProvider.InvoiceLineCogsPrepareCapabilityId,
+                AccountingShellCapabilityProvider.InvoiceLineCogsApproveCapabilityId,
             },
             id => Assert.False(Assert.Single(declarations, item => item.CapabilityId == id).ImplementationAvailable));
     }
@@ -58,9 +60,13 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.5"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.6"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("accounting.invoice-line-cogs.prepare", "accounting.invoice-line-cogs.prepare", "/muhasebe/fatura-satiri-smm",
+                "M-04-LINE-COGS-PREPARE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose]),
+            ("accounting.invoice-line-cogs.approve", "accounting.invoice-line-cogs.approve", "/muhasebe/fatura-satiri-smm-onay",
+                "M-04-LINE-COGS-APPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve]),
             ("accounting.manufacturing-cost-differences.prepare", "accounting.manufacturing-cost-differences.prepare", "/muhasebe/uretim-maliyet-farklari",
                 "M-01-COST-PREPARE", ShellCapabilityRoutePrecedence.Static,
                 [AccountingJournalReversalPermissionNamesV1.Propose, AccountingPermissionManifestV1.PeriodsRead, AccountPlanPermissionNamesV1.Read]),

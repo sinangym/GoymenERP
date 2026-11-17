@@ -44,7 +44,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.5";
+    public const string OwnerContractVersion = "1.6";
+
+    public const string InvoiceLineCogsPrepareCapabilityId = "accounting.invoice-line-cogs.prepare";
+    public const string InvoiceLineCogsApproveCapabilityId = "accounting.invoice-line-cogs.approve";
+    public const string InvoiceLineCogsPrepareRoutePath = "/muhasebe/fatura-satiri-smm";
+    public const string InvoiceLineCogsApproveRoutePath = "/muhasebe/fatura-satiri-smm-onay";
 
     public const string CostDifferencePrepareCapabilityId = "accounting.manufacturing-cost-differences.prepare";
     public const string CostDifferenceApproveCapabilityId = "accounting.manufacturing-cost-differences.approve";
@@ -183,6 +188,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 [AccountingJournalReversalPermissionNamesV1.Propose, AccountingPermissionManifestV1.PeriodsRead, AccountPlanPermissionNamesV1.Read], available: false),
             Declaration(CostDifferenceApproveCapabilityId, CostDifferenceApproveCapabilityId, CostDifferenceApproveRoutePath,
                 "M-01-COST-APPROVE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
+            Declaration(InvoiceLineCogsPrepareCapabilityId, InvoiceLineCogsPrepareCapabilityId, InvoiceLineCogsPrepareRoutePath,
+                "M-04-LINE-COGS-PREPARE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(InvoiceLineCogsApproveCapabilityId, InvoiceLineCogsApproveCapabilityId, InvoiceLineCogsApproveRoutePath,
+                "M-04-LINE-COGS-APPROVE", ShellCapabilityRoutePrecedence.Static,
                 [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
         ];
     }
