@@ -71,7 +71,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 var view = new AccountingInventoryCostProposalV1(Guid.NewGuid(), captured, source.EventId, source.Kind,
                     source.InvoiceId, source.InvoiceVersion, source.AdmissionId, source.InvoiceDate, source.OfficialInvoiceNumber,
                     component, 1, component.AlreadyPostedComponents is { Count: > 0 } ? "AlreadyAccounted"
-                        : amount == 0 ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
+                        : amount == 0 && component.RecordedRounding is null ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
                 Add(view);
                 Audit(view, metadata, "received", null, system: true);
             }
@@ -121,17 +121,17 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             var counter = plan.Package.Mirror.Lookup(new(Company(), request.CounterAccountId));
             if (counter is null || plan.Package.Mirror.Lookup(new(Company(), classification.AccountId)) is null
                 || request.CounterAccountId == classification.AccountId) throw Refuse("inventory_cost_account_invalid");
-            if (!AccountingInventoryCostAmountsV1.TryExactDecimal(view.Component.SignedTlAmount, 28, out var amount))
-                throw Refuse("inventory_cost_amount_not_representable");
             var currency = await TlCurrency(cancellationToken);
             var moneyProfile = await amounts.ReadProfileAsync(Company(), currency, request.AccountingDate, cancellationToken);
-            if (!GoymenERP.BuildingBlocks.Monetary.Money.FitsScale(amount, moneyProfile.Scale))
-                throw new AccountingAmountScaleException(AccountingAmountScaleCodes.ScaleExceeded);
+            RequireCompany(view.CompanyId);
+            if (!AccountingInventoryCostRoundingV1Rules.TryResolve(view.Component, currency, moneyProfile.Profile.ProfileId,
+                    moneyProfile.Profile.Version, moneyProfile.Scale, out var amount, out var rounding))
+                throw Refuse(view.Component.RecordedRounding is null ? "inventory_cost_amount_not_representable" : "inventory_cost_source_money_profile_changed");
             var preparation = new AccountingInventoryCostPreparationV1(request.PeriodId, request.AccountingDate, request.TransactionDate,
                 currency, amount.ToString("0.############################", CultureInfo.InvariantCulture),
                 moneyProfile.Profile.ProfileId, moneyProfile.Profile.Version, moneyProfile.Scale, classification,
                 new(counter.Account.AccountId, counter.Code, counter.Name), plan.PackageId, plan.Version, plan.CatalogVersion,
-                plan.AccountPlanSourceVersion, plan.AccountsSourceSha256, actorId, clock.GetUtcNow(), request.Reason);
+                plan.AccountPlanSourceVersion, plan.AccountsSourceSha256, actorId, clock.GetUtcNow(), request.Reason, rounding);
             var result = view with { Version = checked(view.Version + 1), Status = "Prepared", Preparation = preparation };
             Add(result); Audit(result, metadata, "prepared", view);
             return result;
@@ -156,10 +156,28 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 || await TlCurrency(cancellationToken) != prepared.CurrencyId || moneyProfile.Profile.ProfileId != prepared.MoneyProfileId
                 || moneyProfile.Profile.Version != prepared.MoneyProfileVersion || moneyProfile.Scale != prepared.MoneyScale)
                 throw Refuse("inventory_cost_preparation_stale");
-            if (!AccountingInventoryCostAmountsV1.TryExactDecimal(view.Component.SignedTlAmount, 28, out var signed)
+            decimal signed;
+            if (prepared.Rounding is { } recordedRounding)
+            {
+                // Verification of the frozen preparation, not a second monetary rounding or source mutation.
+                if (!AccountingInventoryCostRoundingV1Rules.TryResolve(view.Component, prepared.CurrencyId,
+                        moneyProfile.Profile.ProfileId, moneyProfile.Profile.Version, moneyProfile.Scale,
+                        out signed, out var expectedRounding) || recordedRounding != expectedRounding
+                    || recordedRounding.RoundedSignedAmount != prepared.SignedAmount)
+                    throw Refuse("inventory_cost_source_conflict");
+            }
+            else if (!AccountingInventoryCostAmountsV1.TryExactDecimal(view.Component.SignedTlAmount, 28, out signed)
                 || signed.ToString("0.############################", CultureInfo.InvariantCulture) != prepared.SignedAmount)
-                throw Refuse("inventory_cost_source_conflict");
+                throw Refuse("inventory_cost_source_conflict"); // An old exact preparation retains its original semantics.
             await freshFence(cancellationToken);
+            if (signed == 0)
+            {
+                if (prepared.Rounding is null) throw Refuse("inventory_cost_source_conflict");
+                var zeroResult = view with { Version = checked(view.Version + 1), Status = "RoundedNoCost", ApprovedBy = actorId,
+                    ApprovedAtUtc = clock.GetUtcNow() };
+                Add(zeroResult); Audit(zeroResult, metadata, "approved-zero-without-journal", view);
+                return zeroResult;
+            }
             var purpose = view.Kind == AccountingInventoryCostKindV1.SalesInvoicedShipment
                 ? AccountingInventoryCostTraceV1.SalesPurpose(view.Component.InvoiceLineId!.Value, view.InvoiceVersion)
                 : AccountingInventoryCostTraceV1.PurchaseDifferencePurpose;
@@ -198,7 +216,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     {
         CompanyId = view.CompanyId, Id = view.ProposalId, Version = view.Version, EventId = view.EventId,
         ComponentKey = view.Component.ComponentKey, Status = view.Status switch
-        { "AwaitingPreparation" => 1, "Prepared" => 2, "Posted" => 3, "NoCost" => 4, "AlreadyAccounted" => 5, _ => throw Refuse("inventory_cost_state_invalid") },
+        { "AwaitingPreparation" => 1, "Prepared" => 2, "Posted" => 3, "NoCost" => 4, "AlreadyAccounted" => 5, "RoundedNoCost" => 6, _ => throw Refuse("inventory_cost_state_invalid") },
         PreparedBy = view.Preparation?.PreparedBy, ApprovedBy = view.ApprovedBy, PeriodId = view.Preparation?.PeriodId,
         JournalId = view.JournalId, ViewJson = Encode(view), RecordedAtUtc = clock.GetUtcNow(),
     });
