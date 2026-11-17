@@ -288,5 +288,11 @@ public sealed class LocalCredential
         Version++;
     }
 
+    public void ChangeTwoFactor(bool enabled, Guid stamp)
+    {
+        RequireNewSecurityStamp(stamp);
+        TwoFactorEnabled = enabled;
+        SecurityStamp = stamp;
+        Version++;
+    }
 }
-

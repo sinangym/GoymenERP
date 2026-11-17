@@ -18,12 +18,17 @@ internal sealed class LocalAccountLoginService(
     ISecurityEventWriterV1 securityEventWriter,
     ICorrelationContext correlationContext,
     TimeProvider timeProvider,
-    IOptions<LocalAccountOptions> options)
+    IOptions<LocalAccountOptions> options,
+    ILocalTwoFactorLoginV1? twoFactor = null)
     : ILocalAccountLoginService
 {
+    public Task<LocalAccountLoginResult> LoginAsync(string? userName, string? password, CancellationToken cancellationToken) =>
+        LoginAsync(userName, password, null, cancellationToken);
+
     public async Task<LocalAccountLoginResult> LoginAsync(
         string? userName,
         string? password,
+        string? secondFactorCode,
         CancellationToken cancellationToken)
     {
         var suppliedPassword = password ?? string.Empty;
@@ -69,6 +74,26 @@ internal sealed class LocalAccountLoginService(
             ? passwordHasher.Hash(suppliedPassword)
             : null;
         var rehashedFormatVersion = rehashedPasswordHash is null ? (int?)null : passwordHasher.FormatVersion;
+
+        if (state.TwoFactorEnabled)
+        {
+            // KS-11: no session, counter reset, rehash or one-time temporary-password consumption before a factor
+            // succeeds. Recovery-code/TOTP consumption and the conditional credential update share one SQL transaction.
+            var usable = state.TemporaryPasswordIssuedAtUtc is null || LocalTemporaryPasswordRules.IsUsable(
+                state.TemporaryPasswordExpiresAtUtc, state.TemporaryPasswordConsumedAtUtc, nowUtc);
+            if (usable && twoFactor is null) throw new LocalTwoFactorUnavailableException();
+            var completed = usable && twoFactor is not null && await twoFactor.TryCompleteAsync(state, secondFactorCode,
+                () => state.TemporaryPasswordIssuedAtUtc is null
+                    ? store.TryRecordSuccessfulAccessAsync(state, rehashedPasswordHash, rehashedFormatVersion, cancellationToken)
+                    : store.TryConsumeTemporaryPasswordAsync(state, rehashedPasswordHash, rehashedFormatVersion, nowUtc, cancellationToken),
+                cancellationToken);
+            if (!completed)
+            {
+                _ = await store.TryRecordFailedAccessAsync(state, options.Value.ToLockoutPolicy(), nowUtc, cancellationToken);
+                return await RefuseAsync(SecurityEventReasonCodesV1.CredentialsInvalid, nowUtc, cancellationToken);
+            }
+            return await SucceedAsync(state, nowUtc, cancellationToken);
+        }
 
         if (state.TemporaryPasswordIssuedAtUtc is not null)
         {

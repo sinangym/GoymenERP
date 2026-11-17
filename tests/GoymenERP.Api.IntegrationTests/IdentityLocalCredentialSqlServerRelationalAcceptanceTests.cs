@@ -17,7 +17,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// collation and the forward-fix <c>Down</c> refuses while a credential exists. Hashes are opaque SENTETIK strings;
 /// the store never verifies them.
 /// </summary>
-public sealed class IdentityLocalCredentialSqlServerRelationalAcceptanceTests
+public sealed partial class IdentityLocalCredentialSqlServerRelationalAcceptanceTests
 {
     private static readonly LocalCredentialLockoutPolicy Policy = new(3, TimeSpan.FromMinutes(15));
 

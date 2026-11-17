@@ -56,7 +56,8 @@ async function sessionPost(path: string, body: unknown): Promise<SessionResponse
 
 /** `POST /identity/session/login` — 204 sets the session cookie; the password leaves this function only in the body. */
 export async function submitLogin(request: LocalLoginRequest): Promise<LoginOutcome> {
-  const result = await sessionPost(LOGIN_PATH, { userName: request.userName, password: request.password })
+  const result = await sessionPost(LOGIN_PATH, { userName: request.userName, password: request.password,
+    ...(request.totpCode === undefined ? {} : { totpCode: request.totpCode }) })
   if (result === 'offline') return { kind: 'offline' }
   if (result === 'unreachable') return { kind: 'network-error' }
   return classifyLogin(result.status, result.body)

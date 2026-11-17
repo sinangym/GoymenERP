@@ -99,6 +99,8 @@ public static class IdentityModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ILocalCredentialStore, SqlLocalCredentialStore>();
         services.AddScoped<ILocalAccountLoginService, LocalAccountLoginService>();
+        services.AddScoped<ILocalTwoFactorLoginV1, SqlLocalTwoFactorLoginV1>();
+        services.AddScoped<ILocalTwoFactorServiceV1, LocalTwoFactorServiceV1>();
         services.AddScoped<ILocalAccountSessionValidator, LocalAccountSessionValidator>();
         // KIM-D30: logout renews the security stamp; every open session then fails the per-request check.
         services.AddScoped<ILocalAccountLogoutService, LocalAccountLogoutService>();

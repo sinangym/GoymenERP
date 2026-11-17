@@ -12,6 +12,7 @@
 export interface LocalLoginRequest {
   readonly userName: string
   readonly password: string
+  readonly totpCode?: string
 }
 
 export const LOGIN_RATE_LIMITED_CODE = 'login_rate_limited'
