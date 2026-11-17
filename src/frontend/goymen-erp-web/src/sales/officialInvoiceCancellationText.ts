@@ -1,0 +1,15 @@
+export const OFFICIAL_CANCELLATION_TEXT = {
+  heading: 'Resmî fatura iptal kaydı', subject: 'Resmî iptal kaydı',
+  description: 'Dışarıda resmen iptal edilmiş faturanın kaydını oluşturur. Dış belgeyi iptal etmez. Kaynak sahibi gerçek iptal durumunu doğrulayamıyorsa işlem tamamlanmaz.',
+  normal: 'Satış faturası', subcontract: 'Fason satış faturası', kind: 'Fatura türü', invoice: 'Fatura',
+  reason: 'İptal gerekçesi', record: 'Resmî iptali kaydet', open: 'Aç', refresh: 'Yenile', next: 'Sonraki sayfa', first: 'İlk sayfa',
+  empty: 'Bu türde kesinleşmiş veya resmî iptali kaydedilmiş fatura yok.', choose: 'Listeden bir fatura seçin.',
+  noAuthority: 'Resmî iptal kaydı için satış faturası kesinleştirme yetkisi gerekir.',
+  recorded: 'Resmî iptal ERP kaydına alındı. Eski fatura ve kesinleştirme kayıtları korunur.',
+  pending: 'Finans iptal kabulü bekliyor.', cancelled: 'Finans açık kalemleri ters kayıtla kapatıldı.',
+  confirmation: 'Finans bu faturada aktif tahsis olduğunu bildirdi. Bırakma onayı ayrı olarak verilmelidir.',
+  release: 'Aktif tahsisleri bu iptal ile birlikte bırakmayı onaylıyorum.',
+  retryFinance: 'Finans iptal teslimini yeniden dene', retrySame: 'Aynı isteği tekrar dene', leave: 'Bu girişimden ayrıl',
+  proofUnavailable: 'Gerçek dış iptal durum kaynağı kullanılamıyor. İşlem sonucu doğrulanamadı; aynı isteği yeniden deneyebilirsiniz.',
+  notConfirmed: 'Kaynak, bu faturanın dışarıda resmen iptal edildiğini henüz doğrulamadı.',
+} as const

@@ -1,3 +1,4 @@
+import { SalesOfficialInvoiceCancellationPanel } from './SalesOfficialInvoiceCancellationPage'
 import { useEffect, useId, useState } from 'react'
 import { commandSubcontractInvoice, fetchSubcontractInvoice, fetchSubcontractInvoiceList, type SubcontractAction, type SubcontractActionPayload } from './SubcontractInvoiceApi'
 import { subcontractServiceInvoicePath, type SubcontractInvoiceDetail, type SubcontractInvoiceList } from './SubcontractInvoiceContract'
@@ -129,6 +130,7 @@ function LifecyclePanel({ invoiceId, salesOrderId, companyId }: {
     {detail === null ? <StateBlock state={classifyOutcome(outcome)} subject={L.subject} onRetry={reload} /> : <>
       <h4>{detail.documentNo} — {INVOICE_STATE_TEXT[detail.state]}</h4>
       <InvoiceDecisionFacts decision={detail.lifecycle?.decision ?? null} />
+      <SalesOfficialInvoiceCancellationPanel kind="Subcontract" invoiceId={invoiceId} companyId={companyId} version={detail.version} state={detail.state} onRecorded={reload} />
       {detail.lifecycle?.instalments.length ? <table><caption>{L.due}</caption><thead><tr><th>{L.due}</th><th>{L.amount}</th></tr></thead>
         <tbody>{detail.lifecycle.instalments.map(item => <tr key={item.sequenceNo}><td>{formatBusinessDate(item.dueDate)}</td><td>{item.amount}</td></tr>)}</tbody></table>
         : <p role="status">{L.noPlan}</p>}

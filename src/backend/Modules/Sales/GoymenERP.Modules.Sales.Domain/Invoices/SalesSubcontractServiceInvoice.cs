@@ -15,6 +15,7 @@ public enum SalesSubcontractServiceInvoiceState
     Rejected = 4,
     Cancelled = 5,
     Finalized = 6,
+    OfficiallyCancelled = 7,
 }
 
 /// <summary>
