@@ -44,7 +44,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
+
+    public const string PostingMappingsReadCapabilityId = "accounting.posting-mappings.read";
+    public const string PostingMappingsPrepareCapabilityId = "accounting.posting-mappings.prepare";
+    public const string PostingMappingsActivateCapabilityId = "accounting.posting-mappings.activate";
+    public const string PostingMappingsRoutePath = "/muhasebe/hesap-eslemeleri";
     public const string SourceVouchersCapabilityId = "accounting.source-vouchers.list";
     public const string SourceVouchersApproveCapabilityId = "accounting.source-vouchers.approve";
     public const string SourceVouchersRoutePath = "/muhasebe/kaynak-fisler";
@@ -129,8 +134,15 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
         // The actual owner is composed; financial browser acceptance remains a separate staged gate.
         var sourceVouchers = Declaration(SourceVouchersCapabilityId, SourceVouchersCapabilityId, SourceVouchersRoutePath,
             "M-04-SOURCE", ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: false);
+        var mappings = Declaration(PostingMappingsReadCapabilityId, PostingMappingsReadCapabilityId, PostingMappingsRoutePath,
+            "M-05-COGS-MAPPING", ShellCapabilityRoutePrecedence.Static, [AccountingPostingAccountMappingPermissionNamesV1.Read], available: false);
         return
         [
+            mappings,
+            mappings with { CapabilityId = PostingMappingsPrepareCapabilityId, ParentCapabilityId = PostingMappingsReadCapabilityId,
+                RequiredPermissions = [AccountingPostingAccountMappingPermissionNamesV1.Read, AccountingPostingAccountMappingPermissionNamesV1.Prepare] },
+            mappings with { CapabilityId = PostingMappingsActivateCapabilityId, ParentCapabilityId = PostingMappingsReadCapabilityId,
+                RequiredPermissions = [AccountingPostingAccountMappingPermissionNamesV1.Read, AccountingPostingAccountMappingPermissionNamesV1.Activate] },
             sourceVouchers,
             sourceVouchers with { CapabilityId = SourceVouchersApproveCapabilityId, ParentCapabilityId = SourceVouchersCapabilityId,
                 RequiredPermissions = [AccountingPermissionManifestV1.JournalsRead, NormalJournalPermissionNamesV1.DraftApprove] },

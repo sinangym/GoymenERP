@@ -38,6 +38,7 @@ public static class TrainCompletionHostComposition
         services.AddInventoryTransferPolicyHostPorts();
         services.AddFinancePartyBalanceTransfersV1();
         services.AddAccountingInvoiceLineCogsRuntime();
+        services.AddScoped<IAccountingCogsAccountResolverV1, AccountingCogsAccountResolverV1>();
         services.AddInventoryPurchaseInvoiceCostsV1();
         services.AddScoped<IPurchaseSupplierReturnInvoiceCostReadPortV1, PurchaseSupplierReturnInvoiceCostReadPort>();
         services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();

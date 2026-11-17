@@ -60,10 +60,9 @@ public sealed class AccountingShellRegistrationTests
         var accounting = registry.Registrations
             .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
             .ToArray();
-        // M-07 and its propose screen, the approve and close controls of that list, M-04 and its detail, M-01:
-        // Fourteen declarations (Accounting 1.4): the seven ACC-V0 routes/controls, three normal-draft routes, M-06,
-        // the reversal propose control and approval route (both staged) and FIN-S16's M-05 account plan (staged).
-        Assert.Equal(14, accounting.Length);
+        // Published owner routes and existing staged source/cost declarations, plus the three
+        // staged mapping read/prepare/activate actions. The exact published set below is unchanged.
+        Assert.Equal(23, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.

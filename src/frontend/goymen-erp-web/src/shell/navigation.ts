@@ -136,6 +136,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'accounting.journals.list',
   'accounting.posting-queues',
   'accounting.source-vouchers.list',
+  'accounting.posting-mappings.read',
   'inventory.opening-stock.record',
   'inventory.stock-positions.list',
   'inventory.stock-transfer.write',
@@ -313,6 +314,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Staged until the actual M-06 browser acceptance; no sidebar publication yet.
   'accounting.trial-balance': '',
   'accounting.source-vouchers.list': 'Kaynak fişler',
+  'accounting.posting-mappings.read': 'SMM hesap eşlemeleri',
   // NAV-OPENING-01: the one-time opening count is set-up work, drawn under Ayarlar (see NAV_GROUPS). Same route,
   // same capability; only the sidebar place and its wording changed.
   'inventory.opening-stock.record': 'Açılış stokları',
@@ -511,7 +513,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'accounting',
     label: 'Muhasebe',
-    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'accounting.source-vouchers.list', 'finance.party-ledger.accounting',
+    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'accounting.source-vouchers.list', 'accounting.posting-mappings.read', 'finance.party-ledger.accounting',
       'accounting.manufacturing-cost-differences.prepare', 'accounting.manufacturing-cost-differences.approve',
       'accounting.invoice-line-cogs.prepare', 'accounting.invoice-line-cogs.approve'],
   },

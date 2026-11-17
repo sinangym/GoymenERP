@@ -22,6 +22,7 @@ import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, journalDetailPath } from '../a
 
 /** The lane's routed ids, paired with the route key that serves each. */
 const ROUTED = [
+  [CAPABILITY.accountingPostingMappingsRead, ACCOUNTING_CAPABILITY.postingMappingsRead, ACCOUNTING_ROUTE.postingMappings],
   [CAPABILITY.accountingSourceVouchers, ACCOUNTING_CAPABILITY.sourceVouchers, ACCOUNTING_ROUTE.sourceVouchers],
   [CAPABILITY.accountingInvoiceLineCogsPrepare, ACCOUNTING_CAPABILITY.invoiceLineCogsPrepare, ACCOUNTING_ROUTE.invoiceLineCogsPrepare],
   [CAPABILITY.accountingInvoiceLineCogsApprove, ACCOUNTING_CAPABILITY.invoiceLineCogsApprove, ACCOUNTING_ROUTE.invoiceLineCogsApprove],
@@ -48,7 +49,8 @@ describe('shell ↔ Accounting lane capability ids', () => {
   it('mounts routed ids without period or source voucher approval controls', () => {
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('accounting.'))
     expect([...shellIds].sort()).toEqual([...ROUTED.map(([shellId]) => shellId as string)].sort())
-    for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose, ACCOUNTING_CAPABILITY.sourceVouchersApprove]) {
+    for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose, ACCOUNTING_CAPABILITY.sourceVouchersApprove,
+      ACCOUNTING_CAPABILITY.postingMappingsPrepare, ACCOUNTING_CAPABILITY.postingMappingsActivate]) {
       expect(shellIds).not.toContain(control)
       expect(Object.values(ACCOUNTING_ROUTE) as string[]).not.toContain(control)
     }
