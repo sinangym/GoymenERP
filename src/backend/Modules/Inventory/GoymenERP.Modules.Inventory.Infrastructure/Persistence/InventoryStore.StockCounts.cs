@@ -6,6 +6,7 @@ using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Counts;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -354,7 +355,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 if (decisionCode == DecisionApproved)
                     await ResolveNegativeStockAttemptsAsync(countRow, now, metadata, cancellationToken);
                 var before = StockCountView(countRow, decision: null);
-                var view = StockCountView(countRow, decision);
+                var costStatus = movementId is { } adjusted ? RecordedCountCostStatus(adjusted, companyId) : null;
+                var view = StockCountView(countRow, decision, costStatus);
                 dbContext.Commands.Add(StockCountCommandRow(DecideStockCountCommand, companyId, keyHash, payloadHash,
                     metadata, countRow.Id, view));
                 Audit(metadata, companyId, StockCountEntityType, countRow.Id,
@@ -432,8 +434,12 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         var decisions = await dbContext.StockCountDecisions.AsNoTracking()
             .Where(row => ids.Contains(row.CountId))
             .ToDictionaryAsync(row => row.CountId, cancellationToken);
+        var commands = await dbContext.Commands.AsNoTracking()
+            .Where(row => row.CommandName == DecideStockCountCommand && row.TargetId != null && ids.Contains(row.TargetId.Value))
+            .ToDictionaryAsync(row => row.TargetId!.Value, cancellationToken);
         return new InventoryLabelStockCountsV1(labelId,
-            [.. counts.Select(row => StockCountView(row, decisions.GetValueOrDefault(row.Id)))], windowFull);
+            [.. counts.Select(row => StockCountView(row, decisions.GetValueOrDefault(row.Id),
+                StoredCountCostStatus(commands.GetValueOrDefault(row.Id), row, decisions.GetValueOrDefault(row.Id))))], windowFull);
     }
 
     private static (long ExpectedVersion, Kilograms Counted, string Reason) ParseStockCount(RecordInventoryStockCountV1 request)
@@ -552,7 +558,10 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             throw StockCountError(409, refusal);
         }
 
-        return new(StockCountView(count, decision), true, decision.CorrelationId);
+        var command = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.CommandName == DecideStockCountCommand && row.TargetId == countId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        return new(StockCountView(count, decision, StoredCountCostStatus(command, count, decision)), true, decision.CorrelationId);
     }
 
     /// <summary>
@@ -694,7 +703,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         && balance.ProductId == line.ProductId
         && balance.Block == line.Block;
 
-    private static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision)
+    private static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision,
+        string? costStatus = null)
     {
         var difference = row.CountedKg - row.BookKg;
         var status = decision?.Decision switch
@@ -730,7 +740,36 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     decision.Decision == DecisionApproved ? InventoryStockCountStatusesV1.Approved : InventoryStockCountStatusesV1.Rejected,
                     decision.DecidedAtUtc,
                     decision.Reason,
-                    decision.MovementId));
+                    decision.MovementId, costStatus));
+    }
+
+    // The first decision freezes only the actual immutable TL movement stamp's status, never its price.
+    private string? RecordedCountCostStatus(Guid movementId, Guid companyId)
+    {
+        var stamp = dbContext.MovementCostStamps.Local.SingleOrDefault(row => row.CompanyId == companyId
+            && row.MovementId == movementId && row.LineNumber == 1 && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira);
+        if (stamp?.Reason == "stock_outside_company_cost_pool") return null;
+        return stamp?.Status == (int)InventoryMovementCostStampStatusV1.Known ? "Known"
+            : stamp?.Reason == "stock_count_average_unreadable" ? "NotCalculated" : "Unavailable";
+    }
+
+    // Lists and a new transport key replay the original decision's frozen status. Old replies keep null;
+    // a later opening cost/recognition must not silently rewrite the original approval response.
+    private static string? StoredCountCostStatus(InventoryCommandRow? command, StockCountRow count, StockCountDecisionRow? decision)
+    {
+        if (decision?.Decision != DecisionApproved || command is null) return null;
+        var stored = JsonSerializer.Deserialize<StockCountCommandResult>(command.ResultJson, Json)?.Count;
+        if (stored is null || stored.CompanyId != count.CompanyId || stored.CountId != count.Id
+            || stored.Decision?.AdjustmentMovementId != decision.MovementId)
+            throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+        return stored.Decision?.CostStatus switch
+        {
+            null => null,
+            "Known" => "Known",
+            "NotCalculated" => "NotCalculated",
+            "Unavailable" => "Unavailable",
+            _ => throw StockCountError(503, InventoryStockCountCodesV1.Unavailable),
+        };
     }
 
     /// <summary>A signed difference as canonical kg text: no trailing zeros, a leading minus for a shortage.</summary>

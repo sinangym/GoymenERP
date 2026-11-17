@@ -2,6 +2,8 @@ using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Counts;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Application;
+using System.Text.Json;
 using static GoymenERP.Inventory.UnitTests.InventoryFixture;
 
 namespace GoymenERP.Inventory.UnitTests;
@@ -9,11 +11,44 @@ namespace GoymenERP.Inventory.UnitTests;
 /// <summary>
 /// SAT-D331 / SAT-D334 (SINAN_KARARLARI_2026-11-13_EK1) golden cases for the pure count-difference cost rule: a surplus
 /// and a shortage are valued at the location/product moving average, exactly and without changing it; an unreadable
-/// or never-recorded average leaves a surplus "hesaplanamadı" and stops a shortage. The rule is not wired into the
-/// approval until the average-cost ledger follows stock movements (SAT-D331 (5)).
+/// or never-recorded average leaves a surplus "hesaplanamadı" and stops a shortage. The actual movement writer uses
+/// the same signed-difference overload after the average ledger is read under the count transaction.
 /// </summary>
 public sealed class InventoryStockCountCostTests
 {
+    [Fact]
+    public void Decision_cost_status_is_additive_price_free_and_absent_for_legacy_decisions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var legacy = new InventoryStockCountDecisionViewV1("Approved", At, "SENTETIK", Guid.NewGuid());
+        var json = JsonSerializer.Serialize(legacy, options);
+        Assert.DoesNotContain("costStatus", json, StringComparison.Ordinal);
+        Assert.Equal(legacy, JsonSerializer.Deserialize<InventoryStockCountDecisionViewV1>(json, options));
+        var current = legacy with { CostStatus = "NotCalculated" };
+        Assert.Equal(current, JsonSerializer.Deserialize<InventoryStockCountDecisionViewV1>(JsonSerializer.Serialize(current, options), options));
+        Assert.Contains(InventoryStockCountCodesV1.CostNotCalculated, InventoryStockCountHttpCodesV1.Status503Codes);
+    }
+
+    [Theory]
+    [InlineData(2.5, 12.3456, 30.864)]
+    [InlineData(-2.5, 12.3456, 30.864)]
+    [InlineData(1, 0, 0)]
+    public void Actual_adjustment_overload_preserves_the_same_four_decimal_average_and_exact_cost(
+        decimal difference, decimal average, decimal amount)
+    {
+        var actual = StockCountCostCalculator.ForDifference(difference, AverageCostPosition.Known(0m, average));
+        Assert.Equal((StockCountCostStatus.Known, (decimal?)average, (decimal?)amount),
+            (actual.Status, actual.AverageCostPerKg, actual.Amount));
+    }
+
+    [Fact]
+    public void Actual_adjustment_without_a_source_distinguishes_surplus_from_refused_shortage()
+    {
+        Assert.Equal(StockCountCostStatus.NotCalculated, StockCountCostCalculator.ForDifference(1m, null).Status);
+        Assert.Equal(StockCountCostStatus.Refused, StockCountCostCalculator.ForDifference(-1m, null).Status);
+        Assert.Throws<InventoryRuleException>(() => StockCountCostCalculator.ForDifference(0m, null));
+    }
+
     private static readonly Guid BaseCurrency = Guid.Parse("70000000-0000-0000-0000-000000000001");
 
     [Theory]

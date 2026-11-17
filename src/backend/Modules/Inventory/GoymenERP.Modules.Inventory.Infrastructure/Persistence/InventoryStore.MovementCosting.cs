@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Inventory.Domain.Counts;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -72,7 +73,23 @@ public sealed partial class InventoryStore
                 var partialSourceChanged = false;
                 var knownZeroReceipt = false;
                 long? sourceVersion = null;
-                if (movement.Kind is StockMovementKind.TransferAccept or StockMovementKind.TransferDispatchCancellation
+                if (movement.Kind == StockMovementKind.CountAdjustment)
+                {
+                    var countCost = StockCountCostCalculator.ForDifference(incoming ? kg : -kg,
+                        pool.IsComplete && pool.ExactPosition is { } known
+                            ? AverageCostPosition.Known(pool.PhysicalKg, known.AverageCostPerKg) : null);
+                    if (countCost.Status == StockCountCostStatus.Refused && currency == SettingsCurrencyIdentitiesV1.TurkishLira)
+                        throw new InventoryStoreException(InventoryStockCountCodesV1.CostNotCalculated,
+                            "Ortalama maliyet hesaplanamadı; sayım eksiği uygulanmadı.");
+                    if (countCost.Status == StockCountCostStatus.Known)
+                    {
+                        unit = countCost.AverageCostPerKg;
+                        sourceVersion = pool.Version;
+                        knownZeroReceipt = incoming && unit == 0m;
+                    }
+                    else stamp.Reason = "stock_count_average_unreadable";
+                }
+                else if (movement.Kind is StockMovementKind.TransferAccept or StockMovementKind.TransferDispatchCancellation
                     or StockMovementKind.TransferReceiptShortage or StockMovementKind.TransferTransitLoss)
                 {
                     var original = await TransferDispatchCostAsync(movement.Source.Id, line.Position, currency, token);
@@ -135,7 +152,7 @@ public sealed partial class InventoryStore
                         stamp.CurrencyReason = null;
                     }
                 }
-                else if (!incoming && (movement.Kind is StockMovementKind.Issue or StockMovementKind.Scrap or StockMovementKind.CountAdjustment
+                else if (!incoming && (movement.Kind is StockMovementKind.Issue or StockMovementKind.Scrap
                         or StockMovementKind.TransferDispatch or StockMovementKind.TransferReceiptShortage or StockMovementKind.TransferTransitLoss)
                     && pool.IsComplete && pool.ExactPosition is not null)
                 {

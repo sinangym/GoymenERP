@@ -64,7 +64,8 @@ public sealed record InventoryStockCountDecisionViewV1(
     string Decision,
     DateTimeOffset DecidedAtUtc,
     string Reason,
-    Guid? AdjustmentMovementId);
+    Guid? AdjustmentMovementId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CostStatus = null);
 
 /// <summary>
 /// One count: the counted position as stored when counted, the book kg the counter saw at that label version,
@@ -210,6 +211,7 @@ public static class InventoryStockCountCodesV1
 
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string Unavailable = "inventory_stock_count_unavailable";
+    public const string CostNotCalculated = "inventory_stock_count_cost_not_calculated";
 }
 
 /// <summary>
@@ -252,6 +254,7 @@ public static class InventoryStockCountHttpCodesV1
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         InventoryStockCountCodesV1.PermissionUnregistered,
         InventoryStockCountCodesV1.Unavailable,
+        InventoryStockCountCodesV1.CostNotCalculated,
         InventoryScaleCodes.ProfileUnusable,
         "settings_provider_unavailable",
         SettingsPrerequisiteCodesV1.UnitProfileNotFound,

@@ -94,19 +94,25 @@ public static class StockCountCostCalculator
     public static StockCountCost For(StockCount count, AverageCostPosition? average)
     {
         ArgumentNullException.ThrowIfNull(count);
-        if (!count.HasDifference)
+        return ForDifference(count.Difference, average);
+    }
+
+    /// <summary>The same rule for the actual approved adjustment's signed kilograms.</summary>
+    public static StockCountCost ForDifference(decimal differenceKg, AverageCostPosition? average)
+    {
+        if (differenceKg == 0m)
         {
             throw new InventoryRuleException(InventoryRuleCodes.InvalidStockCount,
                 "Farkı olmayan sayımın maliyet etkisi yoktur.");
         }
 
-        var surplus = count.Difference > 0m;
+        var surplus = differenceKg > 0m;
         if (average is not { Status: AverageCostStatus.Known, AverageCostPerKg: { } averageCostPerKg })
         {
             var reason = average?.UnreadableReason;
             return surplus ? StockCountCost.NotCalculated(reason) : StockCountCost.Refused(reason);
         }
 
-        return StockCountCost.Known(averageCostPerKg, Math.Abs(count.Difference) * averageCostPerKg);
+        return StockCountCost.Known(averageCostPerKg, Math.Abs(differenceKg) * averageCostPerKg);
     }
 }
