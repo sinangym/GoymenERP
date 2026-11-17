@@ -727,3 +727,49 @@ guessed or seeded, and OPEN-007 stays open.
 | Kept files | Every import that reaches the row check is kept in `product.ProductPackageStandardImportFiles` with its full report: `Accepted` with its version, or `Refused` (row errors, a stale version, a waiting version) as the key's terminal answer with one audit event (`import-file-kept.v3`, entity `Product.PackageStandardImportFile`). A trigger refuses every UPDATE and DELETE (`THROW 51871`). No retention period, deletion or download exists (SAT-D397 / SAT-D401; retention, vault and scan stay NEEDS-SINAN). An inactive product is a row error in a file and a 409 in an edit. |
 | Read port | `IProductPackageStandardReaderV3.GetAsync(productId, customerId?, on)`: the customer's override if any, otherwise the product default, of the version in effect on the consumer's business date, with the entry scope and effective date. V2 reads the product default in effect today. |
 | Rollback | Migration `AddProductPackageStandardApprovalAndFiles` (`dotnet ef`). `Down` refuses with `THROW 51872` while a decision, an override, a kept file or a version that requires approval exists (forward fix); an empty store rolls back freely. |
+
+
+## Paint membership (STK-S13, BS-10 / URT-D25)
+
+The company imports the explicit paint-product list from a real `.xlsx` file, then maintains membership in ERP.
+No Product name, steel taxonomy, item type, supplier name or color text is interpreted as membership. No source is seeded.
+`IProductPaintMembershipReaderV1` answers the actual Product ID/version and the immutable membership version; an absent
+source is `NoSource`, a passive card is `Inactive`, and an unreadable owner is `Unavailable`. The consuming Manufacturing
+operation owns its own permission fence, asks the real Cari supplier owner, and uses the optional Settings PaintColor ID/version.
+
+- `product.paint-memberships.manage` is a registration-only company-wide name; no grant, role or Critical assignment.
+- `GET /api/v1/product-paint-memberships/current`; `POST /imports/validate`; `POST /imports`; `PUT /products/{productId}`.
+  Commands require expected versions, Idempotency-Key, actual actor/company, correlation/causation and a reason. The screen
+  capability is `paint-memberships.manage`, route `/boya-urunleri`, screen `STK-S13`. Runtime activation remains unchanged.
+- The first logical worksheet contains the user-mapped text product-code column (default `Ürün kodu`). Leading zeros and case
+  are preserved. Formula/macros/external links/DTD, duplicate codes or ambiguous headers are refused. At most 2 MiB / 5000 rows.
+  Every code must resolve to one actual active Product. Validation writes nothing. Apply parses the same bytes again and binds
+  SHA-256 + actor/company + Product versions + current table version to the preview token. Any row error refuses the whole file.
+- Import adds the explicitly named products and carries every absent member forward. ERP edits explicitly add or remove one
+  member only after a real first import. Inactive members remain visible to maintenance for explicit removal; consumers never
+  receive them as eligible paint products. A no-op stores its immutable answer without a new version or change event.
+- `PaintMembershipVersions`, `PaintMembershipLines` and `PaintMembershipAttempts` belong to `ProductPriceListDbContext`.
+  Full versions and original terminal answers are append-only; Product is read-only. A serializable SQL transaction preserves
+  the actual card/version and current membership set. The Audit owner borrows the same transaction after the Product save;
+  a failure or the final fresh-authority loss rolls back membership, attempt and Audit together. Source hash/name, reason and
+  before/after version remain in history; this slice invents no file-retention or approval policy.
+- Migration `AddProductPaintMemberships` is generated with EF; first Down guard **51975** protects all three stores before drops.
+  The model-only design-time factory does not enable a Product issuer or connect/apply SQL. It is a new context-construction
+  source requiring K3 review; no architecture allowlist is expanded merely to pass a guard.
+- Source checks include parser/unit/model, real-SQL lifecycle/replay/company/preview/card-version/audit rollback/final-fence/race/
+  Down facts, HTTP declarations and Vitest sources. Runtime tests, SQL, browser and CI remain **NOT_RUN** at this checkpoint.
+  Central Program mapping/provider registration, OpenAPI/registry/recovery/guard/relational/group pins are integrated centrally.
+
+
+### SAT-D419/D422 explicit COGS classification (W8)
+
+The global Product card now carries a separate explicit `TradeGoods` or `Manufactured` classification through the Product-owned append-only `product.CogsClassifications` extension. A known card without a recorded choice remains `NotSet`; lifecycle, tax item type, purchase, production and physical stock never infer a choice. Finance remains the owner of account mapping and Sales/Accounting of any finalized invoice correction. This command changes no amount, quantity, tax, movement or invoice.
+
+- Administration: `GET/PUT /api/v1/product-cogs-classifications/{productId}`. Read uses existing explicit global Product Read; write requires separate global `SetCogsClassification = 7`. `product.cogs-classifications.manage` is registered only; a company role or any existing Product operation cannot supply op7. No role/actor assignment, seed or Critical classification was added.
+- The operational `IProductCogsClassificationReadPortV1` returns actual Product/classification versions, kind, origin and source version under the authenticated resolved company. Its consuming command enforces its own permission; unavailable and an actual unset class remain distinct. It grants no global write.
+- Write checks the expected Product version and independent classification version in a serializable host transaction. Product history, canonical global Audit and the existing global Idempotency terminal commit or roll back together. Global keys remain subject/command/key hash; actor/origin are immutable binding evidence rather than extra key partitions. No-op creates no extra class revision/audit change; stale refusals and their restricted Audit draft are terminal in the same transaction. Original success/refusal replays stay immutable after subsequent class changes.
+- Product row version remains unchanged by the extension. The canonical event records that actual unchanged Product version; its snapshots carry the +1 classification revision. Both chains are validated, including prior kind/origin/time proof. Bounded same-clock owner reads sort the class revision before a page cut, rather than random event IDs.
+- EF-generated forward migrations: `20261117082903_AddProductCogsClassifications` (Down refuses with **51978** while any class history exists); `20261117082918_AddProductCogsClassificationAuthority` (Identity, **51979** while any op7 decision remains, including revoked); `20261117082927_AddProductCogsClassificationTerminals` (Idempotency, **51981** while a COGS terminal remains). Existing stores are not backfilled and historical commands retain their original key policy.
+- UI: the existing Product card contains the explicit class panel and a separate server-granted child control `product.items.set-cogs-classification` (PRODUCT owner version 1.3). It shows no inferred account, retains ambiguous command bodies/keys by API/session/actor/company/product and rejects former-context replies.
+
+Runtime SQL, unit tests, Vitest, browser, CI and final K3 reviews remain separate evidence. Central route mapping, registry admission/fingerprint, OpenAPI, recovery/release and relational/test-group inventories are coordinated at train integration. New private Product participant context construction and narrow canonical Audit operation changes remain K3 review surfaces; no query-filter bypass or guard allowlist was added.

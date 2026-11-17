@@ -401,7 +401,8 @@ public enum InventoryFutureUnitConversionOutcomeV1
     NoSource = 2,
 }
 
-public sealed record InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1 Outcome, decimal? Quantity);
+public sealed record InventoryFutureUnitConversionV1(InventoryFutureUnitConversionOutcomeV1 Outcome, decimal? Quantity,
+    decimal? RemainderKg = null);
 
 /// <summary>
 /// The conversion seam (SAT-D298: the consumer converts its input to the line unit; KLN-D66: when the Sales and purchase units

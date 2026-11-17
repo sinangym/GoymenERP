@@ -12,6 +12,8 @@ internal sealed class FinanceOfficialSalesInvoiceRow : IFinanceTenantRow
     public Guid CompanyId { get; set; }
     public string OfficialNo { get; set; } = string.Empty;
     public string Ettn { get; set; } = string.Empty;
+    // KLN-D102: source document date, never inferred from upload/approval time. Legacy rows remain unknown.
+    public DateOnly? InvoiceDate { get; set; }
     public Guid CustomerPartyId { get; set; }
     public Guid CurrencyId { get; set; }
     public string PayableAmountText { get; set; } = string.Empty;

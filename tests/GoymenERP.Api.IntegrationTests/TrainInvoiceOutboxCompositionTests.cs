@@ -1,0 +1,45 @@
+using GoymenERP.Api.Shell;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Application.Inbox;
+using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Sales.Infrastructure.Outbox;
+using GoymenERP.Modules.Work.Infrastructure;
+using GoymenERP.Modules.Work.Infrastructure.Outbox;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+
+namespace GoymenERP.Api.IntegrationTests;
+
+public sealed class TrainInvoiceOutboxCompositionTests
+{
+    [Fact]
+    public void The_host_binds_actual_Sales_events_to_the_Accounting_consumer_without_starting_dispatch()
+    {
+        var services = new ServiceCollection();
+        services.AddTrainCompletionOwnerBindings();
+        services.AddWorkOutboxDispatcher(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+        // Runs the real cross-registration validator, not a test substitute.
+        Assert.NotNull(provider.GetRequiredService<IOptions<WorkOutboxRegistrationOptions>>().Value);
+        var registry = provider.GetRequiredService<WorkOutboxRegistry>();
+        var source = Assert.Single(registry.Sources, item => item.SourceName == AccountingSalesInvoiceFinalizedInboxV1.SourceName);
+        Assert.Equal(typeof(SalesOutboxEventSourceV1), source.ImplementationType);
+        var consumer = Assert.Single(registry.Consumers, item => item.ConsumerName == AccountingSalesInvoiceFinalizedInboxV1.ConsumerName);
+        Assert.Equal(typeof(AccountingSalesInvoiceFinalizedInboxConsumer), consumer.ImplementationType);
+        foreach (var subscription in consumer.Subscriptions)
+            Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        var finance = Assert.Single(registry.Sources, item => item.SourceName == FinanceFinancialMovementEventsV1.SourceName);
+        Assert.Equal(typeof(FinanceCreditOutboxEventSourceV1), finance.ImplementationType);
+        var financeConsumer = Assert.Single(registry.Consumers, item => item.ConsumerName == FinanceJournalSourceInboxV1.ConsumerName);
+        Assert.Equal(typeof(FinanceJournalSourceInboxConsumerV1), financeConsumer.ImplementationType);
+        Assert.Equal(2, financeConsumer.Subscriptions.Count);
+        foreach (var subscription in financeConsumer.Subscriptions)
+            Assert.Contains(finance.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        Assert.Contains(finance.Publishes, item => item.EventType == CreditMovementProposalInboxV1.EventType);
+        Assert.DoesNotContain(services, item => item.ServiceType == typeof(IHostedService));
+        Assert.DoesNotContain(services, item => item.ServiceType == typeof(WorkOutboxDispatcher));
+    }
+}

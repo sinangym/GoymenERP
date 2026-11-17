@@ -27,7 +27,8 @@ public sealed class LocalCredentialCommand
         string idempotencyKey,
         byte[] requestFingerprint,
         long resultVersion,
-        DateTimeOffset completedAtUtc)
+        DateTimeOffset completedAtUtc,
+        string? originalCorrelationId = null)
     {
         if (id == Guid.Empty || userId == Guid.Empty)
         {
@@ -62,6 +63,9 @@ public sealed class LocalCredentialCommand
         RequestFingerprint = requestFingerprint.ToArray();
         ResultVersion = resultVersion;
         CompletedAtUtc = completedAtUtc;
+        if (originalCorrelationId is not null && (string.IsNullOrWhiteSpace(originalCorrelationId) || originalCorrelationId.Length > 128))
+            throw new ArgumentException("Original correlation is invalid.", nameof(originalCorrelationId));
+        OriginalCorrelationId = originalCorrelationId;
     }
 
     public Guid Id { get; private set; }
@@ -77,4 +81,6 @@ public sealed class LocalCredentialCommand
     public long ResultVersion { get; private set; }
 
     public DateTimeOffset CompletedAtUtc { get; private set; }
+
+    public string? OriginalCorrelationId { get; private set; }
 }

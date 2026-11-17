@@ -87,3 +87,13 @@ injected process runner, registration — `DocumentsProductionAdaptersTests`; a 
 above, not a test);
 `DocumentVaultSqlServerRelationalAcceptanceTests` (real SQL); `src/frontend/.../documents` + `cari/CariDocuments.test.tsx`;
 browser `tests/e2e/cari-c02/specs/c02-documents.spec.ts`.
+# FIN-S13 — UBL fatura kaynak dosyası
+
+`20261117112418_AddPurchaseInvoiceXmlContentKind`, `dotnet ef` ile üretildi. XML,
+yalnız `purchasing.invoice-import` belge sahibinin açık dosya türüdür; genel belge
+ve banka ekstresi türleri genişletilmedi. DTD/dış varlık/işleme talimatı reddedilir;
+zararlı içerik taraması ve değişmez sürüm/hash kontrolleri korunur. Resmî belge veya
+e-imza doğrulaması iddiası yoktur. Down, XML kaynak baytı varken önce `THROW 51995`
+ile durur; veri silmez. Kalıcılık modeli ve gerçek SQL guard test kaynakları yazıldı.
+
+STK-S29 source checkpoint: EF-generated `20261117140908_AddDocumentBrandingPublications` adds company branding, module drafts/publications, actor-bound attempts and immutable publication references on generated document versions. Down first refuses with THROW 51936 while any source or attempt evidence exists. Company/filter, maker-checker and rollback fact sources are included. Renderer, producer bindings, permission registration and actual UI remain unfinished; this is PARTIAL, runtime/SQL NOT_RUN.

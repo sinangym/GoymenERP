@@ -1,5 +1,16 @@
 # Purchasing (PUR-1 … PUR-4a, goods receipt and AT-025 — the implemented slices of T08)
 
+## ALC-S14 account contract v2 (source checkpoint)
+
+`IPurchasingPartyAccountPortV2` extends the authorized Counterparty owner projection with its
+actual `Tolling` flag while keeping v1 unchanged. It does not assign roles. B-16's payment-terms
+item is governed by ALS-D24/D28: terms are chosen per order, never a party-level default or an
+implied zero-day term. `PaymentTermsScope = OrderSpecific` makes that distinction explicit.
+The caller/company fences and exact party-account ownership apply to both versions. Unit and
+real SQL test sources cover role combinations, fresh stored changes and foreign-account refusal;
+runtime acceptance is pending the final train verification. V2 host registration is recorded in
+the W8 integration handoff.
+
 ## Current state (2026-11-02)
 
 This section is the current summary; the sections below it are the slice history and are kept as written, with
@@ -384,3 +395,115 @@ acceptance remain separate work. No role, persona or user is granted the permiss
 
 Migration `20261116113129_AddPurchaseSupplierReturns` creates `PurchaseSupplierReturns` and `PurchaseSupplierReturnAttempts`;
 Down guard **51893** refuses while any return or attempt exists (forward fix). API-44 receipt reversal is not in this slice.
+# W8 receipt adjustment migrations (ALS-D86/D91/D92/D93)
+
+The forward-fix guards run before any schema drop. `20261116213347_AddPurchaseReceiptAdjustments`
+uses **51949** for immutable receipt/cancellation history; its recorded-cancellation backfill awaits K3 review.
+`20261116215806_AddPurchaseSupplierReturnResponseSnapshots` uses **51953** for original response snapshots.
+`20261116222957_AddPurchaseReceiptAdjustmentBatches` uses **51956** for grouped receipt history or any outbox
+cursor history. Batch identity, detail ordering and first response remain immutable. The outbox's fixed
+`MIN_ACTIVE_ROWVERSION` read protects commit ordering and awaits K3 review; tenant filters remain in place.
+Runtime SQL acceptance is not yet run; these migrations are generated source, not deployment evidence.
+
+## KIM-S19 / N-12 purchase-order numbering
+
+KIM-D53 and the later decision replacing ALS-D36 include purchase orders in prefix/year/annual-sequence numbering.
+New orders require the company's explicitly configured Settings series; missing configuration fails closed rather
+than inventing a prefix. The real Settings owner reserves the number within the order's Serializable transaction.
+The number, format version and sequence are immutable order facts. Replay preserves the stored number.
+Cancellation records the Settings gap in the same transaction and does not release that number for reuse.
+Existing orders remain unnumbered; no historical backfill or artificial document number is produced.
+The EF-generated `20261117002600_AddPurchaseOrderDocumentNumbers` additive nullable snapshot has a company-scoped
+filtered unique index and an all-or-none check; its Up contains only DDL and does not backfill old orders.
+Down starts with **THROW 51957** while any numbering fact exists. SQL test sources cover annual reset, replay,
+missing configuration, cancellation/non-reuse, and permission loss after save rolling back the entire unit.
+The direct-store fixtures use the real Settings/Audit owners with explicitly synthetic fixture authority; HTTP
+authorization remains real. Runtime SQL/HTTP/Unit/Vitest/CI acceptance is **NOT_RUN**.
+
+## ALC-SC47 / ALS-D112 and ALS-D115 supplier revision
+
+An approved order can change supplier through the existing order-revision permission only when no receipt history
+or invoice binding exists. The supplier and company account are selected again through the actual Cari owner.
+The new revision returns to Draft, clears current prices, preserves original prices and approval in an append-only
+history, and requires price entry and another actor's approval. The original order creator is never overwritten.
+The order, attempt and audit commit together; company and authority are checked again before and after save.
+The invoice owner must record immutable order-line bindings under the shared order-line locks when recording invoices;
+this binding table alone does not implement incoming invoice production. Legacy orders without a money snapshot
+fail closed before changing supplier or approval, because required replacement prices cannot be entered without it.
+No historical currency/profile is guessed; that missing legacy workflow remains separate work.
+EF-generated `20261117072202_AddPurchaseSupplierRevisions` adds nullable revision history and the tenant-filtered
+invoice binding table. Down starts with **THROW 51977** while either history exists. No backfill, grant or database
+application occurs in this slice. Test sources cover replay, maker/checker, tenant isolation, historical restoration,
+post-save authority loss rollback and the Down guard. Runtime acceptance is **NOT_RUN**.
+
+## FIN-S13 / ALC-SC47 incoming invoice owner prerequisite
+
+ALS-D7/D8/D14/D15/D41/D44/D59/D64: the Purchasing-owned incoming invoice preserves official source identity,
+amounts, rate and installments; matching records actual receipt/order bindings, both favorable and unfavorable
+variances and the exact Settings policy version. Approval cannot come from the preparer. Finalization appends one
+`purchasing.invoice.finalized.v1` event and freezes one Finance admission identity. Finance acknowledgement is a
+separate revision and cannot change the finalized payload. No Finance tables are written from Purchasing.
+Receipt shares require exact storage scale; no quantity rounding is allowed. Matching takes all affected general-line
+locks in one global order. Writes reject ambient/borrowed transactions: Purchasing commits independently before
+the ALS-D64 Finance call; a failed save cannot leave partial invoice writes inside another owner's transaction.
+EF generated `20261117084001_AddPurchaseIncomingInvoices`; Up is only DDL, Down first refuses with **THROW 51980**
+while invoice identity, history, receipt bindings or terminal attempts exist. The migration was not applied.
+This checkpoint is PARTIAL: actual import/document readers, Settings policy composition, receipt comparison facts,
+authorization services/HTTP/UI and the separate Finance admission/retry still need wiring. Service/additional-cost
+invoice lines need their own real owner references; no artificial goods receipt substitutes for them.
+Unit/model and real SQL test sources cover immutable source/history, tenant isolation, replay, actor/payload conflicts,
+quantity scale, late authority loss, transaction ownership, one outbox event and the forward-fix guard. Runtime NOT_RUN.
+
+## ALC-S8 / ALS-D23, ALS-D27, ALS-D80 and ALS-D107 additional expenses
+
+An immutable commercial expense references an actual company-scoped goods or service order and optionally its
+actual acceptance/line. Separate composite foreign keys preserve each owner's real acceptance identity. The Cari
+may be the order supplier or another active Supplier. Actual Settings expense types, effective VAT list and money
+profile/version are retained; an empty active expense catalog uses the required description, while a nonempty active
+catalog requires an explicit current type. Historical untyped facts are not rewritten. Shared tax calculation provides
+the frozen VAT/gross amounts. No quantity, Inventory movement, average cost or cost allocation is produced.
+The direct ALC-S8 answer (Issue #1189, 6946921285) selects existing `purchasing.orders.revise` for recording;
+price-read and company-wide authority are revalidated. No permission grant is added. Its command owns a clean
+Serializable transaction, expected source order version, idempotency, terminal source conflict replay and actual
+Audit append; failure rolls back all rows. Reads remain company/actor/price fenced.
+EF generated `20261117114517_AddPurchaseAdditionalCosts` with additive DDL. Down first refuses with **THROW 51998**
+while expense facts or command attempts exist; an empty store can roll back. No DB migration was applied.
+Partial invoice binding was approved separately (6947000365) and is the next source followup; no artificial receipt
+or physical quantity substitutes for a monetary expense share. Runtime acceptance remains NOT_RUN.
+
+## ALC-S7 / ALS-D29, ALS-D40 and KIM-D49 service orders
+
+Service purchase and outgoing own-material subcontract share actual Settings service types and units.
+Cari supplies the active Supplier account and, for subcontract, its Tolling role. Product and Inventory prove
+material/output identities; customer-owned labels cannot authorize an outgoing own-material order.
+The commercial order reserves its actual Settings purchase-order number in its own Serializable transaction.
+Approval keeps the existing purchase maker/checker boundary; actual service acceptance is append-only and creates
+no goods receipt or stock movement. API72 exposes price-free operational order facts to trusted in-process consumers.
+Service invoice matching binds actual service acceptances, under the shared line locks, in its own table with
+company-scoped composite foreign keys. Normal goods receipt foreign keys remain intact. Typed ServiceTypeId is
+additive and omitted when null, preserving legacy goods JSON. Service lines never enter material-cost order bindings.
+EF generated 20261117110054_AddPurchaseServiceOrders; Up is additive DDL. Down starts with THROW 51992 while
+any service order, revision, acceptance, invoice binding or terminal attempt exists. No migration was applied.
+Unit/model, HTTP, real SQL, strict transport and UI regression sources are written. API, Purchasing.UnitTests,
+Api.IntegrationTests and frontend tsc source builds passed; all runtime/SQL/Vitest/browser/CI evidence is NOT_RUN.
+ALS-D18/D9 later price entry creates a new draft snapshot and requires another actor's reapproval. Actual service
+acceptance, quantities, identities and the old approval/price revisions remain intact; price-only reapproval does
+not repeat or reinterpret a past physical operation. FNS/Inventory facts are untouched.
+ALS-D106 outgoing subcontract price units require the actual kilogram unit profile. ALS-D105 defaults read only
+the actual Purchasing-side Settings tax source and preserve its version per line; no default means 503, never
+zero VAT, a Sales default or an assumed tax code. Purchasing tax-default administration and line overrides remain
+closed pending the explicit permission decision. Central Program/shell/OpenAPI/inventory composition is pending.
+# FIN-S13 / ALS-D7 — alış faturası dosyası önizlemesi
+
+XML/UBL 2.1, açık sütun eşlemeli CSV ve XLSX okuyucuları aynı kaynak sözleşmesini
+üretir; genel tablo eşlemesi Mikro'nun yerel biçim adaptörü olarak adlandırılmaz.
+Özgün tutar, para birimi, vergi kodu, tevkifat, kur amacı ve ödeme tarihi bilgileri
+korunur; tanımsız veya fazla hassasiyetli değerler yuvarlanarak kabul edilmez.
+Taranmış Documents sürümü/hash'i, şirket ve `purchasing.invoices.import` ile fiyat
+okuma yetkisi doğrulanır. Önizleme muhasebe kaydı veya Finance olayı üretmez.
+
+`20261117112436_AddPurchaseInvoiceImportReservations` EF üretimidir. Şirket kapsamlı,
+denetlenen ve idempotent rezervasyon belge sahibini oluşturur; kayıtlar değişmezdir.
+Down, kaynak kimliği varken önce `THROW 51996` ile durur. Birim, HTTP sözleşme,
+kalıcılık modeli ve gerçek SQL test kaynakları vardır. Cari/ürün/birim/vergi ve
+ödeme planı eşlemesiyle kayıt akışı tamamlanana kadar FIN-S13 PARTIAL kalır.

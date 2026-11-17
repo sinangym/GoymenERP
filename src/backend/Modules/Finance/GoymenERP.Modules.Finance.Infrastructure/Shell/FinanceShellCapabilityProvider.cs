@@ -80,7 +80,20 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.13";
+    public const string OwnerContractVersion = "1.16";
+    public const string PartyBalanceTransferCapabilityId = "finance.party-balance-transfers.record";
+    public const string PartyBalanceTransferPath = "/finans/cari-bakiye-devri";
+    public const string OfficialInvoiceRecordCapabilityId = "finance.official-sales-invoices.record";
+    public const string OfficialInvoiceApproveCapabilityId = "finance.official-sales-invoices.approve";
+    public const string OfficialInvoiceWithdrawCapabilityId = "finance.official-sales-invoices.withdraw";
+    public const string OfficialInvoiceRecordPath = "/finans/resmi-satis-faturalari";
+    public const string OfficialInvoiceApprovePath = "/finans/resmi-satis-faturasi-onaylari";
+    public const string CreditAccountsCapabilityId = "finance.credits.workspace";
+    public const string CreditAccountsRouteId = "finance.credits.workspace";
+    public const string CreditAccountsRoutePath = "/finans/krediler";
+    public const string CreditAccountsScreenId = "F-47-CREDITS";
+    public const string CreditAccountsProposeCapabilityId = "finance.credits.propose";
+    public const string CreditAccountsApproveCapabilityId = "finance.credits.approve";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -219,8 +232,29 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
         var openingBalances = Declaration(OpeningBalanceListCapabilityId, OpeningBalanceListRouteId,
             OpeningBalanceListRoutePath, OpeningBalanceListScreenId, ShellCapabilityRoutePrecedence.Static,
             [ErpPermissions.FinanceOpeningBalancesRead]);
+        var credits = Declaration(CreditAccountsCapabilityId, CreditAccountsRouteId, CreditAccountsRoutePath,
+            CreditAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead])
+            with { ImplementationAvailable = false };
+        var officialRecord = Declaration(OfficialInvoiceRecordCapabilityId, OfficialInvoiceRecordCapabilityId,
+            OfficialInvoiceRecordPath, "F-005-OFFICIAL", ShellCapabilityRoutePrecedence.Static,
+            [FinanceOfficialSalesInvoicePermissionNamesV1.Record]) with { ImplementationAvailable = false };
         return
         [
+            Declaration(PartyBalanceTransferCapabilityId, PartyBalanceTransferCapabilityId, PartyBalanceTransferPath,
+                "F-32-PARTY-BALANCE-TRANSFER", ShellCapabilityRoutePrecedence.Static,
+                [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
+                    FinancePermissionNames.PartyLedgerAmountRead]) with { ImplementationAvailable = false },
+            officialRecord,
+            Declaration(OfficialInvoiceApproveCapabilityId, OfficialInvoiceApproveCapabilityId, OfficialInvoiceApprovePath,
+                "F-005-OFFICIAL-APPROVAL", ShellCapabilityRoutePrecedence.Static,
+                [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]) with { ImplementationAvailable = false },
+            officialRecord with { CapabilityId = OfficialInvoiceWithdrawCapabilityId, ParentCapabilityId = OfficialInvoiceRecordCapabilityId,
+                RequiredPermissions = [FinanceOfficialSalesInvoicePermissionNamesV1.Record, FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw] },
+            credits,
+            credits with { CapabilityId = CreditAccountsProposeCapabilityId, ParentCapabilityId = CreditAccountsCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsPropose] },
+            credits with { CapabilityId = CreditAccountsApproveCapabilityId, ParentCapabilityId = CreditAccountsCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsApprove] },
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.DraftRead]),
             Declaration(ReceiptDraftCapabilityId, ReceiptDraftRouteId, ReceiptDraftRoutePath, ReceiptDraftScreenId,

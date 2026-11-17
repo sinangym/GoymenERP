@@ -215,8 +215,8 @@ public sealed class ProductPackageStandardTests
     public void The_package_standard_migration_precedes_the_section_families_and_its_Down_refuses_first_with_51492()
     {
         using var context = Context();
-        Assert.Equal(["AddProductPackageStandards", "AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles"],
-            context.Database.GetMigrations().TakeLast(3).Select(name => name.Split('_', 2)[1]));
+        Assert.Equal(["AddProductPackageStandards", "AddProductSectionFamilies", "AddProductPackageStandardApprovalAndFiles", "AddProductPaintMemberships"],
+            context.Database.GetMigrations().TakeLast(4).Select(name => name.Split('_', 2)[1]));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new AddProductPackageStandards();
@@ -288,11 +288,11 @@ public sealed class ProductPackageStandardTests
     }
 
     [Fact]
-    public void The_approval_migration_is_the_last_one_and_keeps_files_with_a_trigger_and_its_Down_refuses_first_with_51872()
+    public void The_approval_migration_precedes_paint_membership_and_keeps_files_with_a_trigger_and_its_Down_refuses_first_with_51872()
     {
         using var context = Context();
-        Assert.Equal("AddProductPackageStandardApprovalAndFiles",
-            context.Database.GetMigrations().Last().Split('_', 2)[1]);
+        Assert.Equal(["AddProductPackageStandardApprovalAndFiles", "AddProductPaintMemberships"],
+            context.Database.GetMigrations().TakeLast(2).Select(name => name.Split('_', 2)[1]));
 
         var migration = new AddProductPackageStandardApprovalAndFiles();
         var trigger = Assert.Single(migration.UpOperations.OfType<SqlOperation>()).Sql;

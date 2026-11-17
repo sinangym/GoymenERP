@@ -713,6 +713,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<string>("ChargesJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateOnly>("DueDate")
                         .HasColumnType("date");
 
@@ -750,6 +753,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Amounts", "LEN([InstallmentText]) > 0 AND [InstallmentText] NOT LIKE '%[^0-9.]%' AND [InstallmentText] NOT LIKE '%.%.%' AND [InstallmentText] NOT LIKE '.%' AND [InstallmentText] NOT LIKE '%.' AND LEN([PrincipalText]) > 0 AND [PrincipalText] NOT LIKE '%[^0-9.]%' AND [PrincipalText] NOT LIKE '%.%.%' AND [PrincipalText] NOT LIKE '.%' AND [PrincipalText] NOT LIKE '%.' AND LEN([InterestText]) > 0 AND [InterestText] NOT LIKE '%[^0-9.]%' AND [InterestText] NOT LIKE '%.%.%' AND [InterestText] NOT LIKE '.%' AND [InterestText] NOT LIKE '%.' AND LEN([BsmvText]) > 0 AND [BsmvText] NOT LIKE '%[^0-9.]%' AND [BsmvText] NOT LIKE '%.%.%' AND [BsmvText] NOT LIKE '.%' AND [BsmvText] NOT LIKE '%.' AND LEN([KkdfText]) > 0 AND [KkdfText] NOT LIKE '%[^0-9.]%' AND [KkdfText] NOT LIKE '%.%.%' AND [KkdfText] NOT LIKE '.%' AND [KkdfText] NOT LIKE '%.'");
 
+                            t.HasCheckConstraint("CK_CreditAccountInstallments_Charges", "[ChargesJson] IS NULL OR ISJSON([ChargesJson]) = 1");
+
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
@@ -775,6 +780,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CurrencyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("CurrencyScale")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset?>("DecidedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -783,10 +791,28 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(128)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<long?>("LenderCompanyAccountVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("LenderCompanyPartyAccountId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("LenderName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("LenderPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("LenderPartyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("MoneyProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("MoneyProfileVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("PrincipalAmountText")
                         .IsRequired()
@@ -808,6 +834,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("SourceProfileJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateOnly>("StartDate")
                         .HasColumnType("date");
 
@@ -825,9 +854,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
                     b.HasIndex(new[] { "CompanyId", "Status", "ProposedAtUtc" }, "IX_CreditAccounts_Status");
 
+                    b.HasIndex(new[] { "CompanyId", "LenderPartyId", "LenderCompanyPartyAccountId", "ContractReference" }, "UX_CreditAccounts_LenderIdentity_Live")
+                        .IsUnique()
+                        .HasFilter("[Status] IN (1, 2) AND [LenderPartyId] IS NOT NULL");
+
                     b.HasIndex(new[] { "CompanyId", "LenderName", "ContractReference" }, "UX_CreditAccounts_Live")
                         .IsUnique()
-                        .HasFilter("[Status] IN (1, 2)");
+                        .HasFilter("[Status] IN (1, 2) AND [LenderPartyId] IS NULL");
 
                     b.ToTable("CreditAccounts", "finance", t =>
                         {
@@ -838,6 +871,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CreditAccounts_Group", "[CreditGroup] IN (1, 2, 3, 4)");
 
                             t.HasCheckConstraint("CK_CreditAccounts_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ProposedBy]) > 0 AND LEN([LenderName]) > 0 AND LEN([ContractReference]) > 0");
+
+                            t.HasCheckConstraint("CK_CreditAccounts_SourceProfile", "([SourceProfileJson] IS NULL AND [LenderPartyId] IS NULL AND [LenderCompanyPartyAccountId] IS NULL AND [LenderPartyVersion] IS NULL AND [LenderCompanyAccountVersion] IS NULL AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [CurrencyScale] IS NULL) OR ([SourceProfileJson] IS NOT NULL AND ISJSON([SourceProfileJson]) = 1 AND [LenderPartyId] IS NOT NULL AND [LenderPartyId] <> '00000000-0000-0000-0000-000000000000' AND [LenderCompanyPartyAccountId] IS NOT NULL AND [LenderCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [LenderPartyVersion] IS NOT NULL AND [LenderPartyVersion] > 0 AND [LenderCompanyAccountVersion] IS NOT NULL AND [LenderCompanyAccountVersion] > 0 AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] > 0 AND [CurrencyScale] IS NOT NULL AND [CurrencyScale] BETWEEN 0 AND 28)");
 
                             t.HasCheckConstraint("CK_CreditAccounts_Version", "[Version] >= 1");
                         });
@@ -1215,6 +1250,12 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("AllocationAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AllocationPartyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("AmountText")
                         .IsRequired()
                         .IsUnicode(false)
@@ -1273,6 +1314,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
                     b.ToTable("Allocations", "finance", t =>
                         {
+                            t.HasCheckConstraint("CK_Allocations_Beneficiary", "([AllocationPartyId] IS NULL AND [AllocationAccountId] IS NULL) OR ([AllocationPartyId] IS NOT NULL AND [AllocationAccountId] IS NOT NULL AND [AllocationPartyId] <> '00000000-0000-0000-0000-000000000000' AND [AllocationAccountId] <> '00000000-0000-0000-0000-000000000000')");
+
                             t.HasCheckConstraint("CK_Allocations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [OpenItemId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_Allocations_Status", "([Status] = 1 AND [ReleasedBy] IS NULL AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL) OR ([Status] = 2 AND [ReleasedBy] IS NOT NULL AND LEN([ReleasedBy]) > 0 AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL AND LEN([ReleaseReason]) > 0)");
@@ -1364,6 +1407,242 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
 
                             t.HasCheckConstraint("CK_Commands_Target", "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([FinanceAllocationId] IS NOT NULL AND [FinanceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [CustomerInstrumentId] IS NULL) OR ([CustomerInstrumentId] IS NOT NULL AND [CustomerInstrumentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL) OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditLimitRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AmountText")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("CreditAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CreditGroup")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("LenderCompanyPartyAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LenderPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PreviousLimitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProposedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "CreditAccountId");
+
+                    b.HasIndex("CompanyId", "PreviousLimitId");
+
+                    b.HasIndex("CompanyId", "LenderPartyId", "LenderCompanyPartyAccountId", "CreditGroup", "CurrencyId")
+                        .IsUnique()
+                        .HasFilter("[Status] = 1");
+
+                    b.HasIndex("CompanyId", "LenderPartyId", "LenderCompanyPartyAccountId", "CreditGroup", "CurrencyId", "Revision")
+                        .IsUnique()
+                        .HasFilter("[Status] = 2");
+
+                    b.ToTable("CreditLimits", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CreditLimits_Amount", "LEN([AmountText]) > 0 AND [AmountText] NOT LIKE '%[^0-9.]%' AND [AmountText] NOT LIKE '%.%.%' AND [AmountText] NOT LIKE '.%' AND [AmountText] NOT LIKE '%.'");
+
+                            t.HasCheckConstraint("CK_CreditLimits_Decision", "([Status] = 1 AND [Version] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] IN (2,3) AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedBy] <> [ProposedBy] AND [DecidedAtUtc] IS NOT NULL AND (([Status] = 2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND LEN([RejectionReason]) > 0)))");
+
+                            t.HasCheckConstraint("CK_CreditLimits_Source", "ISJSON([SourceJson]) = 1 AND [CreditGroup] IN (1,2,3,4) AND [Revision] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditMovementCommandRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Command")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "Command", "KeyHash");
+
+                    b.ToTable("CreditMovementCommands", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CreditMovementCommands_Json", "ISJSON([ResultJson]) = 1 AND LEN([KeyHash]) = 64 AND LEN([PayloadHash]) = 64");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditMovementRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BankAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BankAmountText")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<Guid>("CreditAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("MoneyProfileJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OpeningPeriodVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("ProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProposedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("ReplacesOpeningMovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReversedByMovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceIdentityHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "CreditAccountId")
+                        .IsUnique()
+                        .HasFilter("[Kind] = 4 AND [ReplacesOpeningMovementId] IS NULL AND [Status] IN (1,2)");
+
+                    b.HasIndex("CompanyId", "ReplacesOpeningMovementId")
+                        .IsUnique()
+                        .HasFilter("[ReplacesOpeningMovementId] IS NOT NULL AND [Status] IN (1,2)");
+
+                    b.HasIndex("CompanyId", "BankAccountId", "Status");
+
+                    b.HasIndex("CompanyId", "CreditAccountId", "SourceIdentityHash")
+                        .IsUnique()
+                        .HasFilter("[Status] IN (1,2)");
+
+                    b.ToTable("CreditMovements", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CreditMovements_Bank", "([BankAccountId] IS NULL AND [BankAmountText] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAmountText] IS NOT NULL AND [Kind] IN (1,2))");
+
+                            t.HasCheckConstraint("CK_CreditMovements_Decision", "([Status] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [Version] = 1) OR ([Status] IN (2,3) AND [DecidedBy] IS NOT NULL AND [DecidedBy] <> [ProposedBy] AND [DecidedAtUtc] IS NOT NULL AND [Version] >= 2 AND (([Status] = 2 AND [RejectionReason] IS NULL) OR ([Status] = 3 AND LEN([RejectionReason]) > 0)))");
+
+                            t.HasCheckConstraint("CK_CreditMovements_Kind", "[Kind] IN (1,2,3,4)");
+
+                            t.HasCheckConstraint("CK_CreditMovements_Opening", "([Kind] = 4 AND [BankAccountId] IS NULL) OR ([Kind] <> 4 AND [ReplacesOpeningMovementId] IS NULL AND [OpeningPeriodVersion] IS NULL AND [ReversedByMovementId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_CreditMovements_Source", "ISJSON([SourceJson]) = 1 AND ISJSON([MoneyProfileJson]) = 1 AND LEN([SourceIdentityHash]) = 64");
                         });
                 });
 
@@ -2137,6 +2416,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .IsFixedLength()
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<DateOnly?>("InvoiceDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("OfficialNo")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -2245,6 +2527,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1 AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 3 AND [RejectedBy] IS NOT NULL AND [RejectedAtUtc] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 4 AND [WithdrawnBy] IS NOT NULL AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)");
 
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [PdfDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialSalesInvoices_InvoiceDate", "[InvoiceDate] IS NULL OR [InvoiceDate] > '00010101'");
 
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Text", "LEN([OfficialNo]) > 0 AND DATALENGTH([Ettn]) = 36 AND [Ettn] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%' AND LEN([PayableAmountText]) > 0 AND LEN([PayableFunctionalAmountText]) > 0 AND LEN([TaxBaseFunctionalAmountText]) > 0 AND LEN([VatFunctionalAmountText]) > 0 AND LEN([WithholdingFunctionalAmountText]) > 0 AND [PdfDocumentVersionNo] >= 1 AND DATALENGTH([PdfSha256]) = 64 AND [PdfSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
@@ -2456,9 +2740,229 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOutboxRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("AggregateVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("Position");
+
+                    b.HasIndex("CompanyId", "EventType", "AggregateId", "AggregateVersion")
+                        .IsUnique();
+
+                    b.ToTable("OutboxMessages", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutboxMessages_Source", "[SchemaVersion] > 0 AND [AggregateVersion] > 0 AND ISJSON([PayloadJson]) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePartyBalanceAssignmentRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrentAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AvailableAmountText")
+                        .IsRequired()
+                        .HasColumnType("varchar(max)");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrentPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LastTransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OriginalAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OriginalPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Kind", "SourceId", "CurrentAccountId");
+
+                    b.HasIndex("CompanyId", "LastTransferId");
+
+                    b.HasIndex("CompanyId", "CurrentAccountId", "Kind");
+
+                    b.ToTable("PartyBalanceAssignments", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyBalanceAssignments_Identity", "[Kind] IN (1,2,3) AND [Version] >= 1 AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalPartyId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrentPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrentAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrentAccountId] <> [OriginalAccountId] AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([AvailableAmountText]) > 0 AND [AvailableAmountText] NOT LIKE '%[^0-9.]%' AND [AvailableAmountText] NOT LIKE '%.%.%' AND [AvailableAmountText] NOT LIKE '.%' AND [AvailableAmountText] NOT LIKE '%.'");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePartyBalanceTransferCommandRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "KeyHash");
+
+                    b.ToTable("PartyBalanceTransferCommands", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyBalanceTransferCommands_Evidence", "LEN([KeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND ISJSON([ResultJson]) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePartyBalanceTransferRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AssignmentSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CurrenciesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateOnly>("OccurredOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("OwnerProofJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("PredecessorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PredecessorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SnapshotVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("SuccessorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SuccessorPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "PredecessorAccountId", "OccurredOn");
+
+                    b.HasIndex("CompanyId", "SuccessorAccountId", "OccurredOn");
+
+                    b.ToTable("PartyBalanceTransfers", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyBalanceTransfers_Evidence", "ISJSON([OwnerProofJson]) = 1 AND ISJSON([EvidenceJson]) = 1 AND ISJSON([CurrenciesJson]) = 1 AND ISJSON([AssignmentSnapshotJson]) = 1 AND LEN([SnapshotVersion]) = 64 AND LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0");
+
+                            t.HasCheckConstraint("CK_PartyBalanceTransfers_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PredecessorPartyId] <> [SuccessorPartyId] AND [PredecessorAccountId] <> [SuccessorAccountId] AND [PredecessorPartyId] <> '00000000-0000-0000-0000-000000000000' AND [SuccessorPartyId] <> '00000000-0000-0000-0000-000000000000' AND [PredecessorAccountId] <> '00000000-0000-0000-0000-000000000000' AND [SuccessorAccountId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePaymentAllocationRow", b =>
                 {
                     b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AllocationAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AllocationPartyId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("AmountText")
@@ -2521,6 +3025,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PaymentAllocations", "finance", t =>
                         {
+                            t.HasCheckConstraint("CK_PaymentAllocations_Beneficiary", "([AllocationPartyId] IS NULL AND [AllocationAccountId] IS NULL) OR ([AllocationPartyId] IS NOT NULL AND [AllocationAccountId] IS NOT NULL AND [AllocationPartyId] <> '00000000-0000-0000-0000-000000000000' AND [AllocationAccountId] <> '00000000-0000-0000-0000-000000000000')");
+
                             t.HasCheckConstraint("CK_PaymentAllocations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PaymentId] <> '00000000-0000-0000-0000-000000000000' AND [OpenItemId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_PaymentAllocations_Status", "([Status] = 1 AND [ReleasedBy] IS NULL AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL) OR ([Status] = 2 AND [ReleasedBy] IS NOT NULL AND LEN([ReleasedBy]) > 0 AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL AND LEN([ReleaseReason]) > 0)");
@@ -4084,6 +4590,42 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditLimitRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.CreditAccountRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CreditAccountId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditLimitRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PreviousLimitId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditMovementRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.BankAccountRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BankAccountId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.CreditAccountRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CreditAccountId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCreditMovementRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ReplacesOpeningMovementId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCustomerReturnCreditItemRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCustomerReturnCreditRow", null)
@@ -4261,6 +4803,15 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePartyBalanceAssignmentRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinancePartyBalanceTransferRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LastTransferId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -133,6 +133,9 @@ public sealed class PartyLedgerService(
                 .Where(row => row.CollectionSourceId.HasValue && collectionSourceIds.Contains(row.CollectionSourceId.Value))
                 .ToDictionaryAsync(row => row.CollectionSourceId!.Value, row => row.Id, cancellationToken);
 
+        var transfers = await FinancePartyBalanceTransferLedger.ReadAsync(dbContext, partyId, accountId, from, to, cancellationToken);
+        if (transfers is null) return Refused(PartyLedgerOutcome.Unavailable);
+
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
@@ -195,6 +198,10 @@ public sealed class PartyLedgerService(
 
             facts.Add(fact);
         }
+
+        facts.AddRange(transfers);
+        if (facts.Count > PartyLedgerRules.MaximumEntries)
+            return await AfterReadAsync(context, PartyLedgerOutcome.TooManyEntries, cancellationToken);
 
         IReadOnlyList<PartyLedgerCurrency> currencies;
         try
@@ -294,6 +301,16 @@ public sealed class PartyLedgerService(
                 .Select(row => row.ReversalSourceId!.Value)
                 .ToListAsync(cancellationToken)).ToHashSet();
 
+        var transfers = await FinancePartyBalanceTransferLedger.ReadAsync(dbContext, partyId, accountId, null, null, cancellationToken);
+        if (transfers is null) return new(PartyBalanceOutcome.Unavailable, null);
+        var currentOpenItems = await FinancePartyBalanceAssignment.OpenItemsOf(dbContext, partyId, accountId).AsNoTracking()
+            .Where(row => row.Status == FinanceOpenItemStatuses.Open).OrderBy(row => row.Id).Take(take)
+            .ToListAsync(cancellationToken);
+        IReadOnlyList<FinanceOpenItemPosition> currentPositions;
+        try { currentPositions = await FinancePartyBalanceAssignment.OpenPositionsAsync(dbContext, currentOpenItems, cancellationToken); }
+        catch (InvalidOperationException) { return new(PartyBalanceOutcome.Unavailable, null); }
+        tooMany |= currentOpenItems.Count > PartyBalanceRules.MaximumFacts || transfers.Count > PartyBalanceRules.MaximumFacts;
+
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedgerAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadPartyLedger, null, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
@@ -341,11 +358,6 @@ public sealed class PartyLedgerService(
             facts.Add(new PartyLedgerFact(OpenItemKind(row.Direction)!.Value, row.Id,
                 DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime), row.CreatedAtUtc, row.CurrencyId, row.OriginalAmountText,
                 row.Id, null, null, null, null));
-            if (row.Status == FinanceOpenItemStatuses.Open)
-            {
-                var sums = row.Direction == FinanceOpenItemDirectionCodes.Receivable ? receivable : payable;
-                sums[row.CurrencyId] = sums.TryGetValue(row.CurrencyId, out var sum) ? sum.Add(outstanding) : outstanding;
-            }
         }
 
         foreach (var row in cancellations)
@@ -368,6 +380,18 @@ public sealed class PartyLedgerService(
             facts.Add(fact);
         }
 
+        facts.AddRange(transfers);
+        foreach (var position in currentPositions.Where(x => x.Balance.PartyId == partyId && x.Balance.CompanyAccountId == accountId))
+        {
+            var row = position.Source;
+            if (row.Direction is not (FinanceOpenItemDirectionCodes.Receivable or FinanceOpenItemDirectionCodes.Payable)
+                || !FinanceExactDecimalText.TryParseNonNegative(position.Balance.AvailableAmount, out var outstanding))
+                return new(PartyBalanceOutcome.Unavailable, null);
+            var sums = row.Direction == FinanceOpenItemDirectionCodes.Receivable ? receivable : payable;
+            sums[row.CurrencyId] = sums.TryGetValue(row.CurrencyId, out var sum) ? sum.Add(outstanding) : outstanding;
+        }
+        if (facts.Count > PartyBalanceRules.MaximumFacts) return new(PartyBalanceOutcome.TooManyFacts, null);
+
         IReadOnlyList<PartyLedgerCurrency> ledger;
         try
         {
@@ -380,10 +404,15 @@ public sealed class PartyLedgerService(
         }
 
         var disclosure = Disclosure(amount);
-        var currencies = ledger.Select(currency => new PartyBalanceCurrency(currency.CurrencyId, currency.DebitTotal,
-                currency.CreditTotal, currency.ClosingBalance,
-                OpenAmount(receivable, currency.CurrencyId, disclosure), OpenAmount(payable, currency.CurrencyId, disclosure)))
-            .ToList();
+        var byCurrency = ledger.ToDictionary(currency => currency.CurrencyId);
+        var currencies = byCurrency.Keys.Union(receivable.Keys).Union(payable.Keys).OrderBy(id => id).Select(id =>
+        {
+            var zero = OpenAmount(new Dictionary<Guid, FinanceExactDecimalText>(), id, disclosure);
+            var currency = byCurrency.GetValueOrDefault(id);
+            return new PartyBalanceCurrency(id, currency?.DebitTotal ?? zero, currency?.CreditTotal ?? zero,
+                currency?.ClosingBalance ?? new PartyLedgerBalanceView(disclosure == AmountDisclosure.Visible ? PartyLedgerBalanceSide.Zero : null, zero),
+                OpenAmount(receivable, id, disclosure), OpenAmount(payable, id, disclosure));
+        }).ToList();
         return new PartyBalanceResult(PartyBalanceOutcome.Found,
             new PartyBalanceView(context.CompanyId, partyId, accountId, currencies));
     }

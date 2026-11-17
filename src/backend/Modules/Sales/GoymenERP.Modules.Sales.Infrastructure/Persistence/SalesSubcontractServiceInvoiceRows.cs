@@ -150,7 +150,8 @@ internal static class SalesSubcontractServiceInvoiceRows
         }
     }
 
-    public static SalesSubcontractServiceInvoice Restore(SubcontractServiceInvoiceRow row, IReadOnlyList<SubcontractServiceInvoiceLineRow> lineRows)
+    public static SalesSubcontractServiceInvoice Restore(SubcontractServiceInvoiceRow row, IReadOnlyList<SubcontractServiceInvoiceLineRow> lineRows,
+        SalesSubcontractInvoiceLifecycleFacts? lifecycle = null)
     {
         var header = new SalesSubcontractServiceInvoiceHeader(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.MoneyProfileId,
             row.MoneyProfileVersion, row.AmountScale, row.BusinessDate);
@@ -169,6 +170,6 @@ internal static class SalesSubcontractServiceInvoiceRows
                 line.VatPercent, line.WithholdingShare, amounts);
         }).ToList();
         return SalesSubcontractServiceInvoice.Restore(row.Id, row.CompanyId, row.DocumentNo, header, source,
-            (SalesSubcontractServiceInvoiceState)row.State, row.Version, row.CreatedBy, row.CreatedAtUtc, lines);
+            (SalesSubcontractServiceInvoiceState)row.State, row.Version, row.CreatedBy, row.CreatedAtUtc, lines, lifecycle);
     }
 }

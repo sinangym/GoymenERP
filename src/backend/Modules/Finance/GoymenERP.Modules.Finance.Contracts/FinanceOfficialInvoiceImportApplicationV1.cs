@@ -17,14 +17,21 @@ public sealed record FinanceOfficialInvoiceOpenItemV1(
     string OutstandingAmount,
     DateOnly? DueOn,
     int Status,
-    string Version);
+    string Version,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<FinanceAllocationPositionV1>? AllocationPositions = null);
 
 public sealed record FinanceOfficialInvoiceAppliedBatchV1(
     Guid BatchId,
     Guid CompanyId,
     string BatchVersion,
     string BatchChecksum,
-    IReadOnlyList<FinanceOfficialInvoiceOpenItemV1> OpenItems);
+    IReadOnlyList<FinanceOfficialInvoiceOpenItemV1> OpenItems,
+    IReadOnlyList<FinanceOfficialInvoiceImportedDocumentViewV1>? OfficialDocuments = null);
+
+public sealed record FinanceOfficialInvoiceImportedDocumentViewV1(Guid SourceDocumentId, string OfficialNo,
+    string Ettn, DateOnly? InvoiceDate, string? PayableFunctionalAmount, bool HasPendingManual,
+    Guid? ApprovedManualInvoiceId, string? EffectivePayableFunctionalAmount, IReadOnlyList<string> DifferentFields);
 
 public sealed record FinanceOfficialInvoiceImportApplyResultV1(
     FinanceOfficialInvoiceImportPreviewV1 Preview,

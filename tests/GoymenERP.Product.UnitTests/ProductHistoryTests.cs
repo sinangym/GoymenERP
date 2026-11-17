@@ -337,6 +337,69 @@ public sealed class ProductHistoryTests
             .Select(i => Edit(Card(newestAfter - i - 1), Card(newestAfter - i), T0.AddMinutes(-i), $"Değişiklik {i}")),
     ];
 
+    [Fact]
+    public void Classification_own_revision_preserves_the_actual_Product_version_chain_without_hiding_the_change()
+    {
+        var initial=ClassificationSnapshot(1,0,null);var classified=ClassificationSnapshot(1,1,ProductCogsClassificationKindV1.TradeGoods);
+        var afterEdit=ClassificationSnapshot(2,1,ProductCogsClassificationKindV1.TradeGoods);
+        var reclassified=ClassificationSnapshot(2,2,ProductCogsClassificationKindV1.Manufactured);
+        var history=ProductHistoryProjector.Project(ProductId,[
+            ClassificationRecord(afterEdit,reclassified,2,T0.AddMinutes(3)),
+            Edit(Card(1),Card(2,"SENTETIK later name"),T0.AddMinutes(2),"SENTETIK actual card edit"),
+            ClassificationRecord(initial,classified,1,T0.AddMinutes(1)),Create(Card(1),T0)]);
+        Assert.Equal(new[]{"SetCogsClassification","DraftBasicEdit","SetCogsClassification","DraftCreate"},history.Entries.Select(x=>x.Operation));
+        Assert.Equal(("2","2"),(history.Entries[0].VersionBefore,history.Entries[0].VersionAfter));
+        Assert.Equal(new[]{"cogsClassification"},history.Entries[0].ChangedFields);
+    }
+    [Theory]
+    [InlineData("revision")] [InlineData("kind")] [InlineData("product-version")]
+    [InlineData("origin")] [InlineData("snapshot-product")] [InlineData("product-chain")]
+    public void Malformed_classification_snapshots_cannot_bypass_the_existing_Product_history_chain(string change)
+    {
+        var before=ClassificationSnapshot(1,0,null);var after=ClassificationSnapshot(1,1,ProductCogsClassificationKindV1.TradeGoods);
+        after=change switch
+        {
+            "revision"=>after with {ClassificationVersion="2"},"kind"=>after with {Classification=null},
+            "product-version"=>after with {ProductVersion="2"},"origin"=>after with {ChangedInCompanyId=Guid.NewGuid()},
+            "snapshot-product"=>after with {ProductId=Guid.NewGuid()},_=>after,
+        };
+        var record=ClassificationRecord(before,after,1,T0.AddMinutes(1));
+        if(change=="product-chain")record=record with {VersionBefore=1,VersionAfter=2};
+        Assert.Throws<InvalidOperationException>(()=>ProductHistoryProjector.Project(ProductId,[record,Create(Card(1),T0)]));
+    }
+    [Fact]
+    public void A_missing_classification_revision_is_not_hidden_by_an_intact_Product_version_chain()
+    {
+        var first=ClassificationRecord(ClassificationSnapshot(1,0,null),ClassificationSnapshot(1,1,ProductCogsClassificationKindV1.TradeGoods),1,T0.AddMinutes(1));
+        var third=ClassificationRecord(ClassificationSnapshot(1,2,ProductCogsClassificationKindV1.Manufactured),
+            ClassificationSnapshot(1,3,ProductCogsClassificationKindV1.TradeGoods),1,T0.AddMinutes(3));
+        Assert.Throws<InvalidOperationException>(()=>ProductHistoryProjector.Project(ProductId,[third,first,Create(Card(1),T0)]));
+        Assert.Throws<InvalidOperationException>(()=>ProductHistoryProjector.Project(ProductId,[third,Create(Card(1),T0)]));
+    }
+    [Theory]
+    [InlineData("kind")] [InlineData("origin")] [InlineData("timestamp")]
+    public void Classification_chain_must_preserve_the_previous_immutable_class_proof_not_only_its_version(string change)
+    {
+        var initial=ClassificationSnapshot(1,0,null);var first=ClassificationSnapshot(1,1,ProductCogsClassificationKindV1.TradeGoods);
+        var before=change switch
+        {
+            "kind"=>first with{Classification=ProductCogsClassificationKindV1.Manufactured},
+            "origin"=>first with{ChangedInCompanyId=Guid.NewGuid()},
+            _=>first with{UpdatedAtUtc=T0.AddTicks(1)},
+        };
+        var next=ClassificationSnapshot(1,2,change=="kind"?ProductCogsClassificationKindV1.TradeGoods:ProductCogsClassificationKindV1.Manufactured);
+        Assert.Throws<InvalidOperationException>(()=>ProductHistoryProjector.Project(ProductId,[
+            ClassificationRecord(before,next,1,T0.AddMinutes(2)),ClassificationRecord(initial,first,1,T0.AddMinutes(1)),Create(Card(1),T0)]));
+    }
+    private static readonly Guid ClassificationCompany=Guid.Parse("11111111-1111-4111-8111-111111111111");
+    private static ProductCogsClassificationViewV1 ClassificationSnapshot(long productVersion,long version,ProductCogsClassificationKindV1? kind)=>
+        new(ClassificationCompany,ProductId,productVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            version.ToString(System.Globalization.CultureInfo.InvariantCulture),kind,version==0?null:ClassificationCompany,
+            version==0?null:T0,ProductCogsClassificationContractsV1.SourceVersion);
+    private static ProductAuditRecordV1 ClassificationRecord(ProductCogsClassificationViewV1 before,ProductCogsClassificationViewV1 after,
+        long productVersion,DateTimeOffset at)=>new(Guid.NewGuid(),ProductId,ProductHistoryApiV1.SetCogsClassification,at,
+            productVersion,productVersion,"SENTETIK explicit class",JsonSerializer.Serialize(before,Web),JsonSerializer.Serialize(after,Web));
+
     private static ProductAuditRecordV1 Create(ProductCardView after, DateTimeOffset at) =>
         new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.DraftCreate, at, null, long.Parse(after.Product.Version),
             "Ürün taslağı oluşturma", "{}", Json(after));

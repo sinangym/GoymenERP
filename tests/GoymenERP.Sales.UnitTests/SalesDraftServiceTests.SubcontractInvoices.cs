@@ -176,10 +176,10 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task A_foreign_currency_order_and_a_line_not_in_kilograms_wait_together_and_nothing_is_billed_by_guess()
+    public async Task A_foreign_currency_draft_no_longer_waits_for_rate_day_policy_but_non_kilogram_service_still_waits()
     {
-        // The synthetic world's currency and unit are not the Settings owner's Turkish lira and kilogram identities: both open
-        // points are named in one answer (the rate day of a fason invoice and a non-kg service fee are not decided).
+        // SAT-D380 fixes the rate day at official matching. Native draft pricing no longer waits for that decided policy;
+        // a service line in an unsupported unit still cannot be billed by guessing a conversion.
         var invoicing = await SubcontractInvoicing.CreateAsync();
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
@@ -187,8 +187,7 @@ public sealed partial class SalesDraftServiceTests
 
         Assert.Equal((409, SalesInvoiceProblemCodesV1.InvoiceNotReady), Status(refused));
         Assert.NotEqual(SettingsCurrencyIdentitiesV1.TurkishLira, Currency);
-        Assert.Contains(refused.Errors, error =>
-            error is { Field: "salesOrderId", Code: SalesSubcontractServiceInvoiceReasonCodesV1.CurrencyPending });
+        Assert.DoesNotContain(refused.Errors, error => error.Code == SalesSubcontractServiceInvoiceReasonCodesV1.CurrencyPending);
         Assert.Contains(refused.Errors, error =>
             error is { Field: "lines[0]", Code: SalesSubcontractServiceInvoiceReasonCodesV1.LineNotKilogram });
         Assert.Empty(invoicing.Invoices.Stored);

@@ -50,7 +50,9 @@ public sealed partial class SalesInvoiceService(
     ISalesInvoiceDiagnosticsV1? diagnostics = null,
     ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null,
     ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null,
-    ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null) : ISalesInvoiceService
+    ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null,
+    ISalesSubcontractInvoiceLifecycleStoreV1? subcontractLifecycle = null,
+    ISalesSubcontractInvoiceListStoreV1? subcontractInvoiceList = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
@@ -581,6 +583,14 @@ public sealed partial class SalesInvoiceService(
         var first = prepared[0];
         foreach (var item in prepared.Skip(1))
         {
+            // 2026-11-17 user answer, #1189 6943483644 (agent relay): USD shipments on different
+            // business days are invoiced separately even if both days resolve to an equal bulletin/rate.
+            if (first.Basis.CurrencyId == SettingsCurrencyIdentitiesV1.UnitedStatesDollar
+                && item.Basis.CurrencyId == first.Basis.CurrencyId && item.ShipmentDate != first.ShipmentDate)
+            {
+                reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.UsdShipmentDayMismatch));
+            }
+
             if (item.Basis.CurrencyId != first.Basis.CurrencyId)
             {
                 reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.CurrencyMismatch));

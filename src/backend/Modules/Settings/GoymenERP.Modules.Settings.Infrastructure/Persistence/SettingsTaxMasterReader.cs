@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// or source is <c>settings_provider_unavailable</c>, never an empty or zero answer. No permission is measured here: the answer
 /// is reference data and the consumer fences its own operation.
 /// </summary>
-internal sealed class SettingsTaxMasterReader(
+internal sealed partial class SettingsTaxMasterReader(
     SettingsDbContext database,
     ICompanyContext companyContext,
     ICurrentUser currentUser,

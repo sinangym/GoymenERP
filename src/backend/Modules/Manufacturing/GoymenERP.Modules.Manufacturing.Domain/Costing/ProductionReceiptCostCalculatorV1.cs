@@ -45,6 +45,9 @@ public enum IssueCostCurrencyStatus
     FunctionalCurrency = 1,
     Converted = 2,
     RateMissing = 3,
+
+    /// <summary>The owner cannot prove the issue's entry currency; no functional-currency default is inferred.</summary>
+    Unreadable = 4,
 }
 
 /// <summary>
@@ -62,9 +65,15 @@ public enum IssueCostCurrencyStatus
 /// order's rate (an invoice rate keeps SAT-D295/BS-1); the issue-cost source stamps that rate, Manufacturing never picks
 /// a rate type or reads a rate table itself. A foreign-currency input with no order to take a rate from comes as
 /// <see cref="IssueCostCurrencyStatus.RateMissing"/> and the cost stays "hesaplanamadi" (that case is NEEDS-SINAN).
+/// An indivisible purchase-unit conversion may supply <see cref="ForeignUnitCostRatio"/> instead of a decimal foreign
+/// unit cost. It is exact provenance only, never an approximate scalar or a substitute for the TL stamp.
 /// </summary>
 public sealed record IssueCostCurrencyInput(IssueCostCurrencyStatus Status, Guid? CurrencyId,
-    decimal? ForeignUnitCostPerKg, decimal? ExchangeRate)
+    decimal? ForeignUnitCostPerKg, decimal? ExchangeRate,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    ProductionExactRatioV1? ForeignUnitCostRatio = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    ProductionExactRatioV1? ExchangeRateRatio = null)
 {
     public static IssueCostCurrencyInput FunctionalCurrency { get; } =
         new(IssueCostCurrencyStatus.FunctionalCurrency, null, null, null);
@@ -340,15 +349,20 @@ public sealed record ProductionReceiptCostResult(
 /// rate recorded when it entered stock, the TL cost per kg the calculator used and the kg the order kept (issued -
 /// returned). <see cref="ForeignAmount"/> = kept kg x foreign cost per kg, unrounded: a display figure, never posted;
 /// how a report rounds a foreign amount is not decided here.
+/// Ratio-only entry currency carries null scalar fields and the exact unit/kept-amount ratios instead.
 /// </summary>
 public sealed record ProductionReceiptCostCurrencyLineV1(
     Guid IssueMovementId,
     Guid CurrencyId,
-    decimal ForeignUnitCostPerKg,
-    decimal ExchangeRate,
+    decimal? ForeignUnitCostPerKg,
+    decimal? ExchangeRate,
     decimal TlUnitCostPerKg,
     decimal KeptKilograms,
-    decimal ForeignAmount);
+    decimal? ForeignAmount,
+    ProductionExactRatioV1? ForeignUnitCostRatio = null,
+    ProductionExactRatioV1? ForeignAmountRatio = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    ProductionExactRatioV1? ExchangeRateRatio = null);
 
 /// <summary>
 /// One issue that keeps the order's cost from being computed and why: <c>input_cost_zero</c> (URT-D58 (1)) or
@@ -621,14 +635,11 @@ public static class ProductionReceiptCostCalculatorV1
         {
             var kept = issue.Mass - returned.GetValueOrDefault(id);
             netCost += kept * issue.Cost;
-            if (issue.Currency is
-                {
-                    Status: IssueCostCurrencyStatus.Converted, CurrencyId: { } currencyId,
-                    ForeignUnitCostPerKg: { } foreignCost, ExchangeRate: { } rate
-                })
+            if (issue.Currency is { Status: IssueCostCurrencyStatus.Converted, CurrencyId: { } currencyId } currency)
             {
-                currencyLines.Add(new ProductionReceiptCostCurrencyLineV1(id, currencyId, foreignCost, rate, issue.Cost,
-                    kept, kept * foreignCost));
+                currencyLines.Add(new(id, currencyId, currency.ForeignUnitCostPerKg, currency.ExchangeRate, issue.Cost, kept,
+                    currency.ForeignUnitCostPerKg is { } foreign ? kept * foreign : null,
+                    currency.ForeignUnitCostRatio, currency.ForeignUnitCostRatio?.Multiply(kept), currency.ExchangeRateRatio));
             }
         }
 
@@ -722,25 +733,28 @@ public static class ProductionReceiptCostCalculatorV1
                 CurrencyLines = amounts.CurrencyLines,
             };
 
-    private static bool IsWellFormed(IssueCostCurrencyInput currency) =>
-        currency switch
-        {
-            { Status: IssueCostCurrencyStatus.FunctionalCurrency, CurrencyId: null, ForeignUnitCostPerKg: null,
-                ExchangeRate: null } => true,
-            { Status: IssueCostCurrencyStatus.Converted, CurrencyId: { } id, ForeignUnitCostPerKg: { } foreign,
-                ExchangeRate: { } rate } => id != Guid.Empty && foreign > 0m && rate > 0m,
-            _ => false,
-        };
+    private static bool IsWellFormed(IssueCostCurrencyInput currency) => currency switch
+    {
+        { Status: IssueCostCurrencyStatus.FunctionalCurrency, CurrencyId: null, ForeignUnitCostPerKg: null,
+            ExchangeRate: null, ForeignUnitCostRatio: null, ExchangeRateRatio: null } => true,
+        { Status: IssueCostCurrencyStatus.Converted, CurrencyId: { } id } => id != Guid.Empty
+            && (currency.ForeignUnitCostPerKg is > 0m && currency.ForeignUnitCostRatio is null
+                || currency.ForeignUnitCostPerKg is null && currency.ForeignUnitCostRatio?.IsValid() == true)
+            && (currency.ExchangeRate is > 0m && (currency.ExchangeRateRatio is null || currency.ExchangeRateRatio.IsValid() && currency.ExchangeRateRatio.Represents(currency.ExchangeRate.Value))
+                || currency.ExchangeRate is null && currency.ExchangeRateRatio?.IsValid() == true),
+        _ => false,
+    };
 
     // URT-D55 (2): no rate recorded, so no TL cost either; the foreign cost is shown when known.
     private static bool IsRateMissing(IssueCostInput issue) =>
         issue is
         {
             UnitCostPerKg: null,
-            Currency: { Status: IssueCostCurrencyStatus.RateMissing, CurrencyId: { } id, ExchangeRate: null } currency
+            Currency: { Status: IssueCostCurrencyStatus.RateMissing, CurrencyId: { } id, ExchangeRate: null, ExchangeRateRatio: null } currency
         }
         && id != Guid.Empty
-        && currency.ForeignUnitCostPerKg is null or > 0m;
+        && (currency.ForeignUnitCostRatio is null && currency.ForeignUnitCostPerKg is null or > 0m
+            || currency.ForeignUnitCostPerKg is null && currency.ForeignUnitCostRatio?.IsValid() == true);
 
     private readonly record struct Amounts(decimal NetCost, decimal RawMaterialCostPerKg, decimal RemnantValue,
         decimal ProcessLoss, decimal ProcessLossRatio, decimal Unexplained,

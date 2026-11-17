@@ -67,6 +67,31 @@ afterEach(() => {
 })
 
 describe('normal journal source-bound creation', () => {
+  it('selects the received expense through Accounting and shows an unavailable binding without offering a draft', async () => {
+    const recorded = installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_CAPABILITY.journalsList],
+      respond: url => {
+        if (url.includes('/finance/manual-receipts')) return json(sourcePage())
+        if (url.endsWith('/finance-journal-sources')) return json({ companyId: COMPANY, items: [{
+          eventId: DRAFT, companyId: COMPANY, sourceId: SOURCE, sourceKind: 'finance.expense-payment.recorded.v1', sourceVersion: '3',
+          currencyId: CURRENCY, amount: '100.01', ownerProfileId: 'SENTETIK-profile', ownerProfileVersion: '1',
+          occurredOn: '2026-11-17', recordedAtUtc: '2026-11-17T09:00:00Z', receivedAtUtc: '2026-11-17T09:01:00Z',
+          status: 'Received', mappingStatus: 'BindingUnavailable', preparationVersion: null,
+        }] })
+        if (url.endsWith(`/normal-journal-draft-sources/${SOURCE}`)) return json({}, 503)
+        return undefined
+      },
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    fireEvent.change(await screen.findByLabelText('Kaynak grubu'), { target: { value: 'financial' } })
+    await screen.findByRole('option', { name: /Masraf ödemesi/ })
+    fireEvent.change(screen.getByLabelText('Onaylı finans kaynağı'), { target: { value: SOURCE } })
+    await screen.findByText('Bu kaynak için onaylı hesap eşlemesi yok. Eşleme tamamlanmadan fiş taslağı hazırlanamaz.')
+    expect(screen.getByText('Kaynak tutarı: 100.01')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Taslağı kaydet' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(requestsFor(recorded, '/normal-journal-drafts', 'POST')).toHaveLength(0)
+  })
+
   it('submits approved choices and the exact preparation version', async () => {
     const recorded = installFetch({
       capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],

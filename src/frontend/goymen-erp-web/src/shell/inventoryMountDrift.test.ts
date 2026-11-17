@@ -9,6 +9,9 @@ import {
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
   INVENTORY_FUTURE_ALLOCATION_ROUTE,
+  INVENTORY_TRANSFER_PLANNING_ROUTE,
+  INVENTORY_TRANSFER_PLANNING_CAPABILITY,
+  INVENTORY_TRANSFER_ACTION_ROUTE,
   inventoryFutureAllocationPath,
 } from '../inventory/capabilities'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
@@ -31,7 +34,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(10)
+    expect(inventoryRoutes).toHaveLength(14)
     const futurePath = inventoryFutureAllocationPath('order-1', 'line-2')
     expect(matchRoutes(inventoryRoutes, futurePath)?.at(-1)?.route.path)
       .toBe(INVENTORY_FUTURE_ALLOCATION_ROUTE.slice(1))
@@ -69,5 +72,23 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(matches?.at(-1)?.route.path).toBe(INVENTORY_OPENING_ROUTE.create.slice(1))
     expect(matches?.at(-1)?.params.countId).toBeUndefined()
     expect(matchPath(INVENTORY_OPENING_ROUTE.detail, '/stok/acilis/COUNT-1')?.params.countId).toBe('COUNT-1')
+  })
+  it('mounts transfer planning with the existing write purpose independently from stock reports', () => {
+    expect(CAPABILITY.inventoryTransferPlanning).toBe(INVENTORY_TRANSFER_PLANNING_CAPABILITY)
+    expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferPlanning]).toBe(INVENTORY_TRANSFER_PLANNING_ROUTE)
+    const route = matchRoutes(inventoryRoutes, INVENTORY_TRANSFER_PLANNING_ROUTE)?.at(-1)?.route
+    expect(route?.path).toBe(INVENTORY_TRANSFER_PLANNING_ROUTE.slice(1))
+    expect(NAV_CAPABILITIES.filter(item => item === INVENTORY_TRANSFER_PLANNING_CAPABILITY)).toHaveLength(1)
+    expect(NAV_GROUPS.find(group => group.id === 'stock-logistics')?.entries).toContain(INVENTORY_TRANSFER_PLANNING_CAPABILITY)
+  })
+  it('mounts every receipt decision purpose under its own advertised action authority', () => {
+    for (const [capability, path] of Object.entries(INVENTORY_TRANSFER_ACTION_ROUTE)) {
+      expect(CAPABILITY_ROUTE[capability as keyof typeof CAPABILITY_ROUTE]).toBe(path)
+      const route = matchRoutes(inventoryRoutes, path)?.at(-1)?.route
+      expect(route?.path).toBe(path.slice(1))
+      expect((route?.element as { props?: { capability?: string } }).props?.capability).toBe(capability)
+      expect(NAV_CAPABILITIES.filter(item => item === capability)).toHaveLength(1)
+      expect(NAV_GROUPS.find(group => group.id === 'stock-logistics')?.entries).toContain(capability)
+    }
   })
 })

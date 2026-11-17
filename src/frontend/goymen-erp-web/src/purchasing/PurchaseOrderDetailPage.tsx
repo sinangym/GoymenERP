@@ -14,6 +14,7 @@ import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
 import { GoodsReceiptBatchPanel } from './GoodsReceiptBatchPanel'
 import { SupplierReturnPanel } from './SupplierReturnPanel'
+import { ReceiptAdjustmentWorkspace } from './ReceiptAdjustmentWorkspace'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
@@ -28,9 +29,12 @@ import { StatusIndicator } from '../ui/StatusIndicator'
 import { AllocationLinkPanel } from './AllocationLinkPanel'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
 import { LineSchedulePanel } from './LineSchedulePanel'
+import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
+import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
+import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 
 const HEADING_ID = 'purchase-order-detail-heading'
 
@@ -227,9 +231,12 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         : T.approvalFailed(attempt.code ?? attempt.status)}</p>
       : null
   return frame(<>
+    {isCurrentDetail && hasCapability(shell, ADDITIONAL_COST_CAPABILITY.read)
+      ? <Link to={additionalCostPath('GoodsOrder', order.id)}>{ADDITIONAL_COST_TEXT.title}</Link> : null}
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
       <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
       <dl className={styles.facts} data-testid="purchase-order-status-facts">
+        <div><dt>{T.documentNumber}</dt><dd>{order.documentNumber ?? T.documentNumberUnavailable}</dd></div>
         <div><dt>{T.orderId}</dt><dd className={styles.identifier}>{order.id}</dd></div>
         <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
         <div><dt>{T.businessDate}</dt><dd><time dateTime={order.effectiveOn}>{formatBusinessDate(order.effectiveOn)}</time></dd></div>
@@ -270,6 +277,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         ? { sessionEpoch: shell.sessionEpoch, actorId, onSettled: () => query.refetch() }
         : null} /></div> : null}
     {/* F-027 (ALC-S16; KLN-D43): the order's bulk goods receipts, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierRevisionPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} actorId={actorId}
+      sessionEpoch={shell.sessionEpoch} canEdit={hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)}
+      hasCurrency={state.data.currency !== null && state.data.currency !== undefined} onSettled={() => query.refetch()} /></div> : null}
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
       orderVersion={order.version} /></div> : null}
@@ -277,6 +288,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierReturnPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
       orderVersion={order.version} /></div> : null}
+    {isCurrentDetail && namespace !== null && receiptAttempt !== null ? <div className={styles.section}><ReceiptAdjustmentWorkspace
+      detail={state.data} binding={`${namespace}::${shell.routeEntryGeneration}`} attemptBinding={receiptAttempt}
+      canAdjust={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY)} canReturn={hasCapability(shell, PURCHASING_CAPABILITY.supplierReturnRecord)}
+      canDecide={canApprove} onSettled={() => { void query.refetch() }} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>

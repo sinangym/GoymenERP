@@ -79,7 +79,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderAllocationReadPortV2? allocationsV2 = null,
     ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null,
     ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null,
-    ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
+    ISalesMarginCostReadPortV1? marginCosts = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -102,7 +103,9 @@ public sealed partial class SalesDraftService(
         // reads like the create permission (#276).
         var priced = CommercialFields(request);
         // MOD-03 → Sales (SAT-D93): a line tax change moves the line's amounts, so it is fenced like a price.
-        priced.AddRange(TaxChangeFields(request));
+        if (request.SubcontractService == true && request.Lines.Any(x => x.TaxOverride is not null))
+            scope = await WithSubcontractTaxAuthorityAsync(scope, cancellationToken);
+        else priced.AddRange(TaxChangeFields(request));
         if (priced.Count > 0)
         {
             await RequirePriceWriteAsync(scope, priced, cancellationToken);
@@ -613,6 +616,8 @@ public sealed partial class SalesDraftService(
                 async writeCancellationToken =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                    if (taxes?.RequiresSubcontractAuthority == true)
+                        await RequireStillAsync(scope, bindings.ApprovePermission, writeCancellationToken);
                 }, cancellationToken);
         }
         catch (SalesVersionConflictException exception)
@@ -1048,13 +1053,23 @@ public sealed partial class SalesDraftService(
             ? await OrderRiskWarningAsync(scope, permission, current, cancellationToken)
             : null;
 
+        var approvalCosts = commandName == SalesDraftCommands.ApproveV1
+            && current.Version == expectedVersion && current.ApprovalState == InternalApprovalState.PendingApproval
+            ? await PrepareMarginCostsAsync(scope, permission, current, cancellationToken)
+            : [];
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
         SalesDraftStateResult? result;
         try
         {
-            Action<SalesOrderDraft, DateTimeOffset> mutate = (draft, now) => transition(draft, scope.ActorId, expectedVersion, now);
+            Action<SalesOrderDraft, DateTimeOffset> mutate = (draft, now) =>
+            {
+                transition(draft, scope.ActorId, expectedVersion, now);
+                if (approvalCosts.Count > 0)
+                    draft.PinMarginCosts([.. approvalCosts.Select(cost => cost with { RecordedAtUtc = now.ToUniversalTime() })]);
+            };
             if (CompletesReducedRevision(current, expectedVersion, commandName))
             {
                 result = await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,
@@ -1203,7 +1218,8 @@ public sealed partial class SalesDraftService(
         string ActorId,
         IReadOnlyCollection<string> RoleCodes,
         bool IsSalesSupport,
-        bool IsSystemRead = false);
+        bool IsSystemRead = false,
+        bool RequiresSubcontractTaxAuthority = false);
 
     /// <summary>
     /// The fence: capture server identity/company, read the active persona, then make the permission
@@ -1263,7 +1279,12 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
-        return current;
+        if (scope.RequiresSubcontractTaxAuthority)
+        {
+            var approval = await RequireAsync(bindings.ApprovePermission, cancellationToken);
+            if (approval.CompanyId != scope.CompanyId || approval.ActorId != scope.ActorId) throw new SalesDraftServiceException(403, "forbidden");
+        }
+        return current with { RequiresSubcontractTaxAuthority = scope.RequiresSubcontractTaxAuthority };
     }
 
     /// <summary>An awaited read is released only under the authority a success would need (the Product fence, #276).</summary>

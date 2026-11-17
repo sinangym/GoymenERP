@@ -6,8 +6,7 @@ namespace GoymenERP.Modules.Finance.Contracts;
 //
 // FNS-D87: a credit account carries ONE of four groups as a type field: cash credit (nakdi), non-cash credit
 // (gayrinakdi: letter of guarantee and similar), instrument-backed credit and factoring (çek/senet + faktoring) and
-// leasing. Group-specific fields (letter-of-guarantee kind, factoring recourse, leasing contract fields) are NOT decided
-// and not built (NEEDS-SINAN).
+// leasing. The explicitly selected lender and the group's source-backed fields are carried in CreditAccountProfileV1.
 //
 // FNS-D88: a credit account is proposed by a holder of finance.credits.propose and approved or rejected by a holder of
 // finance.credits.approve other than its proposer (maker≠checker, person level, in the service and in a database check).
@@ -17,13 +16,13 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // principal, the interest, the BSMV and the KKDF as exact decimal text, never rounded, never converted. The system never
 // calculates interest; it only checks the totals with one deterministic backend calculator (also exposed as a
 // side-effect-free validation endpoint so the screen does not re-implement it):
-//   * every installment = principal + interest + BSMV + KKDF, exactly;
+//   * every installment = principal + interest + BSMV + KKDF + explicitly included source charges, within the
+//     smallest unit of this currency's approved Settings profile; separately collected charges remain separate;
 //   * the sum of the principals = the credit amount, exactly;
 //   * a plan that fails cannot be proposed (and so never reaches approval); the approval checks the stored plan again.
 //
-// NOT built in this slice (W6): the credit screen, FNS-D95 limit per (bank, group) with its warning (a warning only, never
-// a block; who enters the limit and its form are not decided), and the FNS-D97 voucher proposal (Settings account mapping,
-// "eşleme eksik" when missing, idempotent, never a final voucher).
+// Contract approval alone creates no financial movement or voucher. Source-movement facilities carry no invented plan.
+// Limit warnings and actual financial events are separate from this source contract and plan snapshot.
 
 [JsonConverter(typeof(JsonStringEnumConverter<CreditAccountGroup>))]
 public enum CreditAccountGroup { Cash, NonCash, InstrumentAndFactoring, Leasing }
@@ -34,12 +33,14 @@ public enum CreditAccountStatus { Proposed, Approved, Rejected }
 // One line of the bank's repayment plan, as the bank gives it. Sequence: 1..n in order. Every amount is exact
 // non-negative decimal text in the credit's currency.
 public sealed record CreditPlanInstallmentInput(int Sequence, DateOnly DueDate, string Installment, string Principal,
-    string Interest, string Bsmv, string Kkdf);
+    string Interest, string Bsmv, string Kkdf,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CreditPlanChargeInputV1>? Charges = null);
 
 // A new credit account proposal. LenderName: the bank or institution as written on the contract (there is no lender master
 // yet). ContractReference: the bank's contract or credit number. PrincipalAmount: the credit amount (exact positive text).
 public sealed record CreditAccountProposeRequest(CreditAccountGroup Group, string LenderName, string ContractReference,
-    Guid CurrencyId, string PrincipalAmount, DateOnly StartDate, IReadOnlyList<CreditPlanInstallmentInput> Installments);
+    Guid CurrencyId, string PrincipalAmount, DateOnly StartDate, IReadOnlyList<CreditPlanInstallmentInput> Installments,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreditAccountProfileV1? Profile = null);
 
 public sealed record CreditAccountApproveRequest(Guid CreditAccountId, string ExpectedVersion);
 
@@ -52,10 +53,11 @@ public sealed record CreditAccountRejectBody(string ExpectedVersion, string Reas
 
 // The plan totals the calculator derived from the lines (exact sums, never rounded).
 public sealed record CreditPlanTotalsView(string Installment, string Principal, string Interest, string Bsmv,
-    string Kkdf);
+    string Kkdf, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreditPlanChargeTotalsV1? Charges = null);
 
 public sealed record CreditPlanInstallmentView(int Sequence, DateOnly DueDate, string Installment, string Principal,
-    string Interest, string Bsmv, string Kkdf);
+    string Interest, string Bsmv, string Kkdf,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CreditPlanChargeInputV1>? Charges = null);
 
 // One credit account. IsOwnProposal: the caller proposed it (the approve control is not offered on it). No actor id is
 // disclosed.
@@ -74,8 +76,10 @@ public sealed record CreditAccountView(
     DateTimeOffset? DecidedAtUtc,
     string? RejectionReason,
     string Version,
-    CreditPlanTotalsView PlanTotals,
-    IReadOnlyList<CreditPlanInstallmentView> Installments);
+    CreditPlanTotalsView? PlanTotals,
+    IReadOnlyList<CreditPlanInstallmentView> Installments,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreditAccountProfileV1? Profile = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreditPlanToleranceSnapshotV1? Tolerance = null);
 
 public sealed record CreditAccountListPage(Guid CompanyId, IReadOnlyList<CreditAccountView> Items);
 
@@ -84,11 +88,12 @@ public sealed record CreditAccountCommandResult(CommandOutcome Outcome, CreditAc
 
 // FNS-D94: the side-effect-free plan check (the same calculator the proposal and the approval use).
 public sealed record CreditPlanValidationRequest(string PrincipalAmount,
-    IReadOnlyList<CreditPlanInstallmentInput> Installments);
+    IReadOnlyList<CreditPlanInstallmentInput> Installments,
+    Guid? CurrencyId = null, DateOnly? EffectiveOn = null);
 
 // IsValid: no issue. Totals: null when a line could not be read as exact non-negative text.
 public sealed record CreditPlanValidationView(Guid CompanyId, bool IsValid, CreditPlanTotalsView? Totals,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues, CreditPlanToleranceSnapshotV1? Tolerance = null);
 
 public sealed record CreditAccountCurrencyCandidate(Guid CurrencyId, string Code, string DisplayLabel);
 

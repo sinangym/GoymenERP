@@ -1,3 +1,4 @@
+import { PlanPaintSelectionSummary } from './PlanPaintSelectionSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -395,6 +396,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           <Link to={orderListPath()}>{PLAN_FORM_TEXT.backToOrders}</Link>
         </div>
       </header>
+      <PlanPaintSelectionSummary value={plan.processSpec} />
       <dl className={styles.facts}>
         <div><dt>{PLAN_DETAIL_TEXT.plan}</dt><dd className={styles.mono}>{plan.planId}</dd></div>
         <div><dt>{PLAN_DETAIL_TEXT.status}</dt><dd>{PLAN_STATUS_LABEL[plan.status]}</dd></div>
@@ -676,6 +678,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {companyId !== null && namespace !== null ? <PlanQueuePanel
               key={`${namespace}:${companyId}:${plan.planId}:${plan.version}`} companyId={companyId} planId={plan.planId}
               planVersion={plan.version} namespace={namespace} canApprove={canApprove && !busy && plan.status !== 'Cancelled'}
+              canReorder={hasCapability(shell, MANUFACTURING_CAPABILITY.planReorder) && !busy}
               onChanged={() => { void queryClient.invalidateQueries({ queryKey: [namespace, shell.routeEntryGeneration,
                 'manufacturing-plan-due-date-suggestion', plan.planId] }) }} /> : null}
             {plan.status === 'Approved' && companyId !== null && namespace !== null ? (

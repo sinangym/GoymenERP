@@ -53,6 +53,8 @@ export const KIND_LABEL: Readonly<Record<PartyLedgerEntryKind, string>> = {
   OpeningBalanceCredit: 'Açılış bakiyesi (alacak)',
   OpeningBalanceDebitReversal: 'Açılış bakiyesi ters kaydı (borç açılışının)',
   OpeningBalanceCreditReversal: 'Açılış bakiyesi ters kaydı (alacak açılışının)',
+  BalanceTransferDebit: 'Cari bakiye devir fişi (borç)',
+  BalanceTransferCredit: 'Cari bakiye devir fişi (alacak)',
 }
 
 /** Borçlu / alacaklı from the company's view of the party's account. */

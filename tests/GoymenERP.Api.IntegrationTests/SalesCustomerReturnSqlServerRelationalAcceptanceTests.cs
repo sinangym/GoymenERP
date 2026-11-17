@@ -478,7 +478,8 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 new SalesDraftStateAudit("sales.invoice.approved.v1", "Approve", "SENTETIK")))!.Invoice;
             var official = new SalesOfficialInvoiceFacts("GIB2026000000401", "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", approved.Header.PartyId,
                 approved.Header.CurrencyId, approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
-                approved.WithholdingFunctionalAmount);
+                approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
             await invoices.MatchInvoiceAsync(Envelope(prefix + "-match", matcher, SalesPermissionManifestV1.InvoicesMatch), Hash('1'),
                 invoiceId, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
                 new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));

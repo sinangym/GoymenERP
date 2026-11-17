@@ -563,11 +563,205 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
 
-                            t.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Key", "[PolicyKey] IN ('finance.opening-period', 'manufacturing.due-date-buffer', 'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default', 'sales.contract-discount-limit')");
+                            t.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Key", "[PolicyKey] IN ('finance.opening-period', 'manufacturing.due-date-buffer', 'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default', 'sales.contract-discount-limit', 'manufacturing.include-scrap-cost', 'work.notification-active-days')");
 
                             t.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
 
-                            t.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Value", "([PolicyKey] = 'finance.opening-period' AND [PercentValue] IS NULL AND [BooleanValue] IS NOT NULL AND [WholeNumberValue] IS NULL AND [VatApplies] IS NULL AND [VatPercent] IS NULL AND [ExemptionCode] IS NULL AND [WithholdingApplies] IS NULL AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL) OR ([PolicyKey] = 'manufacturing.due-date-buffer' AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NOT NULL AND [WholeNumberValue] >= 0 AND [VatApplies] IS NULL AND [VatPercent] IS NULL AND [ExemptionCode] IS NULL AND [WithholdingApplies] IS NULL AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL) OR ([PolicyKey] IN ('sales.subcontract-tax-default', 'purchasing.subcontract-tax-default') AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL AND [VatApplies] IS NOT NULL AND [WithholdingApplies] IS NOT NULL AND (([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] > 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL AND [WithholdingApplies] = 0)) AND (([WithholdingApplies] = 1 AND [WithholdingPercent] IS NOT NULL AND [WithholdingPercent] > 0 AND [WithholdingPercent] <= 100) OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL))) OR ([PolicyKey] = 'sales.contract-discount-limit' AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL AND [PercentValue] IS NOT NULL AND [PercentValue] >= 0 AND [PercentValue] <= 100 AND [VatApplies] IS NULL AND [VatPercent] IS NULL AND [ExemptionCode] IS NULL AND [WithholdingApplies] IS NULL AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL)");
+                            t.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Value", "([PolicyKey] IN ('finance.opening-period', 'manufacturing.include-scrap-cost') AND [PercentValue] IS NULL AND [BooleanValue] IS NOT NULL AND [WholeNumberValue] IS NULL AND [VatApplies] IS NULL AND [VatPercent] IS NULL AND [ExemptionCode] IS NULL AND [WithholdingApplies] IS NULL AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL) OR ([PolicyKey] IN ('manufacturing.due-date-buffer', 'work.notification-active-days') AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NOT NULL AND [WholeNumberValue] >= 0 AND [VatApplies] IS NULL AND [VatPercent] IS NULL AND [ExemptionCode] IS NULL AND [WithholdingApplies] IS NULL AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL) OR ([PolicyKey] IN ('sales.subcontract-tax-default', 'purchasing.subcontract-tax-default') AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL AND [VatApplies] IS NOT NULL AND [WithholdingApplies] IS NOT NULL AND (([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] > 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL AND [WithholdingApplies] = 0)) AND (([WithholdingApplies] = 1 AND [WithholdingPercent] IS NOT NULL AND [WithholdingPercent] > 0 AND [WithholdingPercent] <= 100) OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL))) OR ([PolicyKey] = 'sales.contract-discount-limit' AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL AND [PercentValue] IS NOT NULL AND [PercentValue] >= 0 AND [PercentValue] <= 100 AND [VatApplies] IS NULL AND [VatPercent] IS NULL AND [ExemptionCode] IS NULL AND [WithholdingApplies] IS NULL AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberCancellationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Series")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("CompanyId", "Series", "DocumentId");
+
+                    b.HasIndex("CompanyId", "KeyHash")
+                        .IsUnique();
+
+                    b.ToTable("DocumentNumberCancellations", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberCancellations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Series] IN (1,2,3,4) AND [DocumentId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberCancellations_Recorded", "LEN([KeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberCounterRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Series")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.Property<long>("LastSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("CompanyId", "Series", "Year");
+
+                    b.ToTable("DocumentNumberCounters", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberCounters_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Series] IN (1,2,3,4) AND [Year] BETWEEN 1 AND 9999 AND [LastSequence] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberFormatRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Series")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("SequenceDigits")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Series", "Version");
+
+                    b.ToTable("DocumentNumberFormats", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberFormats_Format", "LEN([Prefix]) BETWEEN 1 AND 16 AND [Prefix] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9]%' AND [SequenceDigits] BETWEEN 1 AND 18");
+
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberFormats_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Series] IN (1,2,3,4) AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberFormats_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberReservationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Series")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("BusinessDate")
+                        .HasColumnType("date");
+
+                    b.Property<long>("FormatVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Series", "DocumentId");
+
+                    b.HasIndex("CompanyId", "KeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Series", "FormatVersion");
+
+                    b.HasIndex("CompanyId", "Series", "Year", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("DocumentNumberReservations", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberReservations_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Series] IN (1,2,3,4) AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [Year] = YEAR([BusinessDate]) AND [Sequence] > 0 AND [FormatVersion] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsDocumentNumberReservations_Recorded", "LEN([Number]) > 0 AND LEN([KeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0");
                         });
                 });
 
@@ -1102,6 +1296,65 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingProfileBaselineTransferRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("SnapshotHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("TransferredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Kind");
+
+                    b.HasIndex("CompanyId", "TransferId")
+                        .IsUnique();
+
+                    b.ToTable("ManufacturingProfileBaselineTransfers", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Actor", "LEN(LTRIM(RTRIM([ActorId]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TransferId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Kind", "[Kind] IN ('parameters','tolerances') AND [Version] = 1");
+
+                            t.HasCheckConstraint("CK_SettingsMfgBaseline_Snapshot", "ISJSON([SnapshotJson]) = 1 AND LEN([SnapshotHash]) = 64 AND [SnapshotHash] NOT LIKE '%[^0-9A-F]%'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingTolerancePolicyRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1394,6 +1647,53 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsMoneyProfileVersions_Scale", "[Scale] BETWEEN 0 AND 28 AND ([UnitPriceScale] IS NULL OR [UnitPriceScale] BETWEEN 0 AND 28)");
 
                             t.HasCheckConstraint("CK_SettingsMoneyProfileVersions_Source", "[SourceKind] IN ('CompiledBaselineV0','UserMaintained')");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.PurchaseInvoiceVariancePolicyRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("AmountTolerance")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.Property<Guid>("PolicyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("PublishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PublishedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("RateTolerance")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.HasIndex("CompanyId", "PolicyId")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseInvoiceVariancePolicies", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseInvoiceVariancePolicies_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0");
+
+                            t.HasCheckConstraint("CK_PurchaseInvoiceVariancePolicies_Publication", "LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND DATEPART(TZOFFSET,[PublishedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_PurchaseInvoiceVariancePolicies_Values", "[AmountTolerance] >= 0 AND [RateTolerance] >= 0");
                         });
                 });
 
@@ -3076,6 +3376,52 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WarehouseTransferScaleVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LocationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("RequireExitWeighing")
+                        .HasColumnType("bit");
+
+                    b.HasKey("CompanyId", "LocationId", "Version");
+
+                    b.HasIndex("CompanyId", "RecordId")
+                        .IsUnique();
+
+                    b.ToTable("WarehouseTransferScaleVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_WarehouseTransferScaleVersions_Audit", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_WarehouseTransferScaleVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000' AND [RecordId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [LocationVersion] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WorkCenterCapacityVersionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3138,6 +3484,30 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.CollateralTypeRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "EntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberCancellationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberReservationRow", null)
+                        .WithOne()
+                        .HasForeignKey("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberCancellationRow", "CompanyId", "Series", "DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberReservationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberFormatRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Series", "FormatVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.DocumentNumberCounterRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Series", "Year")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

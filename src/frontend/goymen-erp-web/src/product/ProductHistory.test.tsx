@@ -120,6 +120,18 @@ describe('change history', () => {
     expect(items[0].textContent).toContain('İzlenen alanlarda değişiklik görünmüyor.')
   })
 
+  it('names the COGS operation and field while keeping the actual card version', async () => {
+    installFetch({ capabilities: DETAIL_ONLY, onHistory: () => json(productHistory({ entries: [
+      editEntry({ operation: 'SetCogsClassification', versionBefore: '1', versionAfter: '1', changedFields: ['cogsClassification'] }), historyEntry(),
+    ] })) })
+    renderProductApp(PATH)
+    const item = within(await historyList()).getAllByRole('listitem')[0]
+    expect(item.textContent).toContain('Maliyet sınıfı değiştirildi')
+    expect(item.textContent).toContain('Maliyet sınıfı')
+    expect(item.textContent).toContain('Sürüm 1 → 1')
+    expect(item.textContent).not.toMatch(/621|620/)
+  })
+
   it('shows activation as the lifecycle change recorded by Product', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,

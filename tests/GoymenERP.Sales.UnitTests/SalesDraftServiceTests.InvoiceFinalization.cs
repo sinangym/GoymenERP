@@ -257,14 +257,18 @@ public sealed partial class SalesDraftServiceTests
         var root = payload.RootElement;
         Assert.Equal(
             ["invoiceId", "documentNo", "version", "admissionId", "partyId", "companyAccountId", "currencyId", "rate", "payable",
-                "functionalPayable", "match", "instalments", "companyId", "businessDate", "rateDay", "functionalCurrencyId", "net", "vat",
+                "functionalPayable", "match", "instalments", "companyId", "businessDate", "invoiceDate", "finalizedBy", "rateDay", "functionalCurrencyId", "net", "vat",
                 "withholding", "functionalNet", "functionalVat", "functionalWithholding", "lines"],
             root.EnumerateObject().Select(member => member.Name).ToArray());
-        Assert.Equal(["officialNo", "ettn", "officialFunctionalAmount", "difference"],
+        Assert.Equal(["officialNo", "ettn", "officialFunctionalAmount", "difference", "invoiceDate", "sourceProof"],
             root.GetProperty("match").EnumerateObject().Select(member => member.Name).ToArray());
         Assert.Equal(["openItemId", "installmentId", "sequenceNo", "dueDate", "amount", "functionalAmount"],
             root.GetProperty("instalments")[0].EnumerateObject().Select(member => member.Name).ToArray());
         Assert.Equal(stored.Id, root.GetProperty("invoiceId").GetGuid());
+        Assert.Equal(stored.Match!.InvoiceDate!.Value.ToString("yyyy-MM-dd"), root.GetProperty("invoiceDate").GetString());
+        Assert.Equal(stored.Finalization!.FinalizedBy, root.GetProperty("finalizedBy").GetString());
+        Assert.Equal(stored.Match.SourceProof!.InvoiceId, root.GetProperty("match").GetProperty("sourceProof").GetProperty("invoiceId").GetGuid());
+
         Assert.Equal(stored.Finalization!.AdmissionId, root.GetProperty("admissionId").GetGuid());
         Assert.Equal(stored.DocumentNo, root.GetProperty("documentNo").GetString());
         Assert.Equal(stored.Version, root.GetProperty("version").GetInt64());

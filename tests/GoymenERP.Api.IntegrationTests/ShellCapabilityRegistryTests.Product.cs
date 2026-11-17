@@ -23,6 +23,8 @@ public sealed partial class ShellCapabilityRegistryTests
             GroupSharedMasterOperation.Deactivate, "product.items.detail"),
         ProductDeclaration("product.items.reactivate", "product.detail", "/urun/:productId", "U-01-360",
             GroupSharedMasterOperation.Reactivate, "product.items.detail"),
+        ProductDeclaration("product.items.set-cogs-classification", "product.detail", "/urun/:productId", "U-01-360",
+            GroupSharedMasterOperation.SetCogsClassification, "product.items.detail"),
     ];
 
     private static ShellCapabilityDeclaration ProductDeclaration(string id, string routeId, string path, string screenId,
@@ -38,7 +40,7 @@ public sealed partial class ShellCapabilityRegistryTests
     {
         var providers = new[] { Provider("PRODUCT", ProductDeclarations()) };
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(providers));
-        Assert.Equal(7, AuthorizedRegistry(providers).Registrations.Count);
+        Assert.Equal(8, AuthorizedRegistry(providers).Registrations.Count);
         var companyProvider = new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider();
         Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             ShellCapabilityRegistry.ComputeCandidateRevision([companyProvider]));

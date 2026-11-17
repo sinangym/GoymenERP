@@ -12,6 +12,39 @@ import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabiliti
 import { NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', () => {
+  it('keeps sales and purchasing subcontract tax settings on distinct routes and menu entries', () => {
+    for (const [id, ownerId, path] of [
+      [CAPABILITY.settingsSalesSubcontractTax, SETTINGS_CAPABILITY.salesSubcontractTax, '/ayarlar/satis-fason-vergi-varsayilani'],
+      [CAPABILITY.settingsPurchasingSubcontractTax, SETTINGS_CAPABILITY.purchasingSubcontractTax, '/ayarlar/alis-fason-vergi-varsayilani'],
+    ] as const) {
+      expect(id).toBe(ownerId)
+      expect(CAPABILITY_ROUTE[id]).toBe(path)
+      expect(SETTINGS_ROUTE[ownerId]).toBe(path)
+      expect(CAPABILITY_NAV_LABEL[id]).toBe(SETTINGS_NAV_LABEL[ownerId])
+      expect(NAV_CAPABILITIES.filter(item => item === id)).toHaveLength(1)
+      expect(NAV_GROUPS.find(group => group.id === 'settings')?.entries.filter(item => item === id)).toHaveLength(1)
+      expect(matchRoutes(settingsRoutes, path)?.at(-1)?.route.path).toBe(path.slice(1))
+    }
+  })
+  it('mounts warehouse transfer scale policy with exactly one settings navigation entry', () => {
+    const id = CAPABILITY.settingsWarehouseTransferScale
+    expect(id).toBe(SETTINGS_CAPABILITY.warehouseTransferScale)
+    expect(CAPABILITY_ROUTE[id]).toBe(SETTINGS_ROUTE[id])
+    expect(CAPABILITY_NAV_LABEL[id]).toBe(SETTINGS_NAV_LABEL[id])
+    expect(NAV_CAPABILITIES.filter(item => item === id)).toHaveLength(1)
+    expect(NAV_GROUPS.find(group => group.id === 'settings')?.entries).toContain(id)
+    expect(matchRoutes(settingsRoutes, '/ayarlar/depo-transfer-tartisi')?.at(-1)?.route.path).toBe('ayarlar/depo-transfer-tartisi')
+  })
+  it('mounts the company invoice variance policy once under Settings authority', () => {
+    const id = CAPABILITY.settingsPurchaseInvoiceVariance
+    expect(id).toBe(SETTINGS_CAPABILITY.purchaseInvoiceVariance)
+    expect(CAPABILITY_ROUTE[id]).toBe(SETTINGS_ROUTE[id])
+    expect(CAPABILITY_NAV_LABEL[id]).toBe(SETTINGS_NAV_LABEL[id])
+    expect(NAV_CAPABILITIES.filter(item => item === id)).toHaveLength(1)
+    expect(NAV_GROUPS.find(group => group.id === 'settings')?.entries).toContain(id)
+    expect(matchRoutes(settingsRoutes, '/ayarlar/alis-fatura-fark-toleransi')?.at(-1)?.route.path)
+      .toBe('ayarlar/alis-fatura-fark-toleransi')
+  })
   it('mirrors the owner id, route and label, with exactly one navigation entry under Ayarlar', () => {
     expect(CAPABILITY.settingsSalesDiscountLimits).toBe(SETTINGS_CAPABILITY.salesDiscountLimits)
     expect(CAPABILITY_ROUTE[CAPABILITY.settingsSalesDiscountLimits]).toBe(
@@ -98,6 +131,9 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
       [CAPABILITY.settingsSalesContractDiscountLimit, SETTINGS_CAPABILITY.salesContractDiscountLimit],
       [CAPABILITY.settingsCollateralTypes, SETTINGS_CAPABILITY.collateralTypes],
       [CAPABILITY.settingsFinanceOpeningPeriod, SETTINGS_CAPABILITY.financeOpeningPeriod],
+      [CAPABILITY.settingsManufacturingScrapCost, SETTINGS_CAPABILITY.manufacturingScrapCost],
+      [CAPABILITY.settingsNotificationRetention, SETTINGS_CAPABILITY.notificationRetention],
+      [CAPABILITY.settingsDocumentNumberSeries, SETTINGS_CAPABILITY.documentNumberSeries],
       [CAPABILITY.settingsManufacturingParameters, SETTINGS_CAPABILITY.manufacturingParameters],
       [CAPABILITY.settingsManufacturingTolerances, SETTINGS_CAPABILITY.manufacturingTolerances],
     ] as const

@@ -106,7 +106,7 @@ public sealed class ShellCapabilityModuleAuthorityTests
             new[]
             {
                 "product.items.activate", "product.items.create", "product.items.deactivate", "product.items.detail",
-                "product.items.edit", "product.items.list", "product.items.reactivate",
+                "product.items.edit", "product.items.list", "product.items.reactivate", "product.items.set-cogs-classification",
             },
             registry.Registrations.Where(item => item.Owner == ProductShellCapabilityProvider.OwnerId)
                 .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal));

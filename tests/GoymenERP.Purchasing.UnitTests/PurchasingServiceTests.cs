@@ -522,11 +522,15 @@ public sealed partial class PurchasingServiceTests
 
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
-        public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
+        public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null,
+            IPurchaseReceiptReversalTransactionV1? reversals = null, IPurchaseSupplierReturnStore? returns = null,
+            IPurchaseSupplierReturnInvoiceCostReadPortV1? returnCosts = null,
+            IPurchaseReceiptReversalBatchTransactionV1? reversalBatches = null)
         {
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
                 new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources,
-                allocationLinks: AllocationLinks);
+                allocationLinks: AllocationLinks, receiptReversals: reversals, returnStore: returns, returnInvoiceCosts: returnCosts,
+                receiptReversalBatches: reversalBatches);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
@@ -587,6 +591,8 @@ public sealed partial class PurchasingServiceTests
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
+        public List<string> Measured { get; } = [];
+
         /// <summary>A2a-1: names refused even while <see cref="Granted"/> (e.g. the price read, to see the Withheld answer).</summary>
         public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
 
@@ -594,6 +600,7 @@ public sealed partial class PurchasingServiceTests
         {
             Calls++;
             LastPermission = permission;
+            Measured.Add(permission);
             return Task.FromResult(new PermissionScope(Granted && !Denied.Contains(permission), true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
@@ -697,7 +704,7 @@ public sealed partial class PurchasingServiceTests
     }
 
     /// <summary>An in-memory store of the contract's replay rules; the Σ-shares rule is switched on by <see cref="OverSourced"/> (the real rule is the SQL store's).</summary>
-    private sealed class FakeStore : IPurchasingStore
+    private sealed partial class FakeStore : IPurchasingStore
     {
         private sealed record Attempt(string Actor, string Hash, StoredPurchaseRequest? Request, StoredPurchaseOrder? Order, PurchasingTerminalRefusal? Refusal, string Correlation);
 

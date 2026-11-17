@@ -366,6 +366,8 @@ export interface LogisticsProblem {
   readonly code: string | null
   readonly correlationId: string | null
   readonly errors: readonly LogisticsFieldError[]
+  /** Only the server's bounded physical-stock refusal sentence; never an arbitrary problem detail. */
+  readonly detail?: string
 }
 
 /** `LogisticsProblemCodesV1` plus the shared codes the routes answer. 503s carry only the platform's `service_unavailable`. */
@@ -1029,13 +1031,22 @@ export function decodeProblem(value: unknown, status: number): LogisticsProblem 
       if (typeof e.field === 'string' && typeof e.code === 'string') errors.push({ field: e.field, code: e.code })
     }
   }
+  const detail = decodePhysicalStockRefusalDetail(o.detail, status)
   return {
     status,
     title: typeof o.title === 'string' ? o.title : '',
     code: typeof o.code === 'string' ? o.code : null,
     correlationId: typeof o.correlationId === 'string' ? o.correlationId : null,
     errors,
+    ...(detail === null ? {} : { detail }),
   }
+}
+
+/** Display authoritative text verbatim. No quantity arithmetic or interpretation of other problem details. */
+export function decodePhysicalStockRefusalDetail(value: unknown, status: number): string | null {
+  if (status !== 409 || typeof value !== 'string' || value.length > 128) return null
+  const match = /^Sistemde (-?(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,2}[1-9])?) kg var, ((?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,2}[1-9])?) kg istendi\.$/u.exec(value)
+  return match !== null && match[0] === value && match[1] !== '-0' && match[2] !== '0' ? value : null
 }
 
 /* ── The approved-order-lines read ───────────────────────────────────────── */

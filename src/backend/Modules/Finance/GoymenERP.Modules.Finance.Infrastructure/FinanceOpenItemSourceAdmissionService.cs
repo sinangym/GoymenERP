@@ -228,8 +228,7 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         {
             return uploadFence;
         }
-        if (upload is null || !string.Equals(upload.TemplateVersion,
-                FinanceOfficialSalesInvoiceImportTemplateV2.Version, StringComparison.Ordinal))
+        if (upload is null || !FinanceOfficialSalesInvoiceImportTemplateV3.HasDocumentColumns(upload.TemplateVersion))
         {
             return null;
         }

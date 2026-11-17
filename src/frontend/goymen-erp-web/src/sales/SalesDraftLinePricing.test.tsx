@@ -484,3 +484,16 @@ describe('AT-018 list price on the order line', () => {
     expect((submit as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+
+describe('SAT-S12 recorded margin cost source states', () => {
+  it.each(['FormulaGoldenPending', 'CostRepinPolicyPending'] as const)('decodes %s without a value and accepts the recorded snapshot kind', (reason) => {
+    const body = pricing('4')
+    const margin = { disclosure: 'Visible', costBasis: 'PurchaseCostOnly', kind: 'Snapshot',
+      lines: body.lines.map((line) => ({ lineId: line.lineId, lineNo: line.lineNo, state: 'Unavailable',
+        unavailableReason: reason, amount: null, currencyId: null, percent: null, percentUnavailableReason: null })) }
+    expect(decodeDraftLinePricing({ ...body, margin })?.margin).toMatchObject({ kind: 'Snapshot', lines: [{ unavailableReason: reason }] })
+    expect(decodeDraftLinePricing({ ...body, margin: { ...margin, lines: margin.lines.map((line) => ({ ...line, amount: '0.00' })) } })).toBeNull()
+    expect(decodeDraftLinePricing({ ...body, margin: { ...margin, kind: 'Invented' } })).toBeNull()
+  })
+})

@@ -25,17 +25,23 @@ public static class CompanyPolicyKeysV1
     /// <summary>SAT-D381: the default subcontract VAT/withholding code on the sales side.</summary>
     public const string SalesSubcontractTaxDefault = "sales.subcontract-tax-default";
 
-    /// <summary>ALS-D105: the separate purchasing-side record (read only until its write authority is decided).</summary>
+    /// <summary>ALS-D105: the separate purchasing-side record, administered by purchasing.orders.approve.</summary>
     public const string PurchasingSubcontractTaxDefault = "purchasing.subcontract-tax-default";
 
     /// <summary>SAT-D358: separate from the order discount group limits, no default.</summary>
     public const string SalesContractDiscountLimit = "sales.contract-discount-limit";
 
+    /// <summary>SAT-D305: fire cost is included unless an explicit company version disables it.</summary>
+    public const string ManufacturingIncludeScrapCost = "manufacturing.include-scrap-cost";
+    /// <summary>KLN-D114/D115: passivate in-app notifications after this many whole days; never delete.</summary>
+    public const string NotificationActiveDays = "work.notification-active-days";
     public const int MaximumLength = 64;
 
     public static IReadOnlyList<string> All { get; } =
     [
         SalesContractDiscountLimit,
+        ManufacturingIncludeScrapCost,
+        NotificationActiveDays,
         FinanceOpeningPeriod,
         ManufacturingDueDateBuffer,
         SalesSubcontractTaxDefault,
@@ -61,6 +67,7 @@ public static class CompanyPolicyProblemCodesV1
     public const string VersionConflict = "settings_company_policy_version_conflict";
     public const string ExemptionCodeUnknown = "settings_company_policy_exemption_code_unknown";
     public const string WithholdingCodeUnknown = "settings_company_policy_withholding_code_unknown";
+    public const string RateUnknown = "settings_company_policy_tax_rate_unknown";
     public const string ProviderUnavailable = "settings_provider_unavailable";
     public const string AccessDenied = "settings_access_denied";
     public const string ProfileInvalid = "settings_profile_invalid";
@@ -164,6 +171,13 @@ public interface ISettingsCompanyPolicyAdministrationV1
 
     Task<CompanyPolicyCommandResultV1> RecordSalesSubcontractTaxDefaultAsync(RecordSubcontractTaxDefaultRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SubcontractTaxDefaultViewV1> GetPurchasingSubcontractTaxDefaultAsync(CancellationToken cancellationToken = default);
+
+    Task<CompanyPolicyCommandResultV1> RecordPurchasingSubcontractTaxDefaultAsync(RecordSubcontractTaxDefaultRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SubcontractTaxOptionsV1> GetSubcontractTaxOptionsAsync(SubcontractTaxSideV1 side, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -254,20 +268,4 @@ public interface ISettingsFinanceCreditAccountMappingProviderV1
 {
     Task<SettingsFinanceCreditAccountMappingV1> GetCreditAccountMappingAsync(Guid companyId,
         FinanceCreditAccountPurposeV1 purpose, CancellationToken cancellationToken = default);
-}
-
-/// <summary>A number series key (draft implementation; KIM-D53 fixes the number format and reset/gap behavior).</summary>
-public sealed record SettingsNumberSeriesKeyV1(string Value);
-
-public sealed record SettingsNumberSeriesNumberV1(Guid CompanyId, SettingsNumberSeriesKeyV1 SeriesKey, string Number);
-
-/// <summary>
-/// PANO row 64 draft contract only: KIM-D53 decided prefix + year + sequence, annual reset, no reuse of cancelled numbers
-/// and gap reporting. The durable series implementation is still pending; no provider is registered and a consumer must
-/// not assume a number exists.
-/// </summary>
-public interface ISettingsNumberSeriesProviderV1
-{
-    Task<SettingsNumberSeriesNumberV1> NextNumberAsync(Guid companyId, SettingsNumberSeriesKeyV1 seriesKey,
-        CancellationToken cancellationToken = default);
 }

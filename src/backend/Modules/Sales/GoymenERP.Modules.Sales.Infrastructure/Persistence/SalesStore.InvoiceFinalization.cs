@@ -238,6 +238,8 @@ public sealed partial class SalesStore
                 invoice.Match.Ettn,
                 invoice.Match.OfficialFunctionalAmount,
                 invoice.Match.Difference,
+                invoice.Match.InvoiceDate,
+                invoice.Match.SourceProof,
             },
             instalments = finalization.Plan.Select(item => new
             {
@@ -250,6 +252,9 @@ public sealed partial class SalesStore
             }).ToArray(),
             invoice.CompanyId,
             invoice.Header.BusinessDate,
+            invoiceDate = invoice.Match!.InvoiceDate,
+            officialInvoiceNo = invoice.Match.OfficialNo,
+            finalization.FinalizedBy,
             rateDay = invoice.Header.Rate?.RateDay,
             functionalCurrencyId = invoice.Header.Rate?.FunctionalCurrencyId,
             net = totals.Net.Amount,

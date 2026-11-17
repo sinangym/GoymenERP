@@ -74,6 +74,13 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
 /// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
+    /// <summary>ALS-D115: the append-only supplier/price history; null for an order never revised.</summary>
+    public string? SupplierRevisionHistoryJson { get; set; }
+    public string? CurrentPreparedBy { get; set; }
+    public string? DocumentNumber { get; set; }
+    public long? DocumentNumberFormatVersion { get; set; }
+    public long? DocumentNumberSequence { get; set; }
+    public DateTimeOffset? DocumentNumberCancelledAtUtc { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public Guid SupplierPartyId { get; set; }
@@ -106,7 +113,8 @@ internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 /// One order line with its shares as stored totals (§7.2, §13): Ordered is the first commitment, Technical the
 /// part moved into technical lines, Accepted the accepted share, Cancelled (A1-3, No.161 §2) the unaccepted remainder
 /// cancelled with the order, Closed (API-11, F-017 §3.6) the unaccepted remainder closed by a short-delivery closure (zero again
-/// after a reopening); committed = Ordered − Technical and remaining = committed − Accepted − Cancelled − Closed are derived
+/// after an explicit reopening). DefinitiveReturned is a supplier return without replacement, not newly open supply;
+/// committed = Ordered − Technical and remaining = committed − Accepted − Cancelled − Closed − DefinitiveReturned are derived
 /// (master INV-006). The request binding (SourceRequestLineId) is the share this supplier takes.
 /// A2a-1 (ALS-D5): the general line's manual price (UnitPrice, PriceUnitId, DiscountPercent or DiscountAmount), all null for a line
 /// without a price ("fiyat bekliyor", ALS-D18) and always null on a technical line; written once with the line. A2a-2 (ALS-D38,
@@ -130,6 +138,8 @@ internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
     public decimal Accepted { get; set; }
     public decimal Cancelled { get; set; }
     public decimal Closed { get; set; }
+    public decimal DefinitiveReturned { get; set; }
+    public bool ReceiptClosureRevived { get; set; }
     public decimal? UnitPrice { get; set; }
     public Guid? PriceUnitId { get; set; }
     public decimal? DiscountPercent { get; set; }
@@ -149,6 +159,9 @@ internal sealed class PurchaseAttemptRow : IPurchasingTenantRow
     public int Outcome { get; set; }
     public Guid? RequestId { get; set; }
     public Guid? OrderId { get; set; }
+    /// <summary>The immutable API-44/API-60 result; success and refusal share this attempt's unique key.</summary>
+    public Guid? ReceiptAdjustmentId { get; set; }
+    public Guid? ReceiptAdjustmentBatchId { get; set; }
     public string? RefusalJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

@@ -211,6 +211,9 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
             // An in-transit transfer always carries its dispatch row; anything else is a storage fault.
             throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
         }
+        // This existing physical invariant must be checked before an irreversible Logistics/e-document fence.
+        if (request.CancelledAtUtc < dispatchedAtUtc)
+            throw new InventoryTransferException(400, InventoryTransferCodesV1.ValidationFailed);
 
         var currentSetting = InventoryTransferDispatchCancelMapping.ToDomain(
             await ReadSourceScaleSettingAsync(scope, context.SourceLocationId, cancellationToken));
@@ -259,8 +262,12 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         InventoryTransferDispatchCancelConfirmationV1? confirmation;
         try
         {
-            confirmation = await dispatchCancelGate.ConfirmAsync(query, decision.RequiresLogisticsNoExitConfirmation,
-                decision.RequiresEDispatchCancelConfirmation, cancellationToken);
+            confirmation = dispatchCancelGate is IInventoryTransferDispatchCancelGatePortV2 versioned
+                ? await versioned.ConfirmAsync(query, request, decision.RequiresLogisticsNoExitConfirmation,
+                    decision.RequiresEDispatchCancelConfirmation, await FinalizeAsync(scope, transport, cancellationToken),
+                    token => FreshAuthorityFenceAsync(scope, token), cancellationToken)
+                : await dispatchCancelGate.ConfirmAsync(query, decision.RequiresLogisticsNoExitConfirmation,
+                    decision.RequiresEDispatchCancelConfirmation, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

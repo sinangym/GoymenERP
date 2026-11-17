@@ -43,6 +43,9 @@ public static partial class PurchasingEndpoints
     {
         MapRequests(endpoints);
         MapOrders(endpoints);
+        MapSupplierRevisions(endpoints);
+        MapIncomingInvoices(endpoints);
+        MapInvoiceImports(endpoints);
         MapCurrencyCandidates(endpoints);
         MapGoodsReceiptLabels(endpoints);
         return endpoints;
@@ -736,6 +739,8 @@ public static partial class PurchasingEndpoints
 
         MapGoodsReceiptBatches(group);
         MapSupplierReturns(group);
+        MapReceiptReversals(group);
+        MapReceiptReversalBatches(group);
     }
 
     private static bool IsListQueryValid(HttpContext httpContext, HashSet<string> allowedNames, int? pageSize, string? cursor, string? status,
@@ -834,10 +839,14 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.IsReplay,
         PurchaseOrderResponse order => order.IsReplay,
+        PurchaseIncomingInvoiceCommandResponseV1 invoice => invoice.IsReplay,
+        PurchaseInvoiceImportReservationResultV1 reservation => reservation.IsReplay,
         PurchaseFutureAllocationReleaseResponse release => release.IsReplay,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.IsReplay,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.IsReplay,
         PurchaseSupplierReturnResponseV1 supplierReturn => supplierReturn.IsReplay,
+        PurchaseReceiptReversalResponseV1 reversal => reversal.Purchase.IsReplay,
+        PurchaseReceiptReversalBatchResponseV1 batch => batch.IsReplay,
         _ => false,
     };
 
@@ -845,10 +854,14 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.OriginalCorrelationId,
         PurchaseOrderResponse order => order.OriginalCorrelationId,
+        PurchaseIncomingInvoiceCommandResponseV1 invoice => invoice.OriginalCorrelationId,
+        PurchaseInvoiceImportReservationResultV1 reservation => reservation.OriginalCorrelationId,
         PurchaseFutureAllocationReleaseResponse release => release.OriginalCorrelationId,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.OriginalCorrelationId,
         PurchaseGoodsReceiptBatchResponseV1 batch => batch.OriginalCorrelationId,
         PurchaseSupplierReturnResponseV1 supplierReturn => supplierReturn.OriginalCorrelationId,
+        PurchaseReceiptReversalResponseV1 reversal => reversal.Purchase.OriginalCorrelationId,
+        PurchaseReceiptReversalBatchResponseV1 batch => batch.OriginalCorrelationId,
         _ => throw new InvalidOperationException("Replay without its original correlation."),
     };
 
@@ -907,7 +920,8 @@ public static partial class PurchasingEndpoints
             extensions["errors"] = exception.Errors;
         }
 
-        return Results.Problem(statusCode: exception.Status, extensions: extensions);
+        var detail = InventoryRuntime.InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, extensions, exception.Detail);
+        return Results.Problem(statusCode: exception.Status, detail: detail, extensions: extensions);
     }
 
     private static IResult Problem(int statusCode, string code, ICorrelationContext correlation) => Results.Problem(statusCode: statusCode,
@@ -928,14 +942,25 @@ public static partial class PurchasingEndpoints
 /// adopts or rewrites it and is its single writer from the central step on.
 /// </summary>
 public sealed class CounterpartyPurchasingPartyAccountPortV1(ICompanyContext companyContext, ICurrentUser currentUser,
-    ICounterpartyReadService counterparties) : IPurchasingPartyAccountPortV1
+    ICounterpartyReadService counterparties) : IPurchasingPartyAccountPortV1, IPurchasingPartyAccountPortV2
 {
     public async Task<PurchasingPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyAccountId, CancellationToken cancellationToken = default)
+    {
+        var result = await ReadV2Async(partyId, companyAccountId, cancellationToken);
+        return new(result.Outcome, result.Account is { } account
+            ? new(account.PartyId, account.CompanyAccountId, account.CompanyId, account.PartyIsActive,
+                account.AccountIsActive, account.AccountHasSupplierRole, account.PartyVersion, account.AccountVersion) : null);
+    }
+
+    Task<PurchasingPartyAccountAnswerV2> IPurchasingPartyAccountPortV2.GetAuthorizedAsync(Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken) => ReadV2Async(partyId, companyAccountId, cancellationToken);
+
+    private async Task<PurchasingPartyAccountAnswerV2> ReadV2Async(Guid partyId, Guid companyAccountId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!IsCurrent() || partyId == Guid.Empty || companyAccountId == Guid.Empty)
         {
-            return new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Denied, null);
+            return new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.Denied, null);
         }
 
         var companyId = companyContext.CompanyId;
@@ -947,7 +972,7 @@ public sealed class CounterpartyPurchasingPartyAccountPortV1(ICompanyContext com
         }
         catch (UnauthorizedAccessException)
         {
-            return new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Denied, null);
+            return new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.Denied, null);
         }
 
         // The owner answered for the context captured before the await — the company AND the actor;
@@ -956,23 +981,23 @@ public sealed class CounterpartyPurchasingPartyAccountPortV1(ICompanyContext com
         if (!IsCurrent() || companyContext.CompanyId != companyId
             || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
         {
-            return new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Denied, null);
+            return new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.Denied, null);
         }
 
         if (party is null || party.Id != partyId)
         {
-            return new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.NotFound, null);
+            return new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.NotFound, null);
         }
 
         var accounts = party.CompanyAccounts.Where(account => account.Id == companyAccountId && account.CompanyId == companyId).ToArray();
         if (accounts.Length != 1)
         {
-            return new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.NotFound, null);
+            return new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.NotFound, null);
         }
 
         var account = accounts[0];
-        return new PurchasingPartyAccountAnswerV1(PurchasingPartyAccountOutcomeV1.Found, new PurchasingPartyAccountV1(party.Id, account.Id, account.CompanyId,
-            party.IsActive, account.IsActive, account.Roles.HasFlag(PartyRole.Supplier), party.Version, account.Version));
+        return new PurchasingPartyAccountAnswerV2(PurchasingPartyAccountOutcomeV1.Found, new PurchasingPartyAccountV2(party.Id, account.Id, account.CompanyId,
+            party.IsActive, account.IsActive, account.Roles.HasFlag(PartyRole.Supplier), account.Roles.HasFlag(PartyRole.Tolling), party.Version, account.Version));
     }
 
     private bool IsCurrent() =>

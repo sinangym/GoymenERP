@@ -45,11 +45,30 @@ public static class PurchasingModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PurchasingStore>();
+        services.AddScoped<PurchaseServiceOrderStoreV1>();
+        services.AddScoped<IPurchaseServiceOrderStoreV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseSubcontractOrderReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseServiceAcceptanceReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseServiceOrderServiceV1, PurchaseServiceOrderServiceV1>();
+        services.AddScoped<IPurchaseAdditionalCostStoreV1, PurchaseAdditionalCostStoreV1>();
+        services.AddScoped<IPurchaseAdditionalCostServiceV1, PurchaseAdditionalCostServiceV1>();
+        // Direct ALC-S8 answer: the existing purchase-order reviser records expenses. Registration grants nothing.
+        services.TryAddSingleton(new PurchaseAdditionalCostWriteAdmissionV1(PurchasingPermissionManifestV1.OrdersRevise,
+            "Issue #1189 issuecomment-6946921285: alış siparişini revize etme yetkilisi"));
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchaseIncomingInvoiceWorkflowV1, PurchaseIncomingInvoiceWorkflow>();
+        services.AddScoped<IPurchaseIncomingInvoiceMatchSourceV1, PurchaseIncomingInvoiceMatchSource>();
+        services.AddScoped<IPurchaseIncomingInvoiceWorkspaceV1, PurchaseIncomingInvoiceWorkspace>();
+        services.AddScoped<IPurchaseIncomingInvoiceDiagnosticsV1, PurchaseIncomingInvoiceDiagnostics>();
+        services.AddScoped<IPurchaseInvoiceImportReservationStoreV1>(provider => provider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchaseInvoiceFileReaderV1, Imports.PurchaseInvoiceFileReader>();
+        services.AddScoped<IPurchaseInvoiceImportV1, PurchaseInvoiceImport>();
         services.AddScoped<PurchaseUnitVerifier>();
         services.TryAddSingleton(new PurchasingServiceBindings());
         services.AddScoped<PurchasingService>(CreatePurchasingService);
         services.AddScoped<IPurchasingService>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchasingSupplierRevisionServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderRecordReadSourceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderReadServiceV1, PurchasingOrderReadServiceV1>();
         services.AddScoped<IPurchaseGoodsReceiptServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
@@ -59,12 +78,15 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseGoodsReceiptBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseSupplierReturnStore, PurchaseSupplierReturnStore>();
         services.AddScoped<IPurchaseSupplierReturnServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseReceiptReversalServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseReceiptReversalBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseAcceptanceSourceV1, PurchaseAcceptanceSource>();
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
         services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
         // A4 / MOD-03: the open purchase lines serving a Sales order (the host adapts it to Sales's linked-supply read contract).
         services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
+        services.AddScoped<IPurchaseNotificationRecipientsV1, PurchaseNotificationRecipients>();
         // F-017 F17-1 (ALS-D82): the allocatable amount of an approved general line, read by Inventory's future allocation only.
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // F17-1b / KLN-D30: current unreceived schedule slices, on the same scoped owner context/transaction.
@@ -116,7 +138,9 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<IPurchaseSupplierReturnStore>(),
         serviceProvider.GetService<IPurchaseSupplierReturnTransactionV1>(),
         serviceProvider.GetService<IPurchaseSupplierReturnInvoiceCostReadPortV1>(),
-        serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>());
+        serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>(),
+        serviceProvider.GetService<IPurchaseReceiptReversalTransactionV1>(),
+        serviceProvider.GetService<IPurchaseReceiptReversalBatchTransactionV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

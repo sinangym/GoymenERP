@@ -28,6 +28,14 @@ export const INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY = 'inventory.stock-scrap.a
 
 export const INVENTORY_STOCK_POSITIONS_ROUTE = '/stok/pozisyonlar' as const
 export const INVENTORY_TRANSFERS_ROUTE = '/stok/transferler' as const
+export const INVENTORY_TRANSFER_PLANNING_ROUTE = '/stok/transferler/planla' as const
+export const INVENTORY_TRANSFER_PLANNING_CAPABILITY = 'inventory.stock-transfer.write' as const
+/** Existing action permissions, reached without granting the stock-position report. */
+export const INVENTORY_TRANSFER_ACTION_ROUTE = {
+  'inventory.stock-transfer.overage-approve': '/stok/transferler/fazla-kabul-onaylari',
+  'inventory.stock-transfer.loss-record': '/stok/transferler/kayip-talepleri',
+  'inventory.stock-transfer.loss-approve': '/stok/transferler/kayip-onaylari',
+} as const
 export const INVENTORY_TRANSFER_CANCEL_CAPABILITY = 'inventory.stock-transfer.cancel' as const
 
 /**
@@ -43,6 +51,15 @@ export const INVENTORY_MOVEMENT_TIMELINE_ROUTE = '/stok/hareketler' as const
  * own. The API re-measures both reads on every request.
  */
 export const INVENTORY_SHORTAGE_WARNINGS_ROUTE = '/stok/eksik-uyarilari' as const
+/** SAT-D337: existing stock-report capability; no new permission or capability name. */
+export const INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE = '/stok/eksi-stok-denemeleri' as const
+export function inventoryNegativeStockAttemptPath(productId: string | null = null, locationId: string | null = null): string {
+  const search = new URLSearchParams()
+  if (productId !== null) search.set('productId', productId)
+  if (locationId !== null) search.set('locationId', locationId)
+  const suffix = search.toString()
+  return suffix === '' ? INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE : `${INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE}?${suffix}`
+}
 
 /**
  * STK-S33 (KLN-D44, KLN-D41) cross-module label trace and label search. Reached from a label detail, never the sidebar; it

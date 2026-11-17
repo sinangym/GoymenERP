@@ -16,7 +16,7 @@ namespace GoymenERP.Accounting.UnitTests;
 /// database per test, with a synthetic mapping resolver and a synthetic host authority. What SQL Server enforces itself
 /// (one save, the unique indexes, the race, the Down guard) is proven by the relational acceptance tests.
 /// </summary>
-public sealed class AccountingSourceDocumentAdmissionV1Tests
+public sealed partial class AccountingSourceDocumentAdmissionV1Tests
 {
     private static readonly Guid Company = Guid.Parse("b0420000-0000-4000-8000-00000000000a");
     private static readonly Guid OtherCompany = Guid.Parse("b0420000-0000-4000-8000-00000000000b");
@@ -531,6 +531,8 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
 
         public bool SplitVersions { get; set; }
 
+        public string ExpectedPurpose { get; set; } = AccountingPostingAccountMappingPurposesV1.SalesInvoice;
+
         public Task<AccountingPostingAccountMappingResolutionV1> ResolveAsync(
             Guid companyId,
             string purpose,
@@ -542,7 +544,7 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
             string? vatRateCode = null,
             CancellationToken cancellationToken = default)
         {
-            Assert.Equal(AccountingPostingAccountMappingPurposesV1.SalesInvoice, purpose);
+            Assert.Equal(ExpectedPurpose, purpose);
             if (Gap is not null)
             {
                 return Task.FromResult(Gap switch
@@ -563,6 +565,9 @@ public sealed class AccountingSourceDocumentAdmissionV1Tests
                 AccountingPostingAccountMappingKeysV1.Receivable => Receivable,
                 AccountingPostingAccountMappingKeysV1.Revenue => Revenue,
                 AccountingPostingAccountMappingKeysV1.VatOutput => VatOutput,
+                AccountingPostingAccountMappingKeysV1.Payable => Receivable,
+                AccountingPostingAccountMappingKeysV1.Inventory or AccountingPostingAccountMappingKeysV1.Expense => Revenue,
+                AccountingPostingAccountMappingKeysV1.VatInput or AccountingPostingAccountMappingKeysV1.WithholdingPayable => VatOutput,
                 _ => Guid.Empty,
             };
             return Task.FromResult(account == Guid.Empty

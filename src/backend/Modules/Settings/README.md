@@ -1,5 +1,21 @@
 # Settings prerequisite contract V1
 
+## W8 first money profiles (URN-D2/D3/D4; FIN-SC47)
+
+The existing money-profile screen also exposes empty authoring series (`version = "0"`,
+`versions = []`) for the registered operation and TRY/USD/EUR identities. Empty targets have
+no scale, active value or effective date: a permitted human explicitly records the first version.
+The credit-plan target is limited to companies with existing Finance monetary operation
+registration; SAT-D18 company boundaries, module bindings, Finance STOP and grants stay intact.
+New FX identities use the existing `ExchangeRateCurrencyIdentitiesV1` derivation.
+
+The first version and its series marker are saved with audit and idempotency in one transaction,
+using the existing tables; no migration or seed is needed. Operation-specific candidates now
+read the same stored timeline as the profile provider, including scheduled/passive state. A
+missing or unreadable store cannot reactivate a compiled profile. Existing document snapshots
+remain unchanged. New SQL, decoder and screen test sources are recorded in the W8 handoff;
+runtime acceptance remains pending the final train verification.
+
 Source: DEC-SET-001; Master sections 9, 12 and 28.1; Business PR #254
 at `6f0cd10259aeb2a44d32a92535464ed2ce096cf7`, Sales section 4 and Finance section 5;
 issue #66 comment 5653637829. Base: `f6fa07d026403649d6c815b84fd850e7ceeaf092`.
@@ -898,7 +914,7 @@ permissive value. Nothing is seeded.
 | Due-date buffer | URT-D96: company-wide working days, start value 0 when nothing is recorded. The upper bound is NEEDS-SINAN. |
 | Subcontract tax default | SAT-D381 (sales) and ALS-D105 (purchasing) are separate keys with the tax master's item type default shape; codes must exist in the tax master. Only the sales side has a write route; the purchasing write authority is NEEDS-SINAN, so it reads "no default". |
 | Credit account mapping | FNS-D97: `ISettingsFinanceCreditAccountMappingProviderV1` answers `MappingMissing` ("eşleme eksik") until a mapping is recorded. |
-| Number series | `ISettingsNumberSeriesProviderV1.NextNumberAsync` is a draft contract only; no implementation is registered. KIM-D53 fixes prefix + year + sequence, annual reset, no reuse of cancelled numbers and gap reporting. The durable implementation and company format editor are still pending. |
+| Number series | `ISettingsDocumentNumberSeriesV1` has a durable owner provider and explicit company format editor. KIM-D53 fixes prefix + year + sequence, annual reset, no reuse of cancelled numbers and gap reporting. Reservations join the caller's Serializable transaction; no format is seeded. See the KIM-S19 section below; consumer and acceptance evidence remain separate. |
 | Names | `settings.finance-opening-period.manage`: registered, company-wide, not Critical, **granted to no role** (human gate). The due-date buffer route uses `manufacturing.plans.approve`; the sales tax default route uses `purchasing.orders.approve` (to be confirmed, NEEDS-SINAN). |
 | Routes | `GET` and `POST .../versions` under `/api/v1/settings/company-policies/` for `finance-opening-period`, `manufacturing-due-date-buffer` and `sales-subcontract-tax-default`. POST returns 204. |
 | Commands | Each command takes an Idempotency-Key, an expected version ("0" for the first) and a reason (≤ 4000). One save with the execution row and one audit event. Terminal refusals (409, 422) are stored and replay. |
@@ -1010,3 +1026,64 @@ published 64-character collateral transport bound. **51942** is the first Down o
 its value, or collateral rate text incompatible with the previous CHECK exists. Empty/old-compatible stores may roll back.
 The earlier catalog migration remains unchanged. Snapshot/model, permissions, adapter failure/null/zero, foreign company,
 replay, Audit-owner rollback/retry and real-SQL CHECK/Down test sources accompany the screen/decoder cases; **NOT_RUN**.
+
+
+## KIM-S19 N-12 and operational policies (source only)
+
+`20261116220424_AddDocumentNumberSeriesAndOperationalPolicies` is EF-generated pure DDL: four company-filtered
+number-series tables and two approved policy keys. Down first refuses with THROW 51954 while any format,
+counter, reservation, cancellation, scrap-cost or notification-retention history exists. No default rows or seeds.
+Document reservations borrow the owner's open Serializable transaction and connection; the caller must fully
+roll back on every exception. Prefix and minimum sequence width require explicit company format entry.
+Annual counters do not reset on format changes; cancellations append history and never free a number.
+The 90-day notification and scrap-cost inclusion starting values are decided policy reads only after a successful
+empty-store read; storage failure never becomes a default success. Runtime SQL/HTTP/browser tests are NOT_RUN.
+
+## KIM-S15 / TK-38 manufacturing starting-value transfer
+
+The existing parameter/tolerance publish permission allows an explicit company-scoped transfer of that company's
+reviewed version-0 starting values. It copies exact values, source identities, dates and decimal representation into
+an immutable snapshot; it does not publish a draft, revise a formula or create values for an unconfigured company.
+The parameter and tolerance scopes each transfer once. Expected version `0`, a reason, actor-bound idempotency,
+fresh permission/company checks and Audit accompany the same save. Providers read the persisted snapshot after
+transfer; an invalid persisted source fails closed. Existing draft/published versions and past document proofs stay intact.
+The two `starting-values-transfer` commands use existing publish permissions and do not grant rights to any person.
+The forward-fix guard is **51966** and refuses while a baseline snapshot exists. Migration generation and source-build
+results are recorded in the W8 identity report; SQL/HTTP/browser acceptance is **NOT_RUN** until the final test phase.
+
+## API-97 purchase invoice variance policy (ALS-D8 / ALS-D15 / ALS-D63)
+
+`ISettingsPurchaseInvoiceVariancePolicyProviderV1` reads only the company's explicitly published immutable versions.
+No row is `settings_purchase_invoice_variance_policy_not_published`, never an active zero fallback. The editor starts
+the two fields at the decided zero; an authorized person may explicitly publish different values, including on the
+first publication. Amount and control-rate boundaries share one identity/version and the invoice snapshots both.
+The owner stores exact decimal(24,6) values, rejecting excess precision without rounding or choosing approval policy.
+
+`settings.purchase-invoice-variance-policies.manage` is registration only, company-wide: it confers no grant, role,
+Critical classification or invoice-approval permission. `GET /api/v1/settings/purchase-invoice-variance-policy`
+shows the actual current version and history; `POST .../publish` requires the expected version, reason and actor-bound
+idempotency key. The owner revalidates current authority, owns its Serializable transaction and appends Audit through
+the Audit owner's port before committing the version and terminal answer. Caller-owned/ambient transactions and
+pending caller state are refused unchanged. Technical/Audit/concurrency failures roll back and leave the key retryable.
+
+EF-generated migration `20261117085524_AddPurchaseInvoiceVariancePolicies` adds the company-filtered table without seed or backfill. Its first
+Down operation refuses with **THROW 51985** while any policy history exists; an empty table may roll back. The API
+mount, shell capability/route and global generated inventories remain central integration work. Unit, SQL/HTTP and
+frontend test sources are supplied; runtime acceptance is **NOT_RUN**.
+
+### Warehouse transfer exit weighing — STK-S8 / LOJ-D11
+
+`ISettingsWarehouseTransferScaleProviderV1` reads the current company's real internal warehouse and its append-only
+choice. A valid warehouse with no record is `NotConfigured`, false, with no recorded version (the default-Off
+metadata in `SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md:48`). Explicit Off is a recorded version; unavailable or foreign
+sources are not Off. Publishing On requires the actual Logistics departure capability. No policy is seeded.
+
+The `settings.warehouse-transfer-scale.manage` name is registration only. The editor uses actual Organization
+warehouse candidates, expected version, actor-bound idempotency, reason, fresh authority and same-transaction Audit
+owner writes. It rejects borrowed transactions and pending caller state before clearing any owner work. Replay
+returns its immutable original answer before reading a warehouse that may subsequently be unavailable.
+
+EF-generated `20261117111242_AddWarehouseTransferScalePolicies` adds only the version history and checks. Down first
+refuses with **THROW 51990** while any history exists. The real provider and administrator are module-registered;
+`MapSettingsWarehouseTransferScaleEndpoints` and `/ayarlar/depo-transfer-tartisi` are coordinator mounts. Runtime unit,
+SQL, Vitest, browser and CI acceptance remains **NOT_RUN**.

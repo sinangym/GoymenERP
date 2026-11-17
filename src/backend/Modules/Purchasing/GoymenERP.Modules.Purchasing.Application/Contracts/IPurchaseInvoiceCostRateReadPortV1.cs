@@ -10,10 +10,9 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// until that invoice is recorded the answer is <see cref="PurchaseInvoiceCostRateOutcomeV1.Unavailable"/> — there is NO
 /// provisional rate (no order-day, receipt-day or bulletin rate stands in for it) and no correction movement follows later.
 /// <para>
-/// Purchasing records no supplier invoice yet (the incoming invoice and its three-way match are still absent), so today every
-/// recorded receipt answers Unavailable with <see cref="PurchaseInvoiceCostRateReasonsV1.InvoiceNotRecorded"/>; the slice that first
-/// records a supplier invoice answers <see cref="PurchaseInvoiceCostRateOutcomeV1.Rate"/> through
-/// <see cref="PurchaseInvoiceCostRateAnswerV1.Rated"/> without changing this contract. The answer carries the purchase order's
+/// Purchasing reads finalised incoming invoices and their receipt bindings. A fully covered receipt whose sources share one
+/// official rate answers <see cref="PurchaseInvoiceCostRateOutcomeV1.Rate"/>. Missing, pending, incomplete or mixed-rate sources
+/// answer Unavailable with an explicit reason; no weighted-rate policy is inferred. The answer carries the purchase order's
 /// currency as a recorded fact (or null when the order has no money snapshot); Purchasing does NOT decide which currency is the
 /// company's base currency and never answers "no rate needed" — that judgement is the consumer's. No price, amount or quantity
 /// member exists: the foreign-currency value (SAT-D295, the purchase order line price) is read elsewhere.
@@ -56,8 +55,14 @@ public static class PurchaseInvoiceCostRateReasonsV1
     /// <summary>No supplier invoice billing this receipt is recorded in Purchasing (BS-1: Unavailable until it arrives).</summary>
     public const string InvoiceNotRecorded = "purchase_invoice_not_recorded";
 
+    public const string InvoiceNotFinalized = "purchase_invoice_not_finalized";
+    public const string InvoiceCoverageIncomplete = "purchase_invoice_coverage_incomplete";
+    public const string MultipleOfficialRates = "purchase_invoice_multiple_official_rates";
+    public const string NoForeignCurrencyRate = "purchase_invoice_no_foreign_currency_rate";
+
     /// <summary>Every reason this contract version may answer.</summary>
-    public static IReadOnlyList<string> All { get; } = [InvoiceNotRecorded];
+    public static IReadOnlyList<string> All { get; } =
+        [InvoiceNotRecorded, InvoiceNotFinalized, InvoiceCoverageIncomplete, MultipleOfficialRates, NoForeignCurrencyRate];
 }
 
 /// <summary>

@@ -65,8 +65,11 @@ public static class AccountingModuleExtensions
         services.TryAddSingleton<NormalJournalPermissionBindingV1>();
         services.AddScoped<IApprovedNormalJournalSourceBindingCatalogV1>(serviceProvider =>
             serviceProvider.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>());
+        services.AddScoped<IApprovedNormalJournalSourceKindCatalogV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>());
+        services.TryAddScoped<FinanceManualReceiptNormalJournalSourceProviderV1>();
         services.TryAddScoped<INormalJournalDraftServerSourceProviderV1,
-            FinanceManualReceiptNormalJournalSourceProviderV1>();
+            FinanceFinancialMovementNormalJournalSourceProviderV1>();
         services.AddScoped<NormalJournalDraftApprovalPolicyV1>();
         services.AddScoped<NormalJournalDraftServiceV1>();
         services.AddScoped<INormalJournalDraftLifecycleV1>(serviceProvider =>
@@ -96,7 +99,23 @@ public static class AccountingModuleExtensions
             UnavailableAccountingSourceDocumentAdmissionAuthorityV1>();
         services.AddScoped<IAccountingSourceDocumentAdmissionStoreV1, AccountingSourceDocumentAdmissionStoreV1>();
         services.AddScoped<IAccountingSourceDocumentAdmissionPortV1, AccountingSourceDocumentAdmissionServiceV1>();
+        services.AddScoped<IAccountingSourceVoucherStoreV1, AccountingSourceVoucherStoreV1>();
+        services.AddScoped<AccountingSourceVoucherServiceV1>();
+        services.TryAddScoped<IAccountingSourceInvoiceCancellationAuthorityV1, UnavailableAccountingSourceInvoiceCancellationAuthorityV1>();
+        services.AddScoped<IAccountingSourceInvoiceCancellationStoreV1, AccountingSourceInvoiceCancellationStoreV1>();
+        services.AddScoped<IAccountingSourceInvoiceCancellationPortV1, AccountingSourceInvoiceCancellationServiceV1>();
         services.AddScoped<AccountingApiService>();
+        services.AddScoped<IManufacturingCostDifferenceStoreV1, ManufacturingCostDifferenceStoreV1>();
+        services.AddScoped<ManufacturingCostDifferenceServiceV1>();
+        services.AddScoped<IInvoiceLineCogsCorrectionStoreV1, InvoiceLineCogsCorrectionStoreV1>();
+        services.AddScoped<InvoiceLineCogsCorrectionServiceV1>();
+        services.AddScoped<ICreditMovementProposalStoreV1, CreditMovementProposalStoreV1>();
+        services.AddScoped<CreditMovementProposalServiceV1>();
+        services.AddScoped<IFinanceJournalSourceStoreV1, FinanceJournalSourceStoreV1>();
+        services.AddScoped<FinanceJournalSourceServiceV1>();
+        services.AddScoped<FinanceJournalSourceInboxConsumerV1>();
+        services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.CreditMovementProposalInboxConsumerV1>();
+        services.AddScoped<GoymenERP.Modules.Accounting.Application.Inbox.ManufacturingCostDifferenceInboxConsumerV1>();
         return services;
     }
 

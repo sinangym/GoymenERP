@@ -10,6 +10,11 @@ namespace GoymenERP.Modules.Sales.Domain.Invoices;
 public enum SalesSubcontractServiceInvoiceState
 {
     Draft = 1,
+    PendingApproval = 2,
+    Approved = 3,
+    Rejected = 4,
+    Cancelled = 5,
+    Finalized = 6,
 }
 
 /// <summary>
@@ -90,7 +95,7 @@ public sealed class SalesSubcontractServiceInvoiceLine
 /// one delivery weighing of one loading instruction for one subcontract order (the store's unique index refuses a second invoice
 /// of the same key). The document number is a technical display identifier (Ö8), never the official invoice number.
 /// </summary>
-public sealed class SalesSubcontractServiceInvoice
+public sealed partial class SalesSubcontractServiceInvoice
 {
     public const int MaximumLines = SalesOrderDraft.MaximumLines;
     public const int MaximumDocumentNoLength = SalesOrderDraft.MaximumDocumentNoLength;
@@ -126,7 +131,7 @@ public sealed class SalesSubcontractServiceInvoice
     public SalesSubcontractServiceInvoiceState State { get; private set; } = SalesSubcontractServiceInvoiceState.Draft;
 
     /// <summary>Optimistic concurrency: 1 at creation.</summary>
-    public long Version { get; }
+    public long Version { get; private set; }
 
     public string CreatedBy { get; }
 
@@ -215,7 +220,8 @@ public sealed class SalesSubcontractServiceInvoice
     /// </summary>
     public static SalesSubcontractServiceInvoice Restore(Guid id, Guid companyId, string documentNo,
         SalesSubcontractServiceInvoiceHeader header, SalesSubcontractServiceInvoiceSource source, SalesSubcontractServiceInvoiceState state,
-        long version, string createdBy, DateTimeOffset createdAtUtc, IReadOnlyList<SalesSubcontractServiceInvoiceLine> storedLines)
+        long version, string createdBy, DateTimeOffset createdAtUtc, IReadOnlyList<SalesSubcontractServiceInvoiceLine> storedLines,
+        SalesSubcontractInvoiceLifecycleFacts? lifecycle = null)
     {
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(source);
@@ -243,6 +249,9 @@ public sealed class SalesSubcontractServiceInvoice
             invoice.lines.Add(line);
         }
 
+        if (lifecycle is not null) invoice.RestoreLifecycle(lifecycle);
+        else if (state != SalesSubcontractServiceInvoiceState.Draft)
+            throw new InvalidOperationException("Kayıtlı fason fatura karar kanıtı eksik.");
         return invoice;
     }
 

@@ -17,7 +17,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(14, declarations.Count);
+        Assert.Equal(20, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
@@ -44,6 +44,12 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.JournalReversalProposeCapabilityId,
                 AccountingShellCapabilityProvider.JournalReversalApproveCapabilityId,
                 AccountingShellCapabilityProvider.AccountPlanCapabilityId,
+                AccountingShellCapabilityProvider.CostDifferencePrepareCapabilityId,
+                AccountingShellCapabilityProvider.CostDifferenceApproveCapabilityId,
+                AccountingShellCapabilityProvider.InvoiceLineCogsPrepareCapabilityId,
+                AccountingShellCapabilityProvider.InvoiceLineCogsApproveCapabilityId,
+                AccountingShellCapabilityProvider.SourceVouchersCapabilityId,
+                AccountingShellCapabilityProvider.SourceVouchersApproveCapabilityId,
             },
             id => Assert.False(Assert.Single(declarations, item => item.CapabilityId == id).ImplementationAvailable));
     }
@@ -56,9 +62,23 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.4"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.7"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("accounting.source-vouchers.list", "accounting.source-vouchers.list", "/muhasebe/kaynak-fisler",
+                "M-04-SOURCE", ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead]),
+            ("accounting.source-vouchers.approve", "accounting.source-vouchers.list", "/muhasebe/kaynak-fisler",
+                "M-04-SOURCE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingPermissionManifestV1.JournalsRead, NormalJournalPermissionNamesV1.DraftApprove]),
+            ("accounting.invoice-line-cogs.prepare", "accounting.invoice-line-cogs.prepare", "/muhasebe/fatura-satiri-smm",
+                "M-04-LINE-COGS-PREPARE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose]),
+            ("accounting.invoice-line-cogs.approve", "accounting.invoice-line-cogs.approve", "/muhasebe/fatura-satiri-smm-onay",
+                "M-04-LINE-COGS-APPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve]),
+            ("accounting.manufacturing-cost-differences.prepare", "accounting.manufacturing-cost-differences.prepare", "/muhasebe/uretim-maliyet-farklari",
+                "M-01-COST-PREPARE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Propose, AccountingPermissionManifestV1.PeriodsRead, AccountPlanPermissionNamesV1.Read]),
+            ("accounting.manufacturing-cost-differences.approve", "accounting.manufacturing-cost-differences.approve", "/muhasebe/uretim-maliyet-farki-onay",
+                "M-01-COST-APPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve]),
             ("accounting.periods.list", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,
                 [AccountingPermissionManifestV1.PeriodsRead]),
             ("accounting.periods.propose", "accounting.periods.new", "/muhasebe/donemler/yeni", "M-07-NEW",
@@ -131,7 +151,25 @@ public sealed class AccountingShellCapabilityProviderTests
                 control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         }
 
-        Assert.Equal(3, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(4, declarations.Count(item => item.ParentCapabilityId is not null));
+    }
+
+    [Fact]
+    public void Source_voucher_approval_keeps_read_access_and_remains_staged()
+    {
+        var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
+        var list = Assert.Single(declarations, item => item.CapabilityId == AccountingShellCapabilityProvider.SourceVouchersCapabilityId);
+        var approve = Assert.Single(declarations, item => item.CapabilityId == AccountingShellCapabilityProvider.SourceVouchersApproveCapabilityId);
+        Assert.False(list.ImplementationAvailable);
+        Assert.False(approve.ImplementationAvailable);
+        Assert.Equal(list.CapabilityId, approve.ParentCapabilityId);
+        Assert.Equal(list, approve with
+        {
+            CapabilityId = list.CapabilityId,
+            ParentCapabilityId = null,
+            RequiredPermissions = list.RequiredPermissions,
+        });
+        Assert.Equal([AccountingPermissionManifestV1.JournalsRead, NormalJournalPermissionNamesV1.DraftApprove], approve.RequiredPermissions);
     }
 
     [Fact]
@@ -166,7 +204,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-04-REVERSAL-APPROVE", "M-05", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-01-COST-APPROVE", "M-01-COST-PREPARE", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-LINE-COGS-APPROVE", "M-04-LINE-COGS-PREPARE", "M-04-NEW", "M-04-REVERSAL-APPROVE", "M-04-SOURCE", "M-05", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]

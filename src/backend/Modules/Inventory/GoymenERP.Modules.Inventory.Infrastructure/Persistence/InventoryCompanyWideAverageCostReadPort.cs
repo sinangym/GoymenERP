@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -50,18 +51,31 @@ internal sealed class InventoryCompanyWideAverageCostReadPort(InventoryDbContext
             .Where(row => row.CompanyId == companyId && row.ProductId == productId
                 && stockedLocations.Contains(row.LocationId))
             .ToDictionaryAsync(row => row.LocationId, cancellationToken);
+        var exactPools = await dbContext.ExactCostPools.AsNoTracking().Where(row => row.CompanyId == companyId && row.ProductId == productId
+            && row.CurrencyId == GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsCurrencyIdentitiesV1.TurkishLira
+            && stockedLocations.Contains(row.LocationId)).ToDictionaryAsync(row => row.LocationId, cancellationToken);
 
         var result = CompanyWideAverageCostCalculator.Aggregate(stock.Select(entry => new CompanyWideAverageCostLocation(
             entry.LocationId, entry.OnHandKg,
-            ledger.TryGetValue(entry.LocationId, out var row) ? InventoryAverageCostLedgerRows.PositionOf(row) : null)));
+            ledger.TryGetValue(entry.LocationId, out var row)
+                ? exactPools.TryGetValue(entry.LocationId, out var exact) && !InventoryAverageCostReadPort.ExactMatches(exact, row, entry.OnHandKg)
+                    ? AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch)
+                    : InventoryAverageCostLedgerRows.PositionOf(row) : null)));
         var sources = result.Included.Select(location => new InventoryCompanyWideAverageCostSourceV1(
             location.LocationId, location.OnHandKg,
             ledger.TryGetValue(location.LocationId, out var row) ? row.Version : null));
+        // The old ledger has no currency column. Its legacy base-currency description alone proves no identity.
+        // Only every actual matching currency-specific pool can establish the returned currency; no backfill/fallback.
+        Guid? currency = result.Status == CompanyWideAverageCostStatus.Known && result.Included.All(location =>
+            ledger.TryGetValue(location.LocationId, out var row) && exactPools.TryGetValue(location.LocationId, out var exact)
+            && exact.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira
+            && InventoryAverageCostReadPort.ExactMatches(exact, row, location.OnHandKg))
+            ? SettingsCurrencyIdentitiesV1.TurkishLira : null;
 
         return result.Status switch
         {
             CompanyWideAverageCostStatus.Known => InventoryCompanyWideAverageCostReadAnswerV1.ForValue(
-                companyId, productId, result.AverageCostPerKg!.Value, sources),
+                companyId, productId, result.AverageCostPerKg!.Value, sources, currency),
             CompanyWideAverageCostStatus.Unreadable => InventoryCompanyWideAverageCostReadAnswerV1.ForUnreadable(
                 companyId, productId, InventoryAverageCostReadPort.CodeOf((int)result.UnreadableReason!.Value),
                 result.UnreadableLocationId!.Value, sources),

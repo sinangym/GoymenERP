@@ -15,5 +15,7 @@ export const FUTURE_ALLOCATION_TEXT = {
   refused: 'İşlem uygulanmadı. Kaynak satırın durumunu, birimini ve miktarını kontrol edin.',
   noConversion: 'Bu ürün ve birimler için merkezi çevrim kaynağı bulunamadı. İşlem uygulanmadı.',
   window: 'Son 100 ayırma gösteriliyor; daha eski kayıtlar bu pencerede yer almıyor.',
+  delivery: 'Alış termini', overdue: 'Termin geçti', onTime: 'Termin geçmedi', undated: 'Termin belirlenmedi',
+  scheduleUnavailable: 'Termin okunamadı', inactiveSchedule: 'Aktif ayırma yok', evaluatedOn: 'Termin kontrol tarihi',
   statuses: { Active: 'Aktif', Consumed: 'Tüketildi', Released: 'Bırakıldı' } as const,
 } as const

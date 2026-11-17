@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Shell;
 public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "IDENTITY";
-    public const string OwnerContractVersion = "1.2";
+    public const string OwnerContractVersion = "1.3";
 
     public const string AccessListCapabilityId = "identity.assignments.list";
     public const string AccessListRouteId = "identity.assignments.list";
@@ -46,6 +46,10 @@ public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
+        new ShellCapabilityDeclaration(
+            "identity.users.manage", "identity.users.manage", "/ayarlar/kullanicilar", "SY-01-USERS",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.IdentityUsersManage], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(
             IdentityPermissionManifestV1.RolesManage,
             AccessListRouteId, AccessListRoutePath, AccessListScreenId,

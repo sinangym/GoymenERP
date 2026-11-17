@@ -6,7 +6,6 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
-using GoymenERP.Modules.Identity.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -37,7 +36,7 @@ public sealed class CompanyLifecycleScopeFenceTests
 
         Assert.Equal(StatusCodes.Status403Forbidden, request.Http.Response.StatusCode);
         Assert.Equal(0, request.Lifecycle.Calls);
-        Assert.Equal(0, request.Setup.FounderCalls);
+        Assert.Equal(0, request.Setup.AuthorityCalls);
         Assert.Equal(0, request.NextCalls);
         Assert.False(request.CompanyContext.IsResolved);
         AssertMismatchDenial(request);
@@ -48,17 +47,17 @@ public sealed class CompanyLifecycleScopeFenceTests
     }
 
     [Fact]
-    public async Task A_pending_first_admin_request_without_membership_keeps_the_fresh_founder_exception()
+    public async Task A_first_admin_request_without_membership_uses_only_the_fresh_group_operation()
     {
         using var request = new RequestFixture(canAccessCompany: false, firstAdminEndpoint: true);
-        request.Setup.IsFounder = _ => true;
+        request.Setup.IsGranted = _ => true;
         request.Lifecycle.Read = (_, _) => Task.FromResult<CompanyLifecycleViewV1?>(View(CompanyLifecycleStateV1.SetupPending));
 
         await request.InvokeAsync();
 
         Assert.Equal(StatusCodes.Status200OK, request.Http.Response.StatusCode);
-        Assert.Equal(new[] { "founder", "lifecycle", "founder", "next" }, request.Calls);
-        Assert.Equal(2, request.Setup.FounderCalls);
+        Assert.Equal(new[] { "group-authority", "lifecycle", "group-authority", "next" }, request.Calls);
+        Assert.Equal(2, request.Setup.AuthorityCalls);
         Assert.Equal(1, request.NextCalls);
         Assert.True(request.NextSawResolvedCompany);
         Assert.Equal(Company, request.CompanyContext.CompanyId);
@@ -67,14 +66,26 @@ public sealed class CompanyLifecycleScopeFenceTests
     }
 
     [Fact]
-    public async Task First_admin_metadata_without_an_active_founder_never_reads_a_foreign_company()
+    public async Task An_active_company_still_allows_only_the_explicit_group_first_admin_operation_for_replay()
+    {
+        using var request = new RequestFixture(canAccessCompany: false, firstAdminEndpoint: true);
+        request.Setup.IsGranted = _ => true;
+        await request.InvokeAsync();
+        Assert.Equal(StatusCodes.Status200OK, request.Http.Response.StatusCode);
+        Assert.Equal(new[] { "group-authority", "lifecycle", "group-authority", "next" }, request.Calls);
+        Assert.False(request.User.CanAccessCompany(Company));
+        Assert.True(request.NextSawResolvedCompany);
+    }
+
+    [Fact]
+    public async Task First_admin_metadata_without_group_authority_never_reads_a_foreign_company()
     {
         using var request = new RequestFixture(canAccessCompany: false, firstAdminEndpoint: true);
 
         await request.InvokeAsync();
 
         Assert.Equal(StatusCodes.Status403Forbidden, request.Http.Response.StatusCode);
-        Assert.Equal(1, request.Setup.FounderCalls);
+        Assert.Equal(1, request.Setup.AuthorityCalls);
         Assert.Equal(0, request.Lifecycle.Calls);
         Assert.Equal(0, request.NextCalls);
         Assert.False(request.CompanyContext.IsResolved);
@@ -82,20 +93,20 @@ public sealed class CompanyLifecycleScopeFenceTests
     }
 
     [Fact]
-    public async Task A_founder_lost_during_the_pending_lifecycle_read_cannot_use_the_first_admin_bypass()
+    public async Task Group_authority_lost_during_the_lifecycle_read_cannot_use_the_first_admin_exception()
     {
         using var request = new RequestFixture(canAccessCompany: false, firstAdminEndpoint: true);
-        request.Setup.IsFounder = call => call == 1;
+        request.Setup.IsGranted = call => call == 1;
         request.Lifecycle.Read = (_, _) => Task.FromResult<CompanyLifecycleViewV1?>(View(CompanyLifecycleStateV1.SetupPending));
 
         await request.InvokeAsync();
 
-        Assert.Equal(StatusCodes.Status409Conflict, request.Http.Response.StatusCode);
-        Assert.Equal(new[] { "founder", "lifecycle", "founder" }, request.Calls);
+        Assert.Equal(StatusCodes.Status403Forbidden, request.Http.Response.StatusCode);
+        Assert.Equal(new[] { "group-authority", "lifecycle", "group-authority" }, request.Calls);
         Assert.Equal(0, request.NextCalls);
         Assert.False(request.CompanyContext.IsResolved);
         using var problem = request.ReadProblem();
-        Assert.Equal("organization.company.setup_pending", problem.RootElement.GetProperty("code").GetString());
+        Assert.Equal("forbidden", problem.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -109,7 +120,7 @@ public sealed class CompanyLifecycleScopeFenceTests
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, request.Http.Response.StatusCode);
         Assert.Equal(1, request.Lifecycle.Calls);
-        Assert.Equal(0, request.Setup.FounderCalls);
+        Assert.Equal(0, request.Setup.AuthorityCalls);
         Assert.Equal(0, request.NextCalls);
         Assert.False(request.CompanyContext.IsResolved);
         Assert.Empty(request.Denials.Entries);
@@ -208,18 +219,19 @@ public sealed class CompanyLifecycleScopeFenceTests
         }
     }
 
-    private sealed class CompanySetupService(List<string> calls) : IIdentityCompanySetupServiceV1
+    private sealed class CompanySetupService(List<string> calls) : ICompanySetupGroupAuthorityV1
     {
-        public int FounderCalls { get; private set; }
-        public Func<int, bool> IsFounder { get; set; } = _ => false;
-        public Task<bool> IsActiveFounderAsync(CancellationToken cancellationToken = default)
+        public int AuthorityCalls { get; private set; }
+        public Func<int, bool> IsGranted { get; set; } = _ => false;
+        public Task<CompanySetupGroupAuthoritySnapshotV1> ReadAsync(CompanySetupGroupOperationV1 operation,
+            CancellationToken cancellationToken = default)
         {
-            FounderCalls++; calls.Add("founder");
-            return Task.FromResult(IsFounder(FounderCalls));
+            Assert.Equal(CompanySetupGroupOperationV1.AssignFirstAdmin, operation);
+            AuthorityCalls++; calls.Add("group-authority");
+            return Task.FromResult(IsGranted(AuthorityCalls)
+                ? new CompanySetupGroupAuthoritySnapshotV1(true, operation, Actor, "SENTETIK-stable-authority")
+                : CompanySetupGroupAuthoritySnapshotV1.Denied(operation));
         }
-        public Task<IdentityAccessCommandResultV1> AssignFirstAdminAsync(AssignFirstCompanyAdminV1 request,
-            IdentityAccessCommandMetadataV1 metadata, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("The scope fence cannot assign a role.");
     }
 
     private sealed class DenialRecorder : IAuthorizationDenialRecorderV1

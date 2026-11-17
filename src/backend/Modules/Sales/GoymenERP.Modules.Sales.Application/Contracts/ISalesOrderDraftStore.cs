@@ -54,6 +54,7 @@ public static class SalesDraftCommands
 
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
+    public const string ReviseSubcontractTaxV1 = "sales.order-draft.subcontract-tax-revise.v1";
 
     /// <summary>Reasoned maker-checker approval of every current below-floor commercial snapshot.</summary>
     public const string ApprovePriceFloorExceptionsV1 = "sales.order-draft.approve-price-floor-exceptions.v1";
@@ -491,6 +492,9 @@ public interface ISalesOrderDraftStore
 /// </summary>
 public static class SalesDraftRequestHash
 {
+    public static string Compute(string commandName, Guid draftId, SalesSubcontractTaxRevisionV1 request) =>
+        Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request }, SalesDraftJson.Options));
+
     public static string Compute(CreateSalesOrderDraftRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

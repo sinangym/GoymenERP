@@ -18,7 +18,7 @@ namespace GoymenERP.Api.Endpoints;
 /// again against fresh authority before it is stored. Another company's period or journal is the same
 /// code-less 404 as an unknown id. No voucher is created, approved or reversed here (ACC-V1).
 /// </summary>
-public static class AccountingEndpoints
+public static partial class AccountingEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
@@ -142,6 +142,7 @@ public static class AccountingEndpoints
     private static readonly string[] NormalJournalUnprocessableCodes =
     [
         .. PeriodUnprocessableCodes,
+        NormalJournalDraftPreparationCodesV1.SourceAmountMismatch,
         AccountingErrorCodes.CompanyMismatch,
         AccountingErrorCodes.JournalTooFewLines,
         AccountingErrorCodes.JournalLineInvalid,
@@ -155,6 +156,9 @@ public static class AccountingEndpoints
         var group = endpoints.MapGroup("/api/v1/accounting")
             .RequireAuthorization()
             .WithTags("Accounting");
+
+        MapManufacturingCostDifferences(group);
+        MapFinanceJournalSources(group);
 
         group.MapGet("/periods", async (
                 int? pageSize,

@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class CounterpartyPurchasingRecordPartyDisplaySqlServerRelationalAcceptanceTests
+public sealed partial class CounterpartyPurchasingRecordPartyDisplaySqlServerRelationalAcceptanceTests
 {
     private static readonly Guid ActivePartyA = Guid.Parse("72000000-0000-0000-0000-000000000001");
     private static readonly Guid ActivePartyB = Guid.Parse("72000000-0000-0000-0000-000000000002");

@@ -9,9 +9,16 @@
  */
 
 export const SETTINGS_CAPABILITY = {
+  salesSubcontractTax: 'settings.sales-subcontract-tax-default.manage',
+  purchasingSubcontractTax: 'settings.purchasing-subcontract-tax-default.manage',
+  warehouseTransferScale: 'settings.warehouse-transfer-scale.manage',
+  purchaseInvoiceVariance: 'settings.purchase-invoice-variance-policies.manage',
   salesContractDiscountLimit: 'settings.sales-contract-discount-limit.manage',
   collateralTypes: 'settings.collateral-types.manage',
   financeOpeningPeriod: 'settings.finance-opening-period.manage',
+  manufacturingScrapCost: 'settings.manufacturing-scrap-cost.manage',
+  notificationRetention: 'settings.notification-retention.manage',
+  documentNumberSeries: 'settings.document-number-series.manage',
   manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
   /** Route `/ayarlar/iskonto-limitleri`; it carries its sidebar label. */
@@ -90,9 +97,16 @@ export const SETTINGS_MANUFACTURING_PROFILE_CONTROL = {
 } as const
 
 export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.salesSubcontractTax]: '/ayarlar/satis-fason-vergi-varsayilani',
+  [SETTINGS_CAPABILITY.purchasingSubcontractTax]: '/ayarlar/alis-fason-vergi-varsayilani',
+  [SETTINGS_CAPABILITY.warehouseTransferScale]: '/ayarlar/depo-transfer-tartisi',
+  [SETTINGS_CAPABILITY.purchaseInvoiceVariance]: '/ayarlar/alis-fatura-fark-toleransi',
   [SETTINGS_CAPABILITY.salesContractDiscountLimit]: '/ayarlar/sozlesme-iskonto-siniri',
   [SETTINGS_CAPABILITY.collateralTypes]: '/ayarlar/teminat-turleri',
   [SETTINGS_CAPABILITY.financeOpeningPeriod]: '/ayarlar/finans-acilis-donemi',
+  [SETTINGS_CAPABILITY.manufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
+  [SETTINGS_CAPABILITY.notificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
+  [SETTINGS_CAPABILITY.documentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
   [SETTINGS_CAPABILITY.salesDiscountLimits]: '/ayarlar/iskonto-limitleri',
@@ -110,9 +124,16 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
 }
 
 export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
+  [SETTINGS_CAPABILITY.salesSubcontractTax]: 'Satış fason vergi varsayılanı',
+  [SETTINGS_CAPABILITY.purchasingSubcontractTax]: 'Alış fason vergi varsayılanı',
+  [SETTINGS_CAPABILITY.warehouseTransferScale]: 'Depo transfer tartısı',
+  [SETTINGS_CAPABILITY.purchaseInvoiceVariance]: 'Alış faturası fark toleransı',
   [SETTINGS_CAPABILITY.salesContractDiscountLimit]: 'Sözleşme iskonto sınırı',
   [SETTINGS_CAPABILITY.collateralTypes]: 'Teminat türleri ve oranları',
   [SETTINGS_CAPABILITY.financeOpeningPeriod]: 'Finans açılış dönemi',
+  [SETTINGS_CAPABILITY.manufacturingScrapCost]: 'Fire maliyete katılımı',
+  [SETTINGS_CAPABILITY.notificationRetention]: 'Bildirim etkinlik süresi',
+  [SETTINGS_CAPABILITY.documentNumberSeries]: 'Belge numara serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',
   [SETTINGS_CAPABILITY.salesDiscountLimits]: 'İskonto limitleri',

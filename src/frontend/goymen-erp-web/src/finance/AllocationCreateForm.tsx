@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { type SourceDetail, type SourcePage, type SourceSummary } from './contract'
-import { parseAmountInput } from './decimalText'
+import { isPositiveDecimalText, parseAmountInput } from './decimalText'
 import { useFinanceBinding } from './financePort'
 import { sendFinanceAllocationCommand, type FinanceAllocationWireSnapshot } from './allocationHttp'
 import {
@@ -48,6 +48,9 @@ interface AllocationCreateFieldsProps {
   readonly sources: readonly AllocationSourceChoice[]
   readonly batches: readonly AllocationBatchChoice[]
   readonly openItems: readonly AllocationOpenItemChoice[]
+  readonly positions?: readonly AllocationSourceChoice[]
+  readonly allocationAccountId?: string
+  readonly onAllocationAccount?: (value: string) => void
   readonly sourceId: string
   readonly batchId: string
   readonly openItemId: string
@@ -85,6 +88,14 @@ export function AllocationCreateFields(props: AllocationCreateFieldsProps) {
       : <button type="button" disabled={props.frozen} onClick={props.onSourcePrevious}>Önceki tahsilat kaynakları</button>}
     {props.onSourceNext === undefined ? null
       : <button type="button" disabled={props.frozen} onClick={props.onSourceNext}>Sonraki tahsilat kaynakları</button>}
+    {props.positions === undefined ? null : <>
+      <label htmlFor="finance-allocation-beneficiary">Dağıtımın ait olduğu cari</label>
+      <select id="finance-allocation-beneficiary" value={props.allocationAccountId ?? ''} disabled={props.frozen}
+        onChange={(event) => props.onAllocationAccount?.(event.target.value)}>
+        <option value="">Seçin</option>
+        {props.positions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      </select>
+    </>}
     <label htmlFor="finance-allocation-batch">Onaylı fatura kaynağı</label>
     <select id="finance-allocation-batch" value={props.batchId} disabled={props.frozen}
       onChange={(event) => props.onBatch(event.target.value)}>
@@ -125,11 +136,18 @@ function visibleUnallocated(detail: SourceDetail | null): string | null {
 export function selectableAllocationOpenItems(
   batch: AppliedAllocationOpenItemBatch | null,
   source: SourceDetail | null,
+  allocationAccountId?: string,
 ): readonly AllocationOpenItem[] {
   if (batch === null || source === null || visibleUnallocated(source) === null) return []
+  const accountId = allocationAccountId ?? source.source.companyAccountId
+  const selected = source.allocationPositions?.find((item) => item.companyAccountId === accountId)
+  if (source.allocationPositions !== undefined && (selected === undefined || !isPositiveDecimalText(selected.availableAmount))) return []
+  if (source.allocationPositions === undefined && accountId !== source.source.companyAccountId) return []
   return batch.openItems.filter((item) => item.status === 1
-    && item.companyAccountId === source.source.companyAccountId
-    && item.currencyId === source.source.currencyId)
+    && item.currencyId === source.source.currencyId
+    && (item.allocationPositions === undefined ? item.companyAccountId === accountId
+      : item.allocationPositions.some((position) => position.companyAccountId === accountId
+        && position.partyId === (selected?.partyId ?? source.source.partyId) && isPositiveDecimalText(position.availableAmount))))
 }
 
 let allocationCreateEntrySeed = 0
@@ -149,6 +167,7 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
   const [sourceGeneration, setSourceGeneration] = useState(0)
   const [batchGeneration, setBatchGeneration] = useState(0)
   const [sourceId, setSourceId] = useState('')
+  const [allocationAccountId, setAllocationAccountId] = useState('')
   const [batchId, setBatchId] = useState('')
   const [openItemId, setOpenItemId] = useState('')
   const [amount, setAmount] = useState('')
@@ -230,6 +249,7 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
     if (recovered !== null && recovered.snapshot.request.operation === 'allocation-create') {
       const body = recovered.snapshot.request.body
       setSourceId(body.sourceId)
+      setAllocationAccountId(body.allocationAccountId ?? '')
       setOpenItemId(body.openItemId)
       setAmount(body.amount.replace('.', ','))
       setReason(body.reason)
@@ -240,7 +260,9 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
   const sourcePage = !sources.isFetching && sources.data?.kind === 'found' ? sources.data.resource : null
   const sourceDetail = !detail.isFetching && detail.data?.kind === 'found' ? detail.data.resource : null
   const appliedBatch = !applied.isFetching && applied.data?.kind === 'found' ? applied.data.resource : null
-  const openItems = selectableAllocationOpenItems(appliedBatch, sourceDetail)
+  const selectedAccountId = allocationAccountId || sourceDetail?.source.companyAccountId
+  const position = sourceDetail?.allocationPositions?.find((item) => item.companyAccountId === selectedAccountId)
+  const openItems = selectableAllocationOpenItems(appliedBatch, sourceDetail, selectedAccountId)
   const selectedOpenItem = openItems.find((item) => item.id === openItemId) ?? null
   const parsedAmount = parseAmountInput(amount)
   const frozen = pending !== null
@@ -296,6 +318,7 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
           expectedOpenItemVersion: selectedOpenItem.version,
           amount: parsedAmount.wire,
           reason: reason.trim(),
+          ...(position === undefined ? {} : { allocationPartyId: position.partyId, allocationAccountId: position.companyAccountId }),
         },
       },
     }
@@ -329,7 +352,7 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
     }))
   const openItemChoices = openItems.map((item) => ({
     id: item.id,
-    label: `${item.dueOn ?? 'Vadesiz'} - ${item.outstandingAmount}`,
+    label: `${item.dueOn ?? 'Vadesiz'} - ${item.allocationPositions?.find((value) => value.companyAccountId === selectedAccountId)?.availableAmount ?? item.outstandingAmount}`,
   }))
   if (pending?.snapshot.request.operation === 'allocation-create') {
     const body = pending.snapshot.request.body
@@ -343,6 +366,12 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
 
   return <AllocationCreateFields
     sources={sourceChoices}
+    positions={sourceDetail?.allocationPositions?.filter((item) => isPositiveDecimalText(item.availableAmount)).map((item) => ({
+      id: item.companyAccountId,
+      label: `${item.transferId === null ? 'Asıl cari' : `Devir fişi ${item.transferId.slice(0, 8)}`} — kullanılabilir ${item.availableAmount}`,
+    }))}
+    allocationAccountId={selectedAccountId ?? ''}
+    onAllocationAccount={(value) => { setAllocationAccountId(value); setOpenItemId('') }}
     batches={batchChoices}
     openItems={openItemChoices}
     sourceId={sourceId}
@@ -357,6 +386,7 @@ export function AllocationCreateForm({ onCreated }: { readonly onCreated: (alloc
     message={message}
     onSource={(value) => {
       setSourceId(value)
+      setAllocationAccountId('')
       setOpenItemId('')
       setSourceGeneration((current) => current + 1)
       setMessage(null)

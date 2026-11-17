@@ -76,6 +76,9 @@ public static class ProductPriceListRegistration
             serviceProvider.GetRequiredService<ProductPackageStandardService>());
         services.AddScoped<IProductPackageStandardReaderV3>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        services.AddScoped(CreatePaintMembershipReader);
+        services.AddScoped<IProductPaintMembershipReaderV1>(serviceProvider => serviceProvider.GetRequiredService<ProductPaintMembershipReader>());
+        services.AddScoped<IProductPaintMembershipServiceV1>(CreatePaintMembershipService);
         return services;
     }
 
@@ -157,4 +160,14 @@ public static class ProductPriceListRegistration
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),
         serviceProvider.GetRequiredService<ICompanyContext>());
+    private static ProductPaintMembershipReader CreatePaintMembershipReader(IServiceProvider services) => new(
+        services.GetRequiredService<ProductPriceListDbContext>(), services.GetRequiredService<ICompanyContext>(),
+        services.GetRequiredService<ICurrentUser>());
+    private static ProductPaintMembershipService CreatePaintMembershipService(IServiceProvider services) => new(
+        services.GetRequiredService<ProductPriceListDbContext>(), services.GetRequiredService<ICompanyContext>(),
+        services.GetRequiredService<ICurrentUser>(), services.GetRequiredService<IErpAuthorityRevalidationService>(),
+        services.GetRequiredService<IAuditEventCollector>(), services.GetRequiredService<IAuditTransactionWriterV1>(),
+        services.GetRequiredService<IRefusedAttemptRecorderV1>(), services.GetRequiredService<TimeProvider>(),
+        services.GetRequiredService<ProductPaintMembershipReader>());
+
 }

@@ -1,4 +1,8 @@
 using System.Security.Cryptography;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -450,32 +454,37 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class StoreScope(PurchasingDbContext dbContext, PurchasingStore store) : IAsyncDisposable
+    private sealed class StoreScope(PurchasingDbContext dbContext, PurchasingStore store, IAsyncDisposable? numberScope = null) : IAsyncDisposable
     {
         public IPurchasingStore Store => store;
+        public PurchasingDbContext Context => dbContext;
 
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+        public async ValueTask DisposeAsync() { await dbContext.DisposeAsync(); if (numberScope is not null) await numberScope.DisposeAsync(); }
     }
 
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
-        private Run(string baseConnectionString, SqlServerRelationalApiFactory factory)
+        private Run(string baseConnectionString, SqlServerRelationalApiFactory factory, NumberTestUser numberUser)
         {
             this.baseConnectionString = baseConnectionString;
             Factory = factory;
+            NumberUser = numberUser;
+            NumberUser.UserId = Actor;
         }
 
         public SqlServerRelationalApiFactory Factory { get; }
+        private NumberTestUser NumberUser { get; }
         public string Actor { get; } = Guid.NewGuid().ToString("D");
         public string Correlation { get; } = $"pur4-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(bool configureNumbers = true)
         {
             string baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+            var numberUser = new NumberTestUser();
             SqlServerRelationalApiFactory factory = new SqlServerRelationalApiFactory(baseConnectionString);
-            Run run = new Run(baseConnectionString, factory);
+            Run run = new Run(baseConnectionString, factory, numberUser);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
             health.EnsureSuccessStatusCode();
@@ -484,13 +493,24 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             companyContext.Set(CompanyA);
             await using PurchasingDbContext context = new PurchasingDbContext(Options(factory), companyContext);
             await context.Database.MigrateAsync();
+            if (configureNumbers)
+                foreach (var company in new[] { CompanyA, CompanyB })
+                {
+                    await using var numberScope = new PurchaseDocumentNumberSqlTestOwner(factory.Services, company, numberUser, new NumberTestAuthority());
+                    var admin = numberScope.Administration;
+                    var metadata = new SettingsCommandMetadataV1(company, run.Actor, "SENTETIK-number-format", null, "Test", null, null, "SENTETIK-number-format");
+                    Assert.Equal(204, (await admin.RecordFormatAsync(new(SettingsDocumentSeriesV1.PurchaseOrder, "0", "ALI", 6, "SENTETIK biçim"), metadata)).Answer.StatusCode);
+                }
             return run;
         }
 
-        public PurchasingWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null) =>
-            new(actor ?? Actor, "SENTETIK-purchasing-permission", ["SENTETIK-PURCHASING"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+        public PurchasingWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null)
+        {
+            NumberUser.UserId = actor ?? Actor;
+            return new(actor ?? Actor, "SENTETIK-purchasing-permission", ["SENTETIK-PURCHASING"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+        }
 
-        public StoreScope Store(Guid company, IInterceptor? extra = null)
+        public StoreScope Store(Guid company, IInterceptor? extra = null, NumberTestAuthority? numberAuthority = null)
         {
             CompanyContext companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -504,7 +524,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             }
 
             PurchasingDbContext dbContext = new PurchasingDbContext(builder.Options, companyContext);
-            return new StoreScope(dbContext, new PurchasingStore(dbContext, companyContext, collector, TimeProvider.System));
+            numberAuthority ??= new NumberTestAuthority();
+            var numberScope = new PurchaseDocumentNumberSqlTestOwner(Factory.Services, company, NumberUser, numberAuthority);
+            return new StoreScope(dbContext, new PurchasingStore(dbContext, companyContext, collector, TimeProvider.System,
+                numberScope.Numbers, NumberUser, numberAuthority), numberScope);
         }
 
         /// <summary>(requests, request lines, attempts, audit events of the request, version) as the real SQL holds them.</summary>
@@ -520,7 +543,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             (await ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders WHERE Id = @id", ("@id", id)),
                 await ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrderLines WHERE OrderId = @id", ("@id", id)),
                 await ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"),
-                await ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id", ("@id", id.ToString("D"))),
+                await ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = 'Purchasing.PurchaseOrder' AND EntityId = @id", ("@id", id.ToString("D"))),
                 await ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id = @id", ("@id", id)));
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)

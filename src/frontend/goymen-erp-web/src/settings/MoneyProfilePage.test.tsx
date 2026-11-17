@@ -10,6 +10,30 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const path = '/ayarlar/para-profilleri'
 
 describe('F029-S3 money profiles', () => {
+  it('requires explicit values for a first credit currency profile and sends expected version zero', async () => {
+    const fixture = moneyProfileFixture()
+    const profile = { ...fixture.profiles[0], currencyCode: 'USD', currencyId: '66a81432-19e6-55ee-b9af-3927cb887dea',
+      operation: 'finance.credit-plan', version: '0', versions: [] }
+    const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.moneyProfiles], respond: (url, init) => {
+      if (url.endsWith('/settings/money-profiles')) return json({ ...fixture, profiles: [profile] })
+      if (init?.method === 'POST' && url.endsWith('/settings/money-profiles/versions')) return noContent()
+      return undefined
+    } })
+    renderAt(path)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: T.create }))
+    expect(screen.getByLabelText(T.scale)).toHaveProperty('value', '')
+    expect(screen.getByLabelText(T.active)).toHaveProperty('checked', false)
+    expect(screen.getByRole('button', { name: T.save })).toHaveProperty('disabled', true)
+    expect(commands(calls)).toHaveLength(0)
+    await user.type(screen.getByLabelText(T.scale), '2')
+    await user.click(screen.getByLabelText(T.active))
+    await user.type(screen.getByLabelText(T.reason), 'SENTETIK banka belgesi')
+    await user.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(T.saved)).toBeTruthy()
+    expect(commands(calls)[0].body).toMatchObject({ expectedVersion: '0', currencyId: profile.currencyId,
+      operation: 'finance.credit-plan', scale: 2, unitPriceScale: null, isActive: true })
+  })
   it('previews the changed scale before recording and keeps the same attempt on an unknown result', async () => {
     let attempts = 0
     const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.moneyProfiles], respond: (url, init) => {

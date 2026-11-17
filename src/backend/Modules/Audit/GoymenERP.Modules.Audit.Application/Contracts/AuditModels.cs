@@ -70,7 +70,7 @@ public sealed record AuditEventItem(
     long? EntityVersionAfter,
     string ActorType,
     string ActorId,
-    string PermissionCode,
+    string? PermissionCode,
     IReadOnlyList<string> RoleCodes,
     string BeforeJson,
     string AfterJson,

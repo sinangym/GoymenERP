@@ -65,6 +65,7 @@ public sealed class AccountingInvoiceJournalHostTests
     {
         var services = new ServiceCollection();
         services.TryAddScoped<IAccountingSourceDocumentAdmissionAuthorityV1, SyntheticDefaultAuthority>();
+        services.TryAddScoped<IAccountingSourceInvoiceCancellationAuthorityV1, UnavailableAccountingSourceInvoiceCancellationAuthorityV1>();
 
         services.AddAccountingInvoiceJournal(new ConfigurationBuilder().Build());
 
@@ -73,9 +74,59 @@ public sealed class AccountingInvoiceJournalHostTests
         Assert.Equal(ServiceLifetime.Scoped, authority.Lifetime);
         var consumer = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(AccountingSalesInvoiceFinalizedInboxConsumer));
         Assert.Equal(ServiceLifetime.Scoped, consumer.Lifetime);
+        var cancellation = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IAccountingSourceInvoiceCancellationAuthorityV1));
+        Assert.Equal(typeof(AccountingInvoiceJournalCancellationAuthorityV1), cancellation.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, cancellation.Lifetime);
+        Assert.Equal(ServiceLifetime.Scoped, Assert.Single(services,
+            descriptor => descriptor.ServiceType == typeof(AccountingSalesInvoiceCancelledInboxConsumerV1)).Lifetime);
     }
 
-    private static AccountingInvoiceJournalInboxAuthorityV1 Authority(string? enabled)
+    [Fact]
+    public async Task Purchase_inbox_identity_is_allowed_only_for_purchase_kind_and_only_when_the_existing_switch_is_enabled()
+    {
+        var allowed = await Authority("true").CheckAsync(CompanyA, AccountingPurchaseInvoiceFinalizedInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.PurchaseInvoice, SourceDocumentId, CancellationToken.None);
+        Assert.Equal(AccountingSourceDocumentAuthorityDecisionV1.Allowed, allowed.Decision);
+        Assert.Equal(AccountingPurchaseInvoiceFinalizedInboxV1.AuditPermissionCode, allowed.PermissionCode);
+        var off = await Authority(null).CheckAsync(CompanyA, AccountingPurchaseInvoiceFinalizedInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.PurchaseInvoice, SourceDocumentId, CancellationToken.None);
+        var swapped = await Authority("true").CheckAsync(CompanyA, AccountingPurchaseInvoiceFinalizedInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId, CancellationToken.None);
+        Assert.Equal(AccountingSourceDocumentAuthorityAnswerV1.Unavailable, off);
+        Assert.Equal(AccountingSourceDocumentAuthorityAnswerV1.Unavailable, swapped);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("true")]
+    public async Task Cancellation_identity_is_separate_from_finalization_and_preserves_the_existing_host_switch(string? enabled)
+    {
+        var authority = new AccountingInvoiceJournalCancellationAuthorityV1(Options(enabled));
+        var answer = await authority.CheckAsync(CompanyA, AccountingSalesInvoiceCancelledInboxV1.ActorId,
+            AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId, CancellationToken.None);
+        Assert.Equal(enabled == "true" ? AccountingSourceDocumentAuthorityDecisionV1.Allowed
+            : AccountingSourceDocumentAuthorityAnswerV1.Unavailable.Decision, answer.Decision);
+        if (enabled == "true")
+        {
+            Assert.Equal(AccountingSalesInvoiceCancelledInboxV1.ActorId, answer.PermissionCode);
+            Assert.Empty(answer.RoleCodes);
+        }
+        foreach (var invalid in new[]
+        {
+            (CompanyA, AccountingSalesInvoiceFinalizedInboxV1.ActorId, AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId),
+            (CompanyA, AccountingSalesInvoiceCancelledInboxV1.ActorId, AccountingSourceDocumentKindsV1.PurchaseInvoice, SourceDocumentId),
+            (Guid.Empty, AccountingSalesInvoiceCancelledInboxV1.ActorId, AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId),
+            (CompanyA, AccountingSalesInvoiceCancelledInboxV1.ActorId, AccountingSourceDocumentKindsV1.SalesInvoice, Guid.Empty),
+        }) Assert.Equal(AccountingSourceDocumentAuthorityAnswerV1.Unavailable,
+            await authority.CheckAsync(invalid.Item1, invalid.Item2, invalid.Item3, invalid.Item4, CancellationToken.None));
+        Assert.Equal(AccountingSourceDocumentAuthorityAnswerV1.Unavailable,
+            await Authority(enabled).CheckAsync(CompanyA, AccountingSalesInvoiceCancelledInboxV1.ActorId,
+                AccountingSourceDocumentKindsV1.SalesInvoice, SourceDocumentId, CancellationToken.None));
+    }
+
+    private static AccountingInvoiceJournalInboxAuthorityV1 Authority(string? enabled) => new(Options(enabled));
+
+    private static IOptionsMonitor<AccountingInvoiceJournalHostOptions> Options(string? enabled)
     {
         var values = new Dictionary<string, string?>();
         if (enabled is not null)
@@ -86,7 +137,7 @@ public sealed class AccountingInvoiceJournalHostTests
         var services = new ServiceCollection();
         services.AddAccountingInvoiceJournal(new ConfigurationBuilder().AddInMemoryCollection(values).Build());
         var provider = services.BuildServiceProvider();
-        return new AccountingInvoiceJournalInboxAuthorityV1(provider.GetRequiredService<IOptionsMonitor<AccountingInvoiceJournalHostOptions>>());
+        return provider.GetRequiredService<IOptionsMonitor<AccountingInvoiceJournalHostOptions>>();
     }
 
     private sealed class SyntheticDefaultAuthority : IAccountingSourceDocumentAdmissionAuthorityV1

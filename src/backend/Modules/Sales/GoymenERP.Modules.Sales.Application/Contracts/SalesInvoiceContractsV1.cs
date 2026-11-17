@@ -257,6 +257,7 @@ public static class SalesInvoiceReasonCodesV1
     public const string MoneyProfileMismatch = "money_profile_mismatch";
     public const string RateUnresolved = "rate_unresolved";
     public const string RateMismatch = "rate_mismatch";
+    public const string UsdShipmentDayMismatch = "usd_shipment_day_mismatch";
     public const string DueTermsMissing = "due_terms_missing";
     public const string DueDatePending = "due_date_pending";
     public const string DueDateMismatch = "due_date_mismatch";
@@ -316,6 +317,7 @@ public static class SalesInvoiceProblemCodesV1
 
     /// <summary>409 (recorded): the recorded match carries a difference; finalisation stays blocked until it is resolved (SAT-D229).</summary>
     public const string MatchDifferenceOpen = SalesRuleCodes.InvoiceMatchDifferenceOpen;
+    public const string MatchSourceProofRequired = SalesRuleCodes.InvoiceMatchSourceProofRequired;
 
     /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative or zero last remainder (SAT-D227, SAT-D233).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;

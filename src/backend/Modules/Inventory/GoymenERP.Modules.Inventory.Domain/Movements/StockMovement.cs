@@ -98,6 +98,9 @@ public enum StockMovementKind
     /// original goods receipt stocked; it is traced to that receipt line and never exceeds its received kilograms.
     /// </summary>
     SupplierReturnExit = 15,
+
+    /// <summary>ALS-D86: a linked physical undo of one original Purchasing acceptance; the original receipt remains immutable.</summary>
+    PurchaseAcceptanceReversal = 16,
 }
 
 public enum StockDirection
@@ -315,6 +318,7 @@ public sealed class StockMovement
             case StockMovementKind.TransferTransitLoss:
                 RequireNetZeroPairs();
                 break;
+            case StockMovementKind.PurchaseAcceptanceReversal:
             case StockMovementKind.SupplierReturnExit:
                 if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
                 {

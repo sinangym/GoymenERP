@@ -8,7 +8,7 @@ export function manufacturingProfileFixture(kind: ManufacturingProfileKind = 'pa
     profileVersion: '1', stateVersion: '1', status: 'Draft', effectiveFrom: '2026-11-16', effectiveThrough: null,
     preparedBy: IDENTITY.userId, preparedAtUtc: '2026-11-16T10:00:00Z', preparationReason: 'SENTETIK',
     approvedBy: null, approvedAtUtc: null, approvalReason: null, publishedBy: null, publishedAtUtc: null, publicationReason: null }
-  return { companyId: COMPANY_A, businessDate: '2026-11-16', profiles: [{ ...profile, ...(kind === 'parameters'
+  return { companyId: COMPANY_A, startingValuesTransferVersion: '0', businessDate: '2026-11-16', profiles: [{ ...profile, ...(kind === 'parameters'
     ? { values: [{ key: 'densityKgPerCubicMetre', unit: 'kg/m3', value: '7850' }] }
     : { maximumFirePercent: '3', massBalanceDifferenceTolerancePercent: '1' }) }],
     ...(kind === 'parameters' ? { keys: [{ key: 'densityKgPerCubicMetre', unit: 'kg/m3', kind: 'Positive', maximumScale: 6, processes: ['Slitting'], choices: [] }] } : { startingValues: [] }) }

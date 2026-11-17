@@ -122,7 +122,7 @@ export interface DraftLinePricing {
 /** Why a margin (or only its percent) is unavailable — the server's `SalesLineMarginUnavailableReason` member names. */
 export const MARGIN_UNAVAILABLE_REASONS = ['CostSourceMissing', 'CostUnreadable', 'CostNoSource', 'ProducedItem',
   'MixedSourceItem', 'UnitConversionUndecided', 'CurrencyConversionUndecided', 'SalesAmountUnavailable', 'CostInvalid',
-  'AmountOutOfRange'] as const
+  'AmountOutOfRange', 'CostRepinPolicyPending', 'FormulaGoldenPending'] as const
 export type MarginUnavailableReason = (typeof MARGIN_UNAVAILABLE_REASONS)[number]
 
 export const MARGIN_KEYS = ['disclosure', 'costBasis', 'kind', 'lines'] as const
@@ -144,7 +144,7 @@ export type LineMargin =
 
 export type DraftMargin =
   | { readonly disclosure: 'Withheld' }
-  | { readonly disclosure: 'Visible'; readonly costBasis: 'PurchaseCostOnly'; readonly kind: 'Preview'; readonly lines: readonly LineMargin[] }
+  | { readonly disclosure: 'Visible'; readonly costBasis: 'PurchaseCostOnly'; readonly kind: 'Preview' | 'Snapshot'; readonly lines: readonly LineMargin[] }
 
 export interface LinePriceReferences {
   readonly lineId: string
@@ -303,7 +303,7 @@ function decodeMargin(value: unknown, lines: readonly LinePricing[]): DraftMargi
   const o = exact(value, MARGIN_KEYS)
   if (o === null) return null
   if (o.disclosure === 'Withheld') return o.costBasis === null && o.kind === null && o.lines === null ? { disclosure: 'Withheld' } : null
-  if (o.disclosure !== 'Visible' || o.costBasis !== 'PurchaseCostOnly' || o.kind !== 'Preview' || !Array.isArray(o.lines)
+  if (o.disclosure !== 'Visible' || o.costBasis !== 'PurchaseCostOnly' || (o.kind !== 'Preview' && o.kind !== 'Snapshot') || !Array.isArray(o.lines)
     || o.lines.length !== lines.length) return null
   const numbers = new Map(lines.map((line) => [line.lineId, line.lineNo]))
   const seen = new Set<string>()
@@ -314,7 +314,7 @@ function decodeMargin(value: unknown, lines: readonly LinePricing[]): DraftMargi
     seen.add(margin.lineId)
     margins.push(margin)
   }
-  return { disclosure: 'Visible', costBasis: 'PurchaseCostOnly', kind: 'Preview', lines: margins }
+  return { disclosure: 'Visible', costBasis: 'PurchaseCostOnly', kind: o.kind, lines: margins }
 }
 
 export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null {

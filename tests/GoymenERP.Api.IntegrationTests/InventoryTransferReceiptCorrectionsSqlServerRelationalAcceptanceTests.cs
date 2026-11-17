@@ -257,8 +257,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await scope.Store.DispatchAsync(plan.TransferId, dispatch, EffectiveOutgoing(plan, dispatch),
             InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized);
         var received = await scope.Store.ReceiveLineAsync(plan.TransferId, lineId,
-            new ReceiveInventoryTransferLineV1("2", At.AddHours(2),
-                new("inventory.transfer.incoming-note", Guid.NewGuid(), lineId), "12", "SENTETIK tarti fazlasi"),
+            await RecordIncomingReceiptDocumentAsync(run, plan.TransferId, lineId, "12", "SENTETIK tarti fazlasi"),
             Metadata(run), Authorized);
         Assert.Equal(("2", "Pending"), (Assert.Single(received.Facts.Receipts).OverageKg,
             Assert.Single(received.Facts.Receipts).OverageStatus));

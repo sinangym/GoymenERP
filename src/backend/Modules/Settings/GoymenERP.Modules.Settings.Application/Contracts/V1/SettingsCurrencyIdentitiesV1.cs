@@ -15,4 +15,8 @@ public static class SettingsCurrencyIdentitiesV1
 {
     /// <summary>Turkish lira. The only currency with an approved money profile today (GDC/TRY, Ö2; GSP/GIN Sales draft, SAT-D18).</summary>
     public static readonly Guid TurkishLira = Guid.Parse("9e60dcf0-f4bd-5bca-b464-f9a2db98e31a");
+
+    // Identity only: these UUIDv5 currency names do not create an active money profile.
+    public static readonly Guid UnitedStatesDollar = ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD");
+    public static readonly Guid Euro = ExchangeRateCurrencyIdentitiesV1.ForIsoCode("EUR");
 }

@@ -9,6 +9,7 @@ import { TARGET_BASIS_LABEL } from './manufacturingText'
 import { describeRevisionChanges, PLAN_EDIT_TEXT } from './planEditText'
 import type { PlanRevisionList } from './planRevisionContract'
 import styles from './PlanPage.module.css'
+import { PlanPaintSelectionSummary } from './PlanPaintSelectionSummary'
 
 function when(value: string): string {
   const date = new Date(value)
@@ -33,6 +34,7 @@ export function PlanHistory({ history }: { readonly history: PlanRevisionList })
                 {' · '}{when(entry.recordedAtUtc)}
               </h3>
               {entry.reason === null ? null : <p>{PLAN_EDIT_TEXT.revisionReason(entry.reason)}</p>}
+              <PlanPaintSelectionSummary value={entry.processSpec} />
               {entry.revisedBy === null ? null : (
                 <p className={styles.muted}>{PLAN_EDIT_TEXT.revisedBy} <span className={styles.mono}>{entry.revisedBy}</span></p>
               )}

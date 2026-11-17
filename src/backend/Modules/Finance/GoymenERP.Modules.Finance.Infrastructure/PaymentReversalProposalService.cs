@@ -217,6 +217,7 @@ public sealed class PaymentReversalProposalService(
             allocationState.UpdatedAtUtc = now;
         }
 
+        await FinancePartyBalanceAssignment.ClearAsync(dbContext, FinanceBalanceAssignmentKinds.Payment, payment.Id, cancellationToken);
         dbContext.OutgoingMoneyEventReversals.Add(reversal);
         var succeeded = Succeeded(context, proposal);
         AddCommand(context, metadata, ApproveCommand, payloadHash, payment.Id, succeeded, now);

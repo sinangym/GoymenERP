@@ -1286,6 +1286,64 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftMarginCostRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("CostPerUnit")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<Guid?>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceProof")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("UnavailableReason")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "DraftId", "LineId", "Revision");
+
+                    b.HasIndex("CompanyId", "DraftId", "LineNo", "LineId");
+
+                    b.ToTable("DraftMarginCosts", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_DraftMarginCosts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND [LineNo] >= 1 AND [Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_DraftMarginCosts_Proof", "ISJSON([SourceProof]) = 1 AND LEN([SourceProof]) BETWEEN 2 AND 65536");
+
+                            t.HasCheckConstraint("CK_DraftMarginCosts_Value", "([UnavailableReason] IS NULL AND [CurrencyId] IS NOT NULL AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [CostPerUnit] IS NOT NULL AND [CostPerUnit] >= 0) OR ([UnavailableReason] IS NOT NULL AND [UnavailableReason] IN (1,2,3,5,6,7,8,9,10,11,12,13,14) AND [CurrencyId] IS NULL AND [CostPerUnit] IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftNumberRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2453,11 +2511,18 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasPrecision(28, 8)
                         .HasColumnType("decimal(28,8)");
 
+                    b.Property<DateOnly?>("OfficialInvoiceDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("OfficialInvoiceNo")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("OfficialSourceProofJson")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<decimal?>("OfficialVatAmount")
                         .HasPrecision(28, 8)
@@ -2496,6 +2561,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_InvoiceMatches_Amounts", "[Difference] >= 0 AND [Tolerance] >= 0 AND [InvoiceAmount] >= 0 AND [OfficialAmount] >= 0 AND ([Difference] = ABS([InvoiceAmount] - [OfficialAmount])) AND (([Difference] <= [Tolerance] AND ISNULL([VatDifference], 0) <= [Tolerance] AND ISNULL([WithholdingDifference], 0) <= [Tolerance] AND [DifferenceApprovedBy] IS NULL AND [DifferenceReason] IS NULL) OR (([Difference] > [Tolerance] OR ISNULL([VatDifference], 0) > [Tolerance] OR ISNULL([WithholdingDifference], 0) > [Tolerance]) AND [DifferenceApprovedBy] IS NOT NULL AND [DifferenceReason] IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_InvoiceMatches_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36 AND LEN([MatchedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_InvoiceMatches_SourceProof", "([OfficialInvoiceDate] IS NULL AND [OfficialSourceProofJson] IS NULL) OR (CASE WHEN [OfficialInvoiceDate] > '0001-01-01' AND [OfficialSourceProofJson] IS NOT NULL AND ISJSON([OfficialSourceProofJson]) = 1 AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.companyId')) = [CompanyId] AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.invoiceId')) <> '00000000-0000-0000-0000-000000000000' AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.version')) BETWEEN 1 AND 128 AND TRY_CONVERT(datetimeoffset, JSON_VALUE([OfficialSourceProofJson], '$.approvedAtUtc')) > '0001-01-01' AND ((JSON_VALUE([OfficialSourceProofJson], '$.sourceKind') = 'manual' AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentId')) <> '00000000-0000-0000-0000-000000000000' AND TRY_CONVERT(int, JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentVersionNo')) > 0 AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256')) = 64 AND JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256') COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-fA-F]%' AND JSON_VALUE([OfficialSourceProofJson], '$.sourceBatchId') IS NULL AND JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum') IS NULL AND JSON_VALUE([OfficialSourceProofJson], '$.hasPendingManual') = 'false') OR (JSON_VALUE([OfficialSourceProofJson], '$.sourceKind') = 'approved-import' AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([OfficialSourceProofJson], '$.sourceBatchId')) <> '00000000-0000-0000-0000-000000000000' AND LEN(JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum')) = 64 AND JSON_VALUE([OfficialSourceProofJson], '$.sourceChecksum') COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-fA-F]%' AND JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentId') IS NULL AND JSON_VALUE([OfficialSourceProofJson], '$.pdfDocumentVersionNo') IS NULL AND JSON_VALUE([OfficialSourceProofJson], '$.pdfSha256') IS NULL AND JSON_VALUE([OfficialSourceProofJson], '$.hasPendingManual') IN ('true', 'false'))) THEN 1 ELSE 0 END = 1)");
 
                             t.HasCheckConstraint("CK_InvoiceMatches_TaxAmounts", "([InvoiceVatAmount] IS NULL AND [OfficialVatAmount] IS NULL AND [VatDifference] IS NULL AND [InvoiceWithholdingAmount] IS NULL AND [OfficialWithholdingAmount] IS NULL AND [WithholdingDifference] IS NULL) OR ([InvoiceVatAmount] IS NOT NULL AND [OfficialVatAmount] IS NOT NULL AND [VatDifference] IS NOT NULL AND [InvoiceWithholdingAmount] IS NOT NULL AND [OfficialWithholdingAmount] IS NOT NULL AND [WithholdingDifference] IS NOT NULL AND [InvoiceVatAmount] >= 0 AND [OfficialVatAmount] >= 0 AND [InvoiceWithholdingAmount] >= 0 AND [OfficialWithholdingAmount] >= 0 AND [VatDifference] = ABS([InvoiceVatAmount] - [OfficialVatAmount]) AND [WithholdingDifference] = ABS([InvoiceWithholdingAmount] - [OfficialWithholdingAmount]))");
                         });
@@ -2646,6 +2713,50 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Invoices_Text", "LEN([DocumentNo]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
                             t.HasCheckConstraint("CK_Invoices_Version", "[Version] >= 1");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OfficialInvoiceClaimRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Ettn")
+                        .HasMaxLength(36)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(36)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OfficialInvoiceNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "Ettn");
+
+                    b.HasIndex("CompanyId", "OfficialInvoiceNo")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "InvoiceId", "SourceKind")
+                        .IsUnique();
+
+                    b.ToTable("OfficialInvoiceClaims", "sales", t =>
+                        {
+                            t.HasTrigger("TR_OfficialInvoiceClaims_Immutable");
+
+                            t.HasCheckConstraint("CK_OfficialInvoiceClaims_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceKind] IN (N'dispatch',N'subcontract') AND LEN([OfficialInvoiceNo]) > 0 AND LEN([Ettn]) = 36");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
@@ -3545,6 +3656,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3561,6 +3678,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(128)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position");
 
                     b.HasIndex("CompanyId", "EventType", "AggregateId", "Sequence")
                         .IsUnique()
@@ -3811,6 +3930,113 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractInvoiceCommandAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RefusalCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RefusalErrorsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("RefusalStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "InvoiceId");
+
+                    b.ToTable("SubcontractInvoiceCommandAttempts", "sales", t =>
+                        {
+                            t.HasTrigger("TR_SubcontractInvoiceCommandAttempts_Immutable");
+
+                            t.HasCheckConstraint("CK_SubcontractInvoiceCommandAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_SubcontractInvoiceCommandAttempts_Outcome", "([RefusalStatus] IS NULL AND [RefusalCode] IS NULL AND [RefusalErrorsJson] IS NULL AND [InvoiceId] IS NOT NULL) OR ([RefusalStatus] IS NOT NULL AND [RefusalStatus] IN (400,403,404,409,422) AND [RefusalCode] IS NOT NULL AND LEN([RefusalCode]) > 0 AND [RefusalErrorsJson] IS NOT NULL AND ISJSON([RefusalErrorsJson]) = 1)");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractInvoiceLifecycleRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("FactsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("InvoiceVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "InvoiceId", "Sequence");
+
+                    b.ToTable("SubcontractInvoiceLifecycles", "sales", t =>
+                        {
+                            t.HasTrigger("TR_SubcontractInvoiceLifecycles_Immutable");
+
+                            t.HasCheckConstraint("CK_SubcontractInvoiceLifecycles_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [Sequence] >= 1 AND [InvoiceVersion] >= 1 AND [State] IN (1,2,3,4,5,6) AND ISJSON([FactsJson]) = 1 AND LEN([CorrelationId]) > 0");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractServiceInvoiceAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -4056,24 +4282,32 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompanyId", "SalesOrderId")
                         .HasDatabaseName("IX_SubcontractServiceInvoices_Order");
 
+                    b.HasIndex("CompanyId", "LoadingInstructionId", "WeighingId")
+                        .HasDatabaseName("IX_SubcontractServiceInvoices_ClaimRange");
+
                     b.HasIndex("CompanyId", "LoadingInstructionId", "WeighingId", "SalesOrderId")
                         .IsUnique()
-                        .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing");
+                        .HasDatabaseName("UX_SubcontractServiceInvoices_Weighing")
+                        .HasFilter("[State] IN (1,2,3,6)");
 
                     b.ToTable("SubcontractServiceInvoices", "sales", t =>
                         {
+                            t.HasTrigger("TR_SubcontractServiceInvoices_Lifecycle");
+
                             t.HasCheckConstraint("CK_SubcontractServiceInvoices_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND [SalesOrderId] <> '00000000-0000-0000-0000-000000000000' AND [LoadingInstructionId] <> '00000000-0000-0000-0000-000000000000' AND [WeighingId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_SubcontractServiceInvoices_Scale", "[AmountScale] >= 0 AND [AmountScale] <= 8");
 
                             t.HasCheckConstraint("CK_SubcontractServiceInvoices_Source", "[WeighingRevision] >= 1 AND [InstructionVersion] >= 1 AND LEN([NetKgText]) > 0");
 
-                            t.HasCheckConstraint("CK_SubcontractServiceInvoices_State", "[State] = 1");
+                            t.HasCheckConstraint("CK_SubcontractServiceInvoices_State", "[State] IN (1,2,3,4,5,6)");
 
                             t.HasCheckConstraint("CK_SubcontractServiceInvoices_Text", "LEN([DocumentNo]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
                             t.HasCheckConstraint("CK_SubcontractServiceInvoices_Version", "[Version] >= 1");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ContractAttemptRow", b =>
@@ -4248,6 +4482,16 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "DraftId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftMarginCostRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId", "LineNo", "LineId")
+                        .HasPrincipalKey("CompanyId", "DraftId", "LineNo", "LineId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -4468,6 +4712,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.OfficialInvoiceClaimRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.QuoteAttemptRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
@@ -4629,6 +4882,25 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.ShipmentRiskExceptionRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "ExceptionId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractInvoiceCommandAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractServiceInvoiceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InvoiceId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractInvoiceLifecycleRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.SubcontractServiceInvoiceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InvoiceId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();

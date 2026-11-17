@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 /// <summary>
@@ -16,6 +18,18 @@ public static class FinanceOfficialSalesInvoiceImportTemplateV2
         "officialNo,ettn,taxBaseFunctionalAmount,vatFunctionalAmount,withholdingFunctionalAmount";
 
     public const string Header = FinanceOfficialInvoiceImportTemplateV1.Header + "," + DocumentColumns;
+}
+
+/// <summary>FNS-D89 / KLN-D102: explicit source payable TL and official invoice date; no exchange-rate derivation.
+/// Blank payable TL is unknown, not zero. V1 and V2 remain valid historical formats.</summary>
+public static class FinanceOfficialSalesInvoiceImportTemplateV3
+{
+    public const string Version = "finance-official-invoice-installment-csv.v3";
+    public const string DocumentColumns = FinanceOfficialSalesInvoiceImportTemplateV2.DocumentColumns
+        + ",invoiceDate,payableFunctionalAmount";
+    public const string Header = FinanceOfficialInvoiceImportTemplateV1.Header + "," + DocumentColumns;
+    public static bool HasDocumentColumns(string? version) =>
+        version is FinanceOfficialSalesInvoiceImportTemplateV2.Version or Version;
 }
 
 /// <summary>Stable issue codes of the v2 document columns and of FNS-D19 (D5) official identity admission.</summary>
@@ -57,4 +71,6 @@ public sealed record FinanceOfficialSalesInvoiceImportDocumentV2(
     string Ettn,
     string TaxBaseFunctionalAmount,
     string VatFunctionalAmount,
-    string WithholdingFunctionalAmount);
+    string WithholdingFunctionalAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? InvoiceDate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PayableFunctionalAmount = null);

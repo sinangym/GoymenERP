@@ -2,8 +2,8 @@
  * F2 (SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1 §F2): "Fason hizmet faturası taslağı hazırla" on a subcontract service
  * order. The person names the loading instruction and its delivery weighing; the body carries those two ids and the order only
  * — the net kilograms (LOJ-D9: the fee kilograms; scrap is not billed), the kg price, the tax and every amount are the
- * server's. A weighing that cannot be invoiced now (no weighing, a split that is not decided, a non-kg line, a foreign-currency
- * order, already invoiced) comes back as the server's reasons, listed verbatim; the screen evaluates none of them.
+ * server's. A weighing that cannot be invoiced now (no weighing, an unresolved source, a non-kg line or already invoiced)
+ * comes back as the server's reasons, listed verbatim; the screen evaluates none of them.
  *
  * One Idempotency-Key per submitted snapshot: an unknown outcome keeps the key and freezes the inputs (they survive the panel,
  * ./pendingPoolAttempts.ts) until the same request is retried or left. 401/403 go to the auth boundary.
@@ -24,6 +24,7 @@ import {
 } from './SubcontractInvoiceAttempt'
 import { SUBCONTRACT_SERVICE_INVOICES_PATH, type SubcontractInvoiceDetail } from './SubcontractInvoiceContract'
 import { SUBCONTRACT_INVOICE_TEXT as S } from './SubcontractInvoiceText'
+import { SubcontractInvoiceLifecycle } from './SubcontractInvoiceLifecycle'
 import { isReferenceId } from './wirePrimitives'
 import { useShellState } from '../shell/shellContext'
 import { Button } from '../ui/Button'
@@ -153,6 +154,7 @@ export function SubcontractInvoiceCreate({
         </div>
       ) : null}
       {created === null ? null : <SubcontractInvoiceSummary detail={created} />}
+      <SubcontractInvoiceLifecycle key={created?.id ?? 'lookup'} salesOrderId={salesOrderId} initialInvoiceId={created?.id} />
     </section>
   )
 }

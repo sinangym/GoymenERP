@@ -37,6 +37,8 @@ public static class ProductPriceListHostComposition
             return services.AddProductPriceLists(configuration, configureDbContext);
         }
 
+        services.TryAddScoped<IProductPaintMembershipServiceV1, UnavailableProductPaintMembershipService>();
+        services.TryAddScoped<IProductPaintMembershipReaderV1, UnavailableProductPaintMembershipService>();
         services.TryAddScoped<IProductPriceListServiceV1, UnavailableProductPriceListService>();
         // SAT-D134: the product item type lives in the same company-scoped context, so it is fail-closed here too (the routes
         // answer 503 and the Settings line tax port reads "unavailable").

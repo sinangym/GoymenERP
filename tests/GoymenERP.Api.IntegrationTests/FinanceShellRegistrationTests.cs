@@ -63,8 +63,10 @@ public sealed class FinanceShellRegistrationTests
         // FNS-D24 (Finance 1.11) the cash-transfer workspace and its commit control; F-018 L2 (Finance 1.12) the collateral
         // route and its record control; FIN-S9 (Finance 1.13) the opening-balance route and its propose/approve controls. A declaration still grants nothing: each route or control service measures its own
         // Finance permission afresh.
-        Assert.Equal(39, finance.Length);
-        Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
+        Assert.Equal(46, finance.Length);
+        Assert.All(finance, item => Assert.Equal(
+            !FinanceShellCapabilityRegistryTests.TrainStagedCapabilities.Contains(item.Declaration.CapabilityId),
+            item.Declaration.ImplementationAvailable));
         // Sales 1.20: thirteen routes (three draft, three request, three quote, S-07, S-08, S-09, UI-80 reports) plus detail controls; Sales 1.25 adds the three S-10 return routes and their three controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.
         var sales = registry.Registrations

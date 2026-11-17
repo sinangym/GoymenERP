@@ -32,6 +32,8 @@ export interface SupplierReturn {
   readonly decidedBy: string | null
   readonly decidedAtUtc: string | null
   readonly decisionReason: string | null
+  readonly expectedPurchaseOrderVersion?: string
+  readonly undoQuantity?: string
 }
 
 export interface SupplierReturnPage {
@@ -79,18 +81,23 @@ function oneOf(value: unknown, names: readonly string[]): value is string {
  * Strict decoder for one return, fail closed: exactly its fields; this company and the order asked for; known status, cost basis
  * and source block names; positive canonical kg and unit cost texts. An invoice-cost return is recorded at once and never decided;
  * a manual-cost return is pending with no decision, recorded by a decider, or rejected by a decider with a reason. A replacement
- * return is not offered by this contract version (ALS-D91), so `true` is malformed. Anything else is `null`, never a partial return.
+ * return requires the explicit purchase-unit undo quantity and original expected order version (ALS-D91/D92).
  */
 export function decodeSupplierReturn(value: unknown, companyId: string, orderId: string): SupplierReturn | null {
   const source = record(value)
-  if (source === null || !exact(source, RETURN_FIELDS)
+  const metadataPresent = source !== null && Object.hasOwn(source, 'expectedPurchaseOrderVersion')
+  const fields = metadataPresent ? [...RETURN_FIELDS, 'expectedPurchaseOrderVersion', 'undoQuantity'] : RETURN_FIELDS
+  if (source === null || !exact(source, fields)
     || !isPurchasingGuid(source.companyId) || source.companyId.toLowerCase() !== companyId.toLowerCase()
     || !isPurchasingGuid(source.returnId) || !isPurchasingGuid(source.returnLineId) || !isPurchasingGuid(source.purchaseOrderId)
     || source.purchaseOrderId.toLowerCase() !== orderId.toLowerCase() || !isPurchasingGuid(source.purchaseOrderLineId)
     || !isPurchasingGuid(source.goodsAcceptanceId) || !isPurchasingGuid(source.inventoryMovementId)
     || !oneOf(source.status, STATUSES) || !isPurchasingVersion(source.version) || !oneOf(source.sourceBlock, BLOCKS)
     || !positive(source.quantityKg) || !oneOf(source.costBasis, BASES) || !positive(source.unitCostTryPerKg)
-    || source.replacementExpected !== false || !nonBlank(source.reason) || !isPurchasingInstant(source.occurredAtUtc)
+    || typeof source.replacementExpected !== 'boolean' || source.replacementExpected && !metadataPresent
+    || metadataPresent && (!isPurchasingVersion(source.expectedPurchaseOrderVersion) || !positive(source.undoQuantity)
+      || !/^(0|[1-9]\d{0,14})(\.[0-9]{0,2}[1-9])?$/.test(source.undoQuantity))
+    || !nonBlank(source.reason) || !isPurchasingInstant(source.occurredAtUtc)
     || !nonBlank(source.requestedBy) || !isPurchasingInstant(source.requestedAtUtc)
     || !nullableNonBlank(source.decidedBy) || !(source.decidedAtUtc === null || isPurchasingInstant(source.decidedAtUtc))
     || !nullableNonBlank(source.decisionReason)) return null

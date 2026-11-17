@@ -7,7 +7,7 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class ManufacturingPlanReorderPermissionRegistrationTests
 {
     [Fact]
-    public void The_reorder_name_is_registered_once_company_wide_without_a_grant_and_the_control_stays_staged()
+    public void The_reorder_name_is_registered_once_company_wide_without_a_grant_and_the_control_uses_the_persisted_queue()
     {
         const string name = "manufacturing.plans.reorder";
         Assert.Equal(name, ErpPermissions.ManufacturingPlansReorder);
@@ -19,7 +19,7 @@ public sealed class ManufacturingPlanReorderPermissionRegistrationTests
             ManufacturingPermissionManifestV1.Names.Order());
         var control = Assert.Single(new ManufacturingShellCapabilityProvider().GetDeclarations(),
             item => item.CapabilityId == ManufacturingShellCapabilityProvider.PlanReorderCapabilityId);
-        Assert.False(control.ImplementationAvailable);
+        Assert.True(control.ImplementationAvailable);
         Assert.Contains(name, control.RequiredPermissions);
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AGENTS.md"))) directory = directory.Parent;

@@ -56,7 +56,8 @@ public sealed partial class InventoryStore(
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
     TimeProvider timeProvider,
-    IInventorySubstituteProductVerifierV1? substituteVerifier = null) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
+    IInventorySubstituteProductVerifierV1? substituteVerifier = null,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
     IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1,
     IInventoryLabelClassificationWriterV1
 {
@@ -257,17 +258,13 @@ public sealed partial class InventoryStore(
         return rows.Count == 0 ? null : (await RestoreLabelsAsync(rows, cancellationToken))[labelId];
     }
 
-    public async Task<InventoryWriteOutcome> RecordMovementAsync(StockMovement movement, InventoryCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+    public Task<InventoryWriteOutcome> RecordMovementAsync(StockMovement movement, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default) => WithinPhysicalValidationTransactionAsync(async () =>
     {
         var outcome = await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken);
-        if (outcome == InventoryWriteOutcome.Recorded)
-        {
-            await SaveAsync(cancellationToken);
-        }
-
+        if (outcome == InventoryWriteOutcome.Recorded) await SaveAsync(cancellationToken);
         return outcome;
-    }
+    }, cancellationToken);
 
     /// <summary>
     /// Stages one movement into this context without saving it. Only an enlisted owner participant
@@ -311,6 +308,11 @@ public sealed partial class InventoryStore(
             throw Refused(scale.Code!, "Miktar şirketin onaylı kilogram profiline uymuyor.");
         }
 
+        await LockPhysicalValidationAsync(cancellationToken);
+        foreach (var position in movement.Lines.Select(line => line.Position)
+            .DistinctBy(position => (position.ProductId, position.LocationId)))
+            await ObservePhysicalCountBoundaryAsync(position.ProductId, position.LocationId, cancellationToken);
+
         var labelIds = movement.Lines.Select(line => line.Position.LabelId).Distinct().ToArray();
         var labels = await dbContext.Labels.Where(row => labelIds.Contains(row.Id)).ToListAsync(cancellationToken);
         foreach (var line in movement.Lines)
@@ -336,7 +338,15 @@ public sealed partial class InventoryStore(
                 row.LocationId, labelObjects[row.LabelId], row.Block), Kilograms.Of(row.QuantityKg))));
 
         // The domain decides; nothing below runs for a refused movement.
-        ledger.Apply(movement);
+        try { ledger.Apply(movement); }
+        catch (InventoryRuleException exception) when (exception.Shortfall is { LineNumber: { } lineNumber }
+            && movement.Lines[lineNumber - 1].Direction == StockDirection.Out)
+        {
+            var label = labels.Single(row => row.Id == exception.Shortfall.Position.LabelId);
+            throw PhysicalStockRefusal(movement, exception.Shortfall, metadata, label.Code, exception);
+        }
+
+        await StageMovementCostsAsync(movement, metadata, cancellationToken);
 
         foreach (var position in movement.Lines.Select(line => line.Position).Distinct())
         {

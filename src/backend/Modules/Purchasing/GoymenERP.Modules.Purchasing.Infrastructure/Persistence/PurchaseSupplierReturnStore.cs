@@ -51,13 +51,33 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         RequireSameContent(attempt, envelope.ActorId.Trim(), requestHash);
         if (attempt.Outcome == AttemptOutcomeRecorded)
         {
+            if (attempt.ResultJson is { } snapshot)
+            {
+                StoredPurchaseSupplierReturn? original;
+                try { original = JsonSerializer.Deserialize<StoredPurchaseSupplierReturn>(snapshot, Json); }
+                catch (JsonException exception) { throw new InvalidOperationException("Kayıtlı iade yanıtı okunamadı.", exception); }
+                if (original is null || original.Return is null || original.CompanyId != attempt.CompanyId || original.Return.ReturnId != attempt.ReturnId
+                    || original.Version < 1 || original.Return.PurchaseOrderId == Guid.Empty || original.Return.ReturnId == Guid.Empty
+                    || original.Return.ReturnLineId == Guid.Empty || original.Return.PurchaseOrderLineId == Guid.Empty
+                    || original.Return.GoodsAcceptanceId == Guid.Empty || original.Return.InventoryMovementId == Guid.Empty
+                    || !Enum.IsDefined(original.Return.Status) || !Enum.IsDefined(original.Return.CostBasis)
+                    || !PurchaseSupplierReturnJsonV1.SourceBlocks.Contains(original.Return.SourceBlock, StringComparer.Ordinal)
+                    || original.Return.QuantityKg <= 0 || original.Return.UnitCostTryPerKg <= 0
+                    || string.IsNullOrWhiteSpace(original.RequestedBy))
+                    throw new InvalidOperationException("Kayıtlı iade yanıtı deneme kimlikleriyle uyuşmuyor.");
+                return new(original.Return.ReturnId, null, attempt.CorrelationId, original);
+            }
+            // Older attempts did not persist an original response; their explicit legacy fallback stays identifiable.
             return attempt.ReturnId is { } returnId
                 ? new PurchaseSupplierReturnReplay(returnId, null, attempt.CorrelationId)
                 : throw new InvalidOperationException("Kayıtlı deneme bir tedarikçi iadesi taşımıyor.");
         }
 
+        if (attempt.Outcome != AttemptOutcomeRefused)
+            throw new InvalidOperationException("Kayıtlı iade denemesi durumu tanınmıyor.");
         var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<PurchasingTerminalRefusal>(attempt.RefusalJson, Json);
-        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
+        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || !PurchasingPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail))
         {
             throw new InvalidOperationException("Kayıtlı terminal ret okunamadı.");
         }
@@ -142,6 +162,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             CostBasis = (int)draft.CostBasis,
             UnitCostTryPerKg = RequireCostFits(draft.UnitCostTryPerKg),
             ReplacementExpected = draft.ReplacementExpected,
+            ExpectedPurchaseOrderVersion = draft.ExpectedPurchaseOrderVersion,
+            UndoQuantity = draft.UndoQuantity,
             Reason = reason,
             OccurredAtUtc = draft.OccurredAtUtc,
             RequestedBy = actorId,
@@ -149,8 +171,10 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             CorrelationId = envelope.CorrelationId.Trim(),
         };
         dbContext.SupplierReturns.Add(row);
-        dbContext.SupplierReturnAttempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, draft.ReturnId, now));
         var stored = new StoredPurchaseSupplierReturn(companyId, draft with { Reason = reason }, 1, actorId, now, null, null, null);
+        var creationAttempt = Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, draft.ReturnId, now);
+        creationAttempt.ResultJson = JsonSerializer.Serialize(stored, Json);
+        dbContext.SupplierReturnAttempts.Add(creationAttempt);
         var auditReason = draft.Status == PurchaseSupplierReturnStatus.Recorded
             ? "Tedarikçi iadesi fatura birim maliyetiyle kaydedildi"
             : "Tedarikçi iadesi maliyet istisnası onayına gönderildi";
@@ -201,7 +225,6 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         row.DecidedAtUtc = now;
         row.DecisionReason = decided.Reason;
         row.Version = decided.Version;
-        dbContext.SupplierReturnAttempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, row.ReturnId, now));
         var after = before with
         {
             Return = before.Return with { Status = decided.Status },
@@ -210,6 +233,9 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
             DecidedAtUtc = now,
             DecisionReason = decided.Reason,
         };
+        var decisionAttempt = Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, row.ReturnId, now);
+        decisionAttempt.ResultJson = JsonSerializer.Serialize(after, Json);
+        dbContext.SupplierReturnAttempts.Add(decisionAttempt);
         var approved = decided.Status == PurchaseSupplierReturnStatus.Recorded;
         Audit(envelope, companyId, row.ReturnId,
             approved ? "purchasing.supplier-return.cost-exception-approved.v1" : "purchasing.supplier-return.cost-exception-rejected.v1",
@@ -228,6 +254,7 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         RequireCommand(commandName);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || !PurchasingPhysicalStockRefusalDetailV1.IsValid(refusal.Status, refusal.Code, refusal.Detail)
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
         {
             throw new ArgumentException("Terminal ret bir durum, bir kod ve tam alan hataları taşır.", nameof(refusal));
@@ -267,7 +294,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         }
 
         var draft = new PurchaseSupplierReturnDraft(row.ReturnId, row.ReturnLineId, row.OrderId, row.LineId, row.GoodsAcceptanceId, row.MovementId,
-            status, row.SourceBlock, row.QuantityKg, basis, row.UnitCostTryPerKg, row.ReplacementExpected, row.Reason, row.OccurredAtUtc);
+            status, row.SourceBlock, row.QuantityKg, basis, row.UnitCostTryPerKg, row.ReplacementExpected, row.Reason, row.OccurredAtUtc,
+            row.ExpectedPurchaseOrderVersion, row.UndoQuantity);
         return new StoredPurchaseSupplierReturn(companyId, draft, row.Version, row.RequestedBy, row.RequestedAtUtc, row.DecidedBy, row.DecidedAtUtc,
             row.DecisionReason);
     }
@@ -281,7 +309,10 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
                 && draft.CostBasis == PurchaseSupplierReturnCostBasis.ManualCostWithException);
         if (draft.ReturnId == Guid.Empty || draft.ReturnLineId == Guid.Empty || draft.PurchaseOrderId == Guid.Empty
             || draft.PurchaseOrderLineId == Guid.Empty || draft.GoodsAcceptanceId == Guid.Empty || draft.InventoryMovementId == Guid.Empty
-            || !coherent || draft.ReplacementExpected
+            || !coherent || (draft.ReplacementExpected && (draft.ExpectedPurchaseOrderVersion is null || draft.UndoQuantity is null))
+            || (draft.ExpectedPurchaseOrderVersion is null) != (draft.UndoQuantity is null)
+            || draft.ExpectedPurchaseOrderVersion is <= 0 || draft.UndoQuantity is <= 0
+            || (draft.UndoQuantity is { } undo && (undo >= KgColumnBound || decimal.Round(undo, KgScale) != undo))
             || !PurchaseSupplierReturnJsonV1.SourceBlocks.Contains(draft.SourceBlock, StringComparer.Ordinal)
             || draft.QuantityKg <= 0 || draft.UnitCostTryPerKg <= 0 || string.IsNullOrWhiteSpace(draft.Reason))
         {
@@ -361,6 +392,8 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         CostBasis = stored.Return.CostBasis.ToString(),
         stored.Return.UnitCostTryPerKg,
         stored.Return.ReplacementExpected,
+        stored.Return.ExpectedPurchaseOrderVersion,
+        stored.Return.UndoQuantity,
         stored.Return.Reason,
         stored.RequestedBy,
         stored.DecidedBy,

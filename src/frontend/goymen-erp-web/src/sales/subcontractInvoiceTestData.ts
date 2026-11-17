@@ -52,6 +52,7 @@ export function subcontractInvoiceDetail(over: Wire = {}): Wire {
     createdBy: 'actor-a',
     createdAtUtc: '2026-11-14T09:30:00Z',
     isReplay: false,
+    lifecycle: { decision: null, instalments: [], exchangeRate: null, functionalTotals: null, match: null, finalization: null },
     ...over,
   }
 }

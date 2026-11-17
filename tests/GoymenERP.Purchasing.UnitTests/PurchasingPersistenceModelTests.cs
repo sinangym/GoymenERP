@@ -67,7 +67,7 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains(orderLines.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseOrderLines_SourceRequestLine");
         // A1-3 (master INV-006) and API-11: the cancelled and the closed remainders are inside the shares bound.
         Assert.Contains(orderLines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares"
-            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] <= [Ordered]", StringComparison.Ordinal)
+            && check.Sql.Contains("[Technical] + [Accepted] + [Cancelled] + [Closed] + [DefinitiveReturned] <= [Ordered]", StringComparison.Ordinal)
             && check.Sql.Contains("[Cancelled] >= 0", StringComparison.Ordinal));
         Assert.Equal((3, 3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
             orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale(),
@@ -144,10 +144,18 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.8", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(13, declarations.Count);
-        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
+        Assert.Equal("1.14", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(29, declarations.Count);
+        Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
+        var import = byId[PurchasingShellCapabilityProvider.InvoiceImportCapabilityId];
+        var invoiceList = byId[PurchasingShellCapabilityProvider.InvoiceListCapabilityId];
+        Assert.Equal(invoiceList.CapabilityId, import.ParentCapabilityId);
+        Assert.Equal(invoiceList.RoutePath, import.RoutePath);
+        Assert.Equal(invoiceList.RouteId, import.RouteId);
+        Assert.All(invoiceList.RequiredPermissions, permission => Assert.Contains(permission, import.RequiredPermissions));
+        Assert.Contains(PurchaseIncomingInvoicePermissionNamesV1.Import, import.RequiredPermissions);
+        Assert.False(import.ImplementationAvailable); // The full source-to-invoice workflow remains staged.
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
             byId[PurchasingShellCapabilityProvider.RequestListCapabilityId].RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead],
@@ -202,16 +210,16 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(12, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(19, PurchasingPermissionManifestV1.Names.Count);
         // ALC-S3 (ALS-D83/D85): the release name measures the link drop and the drop-and-cancel / drop-and-close commands; no shell
         // control (the screen lives under the order detail capability).
         Assert.Contains("purchasing.future-allocation.release", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration =>
             declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.FutureAllocationRelease));
-        // ALC-S5 (B-19): the supplier return name measures the return create only (the cost exception uses orders.approve); no shell control yet.
+        // ALC-S5 (B-19): supplier return creation is a child control; cost exception uses orders.approve.
         Assert.Contains("purchasing.supplier-returns.record", PurchasingPermissionManifestV1.Names);
-        Assert.DoesNotContain(declarations, declaration =>
-            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.SupplierReturnsRecord));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
+            byId[PurchasingShellCapabilityProvider.SupplierReturnCapabilityId].RequiredPermissions);
         // ALC-S16 (KLN-D45): the variance approval name measures the bulk receipt approval and rejection only; no shell control yet.
         Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration =>
@@ -230,12 +238,21 @@ public sealed class PurchasingPersistenceModelTests
             (lineSchedule.RoutePath, lineSchedule.ScreenId, lineSchedule.ParentCapabilityId));
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise], lineSchedule.RequiredPermissions);
         Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScopeRequirement, lineSchedule.ScopeRequirement);
-        var revised = Assert.Single(declarations,
-            declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise));
-        Assert.Equal(PurchasingShellCapabilityProvider.LineScheduleCapabilityId, revised.CapabilityId);
-        // A2a-1 (PRS-02): the price read governs disclosure only; no shell control or route is measured with it.
+        Assert.Equal(new[] { PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
+                PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId, PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId,
+                PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId }.Order(StringComparer.Ordinal),
+            declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersRevise))
+                .Select(declaration => declaration.CapabilityId).Order(StringComparer.Ordinal));
+        // Invoice screens disclose official amounts and require the existing price-read permission.
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
-        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead));
+        Assert.All(declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead)),
+            declaration => Assert.True(declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal)
+                || declaration.CapabilityId == PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId
+                || declaration.CapabilityId == PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead],
+            byId[PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId].RequiredPermissions);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead, PurchasingPermissionManifestV1.OrdersRevise],
+            byId[PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId].RequiredPermissions);
         Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.requests.withdraw", PurchasingPermissionManifestV1.Names);
         Assert.Contains("purchasing.orders.cancel", PurchasingPermissionManifestV1.Names);
@@ -271,8 +288,13 @@ public sealed class PurchasingPersistenceModelTests
                 "20261107151838_AddPurchaseOrderLineDeferral", "20261111182351_AddPurchaseOrderApproval",
                 "20261112014446_AddPurchaseOrderLineDeliverySchedule", "20261115132609_AddPurchaseOrderLineClosure",
                 "20261115184944_AddPurchaseGoodsReceiptBatches", "20261116104436_AddPurchaseOrderExchangeRate",
-                "20261116113129_AddPurchaseSupplierReturns"],
-            context.Database.GetMigrations().TakeLast(11));
+                "20261116113129_AddPurchaseSupplierReturns", "20261116213347_AddPurchaseReceiptAdjustments",
+                "20261116215806_AddPurchaseSupplierReturnResponseSnapshots", "20261116222957_AddPurchaseReceiptAdjustmentBatches",
+                "20261117002600_AddPurchaseOrderDocumentNumbers", "20261117072202_AddPurchaseSupplierRevisions",
+                "20261117084001_AddPurchaseIncomingInvoices", "20261117110054_AddPurchaseServiceOrders",
+                "20261117112436_AddPurchaseInvoiceImportReservations", "20261117114517_AddPurchaseAdditionalCosts",
+                "20261117120452_AddPurchaseAdditionalCostInvoiceBindings"],
+            context.Database.GetMigrations().TakeLast(21));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;

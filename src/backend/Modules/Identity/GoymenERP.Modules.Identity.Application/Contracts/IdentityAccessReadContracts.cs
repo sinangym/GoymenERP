@@ -40,8 +40,8 @@ public static class IdentityPermissionManifestV1
     public const string AccessApprove = "identity.access.approve";
 
     /// <summary>
-    /// KIM-D9: local user account management. Registered only in this slice; no endpoint uses it yet and no role
-    /// holds it. Company-wide only. Not Critical.
+    /// KIM-D9/D16/D17: local user management, company-wide in every target membership company.
+    /// Registration and command implementation never install a grant. Not Critical.
     /// </summary>
     public const string UsersManage = "identity.users.manage";
 

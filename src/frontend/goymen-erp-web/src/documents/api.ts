@@ -46,6 +46,10 @@ function headers(companyId: string): Record<string, string> {
   }
 }
 
+/** The Documents owner's shared transport identity; branding introduces no second identity adapter. */
+export const documentHeaders = headers
+export const DOCUMENTS_API_BASE = API_BASE_PATH
+
 type Failure = 'aborted' | 'offline' | 'unreachable'
 
 async function send(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Response | Failure> {
