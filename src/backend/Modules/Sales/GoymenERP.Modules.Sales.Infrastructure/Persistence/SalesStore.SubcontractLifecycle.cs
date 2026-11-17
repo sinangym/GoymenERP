@@ -25,8 +25,11 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
                 ?? throw new InvalidOperationException("Fason fatura ret kaydı okunamadı.");
             return new(null, new(status, attempt.RefusalCode!, errors), attempt.CorrelationId);
         }
-        var invoice = await FindSubcontractServiceInvoiceAsync(attempt.InvoiceId!.Value, cancellationToken)
-            ?? throw new InvalidOperationException("Fason fatura komutunun faturası bulunamadı.");
+        // A legacy attempt without an exact version cannot be reconstructed from the latest header.
+        // Keep its historical facts; refuse to invent a response or backfill a version from today's state.
+        if (attempt.LifecycleSequence is not { } outcomeSequence || outcomeSequence < 1)
+            throw new InvalidOperationException("Fason fatura komutunun ilk cevap sürümü kayıtlı değil.");
+        var invoice = await RestoreSubcontractServiceInvoiceOutcomeAsync(attempt.InvoiceId!.Value, outcomeSequence, cancellationToken);
         return new(invoice, null, attempt.CorrelationId);
     }
 
@@ -129,7 +132,9 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
                 CausationId = envelope.CausationId?.Trim(),
             });
         }
-        dbContext.SubcontractInvoiceCommandAttempts.Add(SubcontractCommandAttempt(envelope, requestHash, commandName, invoice.Id, now));
+        var acceptedAttempt = SubcontractCommandAttempt(envelope, requestHash, commandName, invoice.Id, now);
+        acceptedAttempt.LifecycleSequence = checked(sequence + 1);
+        dbContext.SubcontractInvoiceCommandAttempts.Add(acceptedAttempt);
         auditEvents.Enqueue(new AuditEventDraft(companyId, audit.EventType, SubcontractServiceInvoiceEntityType,
             invoice.Id.ToString("D"), audit.Operation, version, invoice.Version, AuditActorTypes.User,
             envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, before, JsonSerializer.Serialize(invoice.LifecycleFacts, Json),
