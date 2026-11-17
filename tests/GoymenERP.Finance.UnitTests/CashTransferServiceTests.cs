@@ -130,19 +130,35 @@ public sealed class CashTransferServiceTests
     public async Task Currency_exchange_with_a_consistent_rate_rule_is_one_record_carrying_both_amounts_and_the_rate()
     {
         await using var run = await Run.StartAsync();
+        CashTransferCommandResult committed;
         await using (var scope = run.Scope("treasurer", new AllowAll(), Sufficient(),
                          new FixedRate(CurrencyExchangeRateOutcome.Consistent)))
         {
-            var committed = await scope.Service.CommitAsync(scope.Context, Key("exchange-1"),
-                new CommitCashTransferRequest(Exchange(), true), CancellationToken.None);
+            var preview = await scope.Service.PreviewAsync(scope.Context, Exchange() with { Rate = null }, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, preview.Outcome);
+            Assert.Null(preview.Preparation!.Rate);
+            Assert.Equal("36.50", preview.Exchange!.TransactionRate);
+            committed = await scope.Service.CommitAsync(scope.Context, Key("exchange-1"),
+                new CommitCashTransferRequest(Exchange() with { Rate = null }, true), CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, committed.Outcome);
+        }
+
+        // Owner availability may change after the money event: the exact original result is replayed without re-quoting.
+        await using (var scope = run.Scope("treasurer", new AllowAll(), Sufficient()))
+        {
+            var replay = await scope.Service.CommitAsync(scope.Context, Key("exchange-1"),
+                new CommitCashTransferRequest(Exchange() with { Rate = null }, true), CancellationToken.None);
+            Assert.True(replay.IsReplay);
+            Assert.Equal(committed.Resource!.Exchange, replay.Resource!.Exchange);
         }
 
         await using var verify = run.Context();
         var row = await verify.CashTransfers.SingleAsync();
-        Assert.Equal((CashTransferKinds.CurrencyExchange, Euro, "100.00", Lira, "3650.00", "36.5"),
+        Assert.Equal((CashTransferKinds.CurrencyExchange, Euro, "100.00", Lira, "3650.00", "36.50"),
             (row.Kind, row.SourceCurrencyId, row.SourceAmountText, row.TargetCurrencyId, row.TargetAmountText,
                 row.RateText));
+        Assert.NotNull(row.ExchangeSnapshotJson);
+        Assert.Single(await verify.CashTransferCommands.ToListAsync());
     }
 
     [Fact]
@@ -533,13 +549,17 @@ public sealed class CashTransferServiceTests
     private sealed class FixedRate(CurrencyExchangeRateOutcome outcome) : IFinanceCurrencyExchangeRateRule
     {
         public Task<CurrencyExchangeRateAnswer> CheckAsync(FinanceContext context, MoneyText sourceMoney,
-            MoneyText targetMoney, string rate, DateOnly occurredOn, CancellationToken cancellationToken) =>
+            MoneyText targetMoney, string? rate, DateOnly occurredOn, CancellationToken cancellationToken) =>
             Task.FromResult(new CurrencyExchangeRateAnswer(outcome, outcome switch
             {
                 CurrencyExchangeRateOutcome.Inconsistent => CurrencyExchangeRateAnswer.InconsistentCode,
                 CurrencyExchangeRateOutcome.Unavailable => CurrencyExchangeRateAnswer.UnavailableCode,
                 _ => null,
-            }));
+            }, outcome == CurrencyExchangeRateOutcome.Consistent ? CashTransferExchangeCalculatorV1.Calculate(
+                context.CompanyId, occurredOn, sourceMoney, targetMoney, new(Profile.ToString("D"), "1"),
+                new(Profile.ToString("D"), "1"), new(sourceMoney.CurrencyId, "36.5", occurredOn, "TCMB", Guid.NewGuid(),
+                    "1", occurredOn.AddDays(-1), "SENTETIK / NOT_ENV"),
+                new(targetMoney.CurrencyId, "1", occurredOn, "FunctionalCurrency", null, null, null, null)) : null));
     }
 
     private sealed class SettingsPort : ISettingsPrerequisiteProvider

@@ -36,13 +36,13 @@ public sealed class CashTransferValidatorTests
     }
 
     [Fact]
-    public void Exchange_refuses_one_currency_a_missing_rate_and_a_malformed_rate()
+    public void Exchange_refuses_one_currency_or_a_malformed_supplied_rate_and_allows_server_calculation()
     {
         Assert.Equal(["cash_transfer_currency_same"], Codes(Exchange() with
         {
             TargetMoney = new MoneyText("3650.00", Euro),
         }));
-        Assert.Equal(["cash_transfer_rate_required"], Codes(Exchange() with { Rate = null }));
+        Assert.Empty(Codes(Exchange() with { Rate = null }));
         Assert.Equal(["cash_transfer_rate_invalid"], Codes(Exchange() with { Rate = "36,5" }));
     }
 
