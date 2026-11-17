@@ -243,6 +243,8 @@ export const CAPABILITY = {
   financeExpensePaymentsWorkspace: 'finance.expense-payments.workspace',
   /** FNS-D24 (API-32/34) Virman ve Döviz Bozdurma. Its commit is a CONTROL of this workspace, never a route. */
   financeCashTransfersWorkspace: 'finance.cash-transfers.workspace',
+  financeExchangeBookValuesPrepare: 'finance.cash-exchange-book-values.prepare',
+  financeExchangeBookValuesApprove: 'finance.cash-exchange-book-values.approve',
   /**
    * F-018 L1 (FNS-D27 / FNS-D46; one step, FNS-D57(3)) Kredi Limitleri. Its propose and approve are CONTROLS of this list, never routes.
    */
@@ -512,6 +514,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeManualBankPaymentsDetail]: '/finans/odemeler/:paymentId',
   [CAPABILITY.financeExpensePaymentsWorkspace]: '/finans/masraf-odemeleri',
   [CAPABILITY.financeCashTransfersWorkspace]: '/finans/virman',
+  [CAPABILITY.financeExchangeBookValuesPrepare]: '/finans/doviz-defter-degeri-hazirla',
+  [CAPABILITY.financeExchangeBookValuesApprove]: '/finans/doviz-defter-degeri-onaylari',
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',

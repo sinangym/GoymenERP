@@ -36,6 +36,7 @@ public static class TrainCompletionHostComposition
     {
         services.AddFinanceCreditLenderOwnerRead();
         services.AddFinanceCashExchangeSources();
+        services.AddFinanceCashExchangeBookValuesV1();
         services.AddPurchaseInvoiceFinanceAdmissionHost();
         services.AddPurchaseServiceOrderHostV1();
         services.AddInventoryTransferPolicyHostPorts();
@@ -80,7 +81,9 @@ public static class TrainCompletionHostComposition
         services.AddWorkOutboxEventSource<FinanceCreditOutboxEventSourceV1>(CreditMovementProposalInboxV1.SourceName,
             new WorkOutboxEventTypeV1(CreditMovementProposalInboxV1.EventType, 1),
             new(FinanceFinancialMovementEventsV1.ExpensePaymentRecorded, FinanceFinancialMovementEventsV1.SchemaVersion),
-            new(FinanceFinancialMovementEventsV1.CashTransferRecorded, FinanceFinancialMovementEventsV1.SchemaVersion));
+            new(FinanceFinancialMovementEventsV1.CashTransferRecorded, FinanceFinancialMovementEventsV1.SchemaVersion),
+            new(FinanceFinancialMovementEventsV1.CashExchangeRecorded, FinanceFinancialMovementEventsV1.SchemaVersion),
+            new(FinanceFinancialMovementEventsV1.CashExchangeBookValueApproved, FinanceFinancialMovementEventsV1.SchemaVersion));
         services.AddWorkOutboxEventSource<SalesOutboxEventSourceV1>(SalesOutboxContractV1.SourceName,
             SalesOutboxContractV1.Publishes.ToArray());
         services.AddWorkNotificationHostV1(InventoryOutboxContractV1.SourceName, AccountingPurchaseInvoiceFinalizedInboxV1.SourceName);

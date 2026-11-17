@@ -1,5 +1,6 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.AccountingRuntime;
+using GoymenERP.Api.FinanceRuntime;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
@@ -95,10 +96,14 @@ public sealed class TrainInvoiceOutboxCompositionTests
         Assert.Equal(typeof(FinanceCreditOutboxEventSourceV1), finance.ImplementationType);
         var financeConsumer = Assert.Single(registry.Consumers, item => item.ConsumerName == FinanceJournalSourceInboxV1.ConsumerName);
         Assert.Equal(typeof(FinanceJournalSourceInboxConsumerV1), financeConsumer.ImplementationType);
-        Assert.Equal(2, financeConsumer.Subscriptions.Count);
+        Assert.Equal(4, financeConsumer.Subscriptions.Count);
         foreach (var subscription in financeConsumer.Subscriptions)
             Assert.Contains(finance.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
         Assert.Contains(finance.Publishes, item => item.EventType == CreditMovementProposalInboxV1.EventType);
+        Assert.Equal(typeof(CashExchangeBookValueServiceV1),
+            Assert.Single(services, item => item.ServiceType == typeof(ICashExchangeBookValueServiceV1)).ImplementationType);
+        Assert.Equal(typeof(DocumentsCashExchangeBookValueEvidencePortV1),
+            Assert.Single(services, item => item.ServiceType == typeof(ICashExchangeBookValueEvidencePortV1)).ImplementationType);
         Assert.DoesNotContain(services, item => item.ServiceType == typeof(IHostedService));
         Assert.DoesNotContain(services, item => item.ServiceType == typeof(WorkOutboxDispatcher));
     }
