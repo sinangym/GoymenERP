@@ -1,9 +1,9 @@
 # W8 mevcut kaynak durumu — son paket
 
 - Son yayımlanan tren planı: **135/174 (%77,6)**.
-- Yerel entegrasyon planı: **151/174 (%86,8) kaynak DONE**, **23 açık**.
+- Yerel entegrasyon planı: **165/174 (%94,8) kaynak DONE**, **9 açık**.
 - Bu güncelleme yeni kapsam veya yeni dalga açmaz. W8 son pakettir.
-- 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Tüm yeni değişikliklerin birleşik dalga derlemesi, pin üretimi ve hafif kontrolleri henüz tamamlanmadığı için tren fast-forward/push yapılmadı.
+- İlk 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Tüm yeni değişikliklerin birleşik dalga derlemesi, pin üretimi ve hafif kontrolleri henüz tamamlanmadığı için tren fast-forward/push yapılmadı.
 - DONE kaynak kapsamıdır; Unit/gerçek SQL/HTTP/Vitest/browser/CI kabulü NOT_RUN. Sağlayıcı veya insan kapısı kapalı yüzey kullanılabilir sayılmaz.
 
 ## Bu kayıtla kaynak kapanışı sayılanlar
@@ -36,3 +36,27 @@
 5. FIN-S14 gerçek muhasebe değeri/eşleme ve FIN-SC47-KREDI bileşen eşleme/fiş akışı tamamlanacak.
 6. Kalan kimlik/alış/satış dilimlerindeki tarihsel PARTIAL raporlar gerçek merkez tüketicileriyle eşleştirilecek; gerçek eksik varsa düzeltilecek. SAT-S12 için SAT-D265(5) bağımsız golden/main kapısı açıktır; ayrı tek istem hazırlanmıştır.
 7. Bütün kaynak kapsamı bittikten sonra birleşik derleme/pin/hafif kontroller, tren kaydı; ardından kullanıcının yetkilendirdiği son tam kabul koşumu ve tek taslak K3 PR. İnsan/sağlayıcı kapısı kod yüzdesine gizlenmez.
+
+
+## Tarihsel PARTIAL kayıtların gerçek merkez kaynağıyla kapanışı
+
+12 kimlik/alış dilimi için ayrı salt-okunur owner denetimi `f6a454ac5` merkezinde gerçek Program/module DI/route/consumer bağlantılarını doğruladı. Sales iki dilimi de gerçek merkez kaynak ve son owner raporuyla eşleştirildi. Aşağıdaki commitlerin merkez ancestry kontrolü exit0'dır; eski raporların artık kapanmış bağımlılık notları güncel kod eksiği sayılmadı. Owner kaynak derlemeleri exit0; runtime ve birleşik son dalga kabulü ayrı bekler.
+
+| Dilim | Kaynak commit | Gerçek kapanış |
+|---|---|---|
+| KIM-S5 | `3b6586e3c325b9ebd75a2775bbcd78d486c56628` | Açık şirket/ilk yönetici seçimi, mesajlaşma ve lifecycle/VKN sahibi |
+| KIM-S6 | `1e0f0c498e4478efc6225128c270692871fe04fc` | Yerel hesap yönetimi, fresh actor, replay ve yetki UI |
+| KIM-S7 | `b769d5d3a2e76c3d2a92add23b8b9dbac15a170c` | Kurucu kurtarma typed System Audit/SecurityEvents aynı işlem |
+| KIM-S8 | `bb82ad491af33544b69a0a6115b6a169cc2ad0f2` | TOTP, recovery kodu, login ve gerçek hesap route |
+| KIM-S9 | `40ee5c4abc64ac7ac772e54da4209187b1b322e9` | Açık hedefli operatör kurtarması gerçek CLI konsolunda |
+| KIM-S15 | `ed7d8296aee800218e8fc71592269e6b97ca8ef2` | Şirket bazlı açık baseline aktarımı, gerçek provider/publish UI |
+| ALC-S5 | `c67daf71f9afa0cb1e5bce97ae94103fd11576b9` | İade/istisna, işlem içi stok çıkışı ve gerçek fatura maliyet okuyucusu |
+| ALC-S6 | `02a05b64f51a5799c7ea4495326cdf1cce405461` | Tekli/batch net düzeltme ve gerçek Work bildirim fanout |
+| ALC-S7 | `e67f53fc75358fb9397dc754e36fe4c538621ed6` | Hizmet/fason/fiyat/vergi revizyonu ve gerçek hizmet kabul eşleştirmesi |
+| ALC-S8 | `555503e1bc7279f7f76bd8a841a146a0e8c2646b` | Ek masraf ve bütçe aşmayan parçalı gerçek fatura eşleştirmesi |
+| ALC-S14 | `6d5e5e0e2b07b55a6dbbe6c7d5f35b07297d5d6a` | V2 gerçek Cari Tolling/sürüm portu ve gerçek tüketicileri |
+| ALC-SC47 | `82d31f3000fed9d17fd808b80f2ca0bdd6e86f6b` | Unvan maker-checker ve gerçek InvoiceOrderBindings/revizyon guard |
+| SAT-S9 | `e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c` | Lazy gerçek gelecek ayırma kaynak planı ve sipariş sürümü |
+| SAT-S13 | `e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c` | Gerçek kantar özeti, kg taşıma ve tek fatura kuru/gün sınırı |
+
+KIM-S19'un numaralama/açılış zinciri hazırdır; geniş B-13 politikalarını yalnız OpeningPeriod portu var diye kapatmadık. OPEN-009/010 ve tanımlanmamış politikalar aynı sınırdadır. STK-S3 owner derlemeleri tamam; orijinal LOJ kapsamı kapanış kontrolü ayrıca sürüyor. SAT-S12 bağımsız golden/main kapısı ve gerçek sağlayıcı yokluğu kapsamdan gizlenmedi.

@@ -1,6 +1,6 @@
 {
  "meta": {
-  "tarih": "2026-11-16",
+  "tarih": "2026-11-17",
   "tren_dali": "claude/tren-1",
   "kod_head": "6edcbf09266c5d9f6038cadb8bd5fdcc725a8284",
   "durum_sozlugu": {
@@ -45,9 +45,9 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 151,
-  "partial": 17,
-  "remaining_not_started": 6,
+  "done": 165,
+  "partial": 7,
+  "remaining_not_started": 2,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
@@ -251,7 +251,21 @@
    "STK-SC36-c",
    "FIN-S17",
    "FNS-SC32",
-   "FIN-SC36"
+   "FIN-SC36",
+   "KIM-S5",
+   "KIM-S6",
+   "KIM-S7",
+   "KIM-S8",
+   "KIM-S9",
+   "KIM-S15",
+   "ALC-S5",
+   "ALC-S6",
+   "ALC-S7",
+   "ALC-S8",
+   "ALC-S14",
+   "ALC-SC47",
+   "SAT-S9",
+   "SAT-S13"
   ],
   "published_train_done_at_last_checkpoint": 135,
   "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9."
@@ -265,8 +279,8 @@
     "Settings"
    ],
    "toplam": 28,
-   "done": 21,
-   "partial": 6,
+   "done": 27,
+   "partial": 1,
    "kalan": [
     {
      "id": "KIM-S3",
@@ -317,12 +331,15 @@
       "sağlar: organization.company.opened.v1, identity.company.first_admin_assigned.v1, ICompanyLifecycleReadPortV1 (kimlik)",
       "tüketir: outbox/inbox kayıt sözleşmesi (platform PLT-S6)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
+     "wave": 8,
      "w6_report": "durum/W6_kimlik.md",
      "w7_result": "SetupPending/inbox/outbox/lifecycle guard kaynağı var. Son kullanıcı cevabı açana otomatik Admin yerine yetkili yönetim/genel müdürün açık ilk yönetici seçimini gerektirir (#1189/6926238225); mevcut otomatik yol değiştirilmeden DONE değildir. Açma/kurulum ekranı ve gerçek global yetki kaynağı eksik; dispatcher kapalı.",
-     "w7_report": "durum/W7_kimlik.md"
+     "w7_report": "durum/W7_kimlik.md",
+     "w8_source_commit": "3b6586e3c325b9ebd75a2775bbcd78d486c56628",
+     "w8_report": "durum/W8_kimlik.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "KIM-S6",
@@ -343,10 +360,13 @@
      "contracts": [
       "tüketir: ID-3 uçları (kimlik)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_kimlik.md"
+     "wave": 8,
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_source_commit": "1e0f0c498e4478efc6225128c270692871fe04fc",
+     "w8_report": "durum/W8_kimlik.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "KIM-S7",
@@ -369,11 +389,14 @@
      "contracts": [
       "tüketir: security-event authz/recovery yazıcısı (platform PLT-S2)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 5,
+     "wave": 8,
      "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_source_commit": "b769d5d3a2e76c3d2a92add23b8b9dbac15a170c",
+     "w8_report": "durum/W8_kimlik.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "KIM-S8",
@@ -395,12 +418,14 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "w6_report": "durum/W6_kimlik.md",
-     "w8_report": "durum/W8_kimlik_kapanis.md",
-     "w8_result": "Gerçek TOTP/kurtarma kodları ve Audit owner bağlantısı merkezde kaynak/derleme tamam. Merkezi pinler, son tren FF ve ayrı runtime kabulü bekler."
+     "w8_report": "durum/W8_kimlik.md",
+     "w8_result": "Gerçek TOTP/kurtarma kodları ve Audit owner bağlantısı merkezde kaynak/derleme tamam. Merkezi pinler, son tren FF ve ayrı runtime kabulü bekler.",
+     "w8_source_commit": "bb82ad491af33544b69a0a6115b6a169cc2ad0f2",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "KIM-S9",
@@ -420,11 +445,14 @@
       "src/backend/Modules/Identity/**/Recovery*"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "decision_note": "NS-04 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Tek seferlik kurtarma kodları (kurulumda) + ikinci yönetici önerisi; hepsi kaybolursa denetim kaydı bırakan sunucu CLI kurtarma aracı.",
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_source_commit": "40ee5c4abc64ac7ac772e54da4209187b1b322e9",
+     "w8_report": "durum/W8_kimlik.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "KIM-S13",
@@ -475,11 +503,14 @@
      "contracts": [
       "değişir: manufacturing profile published.v1 → gerekirse published.v2 (v1 korunur; tüketen uretim)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 5,
+     "wave": 8,
      "w5_raporu": "durum/W5_kimlik.md",
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_source_commit": "ed7d8296aee800218e8fc71592269e6b97ca8ef2",
+     "w8_report": "durum/W8_kimlik.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "KIM-S18",
@@ -561,7 +592,7 @@
      "blocked_reason": ""
     }
    ],
-   "remaining_not_started": 1
+   "remaining_not_started": 0
   },
   {
    "key": "platform",
@@ -607,8 +638,8 @@
     "Sales"
    ],
    "toplam": 17,
-   "done": 13,
-   "partial": 2,
+   "done": 15,
+   "partial": 1,
    "kalan": [
     {
      "id": "SAT-S8",
@@ -655,10 +686,13 @@
      "contracts": [
       "tüketir: F017-b2 uçları (stok_lojistik)"
      ],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_satis.md"
+     "wave": 8,
+     "w6_report": "durum/W6_satis.md",
+     "w8_source_commit": "e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c",
+     "w8_report": "durum/W8_satis.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "SAT-S12",
@@ -705,11 +739,14 @@
      "contracts": [
       "tüketir: kantar farkı kayıt okuma portu (stok_lojistik)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 5,
+     "wave": 8,
      "w5_raporu": "durum/W5_satis.md",
-     "w6_report": "durum/W6_satis.md"
+     "w6_report": "durum/W6_satis.md",
+     "w8_source_commit": "e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c",
+     "w8_report": "durum/W8_satis.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "SAT-SC32",
@@ -739,7 +776,7 @@
      "w6_report": "durum/W6_satis.md"
     }
    ],
-   "remaining_not_started": 2
+   "remaining_not_started": 1
   },
   {
    "key": "alis_cari",
@@ -748,8 +785,8 @@
     "Counterparty"
    ],
    "toplam": 20,
-   "done": 14,
-   "partial": 4,
+   "done": 20,
+   "partial": 0,
    "kalan": [
     {
      "id": "ALC-S5",
@@ -776,11 +813,14 @@
      "contracts": [
       "tüketir: Stok tedarikçi iadesi çıkış portu (stok_lojistik)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 5,
+     "wave": 8,
      "w5_raporu": "durum/W5_alis_cari.md",
-     "w6_report": "durum/W6_alis_cari.md"
+     "w6_report": "durum/W6_alis_cari.md",
+     "w8_source_commit": "c67daf71f9afa0cb1e5bce97ae94103fd11576b9",
+     "w8_report": "durum/W8_alis_cari.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "ALC-S6",
@@ -800,12 +840,15 @@
       "src/backend/Modules/Purchasing/**/Revive*"
      ],
      "contracts": [],
-     "status": "READY",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 7,
+     "wave": 8,
      "w6_report": "durum/W6_alis_cari.md",
      "w7_result": "7B ile kısmi yeniden açma kararı var; Inventory ters-tüketim/özgün conversion ledger ve Purchasing kabul geri alma owner zinciri teknik bağımlılıktır, yeni karar engeli değildir.",
-     "w7_report": "durum/W7_alis_cari.md"
+     "w7_report": "durum/W7_alis_cari.md",
+     "w8_source_commit": "02a05b64f51a5799c7ea4495326cdf1cce405461",
+     "w8_report": "durum/W8_alis_cari.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "ALC-S7",
@@ -830,12 +873,14 @@
      "contracts": [
       "tüketir: ISettingsReferenceListReaderV1 (kimlik)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "w6_report": "durum/W6_alis_cari.md",
      "w8_report": "durum/W8_alis_cari.md",
-     "w8_result": "Gerçek fason hizmet siparişi/vergi kaynağı ve son mevcut iki onay yetkisi cevabı e67f53fc7 ile entegre. API/ilgili projeler/TSC derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir."
+     "w8_result": "Gerçek fason hizmet siparişi/vergi kaynağı ve son mevcut iki onay yetkisi cevabı e67f53fc7 ile entegre. API/ilgili projeler/TSC derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir.",
+     "w8_source_commit": "e67f53fc75358fb9397dc754e36fe4c538621ed6",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "ALC-S8",
@@ -856,12 +901,14 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
+     "wave": 8,
      "w6_report": "durum/W6_alis_cari.md",
      "w8_report": "durum/W8_alis_cari.md",
-     "w8_result": "Gerçek ek masraf kaydı ve parçalı fatura eşleştirmesi 60a2e3110 / 555503e1b ile entegre. OrdersRevise kullanılır, stok maliyeti değişmez. Derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir."
+     "w8_result": "Gerçek ek masraf kaydı ve parçalı fatura eşleştirmesi 60a2e3110 / 555503e1b ile entegre. OrdersRevise kullanılır, stok maliyeti değişmez. Derleme 0; runtime ve merkezi pin/son tren FF bekler. DONE değildir.",
+     "w8_source_commit": "555503e1bc7279f7f76bd8a841a146a0e8c2646b",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "ALC-S14",
@@ -880,10 +927,13 @@
      "contracts": [
       "sağlar: IPurchasingPartyAccountPortV1 v2 (alis_cari; tüketen finans)"
      ],
-     "status": "PLANNED",
+     "status": "DONE",
      "blocked_reason": "",
-     "wave": 6,
-     "w6_report": "durum/W6_alis_cari.md"
+     "wave": 8,
+     "w6_report": "durum/W6_alis_cari.md",
+     "w8_source_commit": "6d5e5e0e2b07b55a6dbbe6c7d5f35b07297d5d6a",
+     "w8_report": "durum/W8_alis_cari.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "ALC-SC47",
@@ -905,13 +955,17 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
-     "wave": 5,
+     "status": "DONE",
+     "wave": 8,
      "w5_raporu": "durum/W5_alis_cari.md",
-     "w6_report": "durum/W6_alis_cari.md"
+     "w6_report": "durum/W6_alis_cari.md",
+     "blocked_reason": "",
+     "w8_source_commit": "82d31f3000fed9d17fd808b80f2ca0bdd6e86f6b",
+     "w8_report": "durum/W8_alis_cari.md",
+     "w8_validation": "Actual owner/host/route/consumer source closure audited; owner source builds exit 0. Final combined builds/pins pending. Runtime/SQL/browser/CI NOT_RUN."
     }
    ],
-   "remaining_not_started": 2
+   "remaining_not_started": 0
   },
   {
    "key": "stok_lojistik",
