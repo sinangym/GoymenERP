@@ -9,3 +9,7 @@
 - İptal ilk maliyet kaynağından önce gelirse tarihsel gerçek fatura kanıtını ve terminal iptal eşlemesini koruyan son dar kaynak bağı hâlâ owner çalışmasındadır. Bu checkpoint STK-SC36-a'nın tamamı veya kullanılabilir kabul değildir.
 
 Unit/SQL/HTTP/Vitest/browser/CI yürütme ve production aktivasyonu **NOT_RUN**. Son K3/pin/hafif kontrol kapıları bekler.
+
+## Son merkez kaynak derlemesi
+
+`15a6342904570eb9e93cda2cdb0acac4ce10cb69` donuk kaynakta API, Settings.Unit, Finance.Unit, Inventory.Unit, Sales.Unit, Accounting.Unit, Integration ve TypeScript derlemeleri exit0/0 uyarı/hata. İlk hata kayıtları ve her native exit korundu; her süreç öncesi en az2GiB RAM ölçüldü. Kaynak incelemesindeki fresh replay çiti ve exact29 capability listesi düzeltmeleri dahildir. Sonraki tarihsel iptal delta kaynağı dahil değildir. Runtime/SQL/browser/CI NOT_RUN.

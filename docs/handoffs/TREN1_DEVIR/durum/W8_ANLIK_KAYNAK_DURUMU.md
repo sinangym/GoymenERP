@@ -1,7 +1,7 @@
 # W8 mevcut kaynak durumu — son paket
 
 - Son yayımlanan tren planı: **135/174 (%77,6)**.
-- Yerel entegrasyon planı: **171/174 (%98,3) kaynak DONE**, **3 açık**.
+- Yerel entegrasyon planı: **172/174 (%98,9) kaynak DONE**, **2 açık**.
 - Bu güncelleme yeni kapsam veya yeni dalga açmaz. W8 son pakettir.
 - İlk 16 kapanışın gerçek commitleri yerel entegrasyon head'inin atası olarak doğrulandı; owner raporlarında kaynak derleme sonuçları vardır. Tüm yeni değişikliklerin birleşik dalga derlemesi, pin üretimi ve hafif kontrolleri henüz tamamlanmadığı için tren fast-forward/push yapılmadı.
 - DONE kaynak kapsamıdır; Unit/gerçek SQL/HTTP/Vitest/browser/CI kabulü NOT_RUN. Sağlayıcı veya insan kapısı kapalı yüzey kullanılabilir sayılmaz.
@@ -69,3 +69,7 @@ Fatura → 120/320 kaynak adaptörünün özgün B-04 kapsamı gerçek kodla do�
 ## Son kaynak kapanışı — dört dilim
 
 FIN-S14, FIN-SC47-KREDI, STK-S3 ve STK-S8 özgün kaynak kapsamları kapandı. Ayrıntı `W8_DORT_DILIM_KAYNAK_KAPANISI.md`. Yukarıdaki kapanış sırası tarihsel ilerlemeyi korur; güncel açık kaynaklar yalnız KIM-S19 (son fresh replay düzeltmesi), SAT-SC34 (gerçek faturalı/faturasız miktar) ve STK-SC36-a (atıflı iptal ve geç kaynak sıralaması). Birleşik son build/pin/hafif kontroller ve tren fast-forward ayrıca bekler.
+
+## Son birleşik kaynak kontrolü
+
+`15a634290` donuk kaynak zincirinde API, beş ilgili UnitTests projesi, Integration ve TypeScript derlemeleri exit0/0 uyarı/hata. KIM-S19 ve SAT-SC34 kaynak DONE. Son kayıtlı karar takibi denetimi, STK-S3 içindeki SAT-D417 uyarı/onay kaynağının eksikliğini doğruladı; dilim açıkça PARTIAL olarak yeniden açıldı. Güncel iki açık kaynak: STK-S3 (karar ayrıntısı #1189/6963231247) ve STK-SC36-a (tarihsel iptal/geç maliyet zinciri). Eski kapanış notları tarihsel checkpointlerdir. Ayrıntı `W8_KAYNAK_SON_KONTROL.md`.

@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "34624009d19c6e3c8e0e0e10ce6ee7726acb0b58",
+  "kod_head": "15a6342904570eb9e93cda2cdb0acac4ce10cb69",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -45,8 +45,8 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 171,
-  "partial": 3,
+  "done": 172,
+  "partial": 2,
   "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
@@ -89,51 +89,56 @@
    {
     "work": "EK24 plan üstü sevk uyarısı",
     "slice": "STK-S3",
-    "status": "SOURCE_TRACE_PENDING"
+    "status": "BLOCKED_DECISION_SOURCE_MISSING",
+    "note": "SAT-D417 actual source missing; no valid current over-plan admission. NEEDS-SINAN #1189/6963231247; do not fabricate unreachable approval or weaken loaded cap."
    },
    {
     "work": "EK24 satır bazlı iskonto",
     "slice": "STK-SC36-a",
-    "status": "SOURCE_TRACE_PENDING"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "Actual Purchasing discounted line price via PurchaseOrderLineCostReadPort; SAT-D414 excludes document-total discount allocator."
    },
    {
     "work": "EK24 N-12 önek/yıl/sıra ve yıllık sıfırlama",
     "slice": "KIM-S19",
-    "status": "PARTIAL",
-    "note": "3A yanıtlandı: alış siparişi KIM-D53 önek/yıl/sıra kapsamındadır, ALS-D36 eski algoritması güncellenir; uygulama henüz tamamlanmadı."
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "Actual Settings number provider/counters/reservations/gaps, Purchasing and Finance consumers; combined15a source compile exit0. No reuse/backfill."
    },
    {
     "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
     "slice": "STK-SC36-a",
-    "status": "PARTIAL"
+    "status": "PARTIAL",
+    "note": "Actual Inventory cost and Accounting source/posting connected; historical cancellation and late cost ordering remains STK-SC36-a."
    },
    {
     "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
     "slice": "STK-SC36-b",
-    "status": "PARTIAL"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "Actual receipt rate stamp/source, exact kg-weighted calculator and Manufacturing consumer;4bd80d9dc."
    },
    {
     "work": "FNS-D106 kredi grubu alan taslağı",
     "slice": "FIN-SC47-KREDI",
     "status": "DRAFT_READY",
-    "note": "FINANCE_CREDIT_GROUP_FIELDS_DRAFT_v1.md hazır; Sinan onayı yok, alan/hareket aktivasyonu yok."
+    "note": "Draft updated under17Nov implementation instructions;69096b33e/5485ec8e5 source scopes separately registered. Group activation, grants and production are not implied."
    },
    {
     "work": "KLN-D114 bildirim deposu/90 gün sonra pasif",
     "slice": "PLATFORM_FOLLOWUP",
-    "status": "PLANNED",
-    "note": "4A yanıtlandı: 90 gün Ayarlar ile değiştirilebilir başlangıç değeri, silme yok. PLT-S13 belge DONE bunu bitirmez; owner depo/süre uygulaması eksik."
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "adee18054 actual Work inbox/notification/passivation + Settings configurable duration + mounted personal UI. Dispatcher activation separate."
    },
    {
     "work": "URT-D109 boya emir toplamı",
     "slice": "URT-SC36",
-    "status": "PARTIAL",
-    "note": "Emir toplamı golden kaynağı var; maliyet runtime bağı eksik."
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "This decision concerns RETURN LIMIT, not cost: ProductionOrder aggregate paint balance + ReturnLimitFormulaGoldenTests;f0efbaebb."
    },
    {
     "work": "FNS-D108 / W5-5 kredi kapalı dönem düzeltmesi",
     "slice": "FIN-SC47-KREDI",
-    "status": "PLANNED"
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "Actual FinanceCreditMovementService reversal+new immutable movement, selected open period, different checker and CreditMovementsPanel source."
    },
    {
     "work": "ALS-D116 / W5-5 fazla teslim onayı ayrı izin",
@@ -144,8 +149,8 @@
    {
     "work": "SAT-D419 / W5-5 Finans maliyet hesabı eşlemesi ve audit",
     "slice": "STK-SC36-a",
-    "status": "PARTIAL",
-    "note": "5 yanıtlandı: açık Product sınıfı; satır bazlı SMM sınıf/hesap düzeltmesi tutar/miktar/vergi/fiziksel stok değiştirmez. Ters/düzeltme yetkilisi hazırlar, farklı muhasebe yetkilisi onaylar; kullanıcı seçili açık dönem/tarih. Gerçek owner zinciri eksik."
+    "status": "SOURCE_DONE_RUNTIME_NOT_RUN",
+    "note": "c51d83d86/e13015a66 actual Product class, account resolver/mapping workspace/audit. Separate SAT-D422 historical correction/cancellation remains STK-SC36-a."
    },
    {
     "work": "FNS-D109 kredi approve Critical / propose değil",
@@ -268,29 +273,31 @@
    "SAT-S13",
    "FIN-S13",
    "SAT-S12",
-   "STK-S3",
    "STK-S8",
    "FIN-S14",
-   "FIN-SC47-KREDI"
+   "FIN-SC47-KREDI",
+   "KIM-S19",
+   "SAT-SC34"
   ],
   "published_train_done_at_last_checkpoint": 135,
   "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
   "w8_last_combined_source_build": {
-   "head": "34624009d19c6e3c8e0e0e10ce6ee7726acb0b58",
+   "head": "15a6342904570eb9e93cda2cdb0acac4ce10cb69",
    "source_exit": 0,
    "projects": [
     "Api",
     "Settings.UnitTests",
     "Finance.UnitTests",
-    "Sales.UnitTests",
     "Inventory.UnitTests",
+    "Sales.UnitTests",
     "Accounting.UnitTests",
     "Api.IntegrationTests",
     "tsc -b"
    ],
-   "first_integration_failure_preserved": true,
    "runtime": "NOT_RUN",
-   "note": "API and unit project source at df821ecac;34624009d only fixes new credit test fixture; Integration retry and TypeScript exit0 at34624009d. Later replay fence delta not included."
+   "warnings": 0,
+   "errors": 0,
+   "note": "Frozen complete chain; actual log/native exit preserved; RAM >=2GiB before each process. Later historical cancellation source excluded."
   },
   "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
   "w8_last_mounted_source_build": "6ff5e4f63",
@@ -316,8 +323,8 @@
     "Settings"
    ],
    "toplam": 28,
-   "done": 27,
-   "partial": 1,
+   "done": 28,
+   "partial": 0,
    "kalan": [
     {
      "id": "KIM-S3",
@@ -600,13 +607,13 @@
      "contracts": [
       "sağlar: ISettingsFinancePolicyProviderV1 + numara serisi portu (ad taslak; kimlik; tüketen finans)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_kimlik.md",
      "w6_report": "durum/W6_kimlik.md",
-     "w8_report": "durum/W8_KIM_S19_IZIN_KAYDI.md",
-     "w8_source_note": "Numaralama/acilis kaynagi merkezde; No133 f520ac7af kayit-only, compile queued. Iki politika ailesi e0cff0a4a kaynak checkpointi; banka listesi cevabi6961276925 ile K6 devam ediyor. Sayisal esik/grant yok."
+     "w8_report": "durum/W8_KIM_S19_MERKEZ.md",
+     "w8_source_note": "Typed policy families, actual bank catalog/K6/numbering/opening sources mounted. e7029e6bc final replay authority fence plus regression sources; combined15a634290 API/Settings/Finance/Sales/Inventory/Accounting/Integration/TSC source compiles exit0. No default threshold/grant/activation; runtime NOT_RUN."
     },
     {
      "id": "KIM-SC32-a",
@@ -677,8 +684,8 @@
     "Sales"
    ],
    "toplam": 17,
-   "done": 16,
-   "partial": 1,
+   "done": 17,
+   "partial": 0,
    "kalan": [
     {
      "id": "SAT-S8",
@@ -811,11 +818,13 @@
      ],
      "files_hint": [],
      "contracts": [],
-     "status": "PARTIAL",
-     "blocked_reason": null,
+     "status": "DONE",
+     "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_satis.md",
-     "w6_report": "durum/W6_satis.md"
+     "w6_report": "durum/W6_satis.md",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_source_note": "Original weigh-derived subcontract invoice, future-allocation revision guard, actual returned and finalized-invoiced quantities connected. dfc1f3195 and4e0d582e1 integrated; combined15a634290 source compiles exit0 includingSales/Integration/TSC. Official provider remains unconfigured, not usable-runtime acceptance."
     }
    ],
    "remaining_not_started": 0
@@ -1017,8 +1026,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 44,
-   "partial": 1,
+   "done": 43,
+   "partial": 2,
    "kalan": [
     {
      "id": "STK-S1",
@@ -1073,13 +1082,13 @@
       "tüketir: ISalesShipmentRiskGateReadPortV1 (satis)",
       "tüketir: Üretim fason emri okuma (uretim)"
      ],
-     "status": "DONE",
-     "blocked_reason": "",
+     "status": "PARTIAL",
+     "blocked_reason": "SAT-D417 warning/approval followup absent. Actual loaded quantity <= own approved open plan, so excess branch unreachable. NEEDS-SINAN #1189/6963231247: authorized instruction revision vs separate excess shipment admission and approval owner. No cap weakening.",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
      "w6_report": "durum/W6_stok_lojistik.md",
-     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
-     "w8_source_note": "Original LOJ scope + actual host/borrowed participant/real panels + explicit unused release are mounted. Source checkpoints 372e27303/7b4c5532f and combined34624009d compile exit0. Eight original Logistics shell declarations remain staged false; runtime/SQL/browser/CI NOT_RUN."
+     "w8_report": "durum/W8_KAYNAK_SON_KONTROL.md",
+     "w8_source_note": "Original LOJ flow and unused release source complete and compiled; enclosing slice reopened for registered SAT-D417 source followup. Eight original shell declarations remain staged false."
     },
     {
      "id": "STK-S8",
