@@ -435,6 +435,13 @@ public sealed partial class SalesDraftServiceTests
             string? exemptionCode = null, CancellationToken cancellationToken = default) =>
             Answer(null, itemType, buyerSituation, on, exemptionCode);
 
+        public async Task<SettingsTaxDefaultResolutionV1> GetSubcontractDefaultAsync(SubcontractTaxSideV1 side, Guid productId,
+            string buyerSituation, DateOnly on, string? exemptionCode = null, CancellationToken cancellationToken = default)
+        {
+            var value = await Answer(productId, TaxItemTypesV1.Service, buyerSituation, on, exemptionCode);
+            return value with { Source = CompanyPolicyKeysV1.SalesSubcontractTaxDefault, RecordId = null };
+        }
+
         public Task<SettingsTaxBuyerSituationListResolutionV1> GetBuyerSituationsAsync(DateOnly on, CancellationToken cancellationToken = default)
         {
             Throw();

@@ -523,6 +523,11 @@ public sealed record SettingsWithholdingThresholdResolutionV1(
 /// </summary>
 public interface ISettingsLineTaxResolverV1
 {
+    /// <summary>SAT-D381/ALS-D105: the separate actual side default, with the same buyer/code calculator; never an item-type fallback.</summary>
+    Task<SettingsTaxDefaultResolutionV1> GetSubcontractDefaultAsync(SubcontractTaxSideV1 side, Guid productId,
+        string buyerSituation, DateOnly on, string? exemptionCode = null, CancellationToken cancellationToken = default) =>
+        throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
+
     /// <summary>
     /// The default tax for the product's item type (the Product owner answers the type) for the order's buyer situation code
     /// (SAT-D140/D158; a malformed code is <c>settings_tax_master_request_invalid</c>, one the list in force does not carry is

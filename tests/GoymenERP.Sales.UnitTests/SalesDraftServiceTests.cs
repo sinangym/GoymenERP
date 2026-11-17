@@ -2231,7 +2231,7 @@ public sealed partial class SalesDraftServiceTests
             Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
         {
             if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
-                    or SalesDraftCommands.ApproveDiscountExceptionsV1))
+                    or SalesDraftCommands.ApproveDiscountExceptionsV1 or SalesDraftCommands.ReviseSubcontractTaxV1))
                 throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,

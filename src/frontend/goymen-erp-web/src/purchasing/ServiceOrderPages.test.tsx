@@ -1,21 +1,22 @@
 /** Synthetic DOM sources; real HTTP, SQL, browser and runtime acceptance are NOT_RUN. */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initialShellState, type ShellState } from '../shell/shellState'
 import type { ViewOutcome } from '../shell/uiState'
 import { ServiceOrderCreatePage, ServiceOrderDetailPage, ServiceOrderListPage } from './ServiceOrderPages'
-import { fetchServiceOrder, fetchServiceOrders, fetchServiceOrderReferences, submitServiceOrder } from './serviceOrderApi'
+import { fetchServiceOrder, fetchServiceOrders, fetchServiceOrderReferences, fetchServiceOrderTaxOptions, submitServiceOrder } from './serviceOrderApi'
 import { serviceFixture, serviceId as id } from './serviceOrderFixtures.testSupport'
 import { SERVICE_ORDER_CAPABILITY as C, type ServiceOrder } from './serviceOrderContract'
 import { SERVICE_ORDER_TEXT as T } from './serviceOrderText'
+import { SUBCONTRACT_TAX_TEXT as TAX } from '../settings/subcontractTaxText'
 import { resetAdjustmentAttemptsForTests } from './useReceiptAdjustmentAttempt'
 let currentShell: ShellState
 const auth = vi.hoisted(() => ({ capture: vi.fn(() => ({})), report: vi.fn() }))
 vi.mock('../shell/shellContext', () => ({ useShellState: () => currentShell }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
-vi.mock('./serviceOrderApi', () => ({ fetchServiceOrder: vi.fn(), fetchServiceOrders: vi.fn(), fetchServiceOrderReferences: vi.fn(), submitServiceOrder: vi.fn() }))
+vi.mock('./serviceOrderApi', () => ({ fetchServiceOrder: vi.fn(), fetchServiceOrders: vi.fn(), fetchServiceOrderReferences: vi.fn(), fetchServiceOrderTaxOptions: vi.fn(), submitServiceOrder: vi.fn() }))
 vi.mock('./api', () => ({ fetchPurchasingSupplierOptions: vi.fn(async () => ({ type: 'ok-single', data: { items: [] } })),
   fetchPurchasingCurrencyCandidates: vi.fn(async () => ({ type: 'ok-single', data: { items: [] } })) }))
 vi.mock('../manufacturing/planReferences', () => ({ fetchParentRollCandidates: vi.fn() }))
@@ -38,6 +39,7 @@ beforeEach(() => {
   vi.mocked(fetchServiceOrder).mockResolvedValue({ type: 'ok-single', data: serviceFixture() })
   vi.mocked(fetchServiceOrders).mockResolvedValue({ type: 'ok-single', data: [serviceFixture()] })
   vi.mocked(fetchServiceOrderReferences).mockResolvedValue({ type: 'ok-single', data: { companyId: id(1), serviceTypes: [], units: [] } })
+  vi.mocked(fetchServiceOrderTaxOptions).mockResolvedValue({ type: 'http', status: 503 })
   vi.mocked(submitServiceOrder).mockResolvedValue({ type: 'unknown', reason: 'malformed' })
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach(x => x.clear()); resetAdjustmentAttemptsForTests() })
@@ -84,6 +86,24 @@ describe('ALC-S7 user workflow source (synthetic, NOT_ENV)', () => {
     expect(vi.mocked(submitServiceOrder).mock.calls[0][2]).toBe('prices')
     expect(vi.mocked(submitServiceOrder).mock.calls[0][3]).toEqual({ expectedVersion: '3', reason: 'SENTETIK gerçek fiyat',
       lines: [{ lineId: id(6), unitPrice: '2' }] })
+  })
+  it('submits a tax-only approval-authorized revision from actual lists without quantity price or physical fields', async () => {
+    vi.mocked(fetchServiceOrder).mockResolvedValue({ type: 'ok-single', data: { ...serviceFixture(), kind: 'OwnMaterialSubcontract' } })
+    vi.mocked(fetchServiceOrderTaxOptions).mockResolvedValue({ type: 'ok-single', data: { companyId: id(1), side: 2, on: '2026-11-17', defaultVersion: '1',
+      default: { vatApplies: true, vatPercent: '20', exemptionCode: null, withholdingApplies: false, withholdingPercent: null, withholdingCode: null },
+      vatRates: [{ code: '10', name: 'SENTETIK KDV', percent: '10', taxCode: null }], withholdingRatios: [], exemptionCodes: [], withholdingCodes: [], sourceVersion: 'SENTETIK-lists:1' } })
+    mount('detail'); const heading = await screen.findByRole('heading', { name: TAX.taxRevision })
+    const form = within(heading.closest('form')!)
+    await waitFor(() => expect(form.getByLabelText(TAX.vat).matches(':disabled')).toBe(false))
+    fireEvent.change(form.getByLabelText(T.serviceType), { target: { value: id(6) } })
+    fireEvent.change(form.getByLabelText(TAX.vat), { target: { value: '10' } })
+    fireEvent.change(form.getByLabelText(TAX.reason), { target: { value: 'SENTETIK satır vergisi' } })
+    fireEvent.click(form.getByRole('button', { name: TAX.save })); await screen.findByText(T.unknown)
+    expect(vi.mocked(submitServiceOrder).mock.calls[0][2]).toBe('tax')
+    expect(vi.mocked(submitServiceOrder).mock.calls[0][3]).toEqual({ expectedVersion: '1', lineId: id(6), useDefault: false,
+      expectedDefaultVersion: '1', expectedSourceVersion: 'SENTETIK-lists:1', vatRateCode: '10', exemptionCode: null, withholdingRatioCode: null, reason: 'SENTETIK satır vergisi' })
+    const first = vi.mocked(submitServiceOrder).mock.calls[0]; fireEvent.click(form.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(submitServiceOrder).toHaveBeenCalledTimes(2)); expect(vi.mocked(submitServiceOrder).mock.calls[1]).toEqual(first)
   })
   it('reports permission refusal and does not disclose a former successful order', async () => {
     vi.mocked(fetchServiceOrder).mockResolvedValue({ type: 'http', status: 403 })

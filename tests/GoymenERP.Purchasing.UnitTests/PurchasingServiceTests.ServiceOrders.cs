@@ -85,6 +85,7 @@ public sealed partial class PurchasingServiceTests
     private sealed class ServiceCommandStore : IPurchaseServiceOrderStoreV1
     {
         public PurchaseServiceOrderState? Saved { get; private set; }
+        public void Seed(PurchaseServiceOrderState value) => Saved = value;
         public Task<PurchaseServiceOrderState?> ReadAsync(Guid id, CancellationToken token) => Task.FromResult(Saved);
         public Task<IReadOnlyList<PurchaseServiceOrderState>> ListAsync(CancellationToken token) => throw new NotSupportedException();
         public Task<PurchaseServiceOrderWriteV1?> ReplayAsync(string command, PurchasingWriteEnvelope envelope, string hash, CancellationToken token) =>

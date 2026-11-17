@@ -128,6 +128,7 @@ import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
 import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesOrderTaxCard } from './SalesOrderTaxCard'
+import { SalesSubcontractTaxRevision } from './SalesSubcontractTaxRevision'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
 import { SalesOrderRiskExceptions } from './SalesOrderRiskExceptions'
 import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
@@ -311,6 +312,7 @@ export function SalesDraftDetailPage() {
               key={`tax:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
               detail={outcome.data}
             />
+            <SalesSubcontractTaxRevision detail={outcome.data} onRecorded={() => void queryClient.invalidateQueries({ queryKey })} />
           </>
         ) : null
       }

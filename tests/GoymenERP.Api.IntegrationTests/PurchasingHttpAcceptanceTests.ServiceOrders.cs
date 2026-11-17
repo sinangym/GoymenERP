@@ -64,6 +64,9 @@ public sealed partial class PurchasingHttpAcceptanceTests
         public bool Replay { get; init; } public int? Refusal { get; init; }
         public ApprovePurchaseServiceOrderV1? Request { get; private set; } public PurchasingCommandMetadata? Metadata { get; private set; }
         public RevisePurchaseServiceOrderPricesV1? PriceRequest { get; private set; }
+        public RevisePurchaseServiceOrderTaxV1? TaxRequest { get; private set; }
+        public Task<PurchaseServiceOrderResponseV1> ReviseTaxAsync(Guid id, RevisePurchaseServiceOrderTaxV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default)
+        { TaxRequest = request; Metadata = metadata; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), Replay, "SENTETIK-original")); }
         private static PurchaseServiceOrderViewV1 View() => new(CompanyA, PurchaseOrderId, "SENTETIK-HIZ-2026-1", "2", "ServicePurchase", "Approved",
             Guid.NewGuid(), Guid.NewGuid(), new(2026, 11, 17), Guid.NewGuid(), "TRY", true, "Withheld",
             [new(Guid.NewGuid(), Guid.NewGuid(), "1", "SENTETIK hizmet", UnitId, "kg", "10", "0", null, null)], [], [], []);
