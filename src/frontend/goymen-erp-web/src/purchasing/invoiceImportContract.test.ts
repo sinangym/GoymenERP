@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { decodeImportPreview, decodeImportReservation } from './invoiceImportContract'
+import { decodeImportPreview, decodeImportReservation, decodeImportReservations } from './invoiceImportContract'
 import { importPreviewFixture, importRequestFixture, importReservationFixture, importTestId as id } from './invoiceImportFixtures.testSupport'
 describe('Purchase invoice source decoder (synthetic, NOT_ENV)', () => {
+  it('rejects a foreign-company or repeated reservation in a successful page', () => {
+    const item = importReservationFixture().reservation, page = { companyId: id(2), pageIndex: 0, hasNext: false, items: [item] }
+    expect(decodeImportReservations(page, id(2), 0)).toEqual(page)
+    expect(decodeImportReservations(page, id(99), 0)).toBeNull()
+    expect(decodeImportReservations(page, id(2), 1)).toBeNull()
+    expect(decodeImportReservations({ ...page, items: [item, item] }, id(2), 0)).toBeNull()
+    expect(decodeImportReservations({ ...page, items: [{ ...item, companyId: id(99) }] }, id(2), 0)).toBeNull()
+  })
   const decode = (value: unknown) => decodeImportPreview(value, id(2), id(1), importRequestFixture())
   it('preserves decimal strings, leading-zero codes and separate exchange-rate purposes', () => {
     const invoice = decode(importPreviewFixture())!.invoice!

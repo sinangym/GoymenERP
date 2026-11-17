@@ -12,15 +12,38 @@ import { Field } from '../ui/Field'
 import { Button } from '../ui/Button'
 import { PURCHASING_CAPABILITY as C } from './capabilities'
 import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
-import { reserveInvoiceImport, previewInvoiceImport } from './invoiceImportApi'
-import type { ImportOptions, ImportPreview, ImportPreviewRequest, ImportReservationResult, SourceInvoice, SourceAmount, SourceTax, SourceAdjustment } from './invoiceImportContract'
+import { reserveInvoiceImport, previewInvoiceImport, fetchInvoiceImports } from './invoiceImportApi'
+import type { ImportOptions, ImportPreview, ImportPreviewRequest, ImportReservation, ImportReservationResult, SourceInvoice, SourceAmount, SourceTax, SourceAdjustment } from './invoiceImportContract'
 import { INVOICE_IMPORT_TEXT as T, REQUIRED_IMPORT_COLUMNS as REQUIRED, OPTIONAL_IMPORT_COLUMNS as OPTIONAL, IMPORT_TOTAL_LABELS as TOTALS, IMPORT_PURPOSE_LABELS as PURPOSES } from './invoiceImportText'
 import styles from './IncomingInvoicePages.module.css'
 
 export interface InvoiceImportBinding { readonly company: string; readonly namespace: string; readonly entry: number }
 export function InvoiceImportPanel({ binding }: { readonly binding: InvoiceImportBinding }) {
   const shell = useShellState()
-  return hasCapability(shell, C.invoiceImport) ? <ImportStart key={`${binding.namespace}:${binding.entry}`} binding={binding} /> : null
+  return hasCapability(shell, C.invoiceImport) ? <div key={`${binding.namespace}:${binding.entry}`} className={styles.page}>
+    <ImportStart binding={binding} /><PreviousImports binding={binding} /></div> : null
+}
+function PreviousImports({ binding }: { readonly binding: InvoiceImportBinding }) {
+  const boundary = useAuthBoundary(), [page, setPage] = useState(0), [opened, setOpened] = useState<string | null>(null)
+  const read = useQuery({ queryKey: [binding.namespace, binding.entry, 'invoice-imports', page], retry: false,
+    queryFn: async ({ signal }) => {
+      const fence = boundary.capture(), value = await fetchInvoiceImports(binding.company, page, signal)
+      if (value.type === 'http' && [401, 403].includes(value.status)) boundary.report(value.status, fence)
+      return value
+    } })
+  const list = !read.isFetching && read.data?.type === 'ok-single' ? read.data.data : null
+  const selected = list?.items.find(item => item.id === opened)
+  return <section className={styles.card} aria-label={T.previousImports}><h3>{T.previousImports}</h3>
+    <ReadState outcome={read.data} fetching={read.isFetching} refresh={() => void read.refetch()} />
+    {list?.items.length === 0 ? <StateBlock subject={T.previousImports} state={{ kind: 'empty-no-data' }} /> : null}
+    {list?.items.map(item => <p key={item.id}>{T.reservationLabel(item.reservedAtUtc)}{' '}
+      <Button type="button" onClick={() => setOpened(item.id)}>{T.open}</Button></p>)}
+    <div className={styles.actions}><Button type="button" disabled={page === 0 || read.isFetching} onClick={() => { setOpened(null); setPage(page - 1) }}>{T.previous}</Button>
+      <Button type="button" disabled={!list?.hasNext || read.isFetching} onClick={() => { setOpened(null); setPage(page + 1) }}>{T.next}</Button>
+      <Button type="button" disabled={read.isFetching} onClick={() => void read.refetch()}>{T.refresh}</Button></div>
+    {selected ? <><Button type="button" onClick={() => setOpened(null)}>{T.close}</Button>
+      <ImportDocuments key={selected.id} binding={binding} reservation={selected} /></> : null}
+  </section>
 }
 function ImportStart({ binding }: { readonly binding: InvoiceImportBinding }) {
   // Keep an unresolved key across route re-entry, but never across actor/company/capability generations.
@@ -29,7 +52,7 @@ function ImportStart({ binding }: { readonly binding: InvoiceImportBinding }) {
   const answer = attempt.outcome
   return <section className={styles.card} aria-label={T.heading}>
     <h2>{T.heading}</h2><p>{T.hint}</p>
-    {answer?.type === 'applied' ? <ImportDocuments key={answer.response.reservation.id} binding={binding} reservation={answer.response} /> : <>
+    {answer?.type === 'applied' ? <ImportDocuments key={answer.response.reservation.id} binding={binding} reservation={answer.response.reservation} /> : <>
       <Button type="button" disabled={attempt.locked} onClick={() => attempt.submit(null)}>{T.start}</Button>
       {answer?.type === 'failed' ? <><p role="alert">{T.rejected}</p><StateBlock subject={T.heading} state={classifyOutcome({ type: 'http', status: answer.status })} /></> : null}
       {answer?.type === 'unknown' ? <StateBlock subject={T.heading} state={{ kind: answer.reason === 'malformed' ? 'malformed-response' : answer.reason }} /> : null}
@@ -42,8 +65,8 @@ function ReadState<TData>({ outcome, fetching, refresh }: { readonly outcome?: V
   if (fetching || outcome === undefined) return <StateBlock subject={T.heading} state={{ kind: 'initial-loading' }} />
   return outcome.type === 'ok-single' ? null : <StateBlock subject={T.heading} state={classifyOutcome(outcome)} onRetry={refresh} />
 }
-function ImportDocuments({ binding, reservation }: { readonly binding: InvoiceImportBinding; readonly reservation: ImportReservationResult }) {
-  const boundary = useAuthBoundary(), id = reservation.reservation.id, owner = OWNER_KIND.purchasingInvoiceImport
+function ImportDocuments({ binding, reservation }: { readonly binding: InvoiceImportBinding; readonly reservation: ImportReservation }) {
+  const boundary = useAuthBoundary(), id = reservation.id, owner = OWNER_KIND.purchasingInvoiceImport
   const [selection, setSelection] = useState('')
   const documents = useQuery({ queryKey: documentsQueryKey(binding.namespace, binding.entry, owner, id), retry: false,
     queryFn: async ({ signal }) => {

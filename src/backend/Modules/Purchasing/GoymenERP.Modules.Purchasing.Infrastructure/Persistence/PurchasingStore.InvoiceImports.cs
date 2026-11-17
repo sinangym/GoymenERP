@@ -6,6 +6,16 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 public sealed partial class PurchasingStore : IPurchaseInvoiceImportReservationStoreV1
 {
+    async Task<PurchaseInvoiceImportReservationPageV1> IPurchaseInvoiceImportReservationStoreV1.ListAsync(int pageIndex, CancellationToken token)
+    {
+        const int pageSize = 25;
+        if (pageIndex < 0 || pageIndex > int.MaxValue / pageSize) throw new ArgumentOutOfRangeException(nameof(pageIndex));
+        var companyId = RequireResolvedCompany();
+        var rows = await dbContext.InvoiceImportReservations.AsNoTracking().OrderByDescending(x => x.ReservedAtUtc).ThenBy(x => x.Id)
+            .Skip(pageIndex * pageSize).Take(pageSize + 1).ToArrayAsync(token);
+        return new(companyId, pageIndex, rows.Length > pageSize, rows.Take(pageSize).Select(row => ImportReservation(row, companyId)).ToArray());
+    }
+
     async Task<PurchaseInvoiceImportReservationV1?> IPurchaseInvoiceImportReservationStoreV1.FindAsync(Guid id, CancellationToken token)
     {
         var companyId = RequireResolvedCompany();

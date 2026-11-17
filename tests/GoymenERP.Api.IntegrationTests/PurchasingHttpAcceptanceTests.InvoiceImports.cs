@@ -12,6 +12,22 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class PurchasingHttpAcceptanceTests
 {
     [Fact]
+    public async Task Invoice_import_list_reopens_company_source_reservations_with_private_no_store_and_strict_query()
+    {
+        var owner = new InvoiceImportHttpOwner();
+        using var host = InvoiceImportHost(owner); using var client = CreateClient(host);
+        using var response = await client.GetAsync("/api/v1/purchasing/invoice-imports?pageIndex=0");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); AssertPrivateNoStore(response);
+        var page = await response.Content.ReadFromJsonAsync<PurchaseInvoiceImportReservationPageV1>();
+        Assert.NotNull(page); Assert.Equal(CompanyA, page.CompanyId); Assert.Equal(owner.Id, Assert.Single(page.Items).Id);
+        foreach (var query in new[] { "?extra=1", "?pageIndex=0&pageIndex=1", "?pageIndex=invalid" })
+        {
+            using var invalid = await client.GetAsync("/api/v1/purchasing/invoice-imports" + query);
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Invoice_import_reservation_preserves_idempotency_metadata_and_preview_is_a_source_read_only()
     {
         var owner = new InvoiceImportHttpOwner();
@@ -77,6 +93,9 @@ public sealed partial class PurchasingHttpAcceptanceTests
         public PurchaseInvoiceImportPreviewRequestV1? Preview { get; private set; }
         public int Reservations { get; private set; }
         private PurchaseInvoiceImportReservationV1 Reservation => new(Id, CompanyA, "1", "SENTETIK", DateTimeOffset.Parse("2026-11-17T10:00:00Z"));
+        public Task<PurchaseInvoiceImportReservationPageV1> ListAsync(int pageIndex, CancellationToken token = default) => FailureStatus is { } status
+            ? throw new PurchasingServiceException(status, "SENTETIK-internal")
+            : Task.FromResult(new PurchaseInvoiceImportReservationPageV1(CompanyA, pageIndex, false, [Reservation]));
         public Task<PurchaseInvoiceImportReservationResultV1> ReserveAsync(PurchasingCommandMetadata metadata, CancellationToken token = default)
         { Metadata = metadata; Reservations++; return Task.FromResult(new PurchaseInvoiceImportReservationResultV1(Reservation, true, "SENTETIK-original")); }
         public Task<PurchaseInvoiceImportReservationV1> ReadAsync(Guid importId, CancellationToken token = default) => FailureStatus is { } status

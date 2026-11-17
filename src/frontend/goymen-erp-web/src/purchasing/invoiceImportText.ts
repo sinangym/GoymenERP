@@ -1,5 +1,7 @@
 export const INVOICE_IMPORT_TEXT = {
   heading: 'Alış faturası dosyasını içe aktar', start: 'Dosya eklemeye başla', documents: 'Kaynak fatura belgeleri',
+  previousImports: 'Önceki dosya işlemleri', open: 'Belgeleri aç', previous: 'Önceki sayfa', next: 'Sonraki sayfa', close: 'Belge listesini kapat',
+  reservationLabel: (date: string) => `Dosya işlemi — ${new Date(date).toLocaleString('tr-TR')}`,
   hint: 'UBL-TR/XML, XLSX veya CSV belgesini yükleyin. Tablo dosyalarında dışarı aktarılan sütunları seçin.',
   reserved: 'Dosya yüklemek için kayıt hazır.', source: 'Okunacak dosya ve sürüm', choose: 'Dosya seçin',
   cleanRequired: 'Önizleme için güvenlik taraması tamamlanmış bir dosya seçin.',

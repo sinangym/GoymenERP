@@ -1,9 +1,20 @@
 import { API_BASE, purchasingHeaders } from './api'
 import type { AdjustmentOutcome } from './receiptAdjustmentApi'
 import type { ViewOutcome } from '../shell/uiState'
-import { decodeImportPreview, decodeImportReservation, type ImportPreview, type ImportPreviewRequest, type ImportReservationResult } from './invoiceImportContract'
+import { decodeImportPreview, decodeImportReservation, decodeImportReservations, type ImportPreview, type ImportPreviewRequest, type ImportReservationResult, type ImportReservationPage } from './invoiceImportContract'
 
 const base = `${API_BASE}/purchasing/invoice-imports`
+export async function fetchInvoiceImports(company: string, pageIndex: number, signal: AbortSignal): Promise<ViewOutcome<ImportReservationPage>> {
+  try {
+    const response = await fetch(`${base}?pageIndex=${pageIndex}`, { cache: 'no-store', signal, headers: purchasingHeaders(company) })
+    if (!response.ok) return { type: 'http', status: response.status }
+    if (response.status !== 200) return { type: 'malformed' }
+    let body: unknown
+    try { body = await response.json() } catch { return { type: 'malformed' } }
+    const decoded = decodeImportReservations(body, company, pageIndex)
+    return decoded === null ? { type: 'malformed' } : { type: 'ok-single', data: decoded }
+  } catch { return signal.aborted ? { type: 'fence-stale' } : { type: navigator.onLine ? 'network-error' : 'offline' } }
+}
 export async function reserveInvoiceImport(company: string, key: string): Promise<AdjustmentOutcome<ImportReservationResult>> {
   try {
     const response = await fetch(`${base}/reservations`, { method: 'POST', headers: { ...purchasingHeaders(company),
