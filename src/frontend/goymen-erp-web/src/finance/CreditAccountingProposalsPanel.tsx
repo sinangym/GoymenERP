@@ -8,8 +8,8 @@ import { isDateOnly } from './dateOnly'
 import { isNonNegativeDecimalText } from './decimalText'
 import { CREDIT_MOVEMENT_TEXT as T, CREDIT_POSTING_TEXT as P } from './creditMovementText'
 
-interface CreditPostingProposal {
-  readonly proposalId: string; readonly companyId: string; readonly status: 'AwaitingMapping'; readonly mappingStatus: 'MappingMissing' | 'MappingDetailsPending'
+export interface CreditPostingProposal {
+  readonly proposalId: string; readonly companyId: string; readonly status: 'AwaitingMapping' | 'ReadyForPreparation'; readonly mappingStatus: 'MappingMissing' | 'MappingDetailsPending' | 'MappingReady'
   readonly mappingVersion: number | null; readonly waitingReasons: readonly string[]; readonly receivedAtUtc: string
   readonly source: { readonly eventId: string; readonly companyId: string; readonly movementId: string; readonly creditAccountId: string; readonly currencyId: string
     readonly kind: keyof typeof T.kinds; readonly sourceDocument: { readonly reference: string; readonly documentDate: string; readonly revision: string }
@@ -26,10 +26,12 @@ export function decodeCreditPostingProposals(value: unknown, company: string): r
   if (!record(value) || value.companyId !== company || !Array.isArray(value.items)) return null
   const ids = new Set<string>()
   for (const row of value.items) {
-    if (!record(row) || !isBoundUuid(row.proposalId) || ids.has(row.proposalId) || row.companyId !== company || row.status !== 'AwaitingMapping'
-      || !['MappingMissing', 'MappingDetailsPending'].includes(row.mappingStatus as string) || !isInstant(row.receivedAtUtc)
-      || !Array.isArray(row.waitingReasons) || row.waitingReasons.length === 0 || row.waitingReasons.some(x => typeof x !== 'string' || !Object.hasOwn(reasons, x))) return null
-    if (row.mappingStatus === 'MappingMissing' ? row.mappingVersion !== null : !Number.isSafeInteger(row.mappingVersion) || (row.mappingVersion as number) < 1) return null
+    if (!record(row) || !isBoundUuid(row.proposalId) || ids.has(row.proposalId) || row.companyId !== company || !['AwaitingMapping', 'ReadyForPreparation'].includes(row.status as string)
+      || !['MappingMissing', 'MappingDetailsPending', 'MappingReady'].includes(row.mappingStatus as string) || !isInstant(row.receivedAtUtc)
+      || !Array.isArray(row.waitingReasons) || row.waitingReasons.some(x => typeof x !== 'string' || !Object.hasOwn(reasons, x))) return null
+    if (row.mappingStatus === 'MappingDetailsPending' ? !Number.isSafeInteger(row.mappingVersion) || (row.mappingVersion as number) < 1 : row.mappingVersion !== null) return null
+    if (row.status === 'ReadyForPreparation' ? row.mappingStatus !== 'MappingReady' || row.waitingReasons.length !== 0
+      : row.mappingStatus === 'MappingReady' || row.waitingReasons.length === 0) return null
     const source = row.source
     if (!record(source) || source.companyId !== company || source.eventId !== row.proposalId || !isBoundUuid(source.movementId)
       || !isBoundUuid(source.creditAccountId) || !isBoundUuid(source.currencyId) || typeof source.kind !== 'string' || !Object.hasOwn(T.kinds, source.kind)
@@ -46,7 +48,7 @@ export function decodeCreditPostingProposals(value: unknown, company: string): r
   }
   return value.items as unknown as CreditPostingProposal[]
 }
-async function read(company: string, signal: AbortSignal): Promise<ViewOutcome<readonly CreditPostingProposal[]>> {
+export async function fetchCreditPostingProposals(company: string, signal: AbortSignal): Promise<ViewOutcome<readonly CreditPostingProposal[]>> {
   try { const response = await fetch(`${API_BASE}/accounting/credit-movement-proposals`, { headers: { ...devHeaders(), 'X-Company-Id': company }, cache: 'no-store', signal })
     const body: unknown = await response.json().catch(() => null)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
@@ -55,13 +57,13 @@ async function read(company: string, signal: AbortSignal): Promise<ViewOutcome<r
 }
 export function CreditAccountingProposalsPanel({ company, accountId, namespace }: { readonly company: string; readonly accountId: string; readonly namespace: string }) {
   const [opened, setOpened] = useState(false)
-  const query = useQuery({ queryKey: [namespace, 'credit-accounting-proposals'], enabled: opened, queryFn: ({ signal }) => read(company, signal) })
+  const query = useQuery({ queryKey: [namespace, 'credit-accounting-proposals'], enabled: opened, queryFn: ({ signal }) => fetchCreditPostingProposals(company, signal) })
   const state = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<readonly CreditPostingProposal[]>
   const rows = state.kind === 'ready' ? state.data.filter(x => x.source.creditAccountId === accountId) : []
   return <section><button onClick={() => { setOpened(true); if (opened) void query.refetch() }}>{P.show}</button>
     {opened ? state.kind !== 'ready' ? <StateBlock state={state} subject={P.subject} onRetry={() => void query.refetch()} /> : rows.length === 0
       ? <p>{P.empty}</p> : rows.map(row => <article key={row.proposalId}>
-        <h4>{T.kinds[row.source.kind]} · {row.source.sourceDocument.reference}</h4><p>{P.waiting}</p>
+        <h4>{T.kinds[row.source.kind]} · {row.source.sourceDocument.reference}</h4><p>{row.status === 'ReadyForPreparation' ? P.ready : P.waiting}</p>
         {row.source.reversesMovementId ? <p>{P.reversal}</p> : null}
         <ul>{row.waitingReasons.map(code => <li key={code}>{reasons[code as keyof typeof reasons]}</li>)}</ul>
         <ul>{row.source.components.map(part => <li key={part.kind}>{T.components[part.kind]}: {part.amount} · {P.functional}: {part.functionalAmount ?? T.unknownTl}</li>)}</ul>

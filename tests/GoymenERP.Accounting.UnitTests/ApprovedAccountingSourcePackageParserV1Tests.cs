@@ -62,6 +62,7 @@ public sealed class ApprovedAccountingSourcePackageParserV1Tests
     [InlineData(NormalJournalSourceKindsV1.RecordedExpensePayment)]
     [InlineData(NormalJournalSourceKindsV1.RecordedCashTransfer)]
     [InlineData(NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue)]
+    [InlineData(NormalJournalSourceKindsV1.RecordedCreditMovement)]
     public void Financial_movement_bindings_keep_exact_approved_source_kind_without_inventing_accounts(string kind)
     {
         var source = Mappings().Replace(NormalJournalSourceKindsV1.RecordedManualReceipt, kind, StringComparison.Ordinal);

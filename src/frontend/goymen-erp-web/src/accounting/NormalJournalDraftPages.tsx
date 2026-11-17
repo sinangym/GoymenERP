@@ -11,6 +11,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { fetchNormalJournalDraft, fetchNormalJournalDraftAccounts } from './api'
 import { fetchNormalJournalDraftSource, fetchNormalJournalSources } from './normalJournalSourceApi'
 import { fetchFinanceJournalSources } from './financeJournalSources'
+import { fetchCreditPostingProposals } from '../finance/CreditAccountingProposalsPanel'
 import {
   ACCOUNTING_CAPABILITY,
   ACCOUNTING_ROUTE,
@@ -73,7 +74,7 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
   const canCreate = hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftCreate)
   const recovered = useRef(recallNormalJournalCreate(attemptOwner))
   const [sourceId, setSourceId] = useState(recovered.current?.request.sourceId ?? '')
-  const [sourceMode, setSourceMode] = useState<'manual' | 'financial'>('manual')
+  const [sourceMode, setSourceMode] = useState<'manual' | 'financial' | 'credit'>('manual')
   const [transactionDate, setTransactionDate] = useState(recovered.current?.request.transactionDate ?? '')
   const [accountingDate, setAccountingDate] = useState(recovered.current?.request.accountingDate ?? '')
   const [valueDate, setValueDate] = useState(recovered.current?.request.valueDate ?? '')
@@ -97,6 +98,14 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
         if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
         return answer.type === 'ok-single' ? { type: 'ok-single', data: { companyId: answer.data.companyId, nextCursor: null,
           items: answer.data.items.map(({ id, sourceNumber, occurredOn, stage }) => ({ id, sourceNumber, occurredOn, stage })) } }
+          : answer.type === 'ok' ? { type: 'malformed' } : answer
+      }
+      if (sourceMode === 'credit') {
+        const answer = await fetchCreditPostingProposals(companyId ?? '', signal)
+        if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
+        return answer.type === 'ok-single' ? { type: 'ok-single', data: { companyId: companyId ?? '', nextCursor: null,
+          items: answer.data.map(row => ({ id: row.proposalId, sourceNumber: row.source.sourceDocument.reference,
+            occurredOn: row.source.transactionDate, stage: 'Recorded', mappingStatus: row.mappingStatus })) } }
           : answer.type === 'ok' ? { type: 'malformed' } : answer
       }
       const answer = await fetchFinanceJournalSources(companyId ?? '', signal)
@@ -205,9 +214,9 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
         <label className={styles.control}>{T.sourceMode}<select value={sourceMode} disabled={sending || unresolved} onChange={event => {
-          setSourceMode(event.target.value === 'financial' ? 'financial' : 'manual'); setSourceId(''); setSnapshot(null); setOutcome(null); setError(null)
+          setSourceMode(event.target.value === 'credit' ? 'credit' : event.target.value === 'financial' ? 'financial' : 'manual'); setSourceId(''); setSnapshot(null); setOutcome(null); setError(null)
           setLines(current => current.map(line => ({ ...line, accountId: '' })))
-        }}><option value="manual">{T.manualSources}</option><option value="financial">{T.financialSources}</option></select></label>
+        }}><option value="manual">{T.manualSources}</option><option value="financial">{T.financialSources}</option><option value="credit">{T.creditSources}</option></select></label>
         <div className={styles.control}><label htmlFor="normal-journal-source">{T.source}</label><select id="normal-journal-source" value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
           setSourceId(event.target.value)
           setSnapshot(null)
@@ -223,7 +232,7 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
       {sourceListState.kind === 'ready' && authorizedSources.length === 0 ? <p role="status" className={styles.help}>{T.sourcesEmpty}</p> : null}
       {sourceMode === 'financial' ? <p className={styles.help}>{T.receivedSourceHelp}</p> : null}
       {selectedSource?.amount ? <p className={styles.help}>{T.sourceAmount}: {selectedSource.amount}</p> : null}
-      {selectedSource?.mappingStatus === 'BindingUnavailable' ? <p role="alert" className={styles.noticeWarn}>{T.bindingUnavailable}</p> : null}
+      {selectedSource?.mappingStatus === 'BindingUnavailable' || selectedSource?.mappingStatus === 'MappingMissing' || selectedSource?.mappingStatus === 'MappingDetailsPending' ? <p role="alert" className={styles.noticeWarn}>{T.bindingUnavailable}</p> : null}
       {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject={T.preparationSubject} /> : null}
       {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
         ? <p role="alert" className={styles.error}>{T.preparationUnreadable}</p> : null}

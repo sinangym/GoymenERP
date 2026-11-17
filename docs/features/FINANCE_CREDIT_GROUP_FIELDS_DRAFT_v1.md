@@ -26,7 +26,9 @@ Bu kodların bulunması gruba özgü iş akışlarının tamamlandığını gös
   onaylayamaz. Yalnız approve Critical'dır (FNS-D100/D109). Grant/rol ataması yapılmaz.
 - Banka + kredi türü limiti aşılırsa uyarı çıkar; aşım yeni bir engel değildir (FNS-D95).
 - Kullanım, geri ödeme ve faiz tahakkuku kesin muhasebe fişi yerine öneri üretir (FNS-D97).
-  TK-30 gereği üç amaçlı eşleme taslağı boştur; eşleme yoksa `MappingMissing` beklenir.
+  TK-30 başlangıç eşlemeleri otomatik doldurulmaz. Kullanıcının Q9 cevabı (ajan aktarımı
+  `6958072219`) doğrultusunda mevcut muhasebe eşleme yetkilileri belgedeki bileşenleri ayrı
+  hesaplara bağlar; fişi hazırlayandan farklı muhasebe yetkilisi onaylar.
 - Kapalı açılış dönemindeki düzeltme açık dönemde ters kayıt + doğru kayıt olur;
   giriş/onay mevcut credits.propose/approve izinleriyle ve iki ayrı kişiyle yapılır (FNS-D108, W5-5.2).
 
@@ -75,8 +77,17 @@ Kapalı açılışın düzeltmesi, eski kaynak ve kararını koruyan ters olay +
 kullanıcının seçtiği açık muhasebe tarihinde kaydedilir. Ayrı onaylayan zorunludur.
 
 Accounting, Finance'ın gerçek transactional outbox olayını kendi immutable kaynak ve de-dup
-kaydıyla alır. TK-30 eşlemesi eksikken öneri `MappingMissing` olarak bekler; eksik TL karşılığı
-ayrıca gösterilir. Bu kayıt veya ekran, muhasebe fişinin üretildiği/onaylandığı anlamına gelmez.
+kaydıyla alır. Kaynağa özgü onaylı eşleme paketi eksikken öneri `MappingMissing` olarak bekler;
+eksik TL karşılığı ayrıca gösterilir. Fiş, kullanım/geri ödeme/faiz tahakkukunun gerçek para
+birimindeki belge bileşenlerini mevcut onaylı kaynak paketi ve normal fiş akışıyla taşır.
+Kur veya vergi hesaplanmaz, TL karşılığı kaynakta yoksa türetilmez. Onaylı gerçek banka
+bacağı `credit.bank`, ayrı belge bileşenleri `credit.component.principal/interest/bsmv/kkdf/commission/fee`
+anahtarlarıyla eşlenir. Bankasız tahakkukta onaylı paketin açıkça seçtiği `credit.total`
+yalnız belgedeki bileşenlerin kesin toplamıdır; banka tutarı yerine kullanılamaz. Borç/alacak
+ve hesap kimlikleri bu metinden değil onaylı paketten gelir. Eksik bileşen, temsil edilemeyen
+para veya dengesiz eşleme kullanılabilir taslak sayılmaz. Açılış/ters açılış aynı normal
+hareket kaynağına çevrilmez. Bu kayıt veya ekran, muhasebe fişinin üretildiği/onaylandığı
+anlamına gelmez.
 İrsaliye/fatura miktarı, vergi oranı, kur veya henüz belirlenmemiş hesap eşlemesi buradan türetilmez.
 
 ## Resmî kaynaklardan uyarlama
