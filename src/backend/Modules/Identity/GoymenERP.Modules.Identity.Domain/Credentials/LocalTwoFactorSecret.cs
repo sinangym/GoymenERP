@@ -47,13 +47,20 @@ public sealed class LocalTwoFactorSecret
     }
     public void Regenerate(IReadOnlyList<string> hashes) { if (!IsActive) throw new InvalidOperationException("Two factor is disabled."); SetHashes(hashes); Version++; }
     public void Deactivate() { IsActive = false; Version++; }
-    private IReadOnlyList<string> Hashes() => JsonSerializer.Deserialize<string[]>(RecoveryHashesJson) ?? throw new InvalidOperationException("Recovery hashes are unreadable.");
+    private IReadOnlyList<string> Hashes()
+    {
+        var hashes = JsonSerializer.Deserialize<string[]>(RecoveryHashesJson);
+        if (!ValidHashes(hashes)) throw new InvalidOperationException("Recovery hashes are unreadable.");
+        return hashes!;
+    }
     private void SetHashes(IReadOnlyList<string> hashes)
     {
-        if (hashes.Count > 10 || hashes.Distinct(StringComparer.Ordinal).Count() != hashes.Count
-            || hashes.Any(value => value.Length != 64 || value.Any(character => !char.IsAsciiDigit(character) && character is not (>= 'A' and <= 'F'))))
-            throw new ArgumentException("Recovery hashes are invalid.");
+        if (!ValidHashes(hashes)) throw new ArgumentException("Recovery hashes are invalid.");
         RecoveryHashesJson = JsonSerializer.Serialize(hashes);
     }
+    private static bool ValidHashes(IReadOnlyList<string>? hashes) => hashes is not null && hashes.Count <= 10
+        && hashes.Distinct(StringComparer.Ordinal).Count() == hashes.Count
+        && hashes.All(value => value is not null && value.Length == 64
+            && value.All(character => char.IsAsciiDigit(character) || character is >= 'A' and <= 'F'));
     public override string ToString() => nameof(LocalTwoFactorSecret);
 }

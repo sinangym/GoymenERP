@@ -32,3 +32,8 @@ Kaynak/derleme tamamlanması runtime kabulü, gerçek kullanıcı ataması veya 
 - API, Identity.UnitTests ve Api.IntegrationTests kaynak derlemeleri `OpenApiGenerateDocumentsOnBuild=false` ile **exit 0 / 0 uyarı / 0 hata**. EF CLI üretimi exit 0. Yeni HTTP kaynakları son Integration derlemesine dahildir. OpenAPI üretimi bu derleme kanıtı değildir.
 - TypeScript son kaynak derlemesi **exit 0**. Unit/SQL/HTTP/Vitest/browser/CI runtime ve DB migration uygulaması **NOT_RUN**; hiçbir test atlanmadı, silinmedi veya karantinaya alınmadı.
 - **K3 review bekliyor:** global credential/factor ownership ve kişisel null-permission typed Audit yolu; yeni DbContext veya filter-bypass admission eklenmedi. Denetim/sırlar/transaction/fresh membership negatif akışları gerçek SQL kabulünde koşulmalıdır.
+
+## Kaynak checkpoint'i ve bozuk owner kanıtı
+
+- KIM-S8 kaynak checkpoint'i `bb82ad491`; API/Identity.Unit/Integration ve TypeScript exit 0 bu kaynağı kapsar. Yeni HTTP ve DOM test kaynakları dahildir. Runtime **NOT_RUN**.
+- Son dar owner-read düzeltmesi: JSON olarak geçerli fakat null/bozuk/tekrarlı recovery hash dizisi taze domain okumasında reddedilir; geçerli boş dizi yalnız bütün kodlar tüketildiğinde geçerlidir. Bozuk authenticator seed'i ve hash kanıtı yanlış kullanıcı kodu veya sıfır kalan kod gibi sunulmaz; mevcut unavailable/503 yolunu kullanır. Yeni schema veya güvenlik politikası yoktur. Unit kaynakları eklendi; bu son dar değişikliğin .NET derlemesi henüz **NOT_BUILT**.

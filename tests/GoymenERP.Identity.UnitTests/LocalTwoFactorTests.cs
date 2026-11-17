@@ -9,6 +9,19 @@ namespace GoymenERP.Identity.UnitTests;
 public sealed class LocalTwoFactorTests
 {
     [Theory]
+    [InlineData("null")]
+    [InlineData("[null]")]
+    [InlineData("[\"not-a-hash\"]")]
+    public void Malformed_persisted_recovery_hashes_are_unreadable_and_never_treated_as_empty_or_bad_caller_proof(string stored)
+    {
+        var codes = LocalTotpV1.NewRecoveryCodes();
+        var row = new LocalTwoFactorSecret(Guid.NewGuid(), "SYNTHETIC-PROTECTED", codes.Select(LocalTotpV1.RecoveryHash).ToArray(), 0);
+        typeof(LocalTwoFactorSecret).GetProperty(nameof(LocalTwoFactorSecret.RecoveryHashesJson))!.SetValue(row, stored);
+        Assert.Throws<InvalidOperationException>(() => row.RecoveryCodeCount);
+        Assert.Throws<InvalidOperationException>(() => row.ConsumeRecoveryCode(codes[0]));
+    }
+
+    [Theory]
     [InlineData(59L, "287082")]
     [InlineData(1111111109L, "081804")]
     [InlineData(1111111111L, "050471")]
