@@ -13,9 +13,25 @@ public static class AccountingSourceDocumentKindsV1
     /// <summary>A finalised sales invoice. Key: <c>sales-invoice-accounting:{invoiceId:D}:{finalizedVersion}</c>.</summary>
     public const string SalesInvoice = "sales-invoice";
 
+    /// <summary>FNS-D105 / KLN-D6..D19: a finalised supplier invoice, never a goods receipt.</summary>
+    public const string PurchaseInvoice = "purchase-invoice";
+
     /// <summary>The idempotency key a producer must use for one finalised sales invoice version.</summary>
     public static string SalesInvoiceKey(Guid invoiceId, long finalizedVersion) =>
         FormattableString.Invariant($"sales-invoice-accounting:{invoiceId:D}:{finalizedVersion}");
+
+    public static string PurchaseInvoiceKey(Guid invoiceId, long finalizedVersion) =>
+        FormattableString.Invariant($"purchase-invoice-accounting:{invoiceId:D}:{finalizedVersion}");
+}
+
+/// <summary>KLN-D11: explicit source-line purpose; neither the account nor the purpose is inferred from a product name.</summary>
+public static class AccountingPurchaseLinePurposesV1
+{
+    public const string ProductionInput = "production-input";
+    public const string Resale = "resale";
+    public const string Service = "service";
+
+    public static bool IsKnown(string? purpose) => purpose is ProductionInput or Resale or Service;
 }
 
 /// <summary>

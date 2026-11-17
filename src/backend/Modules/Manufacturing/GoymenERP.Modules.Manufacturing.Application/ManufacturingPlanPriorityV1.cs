@@ -19,7 +19,8 @@ public interface IManufacturingPlanPriorityStore
 public sealed record PlanWorkCenterQueueLineV1(Guid PlanId, DateOnly? DueDate, int PriorityScore,
     long PriorityRevision, string PlannedKg, string ProcessedKg, string RemainingKg, bool IsOverPlanned, bool IsQueued);
 public sealed record PlanWorkCenterQueueViewV1(int ContractVersion, Guid CompanyId, Guid WorkCenterId,
-    Guid TargetPlanId, long TargetPlanVersion, IReadOnlyList<PlanWorkCenterQueueLineV1> Items);
+    Guid TargetPlanId, long TargetPlanVersion, IReadOnlyList<PlanWorkCenterQueueLineV1> Items,
+    long QueueRevision = 0, bool HasManualOrder = false);
 
 public sealed partial class ManufacturingCommandService
 {
@@ -87,13 +88,14 @@ public sealed partial class ManufacturingCommandService
                     answer = new(ManufacturingApiStatus.Unavailable, null, false, null);
                 else
                 {
-                    var items = ProductionWorkCenterQueueOrderV1.Order(queue.Queued.Where(entry => entry.PlanId != plan.Id).Append(queue.Target))
+                    var items = ProductionWorkCenterQueueOrderV1.Realized(queue.Queued, queue.Target, queue.TargetIsQueued, queue.StoredOrder)
                         .Select(entry => new PlanWorkCenterQueueLineV1(entry.PlanId, entry.DueDate, entry.PriorityScore,
                             entry.PriorityRevision, Text(entry.PlannedInputKg.Value), Text(entry.ProcessedKg.Value),
                             Text(ProductionQueueRemainingKgCalculatorV1.Remaining(entry.PlannedInputKg, entry.ProcessedKg).Value),
                             entry.ProcessedKg.Value > entry.PlannedInputKg.Value,
                             entry.PlanId != plan.Id || queue.TargetIsQueued)).ToArray();
-                    answer = new(ManufacturingApiStatus.Ok, new(1, companyId, plan.WorkCenterId, plan.Id, version, items), false, null);
+                    answer = new(ManufacturingApiStatus.Ok, new(1, companyId, plan.WorkCenterId, plan.Id, version, items,
+                        queue.QueueRevision, queue.StoredOrder is not null), false, null);
                 }
             }
         }

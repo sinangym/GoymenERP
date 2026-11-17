@@ -106,6 +106,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
             PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
             PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierReturnCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
@@ -134,6 +135,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(
             [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
             goodsReceipt.RequiredPermissions);
+        var supplierReturn = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.SupplierReturnCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, supplierReturn.ParentCapabilityId);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
+            supplierReturn.RequiredPermissions);
 
         var requestDetail = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestDetailCapabilityId).Declaration;

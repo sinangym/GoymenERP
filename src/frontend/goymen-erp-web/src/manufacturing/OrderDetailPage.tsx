@@ -77,9 +77,13 @@ import {
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OrderCostTracePanel } from './OrderCostTracePanel'
 import { OrderCostPanel } from './OrderCostPanel'
+import { CostGenerationPanel } from './CostGenerationPanel'
+import { OrderUsdCostPanel } from './OrderUsdCostPanel'
+import { NonKgInputPanel } from './NonKgInputPanel'
 import { OrderLineagePanel } from './OrderLineagePanel'
 import { OutputCorrectionSection } from './OutputCorrectionSection'
 import { OrderCancelSection } from './OrderCancelSection'
+import { OrderReopenSection } from './OrderReopenSection'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -124,6 +128,7 @@ import {
   unknownText,
 } from './manufacturingText'
 import { ORDER_DUE_DATE_TEXT, orderDueDateFailureText } from './orderDueDateText'
+import { INPUT_RETURN_SOURCE_TEXT } from './inputReturnSourceText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -159,6 +164,7 @@ export function OrderDetailPage() {
 }
 
 function OrderDetail({ namespace }: { readonly namespace: string | null }) {
+  const [reopenLocked, setReopenLocked] = useState(false)
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const { orderId } = useParams()
@@ -262,6 +268,12 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           orderVersion={order.version}
         />
       ) : null}
+      {canReadCostTrace && order.status === 'Closed' ? <OrderUsdCostPanel namespace={namespace ?? 'no-context'} routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version} /> : null}
+      {canReadCostTrace && (order.status === 'Closed' || (order.reopenings?.length ?? 0) > 0) ? <CostGenerationPanel key={`${namespace}:${order.orderId}`} namespace={namespace ?? 'no-context'}
+        routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version} closed={order.status === 'Closed'}
+        canRecognize={canClose && !reopenLocked} onRefresh={refresh} /> : null}
       <OrderLineagePanel
         namespace={namespace ?? 'no-context'}
         routeEntryGeneration={shell.routeEntryGeneration}
@@ -269,7 +281,10 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         orderId={order.orderId}
         orderVersion={order.version}
       />
-      {canRecord ? (
+      <NonKgInputPanel key={`${namespace}:${order.orderId}:non-kg`} namespace={namespace ?? 'no-context'} routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version}
+        canRecord={canRecord && !reopenLocked && order.status === 'Open'} onRefresh={refresh} />
+      {canRecord && !reopenLocked ? (
         <FactSection
           order={order}
           namespace={namespace ?? 'no-context'}
@@ -281,7 +296,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canCorrectOutput ? (
+      {canCorrectOutput && !reopenLocked ? (
         <OutputCorrectionSection
           order={order}
           namespace={namespace ?? 'no-context'}
@@ -291,7 +306,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canChangeDueDate ? (
+      {canChangeDueDate && !reopenLocked ? (
         <OrderDueDateSection
           key={`${order.orderId}:${order.dueDateRevision}`}
           order={order}
@@ -299,7 +314,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canClose ? (
+      {canClose && !reopenLocked ? (
         <CloseSection
           order={order}
           companyId={activeCompanyId ?? ''}
@@ -307,9 +322,12 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canCancel ? (
+      {canCancel && !reopenLocked ? (
         <OrderCancelSection order={order} companyId={activeCompanyId ?? ''} onRefresh={refresh} />
       ) : null}
+      <OrderReopenSection key={`${namespace}:${order.orderId}`} order={order} companyId={activeCompanyId ?? ''}
+        namespace={namespace ?? 'no-context'} allowed={hasCapability(shell, MANUFACTURING_CAPABILITY.orderReopen)}
+        blocked={query.isFetching || recallPendingFact(storeKey) !== null} onRefresh={refresh} onLocked={setReopenLocked} />
     </Frame>
   )
 }
@@ -890,6 +908,7 @@ function RollTable({ rolls }: { readonly rolls: readonly RollBalance[] }) {
 interface FormValues {
   readonly kind: FactKind
   readonly parentRollId: string
+  readonly sourceIssueMovementId: string
   readonly kg: string
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
@@ -911,6 +930,7 @@ interface FormValues {
 const EMPTY_FORM: FormValues = {
   kind: 'input-issues',
   parentRollId: '',
+  sourceIssueMovementId: '',
   kg: '',
   occurredAt: '',
   // URT-D43 (2): a new output starts as a good product; BS-14: a usable remnant starts as second quality.
@@ -934,6 +954,7 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
   return {
     kind: snapshot.kind,
     parentRollId: snapshot.parentRollId,
+    sourceIssueMovementId: snapshot.kind === 'input-returns' ? (snapshot.sourceIssueMovementId ?? '') : '',
     kg: snapshot.kg,
     occurredAt: local,
     outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : DEFAULT_OUTPUT_CLASS,
@@ -1137,6 +1158,10 @@ function FactSection({
     ? issuedOutputOwnership(labelState.data, order.orderId)
     : null
   const outputOwnership = issuedOwnership?.kind === 'ready' ? issuedOwnership.snapshot : null
+  const returnSources = labelState?.kind === 'ready' ? labelState.data.movementTimeline.entries.filter(entry =>
+    entry.kind === 'Issue' && entry.sourceKind === 'manufacturing.input-issue'
+      && entry.sourceId.toLowerCase() === order.orderId.toLowerCase() && entry.sourceGrain === 'Line'
+      && entry.sourceLineId !== null && entry.lines.some(line => line.direction === 'Out')) : []
 
   const productQuery = useQuery({
     queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-products', effectiveOn, form.productSearch],
@@ -1238,6 +1263,9 @@ function FactSection({
     if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
     if ((returnSelected || outputSelected) && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
+    if (returnSelected && form.sourceIssueMovementId !== ''
+      && !returnSources.some(source => source.movementId === form.sourceIssueMovementId))
+      return setError(INPUT_RETURN_SOURCE_TEXT.stale)
     if (outputSelected && outputOwnership === null) return setError(ownershipRefusal(issuedOwnership))
     if (timing === null) return setError(TIME_REQUIRED)
     if (outputSelected && selectableOutputLines.length > 0 && selectedOutputLine === undefined)
@@ -1263,6 +1291,7 @@ function FactSection({
             kind: form.kind,
             movementId: newId(),
             expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
+            ...(form.sourceIssueMovementId === '' ? {} : { sourceIssueMovementId: form.sourceIssueMovementId }),
           }
         : form.kind === 'outputs'
           ? {
@@ -1347,7 +1376,7 @@ function FactSection({
               id="mfg-fact-roll"
               value={form.parentRollId}
               disabled={frozen}
-              onChange={(event) => update({ parentRollId: event.target.value })}
+              onChange={(event) => update({ parentRollId: event.target.value, sourceIssueMovementId: '' })}
             >
               <option value="">{FACT_FORM_TEXT.choose}</option>
               {order.rolls.map((roll) => (
@@ -1384,6 +1413,22 @@ function FactSection({
             />
           </div>
         </div>
+        {returnSelected ? <div className={styles.control}>
+          <label htmlFor="mfg-return-source-issue">{INPUT_RETURN_SOURCE_TEXT.label}</label>
+          <select id="mfg-return-source-issue" value={form.sourceIssueMovementId}
+            disabled={frozen || labelState?.kind !== 'ready'}
+            onChange={event => update({ sourceIssueMovementId: event.target.value })}>
+            <option value="">{INPUT_RETURN_SOURCE_TEXT.choose}</option>
+            {returnSources.map(source => <option key={source.movementId} value={source.movementId}>
+              {source.occurredAtUtc} · {source.movementId}
+            </option>)}
+            {unresolved && form.sourceIssueMovementId !== '' && !returnSources.some(source => source.movementId === form.sourceIssueMovementId)
+              ? <option value={form.sourceIssueMovementId}>{form.sourceIssueMovementId}</option> : null}
+          </select>
+          <p className={styles.help}>{INPUT_RETURN_SOURCE_TEXT.help}</p>
+          {labelState?.kind === 'ready' && returnSources.length === 0 ? <p role="status">{INPUT_RETURN_SOURCE_TEXT.unavailable}</p> : null}
+          {labelState?.kind === 'ready' && labelState.data.movementTimeline.windowFull ? <p role="status">{INPUT_RETURN_SOURCE_TEXT.truncated}</p> : null}
+        </div> : null}
         {outputSelected ? (
           <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="output-form">
             <h3 id="mfg-output-heading">{OUTPUT_INVENTORY_TEXT.heading}</h3>

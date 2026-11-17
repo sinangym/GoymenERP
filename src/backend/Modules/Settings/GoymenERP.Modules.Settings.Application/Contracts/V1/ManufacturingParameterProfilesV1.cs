@@ -320,7 +320,8 @@ public sealed record ManufacturingParameterProfileListViewV1(
     Guid CompanyId,
     DateOnly BusinessDate,
     IReadOnlyList<ManufacturingParameterDefinitionViewV1> Keys,
-    IReadOnlyList<ManufacturingParameterProfileViewV1> Profiles);
+    IReadOnlyList<ManufacturingParameterProfileViewV1> Profiles,
+    string StartingValuesTransferVersion = "0");
 
 /// <summary>
 /// The Manufacturing parameter profile administration. Every read and command is authorized on its own name
@@ -330,6 +331,9 @@ public sealed record ManufacturingParameterProfileListViewV1(
 /// </summary>
 public interface ISettingsManufacturingParameterProfileAdministrationV1
 {
+    Task<ManufacturingProfileCommandResultV1> TransferStartingValuesAsync(ManufacturingProfileBaselineTransferRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
     Task<ManufacturingParameterProfileListViewV1> ListAsync(CancellationToken cancellationToken = default);
 
     /// <summary>One profile; null when this company has no such profile (another company's id included).</summary>

@@ -9,6 +9,7 @@ export const PURCHASING_CAPABILITY = {
   orderCreate: 'purchasing.orders.create',
   orderDetail: 'purchasing.orders.detail',
   orderApprove: 'purchasing.orders.approve',
+  supplierReturnRecord: 'purchasing.supplier-returns.record',
   /** A1-3 (plan API-10/UI-05): the order remainder cancellation, a child control of the order detail. */
   orderCancel: 'purchasing.orders.cancel',
   /**

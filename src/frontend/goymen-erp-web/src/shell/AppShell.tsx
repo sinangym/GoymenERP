@@ -22,6 +22,7 @@ import { StateBlock } from './StateBlock'
 import { isLocalAccountMode } from './authMode'
 import { LoginPage } from '../identity/LoginPage'
 import { ChangePasswordPage } from '../identity/ChangePasswordPage'
+import { CompanySetupLink } from '../organization/CompanySetupPage'
 import { LogoutControl } from '../identity/LogoutControl'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
@@ -205,7 +206,8 @@ export function AppShell() {
       return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
     if (directoryState.kind === 'no-authorized-company' || directoryState.kind === 'empty-no-data') {
-      return <StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
+      return <><StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
+        {identity && <CompanySetupLink key={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} binding={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} />}</>
     }
     if (directoryState.kind !== 'ready') {
       return <StateBlock state={directoryState} subject="şirket dizini" onRetry={retry} />
@@ -521,6 +523,7 @@ export function AppShell() {
 
           {/* AT-002: the global search box; it renders only with a searchable owner list grant. */}
           <GlobalSearchBox />
+          {identity && <CompanySetupLink key={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} binding={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} />}
 
           {/* Plan AI-5: the AI panel toggle is on every page; the panel itself is honest about AI being off. */}
           <button

@@ -27,8 +27,9 @@ public sealed class IdentityPersistenceModelTests
 
         Assert.Equal(
             ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow",
-                "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition"],
-            context.Database.GetMigrations().TakeLast(5));
+                "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition", "20261116205256_AddExplicitCompanySetupAuthority",
+                "20261117004612_AddLocalTwoFactorSecrets"],
+            context.Database.GetMigrations().TakeLast(7));
         Assert.False(context.Database.HasPendingModelChanges());
         Assert.Null(context.Model.FindEntityType("GoymenERP.Modules.Audit.Domain.Events.AuditEvent"));
         // Audit was excluded from Identity migrations already. The generated ownership
@@ -101,7 +102,8 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(typeof(UserAccount), foreignKey.PrincipalEntityType.ClrType);
         Assert.Equal([nameof(IdentityBootstrapState.FounderUserId)], foreignKey.Properties.Select(property => property.Name).ToArray());
         Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
-        Assert.DoesNotContain(entity.GetProperties(), property => property.IsNullable);
+        Assert.Equal([nameof(LocalCredentialCommand.OriginalCorrelationId)], entity.GetProperties().Where(property => property.IsNullable).Select(property => property.Name));
+        Assert.Equal(128, entity.FindProperty(nameof(LocalCredentialCommand.OriginalCorrelationId))!.GetMaxLength());
     }
 
     [Fact]
@@ -120,12 +122,27 @@ public sealed class IdentityPersistenceModelTests
             entity.GetProperties().Where(property => property.IsNullable).Select(property => property.Name).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal("Latin1_General_100_BIN2", entity.FindProperty(nameof(IdentityOutboxMessage.EventType))!.GetCollation());
         Assert.Equal("nvarchar(max)", entity.FindProperty(nameof(IdentityOutboxMessage.PayloadJson))!.GetColumnType());
-        var recorded = Assert.Single(entity.GetIndexes());
+        Assert.Equal(
+            ["IX_IdentityOutbox_Recorded", "IX_OutboxMessages_CompanyId_Position"],
+            entity.GetIndexes().Select(index => index.GetDatabaseName()!).Order(StringComparer.Ordinal).ToArray());
+        var recorded = Assert.Single(entity.GetIndexes(), index => index.GetDatabaseName() == "IX_IdentityOutbox_Recorded");
         Assert.Equal("IX_IdentityOutbox_Recorded", recorded.GetDatabaseName());
         Assert.False(recorded.IsUnique);
         Assert.Equal(
             [nameof(IdentityOutboxMessage.RecordedAtUtc), nameof(IdentityOutboxMessage.Id)],
             recorded.Properties.Select(property => property.Name).ToArray());
+        var cursor = Assert.Single(entity.GetIndexes(), index => index.GetDatabaseName() == "IX_OutboxMessages_CompanyId_Position");
+        Assert.False(cursor.IsUnique);
+        Assert.Null(cursor.GetFilter());
+        Assert.Equal(
+            [nameof(IdentityOutboxMessage.CompanyId), nameof(IdentityOutboxMessage.Position)],
+            cursor.Properties.Select(property => property.Name).ToArray());
+        var position = entity.FindProperty(nameof(IdentityOutboxMessage.Position))!;
+        Assert.Equal(typeof(ulong), position.ClrType);
+        Assert.False(position.IsNullable);
+        Assert.True(position.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, position.ValueGenerated);
+        Assert.Equal("rowversion", position.GetColumnType());
         Assert.Empty(entity.GetForeignKeys());
     }
 
@@ -151,7 +168,33 @@ public sealed class IdentityPersistenceModelTests
         var foreignKey = Assert.Single(entity.GetForeignKeys());
         Assert.Equal(typeof(LocalCredential), foreignKey.PrincipalEntityType.ClrType);
         Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
-        Assert.DoesNotContain(entity.GetProperties(), property => property.IsNullable);
+        Assert.Equal([nameof(LocalCredentialCommand.OriginalCorrelationId)], entity.GetProperties().Where(property => property.IsNullable).Select(property => property.Name));
+        Assert.Equal(128, entity.FindProperty(nameof(LocalCredentialCommand.OriginalCorrelationId))!.GetMaxLength());
+    }
+
+    [Fact]
+    public void Optional_two_factor_secrets_are_protected_unique_per_credential_and_have_forward_fix_Down()
+    {
+        using var context = Context();
+        var entity = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LocalTwoFactorSecret))!;
+        Assert.Equal(("identity", "LocalTwoFactorSecrets"), (entity.GetSchema(), entity.GetTableName()));
+        Assert.Equal([nameof(LocalTwoFactorSecret.UserId)], entity.FindPrimaryKey()!.Properties.Select(row => row.Name));
+        var foreign = Assert.Single(entity.GetForeignKeys());
+        Assert.Equal(typeof(LocalCredential), foreign.PrincipalEntityType.ClrType);
+        Assert.True(foreign.IsUnique); Assert.Equal(DeleteBehavior.Restrict, foreign.DeleteBehavior);
+        Assert.Equal(4000, entity.FindProperty(nameof(LocalTwoFactorSecret.ProtectedSecret))!.GetMaxLength());
+        Assert.Equal("nvarchar(max)", entity.FindProperty(nameof(LocalTwoFactorSecret.RecoveryHashesJson))!.GetColumnType());
+        Assert.True(entity.FindProperty(nameof(LocalTwoFactorSecret.Version))!.IsConcurrencyToken);
+        Assert.Equal(IdentityDbContext.TwoFactorStateCheck, Assert.Single(entity.GetCheckConstraints()).Sql);
+        Assert.Null(entity.FindProperty(nameof(LocalTwoFactorSecret.RecoveryCodeCount)));
+        var migration = new AddLocalTwoFactorSecrets();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51967", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[LocalTwoFactorSecrets]", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[TwoFactorEnabled] = 1", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[OriginalCorrelationId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
 
     [Fact]

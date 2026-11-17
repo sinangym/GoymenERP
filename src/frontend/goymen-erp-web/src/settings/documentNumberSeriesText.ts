@@ -1,0 +1,7 @@
+export const NUMBER_SERIES_TEXT = {
+  title: 'Belge numara serileri', intro: 'Şirketin belge biçimlerini sürümleyin ve iptal nedeniyle kullanılmayacak numaraları görün. Sıra her yıl yeniden başlar; ayrılan numaralar tekrar kullanılmaz.',
+  subject: 'Belge numara serisi', series: 'Belge türü', choose: 'Açıkça seçin', salesOrder: 'Satış siparişi', salesInvoice: 'Satış faturası', dispatch: 'İrsaliye', purchaseOrder: 'Satınalma siparişi',
+  missing: 'Biçim henüz kaydedilmedi. Bu seri için yeni numara ayrılamaz.', prefix: 'Önek', digits: 'Sıra basamak sayısı', history: 'Biçim geçmişi', reason: 'Gerekçe', who: 'Kaydeden', when: 'Kayıt zamanı', version: 'Sürüm', edit: 'Yeni biçim sürümü',
+  effect: 'Belge numarası sunucuda önek, iş tarihinin yılı ve yıllık sıradan üretilir. Geçmiş numaralar değişmez.', year: 'Boşluk raporu yılı', readGaps: 'Boşlukları göster', gaps: 'İptal edilen numaralar', noGaps: 'Bu yılda iptal edilmiş numara yok.', number: 'Numara', document: 'Belge',
+  save: 'Kaydet', cancel: 'Vazgeç', pending: 'Kaydediliyor', retry: 'Aynı işlemi yeniden dene', unknown: 'Sonuç doğrulanamadı. Aynı anahtar ve içerikle yeniden deneyin.', refused: 'İşlem tamamlanamadı. Yetki, biçim sürümü ve bağlantı durumunu kontrol edin.', saved: 'Biçim sürümü kaydedildi.', replay: 'Önceki işlemin sonucu doğrulandı.', conflict: 'Biçim değişti. Güncel geçmiş yenilendi; yeni işlemi yeniden hazırlayın.',
+} as const

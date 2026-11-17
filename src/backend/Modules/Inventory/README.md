@@ -868,7 +868,26 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 - **Open (NEEDS-SINAN):** releasing the whole remainder on a link failure, treating not enough unheld kg as a link failure,
   and the partial non-kg share without a central conversion source (released) are the author's reading.
 
+## Receipt reversal history (STK-S19, F017-e, ALS-D86/D91/D92, 7B)
+
+- `IInventoryGoodsReceiptReversalParticipantV1` borrows the host transaction. Purchasing is flushed first; its post-write source must use that same connection and transaction. The host owns Sales-line locks in ascending order, then the full purchase-line union, fresh subset validation, authority and commit/rollback.
+- Original receipt and conversion rows remain immutable. A separate reversal ledger records exact original conversion shares, reopened amounts, overflow released with `acceptance-reversed-no-supply`, and unheld amounts. Prior released shares never return; closed Sales demand or an inactive physical hold does not reopen a future allocation. Physical and purchase-unit quantities remain separate facts.
+- `AddInventoryGoodsReceiptReversals` adds two company-scoped history tables, same-company original links, and movement kind 16 for a pure acceptance undo. Down first refuses with **THROW 51950** while either history table or a kind-16 movement exists; empty storage rolls back freely (forward fix).
+- Evidence: unit/model and real-SQL fact sources are present. Runtime tests are **NOT_RUN**; the complete Purchasing undo/correction and supplier-return host chain remains required before this slice can be called usable.
+
 ## dependency_wait
+
+## Immutable movement cost and Manufacturing generations (SC36 / URT-D67 / URT-D79)
+
+- `AddInventoryMovementCostProvenance` is EF-generated. Its Down first refuses with **THROW 51959** while any new stamp, independent-currency ledger, pending entry, recognition or generation/history row exists (forward fix). It never backfills old movement prices.
+- New movement stamps preserve the actual event-time TL/USD and original currency proof. Canonical invariant decimal text plus strict SQL checks preserve all System.Decimal digits without database rounding; public owner fields remain decimals. Moving averages still use the existing 4-decimal calculator.
+- A borrowed-transaction `InventoryManufacturingCostGenerationParticipant` records Pending/Unreadable without a new physical-close prerequisite; actual recognition preserves authoritative label amounts and the exact before/after average-pool effect. Reopening reverses that actual immutable effect. Average rounding differences are provenance, never an automatic accounting posting.
+- Missing balances are not assumed sold: only actual net definite shipment proves the consumed SMM proposal. Unresolved transit/downstream lineage remains explicitly unreadable. USD is production display only. Accounting proposal acceptance, open-period/date selection, different approver and dispatcher activation remain separate owner/human gates.
+- Sources include model/unit and real-SQL rollback, replay, precision/reversal and Down-guard facts. Final Inventory and API integration test-project compilation is exit 0; runtime tests/SQL/browser/CI are **NOT_RUN**. Committed outbox source and all physical-return cost propagation are still pending.
+
+## Existing central dependencies
+
+- `AddInventoryExactCostPools` preserves the private priced mass as canonical exact ratios, with the existing average at 4dp. Recognition keeps nullable 3dp projections plus exact ratio provenance; no physical kg is rounded into a new quantity. Down first refuses with **THROW 51968** while a private pool or exact recognition mass exists (forward fix). Old movement stamps remain unchanged. Split/merge, partial issues, original partial returns and late Manufacturing recognition have source tests; runtime is **NOT_RUN**.
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
 - **INV-3 central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs` and `InventoryStore.cs`, which changed here (no new raw SQL; the SqlClient use is unchanged); add the four new names of `InventorySqlServerRelationalAcceptanceTests` to the relational verifier's BROAD list and counts.
@@ -881,3 +900,10 @@ dotnet test tests/GoymenERP.Inventory.UnitTests/GoymenERP.Inventory.UnitTests.cs
 # real SQL (needs GOYMEN_ERP_TEST_SQLSERVER_CONNECTION; the CI relational job runs it)
 dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj --filter FullyQualifiedName~InventorySqlServerRelationalAcceptanceTests
 ```
+
+## Immutable first-entry FX (STK-SC36-b, FNS-D103/D104)
+
+- `AddInventoryFirstEntryExchangeRateProof` is EF-generated (`20261117010119`). Nullable receipt-time snapshots and exact issue-rate ratios are append-only with the original movement cost stamp. Its first Down operation refuses with **THROW 51972** while either new proof exists (forward fix); no old movement, price or FX is backfilled.
+- The actual Purchasing proof borrows the receipt transaction. Its approved order rate wins; only an explicitly unspecified rate permits the actual entry-business-day TCMB selling answer. An unreadable order owner never becomes a day-rate fallback. Functional currency is a distinct no-conversion fact, never a fabricated rate of one. This first-entry snapshot does not replace the official supplier-invoice FX used by the TL stock-cost pool.
+- The owner reader follows bounded immutable split/merge lineage. Merges preserve exact kg-weighted rates, actual receipt components and material shares. Non-terminating quotients retain canonical ratios; no intermediate rate is rounded. A missing input rate or different directed currency pair stays unreadable. Manufacturing remains a new-material boundary. Cached subtrees retain their height, so graph limits apply on every path.
+- Source includes host/codec/calculator/model and seven real-SQL facts for original capture, invoice-FX separation, merge/split/diamond provenance, missing/pair refusal, rollback, depth and Down guards. Runtime unit/SQL/browser/CI evidence is **NOT_RUN**. Manufacturing order/non-order priority still needs the actual first-entry port bound at its owning consumer; a registered owner reader alone is not a complete user flow.

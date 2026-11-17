@@ -93,7 +93,9 @@ public sealed record InventoryManufacturingInputReturnRequestV1(
     string ExpectedParentLabelVersion,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    Guid? SourceIssueMovementId = null);
 
 public sealed record InventoryManufacturingInputReturnResultV1(
     Guid CompanyId,
@@ -400,6 +402,8 @@ public static class InventoryManufacturingRealizationContractV1
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
         RequireDistinctMovement(request.ReturnId, request.MovementId);
+        if (request.SourceIssueMovementId == Guid.Empty)
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
         return Quantity(request.QuantityKg);
     }
 

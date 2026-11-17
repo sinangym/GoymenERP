@@ -45,12 +45,13 @@ internal static class MoneyProfileReads
 
     public static void Validate(IEnumerable<MoneyProfileVersionRow> rows, Guid company, Guid currency, string operation)
     {
-        var baseline = Baseline(company, currency, operation);
-        if (baseline.Length == 0) throw new SettingsPrerequisiteException("settings_profile_invalid");
+        var code = MoneyProfileAuthoringCatalogV1.CurrencyCode(currency);
+        if (!MoneyProfileAuthoringCatalogV1.Allows(company, currency, operation))
+            throw new SettingsPrerequisiteException("settings_profile_invalid");
         foreach (var row in rows)
         {
             if (row.CompanyId != company || row.CurrencyId != currency || row.Operation != operation || row.ProfileId == Guid.Empty
-                || row.Version <= 0 || row.CurrencyCode != baseline[^1].CurrencyCode || row.Scale is < 0 or > 28
+                || row.Version <= 0 || row.CurrencyCode != code || row.Scale is < 0 or > 28
                 || row.UnitPriceScale is < 0 or > 28)
                 throw new SettingsPrerequisiteException("settings_profile_invalid");
         }

@@ -14,6 +14,7 @@ import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
 import { GoodsReceiptBatchPanel } from './GoodsReceiptBatchPanel'
 import { SupplierReturnPanel } from './SupplierReturnPanel'
+import { ReceiptAdjustmentWorkspace } from './ReceiptAdjustmentWorkspace'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
@@ -283,6 +284,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierReturnPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
       orderVersion={order.version} /></div> : null}
+    {isCurrentDetail && namespace !== null && receiptAttempt !== null ? <div className={styles.section}><ReceiptAdjustmentWorkspace
+      detail={state.data} binding={`${namespace}::${shell.routeEntryGeneration}`} attemptBinding={receiptAttempt}
+      canAdjust={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY)} canReturn={hasCapability(shell, PURCHASING_CAPABILITY.supplierReturnRecord)}
+      canDecide={canApprove} onSettled={() => { void query.refetch() }} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>

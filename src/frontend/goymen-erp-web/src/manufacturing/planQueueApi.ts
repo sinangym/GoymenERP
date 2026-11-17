@@ -15,6 +15,7 @@ export interface PlanQueueLine {
 export interface PlanQueue {
   readonly contractVersion: 1; readonly companyId: string; readonly workCenterId: string
   readonly targetPlanId: string; readonly targetPlanVersion: number; readonly items: readonly PlanQueueLine[]
+  readonly queueRevision: number; readonly hasManualOrder: boolean
 }
 export interface PriorityAttempt {
   readonly idempotencyKey: string; readonly expectedVersion: number; readonly expectedPriorityRevision: number
@@ -40,6 +41,7 @@ export function decodePlanPriority(v: unknown): PlanPriority | null {
 }
 export function decodePlanQueue(v: unknown): PlanQueue | null {
   if (!obj(v) || v.contractVersion !== 1 || !guid(v.companyId) || !guid(v.workCenterId) || !guid(v.targetPlanId)
+    || !revision(v.queueRevision) || typeof v.hasManualOrder !== 'boolean' || v.hasManualOrder !== (v.queueRevision > 0)
     || !revision(v.targetPlanVersion) || v.targetPlanVersion === 0 || !Array.isArray(v.items) || !v.items.length) return null
   const ids = new Set<string>()
   for (const line of v.items) {

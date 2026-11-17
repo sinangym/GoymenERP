@@ -27,14 +27,14 @@ public sealed partial class SettingsDbContext
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Identity", $"[CompanyId] <> {emptyGuid} AND [Version] > 0");
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Key",
                 "[PolicyKey] IN ('finance.opening-period', 'manufacturing.due-date-buffer', "
-                + "'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default', 'sales.contract-discount-limit')");
+                + "'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default', 'sales.contract-discount-limit', 'manufacturing.include-scrap-cost', 'work.notification-active-days')");
             // Each key fills only its own columns: a boolean (opening period), whole working days ≥ 0 (due-date buffer), or
             // the SAT-D381 tax default shape (VAT above 0 up to 100 without an exemption code, or no VAT and no withholding;
             // withholding above 0 up to 100 with an optional code, or neither).
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Value",
-                "([PolicyKey] = 'finance.opening-period' AND [PercentValue] IS NULL AND [BooleanValue] IS NOT NULL AND [WholeNumberValue] IS NULL AND "
+                "([PolicyKey] IN ('finance.opening-period', 'manufacturing.include-scrap-cost') AND [PercentValue] IS NULL AND [BooleanValue] IS NOT NULL AND [WholeNumberValue] IS NULL AND "
                 + noTax + ") "
-                + "OR ([PolicyKey] = 'manufacturing.due-date-buffer' AND [PercentValue] IS NULL AND [BooleanValue] IS NULL "
+                + "OR ([PolicyKey] IN ('manufacturing.due-date-buffer', 'work.notification-active-days') AND [PercentValue] IS NULL AND [BooleanValue] IS NULL "
                 + "AND [WholeNumberValue] IS NOT NULL AND [WholeNumberValue] >= 0 AND " + noTax + ") "
                 + "OR ([PolicyKey] IN ('sales.subcontract-tax-default', 'purchasing.subcontract-tax-default') "
                 + "AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL "

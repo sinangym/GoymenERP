@@ -26,7 +26,8 @@ public static class MoneyProfileProblemCodesV1
     public const string AccessDenied = "settings_access_denied";
 }
 
-/// <summary>The existing approved operation/currency identity is selected, never created by this command (F029-S3).</summary>
+/// <summary>The registered operation/currency identity is selected. ExpectedVersion "0" records
+/// the first human-maintained profile; no monetary defaults or source identity are invented (URN-D2/D3/D4).</summary>
 public sealed record RecordMoneyProfileRequestV1(string? ExpectedVersion, Guid? CurrencyId, string? Operation,
     int? Scale, int? UnitPriceScale, bool? IsActive, string? Reason, DateOnly? EffectiveFrom = null);
 

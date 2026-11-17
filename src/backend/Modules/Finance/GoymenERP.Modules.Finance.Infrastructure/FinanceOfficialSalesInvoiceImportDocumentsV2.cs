@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 
@@ -30,9 +31,10 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
         Guid sourceDocumentId,
         ReadOnlySpan<string> fields,
         int rowNumber,
-        ICollection<FinanceOfficialInvoiceImportIssueV1> issues)
+        ICollection<FinanceOfficialInvoiceImportIssueV1> issues,
+        bool isV3 = false)
     {
-        if (fields.Length != Columns.Length)
+        if (fields.Length != Columns.Length + (isV3 ? 2 : 0))
         {
             issues.Add(new(rowNumber, "row", FinanceOfficialInvoiceImportCodesV1.RowShapeInvalid));
             return null;
@@ -69,9 +71,25 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
         var taxBase = Amount(fields[2], rowNumber, Columns[2], issues);
         var vat = Amount(fields[3], rowNumber, Columns[3], issues);
         var withholding = Amount(fields[4], rowNumber, Columns[4], issues);
+        DateOnly? invoiceDate = null;
+        string? payableTl = null;
+        if (isV3)
+        {
+            if (!DateOnly.TryParseExact(fields[5], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var parsedDate) || parsedDate == default)
+                issues.Add(new(rowNumber, "invoiceDate", FinanceOfficialInvoiceImportCodesV1.DateInvalid));
+            else invoiceDate = parsedDate;
+            // FNS-D89: an absent TL amount stays unknown; an invalid supplied amount is refused.
+            if (fields[6].Length > 0)
+            {
+                if (!FinanceExactDecimalText.TryParsePositive(fields[6], out var parsedPayable))
+                    issues.Add(new(rowNumber, "payableFunctionalAmount", FinanceOfficialSalesInvoiceImportCodesV2.FunctionalAmountInvalid));
+                else payableTl = parsedPayable.Text;
+            }
+        }
         return issues.Count == before
             ? new FinanceOfficialSalesInvoiceImportDocumentV2(
-                sourceDocumentId, officialNo, canonicalEttn, taxBase, vat, withholding)
+                sourceDocumentId, officialNo, canonicalEttn, taxBase, vat, withholding, invoiceDate, payableTl)
             : null;
     }
 
@@ -120,7 +138,11 @@ internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
         && string.Equals(left.Ettn, right.Ettn, StringComparison.Ordinal)
         && FinanceExactDecimalText.Equal(left.TaxBaseFunctionalAmount, right.TaxBaseFunctionalAmount)
         && FinanceExactDecimalText.Equal(left.VatFunctionalAmount, right.VatFunctionalAmount)
-        && FinanceExactDecimalText.Equal(left.WithholdingFunctionalAmount, right.WithholdingFunctionalAmount);
+        && FinanceExactDecimalText.Equal(left.WithholdingFunctionalAmount, right.WithholdingFunctionalAmount)
+        && left.InvoiceDate == right.InvoiceDate
+        && (left.PayableFunctionalAmount is null && right.PayableFunctionalAmount is null
+            || left.PayableFunctionalAmount is { } leftPayable && right.PayableFunctionalAmount is { } rightPayable
+            && FinanceExactDecimalText.Equal(leftPayable, rightPayable));
 
     private static string Amount(
         string value,

@@ -5,6 +5,7 @@ import { LoginPage, type LoginNotice } from './LoginPage'
 import { LOGIN_TEXT } from './identityText'
 import { LOGIN_PATH } from './loginApi'
 import { LOGIN_RATE_LIMITED_CODE } from './loginContract'
+import { TWO_FACTOR_TEXT } from './twoFactorText'
 
 /** SENTETIK credentials — never a real account. */
 const USER = 'sentetik.kullanici'
@@ -59,6 +60,17 @@ afterEach(() => {
 })
 
 describe('LoginPage — ID-1F local sign-in', () => {
+  it('sends an optional authenticator or recovery code in the same request without a user-disclosing challenge', async () => {
+    const fetchMock = installFetch(() => json({}, 401)); renderLogin()
+    const actor = userEvent.setup()
+    await actor.type(screen.getByLabelText(TWO_FACTOR_TEXT.loginCode), '123456')
+    await signIn()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toEqual({ userName: USER, password: PASSWORD, totpCode: '123456' })
+    await waitFor(() => expect((screen.getByLabelText(TWO_FACTOR_TEXT.loginCode) as HTMLInputElement).value).toBe(''))
+    expect(screen.getByRole('alert').textContent).toContain(LOGIN_TEXT.refused)
+  })
   it('labels both fields, uses the password-manager autocomplete hints and focuses the user name', () => {
     renderLogin()
     const userName = screen.getByLabelText(LOGIN_TEXT.userNameLabel)

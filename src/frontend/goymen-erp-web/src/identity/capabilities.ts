@@ -15,6 +15,7 @@
  */
 
 export const IDENTITY_CAPABILITY = {
+  userManagement: 'identity.users.manage',
   /** Route `/ayarlar/kullanicilar-ve-yetkiler`. The only entry point; it carries the sidebar label. */
   accessList: 'identity.assignments.list',
   /**
@@ -32,12 +33,14 @@ export const IDENTITY_ACCESS_CONTROL = {
 export type IdentityCapabilityId = (typeof IDENTITY_CAPABILITY)[keyof typeof IDENTITY_CAPABILITY]
 
 export const IDENTITY_ROUTE: Record<IdentityCapabilityId, string> = {
+  [IDENTITY_CAPABILITY.userManagement]: '/ayarlar/kullanicilar',
   [IDENTITY_CAPABILITY.accessList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [IDENTITY_CAPABILITY.roleDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
 }
 
 /** Nav label: the list gets one; the role card is reached from a row, never from the sidebar. */
 export const IDENTITY_NAV_LABEL: Record<IdentityCapabilityId, string> = {
+  [IDENTITY_CAPABILITY.userManagement]: 'Kullanıcı yönetimi',
   [IDENTITY_CAPABILITY.accessList]: 'Kullanıcılar ve yetkiler',
   [IDENTITY_CAPABILITY.roleDetail]: '',
 }

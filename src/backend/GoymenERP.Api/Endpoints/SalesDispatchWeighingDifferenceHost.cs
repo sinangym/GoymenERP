@@ -44,7 +44,12 @@ public sealed class SalesDispatchWeighingDifferenceHost(
 
         return new SalesDispatchWeighingDifferenceReadV1(SalesDispatchWeighingDifferenceStatusV1.Recorded, companyId, dispatchNoteId,
             new SalesDispatchWeighingDifferenceV1(answer.RecordId, answer.TheoreticalKg, answer.ScaleKg, answer.DifferenceKg,
-                answer.TotalExcessKg, band, decision, state, answer.SaleMayProceed, answer.Version));
+                answer.TotalExcessKg, band, decision, state, answer.SaleMayProceed, answer.Version,
+                answer.KilogramAllocation is { } allocation ? new SalesDispatchKilogramAllocationV1(
+                    allocation.Lines.Select(line => new SalesDispatchKilogramLineV1(line.LineNo, line.ShipmentId,
+                        line.ProductId, line.TheoreticalKg, line.Kilograms)).ToArray(), allocation.FinalizedDocument?.Ettn,
+                    allocation.FinalizedDocument?.DocumentId, allocation.FinalizedDocument?.DocumentVersion,
+                    allocation.FinalizedDocument?.Sha256, allocation.FinalizedDocument?.Kind) : null));
     }
 
     /// <summary>The owner's wire name, exactly (no case folding, no numbers): anything else is not a fact the seam can state.</summary>

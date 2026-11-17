@@ -50,10 +50,16 @@ internal sealed class InventoryCompanyWideAverageCostReadPort(InventoryDbContext
             .Where(row => row.CompanyId == companyId && row.ProductId == productId
                 && stockedLocations.Contains(row.LocationId))
             .ToDictionaryAsync(row => row.LocationId, cancellationToken);
+        var exactPools = await dbContext.ExactCostPools.AsNoTracking().Where(row => row.CompanyId == companyId && row.ProductId == productId
+            && row.CurrencyId == GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsCurrencyIdentitiesV1.TurkishLira
+            && stockedLocations.Contains(row.LocationId)).ToDictionaryAsync(row => row.LocationId, cancellationToken);
 
         var result = CompanyWideAverageCostCalculator.Aggregate(stock.Select(entry => new CompanyWideAverageCostLocation(
             entry.LocationId, entry.OnHandKg,
-            ledger.TryGetValue(entry.LocationId, out var row) ? InventoryAverageCostLedgerRows.PositionOf(row) : null)));
+            ledger.TryGetValue(entry.LocationId, out var row)
+                ? exactPools.TryGetValue(entry.LocationId, out var exact) && !InventoryAverageCostReadPort.ExactMatches(exact, row, entry.OnHandKg)
+                    ? AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch)
+                    : InventoryAverageCostLedgerRows.PositionOf(row) : null)));
         var sources = result.Included.Select(location => new InventoryCompanyWideAverageCostSourceV1(
             location.LocationId, location.OnHandKg,
             ledger.TryGetValue(location.LocationId, out var row) ? row.Version : null));

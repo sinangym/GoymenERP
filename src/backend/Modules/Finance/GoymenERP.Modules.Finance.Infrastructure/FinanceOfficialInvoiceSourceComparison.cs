@@ -17,6 +17,7 @@ internal static class FinanceOfficialInvoiceSourceComparison
     public const string CustomerPartyField = "customerPartyId";
     public const string CurrencyField = "currencyId";
     public const string PayableAmountField = "payableAmount";
+    public const string PayableFunctionalAmountField = "payableFunctionalAmount";
     public const string TaxBaseField = "taxBaseFunctionalAmount";
     public const string VatField = "vatFunctionalAmount";
     public const string WithholdingField = "withholdingFunctionalAmount";
@@ -36,7 +37,9 @@ internal static class FinanceOfficialInvoiceSourceComparison
         string? PayableAmount,
         string TaxBaseFunctionalAmount,
         string VatFunctionalAmount,
-        string WithholdingFunctionalAmount);
+        string WithholdingFunctionalAmount,
+        DateOnly? InvoiceDate = null,
+        string? PayableFunctionalAmount = null);
 
     /// <summary>An approved manual record and the imported document it disagrees with, field names in a stable order.</summary>
     internal sealed record Difference(Guid ManualInvoiceId, ImportedDocument Imported, IReadOnlyList<string> Fields);
@@ -64,7 +67,7 @@ internal static class FinanceOfficialInvoiceSourceComparison
                 Payable(rows),
                 document.TaxBaseFunctionalAmount,
                 document.VatFunctionalAmount,
-                document.WithholdingFunctionalAmount));
+                document.WithholdingFunctionalAmount, document.InvoiceDate, document.PayableFunctionalAmount));
         }
         return result;
     }
@@ -136,6 +139,9 @@ internal static class FinanceOfficialInvoiceSourceComparison
         {
             fields.Add(WithholdingField);
         }
+        if (manual.InvoiceDate != imported.InvoiceDate) fields.Add("invoiceDate");
+        // Historical v2 has no payable TL column: absence remains a diagnostic, never a derived amount.
+        if (!SameAmount(manual.PayableFunctionalAmountText, imported.PayableFunctionalAmount)) fields.Add(PayableFunctionalAmountField);
         return fields;
     }
 

@@ -1,3 +1,6 @@
+import { PaintSelectionEditor } from './PaintSelectionEditor'
+import { PAINT_SELECTION_TEXT } from './paintSelectionText'
+import type { PlanProcessSpecView } from './contract'
 /**
  * MFG-PLAN-EDIT: the Draft plan's edit form, inside the plan detail.
  *
@@ -151,6 +154,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
   )
   const [targetKg, setTargetKg] = useState(current.target?.kg ?? '')
   const [reason, setReason] = useState('')
+  const [paintSpec, setPaintSpec] = useState<PlanProcessSpecView | null>(current.processSpec)
   // M01.3: the stored lines as authored rows (same ids, order and values); a null plan starts with none.
   const [cutLines, setCutLines] = useState<readonly CutToLengthLineDraft[]>(() => cutToLengthDrafts(current.cutToLengthSpec))
   const released = plan.requiresReapproval === true
@@ -224,7 +228,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       ...previewInput.request,
       ...(plan.slittingSpec === null ? {} : { slittingSpec: plan.slittingSpec }),
       ...(current.lineSpeedMetresPerMinute === null ? {} : { lineSpeedMetresPerMinute: current.lineSpeedMetresPerMinute }),
-      ...(current.processSpec === null ? {} : { processSpec: current.processSpec }),
+      ...((plan.process === 'Paint' ? paintSpec : current.processSpec) === null ? {} : { processSpec: (plan.process === 'Paint' ? paintSpec : current.processSpec) as PlanProcessSpecView }),
     },
   } : previewInput, authBoundary)
 
@@ -283,6 +287,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       setFormError(PLAN_EDIT_TEXT.reasonRequired)
       return
     }
+    if (plan.process === 'Paint' && paintSpec?.paintSelection === undefined) { setFormError(PAINT_SELECTION_TEXT.required); return }
     const request: RevisePlanRequest = {
       expectedVersion: plan.version,
       workCenterId,
@@ -297,7 +302,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       ...(cutToLengthSpec === null ? {} : { cutToLengthSpec }),
       // U2-a / U2-b1: values this form does not edit travel unchanged; an omitted member would clear them on the server.
       ...(current.lineSpeedMetresPerMinute === null ? {} : { lineSpeedMetresPerMinute: current.lineSpeedMetresPerMinute }),
-      ...(current.processSpec === null ? {} : { processSpec: current.processSpec }),
+      ...((plan.process === 'Paint' ? paintSpec : current.processSpec) === null ? {} : { processSpec: (plan.process === 'Paint' ? paintSpec : current.processSpec) as PlanProcessSpecView }),
     }
     if (sameContent(current, request)) {
       setFormError(PLAN_EDIT_TEXT.noChange)
@@ -313,6 +318,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
   return (
     <section className={styles.commandCard} aria-labelledby="manufacturing-plan-edit-heading">
       <h2 id="manufacturing-plan-edit-heading">{released ? PLAN_EDIT_TEXT.recalculateHeading : PLAN_EDIT_TEXT.formHeading}</h2>
+      {plan.process === 'Paint' ? <PaintSelectionEditor companyId={companyId} value={paintSpec} disabled={busy} onChange={setPaintSpec} /> : null}
       {released ? <p className={styles.note}>{PLAN_EDIT_TEXT.recalculateNote}</p> : null}
       {formError === null ? null : <p className={styles.error} role="alert">{formError}</p>}
       <form className={styles.form} onSubmit={submit} noValidate>

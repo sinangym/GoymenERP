@@ -180,6 +180,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             new StockSourceReference(InventoryManufacturingRealizationContractV1.InputReturnSourceKind,
                 request.ManufacturingOrderId, request.ReturnId),
             [new StockMovementLine(trace.Position, StockDirection.In, quantity)], CostResult.NotCalculated);
+        store.UseReturnIssueCost(movement.Id, await ReturnIssueCostSourceAsync(request, quantity.Value, cancellationToken));
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.Unavailable,
             cancellationToken);
 
@@ -190,6 +191,39 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         await SaveCommandAsync(InventoryManufacturingRealizationContractV1.InputReturnCommandName,
             keyHash, payloadHash, request.ReturnId, result, metadata, cancellationToken);
         return result;
+    }
+
+    private async Task<Guid?> ReturnIssueCostSourceAsync(InventoryManufacturingInputReturnRequestV1 request,
+        decimal quantity, CancellationToken token)
+    {
+        var issues = await (from movement in context.Movements.AsNoTracking()
+            join line in context.MovementLines.AsNoTracking() on movement.Id equals line.MovementId
+            where movement.SourceKind == InventoryManufacturingRealizationContractV1.InputIssueSourceKind
+                && movement.SourceId == request.ManufacturingOrderId && movement.Kind == (int)StockMovementKind.Issue
+                && line.LabelId == request.ParentLabelId && line.Direction == (int)StockDirection.Out
+            select new { movement.Id, line.LineNumber, line.QuantityKg }).ToListAsync(token);
+        var selected = request.SourceIssueMovementId is { } explicitId
+            ? issues.SingleOrDefault(row => row.Id == explicitId && row.LineNumber == 1)
+            : issues.Count == 1 && issues[0].LineNumber == 1 ? issues[0] : null;
+        if (request.SourceIssueMovementId is not null && selected is null)
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
+        if (selected is null) return null; // Legacy multiple issues have no inferred FIFO/average binding.
+        var prior = await (from movement in context.Movements.AsNoTracking()
+            join line in context.MovementLines.AsNoTracking() on movement.Id equals line.MovementId
+            where movement.SourceKind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind
+                && movement.SourceId == request.ManufacturingOrderId && line.LabelId == request.ParentLabelId
+            select new { movement.Id, line.LineNumber, line.QuantityKg }).ToListAsync(token);
+        var ids = prior.Select(row => row.Id).ToArray();
+        var stamps = await context.MovementCostStamps.AsNoTracking().Where(row => ids.Contains(row.MovementId)
+            && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira).ToListAsync(token);
+        var boundReturned = prior.Where(row => stamps.Any(stamp => stamp.MovementId == row.Id
+                && stamp.LineNumber == row.LineNumber && stamp.SourceIssueMovementId == selected.Id)).Sum(row => row.QuantityKg);
+        if (quantity + boundReturned > selected.QuantityKg)
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
+        if (issues.Count != 1 && prior.Any(row => !stamps.Any(stamp => stamp.MovementId == row.Id
+                && stamp.LineNumber == row.LineNumber && stamp.SourceIssueMovementId is not null)))
+            return null; // Prior unbound returns make per-issue remaining cost unprovable.
+        return selected.Id;
     }
 
     public async Task<InventoryManufacturingOutputResultV1> StageOutputAsync(

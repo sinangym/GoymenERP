@@ -188,6 +188,10 @@ public sealed partial class ManufacturingCommandService
                 }
 
                 var reapprovedAt = timeProvider.GetUtcNow();
+                if (current is not null && current.Version == request.ExpectedVersion
+                    && await VerifyPaintSelectionAsync(current.ProcessSpec, current.Process, permission, companyId, actor, cancellationToken, approval: true) is { } paintRefusal)
+                    return Refusal<PlanViewV1>(paintRefusal);
+
                 Task<ProductionPlan> Reapprove(CancellationToken token) => planReapprovals.ReapprovePlanAsync(planId,
                     request.ExpectedVersion, actor, reapprovedAt, snapshot, labelUsable, metadata, token);
                 var reapproved = await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Reapprove,

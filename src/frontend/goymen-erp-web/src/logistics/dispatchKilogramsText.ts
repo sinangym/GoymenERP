@@ -1,0 +1,16 @@
+export const DISPATCH_KG_TEXT = {
+  title: 'İrsaliye kg dağılımı', loading: 'Kg kaydı yükleniyor.', empty: 'Bu irsaliye için erişilebilir kg kaydı bulunamadı.',
+  forbidden: 'Bu işlem için yetkiniz yok.', unauthenticated: 'Oturumunuz sona erdi. Yeniden giriş yapın.',
+  conflict: 'Kayıt değişmiş veya işlem koşulları sağlanmıyor. Güncel kaydı okuyun.', offline: 'Çevrimdışısınız.',
+  network: 'Sunucudan yanıt alınamadı.', unavailable: 'Kg hizmeti şu anda kullanılamıyor.', malformed: 'Sunucudan beklenen biçimde yanıt alınamadı.',
+  retryRead: 'Güncel kaydı oku', source: 'Miktar kaynağı', theoretical: 'Kesinleşmiş belge yok; teorik kg oranıyla dağıt',
+  official: 'Kesinleşmiş ETTN’li dış belge', ettn: 'ETTN', kind: 'Belge türü', dispatch: 'e-İrsaliye', invoice: 'e-Fatura',
+  documents: 'Kesinleşmiş belgenin PDF dosyası', chooseDocument: 'Belge seçin', noDocument: 'Okunabilir PDF bulunamadı. Belge yükleyip listeyi yenileyin.',
+  refreshDocuments: 'Belge listesini yenile', scale: 'Ürünün kantar kg toplamı', line: 'Satır', sourceKg: 'Kaynak teorik kg', assignedKg: 'Belgedeki kg',
+  save: 'Kg dağılımını kaydet', approve: 'Farkı onayla', invalid: 'Kg alanlarını en çok üç ondalıkla doldurun; kesinleşmiş belge için ETTN ve okunabilir PDF seçin.',
+  recorded: 'Kaydedildi', pending: 'Fark onayı bekliyor', approved: 'Onaylandı', legacy: 'Bu kayıtta satır dağılımı kanıtı bulunmuyor; fatura aktarımı bekler.',
+  sending: 'İşlem gönderiliyor.', completed: 'Kg kaydı doğrulandı.', replayed: 'Önceki işlem aynı anahtarla doğrulandı.',
+  unknown: 'İşlem kaydedilmiş olabilir. Aynı işlemi yeniden deneyin.', retryCommand: 'Aynı işlemi yeniden dene',
+  refused: 'İşlem reddedildi.', difference: 'Kantar farkı (kg)', total: 'Kantar toplamı (kg)',
+  explanation: 'Fatura, burada kaydedilen satır kg miktarlarını taşır. Parasal tutarlar bu ekranda hesaplanmaz.',
+} as const

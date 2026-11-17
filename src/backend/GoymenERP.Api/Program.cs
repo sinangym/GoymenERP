@@ -252,7 +252,7 @@ builder.Services.AddSettingsModule(
 // KIM-S19 (B-13): Finance's opening period reader answers from the Settings company policy registry. Finance registers its
 // fail-closed default with TryAddScoped, so the host replaces it here; any failure still answers "not available".
 builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceOpeningPeriodReader, SettingsFinanceOpeningPeriodReader>());
-builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceCollateralTypeCatalogReader, SettingsFinanceCollateralTypeCatalogReader>());
+builder.Services.Replace(ServiceDescriptor.Scoped<IFinanceCollateralTypeCatalogReader, SettingsFinanceCollateralTypeCatalogReaderV1>());
 
 static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
     new SalesReferenceReadHandler(
@@ -354,6 +354,7 @@ builder.Services.AddManufacturingModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // MFG realization v1: the host composes the approved Manufacturing ports with their API-owned adapters.
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
+builder.Services.AddScoped<IManufacturingInputOrderRateReadPortV1, ManufacturingSalesOrderInputRateReadPortV1>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
 // F-009 D3 (URT-S2): the output correction shares the return/output host and its one transaction per command.
 builder.Services.AddScoped<ManufacturingInventoryReturnOutputHost>();
@@ -413,6 +414,7 @@ builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, Invent
 // STK-S24: the weighing-difference fence and the read-only physical stock seam over Inventory. The Settings rate/band port
 // keeps Logistics's fail-closed default until Settings publishes those values.
 builder.Services.AddScoped<ILogisticsWeighingDifferenceScopeV1, LogisticsWeighingDifferenceScope>();
+builder.Services.AddScoped<IDispatchKilogramDocumentReadPortV1, DispatchKilogramDocumentReadPort>();
 builder.Services.AddScoped<ILogisticsWeighingDifferenceStockReadPortV1, InventoryWeighingDifferenceStockAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
@@ -496,6 +498,7 @@ builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
 builder.Services.AddSalesRiskExceptionUsageInbox();
 builder.Services.AddCompanySetupMessaging();
+builder.Services.AddTrainCompletionOwnerBindings();
 builder.Services.AddCompanyLifecycleAuthorizationGate();
 // SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
 builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
@@ -522,6 +525,7 @@ builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilit
 builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
 // AT-018: Product's company-scoped U-05 price-list screens and edit/publish controls.
 builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCapabilityProvider>();
+builder.Services.AddSingleton<IShellCapabilityProvider, ProductPaintMembershipShellCapabilityProvider>();
 // SAT-D61…D70: Settings' discount limit screen (settings.sales-discount-limits.manage, granted to no role).
 builder.Services.AddSingleton<IShellCapabilityProvider, SettingsShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
@@ -588,15 +592,18 @@ app.MapProductItemTypeEndpoints();
 app.MapProductDimensionEndpoints();
 app.MapProductProfileWeightTableEndpoints();
 app.MapProductPackageStandardEndpoints();
+app.MapProductPaintMembershipEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
+app.MapWorkNotificationEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();

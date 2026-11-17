@@ -13,6 +13,7 @@ public static class ManufacturingPermissionManifestV1
     public const string OrdersCloseExceptionApprove = "manufacturing.orders.close-exception.approve";
     public const string OrdersWrite = "manufacturing.orders.write";
     public const string OrdersCancel = "manufacturing.orders.cancel";
+    public const string OrdersReopen = "manufacturing.orders.reopen";
     public const string PlansCancel = "manufacturing.plans.cancel";
     public const string PlansReorder = "manufacturing.plans.reorder";
     public const string ScrapPricesRead = "manufacturing.scrap-prices.read";
@@ -32,6 +33,7 @@ public static class ManufacturingPermissionManifestV1
         OrdersCloseExceptionApprove,
         OrdersWrite,
         OrdersCancel,
+        OrdersReopen,
         PlansCancel,
         PlansReorder,
         ScrapPricesRead,

@@ -99,7 +99,7 @@ public sealed class CompanySetupLifecycleTests
     {
         using var db = new OrganizationDbContext(new DbContextOptionsBuilder<OrganizationDbContext>()
             .UseSqlServer("Server=unused.invalid;Database=unused").Options, new CompanyContext(), new());
-        Assert.EndsWith("20261116185536_AddCompanySetupLifecycleAndMessaging", db.Database.GetMigrations().Last());
+        Assert.Equal(["20261116185536_AddCompanySetupLifecycleAndMessaging", "20261116205304_AddAuthorizedCompanyOpening"], db.Database.GetMigrations().TakeLast(2));
         Assert.False(db.Database.HasPendingModelChanges());
         var migration = new AddCompanySetupLifecycleAndMessaging();
         Assert.DoesNotContain(migration.UpOperations, x => x is SqlOperation);

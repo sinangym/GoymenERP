@@ -26,7 +26,8 @@ internal sealed class ManufacturingPlanAllocationHost(
     ICompanyContext companyContext,
     ISettingsPrerequisiteProvider settings,
     TimeProvider timeProvider,
-    IInventoryManufacturingPlanAllocationReadPortV1? allocationState = null)
+    IInventoryManufacturingPlanAllocationReadPortV1? allocationState = null,
+    ManufacturingCostGenerationHost? costGenerations = null)
     : IManufacturingPlanAllocationPortV1
 {
     public const string AllocationReason = "manufacturing.plan-approved";
@@ -152,6 +153,10 @@ internal sealed class ManufacturingPlanAllocationHost(
 
         return RunAsync(planId, write, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
         {
+            var closedOrder = reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed && plan.OrderId is { } orderId
+                ? await plans.FindOrderAsync(orderId, token) : null;
+            if (reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed && (closedOrder is null || costGenerations is null))
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
             var result = await InventoryFaultAsync(() => inventory.StagePlanRemainderReleaseAsync(
                 new InventoryManufacturingPlanReleaseRequestV1(companyId, plan.Id,
                     plan.Version.ToString(CultureInfo.InvariantCulture),
@@ -166,25 +171,30 @@ internal sealed class ManufacturingPlanAllocationHost(
                     timeProvider.GetUtcNow().ToUniversalTime()),
                 inventoryMetadata with
                 {
-                    IdempotencyKey = ReleaseIdempotencyKey(companyId, plan, reason),
+                    IdempotencyKey = ReleaseIdempotencyKey(companyId, plan, reason,
+                        closedOrder?.Reopenings.Count > 0 ? closedOrder.Version : null),
                 },
                 token));
             if (result.IsReplay || result.CompanyId != companyId || result.PlanId != plan.Id)
             {
                 throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
             }
+            if (closedOrder is not null)
+                await costGenerations!.StageClosedAsync(closedOrder.Id, metadata, token);
         }, cancellationToken);
     }
 
     /// <summary>
-    /// The Inventory release key. A plan is cancelled or its order closed at most once, so those keys name the plan and
-    /// the reason only (unchanged since U3-a). F-009 D5: a plan may release one generation per cancelled order, so an
+    /// The Inventory release key. The first close keeps its U3-a identity. URT-D56: another physical close following
+    /// reopening names its new closed-order version. F-009 D5: a plan may release one generation per cancelled order, so an
     /// order cancel also names the plan version the release produced — every release bumps it, a retry replays it.
     /// </summary>
     internal static string ReleaseIdempotencyKey(Guid companyId, Modules.Manufacturing.Domain.Plans.ProductionPlan plan,
-        ManufacturingPlanAllocationReleaseReasonV1 reason) =>
+        ManufacturingPlanAllocationReleaseReasonV1 reason, long? closedOrderVersion = null) =>
         reason == ManufacturingPlanAllocationReleaseReasonV1.OrderCancelled
             ? $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}:{plan.Version.ToString(CultureInfo.InvariantCulture)}"
+            : reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed && closedOrderVersion is { } version
+                ? $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}:close:{version.ToString(CultureInfo.InvariantCulture)}"
             : $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}";
 
     /// <summary>

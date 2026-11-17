@@ -3,6 +3,7 @@ export const MONEY_PROFILE_TEXT = {
   subject: 'para profilleri', empty: 'Bu şirkette onaylı para profili yok.',
   version: 'Sürüm', scale: 'Tutar ondalık basamağı', priceScale: 'Birim fiyat ondalık basamağı', active: 'Kullanımda',
   undefined: 'Tanımlı değil', yes: 'Evet', no: 'Hayır', edit: 'Yeni sürüm', reason: 'Gerekçe',
+  create: 'İlk profili tanımla', unconfigured: 'Henüz profil tanımlanmadı. Bu para birimi ve işlem için aktif değer yok.',
   preview: 'Değişiklik etkisi', previewHistory: 'Geçmiş ve onay bekleyen belgeler yeniden hesaplanmaz.',
   previewIncomplete: '0–28 arası tam basamak sayısı girin; birim fiyat boşsa tanımlı değildir.',
   companyScope: 'Değişiklik seçili şirkette ve seçilen işlemde geçerlidir.',
@@ -18,6 +19,7 @@ export function moneyOperationLabel(operation: string): string {
     'accounting.journal-amount.v1': 'Muhasebe fişi',
     'finance.manual-bank-payment.v1': 'Banka ödemesi',
     'finance.manual-bank-receipt.v1': 'Banka tahsilatı',
+    'finance.credit-plan': 'Banka kaynaklı kredi planı',
     'purchasing.order.v1': 'Alış siparişi',
     'sales.order-draft.v1': 'Satış siparişi',
   }

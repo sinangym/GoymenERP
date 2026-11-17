@@ -10,7 +10,7 @@ import type { WorkCenterSummary } from '../organization/contract'
 import { SETTINGS_CAPABILITY, SETTINGS_MANUFACTURING_PROFILE_CONTROL } from './capabilities'
 import { Frame, stateOf, useBoundaryRead } from './SalesPolicyParts'
 import { useCommandAttempt } from './useCommandAttempt'
-import { fetchManufacturingProfiles, prepareManufacturingProfile, publishManufacturingProfile } from './manufacturingProfileApi'
+import { fetchManufacturingProfiles, prepareManufacturingProfile, publishManufacturingProfile, transferManufacturingStartingValues } from './manufacturingProfileApi'
 import { MANUFACTURING_PROCESSES, type ManufacturingProfile, type ManufacturingProfileKind, type ManufacturingProfileList, type ManufacturingProfileReceipt, type ManufacturingProcess, type PrepareManufacturingProfileBody } from './manufacturingProfileContract'
 import { MANUFACTURING_PROFILE_TEXT as T, manufacturingProcessLabel, manufacturingProfileStatus, parameterLabel } from './manufacturingProfileText'
 import type { CommandContext, CommandOutcome } from './discountLimitApi'
@@ -55,6 +55,10 @@ function Profiles({ data, kind, company, canPrepare, canPublish, workCenters, wo
   const all = [...data.startingValues, ...data.profiles]
   const centerName = (id: string | null) => id === null ? T.allLines : workCenters?.find((center) => center.id === id)?.name ?? id
   return <section><p role="status">{notice}</p><p>{T.catalogNote}</p>
+    {data.startingValuesTransferVersion === '1' && <p>{T.transferred}</p>}
+    {canPublish && data.startingValuesTransferVersion === '0' && all.some((profile) => profile.source === 'Catalog') && (editing === 'transfer'
+      ? <TransferForm company={company} kind={kind} finish={finish} />
+      : <Button type="button" disabled={editing !== null} onClick={() => setEditing('transfer')}>{T.transfer}</Button>)}
     {all.length === 0 && <p>{T.empty}</p>}
     {all.map((profile) => <article key={profile.profileId} className={styles.section}>
       <h2>{manufacturingProcessLabel(profile.process)} · {T.version} {profile.profileVersion}</h2>
@@ -101,9 +105,17 @@ function Mutation<TBody extends { readonly reason: string }>({ company, body, va
   return <form className={styles.form} onSubmit={(event) => void submit(event)} aria-busy={busy}>
     <fieldset disabled={busy || frozen !== null}>{children(busy || frozen !== null)}</fieldset>
     {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
-    <Button type="submit" variant="primary" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : saved === T.prepared ? T.save : T.publish}</Button>
+    <Button type="submit" variant="primary" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : saved === T.prepared ? T.save : saved === T.transferred ? T.transfer : T.publish}</Button>
     <Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>
   </form>
+}
+
+function TransferForm({ company, kind, finish }: { readonly company: string; readonly kind: ManufacturingProfileKind; readonly finish: Finish }) {
+  const [reason, setReason] = useState('')
+  return <Mutation company={company} body={{ expectedVersion: '0', reason: reason.trim() }} valid={reason.trim().length > 0}
+    action={(context, body) => transferManufacturingStartingValues(context, kind, body)} saved={T.transferred} finish={finish}>
+    {() => <><p>{T.transferPreview}</p><Field label={T.reason}>{(control) => <textarea {...control} required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />}</Field></>}
+  </Mutation>
 }
 
 function PublishForm({ company, kind, profile, finish }: { readonly company: string; readonly kind: ManufacturingProfileKind; readonly profile: ManufacturingProfile; readonly finish: Finish }) {

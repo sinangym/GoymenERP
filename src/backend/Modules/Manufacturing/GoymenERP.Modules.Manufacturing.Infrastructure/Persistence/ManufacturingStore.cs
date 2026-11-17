@@ -1381,6 +1381,8 @@ public sealed partial class ManufacturingStore(
         var decisions = await dbContext.OrderClosureDecisions.AsNoTracking()
             .Where(decision => ids.Contains(decision.OrderId))
             .ToListAsync(cancellationToken);
+        var reopenings = await dbContext.OrderReopenings.AsNoTracking()
+            .Where(reopening => ids.Contains(reopening.OrderId)).ToListAsync(cancellationToken);
         // F-009 D2: the reversals recorded before each close and the plan output lines their declarations bind to.
         var reversals = await dbContext.OutputReversals.AsNoTracking()
             .Where(reversal => ids.Contains(reversal.OrderId))
@@ -1396,10 +1398,10 @@ public sealed partial class ManufacturingStore(
             var orderInputs = inputs.Where(input => input.OrderId == row.Id).OrderBy(input => input.Sequence).ToList();
             var orderFacts = facts.Where(fact => fact.OrderId == row.Id).ToList();
             orders.Add(RestoreOrder(row, orderInputs, kind => orderFacts.Where(fact => fact.Kind == (int)kind),
-                decisions.SingleOrDefault(decision => decision.OrderId == row.Id),
+                decisions.SingleOrDefault(decision => decision.OrderId == row.Id && decision.OrderVersion == row.Version - 1),
                 reversals.Where(reversal => reversal.OrderId == row.Id).ToList(),
                 outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
-                planDueDates.GetValueOrDefault(row.PlanId)));
+                planDueDates.GetValueOrDefault(row.PlanId), reopenings.Where(reopening => reopening.OrderId == row.Id).ToArray()));
         }
 
         var last = page[^1];
@@ -1533,6 +1535,7 @@ public sealed partial class ManufacturingStore(
     /// </summary>
     private void Complete(ManufacturingCommandMetadata metadata, Guid companyId, object result)
     {
+        queueMutationMetadata = metadata;
         if (metadata.Completion is { } completion)
         {
             AddCommand(companyId, completion(result));
@@ -1754,7 +1757,10 @@ public sealed partial class ManufacturingStore(
             .Where(fact => fact.OrderId == row.Id)
             .ToListAsync(cancellationToken);
         var closureDecision = await dbContext.OrderClosureDecisions.AsNoTracking()
-            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id, cancellationToken);
+            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id && row.Status == (int)OrderStatus.Closed
+                && decision.OrderVersion == row.Version - 1, cancellationToken);
+        var reopenings = await dbContext.OrderReopenings.AsNoTracking()
+            .Where(reopening => reopening.OrderId == row.Id).ToListAsync(cancellationToken);
         var reversals = await dbContext.OutputReversals.AsNoTracking()
             .Where(reversal => reversal.OrderId == row.Id)
             .ToListAsync(cancellationToken);
@@ -1766,7 +1772,7 @@ public sealed partial class ManufacturingStore(
         {
             return RestoreOrder(row, inputs, Of, closureDecision, reversals,
                 outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
-                planDueDates.GetValueOrDefault(row.PlanId));
+                planDueDates.GetValueOrDefault(row.PlanId), reopenings);
         }
         catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
         {
@@ -1802,7 +1808,7 @@ public sealed partial class ManufacturingStore(
     private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
         Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision,
         IReadOnlyList<OutputReversalRow> reversals, IReadOnlyList<PlanOutputLineReference> plannedOutputLines,
-        DateOnly? planDueDate)
+        DateOnly? planDueDate, IReadOnlyList<OrderReopeningRow>? reopenings = null)
     {
         var (policy, approval) = RestoreClosureDecision(closureDecision);
         if (reversals.Any(reversal => reversal.OutputKind != (int)FactKind.OutputDeclaration))
@@ -1832,7 +1838,10 @@ public sealed partial class ManufacturingStore(
             reversals.Select(reversal => new OutputReversal(reversal.Id, reversal.OutputId, new Kilograms(reversal.MassKg),
                 reversal.Reason, reversal.OccurredAtUtc)),
             row.DueDate, row.DueDateRevision, planDueDate,
-            row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason);
+            row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason,
+            reopenings?.Select(reopening => new ProductionOrderReopeningV1(reopening.ClosedOrderVersion,
+                reopening.ClosedByUserId, reopening.ClosedAtUtc, reopening.ReopenedOrderVersion,
+                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason)));
     }
 
     /// <summary>
@@ -2110,6 +2119,9 @@ public sealed partial class ManufacturingStore(
                 .Append(';')
                 .Append(processSpec.PaintColorCode is { } color ? Convert.ToBase64String(Encoding.UTF8.GetBytes(color)) : null);
         }
+
+        if (plan.ProcessSpec?.PaintSelection is { } paintSelection)
+            builder.Append("|paint-selection.v1|").Append(JsonSerializer.Serialize(paintSelection, Json));
 
         return Hash(builder.ToString());
     }
@@ -2427,7 +2439,9 @@ public sealed partial class ManufacturingStore(
         plan.ApprovedAtUtc,
     }, Json);
 
-    private async Task SaveAsync(CancellationToken cancellationToken)
+    private Task SaveAsync(CancellationToken cancellationToken) => SaveWithManualQueuesAsync(cancellationToken);
+
+    private async Task PersistChangesAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -2469,7 +2483,7 @@ public sealed partial class ManufacturingStore(
 
             var code = sql.Number switch
             {
-                2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
+                1205 or 1222 or 2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
                 547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     || sql.Message.Contains("FK_PlanRevisions_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     => ManufacturingStoreCodes.WorkCenterNotFound,
@@ -2612,6 +2626,7 @@ public sealed partial class ManufacturingStore(
         row.TargetThicknessMm = spec?.TargetThicknessMm;
         row.PaintDescription = spec?.PaintDescription;
         row.PaintColorCode = spec?.PaintColorCode;
+        row.PaintSelectionJson = spec?.PaintSelection is { } selection ? JsonSerializer.Serialize(selection, Json) : null;
         return row;
     }
 
@@ -2620,7 +2635,7 @@ public sealed partial class ManufacturingStore(
     {
         if (row.PackageCount is null && row.PiecesPerPackage is null && row.PieceLengthMm is null && row.UnitKg is null
             && row.PerimeterMm is null && row.TargetThicknessMm is null && row.PaintDescription is null
-            && row.PaintColorCode is null)
+            && row.PaintColorCode is null && row.PaintSelectionJson is null)
         {
             return null;
         }
@@ -2628,9 +2643,11 @@ public sealed partial class ManufacturingStore(
         try
         {
             return new PlanProcessSpec(row.PackageCount, row.PiecesPerPackage, row.PieceLengthMm, row.UnitKg,
-                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode);
+                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode,
+                row.PaintSelectionJson is { } paintJson ? JsonSerializer.Deserialize<PlanPaintSelectionV1>(paintJson, Json)
+                    ?? throw new ArgumentException("Boya kaynak kanıtı okunamadı.") : null);
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is ArgumentException or JsonException)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
                 "Kayıtlı süreç ayrıntısı planın kurallarını karşılamıyor.");

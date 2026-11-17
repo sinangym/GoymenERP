@@ -2,8 +2,11 @@ namespace GoymenERP.BuildingBlocks.Security;
 
 public static class ErpPermissions
 {
-    /// <summary>KIM-D21: Critical registration only. Company opening authority scope remains a decision gate; no grant.</summary>
+    /// <summary>KIM-D21/KIM-D56: Critical company-opening registration; group eligibility is explicit and human-owned, no grant.</summary>
     public const string OrganizationCompaniesOpen = "organization.companies.open";
+
+    /// <summary>KIM-D56: explicit group first-Admin selection; registered only, no grant or new Critical classification.</summary>
+    public const string IdentityCompanyFirstAdminAssign = "identity.company-setup.first-admin.assign";
 
     public const string OrganizationContextRead = "organization.context.read";
     public const string OrganizationSitesRead = "organization.sites.read";
@@ -183,6 +186,9 @@ public static class ErpPermissions
     /// granted: no role, seed or user receives it here; who receives it is a human grant gate. Company-wide only. Not Critical.
     /// </summary>
     public const string ProductPackageStandardsManage = "product.package-standards.manage";
+
+    /// <summary>BS-10: explicit paint membership import and maintenance only. Name registration grants no role or actor.</summary>
+    public const string ProductPaintMembershipsManage = "product.paint-memberships.manage";
 
     /// <summary>
     /// SAT-D382 (STK-SC36-c): the Product owner's name for approving (from an effective date) or rejecting the package standard
@@ -539,6 +545,9 @@ public static class ErpPermissions
     /// does, the flag is a human decision.
     /// </summary>
     public const string ManufacturingOrdersCancel = "manufacturing.orders.cancel";
+
+    /// <summary>URT-D32/D77/D85: reasoned reopening under the existing period and Inventory cost fences. Registration only; no role or user grant.</summary>
+    public const string ManufacturingOrdersReopen = "manufacturing.orders.reopen";
 
     /// <summary>
     /// Üretim U2-a (API-11, plan v1 §5.2): cancelling a production plan — a Draft, or an approved plan that opened no
@@ -1495,6 +1504,11 @@ public static class ErpPermissions
     public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
 
     public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
+    /// <summary>SAT-D305 technical registry name only; real authorized manager grants remain human-owned.</summary>
+    public const string SettingsManufacturingScrapCostManage = "settings.manufacturing-scrap-cost.manage";
+    /// <summary>KLN-D114/D115: register notification passivation duration management, no grant or deletion authority.</summary>
+    public const string SettingsNotificationRetentionManage = "settings.notification-retention.manage";
+    public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
     /// KIM-S18 (KIM-D49/KIM-D51, API-98): read the company's purchasing reference lists (expense type, service type) and add,
@@ -1622,6 +1636,7 @@ public static class ErpPermissions
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
             OrganizationCompaniesOpen,
+            IdentityCompanyFirstAdminAssign,
             OrganizationContextRead,
             OrganizationSitesRead,
             OrganizationLocationsRead,
@@ -1656,6 +1671,7 @@ public static class ErpPermissions
             ProductDimensionManage,
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
+            ProductPaintMembershipsManage,
             ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -1707,6 +1723,7 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
             ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingPlansReorder,
@@ -1854,6 +1871,9 @@ public static class ErpPermissions
             SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
@@ -1930,6 +1950,7 @@ public static class ErpPermissions
             ProductDimensionManage,
             ProductProfileWeightsImport,
             ProductPackageStandardsManage,
+            ProductPaintMembershipsManage,
             ProductPackageStandardsApprove,
             SalesDraftsCreate,
             SalesDraftsRead,
@@ -1981,6 +2002,7 @@ public static class ErpPermissions
             ManufacturingOrdersCloseExceptionApprove,
             ManufacturingOrdersWrite,
             ManufacturingOrdersCancel,
+            ManufacturingOrdersReopen,
             ManufacturingPlansRead,
             ManufacturingPlansCancel,
             ManufacturingPlansReorder,
@@ -2128,6 +2150,9 @@ public static class ErpPermissions
             SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,

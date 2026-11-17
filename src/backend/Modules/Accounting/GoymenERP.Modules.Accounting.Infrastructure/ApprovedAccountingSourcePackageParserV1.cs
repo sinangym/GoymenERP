@@ -139,8 +139,7 @@ public sealed class ApprovedAccountingSourcePackageParserV1 : IApprovedAccountin
             var textFields = new[] { 2, 3, 4, 6, 7, 8 };
             var valid = textFields.All(field =>
                 TextField(MappingsFile, rowNumber, MappingsHeader[field], fields[field], issues));
-            if (!string.Equals(fields[1], NormalJournalSourceKindsV1.RecordedManualReceipt,
-                    StringComparison.Ordinal))
+            if (!NormalJournalSourceKindsV1.IsSupported(fields[1]))
             {
                 Reject(issues, MappingsFile, rowNumber, "sourceKind",
                     ApprovedAccountingSourcePackageCodesV1.SourceKindUnknown);

@@ -60,6 +60,8 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseGoodsReceiptBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseSupplierReturnStore, PurchaseSupplierReturnStore>();
         services.AddScoped<IPurchaseSupplierReturnServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseReceiptReversalServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseReceiptReversalBatchServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseAcceptanceSourceV1, PurchaseAcceptanceSource>();
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
@@ -118,7 +120,9 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetRequiredService<IPurchaseSupplierReturnStore>(),
         serviceProvider.GetService<IPurchaseSupplierReturnTransactionV1>(),
         serviceProvider.GetService<IPurchaseSupplierReturnInvoiceCostReadPortV1>(),
-        serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>());
+        serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>(),
+        serviceProvider.GetService<IPurchaseReceiptReversalTransactionV1>(),
+        serviceProvider.GetService<IPurchaseReceiptReversalBatchTransactionV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

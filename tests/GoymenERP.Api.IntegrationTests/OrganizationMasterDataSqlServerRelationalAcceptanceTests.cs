@@ -168,7 +168,8 @@ public sealed class OrganizationMasterDataSqlServerRelationalAcceptanceTests
                     Assert.Equal(TestCompanyIds.CompanyA, audit.CompanyId);
                     Assert.Equal(SourceChannels.Web, audit.SourceChannel);
                     Assert.NotEmpty(audit.Reason);
-                    Assert.Contains(audit.PermissionCode, OrganizationPermissionManifestV1.Names);
+                    Assert.Equal("User", audit.ActorType);
+                    Assert.Contains(Assert.IsType<string>(audit.PermissionCode), OrganizationPermissionManifestV1.Names);
                 });
                 Assert.Equal(
                     ["organization.location.created.v1", "organization.location.updated.v1", "organization.site.created.v1",

@@ -61,9 +61,9 @@ public sealed class ProductionCostRoundingCalculatorTests
         IReadOnlyList<ProductionScrapCostLabelInput> labels) =>
         ProductionCostRoundingCalculatorV1.Round(new ProductionScrapCostDistributionInput(cost, labels));
 
-    // 1000 kg x 40 TL, scrap in cost, 900 kg good and 100 kg weighed scrap: 40000 / 900 = 44.444... TL per kg.
+    // Synthetic rounding case: scrap 100 kg x 9.9999 = 999.99 TL; 39000.01 / 900 TL per product kg.
     private static ProductionReceiptCostInput ThirdsCost() =>
-        Cost(good: 900m, second: 0m, scrap: ScrapCostSettingStatus.On, weighing: Weighing(100m, Price(10m)));
+        Cost(good: 900m, second: 0m, scrap: ScrapCostSettingStatus.On, weighing: Weighing(100m, Price(9.9999m)));
 
     [Fact]
     public void Golden_scrap_out_of_cost_records_the_kg_cost_at_four_decimals_and_the_tl_at_two()
@@ -134,14 +134,14 @@ public sealed class ProductionCostRoundingCalculatorTests
     [Fact]
     public void The_remainder_goes_to_the_good_product_line_so_the_tl_in_equals_the_tl_distributed()
     {
-        // URT-D80: three 300 kg labels of 13333.333... TL record 13333.33 each; the 0.01 TL left goes on the good
+        // URT-D80: three 300 kg labels of 13000.00333... TL record 13000.00 each; the 0.01 TL left goes on the good
         // product line (equal kg: the smallest label number, here GoodA's), whatever order the labels are given in.
         var result = Round(ThirdsCost(),
             [Label(GoodB, OutputClass.GoodProduct, 300m), Label(GoodC, OutputClass.GoodProduct, 300m),
                 Label(GoodA, OutputClass.GoodProduct, 300m)]);
 
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
-        Assert.Equal(44.4444m, result.RecordedCostPerKg);
+        Assert.Equal(43.3333m, result.RecordedCostPerKg);
         Assert.Equal(40000m, result.InputTotalTl);
         Assert.Equal(0m, result.RecordedWeighedScrapExpenseTl);
         Assert.Equal(0.01m, result.RemainderTl);
@@ -149,13 +149,13 @@ public sealed class ProductionCostRoundingCalculatorTests
         Assert.Equal(40000m, result.DistributedTotalTl);
         Assert.Equal(result.InputTotalTl, result.DistributedTotalTl);
         Assert.Collection(result.Lines,
-            line => AssertLine(line, GoodA, OutputClass.GoodProduct, 44.4444m, 13333.34m, 0.01m),
-            line => AssertLine(line, GoodB, OutputClass.GoodProduct, 44.4444m, 13333.33m, 0m),
-            line => AssertLine(line, GoodC, OutputClass.GoodProduct, 44.4444m, 13333.33m, 0m),
+            line => AssertLine(line, GoodA, OutputClass.GoodProduct, 43.3333m, 13000.01m, 0.01m),
+            line => AssertLine(line, GoodB, OutputClass.GoodProduct, 43.3333m, 13000m, 0m),
+            line => AssertLine(line, GoodC, OutputClass.GoodProduct, 43.3333m, 13000m, 0m),
             line =>
             {
                 Assert.Equal(ScrapA, line.OutputLabelId);
-                Assert.Null(line.RecordedAmountTl);
+                Assert.Equal(999.99m, line.RecordedAmountTl);
                 Assert.Null(line.RecordedSeparateScrapExpenseTl);
                 Assert.Equal(0m, line.RemainderTl);
             });
@@ -179,9 +179,9 @@ public sealed class ProductionCostRoundingCalculatorTests
         Assert.Equal(GoodB, forward.RemainderLabelId);
         Assert.Equal(0.01m, forward.RemainderTl);
         Assert.Collection(forward.Lines,
-            line => AssertLine(line, GoodA, OutputClass.GoodProduct, 44.4444m, 13333.33m, 0m),
-            line => AssertLine(line, GoodB, OutputClass.GoodProduct, 44.4444m, 13333.34m, 0.01m),
-            line => AssertLine(line, GoodC, OutputClass.GoodProduct, 44.4444m, 13333.33m, 0m),
+            line => AssertLine(line, GoodA, OutputClass.GoodProduct, 43.3333m, 13000m, 0m),
+            line => AssertLine(line, GoodB, OutputClass.GoodProduct, 43.3333m, 13000.01m, 0.01m),
+            line => AssertLine(line, GoodC, OutputClass.GoodProduct, 43.3333m, 13000m, 0m),
             line => Assert.Equal(ScrapA, line.OutputLabelId));
         Assert.Equal(40000m, forward.DistributedTotalTl);
         Assert.Equal(forward.Lines, reversed.Lines);
@@ -191,7 +191,7 @@ public sealed class ProductionCostRoundingCalculatorTests
     [Fact]
     public void Of_several_good_product_lines_the_one_with_the_most_kg_carries_the_remainder()
     {
-        // 100 + 700 + 100 kg: 4444.44 + 31111.11 + 4444.44 = 39999.99, so 0.01 TL goes on the 700 kg line, whose label
+        // 100 + 700 + 100 kg: 4333.33 + 30333.34 + 4333.33 = 39000.00, so 0.01 TL goes on the 700 kg line, whose label
         // number is not the smallest.
         IReadOnlyList<ProductionScrapCostLabelInput> labels =
         [
@@ -204,8 +204,8 @@ public sealed class ProductionCostRoundingCalculatorTests
 
         Assert.Equal(GoodB, forward.RemainderLabelId);
         Assert.Equal(0.01m, forward.RemainderTl);
-        Assert.Equal(31111.12m, forward.Lines[1].RecordedAmountTl);
-        Assert.Equal(4444.44m, forward.Lines[0].RecordedAmountTl);
+        Assert.Equal(30333.35m, forward.Lines[1].RecordedAmountTl);
+        Assert.Equal(4333.33m, forward.Lines[0].RecordedAmountTl);
         Assert.Equal(40000m, forward.DistributedTotalTl);
         Assert.Equal(forward.Lines, reversed.Lines);
         Assert.Equal(forward.RemainderLabelId, reversed.RemainderLabelId);
@@ -216,7 +216,7 @@ public sealed class ProductionCostRoundingCalculatorTests
     {
         // URT-D80: "Emirde iyi urun etiketi yoksa maliyet 'bekliyor' kalir"; an order of second quality only has none.
         var result = Round(
-            Cost(good: 0m, second: 900m, scrap: ScrapCostSettingStatus.On, weighing: Weighing(100m, Price(10m))),
+            Cost(good: 0m, second: 900m, scrap: ScrapCostSettingStatus.On, weighing: Weighing(100m, Price(9.9999m))),
             [Label(SecondA, OutputClass.SecondQuality, 300m), Label(SecondB, OutputClass.SecondQuality, 300m),
                 Label(SecondC, OutputClass.SecondQuality, 300m)]);
 
@@ -227,7 +227,7 @@ public sealed class ProductionCostRoundingCalculatorTests
     [Fact]
     public void No_remainder_needs_no_good_product_line()
     {
-        // 900 kg x 40000 / 900 = 40000.00 exactly.
+        // 39000 TL goes to product and 1000 TL to scrap, with no remainder.
         var result = Round(
             Cost(good: 0m, second: 900m, scrap: ScrapCostSettingStatus.On, weighing: Weighing(100m, Price(10m))),
             [Label(SecondA, OutputClass.SecondQuality, 900m)]);
@@ -235,7 +235,7 @@ public sealed class ProductionCostRoundingCalculatorTests
         Assert.Equal(ProductionReceiptCostStatus.Value, result.Status);
         Assert.Equal(0m, result.RemainderTl);
         Assert.Null(result.RemainderLabelId);
-        Assert.Equal(40000m, result.Lines[0].RecordedAmountTl);
+        Assert.Equal(39000m, result.Lines[0].RecordedAmountTl);
         Assert.Equal(40000m, result.DistributedTotalTl);
     }
 
