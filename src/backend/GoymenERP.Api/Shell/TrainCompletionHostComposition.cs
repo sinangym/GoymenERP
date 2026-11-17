@@ -24,6 +24,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Outbox;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Work.Infrastructure;
 
 namespace GoymenERP.Api.Shell;
@@ -49,6 +50,7 @@ public static class TrainCompletionHostComposition
         services.AddInventoryPurchaseInvoiceCostsV1();
         services.AddScoped<IPurchaseSupplierReturnInvoiceCostReadPortV1, PurchaseSupplierReturnInvoiceCostReadPort>();
         services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();
+        services.AddScoped<ISalesFinalizedShipmentClaimReadPortV1, SalesFinalizedShipmentClaimReadPortV1>();
         services.AddScoped<IPurchasingPartyAccountPortV2>(provider =>
             (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());
         services.AddProductPurchaseUnitConversion(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
