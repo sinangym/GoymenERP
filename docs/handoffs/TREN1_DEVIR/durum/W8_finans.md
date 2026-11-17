@@ -55,4 +55,12 @@ Kararlar: URT-D67/D78/D79/D80 ve 17 Kasım tüketilen bölüm için ayrı SMM ö
 
 Mevcut dilimler üzerinde çalışma sürüyor. Kredi grupları araştırmasında resmî ERP belgeleri kaynak belge/plan/gerçek hareket ayrımını destekler; veri yokluğu sıfır sayılmaz. Kullanıcının son iki cevabı, para biriminin Settings profilindeki en küçük birim toleransını ve komisyon/masrafın kaynak belgede takside dahil ya da ayrı gösterilmesine uyulmasını kilitler. Yeni oran, hesap eşlemesi veya grant türetilmez.
 
+## FIN-SC47-KREDI — PARTIAL, kaynak öneri/onay ekranı
+
+- Dört grubun kaynak alanları, gerçek Cari şirket hesabı seçimi, Settings para adayları, banka planının CSV ile aktarımı ve elle kaynak satır girişi yazıldı. Masrafın takside dahil veya ayrı olduğu kullanıcı tarafından açıkça seçilir; seçili varsayılan yoktur. Tutar metni korunur, ekran hesaplama yapmaz.
+- Öneri, farklı yetkilinin onayı ve gerekçeli ret aynı backend sözleşmesini kullanır. Eski profili eksik kayıt başarı varsayılmaz. Bilinmeyen yazma sonucu formu kilitler; aynı oturum/şirket bağlamında sayfa yeniden açılınca aynı anahtar ve gövdeyle sorgulanır.
+- Para tutarı sayı olarak gelirse, kaynak profili başka gruba aitse veya şirket farklıysa yanıt reddedilir. Loading/empty/not-found/403/offline/503/malformed/conflict durumları ortak shell durumlarıdır. Kaynak testleri bu sınırlar, planın byte-değerli tutarları, self-approval ve remount sonrası aynı komut için yazıldı.
+- Finance shell sözleşmesi 1.14; `finance.credits.workspace` yolu `/finans/krediler`, öneri/onay kontrolleri mevcut kredi izinlerini ister. Yeni üç capability `ImplementationAvailable=false`; aktivasyon veya grant yapılmadı. Merkez React mount/menü/pin koordinatörde.
+- TypeScript app kaynak derlemesi exit 0. Shell kaynak testi güncellendi; .NET derleme slotu bekleniyor. Runtime Vitest/browser NOT_RUN. Kalan gerçek hareket, limit uyarısı ve fiş önerisi işleri nedeniyle FIN-SC47-KREDI hâlen PARTIAL.
+
 Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN.

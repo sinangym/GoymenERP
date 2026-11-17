@@ -13,6 +13,9 @@
  */
 
 export const FINANCE_CAPABILITY = {
+  creditsWorkspace: 'finance.credits.workspace',
+  creditsPropose: 'finance.credits.propose',
+  creditsApprove: 'finance.credits.approve',
   /** F-02 Tahsilat / Ödeme — the company's manual-receipt drafts. */
   receiptsList: 'finance.receipts.list',
   /** F-02 — a new manual-receipt draft (entered from a Cari account). */
@@ -91,6 +94,7 @@ export const FINANCE_CAPABILITY = {
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
 
 export const FINANCE_ROUTE = {
+  creditsWorkspace: '/finans/krediler',
   receiptsList: '/finans/tahsilatlar',
   // Static before the parameter route: `yeni` must never be read as a source id.
   receiptsDraft: '/finans/tahsilatlar/yeni',

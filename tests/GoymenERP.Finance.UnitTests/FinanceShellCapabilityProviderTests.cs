@@ -13,12 +13,13 @@ namespace GoymenERP.Finance.UnitTests;
 public sealed class FinanceShellCapabilityProviderTests
 {
     [Fact]
-    public void Every_declaration_is_published_after_the_flip()
+    public void Existing_declarations_remain_published_and_credit_source_work_stays_staged()
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(39, declarations.Count);
-        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
+        Assert.Equal(42, declarations.Count);
+        Assert.All(declarations, declaration => Assert.Equal(
+            !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
     [Fact]
@@ -28,9 +29,15 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.13", provider.ContractVersion);
+        Assert.Equal("1.14", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.credits.workspace", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead]),
+            ("finance.credits.propose", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsPropose]),
+            ("finance.credits.approve", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsApprove]),
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.DraftRead]),
             ("finance.receipts.draft", "finance.receipts.new", "/finans/tahsilatlar/yeni", "F-02-NEW", ShellCapabilityRoutePrecedence.Static,
@@ -259,7 +266,7 @@ public sealed class FinanceShellCapabilityProviderTests
                     control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
             }
         }
-        Assert.Equal(17, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(19, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
