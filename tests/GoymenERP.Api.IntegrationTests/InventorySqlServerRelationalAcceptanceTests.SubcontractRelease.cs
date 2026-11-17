@@ -98,8 +98,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var store = run.Store(CompanyA))
         { await store.Labels.SaveLabelAsync(label, Metadata(run)); await store.Movements.RecordMovementAsync(Movement(CompanyA, StockMovementKind.Receipt, In(position, 100m)), Metadata(run)); }
         // Explicit synthetic Sales/Manufacturing identity proof; all Inventory stores, physical movements, locks, Audit and SQL are real.
+        var productVersion = Assert.IsType<string>(label.ProductVersion);
         var source = new InventorySubcontractDeliverySourceV1(CompanyA, customer, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 3, 0,
-            label.ProductId, label.ProductVersion, Guid.NewGuid(), 1, Guid.NewGuid(), 1, Guid.NewGuid(), label.Id, "100",
+            label.ProductId, productVersion, Guid.NewGuid(), 1, Guid.NewGuid(), 1, Guid.NewGuid(), label.Id, "100",
             InventorySubcontractDeliveryContractV1.SourceVersion, 1, Guid.NewGuid());
         var allocationId = Guid.NewGuid(); var movementId = Guid.NewGuid();
         for (var step = 0; step < 2; step++)
