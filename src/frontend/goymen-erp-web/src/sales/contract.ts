@@ -674,6 +674,7 @@ export const SALES_PROBLEM_CODE = {
   // recorded; no workaround), an instalment whose TL split the server refused (422) — and the API's request-context refusals.
   invoiceMatchRequired: 'sales_invoice_match_required',
   invoiceMatchDifferenceOpen: 'sales_invoice_match_difference_open',
+  invoiceMatchSourceProofRequired: 'sales_invoice_match_source_proof_required',
   invoiceInstalmentFunctionalInvalid: 'sales_invoice_instalment_functional_invalid',
   companyContextInvalid: 'company_context_invalid',
   correlationMetadataInvalid: 'correlation_metadata_invalid',

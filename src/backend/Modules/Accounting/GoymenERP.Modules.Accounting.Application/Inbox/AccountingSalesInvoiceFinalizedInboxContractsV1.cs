@@ -59,8 +59,8 @@ public sealed record AccountingSalesInvoiceFinalizedLineV1(
 
 /// <summary>
 /// The keys of <c>sales.invoice.finalized.v1</c> Accounting reads. <see cref="InvoiceDate"/> (the official invoice date of KLN-D8)
-/// and <see cref="FinalizedBy"/> (the finalising user of KLN-D10/D17) are NOT in the SAT-S1 shape yet; they are requested from
-/// Sales as appended keys under these draft names. An event without them is not admitted (the period date and the source actor
+/// and <see cref="FinalizedBy"/> (the finalising user of KLN-D10/D17) are appended by the FIN-SC36 Sales producer from its
+/// frozen official match and finalisation. A legacy event without them is not admitted (the period date and the source actor
 /// are never guessed: <c>businessDate</c> is the draft's server day, not the invoice date).
 /// </summary>
 public sealed record AccountingSalesInvoiceFinalizedEventV1(

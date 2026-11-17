@@ -68,8 +68,10 @@ public sealed class SalesOfficialInvoiceReadCompositionTests
 
         var found = await port.LookupAsync(company, OfficialNo, ettn);
         Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, found.Outcome);
-        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, ettn, customer, currency, 1250.50m, 1250.50m, 208.42m, 0m),
+        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, ettn, customer, currency, 1250.50m, 1250.50m, 208.42m, 0m, new DateOnly(2026, 11, 14), found.Invoice!.SourceProof),
             found.Invoice);
+        Assert.True(found.Invoice.HasCompleteSourceProof(company));
+        Assert.Equal("manual", found.Invoice.SourceProof!.SourceKind);
 
         // A record still waiting for its second-person approval is not yet the official fact: the match answers 409, not 503.
         var pending = await port.LookupAsync(company, OfficialNo + "P", pendingEttn);
@@ -119,6 +121,7 @@ public sealed class SalesOfficialInvoiceReadCompositionTests
             Id = Guid.NewGuid(),
             CompanyId = company,
             OfficialNo = officialNo,
+            InvoiceDate = new DateOnly(2026, 11, 14),
             Ettn = ettn,
             CustomerPartyId = customer,
             CurrencyId = currency,

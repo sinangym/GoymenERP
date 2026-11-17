@@ -33,6 +33,59 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
     private static readonly Guid Product = Guid.Parse("6b1d2c3b-4a59-4687-9a0b-1c2d3e4f5c04");
 
     [SqlServerFact]
+    public async Task Official_match_source_proof_survives_reload_and_down_51982_refuses_without_losing_the_match()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<SqlOperation>(new AddSalesInvoiceOfficialSourceProof().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+        var approved = await ApprovedAsync(run, "source-proof", "SENTETIK-checker");
+        var proof = new SalesOfficialInvoiceSourceProofV1(CompanyA, Guid.NewGuid(), "approved-import", "batch-v3",
+            DateTimeOffset.UnixEpoch, null, null, null, Guid.NewGuid(), new string('a', 64), true);
+        var date = Day.AddDays(-3);
+        var foreignProof = System.Text.Json.JsonSerializer.Serialize(proof with { CompanyId = CompanyB },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var constraint = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync("""
+            INSERT INTO sales.InvoiceMatches
+              (CompanyId, InvoiceId, OfficialInvoiceNo, Ettn, InvoiceAmount, OfficialAmount, Difference, Tolerance,
+               MatchedBy, MatchedAtUtc, CorrelationId, OfficialInvoiceDate, OfficialSourceProofJson)
+            VALUES (@company,@invoice,'SENTETIK-PROOF',@ettn,1,1,0,0.05,'SENTETIK',SYSUTCDATETIME(),'SENTETIK','2026-11-04',@proof)
+            """, ("@company", CompanyA), ("@invoice", approved.Id), ("@ettn", OfficialEttn), ("@proof", foreignProof)));
+        Assert.Equal(547, constraint.Number);
+
+        var official = new SalesOfficialInvoiceFacts("GIB2026000000982", OfficialEttn, approved.Header.PartyId,
+            approved.Header.CurrencyId, approved.Totals.Payable.Amount, approved.PayableFunctionalAmount,
+            approved.VatFunctionalAmount, approved.WithholdingFunctionalAmount, date, proof);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Invoices.MatchInvoiceAsync(run.Envelope("source-proof-match", actor: "SENTETIK-matcher",
+                permission: SalesPermissionManifestV1.InvoicesMatch), Hash('a'), approved.Id,
+                (invoice, now) => invoice.RecordMatch(invoice.Version, "SENTETIK-matcher", official, 0.05m, false, null, now),
+                new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));
+        }
+        await using (var reloaded = run.Store(CompanyA))
+        {
+            var invoice = (await reloaded.Invoices.FindInvoiceAsync(approved.Id))!;
+            Assert.Equal(date, invoice.Match!.InvoiceDate);
+            Assert.Equal(proof, invoice.Match.SourceProof);
+            var final = invoice.Finalize(invoice.Version, "SENTETIK-finalizer", Guid.NewGuid, DateTimeOffset.UnixEpoch);
+            using var payload = System.Text.Json.JsonDocument.Parse(SalesStore.FinalizedPayload(invoice, final));
+            var accounting = System.Text.Json.JsonSerializer.Deserialize<GoymenERP.Modules.Accounting.Application.Inbox.AccountingSalesInvoiceFinalizedEventV1>(
+                payload.RootElement.GetRawText(), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+            Assert.Equal(date, accounting!.InvoiceDate);
+            Assert.Equal("SENTETIK-finalizer", accounting.FinalizedBy);
+            Assert.NotEqual(invoice.Header.BusinessDate, accounting.InvoiceDate);
+        }
+        await using (var foreign = run.Store(CompanyB))
+            Assert.Null(await foreign.Invoices.FindInvoiceAsync(approved.Id));
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51982, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceMatches WHERE InvoiceId=@id AND OfficialInvoiceDate IS NOT NULL AND OfficialSourceProofJson IS NOT NULL", ("@id", approved.Id)));
+        var immutable = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.InvoiceMatches SET OfficialInvoiceDate='2026-01-01' WHERE InvoiceId=@id", ("@id", approved.Id)));
+        Assert.Equal(51226, immutable.Number);
+    }
+
+    [SqlServerFact]
     public async Task An_invoice_draft_is_stored_in_one_save_replayed_by_its_key_and_its_shipment_stays_on_one_active_line_on_real_sql()
     {
         await using var run = await Run.StartAsync();
@@ -303,7 +356,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var approved = await ApprovedAsync(run, "m1", approver);
         var official = new SalesOfficialInvoiceFacts("GIB2026000000001", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.PayableFunctionalAmount + 0.05m, approved.PayableFunctionalAmount + 0.05m, approved.VatFunctionalAmount,
-            approved.WithholdingFunctionalAmount);
+            approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         var envelope = run.Envelope("m1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
 
         await using (var scope = run.Store(CompanyA))
@@ -360,7 +414,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var tolerance = new SalesInvoiceMatchTolerancePolicy().ToleranceAmount;
         var official = new SalesOfficialInvoiceFacts("GIB2026000000006", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.Totals.Payable.Amount, approved.PayableFunctionalAmount + 0.06m, approved.VatFunctionalAmount,
-            approved.WithholdingFunctionalAmount);
+            approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         var envelope = run.Envelope("m6-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
 
         await using (var scope = run.Store(CompanyA))
@@ -417,7 +472,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             var ettn = Guid.NewGuid().ToString("D");
             var official = new SalesOfficialInvoiceFacts(no, ettn, approved.Header.PartyId, approved.Header.CurrencyId,
                 approved.Totals.Payable.Amount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount + vatDelta,
-                approved.WithholdingFunctionalAmount + withholdingDelta);
+                approved.WithholdingFunctionalAmount + withholdingDelta, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
             var envelope = run.Envelope(prefix + "-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch);
 
             await using (var scope = run.Store(CompanyA))
@@ -490,7 +546,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Contains("CK_InvoiceMatches_Amounts", unapproved.Message, StringComparison.Ordinal);
 
         var official = new SalesOfficialInvoiceFacts("GIB2026000000245", OfficialEttn, compared.Header.PartyId, compared.Header.CurrencyId,
-            compared.Totals.Payable.Amount, compared.PayableFunctionalAmount, compared.VatFunctionalAmount, compared.WithholdingFunctionalAmount);
+            compared.Totals.Payable.Amount, compared.PayableFunctionalAmount, compared.VatFunctionalAmount, compared.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(compared.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("d3-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
@@ -518,7 +575,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var other = await ApprovedAsync(run, "m4", approver);
         var official = new SalesOfficialInvoiceFacts("GIB2026000000003", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
-            approved.WithholdingFunctionalAmount);
+            approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("m3-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
@@ -562,7 +620,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var unmatched = await ApprovedAsync(run, "f2", approver);
         var official = new SalesOfficialInvoiceFacts("GIB2026000000011", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
-            approved.WithholdingFunctionalAmount);
+            approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("f1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
@@ -641,7 +700,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
             ("@id", approved.Id)));
         var official = new SalesOfficialInvoiceFacts("GIB2026000000245", OfficialEttn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.Totals.Payable.Amount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
-            approved.WithholdingFunctionalAmount);
+            approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Invoices.MatchInvoiceAsync(run.Envelope("z1-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
@@ -762,7 +822,8 @@ public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
         var matcher = "SENTETIK-matcher-" + Guid.NewGuid().ToString("N");
         var official = new SalesOfficialInvoiceFacts(officialNo, ettn, approved.Header.PartyId, approved.Header.CurrencyId,
             approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
-            approved.WithholdingFunctionalAmount);
+            approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
         await using var scope = run.Store(CompanyA);
         await scope.Invoices.MatchInvoiceAsync(run.Envelope(prefix + "-match", actor: matcher, permission: SalesPermissionManifestV1.InvoicesMatch),
             Hash('1'), approved.Id, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),

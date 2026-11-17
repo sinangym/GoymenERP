@@ -66,6 +66,11 @@ public sealed partial class SalesInvoiceService
                 new SalesDraftTerminalRefusal(409, SalesInvoiceProblemCodesV1.MatchDifferenceOpen, [new("match", "difference_open")]),
                 cancellationToken);
         }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceMatchSourceProofRequired)
+        {
+            throw new SalesDraftServiceException(409, SalesInvoiceProblemCodesV1.MatchSourceProofRequired,
+                [new("match", "source_proof_required")]);
+        }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.InvoiceMatchRequired)
         {
             // Data, not a permanent refusal: the match can be recorded and the same key asks again.
