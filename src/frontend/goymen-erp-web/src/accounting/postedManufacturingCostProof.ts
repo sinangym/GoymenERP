@@ -8,7 +8,9 @@ export interface PostedManufacturingCostShare {
   readonly moneyProfileId: string; readonly moneyProfileVersion: number; readonly moneyScale: number; readonly profileAccountingDate: string
   readonly sourcePayloadSha256: string; readonly lineageSha256: string; readonly historySha256: string; readonly fingerprint: string
   readonly shipment: { readonly shipmentId: string; readonly movementId: string; readonly movementLineNumber: number
-    readonly productId: string; readonly physicalQuantityKg: number; readonly recordedAtUtc: string }
+    readonly productId: string; readonly physicalQuantityKg: number; readonly recordedAtUtc: string; readonly hasReturns?: boolean
+    readonly returns?: readonly { readonly returnId: string; readonly movementId: string; readonly movementLineNumber: number
+      readonly sourceIssueMovementId: string; readonly quantityKg: number; readonly recordedAtUtc: string }[] }
 }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const guid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value) && !/^0{8}(-0{4}){3}-0{12}$/.test(value)
@@ -16,6 +18,7 @@ const same = (value: unknown, expected: string) => guid(value) && value.toLowerC
 const hash = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
 const decimal = (value: unknown) => typeof value === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]{0,27}[1-9])?$/.test(value) && value !== '-0'
 const positiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0
+const utc = (value: unknown) => typeof value === 'string' && /(?:Z|\+00:00)$/.test(value) && Number.isFinite(Date.parse(value))
 const ratio = (value: unknown) => record(value) && typeof value.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value.numerator)
   && value.numerator !== '-0' && typeof value.denominator === 'string' && /^[1-9][0-9]*$/.test(value.denominator)
 
@@ -31,8 +34,21 @@ export function postedManufacturingCostShare(value: unknown, company: string, pr
     || !['sourcePayloadSha256', 'lineageSha256', 'historySha256', 'fingerprint'].every(key => hash(value[key]))
     || !record(value.shipment)) return false
   const shipment = value.shipment
+  if (!guid(shipment.movementId) || !positiveInteger(shipment.movementLineNumber)) return false
+  if (shipment.hasReturns === true) {
+    if (!Array.isArray(shipment.returns) || shipment.returns.length === 0 || shipment.returns.length > 65536) return false
+    const ids = new Set<string>(); const movements = new Set<string>([`${shipment.movementId}:${shipment.movementLineNumber}`.toLowerCase()])
+    for (const item of shipment.returns) {
+      if (!record(item) || !guid(item.returnId) || !guid(item.movementId) || !positiveInteger(item.movementLineNumber)
+        || !same(item.sourceIssueMovementId, shipment.movementId as string)
+        || typeof item.quantityKg !== 'number' || !Number.isFinite(item.quantityKg) || item.quantityKg <= 0 || !utc(item.recordedAtUtc)) return false
+      const identity = item.returnId.toLowerCase(); const movement = `${item.movementId}:${item.movementLineNumber}`.toLowerCase()
+      if (ids.has(identity) || movements.has(movement)) return false
+      ids.add(identity); movements.add(movement)
+    }
+  } else if ((shipment.hasReturns !== undefined && shipment.hasReturns !== false) || shipment.returns !== undefined) return false
   return ['shipmentId', 'movementId', 'productId'].every(key => guid(shipment[key]))
     && (product === undefined || same(shipment.productId, product)) && positiveInteger(shipment.movementLineNumber)
     && typeof shipment.physicalQuantityKg === 'number' && Number.isFinite(shipment.physicalQuantityKg) && shipment.physicalQuantityKg > 0
-    && typeof shipment.recordedAtUtc === 'string' && /(?:Z|\+00:00)$/.test(shipment.recordedAtUtc) && Number.isFinite(Date.parse(shipment.recordedAtUtc))
+    && utc(shipment.recordedAtUtc)
 }

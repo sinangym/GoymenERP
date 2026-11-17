@@ -1,10 +1,15 @@
 namespace GoymenERP.Modules.Accounting.Application;
 
+public sealed record ManufacturingAttributionReturnV1(Guid ReturnId, Guid MovementId, int MovementLineNumber,
+    Guid SourceIssueMovementId, decimal QuantityKg, DateTimeOffset RecordedAtUtc);
+
 /// <summary>Historical physical facts only. Monetary amounts come exclusively from the actual posted Accounting source.</summary>
 public sealed record ManufacturingAttributionShipmentV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
     Guid LoadingInstructionLineId, Guid ProductId, Guid LabelId, decimal PhysicalQuantityKg,
     AccountingInventoryCostRatioV1 RootShare, AccountingInventoryCostRatioV1 NetRootQuantityKg,
-    DateTimeOffset RecordedAtUtc, long? ProvenOriginalSequence, bool HasReturns, string PhysicalProofJson);
+    DateTimeOffset RecordedAtUtc, long? ProvenOriginalSequence, bool HasReturns, string PhysicalProofJson,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ManufacturingAttributionReturnV1>? Returns = null);
 public sealed record ManufacturingAttributionOutputV1(Guid OutputId, Guid ReceiptMovementId, Guid LabelId,
     decimal NetQuantityKg, AccountingInventoryCostRatioV1 ConsumedRootQuantityKg, string LineageSha256,
     IReadOnlyList<ManufacturingAttributionShipmentV1> Shipments);

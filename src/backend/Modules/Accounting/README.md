@@ -574,3 +574,11 @@ This remains PARTIAL: proved return/net-share handling, mixed original-known and
 manufacturing deltas on an originally known first posting need their remaining owner integration. Legacy evidence
 that cannot be proved remains unavailable. Attributed cancellation stays explicit pending its authority decision.
 The attribution rule does not decide the separate first-recognition or ordinary initial-SMM rounding questions.
+
+The return follow-up now carries actual return IDs, movement/issue linkage, physical kg and recorded timestamps from
+the immutable Inventory history. Exact `(gross - proved returns) * root share` must equal the captured net root kg;
+gross original shipment kg is never overwritten. Partial returns and fully returned zero shares participate in the
+existing posted source evidence without new stock/journal effects. A completely returned output can retain zero
+evidence when another output supplies the actual nonzero aggregate journal. Missing legacy return lists remain
+unavailable. A wholly zero source with no actual journal is not assigned a fabricated journal identity. The remaining
+mixed-component and later-delta integration above is still pending.

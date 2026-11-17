@@ -61,7 +61,9 @@ public sealed class ManufacturingAttributionLineageReaderV1(IInventoryManufactur
                 shipments.Add(new(shipment.ShipmentId, shipment.MovementId, shipment.MovementLineNumber,
                     shipment.LoadingInstructionLineId, shipment.ProductId, shipment.LabelId, shipment.QuantityKg,
                     Ratio(shipment.RootShare), Ratio(shipment.NetRootQuantityKg), shipment.RecordedAtUtc, sequence,
-                    shipment.Returns.Count != 0, JsonSerializer.Serialize(shipment, Json)));
+                    shipment.Returns.Count != 0, JsonSerializer.Serialize(shipment, Json), shipment.Returns.Count == 0 ? null
+                        : shipment.Returns.Select(item => new ManufacturingAttributionReturnV1(item.ReturnId, item.MovementId,
+                            item.MovementLineNumber, item.SourceIssueMovementId, item.QuantityKg, item.RecordedAtUtc)).ToArray()));
             }
             outputs.Add(new(output.OutputId, output.ReceiptMovementId, output.RootLabelId, output.NetQuantityKg,
                 consumed, output.Lineage.EvidenceSha256, shipments));
