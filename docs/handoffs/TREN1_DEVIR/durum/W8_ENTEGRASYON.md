@@ -309,3 +309,11 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Owner kaynakları `c5570b816` ve raporu `cdb3a521e` merkezi entegrasyona alındı. Yetki/şirket değişimi ve eski nullable snapshot/hash uyumluluğu owner test kaynaklarında korunur.
 - Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Standart tek süreç parametreleri ve her süreç öncesi bellek kapısı kullanıldı. Owner TSC exit 0; merkezi yeni frontend farkı için son birleşik TSC ayrıca alınacak.
 - Runtime birim/SQL/HTTP/Vitest/browser/CI ve merkezi pinler NOT_RUN. FIN-S13 bütünü için bu kayıt tek başına DONE/kabul değildir.
+
+
+## STK-SC36-a / SAT-D385/D404/D413 — gerçek geç alış faturası maliyet bağlantısı
+
+- Owner checkpoint `0501f9abd` merkezi entegrasyona alındı. `AddInventoryPurchaseInvoiceCostsV1()` gerçek Inventory store'unu scoped kaydeder; gerçek Purchasing finalized olayı Work manifestinde Inventory maliyet tüketicisine bağlanır. Inventory maliyet farkı olayı da kaynak bildirimine eklendi. Dispatcher/production ayarı değiştirilmedi.
+- Composition test kaynağı gerçek registry doğrulayıcısı, tüketici/source event eşleşmesi, gerçek scoped store türü ve dispatcher başlatılmamasını kontrol eder. Yeni tablo/migration/immutable guard kaynakları owner raporundadır; sessiz guard izin listesi eklenmedi.
+- Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve pin üretimi NOT_RUN.
+- İlk maliyet tanımasının kısmi stok/sevk payı ve parasal artık politikası için #1189 `6954342313` ve `6954297311` cevapları bekleniyor. Accounting gerçek SMM önerisi/eşleme kaynağı ilgili owner'da sürüyor. Dilim PARTIAL; bu bağlantı maliyet kabulü veya production aktivasyonu değildir.
