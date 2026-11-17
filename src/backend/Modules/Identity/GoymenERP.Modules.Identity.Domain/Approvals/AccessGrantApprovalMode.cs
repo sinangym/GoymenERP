@@ -13,4 +13,6 @@ public enum AccessGrantApprovalMode
     FounderDirect,
     /// <summary>KIM-D18: only the company-opened inbox under the company Admin lock.</summary>
     CompanyOpener,
+    /// <summary>KIM-D56: an explicitly authorized group actor selects the first company Admin; no second approval.</summary>
+    CompanySetupAuthority,
 }

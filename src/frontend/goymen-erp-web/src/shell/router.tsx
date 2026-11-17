@@ -9,6 +9,8 @@
 
 import { createBrowserRouter, type RouteObject } from 'react-router'
 import { AppShell } from './AppShell'
+import { CompanySetupPage } from '../organization/CompanySetupPage'
+import { COMPANY_SETUP_PATH } from '../organization/companySetupContract'
 import { ShellHome } from './ShellHome'
 import { CapabilityRoute } from './CapabilityRoute'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
@@ -239,6 +241,8 @@ export const shellRoutes: RouteObject[] = [
       },
     ],
   },
+  // KIM-D56: the server's group setup gate works before a company membership exists.
+  { path: COMPANY_SETUP_PATH, element: <CompanySetupPage /> },
 ]
 
 export const shellRouter = createBrowserRouter(shellRoutes)

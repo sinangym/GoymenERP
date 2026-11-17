@@ -82,8 +82,11 @@ public sealed class SettingsManufacturingToleranceProviderV1(
         var companyId = companyContext.CompanyId;
         ManufacturingTolerancePolicyRow[] versions;
         bool anyPublished;
+        IReadOnlyList<ApprovedManufacturingToleranceStartingValue> baseline;
+        var actor = currentUser.UserId;
         try
         {
+            baseline = (await ManufacturingProfileBaselineReads.TolerancesAsync(database, companyId, cancellationToken)).Values;
             versions = await database.ManufacturingTolerancePolicies.AsNoTracking()
                 .Where(x => x.Process == process)
                 .ToArrayAsync(cancellationToken);
@@ -95,7 +98,11 @@ public sealed class SettingsManufacturingToleranceProviderV1(
             throw new SettingsPrerequisiteException("settings_provider_unavailable");
         }
 
-        if (!anyPublished && !ApprovedManufacturingProfileCatalog.Serves(companyId))
+        if (!currentUser.IsAuthenticated || currentUser.UserId != actor || !companyContext.IsResolved
+            || companyContext.CompanyId != companyId || !currentUser.CanAccessCompany(companyId))
+            throw new SettingsPrerequisiteException("settings_access_denied");
+
+        if (!anyPublished && baseline.Count == 0)
         {
             throw new SettingsPrerequisiteException("settings_provider_unavailable");
         }
@@ -120,7 +127,7 @@ public sealed class SettingsManufacturingToleranceProviderV1(
         }
 
         // URT-D23: the reviewed version-0 starting value is live when no published version of the scope covers the date.
-        var catalog = ApprovedManufacturingProfileCatalog.ToleranceFor(companyId)
+        var catalog = baseline
             .Where(entry => entry.Process == process && entry.EffectiveFrom <= effectiveOn)
             .OrderByDescending(entry => entry.EffectiveFrom)
             .FirstOrDefault()

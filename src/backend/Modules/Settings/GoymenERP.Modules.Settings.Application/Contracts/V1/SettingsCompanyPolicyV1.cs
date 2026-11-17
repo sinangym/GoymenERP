@@ -31,11 +31,17 @@ public static class CompanyPolicyKeysV1
     /// <summary>SAT-D358: separate from the order discount group limits, no default.</summary>
     public const string SalesContractDiscountLimit = "sales.contract-discount-limit";
 
+    /// <summary>SAT-D305: fire cost is included unless an explicit company version disables it.</summary>
+    public const string ManufacturingIncludeScrapCost = "manufacturing.include-scrap-cost";
+    /// <summary>KLN-D114/D115: passivate in-app notifications after this many whole days; never delete.</summary>
+    public const string NotificationActiveDays = "work.notification-active-days";
     public const int MaximumLength = 64;
 
     public static IReadOnlyList<string> All { get; } =
     [
         SalesContractDiscountLimit,
+        ManufacturingIncludeScrapCost,
+        NotificationActiveDays,
         FinanceOpeningPeriod,
         ManufacturingDueDateBuffer,
         SalesSubcontractTaxDefault,
@@ -254,20 +260,4 @@ public interface ISettingsFinanceCreditAccountMappingProviderV1
 {
     Task<SettingsFinanceCreditAccountMappingV1> GetCreditAccountMappingAsync(Guid companyId,
         FinanceCreditAccountPurposeV1 purpose, CancellationToken cancellationToken = default);
-}
-
-/// <summary>A number series key (draft implementation; KIM-D53 fixes the number format and reset/gap behavior).</summary>
-public sealed record SettingsNumberSeriesKeyV1(string Value);
-
-public sealed record SettingsNumberSeriesNumberV1(Guid CompanyId, SettingsNumberSeriesKeyV1 SeriesKey, string Number);
-
-/// <summary>
-/// PANO row 64 draft contract only: KIM-D53 decided prefix + year + sequence, annual reset, no reuse of cancelled numbers
-/// and gap reporting. The durable series implementation is still pending; no provider is registered and a consumer must
-/// not assume a number exists.
-/// </summary>
-public interface ISettingsNumberSeriesProviderV1
-{
-    Task<SettingsNumberSeriesNumberV1> NextNumberAsync(Guid companyId, SettingsNumberSeriesKeyV1 seriesKey,
-        CancellationToken cancellationToken = default);
 }

@@ -27,12 +27,12 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
     public async Task<MoneyProfileViewV1> GetAsync(CancellationToken cancellationToken = default)
     {
         var company = RequireContextCompany();
+        var actor = currentUser.UserId!;
         await RequireAsync(company, cancellationToken);
         var today = SettingsBusinessDate.Today(timeProvider);
         var stored = await ReadAsync(() => database.MoneyProfileVersions.AsNoTracking().ToArrayAsync(cancellationToken));
         var markers = await ReadAsync(() => database.MoneyProfileBaselineTransfers.AsNoTracking().ToArrayAsync(cancellationToken));
-        var keys = ApprovedMoneyProfileCatalog.Approved.Entries.Where(entry => entry.CompanyId == company)
-            .SelectMany(entry => entry.Operations.Select(operation => (entry.CurrencyId, Operation: operation)))
+        var keys = MoneyProfileAuthoringCatalogV1.Targets(company)
             .Distinct().OrderBy(key => key.CurrencyId).ThenBy(key => key.Operation, StringComparer.Ordinal).ToArray();
         if (stored.Any(row => !keys.Contains((row.CurrencyId, row.Operation)))
             || markers.Any(marker => !stored.Any(row => row.CurrencyId == marker.CurrencyId && row.Operation == marker.Operation))
@@ -45,14 +45,14 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
             if (!isStored) rows = MoneyProfileReads.Baseline(company, key.CurrencyId, key.Operation);
             MoneyProfileReads.Validate(rows, company, key.CurrencyId, key.Operation);
             var timeline = MoneyProfileReads.Timeline(rows);
-            return new MoneyProfileSeriesViewV1(key.CurrencyId, rows[0].CurrencyCode, key.Operation,
+            return new MoneyProfileSeriesViewV1(key.CurrencyId, MoneyProfileAuthoringCatalogV1.CurrencyCode(key.CurrencyId)!, key.Operation,
                 Text(SalesPolicyTimelineV1.LatestVersion(timeline)), timeline.Select(entry => new MoneyProfileVersionViewV1(
                     entry.Value.ProfileId, Text(entry.Version), entry.Value.Scale, entry.Value.UnitPriceScale,
                     entry.Value.IsActive, entry.EffectiveFrom, entry.EffectiveThrough, SalesPolicyTimelineV1.State(entry, today),
                     entry.Value.SourceKind, entry.Value.DecisionReference, isStored ? entry.Value.RecordedBy : null,
                     isStored ? entry.Value.RecordedAtUtc : null, isStored ? entry.Value.Reason : null)).ToArray());
         }).ToArray();
-        await RequireStillAsync(company, cancellationToken);
+        await RequireStillAsync(company, actor, cancellationToken);
         return new MoneyProfileViewV1(company, today, profiles);
     }
 
@@ -62,8 +62,9 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
         ArgumentNullException.ThrowIfNull(request);
         ValidateMetadata(metadata);
         var company = RequireContextCompany();
+        var actor = metadata.ActorId;
         var scope = await RequireAsync(company, cancellationToken);
-        if (!TryParseVersion(request.ExpectedVersion, 1, out var expected) || request.CurrencyId is not { } currency
+        if (!TryParseVersion(request.ExpectedVersion, 0, out var expected) || request.CurrencyId is not { } currency
             || currency == Guid.Empty || string.IsNullOrWhiteSpace(request.Operation) || request.Operation.Length > 128
             || request.Scale is not { } scale || scale is < 0 or > 28 || request.UnitPriceScale is < 0 or > 28
             || request.IsActive is not { } active)
@@ -71,14 +72,15 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
         if (ReasonRefusal(request.Reason, out var reason) is { } invalid) return Unstored(invalid, metadata);
         var operation = request.Operation;
         var baseline = MoneyProfileReads.Baseline(company, currency, operation);
-        if (baseline.Length == 0) return Unstored(Answers.Problem(400, MoneyProfileProblemCodesV1.ProfileUnknown,
-            "Para profili tanımsız.", "Bu şirket, para birimi ve işlem için onaylı bir profil yok."), metadata);
+        if (!MoneyProfileAuthoringCatalogV1.Allows(company, currency, operation))
+            return Unstored(Answers.Problem(400, MoneyProfileProblemCodesV1.ProfileUnknown,
+                "Para profili tanımsız.", "Bu şirket, para birimi ve işlem için kayıtlı yönetim hedefi yok."), metadata);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new { ExpectedVersion = expected, CurrencyId = currency,
             Operation = operation, Scale = scale, request.UnitPriceScale, IsActive = active, Reason = reason, request.EffectiveFrom });
         if (await ReadAsync(() => FindExecutionAsync(RecordCommandName, keyHash, cancellationToken)) is { } replay)
         {
-            await RequireStillAsync(company, cancellationToken);
+            await RequireStillAsync(company, actor, cancellationToken);
             return Replay(replay, requestHash, metadata);
         }
         var rows = await ReadAsync(() => MoneyProfileReads.LoadAsync(database, currency, operation, cancellationToken));
@@ -92,13 +94,13 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
         var refusal = expected != latest ? Answers.VersionConflict() : from < today ? Answers.EffectiveFromPast() : null;
         if (refusal is not null)
         {
-            await RequireStillAsync(company, cancellationToken);
+            await RequireStillAsync(company, actor, cancellationToken);
             return await StoreRefusalAsync(RecordCommandName, refusal, keyHash, requestHash, metadata, cancellationToken);
         }
         var current = SalesPolicyTimelineV1.InForceOn(timeline, from)?.Value;
         if (current is not null && current.Scale == scale && current.UnitPriceScale == request.UnitPriceScale && current.IsActive == active)
         {
-            await RequireStillAsync(company, cancellationToken);
+            await RequireStillAsync(company, actor, cancellationToken);
             return await StoreRefusalAsync(RecordCommandName, Answers.NoContent(), keyHash, requestHash, metadata, cancellationToken);
         }
         if (SettingsBusinessDate.Today(timeProvider) != today) return Unstored(Answers.VersionConflict(), metadata);
@@ -113,7 +115,7 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
             }
         }
         var next = new MoneyProfileVersionRow { CompanyId = company, CurrencyId = currency, Operation = operation,
-            Version = checked(latest + 1), ProfileId = Guid.NewGuid(), CurrencyCode = baseline[^1].CurrencyCode,
+            Version = checked(latest + 1), ProfileId = Guid.NewGuid(), CurrencyCode = MoneyProfileAuthoringCatalogV1.CurrencyCode(currency)!,
             Scale = scale, UnitPriceScale = request.UnitPriceScale, IsActive = active, EffectiveFrom = from,
             SourceKind = SalesPolicySourceKindsV1.UserMaintained, RecordedAtUtc = timeProvider.GetUtcNow(),
             RecordedBy = metadata.ActorId, Reason = reason };
@@ -124,7 +126,7 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
                 next.IsActive, next.EffectiveFrom, PreviousScale = current?.Scale, PreviousUnitPriceScale = current?.UnitPriceScale,
                 PreviousIsActive = current?.IsActive, BaselineCopied = imported }, reason,
             "Para profili sürümü kaydedildi; gerekçe kayıt içeriğindedir", metadata);
-        await RequireStillAsync(company, cancellationToken);
+        await RequireStillAsync(company, actor, cancellationToken);
         return Done("record", metadata, subject, await SaveChangeAsync(RecordCommandName, Answers.NoContent(), keyHash,
             requestHash, metadata, Answers.VersionConflict(), cancellationToken));
     }
@@ -152,18 +154,22 @@ internal sealed class SettingsMoneyProfileAdministration(SettingsDbContext datab
     }
 
     /// <summary>The same measurement, fresh from the authority rows (a grant revoked meanwhile is seen).</summary>
-    private async Task RequireStillAsync(Guid companyId, CancellationToken cancellationToken)
+    private async Task RequireStillAsync(Guid companyId, string actor, CancellationToken cancellationToken)
     {
-        if (!currentUser.CanAccessCompany(companyId))
-        {
-            throw new UnauthorizedAccessException();
-        }
-
+        RequireSameActorCompany(companyId, actor);
         var scope = await revalidation.RevalidatePermissionScopeAsync(Permission, companyId, cancellationToken);
+        RequireSameActorCompany(companyId, actor);
         if (scope is not { IsGranted: true, IsCompanyWide: true })
         {
             throw new UnauthorizedAccessException();
         }
+    }
+
+    private void RequireSameActorCompany(Guid companyId, string actor)
+    {
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId || !currentUser.IsAuthenticated
+            || !string.Equals(currentUser.UserId, actor, StringComparison.Ordinal) || !currentUser.CanAccessCompany(companyId))
+            throw new UnauthorizedAccessException();
     }
 
     /// <summary>A read of the store; an unreadable store is <c>settings_provider_unavailable</c> (503), never a 500.</summary>

@@ -196,6 +196,7 @@ public sealed class FounderRecoveryCommandLineTests
     private sealed class NeverReadRecoveryConsole : IFounderRecoveryConsole
     {
         public bool IsInteractive => true;
+        public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration() => throw new InvalidOperationException();
 
         public string? ReadNewPassword() => throw new InvalidOperationException();
 

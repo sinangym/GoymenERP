@@ -32,7 +32,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// no-op. Rows are insert-only.</item>
 /// </list>
 /// </summary>
-internal sealed class SettingsCompanyPolicyAdministration(
+internal sealed partial class SettingsCompanyPolicyAdministration(
     SettingsDbContext database,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -289,9 +289,12 @@ internal sealed class SettingsCompanyPolicyAdministration(
         CancellationToken cancellationToken)
     {
         var companyId = RequireContextCompany();
+        var actor = currentUser.UserId;
         await RequireAsync(spec.Permission, companyId, cancellationToken);
+        if (RequireContextCompany() != companyId || currentUser.UserId != actor) throw new UnauthorizedAccessException();
         var rows = await ReadAsync(() => CompanyPolicyReads.LoadAsync(database, spec.Key, cancellationToken));
         await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+        if (RequireContextCompany() != companyId || currentUser.UserId != actor) throw new UnauthorizedAccessException();
         return (companyId, rows);
     }
 
@@ -332,7 +335,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
         });
         if (await FindExecutionAsync(spec, keyHash, cancellationToken) is { } existing)
         {
-            await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Done(spec, metadata, subject, Replay(existing, requestHash, metadata));
         }
 
@@ -340,21 +343,21 @@ internal sealed class SettingsCompanyPolicyAdministration(
         var latest = current?.Version ?? 0;
         if (latest != expectedVersion)
         {
-            await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Done(spec, metadata, subject,
                 await StoreRefusalAsync(spec, Answers.VersionConflict(), keyHash, requestHash, metadata, cancellationToken));
         }
 
         if (change.Check is not null && await change.Check(cancellationToken) is { } refusal)
         {
-            await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Done(spec, metadata, subject,
                 await StoreRefusalAsync(spec, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
 
         if (change.SameAsInForce(current))
         {
-            await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Done(spec, metadata, subject,
                 await StoreRefusalAsync(spec, Answers.NoContent(), keyHash, requestHash, metadata, cancellationToken));
         }
@@ -378,7 +381,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
             row.Version,
             Change = change.After(current),
         }, reason, metadata);
-        await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+        await RequireReplayStillAsync(spec, metadata, cancellationToken);
         return Done(spec, metadata, subject, await SaveChangeAsync(spec, Answers.NoContent(), keyHash, requestHash, metadata,
             Answers.VersionConflict(), cancellationToken));
     }
@@ -537,7 +540,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
         CancellationToken cancellationToken)
     {
         AddExecution(spec, answer, keyHash, requestHash, metadata);
-        if (spec.Key == CompanyPolicyKeysV1.SalesContractDiscountLimit)
+        if (UsesAuditOwner(spec))
             return await SaveContractChangeOwnedAsync(spec, answer, keyHash, requestHash, metadata, onConflict, cancellationToken);
         try
         {
@@ -568,12 +571,12 @@ internal sealed class SettingsCompanyPolicyAdministration(
         {
             // The owner clears the collector BEFORE Settings' legacy interceptor can attach Audit rows.
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
-            await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
+            await RequireReplayStillAsync(spec, metadata, cancellationToken);
             try { await database.SaveChangesAsync(cancellationToken); }
             catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
             { conflict = true; }
             if (conflict) await transaction.RollbackAsync(CancellationToken.None);
-            else await transaction.CommitAsync(cancellationToken);
+            else { await RequireReplayStillAsync(spec, metadata, cancellationToken); await transaction.CommitAsync(cancellationToken); }
         }
         if (!conflict) return new(answer, false, metadata.CorrelationId);
         database.ChangeTracker.Clear();
@@ -583,7 +586,7 @@ internal sealed class SettingsCompanyPolicyAdministration(
             await RequireReplayStillAsync(spec, metadata, cancellationToken);
             return Replay(winner, requestHash, metadata);
         }
-        await RequireStillAsync(spec.Permission, metadata.CompanyId, cancellationToken);
+        await RequireReplayStillAsync(spec, metadata, cancellationToken);
         return await StoreRefusalAsync(spec, onConflict, keyHash, requestHash, metadata, cancellationToken);
     }
 

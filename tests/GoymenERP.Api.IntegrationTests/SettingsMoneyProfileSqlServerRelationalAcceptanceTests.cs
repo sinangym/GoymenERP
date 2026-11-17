@@ -21,7 +21,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class SettingsMoneyProfileSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsMoneyProfileSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -150,6 +150,15 @@ public sealed class SettingsMoneyProfileSqlServerRelationalAcceptanceTests
             var database = new SettingsDbContext(new DbContextOptionsBuilder<SettingsDbContext>()
                 .UseSqlServer(factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SettingsDbContext.Schema)).Options, context);
             return new PortScope(database, new SettingsMoneyProfilePrerequisiteProvider(database, context, new FixedActor(company)));
+        }
+
+        public async Task<IReadOnlyList<MoneyCurrencyCandidateV1>> CandidatesAsync(Guid company, string operation)
+        {
+            var context = new CompanyContext(); context.Set(company);
+            await using var database = new SettingsDbContext(new DbContextOptionsBuilder<SettingsDbContext>()
+                .UseSqlServer(factory.DatabaseConnectionString).Options, context);
+            return await new SettingsMoneyCandidateReaderV2(database, context, new FixedActor(company), TimeProvider.System)
+                .GetMoneyCurrencyCandidatesAsync(operation);
         }
 
         public async Task<string> GrantAsync(string subject, Guid company, string permission)

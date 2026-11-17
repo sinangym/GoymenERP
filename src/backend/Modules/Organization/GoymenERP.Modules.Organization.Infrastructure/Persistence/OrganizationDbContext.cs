@@ -87,6 +87,7 @@ public sealed partial class OrganizationDbContext(
 
         ConfigureCompany(modelBuilder);
         ConfigureCompanySetup(modelBuilder);
+        ConfigureCompanyOpening(modelBuilder);
         ConfigureSite(modelBuilder);
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
@@ -486,10 +487,10 @@ public sealed partial class OrganizationDbContext(
 
         foreach (var entry in ChangeTracker.Entries<Company>())
         {
-            if (entry.State is EntityState.Added or EntityState.Deleted)
+            if (entry.State == EntityState.Deleted || entry.State == EntityState.Added && !IsAuthorizedPendingCompanyAddition(entry.Entity))
             {
                 throw new InvalidOperationException(
-                    "Şirket kaydı yalnız kurulum tohumlamasında oluşturulabilir ve silinemez.");
+                    "Company creation requires bootstrap or its explicit authorized opening transaction; deletion is forbidden.");
             }
 
             if (entry.State == EntityState.Modified

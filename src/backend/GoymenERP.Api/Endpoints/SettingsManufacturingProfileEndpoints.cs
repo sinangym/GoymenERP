@@ -25,7 +25,7 @@ namespace GoymenERP.Api.Endpoints;
 /// Commands: one Idempotency-Key (stored terminal answers replay with <c>Idempotency-Replayed</c>), the expected version as
 /// decimal text, a mandatory reason (≤ 500). Responses are private, no-store.
 /// </summary>
-public static class SettingsManufacturingProfileEndpoints
+public static partial class SettingsManufacturingProfileEndpoints
 {
     public const string ParameterProfilesPath = "/api/v1/settings/manufacturing-parameter-profiles";
     public const string ToleranceProfilesPath = "/api/v1/settings/manufacturing-tolerance-profiles";
@@ -183,6 +183,7 @@ public static class SettingsManufacturingProfileEndpoints
             ManufacturingToleranceProfileActionsV1.Publish, "PublishSettingsManufacturingToleranceProfileV1", publish: true,
             windowOverlap: true);
 
+        MapBaselineTransfers(endpoints);
         return endpoints;
     }
 

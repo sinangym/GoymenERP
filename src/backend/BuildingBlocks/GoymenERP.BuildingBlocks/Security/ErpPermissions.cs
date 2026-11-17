@@ -2,8 +2,11 @@ namespace GoymenERP.BuildingBlocks.Security;
 
 public static class ErpPermissions
 {
-    /// <summary>KIM-D21: Critical registration only. Company opening authority scope remains a decision gate; no grant.</summary>
+    /// <summary>KIM-D21/KIM-D56: Critical company-opening registration; group eligibility is explicit and human-owned, no grant.</summary>
     public const string OrganizationCompaniesOpen = "organization.companies.open";
+
+    /// <summary>KIM-D56: explicit group first-Admin selection; registered only, no grant or new Critical classification.</summary>
+    public const string IdentityCompanyFirstAdminAssign = "identity.company-setup.first-admin.assign";
 
     public const string OrganizationContextRead = "organization.context.read";
     public const string OrganizationSitesRead = "organization.sites.read";
@@ -1498,6 +1501,11 @@ public static class ErpPermissions
     public const string SettingsCollateralTypesManage = "settings.collateral-types.manage";
 
     public const string SettingsFinanceOpeningPeriodManage = "settings.finance-opening-period.manage";
+    /// <summary>SAT-D305 technical registry name only; real authorized manager grants remain human-owned.</summary>
+    public const string SettingsManufacturingScrapCostManage = "settings.manufacturing-scrap-cost.manage";
+    /// <summary>KLN-D114/D115: register notification passivation duration management, no grant or deletion authority.</summary>
+    public const string SettingsNotificationRetentionManage = "settings.notification-retention.manage";
+    public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
     /// KIM-S18 (KIM-D49/KIM-D51, API-98): read the company's purchasing reference lists (expense type, service type) and add,
@@ -1625,6 +1633,7 @@ public static class ErpPermissions
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
             OrganizationCompaniesOpen,
+            IdentityCompanyFirstAdminAssign,
             OrganizationContextRead,
             OrganizationSitesRead,
             OrganizationLocationsRead,
@@ -1858,6 +1867,9 @@ public static class ErpPermissions
             SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,
@@ -2133,6 +2145,9 @@ public static class ErpPermissions
             SettingsSalesContractDiscountLimitManage,
             SettingsCollateralTypesManage,
             SettingsFinanceOpeningPeriodManage,
+            SettingsManufacturingScrapCostManage,
+            SettingsNotificationRetentionManage,
+            SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
             SettingsExchangeRatesRead,

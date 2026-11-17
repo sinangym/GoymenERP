@@ -4,6 +4,13 @@ import { decodeManufacturingProfiles, decodeManufacturingProfileReceipt } from '
 import { MANUFACTURING_PROFILE_ID, manufacturingProfileFixture } from './manufacturingProfileFixtures'
 
 describe('URN-D6 manufacturing profile contract', () => {
+  it('requires an explicit baseline transfer state without assuming completion', () => {
+    const fixture = manufacturingProfileFixture()
+    expect(decodeManufacturingProfiles({ ...fixture, startingValuesTransferVersion: '1' }, COMPANY_A, 'parameters')?.startingValuesTransferVersion).toBe('1')
+    expect(decodeManufacturingProfiles({ ...fixture, startingValuesTransferVersion: undefined }, COMPANY_A, 'parameters')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...fixture, startingValuesTransferVersion: '2' }, COMPANY_A, 'parameters')).toBeNull()
+  })
+
   it('preserves exact value text, the state version and legacy approval history', () => {
     const fixture = manufacturingProfileFixture()
     const decoded = decodeManufacturingProfiles(fixture, COMPANY_A, 'parameters')!

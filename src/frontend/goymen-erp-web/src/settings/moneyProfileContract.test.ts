@@ -18,3 +18,13 @@ describe('F029-S3 money profile decoder', () => {
     expect(decodeMoneyProfiles({ ...fixture, profiles: [series, series] }, COMPANY_A)).toBeNull()
   })
 })
+
+describe('money profile initial authoring contract', () => {
+  it('accepts only version zero for an empty series and refuses missing history for an existing series', () => {
+    const fixture = moneyProfileFixture()
+    const empty = { ...fixture, profiles: [{ ...fixture.profiles[0], version: '0', versions: [] }] }
+    expect(decodeMoneyProfiles(empty, fixture.companyId)?.profiles[0].version).toBe('0')
+    expect(decodeMoneyProfiles({ ...empty, profiles: [{ ...empty.profiles[0], version: '1' }] }, fixture.companyId)).toBeNull()
+    expect(decodeMoneyProfiles({ ...fixture, profiles: [{ ...fixture.profiles[0], version: '0' }] }, fixture.companyId)).toBeNull()
+  })
+})

@@ -21,7 +21,7 @@ namespace GoymenERP.Api.Endpoints;
 /// Commands (<c>POST …/versions</c>, 204): one Idempotency-Key (stored terminal answers replay with
 /// <c>Idempotency-Replayed</c>), the expected version as decimal text, a mandatory reason (≤ 4000).
 /// </summary>
-public static class SettingsCompanyPolicyEndpoints
+public static partial class SettingsCompanyPolicyEndpoints
 {
     public const string CompanyPolicyPath = "/api/v1/settings/company-policies";
     private const string IdempotencyHeaderName = "Idempotency-Key";
@@ -197,6 +197,8 @@ public static class SettingsCompanyPolicyEndpoints
             .ProducesErpServiceUnavailable(CompanyPolicyProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 
+        MapOperationalPolicies(group);
+        MapDocumentNumberPolicies(group);
         return endpoints;
     }
 

@@ -31,6 +31,7 @@ public sealed partial class OrganizationDbContext
     }
     private void ApplyCompanySetupWriteGuards()
     {
+        ApplyCompanyOpeningWriteGuards();
         foreach (var entry in ChangeTracker.Entries<GoymenERP.Modules.Organization.Domain.Companies.Company>().Where(x => x.State == EntityState.Modified))
         {
             if (entry.Property(x => x.OpenedByUserId).IsModified)

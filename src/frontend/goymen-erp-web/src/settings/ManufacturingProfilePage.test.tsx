@@ -12,6 +12,35 @@ const read = '/settings/manufacturing-parameter-profiles'
 const receipt = { profileId: MANUFACTURING_PROFILE_ID, profileVersion: '1', stateVersion: '2', status: 'Published' }
 
 describe('KIM-S15 manufacturing profile single flow', () => {
+  it('transfers existing starting values only on explicit publish-authorized action and preserves retry identity', async () => {
+    let posted = 0
+    const fixture = manufacturingProfileFixture()
+    const starting = { ...fixture, profiles: fixture.profiles.map((profile) => ({ ...profile, source: 'Catalog', profileVersion: '0', stateVersion: '0', status: 'Published' })) }
+    const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.manufacturingParameters, CONTROL.parameters.publish], respond: (url, init) => {
+      if (url.endsWith(read)) return json(starting)
+      if (init?.method === 'POST' && url.endsWith('/starting-values-transfer')) {
+        posted += 1
+        return posted === 1 ? problem(503) : json({ ...receipt, profileVersion: '0', stateVersion: '1' }, 200, { 'Idempotency-Replayed': 'true' })
+      }
+      return undefined
+    } })
+    renderAt(path)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: T.transfer }))
+    expect(commands(calls)).toEqual([])
+    await user.type(screen.getByLabelText(T.reason), 'SENTETIK değerleri koru')
+    await user.click(screen.getByRole('button', { name: T.transfer }))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', T.unknown)
+    await user.click(screen.getByRole('button', { name: T.retry }))
+    expect(await screen.findByText(T.replay)).toBeTruthy()
+    const sent = commands(calls)
+    expect(sent).toHaveLength(2)
+    expect(sent[0].body).toEqual({ expectedVersion: '0', reason: 'SENTETIK değerleri koru' })
+    expect(sent[1].body).toEqual(sent[0].body)
+    expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+    expect(sent[0].headers['X-Company-Id']).toBe(COMPANY_A)
+  })
+
   it('shows the prepared profile without drawing writes for a read-only capability', async () => {
     const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.manufacturingParameters], respond: (url) => url.endsWith(read) ? json(manufacturingProfileFixture()) : undefined })
     renderAt(path)
