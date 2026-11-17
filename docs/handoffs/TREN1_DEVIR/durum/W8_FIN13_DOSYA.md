@@ -36,3 +36,17 @@ Dayanak: ALS-D7/D44, mevcut FIN-S13; biçimler için kullanıcı cevabının
   eşlemesi; mevcut fatura kayıt komutuna bağlama. Kaynakta olmayan resmî TL satır,
   taksit tutarı veya başlık masraf/yuvarlama dağılımı tahmin edilmez.
 - 174 paydası ve DONE sayısı değişmedi; bu kayıt tamamlanmış FIN-S13 iddiası değildir.
+
+## Kayıt transaction sınırı ve açık tutar kuralı
+
+- Gelen fatura kimliği/geçmişi/denetimi/attempt ve terminal ret yazımı kendi
+  transaction'ında tamamlanır. SQL Save sonrasında son yetki ölçümü reddederse
+  commit yapılmaz; aynı anahtar sonraki yetkili denemede kullanılabilir. Save
+  gerçekleştiğini aynı gerçek SQL transaction'ından gözleyip geri alma ve tekrar
+  denemeyi doğrulayan iki gerçek SQL fact kaynağı eklendi. Purchasing.UnitTests
+  ve Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0 aldı;
+  bu fact'ler çalıştırılmadı. Yeni migration veya para kuralı yoktur.
+- Dövizli dosyada TL satır tutarı eksikken başlık/satır yuvarlama artığı için
+  [6947890400](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947890400)
+  yanıt bekler. Sales veya kredi yuvarlama kararı Alış'a kendiliğinden uygulanmaz.
+  Tutar üretimi bu açık soruyla etkinleştirilmedi.
