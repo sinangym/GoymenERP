@@ -159,10 +159,11 @@ public sealed class CashTransferService(
             context.CorrelationId, []);
         AddCommand(context, keyHash, payloadHash, row.Id, result, now);
         Audit(context, metadata, row);
-        // FNS-D63 does not define the exchange posting mapping; this event publishes only the
-        // decided same-currency source, without synthesising an exchange difference or TL value.
+        // One actual fact. The exchange event retains both legs; no carrying value, P&L or journal is inferred.
         if (request.Preparation.Kind == CashTransferKind.SameCurrency)
             FinanceFinancialMovementOutboxV1.Transfer(dbContext, context, View(row));
+        else
+            FinanceFinancialMovementOutboxV1.Exchange(dbContext, context, View(row));
         if (await FenceAsync(context, action, cancellationToken) is { } beforeSave)
             return Refused(context, beforeSave);
         return await SaveAsync(context, action, keyHash, payloadHash, cancellationToken) ?? result;
@@ -633,7 +634,7 @@ public sealed class CashTransferService(
         new ProfileReference(row.TargetProfileId, row.TargetProfileVersion),
         row.RateText, row.OccurredOn, row.ValueOn, row.Reference, row.Description);
 
-    private static CashTransferView View(CashTransferRow row) => new CashTransferView(
+    internal static CashTransferView View(CashTransferRow row) => new CashTransferView(
         row.Id, row.CompanyId, Preparation(row), row.RecordedBy, row.RecordedAtUtc, row.TransferConfirmed,
         VersionText(row.Version), ReadExchange(row), FinanceDocumentNumbering.View(row));
 

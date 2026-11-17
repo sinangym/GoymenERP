@@ -44,6 +44,7 @@ export const OWNER_KIND = {
   salesOrder: 'sales.order',
   logisticsDispatchNote: 'logistics.dispatch-note',
   financeOfficialSalesInvoice: 'finance.official-sales-invoice',
+  financeCashExchange: 'finance.cash-exchange',
 } as const
 export type OwnerKind = (typeof OWNER_KIND)[keyof typeof OWNER_KIND]
 
