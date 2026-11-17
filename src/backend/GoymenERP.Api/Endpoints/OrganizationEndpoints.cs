@@ -465,6 +465,7 @@ public static partial class OrganizationEndpoints
 
         MapWorkCenterCalendar(group);
         MapCompanyTaxId(group);
+        MapCompanyOpening(group);
     }
 
     /// <summary>

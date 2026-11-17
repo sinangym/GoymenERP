@@ -36,8 +36,11 @@ public sealed class SettingsManufacturingParameterProviderV1(
         var companyId = companyContext.CompanyId;
         IReadOnlyList<ManufacturingParameterProfileCandidate> published;
         bool anyPublished;
+        IReadOnlyList<ApprovedManufacturingParameterProfileEntry> baseline;
+        var actor = currentUser.UserId;
         try
         {
+            baseline = (await ManufacturingProfileBaselineReads.ParametersAsync(database, companyId, cancellationToken)).Values;
             published = await PublishedAsync(process, cancellationToken);
             anyPublished = published.Count > 0 || await database.ManufacturingParameterProfiles.AsNoTracking()
                 .AnyAsync(row => row.Status == ManufacturingProfileStatusesV1.Published, cancellationToken);
@@ -47,12 +50,16 @@ public sealed class SettingsManufacturingParameterProviderV1(
             throw new SettingsPrerequisiteException("settings_provider_unavailable");
         }
 
-        if (!anyPublished && !ApprovedManufacturingProfileCatalog.Serves(companyId))
+        if (!currentUser.IsAuthenticated || currentUser.UserId != actor || !companyContext.IsResolved
+            || companyContext.CompanyId != companyId || !currentUser.CanAccessCompany(companyId))
+            throw new SettingsPrerequisiteException("settings_access_denied");
+
+        if (!anyPublished && baseline.Count == 0)
         {
             throw new SettingsPrerequisiteException("settings_provider_unavailable");
         }
 
-        var candidates = ApprovedManufacturingProfileCatalog.ParametersFor(companyId)
+        var candidates = baseline
             .Where(entry => entry.Process == process)
             .Select(ManufacturingParameterProfileCandidate.FromCatalog)
             .Concat(published)

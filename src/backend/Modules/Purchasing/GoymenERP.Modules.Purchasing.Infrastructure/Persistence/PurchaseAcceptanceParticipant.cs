@@ -211,7 +211,8 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             .OrderBy(row => row.OrderVersionAfter).ToListAsync(cancellationToken);
         var adjustmentRows = await _dbContext.ReceiptAdjustments.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
         var cancellationRows = await _dbContext.CancellationHistory.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows);
+        var batchRows = await _dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
+        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows);
         if (order.Version != validated.ExpectedPurchaseOrderVersion)
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.OrderVersionConflict, 409, "Sipariş sürümü değişti.");

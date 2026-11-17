@@ -44,7 +44,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.4";
+    public const string OwnerContractVersion = "1.5";
+
+    public const string CostDifferencePrepareCapabilityId = "accounting.manufacturing-cost-differences.prepare";
+    public const string CostDifferenceApproveCapabilityId = "accounting.manufacturing-cost-differences.approve";
+    public const string CostDifferencePrepareRoutePath = "/muhasebe/uretim-maliyet-farklari";
+    public const string CostDifferenceApproveRoutePath = "/muhasebe/uretim-maliyet-farki-onay";
 
     public const string PeriodListScreenId = "M-07";
     public const string PeriodProposeScreenId = "M-07-NEW";
@@ -172,6 +177,13 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             // (the staged-then-flip order), and its read name is registered, not granted.
             Declaration(AccountPlanCapabilityId, AccountPlanRouteId, AccountPlanRoutePath, AccountPlanScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountPlanPermissionNamesV1.Read], available: false),
+            // Source-complete routes stay staged until the train's final SQL/browser acceptance. No grants or production activation.
+            Declaration(CostDifferencePrepareCapabilityId, CostDifferencePrepareCapabilityId, CostDifferencePrepareRoutePath,
+                "M-01-COST-PREPARE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Propose, AccountingPermissionManifestV1.PeriodsRead, AccountPlanPermissionNamesV1.Read], available: false),
+            Declaration(CostDifferenceApproveCapabilityId, CostDifferenceApproveCapabilityId, CostDifferenceApproveRoutePath,
+                "M-01-COST-APPROVE", ShellCapabilityRoutePrecedence.Static,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
         ];
     }
 

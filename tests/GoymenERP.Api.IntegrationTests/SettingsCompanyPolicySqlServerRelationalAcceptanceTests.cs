@@ -21,7 +21,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class SettingsCompanyPolicySqlServerRelationalAcceptanceTests
+public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -136,6 +136,19 @@ public sealed class SettingsCompanyPolicySqlServerRelationalAcceptanceTests
             using var response = await client.SendAsync(Json(path, key, body));
             Assert.True(response.StatusCode == HttpStatusCode.NoContent, $"{response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
             Assert.Equal(replay, response.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        public NumberPortScope Numbers(Guid company, NumberAuthority? authority = null)
+        {
+            var scope = factory.Services.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<ICompanyContext>();
+            context.Set(company);
+            var database = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+            var value = new SettingsDocumentNumberSeriesV1(database, context, new FixedActor(company), authority ?? new NumberAuthority(),
+                factory.Services.GetRequiredService<IServiceScopeFactory>(),
+                scope.ServiceProvider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(),
+                scope.ServiceProvider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditTransactionWriterV1>(), TimeProvider.System);
+            return new NumberPortScope(scope, database, value);
         }
 
         public PortScope Port(Guid company)

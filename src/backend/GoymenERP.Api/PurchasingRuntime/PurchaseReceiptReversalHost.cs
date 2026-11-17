@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Data;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,7 +20,9 @@ namespace GoymenERP.Api.PurchasingRuntime;
 /// <summary>API-44 / F017-e: owners borrow one transaction. All retries end before the first owner write.</summary>
 internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext purchasing, IServiceProvider services,
     IOrganizationLocationStatusReaderV1 locations, TimeProvider clock,
-    PurchaseReceiptAdjustmentParticipantFactoryV1? ownerFactory = null) : IPurchaseReceiptReversalTransactionV1
+    PurchaseReceiptAdjustmentParticipantFactoryV1? ownerFactory = null,
+    PurchaseReceiptAdjustmentBatchParticipantFactoryV1? batchOwnerFactory = null) : IPurchaseReceiptReversalTransactionV1,
+    IPurchaseReceiptReversalBatchTransactionV1
 {
     public Task<PurchaseReceiptReversalResponseV1> ExecuteAsync(Guid companyId, PurchaseReceiptReversalWriteV1 write,
         PurchasingWriteEnvelope envelope, Func<CancellationToken, Task> freshAuthority,
@@ -53,7 +56,7 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
             for (var attempt = 0; attempt < PurchaseGoodsReceiptPrelock.MaximumPreparationAttempts; attempt++)
             {
                 await freshAuthority(cancellationToken);
-                await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
+                await using var transaction = await purchasing.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
                 var connection = purchasing.Database.GetDbConnection();
                 var borrowed = transaction.GetDbTransaction();
                 await using var purchase = await ownerFactory(connection, borrowed, companyId, cancellationToken);
@@ -95,10 +98,12 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     var next = write.Request.ReplacementReceipt;
                     if (next is not null && next.ExpectedProductVersion != target.ProductVersion)
                         throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.ProductVersionConflict);
+                    var notificationSnapshots = await CaptureRevivalNotificationsAsync(connection, borrowed, companyId, write.OrderId,
+                        [target], freshAuthority, cancellationToken);
                     var adjusted = await Checked(() => purchase.StageAsync(new(companyId, write.Request.AdjustmentId,
                         write.OrderId, write.AcceptanceId, write.Request.ExpectedPurchaseOrderVersion, write.Request.UndoQuantity,
                         write.ReplacementExpected, write.IsSupplierReturn, write.Request.Reason, write.Request.OccurredAtUtc,
-                        write.CommandName, requestHash, next?.AcceptanceId, next?.AcceptedQuantity), envelope,
+                        write.CommandName, requestHash, next?.AcceptanceId, next?.AcceptedQuantity, notificationSnapshots), envelope,
                         cancellationToken));
                     RequireResult(adjusted, companyId, write);
                     var actual = await Checked(() => purchase.ReadSupplyAsync(write.OrderId, target.GeneralLineId, cancellationToken))

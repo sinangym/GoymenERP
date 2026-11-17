@@ -14,7 +14,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
-    : IApprovedAccountingSourceCatalogStoreV1
+    : IApprovedAccountingSourceCatalogStoreV1, IApprovedNormalJournalSourceKindCatalogV1
 {
     private const int Prepared = (int)ApprovedAccountingSourceCatalogStatusV1.Prepared;
     private const int Active = (int)ApprovedAccountingSourceCatalogStatusV1.Active;
@@ -242,6 +242,17 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
             ownerProfileVersion,
             currencyId,
             cancellationToken);
+    }
+
+    public async Task<string?> ResolveKindAsync(Guid companyId, Guid sourceId, CancellationToken cancellationToken = default)
+    {
+        RequireCompany();
+        if (companyId != companyContext.CompanyId || sourceId == Guid.Empty) return null;
+        var row = await dbContext.ApprovedSourceCatalogs.AsNoTracking().SingleOrDefaultAsync(x => x.Status == Active, cancellationToken);
+        if (row is null) return null;
+        var kinds = Restore(row).Package.Bindings.Where(x => x.CompanyId == companyId && x.SourceId == sourceId)
+            .Select(x => x.SourceKind).Distinct(StringComparer.Ordinal).ToArray();
+        return kinds.Length == 1 && NormalJournalSourceKindsV1.IsSupported(kinds[0]) ? kinds[0] : null;
     }
 
     private ApprovedAccountingSourceCatalogRecordV1 Restore(ApprovedAccountingSourceCatalogRow row)

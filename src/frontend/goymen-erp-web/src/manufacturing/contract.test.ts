@@ -201,6 +201,13 @@ describe('factBody', () => {
     })
   })
 
+  it('keeps a legacy null return source absent and freezes an explicit source movement without substituting the fact id', () => {
+    const snapshot: FactSnapshot = { ...base, kind: 'input-returns', expectedParentLabelVersion: '8' }
+    expect(factBody(snapshot)).not.toHaveProperty('sourceIssueMovementId')
+    expect(factBody({ ...snapshot, sourceIssueMovementId: null })).not.toHaveProperty('sourceIssueMovementId')
+    expect(factBody({ ...snapshot, sourceIssueMovementId: ORDER })).toHaveProperty('sourceIssueMovementId', ORDER)
+  })
+
   it('keeps WIP on RecordFactRequestV1 without an Inventory movement', () => {
     expect(factBody({
       ...base,

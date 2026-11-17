@@ -64,7 +64,7 @@ public sealed partial class AuditEvent
             throw new InvalidOperationException("The stored global audit subject/schema is invalid.");
         var data = new GroupSharedAuditEventData(new(Id, new(productId, origin, AuthorityRevision), OccurredAtUtc,
             EventType, EntityType, EntityId, Operation, EntityVersionBefore, after, ActorType, ActorId,
-            PermissionCode, RoleCodesJson, BeforeJson, AfterJson, Reason, AiInvolvement, AiContextJson,
+            PermissionCode ?? throw new InvalidOperationException("A group Product audit requires its permission."), RoleCodesJson, BeforeJson, AfterJson, Reason, AiInvolvement, AiContextJson,
             SourceChannel, ClientIpAddress, UserAgent, CorrelationId, CausationId, IdempotencyKeyHash, Outcome, SchemaVersion), IntegrityHash);
         data.ValidateIntegrity();
         return data;

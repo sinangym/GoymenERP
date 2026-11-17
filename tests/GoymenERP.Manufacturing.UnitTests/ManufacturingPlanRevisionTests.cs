@@ -862,6 +862,10 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     private sealed class ParentRollPort(List<string> calls)
         : IInventoryParentRollValidationV1, IInventoryContextualParentRollReferencesV1
     {
+        public string PhysicalKg { get; set; } = "10000";
+        public string? UnblockedPhysicalKg { get; set; }
+        public string BlockedPhysicalKg { get; set; } = "0";
+
         public Exception? Exception { get; set; }
 
         public List<InventoryParentRollSelectionV1> Selections { get; } = [];
@@ -880,7 +884,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [],
+                PhysicalKg, UnblockedPhysicalKg ?? PhysicalKg, BlockedPhysicalKg, [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }
@@ -900,7 +905,8 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [],
+                PhysicalKg, UnblockedPhysicalKg ?? PhysicalKg, BlockedPhysicalKg, [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }

@@ -10,16 +10,16 @@ namespace GoymenERP.Modules.Logistics.Application;
 /// record that waits. It never moves stock and never approves or blocks the dispatch note itself: the "kantar farkı" stock entry
 /// at average cost and the D323 pending value belong to Inventory (separate slice); Sales reads <see cref="LogisticsWeighingDifferenceReadV1.SaleMayProceed"/> through
 /// <see cref="ILogisticsWeighingDifferenceReadPortV1"/>. The SAT-D332 order tolerance is a separate check and is not read here.
-/// No HTTP route yet: the central host owns route exposure.
+/// The central host exposes the versioned weighing-difference HTTP routes.
 /// </summary>
-public sealed class LogisticsWeighingDifferenceService(
+public sealed partial class LogisticsWeighingDifferenceService(
     ILogisticsWeighingDifferenceScopeV1 scopes,
     ILogisticsWeighingDifferenceStoreV1 store,
     LogisticsWeighingDifferenceBindingsV1 bindings,
     ILogisticsWeighingDifferencePolicyReadPortV1 policies,
     ILogisticsWeighingDifferenceStockReadPortV1 stock,
     ICorrelationContext correlation,
-    TimeProvider timeProvider) : ILogisticsWeighingDifferenceServiceV1
+    TimeProvider timeProvider, IDispatchKilogramDocumentReadPortV1? documents = null) : ILogisticsWeighingDifferenceServiceV1
 {
     public async Task<WeighingDifferenceResponseV1> RecordAsync(RecordWeighingDifferenceV1 request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -27,8 +27,12 @@ public sealed class LogisticsWeighingDifferenceService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
         if (request.RecordId == Guid.Empty || request.DispatchNoteId == Guid.Empty || request.Products is null
-            || request.Products.Count == 0 || request.Products.Count > WeighingDifferenceCalculator.MaximumLines
-            || request.Products.Any(item => item is null))
+            || request.Products.Count > WeighingDifferenceCalculator.MaximumLines || request.Products.Any(item => item is null)
+            || (request.FinalizedDocument is null ? request.Products.Count == 0 : request.Products.Count != 0)
+            || request.FinalizedDocument is { Lines: null }
+            || request.FinalizedDocument is { } external && (external.Lines.Count is < 1 or > WeighingDifferenceCalculator.MaximumLines
+                || external.Lines.Any(line => line is null) || external.ExpectedDocumentVersion < 1
+                || external.ExpectedDocumentSha256 is not { Length: 64 } || !external.ExpectedDocumentSha256.All(Uri.IsHexDigit)))
             throw Validation();
         var scope = await scopes.RequireAsync(bindings.RecordPermission, cancellationToken);
         var envelope = Envelope(scope, bindings.RecordPermission, metadata);
@@ -37,11 +41,17 @@ public sealed class LogisticsWeighingDifferenceService(
             var hash = LogisticsRequestHash.Compute(LogisticsWeighingDifferenceCommandsV1.Record, request.RecordId, request);
             var replay = await store.FindReplayAsync(envelope, LogisticsWeighingDifferenceCommandsV1.Record, hash,
                 cancellationToken);
-            if (replay is not null) return Response(replay);
+            if (replay is not null)
+            {
+                await RequireEvidenceAndAuthorityAsync(scope, replay.Record.DispatchNoteId, replay.Record.KilogramAllocation?.FinalizedDocument,
+                    bindings.RecordPermission, cancellationToken);
+                return Response(replay);
+            }
 
-            var source = await store.ReadSourceAsync(request.DispatchNoteId, cancellationToken)
-                ?? throw new LogisticsWeighingDifferenceServiceException(404,
-                    LogisticsWeighingDifferenceCodesV1.DispatchNoteNotFound);
+            var source = await store.ReadSourceAsync(request.DispatchNoteId, cancellationToken);
+            await scopes.RequireStillAsync(scope, bindings.RecordPermission, cancellationToken);
+            if (source is null) throw new LogisticsWeighingDifferenceServiceException(404,
+                LogisticsWeighingDifferenceCodesV1.DispatchNoteNotFound);
             if (!source.IsDraft)
                 throw new LogisticsWeighingDifferenceServiceException(409,
                     LogisticsWeighingDifferenceCodesV1.DispatchNoteNotDraft);
@@ -49,22 +59,31 @@ public sealed class LogisticsWeighingDifferenceService(
                 throw new LogisticsWeighingDifferenceServiceException(409, WeighingDifferenceRuleCodes.UnitNotKilogram);
 
             var productIds = source.Lines.Select(line => line.ProductId).Distinct().ToArray();
-            var policy = Policy(await policies.ReadAsync(scope.CompanyId, cancellationToken));
+            var policyRead = await policies.ReadAsync(scope.CompanyId, cancellationToken);
+            await scopes.RequireStillAsync(scope, bindings.RecordPermission, cancellationToken);
+            var policy = Policy(policyRead);
             var free = await stock.ReadAsync(scope.CompanyId, productIds, cancellationToken);
+            await scopes.RequireStillAsync(scope, bindings.RecordPermission, cancellationToken);
             var remaining = RemainingPhysical(free, productIds);
 
             var noteLines = source.Lines.Select(line => new WeighingDifferenceNoteLine(line.LineNo, line.ShipmentId,
                 line.ProductId, Quantity.Of(line.Quantity, QuantityUnit.Kilogram))).ToArray();
-            var measurements = request.Products.Select(item => new WeighingDifferenceProductMeasurement(item.ProductId,
+            // The issued document's quantities are authoritative; the browser does not sum or redistribute them.
+            var measuredProducts = request.FinalizedDocument is { } finalized
+                ? finalized.Lines.GroupBy(line => line.ProductId).Select(group => new WeighingDifferenceScaleEntryV1(group.Key, group.Sum(line => line.Kilograms))).ToArray()
+                : request.Products;
+            var measurements = measuredProducts.Select(item => new WeighingDifferenceProductMeasurement(item.ProductId,
                 Quantity.Of(item.ScaleKg, QuantityUnit.Kilogram),
                 remaining.TryGetValue(item.ProductId, out var physical) ? physical : Quantity.Zero(QuantityUnit.Kilogram)))
                 .ToArray();
             var evaluation = WeighingDifferenceCalculator.Evaluate(noteLines, measurements, policy);
+            var allocation = await PrepareKilogramsAsync(scope, source, evaluation, request.FinalizedDocument, cancellationToken);
             var record = WeighingDifferenceRecord.Create(scope.CompanyId, request.RecordId, source.DispatchNoteId,
                 source.InstructionId, evaluation, source.EnteredBy, source.EnteredByComplete, scope.ActorId,
-                timeProvider.GetUtcNow());
+                timeProvider.GetUtcNow(), allocation);
             var result = await store.StoreAsync(envelope, hash, record, source,
-                token => scopes.RequireStillAsync(scope, bindings.RecordPermission, token), cancellationToken);
+                token => RequireEvidenceAndAuthorityAsync(scope, record.DispatchNoteId, allocation.FinalizedDocument,
+                    bindings.RecordPermission, token), cancellationToken);
             return Response(result);
         }
         catch (WeighingDifferenceRuleException exception)
@@ -92,9 +111,11 @@ public sealed class LogisticsWeighingDifferenceService(
         try
         {
             var hash = LogisticsRequestHash.Compute(LogisticsWeighingDifferenceCommandsV1.Approve, recordId, request);
+            WeighingDifferenceRecord? changed = null;
             var result = await store.MutateAsync(envelope, hash, LogisticsWeighingDifferenceCommandsV1.Approve, recordId,
-                (record, now) => record.Approve(request.ExpectedVersion, scope.ActorId, now),
-                token => scopes.RequireStillAsync(scope, bindings.ApprovePermission, token), cancellationToken);
+                (record, now) => { record.Approve(request.ExpectedVersion, scope.ActorId, now); changed = record; },
+                token => RequireEvidenceAndAuthorityAsync(scope, changed?.DispatchNoteId ?? Guid.Empty,
+                    changed?.KilogramAllocation?.FinalizedDocument, bindings.ApprovePermission, token), cancellationToken);
             return Response(result);
         }
         catch (WeighingDifferenceRuleException exception)
@@ -115,11 +136,12 @@ public sealed class LogisticsWeighingDifferenceService(
         CancellationToken cancellationToken = default)
     {
         if (dispatchNoteId == Guid.Empty) throw Validation();
-        await scopes.RequireAsync(bindings.ReadPermission, cancellationToken);
+        var scope = await scopes.RequireAsync(bindings.ReadPermission, cancellationToken);
         try
         {
-            var record = await store.FindByDispatchNoteAsync(dispatchNoteId, cancellationToken)
-                ?? throw new LogisticsWeighingDifferenceServiceException(404, LogisticsWeighingDifferenceCodesV1.NotFound);
+            var record = await store.FindByDispatchNoteAsync(dispatchNoteId, cancellationToken);
+            await scopes.RequireStillAsync(scope, bindings.ReadPermission, cancellationToken);
+            if (record is null) throw new LogisticsWeighingDifferenceServiceException(404, LogisticsWeighingDifferenceCodesV1.NotFound);
             return View(record);
         }
         catch (LogisticsStoreException exception)
@@ -189,7 +211,7 @@ public sealed class LogisticsWeighingDifferenceService(
             [.. item.Products.Select(product => new WeighingDifferenceProductViewV1(product.ProductId, product.NoteKg.Value,
                 product.ScaleKg.Value, product.DifferenceKg, product.RemainingPhysicalKg.Value,
                 product.PhysicallyCoveredKg.Value, product.ExcessKg.Value, product.TargetLineNo))],
-            item.EnteredBy, item.EnteredByComplete, item.RecordedBy, item.RecordedAtUtc, item.ApprovedBy, item.ApprovedAtUtc);
+            item.EnteredBy, item.EnteredByComplete, item.RecordedBy, item.RecordedAtUtc, item.ApprovedBy, item.ApprovedAtUtc, item.KilogramAllocation);
     }
 
     private static LogisticsWeighingDifferenceServiceException Validation() =>

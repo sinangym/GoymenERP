@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
+public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
 {
     private const string Source = "sales";
     private const string Event = "sales.invoice.finalized.v1";

@@ -1,3 +1,4 @@
+import { samePaintSelection } from './paintSelectionContract'
 /**
  * `POST /api/v1/manufacturing/plans` transport.
  *
@@ -55,6 +56,7 @@ export interface SavePlanRequest {
   readonly slittingSpec?: SlittingSpecRequest | null
   /** M01.3: the authored ordered cut lines; omitted when the plan has none (never an empty or implicit clear). */
   readonly cutToLengthSpec?: CutToLengthSpecRequest
+  readonly processSpec?: PlanProcessSpecView
 }
 
 export interface SavePlanContext {
@@ -179,6 +181,7 @@ export function sameProcessSpec(stored: PlanProcessSpecView | null, sent: PlanPr
   if (sent === undefined || stored === null) return sent === undefined && stored === null
   return (
     PROCESS_SPEC_EXACT.every((key) => stored[key] === sent[key]) &&
+    samePaintSelection(stored.paintSelection, sent.paintSelection) &&
     PROCESS_SPEC_MEASURES.every((key) => {
       const left = stored[key]
       const right = sent[key]
@@ -205,7 +208,7 @@ function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, co
     sameTarget(plan, request) &&
     sameSlittingSpec(plan, request) &&
     // Exactly the sent cut lines (or none when none were sent): order, ids, sequences, canonical lengths and counts.
-    sameCutToLengthSpec(plan, request)
+    sameCutToLengthSpec(plan, request) && sameProcessSpec(plan.processSpec, request.processSpec)
   )
 }
 

@@ -32,8 +32,11 @@ internal sealed partial class IdentityAccessAssignmentService(
     ISecurityEventWriterV1 securityEvents,
     TimeProvider timeProvider,
     IOptions<IdentityBootstrapOptions> bootstrapOptions,
-    ILogger<IdentityAccessAssignmentService> logger)
-    : IIdentityAccessAssignmentService
+    ILogger<IdentityAccessAssignmentService> logger,
+    ILocalPasswordHasher? passwordHasher = null,
+    ILocalPasswordContextTermSource? passwordContext = null,
+    IOptions<LocalAccount.LocalAccountOptions>? localOptions = null)
+    : IIdentityAccessAssignmentService, IIdentityUserManagementServiceV1
 {
     public async Task<IdentityAccessCommandResultV1> AssignAsync(
         AssignIdentityRoleRequestV1 request,

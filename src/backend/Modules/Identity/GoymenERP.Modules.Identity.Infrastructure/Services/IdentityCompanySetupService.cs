@@ -22,12 +22,12 @@ using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Modules.Identity.Infrastructure.Services;
 
-/// <summary>ID-3b. Both first-Admin paths serialize with all existing access commands on the same company Admin lock.</summary>
+/// <summary>ID-3b. KIM-D56 explicit first-Admin selection shares the existing company Admin lock; opening events grant nothing.</summary>
 public sealed class IdentityCompanySetupService(IdentityDbContext database, ICompanyContext companyContext,
     ICurrentUser currentUser, ICompanyLifecycleReadPortV1 lifecycle, IOptions<IdentityBootstrapOptions> options,
-    IErpAuthorityRevalidationService revalidation, IAuditEventCollector auditEvents, IAuditTransactionWriterV1 auditWriter,
+    ICompanySetupGroupAuthorityV1 groupAuthority, IAuditEventCollector auditEvents, IAuditTransactionWriterV1 auditWriter,
     IRefusedAttemptRecorderV1 refusedAttempts, ISecurityEventWriterV1 securityEvents, TimeProvider timeProvider)
-    : IIdentityCompanySetupServiceV1, IWorkInboxConsumerV1
+    : IIdentityCompanySetupServiceV1, IIdentityFirstAdminCandidatesV1, IWorkInboxConsumerV1
 {
     public const string ConsumerName = "identity.company-opened";
     public const string CommandName = "identity.company.first-admin.assign.v1";
@@ -56,9 +56,8 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
 
     public async Task HandleAsync(WorkInboxEventV1 message, CancellationToken cancellationToken)
     {
-        var payload = Read(message, companyContext);
+        _ = Read(message, companyContext);
         var hash = Hash(message.PayloadJson);
-        IDisposable? openerProof = null;
         try
         {
             await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -72,39 +71,38 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                 await transaction.RollbackAsync(cancellationToken);
                 return;
             }
-            var role = await AdminRoleAsync(cancellationToken);
-            var now = timeProvider.GetUtcNow().ToUniversalTime();
-            var count = await IdentityAdminLock.CountOtherEffectiveHoldersAsync(database, message.CompanyId, role.Id, Guid.Empty, now, cancellationToken);
-            IdentityAccessCommandMetadataV1? grantMetadata = null;
-            if (count == 0)
-            {
-                var company = await lifecycle.ReadAsync(message.CompanyId, cancellationToken)
-                    ?? throw new InvalidOperationException("Company lifecycle unavailable.");
-                if (company.State != CompanyLifecycleStateV1.SetupPending) throw Poison("company_setup_not_pending");
-                // A temporarily inactive opener is retried/dead-lettered by Work; it never activates the company.
-                if (!await database.Users.AsNoTracking().AnyAsync(x => x.Id == payload.OpenedByUserId && x.IsActive, cancellationToken))
-                    throw new InvalidOperationException("Company opener is not active.");
-                var metadata = new IdentityAccessCommandMetadataV1(message.CompanyId, payload.OpenedByUserId.ToString("D"),
-                    message.CorrelationId, message.EventId.ToString("D"), "System", null, null, message.EventId.ToString("D"));
-                grantMetadata = metadata;
-                openerProof = database.BeginCompanyOpenerWrite(message.CompanyId, payload.OpenedByUserId, role.Id);
-                await StageAssignmentAsync(payload.OpenedByUserId, payload.OpenedByUserId, role.Id, role.Code,
-                    AccessGrantApprovalMode.CompanyOpener, "Şirket açılışında ilk Admin ataması.", metadata, now, cancellationToken);
-            }
-            database.CompanySetupInboxReceipts.Add(new(message.CompanyId, message.EventId, hash, now));
+            // KIM-D56 supersedes the automatic opener grant. Retain the original event and dedup history,
+            // including late/repeated pre-change events, without creating any request, assignment or activation event.
+            database.CompanySetupInboxReceipts.Add(new(message.CompanyId, message.EventId, hash,
+                timeProvider.GetUtcNow().ToUniversalTime()));
             await database.SaveChangesAsync(cancellationToken);
-            await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
-            if (grantMetadata is not null) await WriteSecurityEventAsync(grantMetadata, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
-        finally { openerProof?.Dispose(); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); }
+        finally { database.ChangeTracker.Clear(); auditWriter.DiscardPending(); }
+    }
+
+    public async Task<IReadOnlyList<FirstCompanyAdminCandidateV1>> ReadCandidatesAsync(string? search,
+        CancellationToken cancellationToken = default)
+    {
+        var authority = await RequireGroupAsync(null, cancellationToken);
+        var query = database.Users.AsNoTracking().Where(user => user.IsActive);
+        var term = search?.Trim();
+        if (term?.Length > 100) throw new ArgumentException("Candidate search is too long.");
+        if (!string.IsNullOrEmpty(term)) query = query.Where(user => user.DisplayName.Contains(term));
+        var rows = await query.OrderBy(user => user.DisplayName).ThenBy(user => user.Id).Take(100)
+            .Select(user => new FirstCompanyAdminCandidateV1(user.Id, user.DisplayName)).ToListAsync(cancellationToken);
+        await RequireStillAsync(authority, null, cancellationToken);
+        return rows;
     }
 
     public async Task<IdentityAccessCommandResultV1> AssignFirstAdminAsync(AssignFirstCompanyAdminV1 request,
         IdentityAccessCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
-        if (!companyContext.IsResolved || metadata.CompanyId != companyContext.CompanyId
-            || metadata.ActorId != currentUser.UserId || !await IsActiveFounderAsync(cancellationToken)) throw new UnauthorizedAccessException();
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+        var authority = await RequireGroupAsync(metadata.CompanyId, cancellationToken);
+        if (metadata.ActorId != currentUser.UserId) throw new UnauthorizedAccessException();
         if (string.IsNullOrWhiteSpace(metadata.IdempotencyKey) || metadata.IdempotencyKey.Length > 200
             || string.IsNullOrWhiteSpace(metadata.CorrelationId) || string.IsNullOrWhiteSpace(metadata.SourceChannel))
             throw new ArgumentException("Invalid first Admin metadata.");
@@ -121,24 +119,22 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
         var companyId = companyContext.CompanyId;
         var keyHash = Hash(metadata.IdempotencyKey);
         var requestHash = Hash(JsonSerializer.Serialize(request, Json));
+        IDisposable? selectionProof = null;
         try
         {
             await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
             if (!await IdentityAdminLock.TryAcquireAsync(database, companyId, cancellationToken)) return Result(Unavailable(), metadata);
-            if (!await IsActiveFounderAsync(cancellationToken)) throw new UnauthorizedAccessException();
+            await RequireStillAsync(authority, companyId, cancellationToken);
             var company = await lifecycle.ReadAsync(companyId, cancellationToken);
-            if (company is null) return Result(Unavailable(), metadata);
-            if (company.State != CompanyLifecycleStateV1.SetupPending)
-            {
-                // Once Active, the founder has exactly normal membership and permission, including on replay.
-                var scope = await revalidation.RevalidatePermissionScopeAsync(IdentityPermissionManifestV1.RolesManage, companyId, cancellationToken);
-                if (!currentUser.CanAccessCompany(companyId) || !scope.IsCompanyWide) throw new UnauthorizedAccessException();
-            }
+            await RequireStillAsync(authority, companyId, cancellationToken);
+            if (company is null || company.CompanyId != companyId || company.Version < 1) return Result(Unavailable(), metadata);
             var previous = await database.CommandExecutions.AsNoTracking().SingleOrDefaultAsync(x => x.CompanyId == companyId
                 && x.CommandName == CommandName && x.IdempotencyKeyHash == keyHash, cancellationToken);
+            await RequireStillAsync(authority, companyId, cancellationToken);
             if (previous is not null)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                await RequireStillAsync(authority, companyId, cancellationToken);
                 if (previous.ActorId != metadata.ActorId || previous.RequestHash != requestHash)
                 {
                     var conflict = Refusal(IdentityAccessProblemCodesV1.IdempotencyConflict, "İstek anahtarı başka içerikte kullanıldı.");
@@ -149,6 +145,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                     ?? throw new InvalidOperationException("First Admin replay is unreadable.");
                 if (answer.StatusCode != previous.HttpStatusCode || (answer.Code ?? "Succeeded") != previous.Outcome)
                     throw new InvalidOperationException("First Admin replay is inconsistent.");
+                await RequireStillAsync(authority, companyId, cancellationToken);
                 if (answer.StatusCode == 409) refusedAttempts.NoteReplayedRefusal(RefusalClass(answer));
                 return new(answer, true, previous.OriginalCorrelationId);
             }
@@ -165,10 +162,13 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                 terminal = Refusal(IdentityAccessProblemCodesV1.UserNotAssignable, "Hedef kullanıcı etkin değil.");
             else
             {
+                await RequireStillAsync(authority, companyId, cancellationToken);
+                selectionProof = database.BeginSelectedFirstAdminWrite(companyId, request.UserId, role.Id, authority);
                 var assignment = await StageAssignmentAsync(Guid.Parse(metadata.ActorId), request.UserId, role.Id, role.Code,
-                    AccessGrantApprovalMode.FounderDirect, request.Reason.Trim(), metadata, now, cancellationToken);
+                    AccessGrantApprovalMode.CompanySetupAuthority, request.Reason.Trim(), metadata, now, cancellationToken);
                 terminal = new(201, null, string.Empty, string.Empty, new(assignment.Id, "1", "Active", assignment.Id));
             }
+            await RequireStillAsync(authority, companyId, cancellationToken);
             if (terminal.StatusCode == 409) refusedAttempts.Record(Attempt(terminal, metadata, request.ExpectedCompanyVersion));
             database.CommandExecutions.Add(CommandExecution.Complete(new(Guid.NewGuid(), companyId, CommandName, keyHash,
                 requestHash, metadata.ActorId, terminal.Code ?? "Succeeded", terminal.StatusCode, JsonSerializer.Serialize(terminal, Json),
@@ -176,10 +176,31 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
             await database.SaveChangesAsync(cancellationToken);
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
             if (terminal.StatusCode == 201) await WriteSecurityEventAsync(metadata, now, cancellationToken);
+            await RequireStillAsync(authority, companyId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Result(terminal, metadata);
         }
-        finally { database.ChangeTracker.Clear(); auditWriter.DiscardPending(); }
+        finally { selectionProof?.Dispose(); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); }
+    }
+
+    private async Task<CompanySetupGroupAuthoritySnapshotV1> RequireGroupAsync(Guid? companyId, CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated || !Guid.TryParse(currentUser.UserId, out var actor) || actor == Guid.Empty
+            || companyId.HasValue && (!companyContext.IsResolved || companyContext.CompanyId != companyId.Value))
+            throw new UnauthorizedAccessException();
+        var snapshot = await groupAuthority.ReadAsync(CompanySetupGroupOperationV1.AssignFirstAdmin, cancellationToken);
+        if (!snapshot.IsGranted || snapshot.Operation != CompanySetupGroupOperationV1.AssignFirstAdmin
+            || snapshot.ActorUserId != actor || string.IsNullOrWhiteSpace(snapshot.Revision)
+            || !currentUser.IsAuthenticated || !Guid.TryParse(currentUser.UserId, out var afterActor) || afterActor != actor
+            || companyId.HasValue && (!companyContext.IsResolved || companyContext.CompanyId != companyId.Value))
+            throw new UnauthorizedAccessException();
+        return snapshot;
+    }
+    private async Task RequireStillAsync(CompanySetupGroupAuthoritySnapshotV1 original, Guid? companyId, CancellationToken cancellationToken)
+    {
+        var current = await RequireGroupAsync(companyId, cancellationToken);
+        if (current.ActorUserId != original.ActorUserId || current.Revision != original.Revision)
+            throw new UnauthorizedAccessException();
     }
 
     private async Task<(Guid Id, string Code)> AdminRoleAsync(CancellationToken cancellationToken)
@@ -199,8 +220,8 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
         var assignment = new RoleAssignment(Guid.NewGuid(), user, roleId, metadata.CompanyId, now, null, actor);
         assignment.AddScope(AccessScopeType.Company, metadata.CompanyId);
         var request = new AccessGrantRequest(Guid.NewGuid(), actor, user, roleId, metadata.CompanyId, true, now, now, null, reason);
-        if (mode == AccessGrantApprovalMode.CompanyOpener) request.ApproveAsCompanyOpener(actor, now, assignment.Id);
-        else request.ApproveAsFounder(actor, now, assignment.Id);
+        if (mode != AccessGrantApprovalMode.CompanySetupAuthority) throw new InvalidOperationException("Explicit group selection is required.");
+        request.ApproveAsCompanySetupAuthority(actor, now, assignment.Id);
         database.AccessGrantRequests.Add(request);
         database.RoleAssignments.Add(assignment);
         var payload = new IdentityCompanyFirstAdminAssignedV1(metadata.CompanyId, user, assignment.Id, actor, now);
@@ -219,7 +240,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
             (Type: "Identity.RoleAssignment", Id: assignment.Id, Event: "identity.role-assignment.granted.v1", Op: "Assign", Image: (object)new { assignment.Id, assignment.CompanyId, user, roleId, roleCode, assignment.ValidUntilUtc }) })
             auditEvents.Enqueue(new(metadata.CompanyId, item.Event, item.Type, item.Id.ToString("D"), item.Op, null,
                 item.Image is AccessGrantRequest ? request.Version : assignment.Version, AuditActorTypes.User, metadata.ActorId,
-                IdentityPermissionManifestV1.RolesManage, [], "{}", JsonSerializer.Serialize(item.Image, Json), reason,
+                ErpPermissions.IdentityCompanyFirstAdminAssign, [], "{}", JsonSerializer.Serialize(item.Image, Json), reason,
                 approval, AuditAiInvolvement.None, null, metadata.SourceChannel, metadata.ClientIpAddress,
                 metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         return assignment;
@@ -232,7 +253,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
             EventId = Guid.NewGuid(), OccurredAtUtc = now, ScopeKind = SecurityEventScopeKindsV1.Company,
             CompanyId = metadata.CompanyId, ActorType = SecurityEventActorTypesV1.User, ActorId = metadata.ActorId,
             EventType = SecurityEventTypesV1.PermissionChanged, Outcome = SecurityEventOutcomesV1.Allowed,
-            Severity = SecurityEventSeveritiesV1.High, PermissionCode = IdentityPermissionManifestV1.RolesManage,
+            Severity = SecurityEventSeveritiesV1.High, PermissionCode = ErpPermissions.IdentityCompanyFirstAdminAssign,
             CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, SourceChannel = metadata.SourceChannel,
         }, cancellationToken);
         if (!security.CallerMayContinue) throw new InvalidOperationException("First Admin security event unavailable.");
@@ -241,7 +262,7 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
     {
         CompanyId = metadata.CompanyId, CommandName = CommandName, Operation = "Assign", TargetType = "Organization.Company",
         TargetId = metadata.CompanyId.ToString("D"), ExpectedVersion = version, ActorType = AuditActorTypes.User,
-        ActorId = metadata.ActorId, PermissionCode = IdentityPermissionManifestV1.RolesManage, RoleCodes = [],
+        ActorId = metadata.ActorId, PermissionCode = ErpPermissions.IdentityCompanyFirstAdminAssign, RoleCodes = [],
         HttpStatus = answer.StatusCode, ProblemCode = answer.Code!, RefusalClass = RefusalClass(answer),
         CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, SourceChannel = metadata.SourceChannel,
         IdempotencyKey = metadata.IdempotencyKey,

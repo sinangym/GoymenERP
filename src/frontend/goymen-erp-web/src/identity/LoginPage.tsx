@@ -20,6 +20,7 @@ import { LOGIN_TEXT as T } from './identityText'
 import { submitLogin } from './loginApi'
 import type { LoginOutcome } from './loginContract'
 import styles from './login.module.css'
+import { TWO_FACTOR_TEXT } from './twoFactorText'
 
 /** Why the sign-in screen is shown: first visit (null), after a 401 on a live session, or after the user signed out. */
 export type LoginNotice = 'expired' | 'signed-out' | null
@@ -54,6 +55,7 @@ export function LoginPage({
   const passwordId = `login-password-${useId()}`
   const [userName, setUserName] = useState('')
   const [password, setPassword] = useState('')
+  const [factorCode, setFactorCode] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [problem, setProblem] = useState<{ readonly kind: LoginProblem; readonly attempt: number } | null>(null)
@@ -89,9 +91,10 @@ export function LoginPage({
     }
     setSubmitting(true)
     setProblem(null)
-    const outcome = await submitLogin({ userName, password })
+    const outcome = await submitLogin({ userName, password, ...(factorCode === '' ? {} : { totpCode: factorCode }) })
     if (!mountedRef.current) return
     setPassword('')
+    setFactorCode('')
     if (outcome.kind === 'signed-in') {
       onSignedIn()
       return
@@ -177,6 +180,7 @@ export function LoginPage({
               </div>
             )}
           </Field>
+          <Field label={TWO_FACTOR_TEXT.loginCode}>{(control) => <input {...control} type="text" autoComplete="one-time-code" autoCapitalize="none" maxLength={64} value={factorCode} disabled={submitting} onChange={(event) => setFactorCode(event.target.value)} />}</Field>
           <Button type="submit" variant="primary" disabled={submitting}>
             {submitting ? T.submitting : T.submit}
           </Button>

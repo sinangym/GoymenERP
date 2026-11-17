@@ -41,13 +41,14 @@ function Profiles({ data, company, changed }: { readonly data: MoneyProfileView;
     {data.profiles.map((profile) => {
       const key = `${profile.currencyId}:${profile.operation}`
       return <section key={key} className={styles.section}><h2>{profile.currencyCode} · {moneyOperationLabel(profile.operation)}</h2>
+        {profile.versions.length === 0 && <p>{T.unconfigured}</p>}
         <table className={styles.table}><caption>{T.title} · {profile.currencyCode} · {moneyOperationLabel(profile.operation)}</caption><thead><tr>
           <th scope="col">{T.version}</th><th scope="col">{T.scale}</th><th scope="col">{T.priceScale}</th><th scope="col">{T.active}</th><MetaHeaders />
         </tr></thead><tbody>{profile.versions.map((entry) => <tr key={entry.version}>
           <td>{entry.version}</td><td>{entry.scale}</td><td>{entry.unitPriceScale ?? T.undefined}</td><td>{entry.isActive ? T.yes : T.no}</td><MetaCells entry={entry} />
         </tr>)}</tbody></table>
         {editing === key ? <Editor profile={profile} today={data.today} company={company} finish={(text) => { setEditing(null); setNotice(text); if (text !== null) changed() }} />
-          : <Button type="button" disabled={editing !== null} onClick={() => setEditing(key)}>{T.edit}</Button>}
+          : <Button type="button" disabled={editing !== null} onClick={() => setEditing(key)}>{profile.version === '0' ? T.create : T.edit}</Button>}
       </section>
     })}</section>
 }

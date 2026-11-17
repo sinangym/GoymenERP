@@ -14,7 +14,7 @@ export interface ManufacturingProfile {
   readonly publishedBy: string | null; readonly publishedAtUtc: string | null; readonly publicationReason: string | null
   readonly values: readonly ParameterValue[]; readonly maximumFirePercent: string | null; readonly massBalanceDifferenceTolerancePercent: string | null
 }
-export interface ManufacturingProfileList { readonly companyId: string; readonly businessDate: string; readonly keys: readonly ParameterKey[]; readonly profiles: readonly ManufacturingProfile[]; readonly startingValues: readonly ManufacturingProfile[] }
+export interface ManufacturingProfileList { readonly startingValuesTransferVersion: "0" | "1"; readonly companyId: string; readonly businessDate: string; readonly keys: readonly ParameterKey[]; readonly profiles: readonly ManufacturingProfile[]; readonly startingValues: readonly ManufacturingProfile[] }
 export interface ManufacturingProfileReceipt { readonly profileId: string; readonly profileVersion: string; readonly stateVersion: string; readonly status: 'Draft' | 'Approved' | 'Published' }
 export interface PrepareManufacturingProfileBody { readonly expectedVersion: string; readonly process: ManufacturingProcess; readonly workCenterId: string | null; readonly reason: string; readonly effectiveFrom: string; readonly effectiveThrough: string | null; readonly values?: readonly { readonly key: string; readonly value: string }[]; readonly maximumFirePercent?: string; readonly massBalanceDifferenceTolerancePercent?: string }
 export interface PublishManufacturingProfileBody { readonly expectedVersion: string; readonly reason: string }
@@ -60,7 +60,8 @@ function profile(raw: unknown, kind: ManufacturingProfileKind): ManufacturingPro
 }
 
 export function decodeManufacturingProfiles(raw: unknown, company: string, kind: ManufacturingProfileKind): ManufacturingProfileList | null {
-  if (!record(raw) || raw.companyId !== company || !isDateText(raw.businessDate) || !Array.isArray(raw.profiles)) return null
+  if (!record(raw) || raw.companyId !== company || !isDateText(raw.businessDate) || !Array.isArray(raw.profiles)
+    || (raw.startingValuesTransferVersion !== '0' && raw.startingValuesTransferVersion !== '1')) return null
   const keys: ParameterKey[] = []
   if (kind === 'parameters') {
     if (!Array.isArray(raw.keys)) return null
@@ -79,5 +80,5 @@ export function decodeManufacturingProfiles(raw: unknown, company: string, kind:
   }
   const profiles = decode(raw.profiles)
   const startingValues = kind === 'parameters' ? [] : decode(raw.startingValues as unknown[])
-  return profiles === null || startingValues === null ? null : { companyId: company, businessDate: raw.businessDate, keys, profiles, startingValues }
+  return profiles === null || startingValues === null ? null : { companyId: company, businessDate: raw.businessDate, keys, profiles, startingValues, startingValuesTransferVersion: raw.startingValuesTransferVersion }
 }

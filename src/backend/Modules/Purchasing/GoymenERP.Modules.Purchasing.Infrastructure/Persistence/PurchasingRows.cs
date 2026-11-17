@@ -74,6 +74,13 @@ internal sealed class PurchaseRequestLineRow : IPurchasingTenantRow
 /// </summary>
 internal sealed class PurchaseOrderRow : IPurchasingTenantRow
 {
+    /// <summary>ALS-D115: the append-only supplier/price history; null for an order never revised.</summary>
+    public string? SupplierRevisionHistoryJson { get; set; }
+    public string? CurrentPreparedBy { get; set; }
+    public string? DocumentNumber { get; set; }
+    public long? DocumentNumberFormatVersion { get; set; }
+    public long? DocumentNumberSequence { get; set; }
+    public DateTimeOffset? DocumentNumberCancelledAtUtc { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public Guid SupplierPartyId { get; set; }
@@ -154,6 +161,7 @@ internal sealed class PurchaseAttemptRow : IPurchasingTenantRow
     public Guid? OrderId { get; set; }
     /// <summary>The immutable API-44/API-60 result; success and refusal share this attempt's unique key.</summary>
     public Guid? ReceiptAdjustmentId { get; set; }
+    public Guid? ReceiptAdjustmentBatchId { get; set; }
     public string? RefusalJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

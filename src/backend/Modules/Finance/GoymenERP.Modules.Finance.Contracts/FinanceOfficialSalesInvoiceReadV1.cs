@@ -37,11 +37,16 @@ public sealed record FinanceOfficialSalesInvoiceFactsV1(
     string TaxBaseFunctionalAmount,
     string VatFunctionalAmount,
     string WithholdingFunctionalAmount,
-    Guid PdfDocumentId,
-    int PdfDocumentVersionNo,
-    string PdfSha256,
+    Guid? PdfDocumentId,
+    int? PdfDocumentVersionNo,
+    string? PdfSha256,
     string Version,
-    DateTimeOffset ApprovedAtUtc);
+    DateTimeOffset ApprovedAtUtc,
+    DateOnly? InvoiceDate = null,
+    string SourceKind = "manual",
+    Guid? SourceBatchId = null,
+    string? SourceChecksum = null,
+    bool HasPendingManual = false);
 
 public sealed record FinanceOfficialSalesInvoiceReadAnswerV1(
     FinanceOfficialSalesInvoiceReadOutcomeV1 Outcome,

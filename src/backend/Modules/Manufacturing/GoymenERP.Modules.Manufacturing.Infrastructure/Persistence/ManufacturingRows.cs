@@ -73,6 +73,7 @@ internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
     public decimal? TargetThicknessMm { get; set; }
     public string? PaintDescription { get; set; }
     public string? PaintColorCode { get; set; }
+    public string? PaintSelectionJson { get; set; }
 
     public Guid? ApprovedByUserId { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
@@ -229,6 +230,7 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow, IPlanProcessSpe
     public decimal? TargetThicknessMm { get; set; }
     public string? PaintDescription { get; set; }
     public string? PaintColorCode { get; set; }
+    public string? PaintSelectionJson { get; set; }
 
     public string Reason { get; set; } = string.Empty;
     public long PlanVersion { get; set; }
@@ -624,4 +626,5 @@ internal interface IPlanProcessSpecColumns
     decimal? TargetThicknessMm { get; set; }
     string? PaintDescription { get; set; }
     string? PaintColorCode { get; set; }
+    string? PaintSelectionJson { get; set; }
 }

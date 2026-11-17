@@ -51,6 +51,7 @@ public static class ProductionScrapCostDistributionCodesV1
 
     public const string AllocatedAtProductCost = "allocated-at-product-cost-per-kg";
     public const string AllocatedAtRawMaterialCost = "allocated-at-net-raw-material-cost-per-kg";
+    public const string AllocatedAtMonthlyScrapPrice = "allocated-at-weighing-month-scrap-price";
 }
 
 /// <summary>
@@ -278,9 +279,15 @@ public static class ProductionScrapCostDistributionCalculatorV1
             decimal? expense = scrapOut
                 ? weighing.Price.TlPerKg is { } price ? weighing.Mass.Value * price : 0m
                 : null;
+            // URT-D75 (3) supersedes the earlier URT-D8 unavailable label price when scrap is included in cost.
+            // The same already-validated weighing-month value taken off the product belongs to the scrap label;
+            // otherwise the rounding remainder would incorrectly load the entire scrap value back onto good product.
+            var stockUnit = !scrapOut ? weighing.Price.TlPerKg : null;
+            var stockAmount = !scrapOut ? weighing.Mass.Value * (stockUnit ?? 0m) : (decimal?)null;
             lines.Add(new ProductionScrapCostDistributionLine(weighing.ScrapOutputId, OutputClass.Scrap,
-                weighing.Mass.Value, null, null, expense, null,
-                ProductionScrapCostDistributionCodesV1.ScrapLabelCostNotDecided));
+                weighing.Mass.Value, stockUnit, stockAmount, expense,
+                !scrapOut ? ProductionScrapCostDistributionCodesV1.AllocatedAtMonthlyScrapPrice : null,
+                !scrapOut ? null : ProductionScrapCostDistributionCodesV1.ScrapLabelCostNotDecided));
         }
 
         lines.Sort(static (left, right) =>

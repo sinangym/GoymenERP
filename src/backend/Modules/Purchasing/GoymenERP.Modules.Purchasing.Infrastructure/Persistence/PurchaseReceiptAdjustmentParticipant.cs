@@ -18,7 +18,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 /// <summary>ALC-S6: immutable replay and one net mutation on the caller's existing transaction.</summary>
-public sealed class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjustmentParticipantV1
+public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjustmentParticipantV1, IPurchaseReceiptAdjustmentBatchParticipantV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly PurchasingDbContext database;
@@ -78,14 +78,14 @@ public sealed class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjus
             throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, true, attempt.CorrelationId);
         }
         if (attempt.Outcome != 1 || attempt.ReceiptAdjustmentId is not { } adjustmentId || attempt.OrderId is not { } orderId
-            || attempt.RefusalJson is not null || attempt.RequestId is not null) throw Unavailable();
+            || attempt.RefusalJson is not null || attempt.RequestId is not null || attempt.ReceiptAdjustmentBatchId is not null) throw Unavailable();
         // Immutable ledger only: neither RestoreOrder nor today's quantity/version/cost is consulted on replay.
         var row = await database.ReceiptAdjustments.AsNoTracking().SingleOrDefaultAsync(item => item.AdjustmentId == adjustmentId, cancellationToken)
             ?? throw Unavailable();
         PurchaseReceiptAdjustmentResultV1? result;
         try { result = JsonSerializer.Deserialize<PurchaseReceiptAdjustmentResultV1>(row.ResultJson, Json); }
         catch (JsonException) { throw Unavailable(); }
-        if (result is null || row.CompanyId != company.CompanyId || row.OrderId != orderId
+        if (result is null || row.CompanyId != company.CompanyId || row.OrderId != orderId || row.BatchId is not null || row.BatchLineNo is not null
             || result.CompanyId != row.CompanyId || result.OrderId != row.OrderId || result.AdjustmentId != row.AdjustmentId
             || result.AcceptanceId != row.AcceptanceId || result.LineId != row.LineId
             || result.OrderVersion != row.OrderVersionAfter.ToString(CultureInfo.InvariantCulture)
@@ -140,7 +140,8 @@ public sealed class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjus
         var rates = await database.ExchangeRateChanges.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
         var adjustments = await database.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
         var cancellations = await database.CancellationHistory.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(row, lines, shares, slices, closures, rates, adjustments, cancellations);
+        var batches = await database.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
+        var order = PurchasingStore.RestoreOrder(row, lines, shares, slices, closures, rates, adjustments, cancellations, batches);
         var unit = lines.Single(item => item.LineId == target.LineId).UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
         var undo = ParseQuantity(request.UndoQuantity, unit);
         var replacement = ParseQuantity(request.NewAcceptedQuantity ?? "0", unit);
@@ -156,6 +157,8 @@ public sealed class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjus
         }
         catch (PurchasingRuleException exception) { throw new PurchasingServiceException(409, exception.Code); }
         catch (PurchasingVersionConflictException) { throw new PurchasingServiceException(409, PurchasingStoreCodes.ConcurrentChange); }
+        var notificationTargets = change.Revived ? NotificationTargets(request.NotificationSnapshots,
+            order.Id, target.GeneralLineId, beforeVersion) : null;
         row.Status = (int)order.Status; row.Version = order.Version; row.UpdatedAtUtc = order.UpdatedAtUtc;
         row.CancelledBy = order.Cancellation?.CancelledBy; row.CancelledAtUtc = order.Cancellation?.CancelledAtUtc;
         row.CancellationReason = order.Cancellation?.Reason;
@@ -195,6 +198,9 @@ public sealed class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjus
         database.Attempts.Add(new PurchaseAttemptRow { CompanyId = company.CompanyId, CommandName = request.CommandName,
             IdempotencyKeyHash = key, RequestHash = request.RequestHash, ActorId = envelope.ActorId.Trim(), Outcome = 1,
             OrderId = order.Id, ReceiptAdjustmentId = change.AdjustmentId, CorrelationId = envelope.CorrelationId.Trim(), RecordedAtUtc = change.OccurredAtUtc });
+        if (change.Revived)
+            database.OutboxMessages.Add(RevivedMessage(order, general.Id, change.NetOpenedQuantity.Value, envelope,
+                change.OccurredAtUtc, change.AdjustmentId, null, notificationTargets!));
         try
         {
             EnsureTransaction();
@@ -246,7 +252,7 @@ public sealed class PurchaseReceiptAdjustmentParticipant : IPurchaseReceiptAdjus
     private static Quantity ParseQuantity(string text, QuantityUnit unit)
     {
         if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
-            || value < 0 || value >= 1_000_000_000_000_000m) throw InvalidRequest();
+            || value < 0 || value >= 1_000_000_000_000_000m || Text(value) != text) throw InvalidRequest();
         try { return Quantity.Of(value, unit); } catch (ArgumentException) { throw InvalidRequest(); }
     }
 

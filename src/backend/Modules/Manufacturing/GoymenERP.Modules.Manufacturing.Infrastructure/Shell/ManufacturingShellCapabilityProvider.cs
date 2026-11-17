@@ -58,11 +58,12 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
     // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
     // (URT-S19): the order cost trace control. 1.10 adds correction/cancel; 1.11 stages reorder (URT-D106).
-    public const string OwnerContractVersion = "1.11";
+    public const string OwnerContractVersion = "1.13";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string OutputCorrectionCapabilityId = "manufacturing.orders.output-correction";
     public const string CancelCapabilityId = "manufacturing.orders.cancel";
+    public const string ReopenCapabilityId = "manufacturing.orders.reopen";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
     public const string ListCapabilityId = "manufacturing.orders.list";
     public const string CloseCapabilityId = "manufacturing.orders.close";
@@ -224,6 +225,14 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCancel],
             },
+            detail with
+            {
+                CapabilityId = ReopenCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersReopen, ErpPermissions.AccountingPeriodsRead],
+                // Enabled in the integrated source only after the real Inventory generation participant is registered.
+                ImplementationAvailable = false,
+            },
             list,
             planCreate,
             planDetail,
@@ -256,13 +265,13 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 ParentCapabilityId = PlanDetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansCancel],
             },
-            // URT-D106: registered-only, staged until the queue command and its screen are implemented.
+            // URT-D106/D110: queue mutation on its own registered permission; no grant is made here.
             planDetail with
             {
                 CapabilityId = PlanReorderCapabilityId,
                 ParentCapabilityId = PlanDetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansReorder],
-                ImplementationAvailable = false,
+                ImplementationAvailable = true,
             },
             planList,
             scrapPriceList,

@@ -79,6 +79,7 @@ public static class SalesModuleExtensions
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
         services.AddScoped<ISalesOrderLineReferencePortV1, SalesOrderLineReferencePort>();
+        services.AddScoped<ISalesOrderCostRateSourceReadPortV1, SalesOrderCostRateSourceReadPortV1>();
         // S-3 / SAT-D175 (EK25): the Sales-owned subcontract service order read port for the Production consumer (URT-D22), over
         // the same company-filtered store; the Production lane binds its consumer to it.
         services.AddScoped<ISalesSubcontractServiceOrderReadPortV1, SalesSubcontractServiceOrderReadPort>();
@@ -86,6 +87,7 @@ public static class SalesModuleExtensions
         // (registered by that module), the Sales store's own order references and the Cari party display (host adapter).
         services.TryAddSingleton(new SalesDispatchReadBindings());
         services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
+        services.AddScoped<ISalesLineResponsibleReadPortV1, SalesLineResponsibleReadPort>();
         services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
         // SAT-S13: the same read service answers one note's weighing difference (the Logistics owner's read through the host adapter).
         services.AddScoped<ISalesDispatchWeighingDifferenceReadService>(CreateDispatchReadService);

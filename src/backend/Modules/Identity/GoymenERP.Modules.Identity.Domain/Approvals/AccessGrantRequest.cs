@@ -163,6 +163,19 @@ public sealed class AccessGrantRequest
         ResultingRoleAssignmentId = assignmentId;
     }
 
+    /// <summary>KIM-D56: the owner proves fresh group authority and the locked first-Admin transition.</summary>
+    public void ApproveAsCompanySetupAuthority(Guid actorUserId, DateTimeOffset decidedAtUtc, Guid assignmentId)
+    {
+        EnsurePending();
+        EnsureValidActor(actorUserId);
+        if (actorUserId != RequestedByUserId || ValidUntilUtc is not null)
+            throw new InvalidOperationException("First Admin selection requires its explicit requester and an indefinite assignment.");
+        var resulting = EnsureAssignment(assignmentId);
+        Decide(AccessGrantRequestStatus.Approved, actorUserId, decidedAtUtc);
+        ApprovalMode = AccessGrantApprovalMode.CompanySetupAuthority;
+        ResultingRoleAssignmentId = resulting;
+    }
+
     public void Reject(Guid approverUserId, string reasonCode, DateTimeOffset decidedAtUtc)
     {
         EnsurePending();

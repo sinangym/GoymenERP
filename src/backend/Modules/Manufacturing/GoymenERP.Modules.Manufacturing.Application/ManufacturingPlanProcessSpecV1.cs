@@ -1,18 +1,19 @@
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
 
 // Üretim U2-b1 (API-12; URT-D25, URT-D26, URT-D27): the Tube / Profile, Paint and Cold Rolling values a plan enters
 // itself. Lengths, perimeter, thickness and unit kg travel as lossless invariant text (Ö2) like every other measure here;
-// counts are JSON integers like the slit and cut line counts. The package standard and the paint product would come from
-// Product; until that module starts they are entered by hand ("ertelendi: Ürün başlayınca").
+// counts are JSON integers like the slit and cut line counts. Paint now carries exact Product membership, Cari supplier
+// and optional Settings color references. Old free text remains readable but cannot prove a new paint selection.
 
 /// <summary>
 /// The process values entered on a plan, all optional. Tube / Profile: <see cref="PackageCount"/>,
 /// <see cref="PiecesPerPackage"/>, <see cref="PieceLengthMm"/>, <see cref="UnitKg"/>. Paint: <see cref="PackageCount"/>,
 /// <see cref="PiecesPerPackage"/>, <see cref="PieceLengthMm"/> (the profile length), <see cref="PerimeterMm"/>,
-/// <see cref="PaintDescription"/> (paint type / supplier, required on Paint) and <see cref="PaintColorCode"/>.
+/// <see cref="PaintSelection"/> (owner-verified material/supplier), legacy <see cref="PaintDescription"/> and optional <see cref="PaintColorCode"/>.
 /// Cold Rolling: <see cref="TargetThicknessMm"/>. A value of another process is refused.
 /// </summary>
 public sealed record PlanProcessSpecRequestV1(
@@ -23,7 +24,8 @@ public sealed record PlanProcessSpecRequestV1(
     string? PerimeterMm = null,
     string? TargetThicknessMm = null,
     string? PaintDescription = null,
-    string? PaintColorCode = null);
+    string? PaintColorCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlanPaintSelectionV1? PaintSelection = null);
 
 /// <summary>The plan's entered process values as lossless text; an absent value is null.</summary>
 public sealed record PlanProcessSpecViewV1(
@@ -34,7 +36,8 @@ public sealed record PlanProcessSpecViewV1(
     string? PerimeterMm,
     string? TargetThicknessMm,
     string? PaintDescription,
-    string? PaintColorCode);
+    string? PaintColorCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlanPaintSelectionV1? PaintSelection = null);
 
 public sealed partial class ManufacturingCommandService
 {
@@ -75,7 +78,7 @@ public sealed partial class ManufacturingCommandService
         {
             return (new PlanProcessSpec(request.PackageCount, request.PiecesPerPackage, pieceLength.Value,
                 unitKg.Value, perimeter.Value, targetThickness.Value, request.PaintDescription,
-                request.PaintColorCode), false);
+                request.PaintColorCode, request.PaintSelection), false);
         }
         catch (ArgumentException)
         {
@@ -125,5 +128,5 @@ public sealed partial class ManufacturingCommandService
             spec.UnitKg is { } unitKg ? Text(unitKg) : null,
             spec.PerimeterMm is { } perimeter ? Text(perimeter) : null,
             spec.TargetThicknessMm is { } thickness ? Text(thickness) : null,
-            spec.PaintDescription, spec.PaintColorCode);
+            spec.PaintDescription, spec.PaintColorCode, spec.PaintSelection);
 }

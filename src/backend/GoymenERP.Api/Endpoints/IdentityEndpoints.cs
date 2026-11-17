@@ -52,6 +52,8 @@ public static partial class IdentityEndpoints
 
         MapAccessView(group);
         MapAccessAssignments(group);
+        MapUserManagement(group);
+        MapLocalTwoFactor(group);
         MapFirstCompanyAdmin(group);
         MapLocalAccountSession(group);
 
@@ -116,10 +118,13 @@ public static partial class IdentityEndpoints
                     return LoginRateLimited(services.GetRequiredService<ICorrelationContext>());
                 }
 
-                var result = await services.GetRequiredService<ILocalAccountLoginService>().LoginAsync(
-                    request.UserName,
-                    request.Password,
-                    cancellationToken);
+                LocalAccountLoginResult result;
+                try
+                {
+                    result = await services.GetRequiredService<ILocalAccountLoginService>().LoginAsync(
+                        request.UserName, request.Password, request.TotpCode, cancellationToken);
+                }
+                catch (LocalTwoFactorUnavailableException) { return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable); }
                 if (!result.Succeeded)
                 {
                     return Results.Problem(statusCode: StatusCodes.Status401Unauthorized);
@@ -142,6 +147,7 @@ public static partial class IdentityEndpoints
             .ProducesErpLoginRefused()
             .ProducesErpCodeLessNotFound()
             .ProducesErpTooManyRequests(IdentitySessionProblemCodesV1.LoginRateLimited)
+            .ProducesErpServiceUnavailable()
             .ProducesErpInternalError();
 
         group.MapPost("/session/logout", async (

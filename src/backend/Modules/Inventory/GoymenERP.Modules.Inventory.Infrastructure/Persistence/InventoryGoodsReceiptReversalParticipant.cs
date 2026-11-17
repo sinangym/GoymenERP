@@ -26,7 +26,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// before calling StageAsync once. This owner never commits borrowed handles and never writes Purchasing or Sales.
 /// Owner sources passed here must preserve the host transaction, company and already-authorized command scope.
 /// </summary>
-public sealed class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsReceiptReversalParticipantV1
+public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventoryGoodsReceiptReversalParticipantV1,
+    IInventoryGoodsReceiptReversalBatchParticipantV1
 {
     private const int ResizeChangeKind = 1;
     private readonly InventoryDbContext context;

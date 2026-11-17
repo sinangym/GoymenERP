@@ -25,8 +25,9 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly Type[] TenantRows =
         [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
             typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
-            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(OutputReversalRow),
-            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(PlanPriorityVersionRow), typeof(CommandRow)];
+            typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(OrderReopeningRow), typeof(CostGenerationRow), typeof(FactRow), typeof(OutputReversalRow),
+            typeof(MonthlyScrapPriceRow), typeof(OutputLineageEdgeRow), typeof(OutputLabelCodeRow), typeof(PlanPriorityVersionRow),
+            typeof(WorkCenterQueueVersionRow), typeof(WorkCenterQueueEntryRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -145,8 +146,12 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingOutputLabelCodes", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingOrderCancellation", StringComparison.Ordinal));
-        Assert.EndsWith("_AddManufacturingPlanPriorities", context.Database.GetMigrations().Last(),
-            StringComparison.Ordinal);
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingPlanPriorities", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingManualQueues", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingOrderReopenings", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingCostGenerations", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingNonKgInputFacts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddManufacturingPaintSelections", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -658,7 +663,7 @@ public sealed class ManufacturingPersistenceModelTests
         var model = context.GetService<IDesignTimeModel>().Model;
         var decision = model.FindEntityType(typeof(OrderClosureDecisionRow))!;
 
-        Assert.Equal(["CompanyId", "OrderId"],
+        Assert.Equal(["CompanyId", "OrderId", "OrderVersion"],
             decision.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Contains(decision.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(OrderRow)
             && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OrderId"])

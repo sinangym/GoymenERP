@@ -735,6 +735,29 @@ public sealed class ManufacturingPlanPreviewTests
         thicknessMm,
         widthMm);
 
+    [Theory]
+    [InlineData("1000.125", true)]
+    [InlineData("1000.126", false)]
+    public async Task Preview_and_save_apply_the_same_exact_version_total_physical_cap(string requestedKg, bool accepted)
+    {
+        var fixture = new Fixture();
+        fixture.ParentRolls.PhysicalKg = "1000.125";
+        var preview = await fixture.Service.PreviewPlanAsync(Request(requestedKg), Permission, CancellationToken.None);
+        Assert.Empty(fixture.Store.Writes);
+        var saved = await fixture.Service.SavePlanAsync(new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            Request(requestedKg).Inputs, null), "physical-preview", Permission, CancellationToken.None);
+
+        Assert.Equal(accepted ? ManufacturingApiStatus.Ok : ManufacturingApiStatus.Unprocessable, preview.Status);
+        Assert.Equal(accepted ? ManufacturingApiStatus.Created : ManufacturingApiStatus.Unprocessable, saved.Status);
+        if (!accepted)
+        {
+            Assert.Equal((ManufacturingRuleCodes.PlanLabelNotUsable, "inputs[0].plannedKg"), (preview.Code, preview.Field));
+            Assert.Equal((preview.Code, preview.Field), (saved.Code, saved.Field));
+            Assert.Empty(fixture.Store.Writes);
+            Assert.Empty(fixture.Store.Commands);
+        }
+    }
+
     private sealed class Fixture
     {
         public Fixture(bool withWorkCenters = true, ISettingsManufacturingParameterProviderV1? parameters = null)
@@ -808,6 +831,8 @@ public sealed class ManufacturingPlanPreviewTests
 
     private sealed class ParentRollPort(List<string> calls) : IInventoryParentRollValidationV1
     {
+        public string PhysicalKg { get; set; } = "10000";
+
         public Exception? Exception { get; set; }
 
         public List<InventoryParentRollSelectionV1> Selections { get; } = [];
@@ -824,7 +849,7 @@ public sealed class ManufacturingPlanPreviewTests
 
             return Task.FromResult(new InventoryParentRollReferenceV1(
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
-                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
+                new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], PhysicalKg, PhysicalKg, "0", [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true)
             { ProductVersion = AcceptedProductFixtureVersion });
         }

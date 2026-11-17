@@ -592,6 +592,14 @@ internal sealed class CreditAccountRow : IFinanceTenantRow
     public Guid CurrencyId { get; set; }
     public string PrincipalAmountText { get; set; } = string.Empty;
     public DateOnly StartDate { get; set; }
+    public Guid? LenderPartyId { get; set; }
+    public Guid? LenderCompanyPartyAccountId { get; set; }
+    public long? LenderPartyVersion { get; set; }
+    public long? LenderCompanyAccountVersion { get; set; }
+    public string? SourceProfileJson { get; set; }
+    public Guid? MoneyProfileId { get; set; }
+    public long? MoneyProfileVersion { get; set; }
+    public int? CurrencyScale { get; set; }
     public int Status { get; set; }
     public string ProposedBy { get; set; } = string.Empty;
     public DateTimeOffset ProposedAtUtc { get; set; }
@@ -617,6 +625,7 @@ internal sealed class CreditAccountInstallmentRow : IFinanceTenantRow
     public string InterestText { get; set; } = string.Empty;
     public string BsmvText { get; set; } = string.Empty;
     public string KkdfText { get; set; } = string.Empty;
+    public string? ChargesJson { get; set; }
 }
 
 /// <summary>ADR-011: the idempotency record of a credit account command (a terminal refusal included).</summary>

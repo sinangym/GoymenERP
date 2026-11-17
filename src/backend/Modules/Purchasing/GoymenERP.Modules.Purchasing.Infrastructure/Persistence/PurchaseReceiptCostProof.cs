@@ -59,13 +59,19 @@ public sealed class PurchaseReceiptCostProof : IPurchaseReceiptCostProofV1
         EnsureTransaction();
         var rate = await new PurchaseInvoiceCostRateReadPort(database, company).GetAsync(company.CompanyId, acceptanceId, cancellationToken);
         EnsureTransaction();
+        var approvedOrderRate = await new PurchaseOrderExchangeRateReadPort(database, company).GetAsync(company.CompanyId,
+            purchaseOrderId, cancellationToken);
+        EnsureTransaction();
         if (price.CompanyId != company.CompanyId || price.PurchaseOrderId != purchaseOrderId
             || price.PurchaseOrderLineId != purchaseOrderLineId || price.Outcome == PurchaseOrderLineCostOutcomeV1.NotFound
             || rate.CompanyId != company.CompanyId || rate.GoodsReceiptLineId != acceptanceId
             || rate.PurchaseOrderId != purchaseOrderId || rate.PurchaseOrderLineId != purchaseOrderLineId
-            || rate.Outcome == PurchaseInvoiceCostRateOutcomeV1.NotFound) throw Unavailable();
+            || rate.Outcome == PurchaseInvoiceCostRateOutcomeV1.NotFound
+            || approvedOrderRate.CompanyId != company.CompanyId || approvedOrderRate.PurchaseOrderId != purchaseOrderId
+            || approvedOrderRate.Outcome == PurchaseOrderExchangeRateOutcomeV1.NotFound) throw Unavailable();
         return new(company.CompanyId, purchaseOrderId, purchaseOrderLineId, acceptanceId, line.ProductId,
-            line.ProductVersion, acceptance.AcceptedQuantity, acceptance.PurchaseOrderVersionAfter, acceptance.OccurredAtUtc, price, rate);
+            line.ProductVersion, acceptance.AcceptedQuantity, acceptance.PurchaseOrderVersionAfter, acceptance.OccurredAtUtc,
+            price, rate, approvedOrderRate);
     }
 
     private void EnsureTransaction()

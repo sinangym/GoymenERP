@@ -56,10 +56,12 @@ public sealed class PurchaseOrderLine
 
     /// <summary>
     /// A2a-1 (ALS-D5, ALS-D18): the line's manual price in the order's currency, or null — "fiyat bekliyor". Written once with
-    /// the line (a later price is a revision, ALS-D9/D18, A2b); a technical line never carries one (its quantity is priced on
+    /// the line, then explicitly cleared/re-entered for a supplier revision (ALS-D115); a technical line never carries one (its quantity is priced on
     /// its general line).
     /// </summary>
-    public PurchaseOrderLinePrice? Price { get; }
+    public PurchaseOrderLinePrice? Price { get; private set; }
+
+    internal void ReplaceSupplierRevisionPrice(PurchaseOrderLinePrice? price) => Price = price;
 
     /// <summary>General lines only: the part already carved into technical lines.</summary>
     public Quantity TechnicalQuantity { get; private set; }
@@ -201,6 +203,11 @@ public sealed class PurchaseOrderLine
     {
         var accepted = AcceptedQuantity.Subtract(undone).Add(newlyAccepted);
         var returned = definitiveReturn ? DefinitiveReturnQuantity.Add(undone) : DefinitiveReturnQuantity;
+        ApplyReceiptAdjustmentTotals(accepted, returned);
+    }
+
+    internal void ApplyReceiptAdjustmentTotals(Quantity accepted, Quantity returned)
+    {
         if (accepted.Add(CancelledQuantity).Add(ClosedQuantity).Add(returned).IsGreaterThan(CommittedQuantity))
             throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
                 "İç tutarsızlık: kabul düzeltmesinin payları taahhüdü aşıyor.");

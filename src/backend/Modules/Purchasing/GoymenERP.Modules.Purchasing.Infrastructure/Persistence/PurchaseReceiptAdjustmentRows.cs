@@ -8,6 +8,8 @@ internal sealed class PurchaseReceiptAdjustmentRow : IPurchasingTenantRow
     public Guid OrderId { get; set; }
     public Guid AcceptanceId { get; set; }
     public Guid LineId { get; set; }
+    public Guid? BatchId { get; set; }
+    public int? BatchLineNo { get; set; }
     public decimal UndoQuantity { get; set; }
     public bool IsSupplierReturn { get; set; }
     public bool ReplacementExpected { get; set; }
@@ -16,6 +18,21 @@ internal sealed class PurchaseReceiptAdjustmentRow : IPurchasingTenantRow
     public long OrderVersionAfter { get; set; }
     public bool Revived { get; set; }
     public decimal NetOpenedQuantity { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string ResultJson { get; set; } = string.Empty;
+}
+
+/// <summary>One append-only command result and final order version for every correction in the batch.</summary>
+internal sealed class PurchaseReceiptAdjustmentBatchRow : IPurchasingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid BatchId { get; set; }
+    public Guid OrderId { get; set; }
+    public long OrderVersionAfter { get; set; }
+    public int LineCount { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

@@ -27,6 +27,8 @@ public static class ErpAuthenticationExtensions
         // only when a login or session request reaches them, and those requests exist only while the LocalAccount scheme
         // is enabled.
         services.AddSingleton<ILocalPasswordHasher, LocalAccountPasswordHasher>();
+        services.AddDataProtection();
+        services.AddScoped<ILocalTwoFactorProtectionV1, LocalTwoFactorProtectionV1>();
         // KIM-D34: the limiter reads the group-wide Settings record through the scoped provider handed to TryAcquireAsync.
         services.AddSingleton(provider => new LocalAccountLoginRateLimiter(
             provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalAccountOptions>>(),

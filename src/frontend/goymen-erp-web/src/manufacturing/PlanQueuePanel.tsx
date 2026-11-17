@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { changePlanPriority, fetchPlanPriority, fetchPlanQueue, type PlanPriority, type PlanQueue, type PriorityAttempt } from './planQueueApi'
 import { newCommandId } from './commandId'
+import { ManualQueueControls } from './ManualQueueControls'
 import { PLAN_QUEUE_TEXT as T } from './manufacturingText'
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -9,9 +10,9 @@ import { Button } from '../ui/Button'
 import styles from './OrderDetailPage.module.css'
 
 const pending = new Map<string, PriorityAttempt>()
-export function PlanQueuePanel({ companyId, planId, planVersion, namespace, canApprove, onChanged }: {
+export function PlanQueuePanel({ companyId, planId, planVersion, namespace, canApprove, canReorder = false, onChanged }: {
   readonly companyId: string; readonly planId: string; readonly planVersion: number; readonly namespace: string
-  readonly canApprove: boolean; readonly onChanged?: () => void
+  readonly canApprove: boolean; readonly canReorder?: boolean; readonly onChanged?: () => void
 }) {
   const boundary = useAuthBoundary(); const boundaryRef = useRef(boundary); boundaryRef.current = boundary
   const scope = `${namespace}:${companyId}:${planId}`
@@ -22,6 +23,7 @@ export function PlanQueuePanel({ companyId, planId, planVersion, namespace, canA
   const [score, setScore] = useState(''); const [reason, setReason] = useState('')
   const [attempt, setAttempt] = useState<PriorityAttempt | null>(() => pending.get(scope) ?? null)
   const [sending, setSending] = useState(false); const inFlight = useRef(false)
+  const [manualLocked, setManualLocked] = useState(false)
   const [message, setMessage] = useState<string | null>(() => pending.has(scope) ? T.unknown : null)
   useEffect(() => {
     const controller = new AbortController(); const captured = boundaryRef.current.capture()
@@ -41,7 +43,7 @@ export function PlanQueuePanel({ companyId, planId, planVersion, namespace, canA
   }, [key, companyId, planId, planVersion, retry])
   const state = classifyOutcome(read.key === key ? read.outcome : { type: 'loading' }) as RemoteViewState<{ priority: PlanPriority; queue: PlanQueue }>
   const send = async (frozen: PriorityAttempt) => {
-    if (!canApprove || inFlight.current) return
+    if (!canApprove || manualLocked || inFlight.current) return
     inFlight.current = true; setSending(true); setAttempt(frozen); pending.set(scope, frozen)
     const captured = boundaryRef.current.capture(); const capturedKey = key
     const outcome = await changePlanPriority(companyId, planId, frozen)
@@ -79,13 +81,16 @@ export function PlanQueuePanel({ companyId, planId, planVersion, namespace, canA
         void send({ idempotencyKey: newCommandId(), expectedVersion: planVersion,
           expectedPriorityRevision: state.data.priority.priorityRevision, priorityScore: value, reason: reason.trim() })
       }}>
-        <label className={styles.control}>{T.score}<input inputMode="numeric" value={score} disabled={sending || attempt !== null}
+        <label className={styles.control}>{T.score}<input inputMode="numeric" value={score} disabled={sending || attempt !== null || manualLocked}
           onChange={(event) => setScore(event.target.value)} /></label>
-        <label className={styles.control}>{T.reason}<textarea value={reason} maxLength={4000} disabled={sending || attempt !== null}
+        <label className={styles.control}>{T.reason}<textarea value={reason} maxLength={4000} disabled={sending || attempt !== null || manualLocked}
           onChange={(event) => setReason(event.target.value)} /></label>
-        {attempt === null ? <Button type="submit" disabled={sending}>{T.save}</Button>
-          : <Button type="button" disabled={sending} onClick={() => void send(attempt)}>{T.resend}</Button>}
+        {attempt === null ? <Button type="submit" disabled={sending || manualLocked}>{T.save}</Button>
+          : <Button type="button" disabled={sending || manualLocked} onClick={() => void send(attempt)}>{T.resend}</Button>}
       </form> : null}
+      <ManualQueueControls key={scope} companyId={companyId} planId={planId} namespace={namespace} queue={state.data.queue}
+        allowed={canReorder} blocked={sending || attempt !== null} onLocked={setManualLocked}
+        onRefresh={() => { setRetry(n => n + 1); onChanged?.() }} />
     </>}
     {message !== null ? <p role="status">{message}</p> : null}
   </section>

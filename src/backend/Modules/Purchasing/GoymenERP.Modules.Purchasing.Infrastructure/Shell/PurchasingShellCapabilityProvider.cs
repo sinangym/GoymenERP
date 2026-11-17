@@ -73,6 +73,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string SupplierReturnCapabilityId = "purchasing.supplier-returns.record";
     public const string CancelCapabilityId = "purchasing.orders.cancel";
     public const string LineScheduleCapabilityId = "purchasing.orders.line-schedule.write";
+    public const string SupplierRevisionCapabilityId = "purchasing.orders.supplier-revise";
     public const string DetailRoutePath = "/satinalma/siparisler/:orderId";
     public const string DetailScreenId = "P-03-DETAIL";
 
@@ -151,6 +152,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
             detail with
             {
                 CapabilityId = LineScheduleCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise],
+            },
+            detail with
+            {
+                CapabilityId = SupplierRevisionCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise],
             },

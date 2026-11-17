@@ -1402,6 +1402,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("InstructionId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("KilogramAllocationJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1456,6 +1459,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_WeighingDifferences_Decision", "([Decision] = 1 AND [TotalExcessKg] = 0) OR ([Decision] = 2 AND [TotalExcessKg] > 0 AND [ApprovalRatePercent] IS NOT NULL) OR ([Decision] = 3 AND [TotalExcessKg] > 0)");
 
                             t.HasCheckConstraint("CK_WeighingDifferences_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [RecordId] <> '00000000-0000-0000-0000-000000000000' AND [InstructionId] <> '00000000-0000-0000-0000-000000000000' AND [DispatchNoteId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_WeighingDifferences_KilogramAllocation", "[KilogramAllocationJson] IS NULL OR (ISJSON([KilogramAllocationJson]) = 1 AND JSON_QUERY(CASE WHEN ISJSON([KilogramAllocationJson]) = 1 THEN [KilogramAllocationJson] ELSE N'{}' END, '$.lines') IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_WeighingDifferences_Quantities", "[TheoreticalKg] > 0 AND [ScaleKg] >= 0 AND [TotalExcessKg] >= 0 AND [DifferenceKg] = [ScaleKg] - [TheoreticalKg]");
 

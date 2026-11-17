@@ -65,7 +65,7 @@ public sealed partial class PurchasingService
         }
     }
 
-    private static bool ReceiptReversalTerminal(PurchasingServiceException exception) => exception.Status is 409 or 422
+    private static bool ReceiptReversalTerminal(PurchasingServiceException exception) => exception.Status == 409
         && exception.Code is not (PurchasingProblemCodesV1.ConcurrentChange or PurchasingStoreCodes.LineBusy
             or PurchaseAcceptanceParticipantCodes.ConcurrentChange or "sales_order_line_busy"
             or "inventory_concurrent_change" or "inventory_goods_receipt_concurrent_change"

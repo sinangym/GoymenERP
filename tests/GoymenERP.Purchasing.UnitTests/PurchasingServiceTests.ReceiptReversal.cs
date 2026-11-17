@@ -58,6 +58,7 @@ public sealed partial class PurchasingServiceTests
     [InlineData(409, "purchasing_line_busy")]
     [InlineData(409, "sales_order_line_busy")]
     [InlineData(409, "inventory_concurrent_change")]
+    [InlineData(422, "inventory_goods_receipt_reversal_partial_quantity_not_representable")]
     public async Task Receipt_reversal_transient_failure_does_not_record_the_key_and_the_same_key_can_succeed(int status, string code)
     {
         var world = new World(); var host = new ReversalHostFake { Failure = new(status, code) };

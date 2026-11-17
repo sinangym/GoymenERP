@@ -84,10 +84,27 @@
 - Down guard **51877** refuses while any correction is `Applied` (forward fix); pending-only rows roll back freely.
 
 
-### KIM-S5 company setup (KIM-D18/D20/D21; source PARTIAL)
+### KIM-S5 W7 lifecycle foundation (KIM-D18/D20/D21; historical source checkpoint)
 
 - Generated migration `20261116185536_AddCompanySetupLifecycleAndMessaging`: owner inbox/outbox and lifecycle source; Up DDL only. Existing companies remain Active.
 - Down first refuses with **51945** while company setup lifecycle/history would lose meaning (forward fix). No database application was performed.
 - Only the two exact setup events pass the pending-company dispatcher gate; business events stay held. Dispatcher activation remains human-owned.
-- Company opening authority scope is still a decision gate. No opening endpoint, production grant or seed was added; source is not a usable opening workflow.
+- The W7 checkpoint had no opening endpoint or group authority source. KIM-D56 and the W8 implementation below supersede that source gap; production grants, dispatcher activation and runtime acceptance remain separate human/verification gates.
 - Unit/contract and real SQL facts are written; runtime acceptance is NOT_RUN.
+
+
+### KIM-S5 / KIM-D56 company opening
+
+The group-authorized opening command creates a real, non-placeholder, invoice-disabled `SetupPending` company,
+one Organization-owned opening event, one global-key terminal and canonical Audit records in the same transaction.
+It grants the opener nothing. A separate group-authorized explicit first-Admin selection produces Identity's event;
+only the Organization consumer completes the lifecycle. Dispatcher/production activation remains human-owned.
+
+`CompanyOpeningExecutions` is an Organization-owned global command-key journal: actor/target changes cannot
+partition an idempotency key. Fresh group authority fences every owner read and replay. Its owner write proof
+binds company, actor and transaction; ordinary direct company creation, journal mutation and deletion remain closed.
+This deliberate global-key read scope requires K3 review rather than an automatic tenant-bypass allowlist entry.
+
+EF-generated `20261116205304_AddAuthorizedCompanyOpening` creates only the journal (DDL-only Up, no seed).
+Down first refuses with **THROW 51948** while any terminal history exists. The group setup UI has its own server
+capability response and works without an operational-company membership; normal company gates stay unchanged.

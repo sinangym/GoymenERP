@@ -19,6 +19,7 @@ import { JournalDetailPage, JournalsPage } from './JournalPages'
 import { PostingQueuesPage } from './PostingQueuesPage'
 import { TrialBalancePage } from './TrialBalancePage'
 import { AccountPlanPage } from './AccountPlanPage'
+import { ManufacturingCostDifferencesPage } from './ManufacturingCostDifferencesPage'
 import { JournalReversalApprovalPage } from './JournalReversalPages'
 import {
   NormalJournalDraftCreatePage,
@@ -37,6 +38,8 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
 }
 
 export const accountingRoutes: RouteObject[] = [
+  { path: ACCOUNTING_ROUTE.costDifferencePrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.costDifferencePrepare, <ManufacturingCostDifferencesPage mode="prepare" />) },
+  { path: ACCOUNTING_ROUTE.costDifferenceApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.costDifferenceApprove, <ManufacturingCostDifferencesPage mode="approve" />) },
   {
     path: ACCOUNTING_ROUTE.normalDraftCreate.slice(1),
     element: gate(ACCOUNTING_CAPABILITY.normalDraftCreate, <NormalJournalDraftCreatePage />),

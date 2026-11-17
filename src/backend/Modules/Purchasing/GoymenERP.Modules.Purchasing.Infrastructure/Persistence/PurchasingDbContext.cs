@@ -100,7 +100,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     internal const string OrderApprovalCheck =
         "([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) "
         + "OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [Status] IN (2, 3) "
-        + "AND [ApprovedBy] COLLATE " + IdentityCollation + " <> [CreatedBy] COLLATE " + IdentityCollation + ")";
+        + "AND [ApprovedBy] COLLATE " + IdentityCollation + " <> COALESCE([CurrentPreparedBy], [CreatedBy]) COLLATE " + IdentityCollation + ")";
 
     /// <summary>
     /// §7.2 / §13, A1-3 and API-11 (master INV-006): technical slices, the accepted share, the cancelled remainder and the closed
@@ -120,7 +120,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
 
     /// <summary>The outbox's message types (the store writes nothing else).</summary>
     internal static readonly string OutboxEventTypeCheck =
-        "[EventType] = '" + PurchasingOrderLineClosedEventV1.EventType + "'";
+        "[EventType] IN ('" + PurchasingOrderLineClosedEventV1.EventType + "', '" + PurchasingOrderLineRevivedEventV1.EventType + "')";
 
     /// <summary>
     /// A2a-1 (TEK-01): the order's money snapshot is all five facts or none — a non-empty currency and profile, a non-blank code, a
@@ -236,6 +236,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         ConfigureGoodsReceiptBatches(modelBuilder);
         ConfigureSupplierReturns(modelBuilder);
         ConfigureReceiptAdjustments(modelBuilder);
+        ConfigureSupplierRevisions(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -332,6 +333,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
             table.HasCheckConstraint("CK_PurchaseOrders_Approval", OrderApprovalCheck);
             // A2a-1 (TEK-01): the money snapshot is complete or absent.
             table.HasCheckConstraint("CK_PurchaseOrders_Money", OrderMoneyCheck);
+            table.HasCheckConstraint("CK_PurchaseOrders_DocumentNumber", OrderDocumentNumberCheck);
             // A2a-1c (ALS-D72): the unit-price scale only beside a money snapshot.
             table.HasCheckConstraint("CK_PurchaseOrders_UnitPriceScale", OrderUnitPriceScaleCheck);
         });
@@ -347,6 +349,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         entity.Property(x => x.CancellationReason).HasMaxLength(4000);
         entity.Property(x => x.ApprovedBy).HasMaxLength(128);
         entity.Property(x => x.CurrencyCode).HasMaxLength(PurchaseOrderMoney.MaximumCurrencyCodeLength);
+        entity.Property(x => x.DocumentNumber).HasMaxLength(64).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
+        entity.HasIndex(x => new { x.CompanyId, x.DocumentNumber }).IsUnique().HasFilter("[DocumentNumber] IS NOT NULL");
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseOrders_CompanyId_Status_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.SourceRequestId }).HasDatabaseName("IX_PurchaseOrders_CompanyId_SourceRequestId");
@@ -605,6 +609,8 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     private void ConfigureOutbox(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<PurchasingOutboxRow>();
+        entity.Property(x => x.Position).IsRowVersion().HasConversion<byte[]>();
+        entity.HasIndex(x => x.Position).HasDatabaseName("IX_OutboxMessages_Position");
         entity.ToTable("OutboxMessages", Schema, table =>
         {
             table.HasCheckConstraint("CK_OutboxMessages_Identity",
@@ -850,6 +856,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
     private void ApplyWriteGuards()
     {
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
+        GuardSupplierRevisionHistory();
         foreach (var entry in ChangeTracker.Entries<IPurchasingTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -874,6 +881,10 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is PurchaseOrderRow && entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).IsModified
+                    && (entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).OriginalValue is not null
+                        || entry.Property(nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc)).CurrentValue is null))
+                    throw new InvalidOperationException("Belge numarası iptal geçmişi yalnız bir kez eklenir.");
                 string[] allowed = entry.Entity switch
                 {
                     PurchaseRequestRow =>
@@ -888,12 +899,18 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                         nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc),
                         nameof(PurchaseOrderRow.ApprovedBy), nameof(PurchaseOrderRow.ApprovedAtUtc),
                         nameof(PurchaseOrderRow.CancelledBy), nameof(PurchaseOrderRow.CancelledAtUtc), nameof(PurchaseOrderRow.CancellationReason),
+                        nameof(PurchaseOrderRow.DocumentNumberCancelledAtUtc),
+                        nameof(PurchaseOrderRow.SupplierRevisionHistoryJson), nameof(PurchaseOrderRow.CurrentPreparedBy),
+                        nameof(PurchaseOrderRow.SupplierPartyId), nameof(PurchaseOrderRow.CompanyAccountId),
                     ],
                     PurchaseOrderLineRow =>
                     [
                         nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted), nameof(PurchaseOrderLineRow.Cancelled),
                         nameof(PurchaseOrderLineRow.Closed), nameof(PurchaseOrderLineRow.DefinitiveReturned),
                         nameof(PurchaseOrderLineRow.ReceiptClosureRevived),
+                        nameof(PurchaseOrderLineRow.UnitPrice), nameof(PurchaseOrderLineRow.PriceUnitId),
+                        nameof(PurchaseOrderLineRow.DiscountPercent), nameof(PurchaseOrderLineRow.DiscountAmount),
+                        nameof(PurchaseOrderLineRow.DeferralPercent), nameof(PurchaseOrderLineRow.DeferralAmount),
                     ],
                     // ALC-S16: a bulk receipt moves once (its status and decision facts); a label is only released by a rejection.
                     PurchaseGoodsReceiptBatchRow =>

@@ -1,3 +1,4 @@
+import { decodePaintSelection, type PlanPaintSelection } from './paintSelectionContract'
 /**
  * Wire contract of `GET /api/v1/manufacturing/orders/{orderId}` (`OrderViewV1`, MFG-API #313)
  * and of the fact commands' request bodies.
@@ -199,6 +200,7 @@ export interface PlanProcessSpecView {
   readonly targetThicknessMm: string | null
   readonly paintDescription: string | null
   readonly paintColorCode: string | null
+  readonly paintSelection?: PlanPaintSelection
 }
 
 /** Üretim U2-a: the cancellation of a plan (`PlanCancellationViewV1`). */
@@ -321,6 +323,10 @@ function decodeOutputLine(value: unknown): ManufacturingOutputLineReference | nu
   return null
 }
 
+export interface OrderReopeningHistory {
+  readonly closedOrderVersion: number; readonly closedByUserId: string; readonly closedAtUtc: string
+  readonly reopenedOrderVersion: number; readonly reopenedByUserId: string; readonly reopenedAtUtc: string; readonly reason: string
+}
 export interface ProductionOrderView {
   readonly orderId: string
   readonly companyId: string
@@ -352,6 +358,7 @@ export interface ProductionOrderView {
   readonly cancellationReason?: string | null
   readonly cancelledByUserId?: string | null
   readonly cancelledAtUtc?: string | null
+  readonly reopenings?: readonly OrderReopeningHistory[]
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -1026,7 +1033,9 @@ const PROCESS_SPEC_KEYS = [
  */
 export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | null | undefined {
   if (value === undefined || value === null) return null
-  if (!isObject(value) || !hasExactKeys(value, PROCESS_SPEC_KEYS)) return undefined
+  if (!isObject(value) || !hasExactKeys(value, Object.hasOwn(value, 'paintSelection') ? [...PROCESS_SPEC_KEYS, 'paintSelection'] : PROCESS_SPEC_KEYS)) return undefined
+  const selection = Object.hasOwn(value, 'paintSelection') ? decodePaintSelection(value.paintSelection) : undefined
+  if (Object.hasOwn(value, 'paintSelection') && selection === undefined) return undefined
   const count = (raw: unknown): number | null | undefined =>
     raw === null ? null : typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 1 ? raw : undefined
   const measure = (raw: unknown): string | null | undefined =>
@@ -1048,8 +1057,8 @@ export function decodePlanProcessSpec(value: unknown): PlanProcessSpecView | nul
     paintColorCode: text(value.paintColorCode, 32),
   }
   const values = Object.values(spec)
-  if (values.some((member) => member === undefined) || values.every((member) => member === null)) return undefined
-  return spec as PlanProcessSpecView
+  if (values.some((member) => member === undefined) || selection === undefined && values.every((member) => member === null)) return undefined
+  return { ...spec, ...(selection === undefined ? {} : { paintSelection: selection }) } as PlanProcessSpecView
 }
 
 const REJECTION_KEYS = ['number', 'reason', 'rejectedByUserId', 'rejectedAtUtc', 'planVersion'] as const
@@ -1146,6 +1155,8 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
   const cancellationComplete = cancellationReason !== null && cancelledByUserId !== null && cancelledAtUtc !== null
   if (body.status === 'Cancelled' ? !cancellationComplete || closedAtUtc !== null || closedByUserId !== null
     : cancellationReason !== null || cancelledByUserId !== null || cancelledAtUtc !== null) return null
+  const reopenings = decodeOrderReopenings(body.reopenings, orderVersion)
+  if (reopenings === null) return null
   // CK_Orders_DueDateRevision: a termin changed on the order always has a day.
   if (dueDateRevision > 0 && dueDate === null) return null
   // The flag is the server's, but it never contradicts the two days it was computed from.
@@ -1178,7 +1189,25 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
     cancellationReason,
     cancelledByUserId,
     cancelledAtUtc,
+    reopenings,
   }
+}
+
+function decodeOrderReopenings(value: unknown, orderVersion: number): OrderReopeningHistory[] | null {
+  if (value === undefined || value === null) return [] // Legacy ADR-011 answers had no reopening member.
+  if (!Array.isArray(value)) return null
+  const result: OrderReopeningHistory[] = []; let previousVersion = 0
+  for (const row of value) {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) return null
+    const v = row as Record<string, unknown>
+    if (!Number.isSafeInteger(v.closedOrderVersion) || (v.closedOrderVersion as number) < 2 || (v.closedOrderVersion as number) <= previousVersion
+      || v.reopenedOrderVersion !== (v.closedOrderVersion as number) + 1 || (v.reopenedOrderVersion as number) > orderVersion
+      || nullableGuid(v.closedByUserId) == null || nullableGuid(v.reopenedByUserId) == null
+      || nullableInstant(v.closedAtUtc) == null || nullableInstant(v.reopenedAtUtc) == null
+      || !boundedSnapshotText(v.reason, 256)) return null
+    result.push(v as unknown as OrderReopeningHistory); previousVersion = v.reopenedOrderVersion as number
+  }
+  return result
 }
 
 /** An absent or null member is null; anything but a calendar day is malformed (undefined). */
@@ -1230,6 +1259,7 @@ export type FactSnapshot =
       readonly kind: 'input-returns'
       readonly movementId: string
       readonly expectedParentLabelVersion: string
+      readonly sourceIssueMovementId?: string | null
     })
   | (FactSnapshotBase & {
       readonly kind: 'wip-measurements'
@@ -1283,6 +1313,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       movementId: snapshot.movementId,
+      ...(snapshot.sourceIssueMovementId == null ? {} : { sourceIssueMovementId: snapshot.sourceIssueMovementId }),
     }
   }
   if (snapshot.kind === 'outputs') {

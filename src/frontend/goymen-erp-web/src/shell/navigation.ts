@@ -29,6 +29,13 @@ import type { PriceListCapabilityId } from '../product/priceLists/capabilities'
  */
 /** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
 export const NAV_CAPABILITIES: readonly CapabilityId[] = [
+  'finance.credits.workspace',
+  'finance.official-sales-invoices.record',
+  'finance.official-sales-invoices.approve',
+  'accounting.manufacturing-cost-differences.prepare',
+  'accounting.manufacturing-cost-differences.approve',
+  'identity.users.manage',
+  'paint-memberships.manage',
   'cari.parties.list',
   /**
    * `cariPartiesCreate` is deliberately ABSENT, and it is the one removal here that is a decision
@@ -173,6 +180,9 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.sales-contract-discount-limit.manage',
   'settings.collateral-types.manage',
   'settings.finance-opening-period.manage',
+  'settings.manufacturing-scrap-cost.manage',
+  'settings.notification-retention.manage',
+  'settings.document-number-series.manage',
   'settings.manufacturing-parameter-profiles.read',
   'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
@@ -267,6 +277,13 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.credit-limits.list': 'Kredi Limitleri',
   'finance.collaterals.list': 'Müşteri Teminatları',
   'finance.opening-balances.list': 'Açılış Bakiyeleri',
+  'finance.credits.workspace': 'Krediler',
+  'finance.official-sales-invoices.record': 'Resmî satış faturaları',
+  'finance.official-sales-invoices.approve': 'Resmî satış faturası onayları',
+  'accounting.manufacturing-cost-differences.prepare': 'Üretim maliyet farkları',
+  'accounting.manufacturing-cost-differences.approve': 'Üretim maliyet farkı onayları',
+  'identity.users.manage': 'Kullanıcı yönetimi',
+  'paint-memberships.manage': 'Boya ürünleri',
   'accounting.periods.list': 'Muhasebe Dönemleri',
   'accounting.journals.list': 'Muhasebe Fişleri',
   'accounting.posting-queues': 'Muhasebe Kontrol',
@@ -292,6 +309,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.sales-contract-discount-limit.manage': 'Sözleşme iskonto sınırı',
   'settings.collateral-types.manage': 'Teminat türleri ve oranları',
   'settings.finance-opening-period.manage': 'Finans açılış dönemi',
+  'settings.manufacturing-scrap-cost.manage': 'Fire maliyete katılımı',
+  'settings.notification-retention.manage': 'Bildirim etkinlik süresi',
+  'settings.document-number-series.manage': 'Belge numara serileri',
   'settings.manufacturing-parameter-profiles.read': 'Üretim parametre profilleri',
   'settings.manufacturing-tolerance-profiles.read': 'Üretim tolerans profilleri',
   'settings.work-center-capacities.manage': 'İş merkezi kapasitesi',
@@ -394,12 +414,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'logistics.operations-work.purchase',
     ],
   },
-  { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list'] },
+  { id: 'product', label: 'Ürün & Hizmet', entries: ['product.items.list', 'paint-memberships.manage'] },
   { id: 'cari', label: 'Cari', entries: ['cari.parties.list', 'cari.accounts.link', 'finance.party-ledger.cari'] },
   {
     id: 'finance',
     label: 'Finans & Hazine',
     entries: [
+      'finance.credits.workspace',
+      'finance.official-sales-invoices.record',
+      'finance.official-sales-invoices.approve',
       'finance.receipts.list',
       'finance.manual-bank-payments.list',
       'finance.expense-payments.workspace',
@@ -419,7 +442,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'accounting',
     label: 'Muhasebe',
-    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'finance.party-ledger.accounting'],
+    entries: ['accounting.journals.list', 'accounting.periods.list', 'accounting.posting-queues', 'finance.party-ledger.accounting',
+      'accounting.manufacturing-cost-differences.prepare', 'accounting.manufacturing-cost-differences.approve'],
   },
   {
     id: 'settings',
@@ -447,6 +471,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.sales-contract-discount-limit.manage',
   'settings.collateral-types.manage',
   'settings.finance-opening-period.manage',
+  'settings.manufacturing-scrap-cost.manage',
+  'settings.notification-retention.manage',
+  'settings.document-number-series.manage',
       'settings.manufacturing-parameter-profiles.read',
       'settings.manufacturing-tolerance-profiles.read',
       // API-98, B-14 (KIM-D49, KIM-D51): the company reference lists are master data, after the units and before the rates.
@@ -460,6 +487,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.sales-delivery-tolerances.manage',
       'settings.sales-approval-thresholds.manage',
       'identity.assignments.list',
+      'identity.users.manage',
       // UI-K02: the audit log follows the access list inside the Sistem Yönetimi section (KLN-D2 names it there).
       'identity.audit.list',
       // KIM-D34: the group-wide login attempt limit is a sign-in security setting inside Sistem Yönetimi.

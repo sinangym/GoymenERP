@@ -16,6 +16,16 @@ public interface IInventoryGoodsReceiptReversalParticipantV1 : IAsyncDisposable
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>Read-only API-44 batch preflight. The host has already locked the complete Sales/Purchasing union.</summary>
+public interface IInventoryGoodsReceiptReversalBatchParticipantV1
+{
+    Task EvaluateBatchAsync(IReadOnlyList<InventoryGoodsReceiptReversalBatchLineV1> lines,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record InventoryGoodsReceiptReversalBatchLineV1(InventoryGoodsReceiptReversalRequestV1 Request,
+    InventoryGoodsReceiptReversalSupplyV1 ExpectedSupply, InventoryCommandMetadata Metadata);
+
 /// <summary>All identities come from Inventory's original receipt and conversion rows; no authority is granted by this read.</summary>
 public sealed record InventoryGoodsReceiptReversalTargetV1(InventoryGoodsReceiptSourceV1 Original,
     string LabelVersion, string AlreadyReversedKg, IReadOnlyList<InventoryGoodsReceiptReversalLinkV1> Links);
