@@ -6,6 +6,7 @@ export interface IncomingInvoiceLine {
   readonly id: string; readonly lineNo: number; readonly productId: string; readonly unitId: string; readonly quantity: string
   readonly itemType: string; readonly linePurpose: string; readonly vatPercent: string
   readonly amounts: InvoiceAmounts; readonly functionalAmounts: InvoiceAmounts | null
+  readonly serviceTypeId?: string
 }
 export interface IncomingInvoice {
   readonly id: string; readonly companyId: string; readonly version: string
@@ -23,6 +24,7 @@ export interface InvoiceReceiptCandidate {
   readonly purchaseOrderId: string; readonly purchaseOrderNumber: string | null; readonly purchaseOrderLineId: string
   readonly orderLineNo: number; readonly acceptanceId: string; readonly acceptedAtUtc: string
   readonly productId: string; readonly unitId: string; readonly availableQuantity: string
+  readonly serviceTypeId?: string
 }
 export interface InvoiceReceiptPage {
   readonly invoiceId: string; readonly invoiceLineId: string; readonly invoiceVersion: string
@@ -67,9 +69,12 @@ export function decodeIncomingInvoice(value: unknown, companyId: string, invoice
   const ids = new Set<string>(), numbers = new Set<number>()
   for (const raw of item.lines) {
     const line = obj(raw)
-    if (line === null || !exact(line, ['id', 'lineNo', 'productId', 'unitId', 'quantity', 'itemType', 'linePurpose', 'vatPercent', 'amounts', 'functionalAmounts'])
+    if (line === null || !exact(line, ['id', 'lineNo', 'productId', 'unitId', 'quantity', 'itemType', 'linePurpose', 'vatPercent', 'amounts', 'functionalAmounts',
+      ...(Object.hasOwn(line, 'serviceTypeId') ? ['serviceTypeId'] : [])])
       || !guid(line.id) || ids.has(line.id) || !positiveInt(line.lineNo) || numbers.has(line.lineNo as number)
-      || !guid(line.productId) || !guid(line.unitId) || !invoiceQuantity(line.quantity) || !text(line.itemType) || !text(line.linePurpose)
+      || (Object.hasOwn(line, 'serviceTypeId') ? !guid(line.serviceTypeId) || line.productId !== '00000000-0000-0000-0000-000000000000'
+        || line.itemType !== 'Service' || line.linePurpose !== 'service' : !guid(line.productId))
+      || !guid(line.unitId) || !invoiceQuantity(line.quantity) || !text(line.itemType) || !text(line.linePurpose)
       || !decimal(line.vatPercent) || !amounts(line.amounts, item.moneyScale)
       || (line.functionalAmounts !== null && !amounts(line.functionalAmounts, item.functionalScale))) return null
     ids.add(line.id); numbers.add(line.lineNo as number)
@@ -103,10 +108,12 @@ export function decodeInvoiceReceipts(value: unknown, invoice: IncomingInvoice, 
   for (const raw of page.items) {
     const item = obj(raw)
     if (item === null || !exact(item, ['purchaseOrderId', 'purchaseOrderNumber', 'purchaseOrderLineId', 'orderLineNo', 'acceptanceId',
-      'acceptedAtUtc', 'productId', 'unitId', 'availableQuantity']) || !guid(item.purchaseOrderId) || !guid(item.purchaseOrderLineId)
+      'acceptedAtUtc', 'productId', 'unitId', 'availableQuantity', ...(Object.hasOwn(item, 'serviceTypeId') ? ['serviceTypeId'] : [])])
+      || !guid(item.purchaseOrderId) || !guid(item.purchaseOrderLineId)
       || !guid(item.acceptanceId) || ids.has(item.acceptanceId) || !positiveInt(item.orderLineNo)
       || (item.purchaseOrderNumber !== null && !text(item.purchaseOrderNumber)) || !instant(item.acceptedAtUtc)
-      || item.productId !== line.productId || item.unitId !== line.unitId || !invoiceQuantity(item.availableQuantity)) return null
+      || item.productId !== line.productId || item.unitId !== line.unitId || item.serviceTypeId !== line.serviceTypeId
+      || !invoiceQuantity(item.availableQuantity)) return null
     ids.add(item.acceptanceId)
   }
   return page as unknown as InvoiceReceiptPage

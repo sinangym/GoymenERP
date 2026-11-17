@@ -1,0 +1,17 @@
+export const SERVICE_ORDER_TEXT = {
+  title: 'Hizmet ve giden fason alış siparişleri', subject: 'hizmet siparişi', create: 'Hizmet siparişi hazırla', back: 'Hizmet siparişlerine dön',
+  kind: 'Sipariş türü', service: 'Hizmet alışı', subcontract: 'Kendi malımız için giden fason hizmeti', date: 'Sipariş tarihi', currency: 'Para birimi',
+  supplier: 'Tedarikçi', search: 'Kaynaklarda ara', serviceType: 'Hizmet tipi', unit: 'Hizmet birimi', quantity: 'Hizmet miktarı', price: 'Birim fiyat (isteğe bağlı)',
+  reason: 'Gerekçe', choose: 'Seçin', save: 'Taslağı kaydet', addLine: 'Hizmet satırı ekle', remove: 'Satırı çıkar', approve: 'Siparişi onayla',
+  accepted: 'Gerçekleşen hizmet', accept: 'Hizmet kabulü kaydet', acceptDate: 'Hizmetin kabul tarihi', amount: 'Satır tutarı', material: 'Gönderilecek kendi etiketimiz',
+  materialKg: 'Gönderilecek kg', output: 'Beklenen çıktı ürünü', outputKg: 'Beklenen çıktı kg', addMaterial: 'Malzeme ekle', addOutput: 'Beklenen çıktı ekle',
+  physical: 'Fason sipariş malzemesinin mülkiyeti şirketimizde kalır. Fiziksel gönderim ve dönüş Stok sahibinin ayrı işlemidir; bu ekran stok hareketi oluşturmaz.',
+  noCatalog: 'Etkin hizmet tipi bulunamadı. Ayarlar sahibi hizmet tipi listesini düzenlemelidir.', window: 'En çok 100 hizmet siparişi gösterilir.',
+  noPrice: 'Fiyat bekliyor', withheld: 'Fiyat okuma yetkiniz yok.', invalid: 'Tedarikçi, tarih, hizmet tipi, birim, miktar ve gerekçeyi tamamlayın.',
+  noSources: 'Kaynak seçimi tamamlanmadı.', unknown: 'Sonuç doğrulanamadı. Aynı içerik ve anahtarla yeniden deneyin.', retry: 'Aynı isteği yeniden dene',
+  busy: 'Kaydediliyor…', saved: 'İşlem kaydedildi.', refused: 'İşlem uygulanmadı. Kaynakları, güncel sürümü ve yetkilerinizi kontrol edin.',
+  conflict: 'Kayıt veya kaynak sürümü değişti. Güncel kaydı okuyup yeniden hazırlayın.', sameActor: 'Siparişi hazırlayan kişi onaylayamaz.',
+  emptyMaterials: 'Gönderilecek etiket ve beklenen çıktı seçilmelidir.', references: 'Hizmet kaynakları', sourcesSearch: 'Etiket veya ürün adı/kodu',
+  status: { Draft: 'Taslak', Approved: 'Onaylı', Cancelled: 'İptal' }, open: 'Açık', complete: 'Tam kabul edildi',
+  selected: 'Seçilen kayıtlar', removeSelected: 'Seçimi kaldır', acceptanceHistory: 'Hizmet kabul geçmişi',
+} as const

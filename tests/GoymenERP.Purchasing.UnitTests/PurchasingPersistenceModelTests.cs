@@ -144,8 +144,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.10", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(20, declarations.Count);
+        Assert.Equal("1.11", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(25, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -275,8 +275,8 @@ public sealed class PurchasingPersistenceModelTests
                 "20261116113129_AddPurchaseSupplierReturns", "20261116213347_AddPurchaseReceiptAdjustments",
                 "20261116215806_AddPurchaseSupplierReturnResponseSnapshots", "20261116222957_AddPurchaseReceiptAdjustmentBatches",
                 "20261117002600_AddPurchaseOrderDocumentNumbers", "20261117072202_AddPurchaseSupplierRevisions",
-                "20261117084001_AddPurchaseIncomingInvoices"],
-            context.Database.GetMigrations().TakeLast(17));
+                "20261117084001_AddPurchaseIncomingInvoices", "20261117110054_AddPurchaseServiceOrders"],
+            context.Database.GetMigrations().TakeLast(18));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
