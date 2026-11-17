@@ -1441,6 +1441,9 @@ public static class ErpPermissions
     /// </summary>
     public const string SettingsSalesQuotePoliciesManage = "settings.sales-quote-policies.manage";
 
+    /// <summary>ALS-D8/D15/D63: explicit company invoice-variance policy publication. Registered only; no grant or new Critical class.</summary>
+    public const string SettingsPurchaseInvoiceVariancePoliciesManage = "settings.purchase-invoice-variance-policies.manage";
+
     /// <summary>
     /// F-029 S6 (URUN_F029 spec §5.4(2); URN-D2…D5): read the e-Fatura scenario policy — the scenario code list (SAT-D120)
     /// and the default scenario (SAT-D102) — transfer its reviewed compiled baseline once and record new versions
@@ -1867,6 +1870,7 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
@@ -2147,6 +2151,7 @@ public static class ErpPermissions
             SettingsSalesDeliveryTolerancesManage,
             SettingsSalesApprovalThresholdsManage,
             SettingsSalesQuotePoliciesManage,
+            SettingsPurchaseInvoiceVariancePoliciesManage,
             SettingsEInvoiceScenariosManage,
             SettingsUnitConversionPoliciesManage,
             SettingsUnitProfilesManage,
