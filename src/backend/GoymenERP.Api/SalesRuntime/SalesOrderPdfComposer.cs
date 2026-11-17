@@ -14,7 +14,8 @@ namespace GoymenERP.Api.SalesRuntime;
 /// <see cref="SalesPriceDisclosure.Visible"/> AND every detail line says the same; otherwise the price columns and the tax
 /// table are not drawn at all (never as empty cells). Every user text
 /// comes from <c>Resources/SalesRuntime.SalesOrderPdfComposer.resx</c>; a missing text is a server fault, never a key
-/// printed in its place. Not a corporate template (DEC-DOC-010): no logo, letterhead or company name.
+/// printed in its place. The closed business content here is independent of the Documents owner's optional approved
+/// logo/letterhead publication; the host attaches that verified publication without changing these business blocks.
 /// </summary>
 public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer> texts, TimeZoneInfo? businessTimeZone)
 {

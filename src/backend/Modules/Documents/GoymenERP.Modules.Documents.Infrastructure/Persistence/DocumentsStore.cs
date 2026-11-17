@@ -74,8 +74,19 @@ public sealed partial class DocumentsStore(DocumentsDbContext dbContext, ICompan
         return attempt is null ? null : await ReplayLinkAsync(attempt, envelope, requestHash, documentId, cancellationToken);
     }
 
-    public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, null, cancellationToken);
+
+    public Task<DocumentStoreResult> StoreUploadWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeNewWrite);
+        return StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, beforeNewWrite, cancellationToken);
+    }
+
+    private async Task<DocumentStoreResult> StoreUploadCoreAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(upload);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -117,6 +128,7 @@ public sealed partial class DocumentsStore(DocumentsDbContext dbContext, ICompan
 
             var earlierVersions = await dbContext.Versions.AsNoTracking().CountAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
             await beforeWrite(cancellationToken);
+            if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow
@@ -200,8 +212,21 @@ public sealed partial class DocumentsStore(DocumentsDbContext dbContext, ICompan
         }
     }
 
-    public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
-        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, null, cancellationToken);
+
+    public Task<DocumentStoreResult> StoreVersionWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeNewWrite);
+        return StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, beforeNewWrite, cancellationToken);
+    }
+
+    private async Task<DocumentStoreResult> StoreVersionCoreAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(version);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -248,6 +273,7 @@ public sealed partial class DocumentsStore(DocumentsDbContext dbContext, ICompan
             }
 
             await beforeWrite(cancellationToken);
+            if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow

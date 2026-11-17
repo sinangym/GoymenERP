@@ -286,6 +286,7 @@ builder.Services.AddProductPriceListHost(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
+builder.Services.AddProductLogisticsDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -509,6 +510,7 @@ builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
 builder.Services.AddDocumentsRuntime(builder.Configuration, builder.Environment);
+builder.Services.AddDocumentBrandingPdfRuntime();
 // AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
 builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
@@ -613,6 +615,7 @@ app.MapLogisticsEndpoints();
 app.MapLogisticsTransferDepartureEndpoints();
 app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
+app.MapLogisticsDispatchPdfEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchaseServiceOrderEndpointsV1();
@@ -623,6 +626,7 @@ app.MapAccountingSourceVouchersV1();
 app.MapAccountingInvoiceLineCogsEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
+app.MapDocumentBrandingEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
 app.MapSettingsSalesPolicyEndpoints();

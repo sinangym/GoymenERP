@@ -62,7 +62,7 @@ public static class DocumentBrandingEndpoints
         .ProducesErpServiceUnavailable().ProducesErpBadRequest("validation_failed");
     private static RouteHandlerBuilder Write(RouteHandlerBuilder route) => Common(route)
         .WithIdempotencyContract(200, 409).ProducesErpConflict(ConflictCodes).ProducesErpUnsupportedMediaType()
-        .ProducesErpUnprocessableEntity("document_branding_asset_render_invalid");
+        .ProducesErpUnprocessableEntity("document_branding_asset_render_invalid", "document_branding_asset_type_not_allowed");
 
     private static async Task<IResult> Read<T>(HttpContext context, Func<Task<T>> action)
     {

@@ -26,11 +26,11 @@ export const APPROVE_CONFIRM_TEXT =
   'Onaydan sonra dönem açılır ve kayıt alır. Onay tektir; dönemi öneren kişi onaylayamaz.'
 export const APPROVE_CONFIRM = 'Evet, onayla'
 export const CLOSE = 'Kapat'
-export const CLOSE_CONFIRM_TEXT = 'Kapanan döneme yeni kayıt girmez. Kapanış geri alınamaz; düzeltme açık bir dönemde yeni kayıtla yapılır.'
+export const CLOSE_CONFIRM_TEXT = 'Kapanış ve sonraki açık döneme bakiye devri birlikte kaydedilir. Sonraki dönem açık değilse ikisi de reddedilir. Yeniden açma farklı yetkilinin onayını gerektirir.'
 export const CLOSE_CONFIRM = 'Evet, kapat'
 export const CANCEL = 'Vazgeç'
 export const APPROVED_NOTICE = 'Dönem açıldı. Liste sunucudan yeniden okundu.'
-export const CLOSED_NOTICE = 'Dönem kapandı. Liste sunucudan yeniden okundu.'
+export const CLOSED_NOTICE = 'Dönem kapandı ve devir fişi kaydedildi. Liste sunucudan yeniden okundu.'
 export const REPLAYED_NOTICE = 'Bu işlem daha önce kaydedilmişti; sunucunun ilk cevabı gösterildi. Liste yeniden okundu.'
 export const JOURNALS_OF_PERIOD = 'Fişleri'
 
@@ -93,6 +93,7 @@ const CODE_TEXT: Readonly<Record<string, string>> = {
   accounting_period_preparer_conflict: 'Aynı dönem kimliğini başka bir kişi önerdi.',
   accounting_period_not_proposed: 'Dönem artık öneri değil; liste yeniden okundu.',
   accounting_period_not_open: 'Yalnız açık bir dönem kapatılır.',
+  accounting_period_carry_target_not_open: 'Kapanış ve devir için önce sonraki dönemi açın; bu işlemde kapanış veya devir kaydedilmedi.',
   accounting_period_already_closed: 'Dönem zaten kapalı.',
   accounting_period_invalid: 'Dönem tarihleri geçerli değil.',
 }

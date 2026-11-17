@@ -8,6 +8,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SOURCE_VOUCHER_TEXT as T } from './sourceVoucherText'
 import { approveSourceVoucher, fetchSourceVouchers, type SourceVoucher, type SourceVoucherAttempt, type SourceVoucherOutcome } from './sourceVoucherApi'
 import styles from './Accounting.module.css'
+import { SourceVoucherReversalPanel } from './SourceVoucherReversalPanel'
 
 export function SourceVouchersPage({ mode }: { readonly mode: 'read' | 'approve' }) {
   const shell = useShellState(); const context = contextKey(shell)
@@ -22,12 +23,13 @@ function Page({ namespace, mode }: { readonly namespace: string | null; readonly
   const [attempt, setAttempt] = useState<SourceVoucherAttempt | null>(null)
   const [outcome, setOutcome] = useState<SourceVoucherOutcome | null>(null)
   const [sending, setSending] = useState(false); const inFlight = useRef(false); const mounted = useRef(true)
+  const [reversalFrozen, setReversalFrozen] = useState(false)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'accounting-source-vouchers'], enabled: single,
     queryFn: async ({ signal }) => { const security = boundary.capture(); const answer = await fetchSourceVouchers(company, signal)
       if (answer.type === 'http' && [401, 403].includes(answer.status)) boundary.report(answer.status as 401 | 403, security)
       return answer } })
-  const frozen = sending || outcome?.type === 'unknown'
+  const frozen = sending || outcome?.type === 'unknown' || reversalFrozen
   const send = async (next: SourceVoucherAttempt, retry = false) => {
     if (!single || mode !== 'approve' || inFlight.current || outcome?.type === 'unknown' && !retry) return
     inFlight.current = true; setSending(true); setAttempt(next); setOutcome(null)
@@ -56,7 +58,9 @@ function Page({ namespace, mode }: { readonly namespace: string | null; readonly
               <td>{line.side === 1 ? T.debit : T.credit}</td><td>{line.functionalAmount}</td></tr>)}</tbody></table></div>
           {row.status === 'PeriodWaiting' ? <p role="note">{T.period}</p> : null}
           {row.cancellationReason !== null ? <p>{row.cancellationReason}</p> : null}
-          {row.status === 'CancellationReversalPending' ? <p role="note">{T.reversal}</p> : null}
+          {['CancellationReversalPending', 'CancelledByReversal'].includes(row.status) && namespace !== null
+            ? <SourceVoucherReversalPanel key={row.id} row={row} namespace={namespace}
+              onFrozenChange={setReversalFrozen} onChanged={() => void query.refetch()} /> : null}
           {mode === 'approve' && row.status === 'AwaitingApproval' ? row.sourceActorId.toLowerCase() === actor.toLowerCase()
             ? <p>{T.own}</p> : <button disabled={frozen} onClick={() => void send({ id: row.id, key: crypto.randomUUID(), expectedVersion: row.version })}>{T.approve}</button> : null}
         </>}

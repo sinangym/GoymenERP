@@ -1878,7 +1878,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             var approved = await store.ApprovePeriodAsync(periodId, proposed.Version, approver, PeriodMetadata());
             if (close)
             {
-                await store.ClosePeriodAsync(periodId, approved.Version, approver, PeriodMetadata());
+                await AccountingPeriodCarrySqlFixture.CloseAsync(Factory, company, periodId, approved.Version, approver, PeriodMetadata());
             }
 
             return periodId;

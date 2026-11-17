@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
+using GoymenERP.Modules.Accounting.Domain.Periods;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -458,8 +459,13 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
         public async Task ClosePeriodAsync(Guid periodId)
         {
             await using var scope = Open(PeriodApprover);
-            var stored = await scope.Store.FindPeriodAsync(periodId);
-            await scope.Store.ClosePeriodAsync(periodId, stored!.Version, PeriodApprover, Metadata());
+            // This in-memory fixture tests reversal admission only. Cross-owner close/carry is
+            // separately covered by the actual SQL fixture; seed an already-closed period here.
+            var row = await scope.Db.Periods.SingleAsync(x => x.Id == periodId);
+            row.Status = (int)AccountingPeriodStatus.Closed;
+            row.ClosedByUserId = PeriodApprover; row.ClosedAtUtc = Now;
+            row.UpdatedAtUtc = Now; row.Version++;
+            await scope.Db.SaveChangesAsync();
         }
 
         public async Task<Journal> PostSourceAsync(string messageId)

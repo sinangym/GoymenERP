@@ -145,6 +145,13 @@ public interface IDocumentPublishedTemplateReadPortV1
 {
     Task<DocumentPublishedTemplateReadV1> ReadAsync(Guid companyId, DocumentTemplateModuleV1 module, string templateCode,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Reads the exact immutable publication selected before a producer command. A missing selection is
+    /// unavailable, never a reason to render the current publication instead. This keeps lost-answer retries stable.</summary>
+    Task<DocumentPublishedTemplateReadV1> ReadPublicationAsync(Guid companyId, DocumentTemplateModuleV1 module,
+        string templateCode, Guid publicationId, string publicationVersion, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new DocumentPublishedTemplateReadV1(DocumentPublishedTemplateOutcomeV1.Unavailable, companyId,
+            module, templateCode, null, null, null, "fixed_publication_reader_unavailable"));
 }
 
 public sealed class DocumentBrandingServiceException(int status, string code, bool isReplay = false,

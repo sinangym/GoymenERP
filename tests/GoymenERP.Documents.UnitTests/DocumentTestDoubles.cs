@@ -267,8 +267,14 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         return result;
     }
 
-    public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, null, cancellationToken);
+    public Task<DocumentStoreResult> StoreUploadWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite, CancellationToken cancellationToken = default) =>
+        StoreUploadCoreAsync(envelope, requestHash, upload, beforeWrite, beforeNewWrite, cancellationToken);
+    private async Task<DocumentStoreResult> StoreUploadCoreAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         // The real store's guards: a generated PDF names its template and producing command together, and only a generated
@@ -280,7 +286,11 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         }
 
         BeforeWrite?.Invoke();
+        if (await FindReplayAsync(envelope, requestHash, upload.Template is null ? DocumentCommands.UploadV1 : DocumentCommands.StoreGeneratedV1,
+            cancellationToken) is { } replay)
+        { await beforeWrite(cancellationToken); return replay; }
         await beforeWrite(cancellationToken);
+        if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
         var companyId = companyContext.CompanyId;
         Envelopes.Add(envelope);
         var stored = new StoredDocument(upload.DocumentId, companyId, upload.Owner.Kind, upload.Owner.OwnerId, 1, upload.FileName.Value,
@@ -300,12 +310,22 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         return new DocumentStoreResult(WithLinks(stored), false, envelope.CorrelationId);
     }
 
-    public async Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
-        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    public Task<DocumentStoreResult> StoreVersionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default) =>
+        StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, null, cancellationToken);
+    public Task<DocumentStoreResult> StoreVersionWithAdmissionAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task> beforeNewWrite,
+        CancellationToken cancellationToken = default) =>
+        StoreVersionCoreAsync(envelope, requestHash, expectedCurrentVersion, version, beforeWrite, beforeNewWrite, cancellationToken);
+    private async Task<DocumentStoreResult> StoreVersionCoreAsync(DocumentWriteEnvelope envelope, string requestHash, int expectedCurrentVersion,
+        NewDocumentVersion version, Func<CancellationToken, Task> beforeWrite, Func<CancellationToken, Task>? beforeNewWrite, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         BeforeWrite?.Invoke();
+        if (await FindVersionReplayAsync(envelope, requestHash, version.DocumentId, checked(expectedCurrentVersion + 1), cancellationToken) is { } replay)
+        { await beforeWrite(cancellationToken); return replay; }
         await beforeWrite(cancellationToken);
+        if (beforeNewWrite is not null) await beforeNewWrite(cancellationToken);
         var existing = Visible().SingleOrDefault(document => document.Id == version.DocumentId);
         if (existing is null || existing.VersionNo != expectedCurrentVersion)
         {

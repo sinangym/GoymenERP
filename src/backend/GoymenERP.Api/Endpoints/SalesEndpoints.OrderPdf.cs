@@ -1,5 +1,9 @@
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.SalesRuntime;
+using GoymenERP.Api.DocumentsRuntime;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.DocumentGeneration.Pdf;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -38,17 +42,22 @@ public static partial class SalesEndpoints
             [FromServices] ILogger<SalesOrderPdfComposer> logger,
             ICorrelationContext correlation,
             [FromServices] ISalesOrderPdfBusinessTimeZoneSource? timeZoneSource,
+            PublishedDocumentBrandingReader templates, ICompanyContext company, ICurrentUser user,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
+            var frame = new DocumentPdfProducerFrame(company, user);
             SalesOrderDraftReadDetailViewV1 detail;
             SalesOrderPrintPricingV1 pricing;
             try
             {
+                frame.Require();
                 detail = await detailService.GetDraftDetailAsync(id, cancellationToken);
                 // The price decision is the freshest word: asked after the detail, never cached across the two.
                 pricing = await printService.GetOrderPrintPricingAsync(id, cancellationToken);
+                frame.Require();
             }
+            catch (DocumentBrandingServiceException error) { return Results.Problem(statusCode: error.Status); }
             catch (SalesDraftServiceException exception)
             {
                 // A read has no request to fix: an owner refusal that is not about authority is the print being unavailable.
@@ -76,10 +85,21 @@ public static partial class SalesEndpoints
             GeneratedPdf pdf;
             try
             {
+                frame.Require();
+                var branding = await templates.ReadAsync(frame.CompanyId, DocumentTemplateModuleV1.Sales,
+                    ErpPermissions.SalesDraftsRead, cancellationToken);
+                // Owner record and price disclosure are fresh after the template read. A template grants no read or price authority.
+                detail = await detailService.GetDraftDetailAsync(id, cancellationToken);
+                pricing = await printService.GetOrderPrintPricingAsync(id, cancellationToken);
+                frame.Require();
+                if (detail.Draft.Id != id || pricing is null) return Results.Problem(statusCode: 503);
+                if (detail.Draft.Version != pricing.Version) return DraftProblem(409, SalesDraftProblemCodesV1.ConcurrentChange, correlation);
                 var zone = timeZoneSource is null ? SalesOrderPdfComposer.SystemBusinessTimeZone : timeZoneSource.BusinessTimeZone;
                 var (request, _) = new SalesOrderPdfComposer(texts, zone).Compose(Guid.NewGuid(), detail, pricing);
-                pdf = new DocumentPdfGenerator().Generate(request);
+                pdf = new DocumentPdfGenerator().Generate(request with { Branding = branding.Render });
             }
+            catch (DocumentBrandingServiceException error) { return Results.Problem(statusCode: error.Status is 401 or 403 ? error.Status : 503); }
+            catch (SalesDraftServiceException error) { return error.Status == 422 ? Results.Problem(statusCode: 503) : DraftProblem(error, correlation); }
             catch (DocumentPdfPageLimitException exception)
             {
                 // A valid order too long for one synchronous PDF: said to the person (422, stable code), never retried as a 503.

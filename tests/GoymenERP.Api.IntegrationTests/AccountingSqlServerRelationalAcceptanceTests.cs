@@ -6,6 +6,7 @@ using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -15,6 +16,7 @@ using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -551,6 +553,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var period = await run.OpenSeptemberAsync(CompanyA);
+        await AccountingPeriodCarrySqlFixture.PrepareAsync(run.Factory, CompanyA, period, run.Actor);
         var accounts = Accounts(CompanyA);
 
         long versionBeforeRace;
@@ -578,7 +581,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
-                await writer.Periods.ClosePeriodAsync(period, versionBeforeRace, run.Actor, Metadata(run));
+                await writer.Periods.ClosePeriodAsync(period, versionBeforeRace, run.Actor, Metadata(run) with
+                    { ActorId = run.Actor.ToString("D"), PermissionCode = AccountingPermissionManifestV1.PeriodsClose });
                 return "closed";
             }
             catch (AccountingStoreException exception)
@@ -597,7 +601,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             var current = (await a.Periods.FindPeriodAsync(period))!;
             if (current.Period.ClosedAtUtc is null)
             {
-                await a.Periods.ClosePeriodAsync(period, current.Version, run.Actor, Metadata(run));
+                await a.Periods.ClosePeriodAsync(period, current.Version, run.Actor, Metadata(run) with
+                    { ActorId = run.Actor.ToString("D"), PermissionCode = AccountingPermissionManifestV1.PeriodsClose });
             }
         }
 
@@ -866,9 +871,10 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
 
         public StoreScope Store(Guid company, params IInterceptor[] extra)
         {
-            var companyContext = new CompanyContext();
+            var auditScope = Factory.Services.CreateAsyncScope();
+            var companyContext = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>();
             companyContext.Set(company);
-            var collector = new AuditEventCollector();
+            var collector = (AuditEventCollector)auditScope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
             var interceptors = new List<IInterceptor> { new AuditSaveChangesInterceptor(collector, companyContext) };
             interceptors.AddRange(extra);
             var options = new DbContextOptionsBuilder<AccountingDbContext>()
@@ -878,7 +884,9 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
                 .Options;
             var dbContext = new AccountingDbContext(options, companyContext);
             return new StoreScope(dbContext, new AccountingStore(dbContext, companyContext, collector, TimeProvider.System,
-                new AccountingAmountScaleVerifier(new SyntheticMoneyProfiles(company))));
+                new AccountingAmountScaleVerifier(new SyntheticMoneyProfiles(company)),
+                AccountingPeriodCarrySqlFixture.Port(dbContext, companyContext, collector,
+                    auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), Actor)), auditScope);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -912,14 +920,18 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class StoreScope(AccountingDbContext dbContext, AccountingStore store) : IAsyncDisposable
+    private sealed class StoreScope(AccountingDbContext dbContext, AccountingStore store, AsyncServiceScope auditScope) : IAsyncDisposable
     {
         public IAccountingPeriodStore Periods => store;
         public IAccountingPostingStore Postings => store;
         public IAccountingNormalJournalDraftStore Drafts => store;
         public IAccountingCommandLog Commands => store;
 
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            await dbContext.DisposeAsync();
+            await auditScope.DisposeAsync();
+        }
     }
 
     /// <summary>Grants the narrow normal-draft permissions company-wide (the race is about the store, not authority).</summary>

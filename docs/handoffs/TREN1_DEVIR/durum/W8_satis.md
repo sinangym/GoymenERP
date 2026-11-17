@@ -168,3 +168,37 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
   yalnız bu seam o akışın tamamlandığı anlamına gelmez. Finalized iptal üreticisi
   ve Finans/Muhasebe dönem-tarih kararı halen açık; Accounting iptal tüketicisi
   `3044b80fb` ile vardır, Work kaydı gerçek Sales üreticisini bekler. DONE artışı yok.
+
+### STK-S3 bağımlılığı — işlem içi gerçek satış kaynağı ve ayrı ürün kimlikleri
+
+- Kaynak `e8ed7373ebc170d27f050f5017a6788e9ba7262e`. Yeni read-only Sales owner
+  session gerçek aggregate ve kabul edilmiş revizyon kurallarını caller'ın açık
+  Serializable transaction'ında okur. Şirket/işlem çiti await öncesi ve sonrasıdır;
+  dispose yalnız kendisine ait context'i kapatır. Ham SQL/bypass yoktur.
+- Fason Inventory kanıtında fiziksel etiket ürünü ve satış hizmet ürünü ayrı tutulur.
+  Manufacturing plan sürümünden bağımsız SalesLinkRevision da immutable JSON/hash'e
+  girer; geriye giden kaynak reddedilir. Bu iki additive provenance alanı yeni bir
+  maliyet/çevrim/sahiplik politikası değildir; yeni tablo veya migration gerekmez.
+- İki gerçek SQL fact kaynağı uncommitted gerçek Sales sürümünü, caller rollback'ini,
+  başka şirketi, zayıf/bitmiş transaction'ı, aynı kayda paralel gerçek SQL yazımının
+  bloklanmasını ve handle sahipliğini kapsar. İlişkisel satış envanteri sıralıdır.
+- Inventory.UnitTests, Sales.UnitTests ve Api.IntegrationTests kaynak derlemeleri
+  exit 0, hata/uyarı 0. İlk Inventory derlemesinde eksik assets bulundu; yalnız
+  mevcut proje restore edildi, yeni paket yoktur. Runtime Unit/SQL/HTTP/CI NOT_RUN.
+- K3 review bekliyor: yeni borrowed Sales read-context construction. Guard izin
+  listesi genişletilmedi. Gerçek fason Logistics host ve ekran zinciri halen açıktır;
+  bu bağımlılık bütün STK-S3 diliminin DONE veya runtime kabulü değildir.
+
+### SAT-S12 ilk onay marj maliyeti koruma
+
+- Oturumdaki doğrudan insan cevabının kaynak sınırı açık aktarımı:
+  [6951607190](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951607190).
+  Müşteri reddi sonrası aynı ürün/miktarla yeniden etkinleşen satır ilk onayın
+  birim maliyetini korur; aynı revizyon içindeki miktar değişimi yeni maliyet
+  okuması gerektirmez. Gerçek yeni revizyonda değişen miktar tabanı için mevcut
+  yeniden sabitleme ve eski kayıtları geriye doldurmama kuralları korunur.
+- Yeni bir miktar değiştirme endpointi veya stok/muhasebe hareketi eklenmedi.
+  Golden kabul kapısı açık tutuldu; marjın kullanılabilir olduğu iddia edilmez.
+- Yeniden etkinleşme kaynak testi ilk sabiti ve maliyet okuma sayısını korur.
+  Sales.UnitTests ve Api.IntegrationTests derlemeleri exit 0, hata/uyarı 0;
+  `git diff --check` exit 0. Runtime testler ve SQL **NOT_RUN**.

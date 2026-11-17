@@ -47,6 +47,7 @@ public static partial class AccountingEndpoints
         AccountingStoreCodes.PeriodPreparerConflict,
         AccountingStoreCodes.PeriodOverlap,
         AccountingStoreCodes.ConcurrentChange,
+        "accounting_period_reopening_exists",
     ];
 
     private static readonly string[] NormalJournalConflictCodes =
@@ -137,6 +138,10 @@ public static partial class AccountingEndpoints
         AccountingErrorCodes.PeriodInvalid,
         AccountingErrorCodes.InvalidReference,
         AccountingStoreCodes.ValueDoesNotFit,
+        "accounting_period_carry_target_not_open",
+        "accounting_period_closure_proof_required",
+        "accounting_period_not_closed",
+        "accounting_period_reopening_already_approved",
     ];
 
     private static readonly string[] NormalJournalUnprocessableCodes =
@@ -159,6 +164,7 @@ public static partial class AccountingEndpoints
 
         MapManufacturingCostDifferences(group);
         MapFinanceJournalSources(group);
+        MapPeriodLifecycle(group);
 
         group.MapGet("/periods", async (
                 int? pageSize,

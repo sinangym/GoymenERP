@@ -14,6 +14,8 @@ public sealed class AccountingJournalReversalEndpointContractTests
         AccountingJournalReversalPermissionNamesV1.Propose, 201, false)]
     [InlineData("ApproveAccountingJournalReversalV1", "/api/v1/accounting/journal-reversal-proposals/{proposalId:guid}/approval",
         AccountingJournalReversalPermissionNamesV1.Approve, 200, true)]
+    [InlineData("ProposeAccountingSourceVoucherCancellationReversalV1", "/api/v1/accounting/source-vouchers/{id:guid}/cancellation-reversal-proposals",
+        AccountingJournalReversalPermissionNamesV1.Propose, 200, true)]
     public async Task Public_routes_bind_narrow_permission_and_declared_error_contract(
         string endpointName,
         string routePrefix,

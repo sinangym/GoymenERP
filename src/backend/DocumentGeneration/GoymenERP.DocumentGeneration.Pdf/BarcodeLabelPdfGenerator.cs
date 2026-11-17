@@ -7,10 +7,11 @@ using PdfSharp.Pdf;
 namespace GoymenERP.DocumentGeneration.Pdf;
 
 public sealed record BarcodeLabelPdfRequest(Guid TechnicalId, string VisibleFileName, DateTimeOffset RequestedAtUtc,
-    string Title, string BarcodeText, IReadOnlyList<string> Lines);
+    string Title, string BarcodeText, IReadOnlyList<string> Lines, DocumentPdfBranding? Branding = null);
 
 /// <summary>
-/// Brand-free label PDF over the existing PDFsharp 6.2.4 Code3of9Standard and vendored Noto Sans.
+/// Label PDF over the existing PDFsharp 6.2.4 Code3of9Standard and vendored Noto Sans; an optional fixed corporate
+/// publication draws only approved assets, leaving the original technical layout and replay unchanged when absent.
 /// ASSUMPTION-STK-BARCODE-1: Code39 is a reversible print choice; the exact stored code is encoded, never uppercased.
 /// Source API: PDFsharp v6.2.4 PdfSharp.BarCodes/Drawing.BarCodes/Code3of9Standard.cs (existing MIT package).
 /// Request timestamps and PDF identifiers are stable for the vault's same-key replay; no current clock is read here.
@@ -41,6 +42,7 @@ public sealed class BarcodeLabelPdfGenerator
         NotoSansRegularFont.EnsureIntegrity();
         PdfFontResolverRegistration.EnsureRegistered();
         using var document = new PdfDocument();
+        using var branding = DocumentPdfBrandingImages.Open(request.Branding, document);
         document.Info.Title = text[0];
         document.Info.CreationDate = request.RequestedAtUtc.UtcDateTime;
         document.Info.ModificationDate = request.RequestedAtUtc.UtcDateTime;
@@ -51,6 +53,8 @@ public sealed class BarcodeLabelPdfGenerator
         page.Orientation = PageOrientation.Landscape;
         using (var graphics = XGraphics.FromPdfPage(page))
         {
+            branding?.Draw(graphics, page.Width.Point, page.Height.Point, Margin);
+            var contentTop = Margin + (branding?.HeaderReservePoints ?? 0);
             var font = new XFont(NotoSansRegularFont.FamilyName, 12, XFontStyleEx.Regular,
                 new XPdfFontOptions(PdfFontEncoding.Unicode, PdfFontEmbedding.EmbedCompleteFontFile));
             var available = page.Width.Point - 2 * Margin;
@@ -58,12 +62,12 @@ public sealed class BarcodeLabelPdfGenerator
             {
                 if (graphics.MeasureString(text[index], font).Width > available)
                     throw new ArgumentException("The label text does not fit the PDF content area.", nameof(request));
-                graphics.DrawString(text[index], font, XBrushes.Black, new XPoint(Margin, Margin + index * LineHeight));
+                graphics.DrawString(text[index], font, XBrushes.Black, new XPoint(Margin, contentTop + index * LineHeight));
             }
             // The page margin provides the white quiet zone around the library-rendered barcode.
             var barcode = new Code3of9Standard(request.BarcodeText, new XSize(available - 32, BarcodeHeight))
             { TextLocation = TextLocation.None, Anchor = AnchorType.MiddleCenter };
-            var top = Margin + text.Length * LineHeight + 16;
+            var top = contentTop + text.Length * LineHeight + 16;
             graphics.DrawBarCode(barcode, XBrushes.Black, new XPoint(page.Width.Point / 2, top + BarcodeHeight / 2));
             graphics.DrawString(request.BarcodeText, font, XBrushes.Black,
                 new XPoint(Margin, top + BarcodeHeight + LineHeight));
