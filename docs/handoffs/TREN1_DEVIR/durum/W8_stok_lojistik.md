@@ -124,3 +124,10 @@
 - Ön yüz 14 yeni dosya, 6 Vitest dosyasında 55 test tanımı / 115 parametrik vaka kaynağı. Dar ikinci kaynak gözü yeni somut P1/P2 bildirmedi; bağımsız K3 imzası değildir.
 - Kaynak derlemeleri **Api, Product.UnitTests, Identity.UnitTests, Api.IntegrationTests ve `npx tsc -b`: exit 0**; .NET sıfır uyarı/hata. EF üretimi exit 0. Native exit/log kayıtları depodışında tutulur. Unit/SQL/Vitest/browser/CI runtime koşumları **NOT_RUN**; tek .NET/EF ve Node slotu bırakıldı.
 - Merkezi entegrasyon listesi: Program endpoint mapping + shell provider kaydı; registry/OpenAPI yeniden üretimi; yeni attempt durable-store/recovery/release ve 51975 migration sayıları; Product context/partial/design-factory/service/read fingerprint'leri; yeni izin ve API/event sözleşmeleri; 7 SQL fact tam adı/ilişkisel envanter + backend test grubu pinleri; Manufacturing gerçek üyelik/Cari/Settings tüketici checkpoint'i. Program, merkez pinler ve KALAN_PLAN bu ekipçe değiştirilmedi. Sonraki mevcut bağımlılık Product'ta açık ticari mal/mamul sınıfı owner kaynağıdır; boya sınıfından türetilmez.
+
+
+### URT-S8 / URT-D58,D67 — borrowed Inventory cost reads
+
+- SOURCE_READY: actual movement cost and immutable first-entry rate readers can borrow the physical host transaction through `InventoryManufacturingCostReadSession.EnlistAsync`. Both reads keep actual company checks and validate the active transaction before and after reads. Dispose never commits, rolls back or closes host handles.
+- Real-SQL fact source stages an actual uncommitted issue, reads that exact movement through the borrowed session, rejects another company, disposes the reader and rolls back the physical write. Runtime SQL and tests: NOT_RUN. Compilation pending the coordinated build checkpoint.
+- New context-construction surface: K3 review pending; no guard inventory bypass or SQL allowlist was added.
