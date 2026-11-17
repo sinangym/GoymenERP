@@ -604,6 +604,82 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorOperatorRecoveryAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ConfirmedCredentialVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ConfirmedSecretVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("ConfirmedTwoFactorEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("ConfirmedUserVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("OperatorHash")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("OriginalCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("ResultCredentialVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ResultSecretVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TargetInputHash")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("TargetUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LocalTwoFactorOperatorRecoveryAttempts_KeyHash");
+
+                    b.HasIndex("TargetUserId", "RecordedAtUtc", "Id");
+
+                    b.ToTable("LocalTwoFactorOperatorRecoveryAttempts", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalTwoFactorOperatorRecoveryAttempts_State", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [TargetUserId] <> '00000000-0000-0000-0000-000000000000' AND [ConfirmedUserVersion] >= 1 AND [ConfirmedCredentialVersion] >= 1 AND [ConfirmedSecretVersion] >= 0 AND [ResultCredentialVersion] >= [ConfirmedCredentialVersion] AND [ResultSecretVersion] >= 0 AND [Outcome] IN (1,2,3) AND LEN([Reason]) BETWEEN 1 AND 1000 AND LEN([OriginalCorrelationId]) BETWEEN 1 AND 128 AND LEN([KeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN([TargetInputHash]) = 64 AND LEN([OperatorHash]) = 64 AND DATEPART(TZOFFSET, [RecordedAtUtc]) = 0 AND [KeyHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9A-F]%' AND [RequestHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9A-F]%' AND [TargetInputHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9A-F]%' AND [OperatorHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9A-F]%' AND (([Outcome] = 1 AND [ConfirmedTwoFactorEnabled] = 1 AND [ConfirmedSecretVersion] >= 1 AND CONVERT(decimal(20,0),[ResultCredentialVersion]) - CONVERT(decimal(20,0),[ConfirmedCredentialVersion]) = 1 AND CONVERT(decimal(20,0),[ResultSecretVersion]) - CONVERT(decimal(20,0),[ConfirmedSecretVersion]) = 1) OR ([Outcome] = 2 AND [ConfirmedTwoFactorEnabled] = 0 AND [ResultCredentialVersion] = [ConfirmedCredentialVersion] AND [ResultSecretVersion] = [ConfirmedSecretVersion]) OR [Outcome] = 3)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -991,6 +1067,15 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorOperatorRecoveryAttempt", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

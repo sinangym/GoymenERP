@@ -76,11 +76,13 @@ public sealed partial class IdentityDbContext
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         ApplyCompanySetupWriteGuards();
+        ApplyOperatorTwoFactorRecoveryWriteGuards();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         ApplyCompanySetupWriteGuards();
+        ApplyOperatorTwoFactorRecoveryWriteGuards();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 }

@@ -193,11 +193,13 @@ namespace GoymenERP.Modules.SecurityEvents.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SecurityEvents_AiRiskClass", "[AiRiskClass] IS NULL OR [AiRiskClass] IN ('Read', 'Draft', 'Simulate', 'Write')");
 
-                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read', 'auth.login.rate_limited', 'identity.founder.recovered', 'identity.founder.password_reset', 'identity.founder.recovery_refused')");
+                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('auth.login.succeeded', 'auth.login.failed', 'authz.denied', 'ai.authz.denied', 'identity.permission.changed', 'settings.policy.published', 'export.performed', 'retention.purge.requested', 'ai.tool.called', 'ai.request.refused', 'security.events.read', 'auth.login.rate_limited', 'identity.founder.recovered', 'identity.founder.password_reset', 'identity.founder.recovery_refused', 'identity.two_factor.recovered', 'identity.two_factor.recovery_refused')");
 
                             t.HasCheckConstraint("CK_SecurityEvents_LegalHold", "[LegalHold] = 0");
 
                             t.HasCheckConstraint("CK_SecurityEvents_OccurrenceCount", "[OccurrenceCount] >= 1");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_OperatorTwoFactorRecovery", "[EventType] NOT IN ('identity.two_factor.recovered','identity.two_factor.recovery_refused') OR ([ScopeKind] = 'Platform' AND [CompanyId] IS NULL AND [RequestedCompanyId] IS NULL AND [ActorType] = 'System' AND [ActorId] IS NOT NULL AND [ActorId] COLLATE Latin1_General_100_BIN2 = 'identity.recover-two-factor' AND [Phase] = 'Single' AND [SourceChannel] = 'System' AND [Severity] = 'High' AND [PermissionCode] IS NULL AND [PolicyId] IS NULL AND [PolicyVersion] IS NULL AND [AiToolId] IS NULL AND [AiToolVersion] IS NULL AND [AiRiskClass] IS NULL AND [AiDataClass] IS NULL AND [OccurrenceCount] = 1 AND [AggregationWindowStartUtc] IS NULL AND [AggregationWindowEndUtc] IS NULL AND (([EventType] = 'identity.two_factor.recovered' AND [Outcome] = 'Allowed' AND [ReasonCode] IS NULL) OR ([EventType] = 'identity.two_factor.recovery_refused' AND [Outcome] = 'Denied' AND [ReasonCode] IS NOT NULL AND [ReasonCode] = 'policy_refused')))");
 
                             t.HasCheckConstraint("CK_SecurityEvents_Outcome", "[Outcome] IN ('Allowed', 'Denied', 'Failed', 'Unknown')");
 

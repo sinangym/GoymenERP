@@ -86,6 +86,7 @@ public static partial class SecurityEventV1Validator
         ValidateAiFields(e, errors);
         ValidateRateLimitSummary(e, errors);
         ValidateFounderRecovery(e, errors);
+        ValidateOperatorTwoFactorRecovery(e, errors);
 
         return errors;
     }
@@ -192,6 +193,8 @@ public static partial class SecurityEventV1Validator
         if (eventType == SecurityEventTypesV1.LoginSucceeded) return outcome == SecurityEventOutcomesV1.Allowed;
         if (eventType == SecurityEventTypesV1.LoginRateLimited) return outcome == SecurityEventOutcomesV1.Denied;
         if (eventType == SecurityEventTypesV1.FounderRecoveryRefused) return outcome == SecurityEventOutcomesV1.Denied;
+        if (eventType == SecurityEventTypesV1.OperatorTwoFactorRecoveryRefused) return outcome == SecurityEventOutcomesV1.Denied;
+        if (eventType == SecurityEventTypesV1.OperatorTwoFactorRecovered) return outcome == SecurityEventOutcomesV1.Allowed;
         if (eventType is SecurityEventTypesV1.FounderRecovered or SecurityEventTypesV1.FounderPasswordReset)
         {
             return outcome == SecurityEventOutcomesV1.Allowed;
