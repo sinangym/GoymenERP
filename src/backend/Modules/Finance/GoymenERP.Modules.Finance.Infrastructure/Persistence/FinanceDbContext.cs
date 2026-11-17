@@ -173,6 +173,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         ConfigureCreditAccounts(modelBuilder);
         ConfigureCreditMovements(modelBuilder);
         ConfigureCreditLimits(modelBuilder);
+        ConfigurePartyBalanceTransfers(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2366,6 +2367,9 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is FinancePartyBalanceAssignmentRow assignment
+                    && assignment.Version != (long)entry.OriginalValues[nameof(FinancePartyBalanceAssignmentRow.Version)]! + 1)
+                    throw new InvalidOperationException("Bakiye devir bağlantısı yalnız beklenen sürümü bir artırarak değişir.");
                 if (entry.Entity is FinanceCreditMovementRow movement && !CreditMovementChangeAllowed(entry, movement))
                     throw new InvalidOperationException("Kredi hareketi yalnız ayrı kişinin kararı veya açık dönem ters kaydıyla değişir.");
                 if (entry.Entity is FinanceCreditLimitRow limit && !CreditLimitChangeAllowed(entry, limit))
@@ -2610,6 +2614,11 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                         nameof(FinancePaymentAllocationStateRow.UnallocatedAmountText),
                         nameof(FinancePaymentAllocationStateRow.UpdatedBy),
                         nameof(FinancePaymentAllocationStateRow.UpdatedAtUtc),
+                    ],
+                    FinancePartyBalanceAssignmentRow =>
+                    [
+                        nameof(FinancePartyBalanceAssignmentRow.AvailableAmountText),
+                        nameof(FinancePartyBalanceAssignmentRow.LastTransferId),
                     ],
                     FinanceOpenItemRow =>
                     [

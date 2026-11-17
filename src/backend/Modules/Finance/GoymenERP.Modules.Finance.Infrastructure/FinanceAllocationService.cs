@@ -60,7 +60,7 @@ public sealed class FinanceAllocationService(
                 source?.Id, null, request.AllocationId, refusal, cancellationToken);
         }
         if (await dbContext.ReversalProposals.AsNoTracking().AnyAsync(
-                row => row.OriginalSourceId == source.Id && row.Status == ReversalProposalStatuses.Approved,
+                row => (row.OriginalSourceId == source.Id || row.ReversalSourceId == source.Id) && row.Status == ReversalProposalStatuses.Approved,
                 cancellationToken))
         {
             var refusal = Refused(context, CommandOutcome.ValidationFailed,
@@ -72,7 +72,20 @@ public sealed class FinanceAllocationService(
         FinanceAllocationMutation mutation;
         try
         {
-            mutation = FinanceAllocationPolicy.Create(source, openItem, sourceState, normalizedRequest);
+            var sourcePositions = await FinancePartyBalanceAssignment.ReadAsync(dbContext, FinanceBalanceAssignmentKinds.Receipt,
+                source.Id, source.PartyId, source.CompanyAccountId, source.CurrencyId,
+                sourceState?.UnallocatedAmountText ?? source.AmountText, true, cancellationToken);
+            var itemPositions = await FinancePartyBalanceAssignment.ReadAsync(dbContext, FinanceBalanceAssignmentKinds.OpenItem,
+                openItem.Id, openItem.PartyId, openItem.CompanyAccountId, openItem.CurrencyId,
+                openItem.OutstandingAmountText, true, cancellationToken);
+            var sourceOwner = sourcePositions.Select(request.AllocationPartyId, request.AllocationAccountId);
+            var itemOwner = itemPositions.Select(request.AllocationPartyId, request.AllocationAccountId);
+            FinanceAllocationPositions.RequireAvailable(sourceOwner, normalizedRequest.Amount);
+            FinanceAllocationPositions.RequireAvailable(itemOwner, normalizedRequest.Amount);
+            mutation = FinanceAllocationPolicy.Create(source, openItem, sourceState, normalizedRequest,
+                sourceOwner.CompanyAccountId, itemOwner.CompanyAccountId);
+            sourcePositions.Spend(sourceOwner, normalizedRequest.Amount);
+            itemPositions.Spend(itemOwner, normalizedRequest.Amount);
         }
         catch (FinanceAllocationPolicyException exception)
         {
@@ -117,6 +130,8 @@ public sealed class FinanceAllocationService(
             OpenItemId = openItem.Id,
             CurrencyId = source.CurrencyId,
             AmountText = normalizedRequest.Amount,
+            AllocationPartyId = request.AllocationPartyId,
+            AllocationAccountId = request.AllocationAccountId,
             Reason = normalizedRequest.Reason,
             Status = FinanceAllocationStatuses.Active,
             Version = 1,
@@ -175,6 +190,13 @@ public sealed class FinanceAllocationService(
             return await TerminalAsync(context, metadata, ReleaseCommandName, payloadHash,
                 null, allocation.Id, allocation.Id, PolicyRefusal(context, exception), cancellationToken);
         }
+
+        var originalAccount = await dbContext.ReceiptDrafts.AsNoTracking()
+            .Where(x => x.Id == allocation.SourceId).Select(x => x.CompanyAccountId).SingleAsync(cancellationToken);
+        await FinancePartyBalanceAssignment.RestoreAsync(dbContext, FinanceBalanceAssignmentKinds.Receipt,
+            allocation.SourceId, originalAccount, allocation.AllocationAccountId, allocation.AmountText, cancellationToken);
+        await FinancePartyBalanceAssignment.RestoreAsync(dbContext, FinanceBalanceAssignmentKinds.OpenItem,
+            openItem.Id, openItem.CompanyAccountId, allocation.AllocationAccountId, allocation.AmountText, cancellationToken);
 
         var now = timeProvider.GetUtcNow();
         var before = AuditJson(allocation);
@@ -365,7 +387,8 @@ public sealed class FinanceAllocationService(
     private static FinanceAllocationView View(FinanceAllocationRow row) => new FinanceAllocationView(
         row.Id, row.CompanyId, row.SourceId, row.OpenItemId, row.CurrencyId, row.AmountText,
         (FinanceAllocationStatus)row.Status, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason);
+        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason,
+        row.AllocationPartyId, row.AllocationAccountId);
 
     private static string AuditJson(FinanceAllocationRow row) => JsonSerializer.Serialize(View(row), Json);
 

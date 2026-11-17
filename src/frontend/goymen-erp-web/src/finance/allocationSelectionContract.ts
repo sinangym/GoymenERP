@@ -1,4 +1,4 @@
-import { isBoundUuid, isPositiveInt64Text } from './contract'
+import { decodeAllocationPositions, isBoundUuid, isPositiveInt64Text, type FinanceAllocationPosition } from './contract'
 import { isNonNegativeDecimalText, isPositiveDecimalText, positiveDifference, sameDecimal } from './decimalText'
 import { isDateOnly } from './dateOnly'
 
@@ -47,6 +47,7 @@ export interface AllocationOpenItem {
   readonly dueOn: string | null
   readonly status: 1 | 2
   readonly version: string
+  readonly allocationPositions?: readonly FinanceAllocationPosition[]
 }
 
 export interface AppliedAllocationOpenItemBatch {
@@ -149,6 +150,7 @@ function openItem(
     'id', 'companyId', 'sourceKind', 'sourceDocumentId', 'sourceInstallmentId', 'sourceVersion',
     'sourceBatchId', 'sourceBatchVersion', 'sourceBatchChecksum', 'partyId', 'companyAccountId',
     'currencyId', 'originalAmount', 'outstandingAmount', 'dueOn', 'status', 'version',
+    ...(source.allocationPositions === undefined ? [] : ['allocationPositions']),
   ]) || expectedRow === null || source.companyId !== companyId
     || source.sourceKind !== 'official.invoice-installment.v1'
     || source.sourceDocumentId !== expectedRow.sourceDocumentId
@@ -165,6 +167,8 @@ function openItem(
       || positiveDifference(source.originalAmount, source.outstandingAmount) !== null)
     || (source.status === 1 && !isPositiveDecimalText(source.outstandingAmount))
     || (source.status === 2 && !sameDecimal(source.outstandingAmount, '0'))) return null
+  if (source.allocationPositions !== undefined
+    && decodeAllocationPositions(source.allocationPositions, expectedRow.partyId, expectedRow.companyAccountId) === null) return null
   return source as unknown as AllocationOpenItem
 }
 
