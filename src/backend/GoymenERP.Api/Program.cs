@@ -353,6 +353,7 @@ builder.Services.AddManufacturingModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // MFG realization v1: the host composes the approved Manufacturing ports with their API-owned adapters.
+builder.Services.AddManufacturingCostRuntimeComposition();
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
 builder.Services.AddScoped<IManufacturingInputOrderRateReadPortV1, ManufacturingSalesOrderInputRateReadPortV1>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
