@@ -1050,3 +1050,23 @@ transfer; an invalid persisted source fails closed. Existing draft/published ver
 The two `starting-values-transfer` commands use existing publish permissions and do not grant rights to any person.
 The forward-fix guard is **51966** and refuses while a baseline snapshot exists. Migration generation and source-build
 results are recorded in the W8 identity report; SQL/HTTP/browser acceptance is **NOT_RUN** until the final test phase.
+
+## API-97 purchase invoice variance policy (ALS-D8 / ALS-D15 / ALS-D63)
+
+`ISettingsPurchaseInvoiceVariancePolicyProviderV1` reads only the company's explicitly published immutable versions.
+No row is `settings_purchase_invoice_variance_policy_not_published`, never an active zero fallback. The editor starts
+the two fields at the decided zero; an authorized person may explicitly publish different values, including on the
+first publication. Amount and control-rate boundaries share one identity/version and the invoice snapshots both.
+The owner stores exact decimal(24,6) values, rejecting excess precision without rounding or choosing approval policy.
+
+`settings.purchase-invoice-variance-policies.manage` is registration only, company-wide: it confers no grant, role,
+Critical classification or invoice-approval permission. `GET /api/v1/settings/purchase-invoice-variance-policy`
+shows the actual current version and history; `POST .../publish` requires the expected version, reason and actor-bound
+idempotency key. The owner revalidates current authority, owns its Serializable transaction and appends Audit through
+the Audit owner's port before committing the version and terminal answer. Caller-owned/ambient transactions and
+pending caller state are refused unchanged. Technical/Audit/concurrency failures roll back and leave the key retryable.
+
+EF-generated migration `20261117085524_AddPurchaseInvoiceVariancePolicies` adds the company-filtered table without seed or backfill. Its first
+Down operation refuses with **THROW 51985** while any policy history exists; an empty table may roll back. The API
+mount, shell capability/route and global generated inventories remain central integration work. Unit, SQL/HTTP and
+frontend test sources are supplied; runtime acceptance is **NOT_RUN**.
