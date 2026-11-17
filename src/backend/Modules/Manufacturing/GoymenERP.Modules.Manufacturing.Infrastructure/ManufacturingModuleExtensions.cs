@@ -64,6 +64,9 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<IManufacturingWorkCenterQueueStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingWorkCenterQueueOrderingStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingOrderReopeningStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-S8/SC36: these facts and immutable cost generations share the physical order's context and transaction.
+        services.AddScoped<IManufacturingCostGenerationStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingNonKgInputStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingPlanPriorityStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // F-009 D5 (URT-D33/D34/D35): the order cancel with its plan release and the plan's re-approval, the same store.
         services.AddScoped<IManufacturingOrderCancellationStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());

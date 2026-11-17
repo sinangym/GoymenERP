@@ -4,9 +4,13 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Costing;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Api.ManufacturingRuntime;
 
@@ -14,7 +18,8 @@ namespace GoymenERP.Api.ManufacturingRuntime;
 /// The own plan decides whether an order link exists; every unlinked input reads its own first-entry proof.</summary>
 internal sealed class ManufacturingInputRatePriorityReaderV1(ICompanyContext company, ICurrentUser user,
     IManufacturingOrderStore orders, IManufacturingPlanStore plans,
-    IManufacturingInputOrderRateReadPortV1 orderRates, IInventoryFirstReceiptExchangeRateReadPortV1 receipts)
+    IManufacturingInputOrderRateReadPortV1 orderRates, IInventoryFirstReceiptExchangeRateReadPortV1 receipts,
+    ManufacturingDbContext? manufacturing = null)
     : IManufacturingInputRatePriorityReadPortV1
 {
     public async Task<ManufacturingInputRateProofV1?> ReadAsync(Guid companyId, Guid manufacturingOrderId, Guid issueFactId,
@@ -54,7 +59,10 @@ internal sealed class ManufacturingInputRatePriorityReaderV1(ICompanyContext com
             }
             else
             {
-                var answer = await receipts.GetAsync(companyId, parentLabelId, ct);
+                await using var shared = manufacturing?.Database.CurrentTransaction is { } transaction
+                    ? await InventoryManufacturingCostReadSession.EnlistAsync(manufacturing.Database.GetDbConnection(),
+                        transaction.GetDbTransaction(), company, ct) : null;
+                var answer = await (shared?.FirstReceiptRates ?? receipts).GetAsync(companyId, parentLabelId, ct);
                 if (!Scope() || answer is null || answer.CompanyId != companyId || answer.LabelId != parentLabelId) return null;
                 if (answer.Status == InventoryFirstReceiptExchangeRateStatusV1.Rated)
                 {
