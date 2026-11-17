@@ -38,6 +38,7 @@ export const OWNER_KIND = {
   counterpartyParty: 'counterparty.party',
   inventoryMaterialLabel: 'inventory.material-label',
   purchasingPurchaseOrder: 'purchasing.purchase-order',
+  purchasingInvoiceImport: 'purchasing.invoice-import',
   /** The Sales order (S-04 "Sözleşme / Belgeler" tab); the vault asks Sales's own detail read (SalesDocumentOwnerLinkPort). */
   salesOrder: 'sales.order',
   logisticsDispatchNote: 'logistics.dispatch-note',

@@ -15,7 +15,17 @@ Dayanak: ALS-D7/D44, mevcut FIN-S13; biçimler için kullanıcı cevabının
   Documents projesinin eksik yerel restore çıktısı standart restore ile üretildi.
 - Birim/HTTP/model/gerçek SQL test kaynakları yazıldı; çalışma zamanı testleri,
   SQL, Vitest/browser ve CI **NOT_RUN**. Pin ve ilişkisel/grup üretimi entegrasyonda.
-- Kalan: kullanıcı ekranı ve sütun seçimi; gerçek cari/ürün/birim/vergi/ödeme planı
+- Kullanıcı ekranı: gerçek Documents listesi/temiz sürüm seçimi, XML doğrudan okuma,
+  CSV/XLSX açık sütun eşleştirmesi, belge üzerindeki tüm satır/toplam/vergi/kur/ödeme
+  bilgilerinin ondalık metinlerini koruyan önizlemesi yazıldı. React ekranında para
+  hesabı yapılmaz. Bilinmeyen kimlik ayırma sonucu aynı anahtarla doğrulanır;
+  bağlam/sürüm değişince eski önizleme kapanır. Yetkisiz/bulunamadı/çakışma/503,
+  çevrimdışı ve bozuk yanıt durumları ayrıdır. Ekran mevcut import capability'sine
+  bağlıdır; bu kontrolün merkez owner bildirimi ve tam workflow yayını tamamlanmadı.
+- Frontend `npx tsc -b`: exit 0. Strict decoder, transport ve DOM test kaynakları
+  yazıldı; Vitest/browser çalıştırılmadı. Mevcut Documents owner sözleşmesine
+  `purchasing.invoice-import` eklendi; yeni izin/grant yoktur.
+- Kalan: kayıtlı içe aktarma işlemini tekrar açma; gerçek cari/ürün/birim/vergi/ödeme planı
   eşlemesi; mevcut fatura kayıt komutuna bağlama. Kaynakta olmayan resmî TL satır,
   taksit tutarı veya başlık masraf/yuvarlama dağılımı tahmin edilmez.
 - 174 paydası ve DONE sayısı değişmedi; bu kayıt tamamlanmış FIN-S13 iddiası değildir.

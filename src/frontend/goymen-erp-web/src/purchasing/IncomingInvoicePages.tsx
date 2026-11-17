@@ -16,6 +16,7 @@ import { invoiceQuantity, type IncomingInvoice, type IncomingInvoiceLine, type I
 import { INCOMING_INVOICE_TEXT as T, INCOMING_INVOICE_STATUS as STATUS } from './incomingInvoiceText'
 import { PURCHASING_CAPABILITY as C } from './capabilities'
 import { isPurchasingGuid } from './contract'
+import { InvoiceImportPanel } from './InvoiceImportPanel'
 import styles from './IncomingInvoicePages.module.css'
 
 const listPath = '/satinalma/faturalar'
@@ -51,6 +52,7 @@ function InvoiceList({ binding }: { readonly binding: Binding }) {
   const data = !read.isFetching && read.data?.type === 'ok-single' ? read.data.data : null
   return <section className={styles.page} aria-labelledby="incoming-invoices-heading">
     <h1 id="incoming-invoices-heading">{T.heading}</h1>
+    <InvoiceImportPanel binding={binding} />
     <form onSubmit={(event) => { event.preventDefault(); setSearch(text.trim()); setPage(0) }} className={styles.actions}>
       <Field label={T.number}>{(props) => <input {...props} maxLength={128} value={text} onChange={(event) => setText(event.target.value)} />}</Field>
       <Button type="submit">{T.search}</Button>
