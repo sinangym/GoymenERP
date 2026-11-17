@@ -1,4 +1,4 @@
-﻿using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
@@ -213,7 +213,7 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryOpeningCosts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferOverageRenewalsAndLossWithdrawals", StringComparison.Ordinal));
-        Assert.Equal("AddInventoryExactCostPools",
+        Assert.Equal("AddInventoryFirstEntryExchangeRateProof",
             context.Database.GetMigrations().Last()[15..]);
         Assert.False(context.Database.HasPendingModelChanges());
     }

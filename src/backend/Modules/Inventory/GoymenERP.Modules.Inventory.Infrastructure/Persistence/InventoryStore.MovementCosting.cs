@@ -44,6 +44,9 @@ public sealed partial class InventoryStore
                 var entryCurrency = proof?.Currency ?? await EntryCurrencyAsync(position.LabelId, token);
                 var stamp = NewStamp(movement.Id, number, currency, entryCurrency, proof?.EvidenceJson ?? "{}", metadata);
                 stamp.SourceIssueMovementId = sourceIssue;
+                if (movement.Source.Kind == InventoryGoodsReceiptContractV1.SourceKind
+                    && InventoryFirstEntryRateProof.IsValid(proof?.FirstEntryRate, movement.CompanyId, movement.Source.Id, proof?.PurchaseOrderId))
+                    stamp.FirstEntryRateJson = JsonSerializer.Serialize(proof!.FirstEntryRate, CostJson);
                 var isCosted = position.Owner.Kind == StockPartyKind.Company && position.Owner.Id == movement.CompanyId
                     && position.Custodian.Kind == StockPartyKind.Company && position.Custodian.Id == movement.CompanyId;
                 if (!isCosted)
@@ -127,7 +130,7 @@ public sealed partial class InventoryStore
                         stamp.EvidenceJson = System.Text.Json.JsonSerializer.Serialize(new { movement.Source, approvedReturnTlUnitCost = unit });
                         stamp.EntryCurrencyStatus = (int)InventoryIssueCostCurrencyStatusV1.FunctionalCurrency;
                         stamp.OriginalCurrencyId = null; stamp.ForeignUnitCostPerKg = null; stamp.EntryExchangeRate = null;
-                        stamp.ForeignUnitCostRatioJson = null;
+                        stamp.ForeignUnitCostRatioJson = null; stamp.EntryExchangeRateRatioJson = null;
                         stamp.CurrencySourceVersion = $"inventory.supplier-return-approved-cost.v1/{movement.Id:D}";
                         stamp.CurrencyReason = null;
                     }
@@ -282,17 +285,56 @@ public sealed partial class InventoryStore
     private MovementCostStampRow NewStamp(Guid movement, int line, Guid currency, InventoryIssueCostCurrencyV1 proof,
         string evidence, InventoryCommandMetadata metadata)
     {
-        // Existing rate column is decimal(38,18). Never silently truncate a higher-precision owner's FX proof.
-        if (proof.ExchangeRate is { } rate && Math.Round(rate, 18, MidpointRounding.AwayFromZero) != rate)
-            proof = new(InventoryIssueCostCurrencyStatusV1.Unreadable, null, null, null, proof.SourceVersion,
-                "movement_currency_rate_not_representable");
+        // The exact owner rate is retained even when decimal(38,18) cannot represent its scalar.
+        InventoryExactCostRatioV1? rateRatio = proof.ExchangeRateRatio;
+        decimal? rateScalar = proof.ExchangeRate;
+        try
+        {
+            if (proof.Status == InventoryIssueCostCurrencyStatusV1.Converted)
+            {
+                var exact = InventoryExactCostRatioV1.Resolve(rateScalar, rateRatio);
+                if (exact.Sign <= 0 || proof.OriginalCurrencyId is null || proof.OriginalCurrencyId == Guid.Empty
+                    || proof.Reason is not null
+                    || InventoryExactCostRatioV1.Resolve(proof.ForeignUnitCostPerKg, proof.ForeignUnitCostRatio).Sign <= 0)
+                    throw new InvalidOperationException();
+                rateRatio = InventoryExactCostRatioV1.From(exact);
+                if (rateScalar is { } value && (Math.Round(value, 18, MidpointRounding.AwayFromZero) != value || value >= 100_000_000_000_000_000_000m))
+                    rateScalar = null;
+            }
+            else if (rateScalar is not null || rateRatio is not null) throw new InvalidOperationException();
+            if (proof.Status == InventoryIssueCostCurrencyStatusV1.FunctionalCurrency
+                && (proof.OriginalCurrencyId is not null || proof.ForeignUnitCostPerKg is not null || proof.ForeignUnitCostRatio is not null
+                    || proof.Reason is not null)) throw new InvalidOperationException();
+            if (proof.Status == InventoryIssueCostCurrencyStatusV1.RateMissing)
+            {
+                if (proof.OriginalCurrencyId is null || proof.OriginalCurrencyId == Guid.Empty || string.IsNullOrWhiteSpace(proof.Reason))
+                    throw new InvalidOperationException();
+                if (proof.ForeignUnitCostPerKg is not null || proof.ForeignUnitCostRatio is not null)
+                    if (InventoryExactCostRatioV1.Resolve(proof.ForeignUnitCostPerKg, proof.ForeignUnitCostRatio).Sign <= 0)
+                        throw new InvalidOperationException();
+            }
+            if (proof.Status == InventoryIssueCostCurrencyStatusV1.Unreadable
+                && (proof.OriginalCurrencyId is not null || proof.ForeignUnitCostPerKg is not null || proof.ForeignUnitCostRatio is not null
+                    || string.IsNullOrWhiteSpace(proof.Reason))) throw new InvalidOperationException();
+            if (!Enum.IsDefined(proof.Status) || string.IsNullOrWhiteSpace(proof.SourceVersion) || proof.SourceVersion.Length > 160)
+                throw new InvalidOperationException();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or FormatException or OverflowException)
+        {
+            proof = new(InventoryIssueCostCurrencyStatusV1.Unreadable, null, null, null,
+                !string.IsNullOrWhiteSpace(proof.SourceVersion) && proof.SourceVersion.Length <= 160
+                    ? proof.SourceVersion : "inventory.entry-currency.v1/unreadable",
+                "movement_currency_rate_proof_unreadable");
+            rateScalar = null; rateRatio = null;
+        }
         return new()
         {
         CompanyId = companyContext.CompanyId, MovementId = movement, LineNumber = line, CurrencyId = currency,
         Status = (int)InventoryMovementCostStampStatusV1.Unavailable, StampVersion = 1,
         EntryCurrencyStatus = (int)proof.Status, OriginalCurrencyId = proof.OriginalCurrencyId,
-        ForeignUnitCostPerKg = proof.ForeignUnitCostPerKg is { } foreign && foreign < 100_000_000_000_000_000_000m ? foreign : null,
-        EntryExchangeRate = proof.ExchangeRate,
+        ForeignUnitCostPerKg = proof.ForeignUnitCostPerKg,
+        EntryExchangeRate = rateScalar,
+        EntryExchangeRateRatioJson = rateRatio is null ? null : JsonSerializer.Serialize(rateRatio, CostJson),
         ForeignUnitCostRatioJson = proof.ForeignUnitCostRatio is null ? null : JsonSerializer.Serialize(proof.ForeignUnitCostRatio, CostJson),
         CurrencySourceVersion = proof.SourceVersion, CurrencyReason = proof.Reason, EvidenceJson = evidence,
         RecordedAtUtc = timeProvider.GetUtcNow(), CorrelationId = metadata.CorrelationId,
@@ -353,6 +395,7 @@ public sealed partial class InventoryStore
         target.EntryCurrencyStatus = source.EntryCurrencyStatus; target.OriginalCurrencyId = source.OriginalCurrencyId;
         target.ForeignUnitCostPerKg = source.ForeignUnitCostPerKg; target.EntryExchangeRate = source.EntryExchangeRate;
         target.ForeignUnitCostRatioJson = source.ForeignUnitCostRatioJson;
+        target.EntryExchangeRateRatioJson = source.EntryExchangeRateRatioJson;
         target.CurrencySourceVersion = source.CurrencySourceVersion; target.CurrencyReason = source.CurrencyReason;
         target.EvidenceJson = source.EvidenceJson;
     }
@@ -401,7 +444,8 @@ public sealed partial class InventoryStore
         return receipts.Count == 1 ? new((InventoryIssueCostCurrencyStatusV1)receipts[0].EntryCurrencyStatus,
             receipts[0].OriginalCurrencyId, receipts[0].ForeignUnitCostPerKg, receipts[0].EntryExchangeRate,
             receipts[0].CurrencySourceVersion, receipts[0].CurrencyReason,
-            receipts[0].ForeignUnitCostRatioJson is { } ratio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(ratio, CostJson) : null)
+            receipts[0].ForeignUnitCostRatioJson is { } ratio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(ratio, CostJson) : null,
+            receipts[0].EntryExchangeRateRatioJson is { } fxRatio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(fxRatio, CostJson) : null)
             : new(InventoryIssueCostCurrencyStatusV1.Unreadable, null, null, null,
                 "inventory.entry-currency.v1/unreadable", "entry_currency_source_unreadable");
     }

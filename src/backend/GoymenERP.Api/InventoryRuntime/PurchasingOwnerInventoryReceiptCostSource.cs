@@ -29,6 +29,7 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
         PurchaseReceiptCostProofV1? proof = null;
         ProductPurchaseUnitConversionResultV1? conversion = null;
         ExchangeRateResolutionV1? usdRate = null;
+        InventoryFirstEntryRateV1? firstEntryRate = null;
         try
         {
             var receiptProof = await purchasing.ReadAsync(selection.PurchaseOrderId, selection.PurchaseOrderLineId, selection.AcceptanceId, cancellationToken);
@@ -45,6 +46,8 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
                 return Unavailable("purchase_receipt_cost_proof_unreadable");
             // Rejected owner payloads never enter another company's immutable evidence.
             proof = receiptProof;
+            firstEntryRate = await InventoryFirstEntryRateSource.ReadAsync(proof, exchangeRates,
+                () => Fence(selection.CompanyId, actor), cancellationToken);
             if (proof.Price is not { Outcome: PurchaseOrderLineCostOutcomeV1.Known, Price: { } price } || price.ProductId != selection.ProductId)
                 return Unavailable(proof.Price.UnreadableReason ?? "purchase_receipt_price_not_recorded");
             if (price.MovingAverageUnitCost <= 0m) return Unavailable("purchase_receipt_cost_zero_unreadable");
@@ -110,19 +113,19 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
             return new(selection.CompanyId, selection.AcceptanceId, selection.PurchaseOrderId, selection.PurchaseOrderLineId,
                 currency, original, tlScalar, usd, provenance, version, evidence, hasTl ? null : tl.UnavailableCode, usdReason,
                 InventoryExactCostRatioV1.From(originalRatio), tlRatio is null ? null : InventoryExactCostRatioV1.From(tlRatio),
-                usdRatio is null ? null : InventoryExactCostRatioV1.From(usdRatio));
+                usdRatio is null ? null : InventoryExactCostRatioV1.From(usdRatio), firstEntryRate);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (UnauthorizedAccessException) { throw; }
         catch { Fence(selection.CompanyId, actor); return Unavailable("purchase_receipt_cost_source_unreadable"); }
 
-        string Evidence() => JsonSerializer.Serialize(new { selection, proof, conversion, usdRate }, Json);
+        string Evidence() => JsonSerializer.Serialize(new { selection, proof, conversion, usdRate, firstEntryRate }, Json);
         InventoryPurchaseReceiptCostV1 Unavailable(string reason)
         {
             var evidence = Evidence(); var version = Version(evidence);
             return new(selection.CompanyId, selection.AcceptanceId, selection.PurchaseOrderId, selection.PurchaseOrderLineId,
                 null, null, null, null, new(InventoryIssueCostCurrencyStatusV1.Unreadable, null, null, null, version, reason),
-                version, evidence, reason, reason);
+                version, evidence, reason, reason, FirstEntryRate: firstEntryRate);
         }
     }
 

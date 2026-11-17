@@ -900,3 +900,10 @@ dotnet test tests/GoymenERP.Inventory.UnitTests/GoymenERP.Inventory.UnitTests.cs
 # real SQL (needs GOYMEN_ERP_TEST_SQLSERVER_CONNECTION; the CI relational job runs it)
 dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj --filter FullyQualifiedName~InventorySqlServerRelationalAcceptanceTests
 ```
+
+## Immutable first-entry FX (STK-SC36-b, FNS-D103/D104)
+
+- `AddInventoryFirstEntryExchangeRateProof` is EF-generated (`20261117010119`). Nullable receipt-time snapshots and exact issue-rate ratios are append-only with the original movement cost stamp. Its first Down operation refuses with **THROW 51972** while either new proof exists (forward fix); no old movement, price or FX is backfilled.
+- The actual Purchasing proof borrows the receipt transaction. Its approved order rate wins; only an explicitly unspecified rate permits the actual entry-business-day TCMB selling answer. An unreadable order owner never becomes a day-rate fallback. Functional currency is a distinct no-conversion fact, never a fabricated rate of one. This first-entry snapshot does not replace the official supplier-invoice FX used by the TL stock-cost pool.
+- The owner reader follows bounded immutable split/merge lineage. Merges preserve exact kg-weighted rates, actual receipt components and material shares. Non-terminating quotients retain canonical ratios; no intermediate rate is rounded. A missing input rate or different directed currency pair stays unreadable. Manufacturing remains a new-material boundary. Cached subtrees retain their height, so graph limits apply on every path.
+- Source includes host/codec/calculator/model and seven real-SQL facts for original capture, invoice-FX separation, merge/split/diamond provenance, missing/pair refusal, rollback, depth and Down guards. Runtime unit/SQL/browser/CI evidence is **NOT_RUN**. Manufacturing order/non-order priority still needs the actual first-entry port bound at its owning consumer; a registered owner reader alone is not a complete user flow.

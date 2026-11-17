@@ -28,22 +28,24 @@ public sealed partial class InventoryDbContext
                 + "AND [UnitCostRatioJson] IS NULL AND LEN([Reason]) > 0 AND [Reason] IS NOT NULL AND ([LedgerVersion] IS NULL OR [LedgerVersion] >= 1))");
             table.HasCheckConstraint("CK_MovementCostStamps_Currency", "LEN([CurrencySourceVersion]) > 0 AND "
                 + "(([EntryCurrencyStatus] = 1 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL AND [EntryExchangeRate] IS NULL "
-                + "AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 2 AND [OriginalCurrencyId] IS NOT NULL "
+                + "AND [EntryExchangeRateRatioJson] IS NULL AND [ForeignUnitCostRatioJson] IS NULL AND [CurrencyReason] IS NULL) OR ([EntryCurrencyStatus] = 2 AND [OriginalCurrencyId] IS NOT NULL "
                 + "AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND (([ForeignUnitCostPerKg] <> '0' AND [ForeignUnitCostPerKg] IS NOT NULL) OR [ForeignUnitCostRatioJson] IS NOT NULL) "
-                + "AND [EntryExchangeRate] > 0 AND [EntryExchangeRate] IS NOT NULL AND [CurrencyReason] IS NULL) "
+                + "AND (([EntryExchangeRate] > 0 AND [EntryExchangeRate] IS NOT NULL) OR [EntryExchangeRateRatioJson] IS NOT NULL) AND [CurrencyReason] IS NULL) "
                 + "OR ([EntryCurrencyStatus] = 3 AND [OriginalCurrencyId] IS NOT NULL "
                 + "AND [OriginalCurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [EntryExchangeRate] IS NULL "
-                + "AND ([ForeignUnitCostPerKg] IS NULL OR [ForeignUnitCostPerKg] <> '0') AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL) "
+                + "AND [EntryExchangeRateRatioJson] IS NULL AND ([ForeignUnitCostPerKg] IS NULL OR [ForeignUnitCostPerKg] <> '0') AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL) "
                 + "OR ([EntryCurrencyStatus] = 4 AND [OriginalCurrencyId] IS NULL AND [ForeignUnitCostPerKg] IS NULL "
-                + "AND [EntryExchangeRate] IS NULL AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL))");
+                + "AND [EntryExchangeRate] IS NULL AND [EntryExchangeRateRatioJson] IS NULL AND [ForeignUnitCostRatioJson] IS NULL AND LEN([CurrencyReason]) > 0 AND [CurrencyReason] IS NOT NULL))");
             table.HasCheckConstraint("CK_MovementCostStamps_Envelope", "LEN([CorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 "
                 + "AND ISJSON([EvidenceJson], OBJECT) = 1");
             table.HasCheckConstraint("CK_MovementCostStamps_DecimalText", CanonicalCostDecimal("UnitCostPerKg")
                 + " AND " + CanonicalCostDecimal("Amount") + " AND " + CanonicalCostDecimal("ForeignUnitCostPerKg"));
             table.HasCheckConstraint("CK_MovementCostStamps_ExactProof", "([UnitCostRatioJson] IS NULL OR ISJSON([UnitCostRatioJson], OBJECT) = 1) "
                 + "AND ([ForeignUnitCostRatioJson] IS NULL OR ISJSON([ForeignUnitCostRatioJson], OBJECT) = 1) "
-                + "AND ([PoolEffectJson] IS NULL OR ISJSON([PoolEffectJson], OBJECT) = 1)");
+                + "AND ([PoolEffectJson] IS NULL OR ISJSON([PoolEffectJson], OBJECT) = 1) "
+                + "AND ([EntryExchangeRateRatioJson] IS NULL OR ISJSON([EntryExchangeRateRatioJson], OBJECT) = 1) "
+                + "AND ([FirstEntryRateJson] IS NULL OR ISJSON([FirstEntryRateJson], OBJECT) = 1)");
         });
         stamp.HasKey(row => new { row.CompanyId, row.MovementId, row.LineNumber, row.CurrencyId });
         var decimalText = new ValueConverter<decimal, string>(value => CostDecimalText(value), value => CostDecimalValue(value));
@@ -53,6 +55,8 @@ public sealed partial class InventoryDbContext
         stamp.Property(row => row.UnitCostRatioJson).HasColumnType("nvarchar(max)");
         stamp.Property(row => row.ForeignUnitCostRatioJson).HasColumnType("nvarchar(max)");
         stamp.Property(row => row.PoolEffectJson).HasColumnType("nvarchar(max)");
+        stamp.Property(row => row.EntryExchangeRateRatioJson).HasColumnType("nvarchar(max)");
+        stamp.Property(row => row.FirstEntryRateJson).HasColumnType("nvarchar(max)");
         stamp.Property(row => row.EntryExchangeRate).HasPrecision(38, 18);
         stamp.Property(row => row.Reason).HasMaxLength(160).IsUnicode(false);
         stamp.Property(row => row.CurrencyReason).HasMaxLength(160).IsUnicode(false);

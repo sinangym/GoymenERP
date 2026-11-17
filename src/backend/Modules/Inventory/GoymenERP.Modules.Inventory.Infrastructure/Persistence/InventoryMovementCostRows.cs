@@ -21,6 +21,8 @@ internal sealed class MovementCostStampRow : IInventoryTenantRow
     public decimal? ForeignUnitCostPerKg { get; set; }
     public string? ForeignUnitCostRatioJson { get; set; }
     public decimal? EntryExchangeRate { get; set; }
+    public string? EntryExchangeRateRatioJson { get; set; }
+    public string? FirstEntryRateJson { get; set; }
     public string CurrencySourceVersion { get; set; } = string.Empty;
     public string? CurrencyReason { get; set; }
     public string EvidenceJson { get; set; } = "{}";

@@ -139,11 +139,44 @@ public sealed class InventoryManufacturingCostReadPort(InventoryDbContext db, IC
         throw new InvalidOperationException();
     }
 
-    private static InventoryIssueCostCurrencyV1 Currency(MovementCostStampRow? row) => row is null
-        ? new(InventoryIssueCostCurrencyStatusV1.Unreadable, null, null, null, "legacy-not-recorded", "movement_currency_proof_not_recorded")
-        : new((InventoryIssueCostCurrencyStatusV1)row.EntryCurrencyStatus, row.OriginalCurrencyId,
+    private static InventoryIssueCostCurrencyV1 Currency(MovementCostStampRow? row)
+    {
+        if (row is null) return new(InventoryIssueCostCurrencyStatusV1.Unreadable, null, null, null,
+            "legacy-not-recorded", "movement_currency_proof_not_recorded");
+        var proof = new InventoryIssueCostCurrencyV1((InventoryIssueCostCurrencyStatusV1)row.EntryCurrencyStatus, row.OriginalCurrencyId,
             row.ForeignUnitCostPerKg, row.EntryExchangeRate, row.CurrencySourceVersion, row.CurrencyReason,
-            row.ForeignUnitCostRatioJson is { } ratio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(ratio, Json) : null);
+            row.ForeignUnitCostRatioJson is { } ratio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(ratio, Json) : null,
+            row.EntryExchangeRateRatioJson is { } rateRatio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(rateRatio, Json) : null);
+        if (string.IsNullOrWhiteSpace(proof.SourceVersion)) throw new InvalidOperationException();
+        switch (proof.Status)
+        {
+            case InventoryIssueCostCurrencyStatusV1.Converted:
+                if (proof.OriginalCurrencyId is null || proof.OriginalCurrencyId == Guid.Empty || proof.Reason is not null
+                    || InventoryExactCostRatioV1.Resolve(proof.ForeignUnitCostPerKg, proof.ForeignUnitCostRatio).Sign <= 0
+                    || InventoryExactCostRatioV1.Resolve(proof.ExchangeRate, proof.ExchangeRateRatio).Sign <= 0)
+                    throw new InvalidOperationException();
+                break;
+            case InventoryIssueCostCurrencyStatusV1.FunctionalCurrency:
+                if (proof.OriginalCurrencyId is not null || proof.ForeignUnitCostPerKg is not null || proof.ForeignUnitCostRatio is not null
+                    || proof.ExchangeRate is not null || proof.ExchangeRateRatio is not null || proof.Reason is not null)
+                    throw new InvalidOperationException();
+                break;
+            case InventoryIssueCostCurrencyStatusV1.RateMissing:
+                if (proof.OriginalCurrencyId is null || proof.OriginalCurrencyId == Guid.Empty || proof.ExchangeRate is not null
+                    || proof.ExchangeRateRatio is not null || string.IsNullOrWhiteSpace(proof.Reason)) throw new InvalidOperationException();
+                if (proof.ForeignUnitCostPerKg is not null || proof.ForeignUnitCostRatio is not null)
+                    if (InventoryExactCostRatioV1.Resolve(proof.ForeignUnitCostPerKg, proof.ForeignUnitCostRatio).Sign <= 0)
+                        throw new InvalidOperationException();
+                break;
+            case InventoryIssueCostCurrencyStatusV1.Unreadable:
+                if (proof.OriginalCurrencyId is not null || proof.ForeignUnitCostPerKg is not null || proof.ForeignUnitCostRatio is not null
+                    || proof.ExchangeRate is not null || proof.ExchangeRateRatio is not null || string.IsNullOrWhiteSpace(proof.Reason))
+                    throw new InvalidOperationException();
+                break;
+            default: throw new InvalidOperationException();
+        }
+        return proof;
+    }
     private static InventoryManufacturingCostReadV1 Unreadable(Guid company, Guid order) =>
         new(InventoryManufacturingCostReadOutcomeV1.Unreadable, company, order, [], [], [], Version + "/unreadable", "inventory_cost_source_unreadable");
     private sealed record Fact(MovementRow Movement, MovementLineRow Line, LabelRow Label);

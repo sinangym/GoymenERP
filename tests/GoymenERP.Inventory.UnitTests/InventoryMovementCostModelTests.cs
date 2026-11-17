@@ -13,6 +13,26 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryMovementCostModelTests
 {
     [Fact]
+    public void First_entry_FX_migration_retains_nullable_immutable_owner_snapshots_and_exact_rates_without_backfill()
+    {
+        var migration = new AddInventoryFirstEntryExchangeRateProof();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 51972", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        using var context = Context();
+        var stamp = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementCostStampRow))!;
+        foreach (var name in new[] { nameof(MovementCostStampRow.FirstEntryRateJson), nameof(MovementCostStampRow.EntryExchangeRateRatioJson) })
+        {
+            Assert.True(stamp.FindProperty(name)!.IsNullable);
+            Assert.Equal("nvarchar(max)", stamp.FindProperty(name)!.GetColumnType());
+        }
+        Assert.Contains(stamp.GetCheckConstraints(), check => check.Name == "CK_MovementCostStamps_ExactProof"
+            && check.Sql.Contains("ISJSON([FirstEntryRateJson], OBJECT)", StringComparison.Ordinal));
+        Assert.Contains(stamp.GetCheckConstraints(), check => check.Name == "CK_MovementCostStamps_Currency"
+            && check.Sql.Contains("OR [EntryExchangeRateRatioJson] IS NOT NULL", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Outbox_cursor_and_exact_cost_forward_migration_guard_both_provenances_before_any_drop()
     {
         var migration = new AddInventoryOutboxCursorAndExactCostRatios();
