@@ -88,7 +88,11 @@ public static class FinanceModuleExtensions
         // API-85b (F018 §L2; FNS-D57/D31/D58): the customer collateral master, one step. The type and its rate are
         // Settings' (FNS-D31); until a Settings adapter registers its catalog the default answers Unavailable, so a
         // record and the weighted collateral fail closed.
-        services.TryAddScoped<IFinanceCollateralTypeCatalogReader, UnavailableFinanceCollateralTypeCatalogReader>();
+        services.TryAddScoped<IFinanceCollateralTypeCatalogReader>(provider =>
+            provider.GetService<ISettingsCollateralTypeCatalogV1>() is { } catalog
+                ? new SettingsFinanceCollateralTypeCatalogReaderV1(provider.GetRequiredService<ICompanyContext>(),
+                    provider.GetRequiredService<ICurrentUser>(), catalog, provider.GetRequiredService<TimeProvider>())
+                : new UnavailableFinanceCollateralTypeCatalogReader());
         services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
         // FIN-S9 (FNS-D23): the opening balances, proposed and approved by two people while the Settings opening period
         // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and

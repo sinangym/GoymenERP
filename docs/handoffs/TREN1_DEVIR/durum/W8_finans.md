@@ -78,3 +78,9 @@ Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN
 - API, Finance.UnitTests, Accounting.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/0 hata. Hepsi tek .NET slotunda `-m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` ile koşuldu. Bu OpenAPI üretimi veya test PASS kanıtı değildir; merkezi pin üretimi ayrıdır. TypeScript app son kaynak derlemesi ve `git diff --check` exit 0.
 - Merkez bağlama: `AddFinanceCreditLenderOwnerRead` krediye özgü açık dönem adapterini de kaydeder; `AddWorkOutboxEventSource<FinanceCreditOutboxEventSourceV1>` kaynağı yukarıdaki tek olay/schema ile tanıtılmalı, `AddWorkInboxConsumer<CreditMovementProposalInboxConsumerV1>(CreditMovementProposalInboxV1.ConsumerName, CreditMovementProposalInboxV1.Subscriptions)` eklenmelidir. Dispatcher etkinleştirilmez.
 - Kalan: banka+tür limit uyarısı ve merkezi gerçek Settings/host bağlantıları. Tüm kredi dilimi DONE değildir; TK-30 eşleme ayrıntısı insan kararında kalır.
+
+### FNS-SC32 / FNS-D31-D70: gerçek teminat türü bağlantısı
+
+- Finance teminat türü okuyucusu Settings'in `ISettingsCollateralTypeCatalogV1` gerçek sözleşmesine bağlandı; güncel İstanbul iş günü ve çağrı öncesi/sonrası şirket/kişi çiti korunur. Pasif türün mevcut kayıtlardaki oranı korunur, boş katalog boş kalır. Eksik/bozuk/yabancı şirket cevabı kullanılabilir sonuç veya yüzde 100 olarak gösterilmez.
+- Settings sözleşmesi owner kaynağından byte-exact alındı. Owner persistence ve gerçek host DI kabulü merkezi entegrasyonda doğrulanacak. Yeni persistence/migration yok.
+- Dört birim kaynak testi: oran/sürüm, boş/pasif, yabancı şirket/geç yetki kaybı, bozuk cevap/iptal. Derleme sırada; runtime test/SQL/CI NOT_RUN. FNS-SC32 cari bakiye transferi bu bağlantıyla tamamlanmış sayılmaz.
