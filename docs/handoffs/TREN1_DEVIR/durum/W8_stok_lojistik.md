@@ -574,8 +574,19 @@
   eşzamanlı sürüm ve terminal replay/aktör/payload çitleri); codec ve DOM Vitest kaynakları yazıldı.
   SQL fixture'ın Sales/Manufacturing kimlik kanıtı sentetiktir; Inventory hareketi, kilidi, Audit owner'ı
   ve transaction gerçektir. Cross-module uçtan uca kabul diye sunulmaz.
-- **Kaynak derlemeleri QUEUED; runtime birim/SQL/HTTP/Vitest/browser/CI NOT_RUN.** Yeni paket,
-  model/migration/EF, InventoryStore/DbContext/first-cost değişikliği veya allowlist genişletmesi yoktur.
-  Merkezi bağlama koordinatördedir: `AddInventorySubcontractAllocationRelease()` ve
-  `MapInventorySubcontractAllocationReleaseEndpoints()`; purpose ekranı mevcut izinle bağımsız mount
-  edilir. Kaynak/pin/OpenAPI/ilişkisel envanter/grup üretimi ve exact-head kabul ayrıca gereklidir.
+- Kaynak checkpoint'i `372e27303`, tek SQL fixture nullability düzeltmesi `7b4c5532f`.
+  **Kaynak derlemeleri exit0 / 0 uyarı / 0 hata:** API 2:48,32; Inventory.UnitTests 7,74sn;
+  Api.IntegrationTests 45,03sn. İlk Integration denemesi yeni fixture'ın nullable ProductVersion
+  alanında CS8604/exit1 verdi; gerçek sürüm `Assert.IsType<string>` ile kanıtlanarak düzeltildi.
+  Değişmeyen üretim kaynaklarının başarılı API/birim derlemeleri gereksiz tekrarlanmadı; başarılı
+  Integration bu test düzeltmesini içerir. Frontend `npx tsc -b` **exit0**. Her süreç öncesi >=2GiB RAM
+  ölçüldü; ilk hata, native exit ve ham loglar depodışında korundu. Her iki lease açıkça bırakıldı.
+- **SOURCE_COMPLETE — yalnız bu ayrı açık bırakma komutunun kaynak kapsamı.** Runtime birim/SQL/HTTP/
+  Vitest/browser/CI **NOT_RUN**. Yeni paket, model/migration/EF, InventoryStore/DbContext/first-cost
+  değişikliği veya allowlist genişletmesi yoktur. Merkezi bağlama koordinatördedir:
+  `AddInventorySubcontractAllocationRelease()` ve `MapInventorySubcontractAllocationReleaseEndpoints()`.
+  Purpose ekranının merkezi teknik capability'si `inventory.subcontract-allocations.release-unused`,
+  arkasındaki mevcut ERP izni `inventory.physical-allocation.write` olarak ayrı tutulur; yeni izin/grant
+  değildir. Bu merkezi cap/mount deltası owned kaynak derlemesinden ayrıca birleşik head'de doğrulanır.
+  Kaynak/pin/OpenAPI/ilişkisel envanter/grup üretimi ve exact-head kabul ayrıca gereklidir; enclosing
+  STK-S3 durumunu yalnız bu dar checkpoint ile yükseltme yetkisi alınmaz.
