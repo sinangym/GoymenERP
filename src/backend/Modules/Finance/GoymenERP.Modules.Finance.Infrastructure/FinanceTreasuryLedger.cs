@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -15,6 +16,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </summary>
 internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompanyContext companyContext)
 {
+    private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
+
     internal async Task<FinanceTreasuryBalance?> ReadAsync(
         Guid companyId, ExpensePaymentSourceKind kind, Guid accountId, Guid currencyId,
         CancellationToken cancellationToken, DateOnly? throughDate = null)
@@ -52,13 +55,25 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
             // Credit plans are not money. Only the approved, explicitly documented actual bank leg is read.
             var credits = await dbContext.CreditMovements.AsNoTracking()
                 .Where(row => row.CompanyId == companyId && row.BankAccountId == accountId && row.Status == 2)
-                .Select(row => new { row.CurrencyId, row.Kind, row.BankAmountText }).ToListAsync(cancellationToken);
-            // The transaction-date/accounting-date choice for a period carry is awaiting the direct
-            // human answer. A current balance remains available; a dated carry never guesses.
-            if (throughDate.HasValue && credits.Count != 0) return null;
+                .Select(row => new { row.CreditAccountId, row.CurrencyId, row.Kind, row.BankAmountText, row.SourceJson })
+                .ToListAsync(cancellationToken);
             foreach (var row in credits)
             {
                 if (row.CurrencyId != currencyId || row.BankAmountText is null) return null;
+                if (throughDate.HasValue)
+                {
+                    // FIN-S17 / #1189 6957888388: the actual bank date belongs to the
+                    // immutable approved source, not its separate AccountingDate or approval time.
+                    // A missing/mismatched source cannot become an empty dated balance.
+                    CreditMovementProposeV1? source;
+                    try { source = JsonSerializer.Deserialize<CreditMovementProposeV1>(row.SourceJson, Json); }
+                    catch (JsonException) { return null; }
+                    if (source is null || source.TransactionDate == default || source.CreditAccountId != row.CreditAccountId
+                        || (int)source.Kind != row.Kind || source.Kind is not (CreditMovementKindV1.Drawdown or CreditMovementKindV1.Repayment)
+                        || source.BankEffect is not { } bank || bank.BankAccountId != accountId
+                        || bank.Amount != row.BankAmountText) return null;
+                    if (source.TransactionDate > throughDate.Value) continue;
+                }
                 if (row.Kind == (int)CreditMovementKindV1.Drawdown) incoming.Add(row.BankAmountText);
                 else if (row.Kind == (int)CreditMovementKindV1.Repayment) outgoing.Add(row.BankAmountText);
                 else return null;

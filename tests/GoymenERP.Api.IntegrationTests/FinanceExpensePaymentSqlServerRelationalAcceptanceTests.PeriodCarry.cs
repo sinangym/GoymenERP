@@ -102,6 +102,56 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
     }
 
     [SqlServerFact]
+    public async Task Later_closed_periods_must_be_reopened_by_their_own_two_person_flow_before_an_earlier_carry_is_reversed()
+    {
+        await using var run = await Run.StartAsync();
+        var (earlier, later) = await CarryPeriods(run, includeTarget: true);
+        Guid next;
+        await using (var scope = OpenCarry(run, CarryChecker))
+        {
+            next = Guid.NewGuid();
+            var (proposed, _) = await scope.Store.ProposePeriodAsync(next, new(2027, 1, 1), new(2027, 1, 31), CarryMaker,
+                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsPropose));
+            await scope.Store.ApprovePeriodAsync(next, proposed.Version, CarryChecker,
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove));
+            await scope.Store.ClosePeriodAsync(earlier, 2, CarryChecker, CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsClose));
+            await scope.Store.ClosePeriodAsync(later, 2, CarryChecker, CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsClose));
+        }
+        Guid earlierProposal; Guid laterProposal;
+        await using (var maker = OpenCarry(run, CarryMaker))
+        {
+            earlierProposal = (await maker.Store.ProposeReopeningAsync(earlier, new(3, Guid.NewGuid(), "SENTETIK earlier correction"), CarryMaker,
+                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsPropose), default)).Id;
+            laterProposal = (await maker.Store.ProposeReopeningAsync(later, new(3, Guid.NewGuid(), "SENTETIK later correction"), CarryMaker,
+                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsPropose), default)).Id;
+            await Assert.ThrowsAsync<AccountingDomainException>(() => maker.Store.ApproveReopeningAsync(later, laterProposal, new(1, 3), CarryMaker,
+                CarryMetadata(CarryMaker, AccountingPermissionManifestV1.PeriodsApprove), default));
+        }
+        await using (var checker = OpenCarry(run, CarryChecker))
+        {
+            var refused = await Assert.ThrowsAsync<AccountingStoreException>(() => checker.Store.ApproveReopeningAsync(earlier,
+                earlierProposal, new(1, 3), CarryChecker, CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default));
+            Assert.Equal("accounting_period_carry_source_unavailable", refused.Code);
+            Assert.Equal(AccountingPeriodStatus.Closed, (await checker.Store.FindPeriodAsync(earlier))!.Period.Status);
+            Assert.Equal(AccountingPeriodStatus.Closed, (await checker.Store.FindPeriodAsync(later))!.Period.Status);
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PeriodCarryReversals"));
+            await checker.Store.ApproveReopeningAsync(later, laterProposal, new(1, 3), CarryChecker,
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default);
+            Assert.Equal(AccountingPeriodStatus.Open, (await checker.Store.FindPeriodAsync(later))!.Period.Status);
+            Assert.Equal(AccountingPeriodStatus.Closed, (await checker.Store.FindPeriodAsync(earlier))!.Period.Status);
+            await checker.Store.ApproveReopeningAsync(earlier, earlierProposal, new(1, 3), CarryChecker,
+                CarryMetadata(CarryChecker, AccountingPermissionManifestV1.PeriodsApprove), default);
+            Assert.Equal(AccountingPeriodStatus.Open, (await checker.Store.FindPeriodAsync(earlier))!.Period.Status);
+            Assert.Equal(AccountingPeriodStatus.Open, (await checker.Store.FindPeriodAsync(next))!.Period.Status);
+        }
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.PeriodClosures"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PeriodCarryVouchers"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.PeriodCarryReversals"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpeningBalanceMovements"));
+    }
+
+    [SqlServerFact]
     public async Task Final_authority_failure_rolls_back_both_owner_records_and_both_audits()
     {
         await using var run = await Run.StartAsync(); var (period, _) = await CarryPeriods(run, includeTarget: true);
