@@ -388,3 +388,12 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Üç yeni calculator, üç adapter ve bir gerçek SQL fact kaynağı eklendi; önceki tek-kabul SQL kaynakları yeni satır başlığıyla korunur. Bunlar test kaynaklarıdır; runtime/SQL koşulmadı.
 - Bu checkpoint kaynak derlemesi **QUEUED**: Q11/line-key Accounting bağımlılıkları sonraki no-ff entegrasyonla alınacaktır. Önceki e408 kernel derlemesi bu yeni aggregate/adapter delta için PASS değildir. Migration yoktur. Inventory kaynak fact envanterine gerçek tam ad eklendi; guard hashleri final üretici sırasındadır.
 - Dilim halen PARTIAL: actual purchase posted attribution, Mixed/SAT422 ve üretim delta bağlantılarının kalan kısmı Accounting sahibiyle tamamlanıyor. Bu kernel veya derleme, bütün STK-SC36-a'nın bittiği iddiası değildir.
+
+
+## SAT-SC34 — merkez resmî iptal kaydı bağlantısı
+
+- Owner checkpoint `5455cb849` no-ff ile alındı; gerçek Program'da `AddSalesFinanceCancellationHost`, mevcut Work registry'de Accounting Sales cancellation consumer/subscription bağlandı. Dispatcher/production ayarı açılmadı.
+- Sales shell 1.26, yalnız mevcut `sales.invoices.finalize` yetkisini kullanan tek şirketli, fiyat gerektirmeyen bağımsız `/satis/fatura-resmi-iptal` ekranını yayımlar. Yeni izin/grant/rol/Critical yoktur. Ekran Sales route listesine ve merkezi menüye bağlandı; backend yetkisi her istekte tekrar ölçülür.
+- Gerçek sağlayıcı yokluğu typed 503 olarak korunur (kullanıcı Q12). Resmî iptal olmuş gibi kanıt üretilmez. Kaynak/route/host hazır olması dış belge iptalinin kullanılabilir kabulü değildir; dilim PARTIAL kalır.
+- Provider/host/mount sözleşme test kaynakları güncellendi; owner'ın altı gerçek SQL fact tam adı sıralı Sales envanterine eklendi. Shell registry otoriteleri, OpenAPI, recovery ve guard pinleri finalde üreticiyle yeniden üretilecek; elle hash yazılmadı.
+- Owner API/EF/Sales.Unit/Integration/TSC derlemeleri exit0. Bu merkezi delta için derlemeler QUEUED; runtime/SQL/Vitest/browser/CI NOT_RUN.

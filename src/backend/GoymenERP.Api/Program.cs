@@ -195,6 +195,7 @@ builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
 builder.Services.AddFinanceOfficialSalesInvoiceHost();
 builder.Services.AddSalesFinanceAdmissionHost();
+builder.Services.AddSalesFinanceCancellationHost();
 builder.Services.AddFinanceInvoiceAcceptanceHost();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, FinanceInvoiceImportPendingApprovalAdapterV1>();
 builder.Services.AddScoped<INativeApprovalReadAdapterV1, InventoryStockCountPendingApprovalAdapterV1>();

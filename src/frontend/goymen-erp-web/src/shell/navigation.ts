@@ -98,6 +98,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'sales.invoice-candidates.list',
   /** UI-63: the read-only S-09 invoice list, on the invoice read plus the price read. */
   'sales.invoices.list',
+  'sales.invoices.official-cancellation',
   /** UI-80: the read-only Sales reports screen, on its own grant. */
   'sales.reports.view',
   /** UI-70b S-10: the customer return list, on the return read plus the price read; create and detail are reached from it. */
@@ -261,6 +262,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'sales.dispatches.list': 'Sevkiyat / İrsaliyeler',
   'sales.invoice-candidates.list': 'Faturaya Hazır',
   'sales.invoices.list': 'Satış faturaları',
+  'sales.invoices.official-cancellation': 'Resmî fatura iptal kaydı',
   'sales.reports.view': 'Satış raporları',
   'sales.customer-returns.list': 'Müşteri iadeleri',
   // UI-70b: create and detail are reached from the return list, never from the sidebar.
@@ -470,7 +472,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'sales',
     label: 'Satış',
-    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
+    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.invoices.list', 'sales.invoices.official-cancellation', 'sales.customer-returns.list', 'sales.reports.view', 'price-lists.list'],
   },
   { id: 'purchasing', label: 'Satın Alma', entries: ['purchasing.requests.list', 'purchasing.orders.list', 'purchasing.service-orders.list', 'purchasing.invoices.list'] },
   { id: 'manufacturing', label: 'Üretim', entries: ['manufacturing.orders.list'] },
