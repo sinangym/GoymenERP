@@ -55,6 +55,9 @@ public sealed class CashTransferServiceTests
             (row.Kind, row.SourceKind, row.TargetKind));
         Assert.Equal(("1000.00", "1000.00", (string?)null), (row.SourceAmountText, row.TargetAmountText, row.RateText));
         Assert.Equal(1, await verify.CashTransferCommands.CountAsync());
+        var sourceEvent = await verify.OutboxMessages.SingleAsync();
+        Assert.Equal((row.Id, row.Version, FinanceFinancialMovementEventsV1.CashTransferRecorded),
+            (sourceEvent.AggregateId, sourceEvent.AggregateVersion, sourceEvent.EventType));
         var audit = await verify.Set<AuditEvent>().SingleAsync();
         Assert.Equal("finance.cash-transfer.recorded.v1", audit.EventType);
     }
