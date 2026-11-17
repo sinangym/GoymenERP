@@ -1,5 +1,6 @@
 using GoymenERP.Api.FinanceRuntime;
 using GoymenERP.Api.AccountingRuntime;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.ManufacturingRuntime;
@@ -19,6 +20,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Outbox;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Outbox;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Work.Infrastructure;
 
 namespace GoymenERP.Api.Shell;
@@ -32,6 +34,7 @@ public static class TrainCompletionHostComposition
         services.AddPurchaseInvoiceFinanceAdmissionHost();
         services.AddFinancePartyBalanceTransfersV1();
         services.AddAccountingInvoiceLineCogsRuntime();
+        services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();
         services.AddScoped<IPurchasingPartyAccountPortV2>(provider =>
             (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());
         services.AddProductPurchaseUnitConversion(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
