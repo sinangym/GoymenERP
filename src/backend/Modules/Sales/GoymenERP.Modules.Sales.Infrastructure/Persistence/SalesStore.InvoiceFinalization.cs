@@ -284,6 +284,9 @@ public sealed partial class SalesStore
                 functionalVat = line.Functional?.Amounts.Vat.Amount,
                 functionalWithholding = line.Functional?.Amounts.Withholding.Amount,
                 functionalPayable = line.Functional?.Amounts.Payable.Amount,
+                shipmentSource = new SalesInvoiceShipmentSourceV1(line.Share.ShipmentId, line.Share.DispatchNoteId,
+                    line.Share.NoteLineNo, line.Share.SalesOrderId, line.Share.SalesOrderLineId, line.Share.PriceBasisRevision,
+                    line.Share.ProductId, line.Share.UnitId, line.Share.QuantityText),
             }).ToArray(),
         }, Json);
     }
