@@ -413,6 +413,7 @@ builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, Invent
 // STK-S24: the weighing-difference fence and the read-only physical stock seam over Inventory. The Settings rate/band port
 // keeps Logistics's fail-closed default until Settings publishes those values.
 builder.Services.AddScoped<ILogisticsWeighingDifferenceScopeV1, LogisticsWeighingDifferenceScope>();
+builder.Services.AddScoped<IDispatchKilogramDocumentReadPortV1, DispatchKilogramDocumentReadPort>();
 builder.Services.AddScoped<ILogisticsWeighingDifferenceStockReadPortV1, InventoryWeighingDifferenceStockAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
@@ -597,6 +598,7 @@ app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();

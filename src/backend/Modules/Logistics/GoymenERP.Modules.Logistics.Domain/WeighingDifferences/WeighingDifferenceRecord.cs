@@ -27,7 +27,7 @@ public sealed class WeighingDifferenceRecord
     private WeighingDifferenceRecord(Guid companyId, Guid recordId, Guid dispatchNoteId, Guid instructionId,
         WeighingDifferenceEvaluation evaluation, IEnumerable<string> enteredBy, bool enteredByComplete,
         WeighingDifferenceRecordStatus status, int version, string recordedBy, DateTimeOffset recordedAtUtc,
-        string? approvedBy, DateTimeOffset? approvedAtUtc)
+        string? approvedBy, DateTimeOffset? approvedAtUtc, DispatchKilogramSnapshot? kilogramAllocation = null)
     {
         CompanyId = RequireId(companyId, nameof(companyId));
         RecordId = RequireId(recordId, nameof(recordId));
@@ -35,6 +35,7 @@ public sealed class WeighingDifferenceRecord
         InstructionId = RequireId(instructionId, nameof(instructionId));
         Evaluation = evaluation ?? throw new ArgumentNullException(nameof(evaluation));
         products = [.. evaluation.Products];
+        KilogramAllocation = kilogramAllocation?.ValidateAndCopy(products);
         if (products.Length == 0) throw new ArgumentException("Kantar farkı kaydı ürünsüz olamaz.", nameof(evaluation));
         RecordedBy = RequireActor(recordedBy, nameof(recordedBy));
         this.enteredBy = [.. (enteredBy ?? throw new ArgumentNullException(nameof(enteredBy)))
@@ -57,6 +58,7 @@ public sealed class WeighingDifferenceRecord
     public Guid InstructionId { get; }
     public WeighingDifferenceEvaluation Evaluation { get; }
     public IReadOnlyList<WeighingDifferenceProductResult> Products => Array.AsReadOnly(products);
+    public DispatchKilogramSnapshot? KilogramAllocation { get; }
 
     /// <summary>
     /// SAT-D321 (2): everyone who entered the weighing or a shipment on the note, plus whoever recorded this difference. None of
@@ -76,22 +78,22 @@ public sealed class WeighingDifferenceRecord
 
     public static WeighingDifferenceRecord Create(Guid companyId, Guid recordId, Guid dispatchNoteId, Guid instructionId,
         WeighingDifferenceEvaluation evaluation, IEnumerable<string> enteredBy, bool enteredByComplete, string actorId,
-        DateTimeOffset now)
+        DateTimeOffset now, DispatchKilogramSnapshot? kilogramAllocation = null)
     {
         ArgumentNullException.ThrowIfNull(evaluation);
         var status = evaluation.Decision == WeighingDifferenceDecision.ApprovalRequired
             ? WeighingDifferenceRecordStatus.PendingApproval
             : WeighingDifferenceRecordStatus.Recorded;
         return new(companyId, recordId, dispatchNoteId, instructionId, evaluation, enteredBy, enteredByComplete, status, 1,
-            actorId, now, null, null);
+            actorId, now, null, null, kilogramAllocation);
     }
 
     public static WeighingDifferenceRecord Restore(Guid companyId, Guid recordId, Guid dispatchNoteId, Guid instructionId,
         WeighingDifferenceEvaluation evaluation, IEnumerable<string> enteredBy, bool enteredByComplete,
         WeighingDifferenceRecordStatus status, int version, string recordedBy, DateTimeOffset recordedAtUtc,
-        string? approvedBy, DateTimeOffset? approvedAtUtc) =>
+        string? approvedBy, DateTimeOffset? approvedAtUtc, DispatchKilogramSnapshot? kilogramAllocation = null) =>
         new(companyId, recordId, dispatchNoteId, instructionId, evaluation, enteredBy, enteredByComplete, status, version,
-            recordedBy, recordedAtUtc, approvedBy, approvedAtUtc);
+            recordedBy, recordedAtUtc, approvedBy, approvedAtUtc, kilogramAllocation);
 
     /// <summary>
     /// SAT-D320 (1) / SAT-D321 (1)–(2): the approver is never one of the people who entered the weighing, a shipment or this

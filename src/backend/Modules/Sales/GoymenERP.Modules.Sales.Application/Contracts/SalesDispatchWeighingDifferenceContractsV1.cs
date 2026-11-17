@@ -66,7 +66,11 @@ public sealed record SalesDispatchWeighingDifferenceV1(
     SalesWeighingDifferenceDecisionView Decision,
     SalesWeighingDifferenceRecordStateView State,
     bool SaleMayProceed,
-    int Version);
+    int Version, SalesDispatchKilogramAllocationV1? KilogramAllocation = null);
+
+public sealed record SalesDispatchKilogramLineV1(int LineNo, Guid ShipmentId, Guid ProductId, decimal TheoreticalKg, decimal Kilograms);
+public sealed record SalesDispatchKilogramAllocationV1(IReadOnlyList<SalesDispatchKilogramLineV1> Lines,
+    Guid? Ettn = null, Guid? DocumentId = null, int? DocumentVersion = null, string? Sha256 = null, string? DocumentKind = null);
 
 /// <summary>The seam's answer: the asked key echoed, the status and — only when recorded — the facts.</summary>
 public sealed record SalesDispatchWeighingDifferenceReadV1(
@@ -104,7 +108,7 @@ public enum SalesDispatchWeighingInvoiceWaitView
 
     /// <summary>
     /// SAT-D320 (3) / SAT-D322 (1): the sale passes at the scale kilograms, but the per-line scale kilograms are not readable from
-    /// the owner yet (the V1 read carries the note totals only) — the invoice waits rather than guess a split.
+    /// the owner (including a legacy record without a per-line proof) — the invoice waits rather than guess a split.
     /// </summary>
     KgTransferPending = 3,
 }
@@ -156,8 +160,28 @@ public static class SalesDispatchWeighingInvoiceRule
             return SalesDispatchWeighingInvoiceWaitView.PendingApproval;
         }
 
-        // SAT-D322 (1): the invoice passes at the scale kilograms. With no difference the note kilograms are the scale kilograms;
-        // any difference needs the owner's per-line scale kilograms, which the V1 read does not carry yet.
-        return value.DifferenceKg == 0m && value.TotalExcessKg == 0m ? null : SalesDispatchWeighingInvoiceWaitView.KgTransferPending;
+        // SAT-D424/D425: even a zero note total difference cannot prove each product/line is unchanged.
+        // Carry the owner's immutable per-line distribution; a legacy missing proof waits for explicit remediation.
+        return HasConsistentAllocation(value) ? null : SalesDispatchWeighingInvoiceWaitView.KgTransferPending;
     }
+
+    public static bool HasConsistentAllocation(SalesDispatchWeighingDifferenceV1 value)
+    {
+        if (value.RecordId == Guid.Empty || value.Version < 1 || !Enum.IsDefined(value.State) || !Enum.IsDefined(value.Decision)
+            || !Enum.IsDefined(value.BandLevel) || value.ScaleKg - value.TheoreticalKg != value.DifferenceKg || value.TotalExcessKg < 0m) return false;
+        if (value.KilogramAllocation is not { Lines.Count: > 0 and <= 200 } allocation) return false;
+        var lines = allocation.Lines;
+        if (lines.Any(line => line is null || line.LineNo < 1 || line.ShipmentId == Guid.Empty || line.ProductId == Guid.Empty
+                || !Kg(line.TheoreticalKg) || !Kg(line.Kilograms))
+            || lines.Select(line => line.LineNo).Distinct().Count() != lines.Count
+            || lines.Select(line => line.ShipmentId).Distinct().Count() != lines.Count) return false;
+        if (lines.Sum(line => line.TheoreticalKg) != value.TheoreticalKg || lines.Sum(line => line.Kilograms) != value.ScaleKg) return false;
+        return allocation.Ettn is null
+            ? allocation.DocumentId is null && allocation.DocumentVersion is null && allocation.Sha256 is null && allocation.DocumentKind is null
+            : allocation.Ettn != Guid.Empty && allocation.DocumentId is { } document && document != Guid.Empty
+                && allocation.DocumentVersion is > 0 && allocation.Sha256 is { Length: 64 } && allocation.Sha256.All(Uri.IsHexDigit)
+                && allocation.DocumentKind is "ElectronicDispatch" or "ElectronicInvoice";
+    }
+
+    private static bool Kg(decimal value) => value > 0m && value < 1_000_000_000_000_000m && decimal.Round(value, 3) == value;
 }

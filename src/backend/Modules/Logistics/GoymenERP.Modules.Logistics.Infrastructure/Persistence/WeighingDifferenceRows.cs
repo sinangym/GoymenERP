@@ -23,6 +23,7 @@ internal sealed class WeighingDifferenceRecordRow : ILogisticsTenantRow
     public bool EnteredByComplete { get; set; }
     public int Status { get; set; }
     public int Version { get; set; }
+    public string? KilogramAllocationJson { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public string RecordedBy { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

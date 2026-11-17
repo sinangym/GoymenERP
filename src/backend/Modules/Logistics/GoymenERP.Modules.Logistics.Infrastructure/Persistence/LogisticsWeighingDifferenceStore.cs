@@ -105,6 +105,7 @@ public sealed class LogisticsWeighingDifferenceStore(
 
             await beforeCommit(cancellationToken);
             await SaveAsync(cancellationToken);
+            await beforeCommit(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(record, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
@@ -160,6 +161,7 @@ public sealed class LogisticsWeighingDifferenceStore(
 
             await beforeCommit(cancellationToken);
             await SaveAsync(cancellationToken);
+            await beforeCommit(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(record, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
@@ -199,7 +201,7 @@ public sealed class LogisticsWeighingDifferenceStore(
                 record.Evaluation.TheoreticalKg.Value, record.Evaluation.ScaleKg.Value, record.Evaluation.DifferenceKg,
                 record.Evaluation.BandLevel.ToString(), record.Evaluation.TotalExcessKg.Value,
                 record.Evaluation.Decision.ToString(), record.Status.ToString(),
-                record.Status != WeighingDifferenceRecordStatus.PendingApproval, record.Version);
+                record.Status != WeighingDifferenceRecordStatus.PendingApproval, record.Version, record.KilogramAllocation);
     }
 
     private async Task<WeighingDifferenceSourceV1?> ReadSourceCoreAsync(Guid dispatchNoteId,
@@ -281,6 +283,7 @@ public sealed class LogisticsWeighingDifferenceStore(
         EnteredByComplete = item.EnteredByComplete,
         Status = (int)item.Status,
         Version = item.Version,
+        KilogramAllocationJson = item.KilogramAllocation is null ? null : JsonSerializer.Serialize(item.KilogramAllocation, Json),
         RecordedBy = item.RecordedBy,
         RecordedAtUtc = item.RecordedAtUtc,
         ApprovedBy = item.ApprovedBy,
@@ -336,6 +339,7 @@ public sealed class LogisticsWeighingDifferenceStore(
             theoreticalKg = item.Evaluation.TheoreticalKg.Value,
             scaleKg = item.Evaluation.ScaleKg.Value,
             totalExcessKg = item.Evaluation.TotalExcessKg.Value,
+            kilogramAllocation = item.KilogramAllocation,
         }, Json),
         reason, ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel,
         envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId,
@@ -456,7 +460,7 @@ public sealed class LogisticsWeighingDifferenceStore(
         string RecordedBy,
         DateTimeOffset RecordedAtUtc,
         string? ApprovedBy,
-        DateTimeOffset? ApprovedAtUtc)
+        DateTimeOffset? ApprovedAtUtc, DispatchKilogramSnapshot? KilogramAllocation = null)
     {
         public static ResultSnapshot From(WeighingDifferenceRecord item) => new(
             item.CompanyId, item.RecordId, item.InstructionId, item.DispatchNoteId, item.Evaluation.TheoreticalKg.Value,
@@ -467,7 +471,7 @@ public sealed class LogisticsWeighingDifferenceStore(
                 product.ScaleKg.Value, product.DifferenceKg, product.RemainingPhysicalKg.Value,
                 product.PhysicallyCoveredKg.Value, product.ExcessKg.Value, product.TargetLineNo))],
             [.. item.EnteredBy], item.EnteredByComplete, item.Status, item.Version, item.RecordedBy, item.RecordedAtUtc,
-            item.ApprovedBy, item.ApprovedAtUtc);
+            item.ApprovedBy, item.ApprovedAtUtc, item.KilogramAllocation);
 
         public static ResultSnapshot From(WeighingDifferenceRecordRow row, IEnumerable<WeighingDifferenceProductRow> products,
             IEnumerable<string> enteredBy) => new(
@@ -478,7 +482,9 @@ public sealed class LogisticsWeighingDifferenceStore(
                 item.ScaleKg, item.DifferenceKg, item.RemainingPhysicalKg, item.PhysicallyCoveredKg, item.ExcessKg,
                 item.TargetLineNo))],
             [.. enteredBy], row.EnteredByComplete, (WeighingDifferenceRecordStatus)row.Status, row.Version, row.RecordedBy,
-            row.RecordedAtUtc, row.ApprovedBy, row.ApprovedAtUtc);
+            row.RecordedAtUtc, row.ApprovedBy, row.ApprovedAtUtc,
+            row.KilogramAllocationJson is null ? null : JsonSerializer.Deserialize<DispatchKilogramSnapshot>(row.KilogramAllocationJson, Json)
+                ?? throw new InvalidOperationException("Stored dispatch kilogram distribution is unreadable."));
 
         public WeighingDifferenceRecord Restore()
         {
@@ -491,7 +497,7 @@ public sealed class LogisticsWeighingDifferenceStore(
                     Kg(product.PhysicallyCoveredKg), Kg(product.ExcessKg), product.TargetLineNo))],
                 Kg(TotalExcessKg), ApprovalRatePercent, Decision);
             return WeighingDifferenceRecord.Restore(CompanyId, RecordId, DispatchNoteId, InstructionId, evaluation, EnteredBy,
-                EnteredByComplete, Status, Version, RecordedBy, RecordedAtUtc, ApprovedBy, ApprovedAtUtc);
+                EnteredByComplete, Status, Version, RecordedBy, RecordedAtUtc, ApprovedBy, ApprovedAtUtc, KilogramAllocation);
         }
 
         private static Quantity Kg(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);

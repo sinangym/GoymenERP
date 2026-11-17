@@ -23,6 +23,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 {
     public const string Schema = "logistics";
     public const string IdentityCollation = "Latin1_General_100_BIN2";
+    internal const string WeighingKilogramAllocationCheck = "[KilogramAllocationJson] IS NULL OR (ISJSON([KilogramAllocationJson]) = 1 "
+        + "AND JSON_QUERY(CASE WHEN ISJSON([KilogramAllocationJson]) = 1 THEN [KilogramAllocationJson] ELSE N'{}' END, '$.lines') IS NOT NULL)";
 
     /// <summary>A recorded share actor, when present, is not blank (SAT-D222: a blank name never counts as a shipper).</summary>
     public const string ShareRecordedByCheck = "[RecordedBy] IS NULL OR LEN([RecordedBy]) > 0";
@@ -541,11 +543,13 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 + "AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_WeighingDifferences_Actors",
                 "LEN([RecordedBy]) > 0 AND ([ApprovedBy] IS NULL OR LEN([ApprovedBy]) > 0)");
+            table.HasCheckConstraint("CK_WeighingDifferences_KilogramAllocation", WeighingKilogramAllocationCheck);
         });
         record.HasKey(x => new { x.CompanyId, x.RecordId });
         record.HasIndex(x => new { x.CompanyId, x.DispatchNoteId }).IsUnique()
             .HasDatabaseName("UX_WeighingDifferences_DispatchNoteId");
         record.Property(x => x.Version).IsConcurrencyToken();
+        record.Property(x => x.KilogramAllocationJson).HasColumnType("nvarchar(max)");
         record.Property(x => x.RowVersion).IsRowVersion();
         record.Property(x => x.TheoreticalKg).HasPrecision(18, 3);
         record.Property(x => x.ScaleKg).HasPrecision(18, 3);

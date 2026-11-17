@@ -475,6 +475,7 @@ public sealed partial class SalesDraftServiceTests
 
     private sealed class FakeInvoiceableShipments : ISalesInvoiceableShipmentReadPortV1
     {
+        public SalesInvoiceableShipmentAnswerV1? LastAnswer { get; private set; }
         public Func<SalesInvoiceableShipmentQueryV1, SalesInvoiceableShipmentAnswerV1> Answer { get; set; } =
             _ => new(SalesDispatchReadOutcomeV1.Found, Company, [], false, SalesInvoicedStateSourceV1.NoSource);
         public List<SalesInvoiceableShipmentQueryV1> Asked { get; } = [];
@@ -483,7 +484,8 @@ public sealed partial class SalesDraftServiceTests
             CancellationToken cancellationToken = default)
         {
             Asked.Add(query);
-            return Task.FromResult(Answer(query));
+            LastAnswer = Answer(query);
+            return Task.FromResult(LastAnswer);
         }
     }
 

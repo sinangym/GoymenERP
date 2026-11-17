@@ -252,7 +252,7 @@ public sealed class LogisticsPersistenceModelTests
             property.Name.Contains("Amount", StringComparison.OrdinalIgnoreCase)
             || property.Name.Contains("Limit", StringComparison.OrdinalIgnoreCase)
             || property.Name.Contains("Risk", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal("AddShipmentRiskGateOutbox", context.Database.GetMigrations().Last()[(context.Database.GetMigrations().Last().IndexOf('_', StringComparison.Ordinal) + 1)..]);
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddShipmentRiskGateOutbox", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddShipmentRiskGateOutbox();
@@ -388,11 +388,14 @@ public sealed class LogisticsPersistenceModelTests
         Assert.True(record.FindProperty("Version")!.IsConcurrencyToken);
         Assert.Equal(
             ["CK_WeighingDifferences_Actors", "CK_WeighingDifferences_Bands", "CK_WeighingDifferences_Decision",
-                "CK_WeighingDifferences_Identity", "CK_WeighingDifferences_Quantities", "CK_WeighingDifferences_Rate",
+                "CK_WeighingDifferences_Identity", "CK_WeighingDifferences_KilogramAllocation", "CK_WeighingDifferences_Quantities", "CK_WeighingDifferences_Rate",
                 "CK_WeighingDifferences_State"],
             record.GetCheckConstraints().Select(check => check.Name!).Order(StringComparer.Ordinal).ToArray());
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Quantities"
             && check.Sql.Contains("[DifferenceKg] = [ScaleKg] - [TheoreticalKg]", StringComparison.Ordinal));
+        Assert.True(record.FindProperty(nameof(WeighingDifferenceRecordRow.KilogramAllocationJson))!.IsNullable);
+        Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_KilogramAllocation"
+            && check.Sql == LogisticsDbContext.WeighingKilogramAllocationCheck);
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_Decision"
             && check.Sql.Contains("([Decision] = 1 AND [TotalExcessKg] = 0)", StringComparison.Ordinal));
         Assert.Contains(record.GetCheckConstraints(), check => check.Name == "CK_WeighingDifferences_State"
@@ -485,6 +488,22 @@ public sealed class LogisticsPersistenceModelTests
             var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
             Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void Dispatch_kilogram_migration_keeps_legacy_proofs_nullable_and_guards_down_before_the_drop()
+    {
+        using var context = Context();
+        Assert.EndsWith("_AddDispatchKilogramAllocations", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.False(context.Database.HasPendingModelChanges());
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddDispatchKilogramAllocations();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51973", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[KilogramAllocationJson] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var column = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>());
+        Assert.Equal(("logistics", "WeighingDifferences", "KilogramAllocationJson", true), (column.Schema, column.Table, column.Name, column.IsNullable));
     }
 
     private static WeighingDifferenceRecordRow Difference(int status = 2) => new()
