@@ -130,7 +130,7 @@ public sealed partial class AccountingInventoryCostStoreV1
             proposal.DecisionReason, proposal.Version);
         var isReversed = await db.Journals.AnyAsync(x => x.LinkedJournalId == journal && x.Kind == (int)JournalKind.Reversal, token);
         return view with { Status = isReversed ? "CancelledByReversal" : "CancellationReversalPending",
-            CancellationId = cancelled.CancellationId, ReversalProposal = reversal };
+            CancellationId = cancelled.CancellationId, ReversalProposal = reversal, CurrentPostedJournalId = journal };
     }
 
     public Task<AccountingInventoryCostProposalV1> ProposeReversalAsync(Guid proposalId, ProposeAccountingInventoryCostReversalV1 request,
