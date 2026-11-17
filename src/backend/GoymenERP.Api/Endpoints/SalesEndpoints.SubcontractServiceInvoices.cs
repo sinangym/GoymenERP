@@ -27,6 +27,7 @@ public static partial class SalesEndpoints
             .WithTags("Sales")
             .RequireAuthorization()
             .RequireCompanyContext();
+        MapSubcontractInvoiceLifecycleEndpoints(invoices);
 
         invoices.MapPost("/", async (
             HttpContext httpContext,

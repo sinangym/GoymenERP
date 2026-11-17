@@ -134,8 +134,8 @@ public sealed class AccountingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddPeriodApproval", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddNormalJournalDrafts", StringComparison.Ordinal));
         Assert.Equal(["20261117000534_AddManufacturingCostDifferenceProposals", "20261117005516_AddCreditMovementProposals",
-                "20261117095844_AddInvoiceLineCogsCorrections"],
-            context.Database.GetMigrations().TakeLast(3));
+                "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources"],
+            context.Database.GetMigrations().TakeLast(4));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

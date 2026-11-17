@@ -146,6 +146,7 @@ import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import { SalesOrderInvoices } from './SalesInvoiceFinalization'
 import { SubcontractInvoiceCreate } from './SubcontractInvoiceCreate'
+import { SubcontractInvoiceLifecycle } from './SubcontractInvoiceLifecycle'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
@@ -273,6 +274,13 @@ export function SalesDraftDetailPage() {
                 salesOrderId={outcome.data.draft.id}
               />
             ) : null}
+            {outcome.data.draft.subcontractService === true && !hasCapability(shell, SALES_INVOICE_WRITE_CAPABILITY)
+              && hasCapability(shell, SALES_CAPABILITY.invoiceCandidatesList) ? (
+                <SubcontractInvoiceLifecycle
+                  key={`subcontract-read:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+                  salesOrderId={outcome.data.draft.id}
+                />
+              ) : null}
           </>
         ) : null
       }

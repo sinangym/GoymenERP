@@ -139,7 +139,7 @@ export interface InvoiceRate {
 }
 const RATE_FIELDS = ['rate', 'rateDay', 'bulletinDate', 'functionalCurrencyId', 'functionalScale'] as const
 
-function decodeRate(value: unknown): InvoiceRate | null {
+export function decodeRate(value: unknown): InvoiceRate | null {
   const o = exact(value, RATE_FIELDS)
   if (o === null || !isAmount(o.rate) || !isDateOnly(o.rateDay) || !isDateOnly(o.bulletinDate)
     || !isReferenceId(o.functionalCurrencyId) || !isCount(o.functionalScale)) return null
@@ -172,7 +172,7 @@ export interface InvoiceInstalment {
 }
 const INSTALMENT_FIELDS = ['sequenceNo', 'dueDate', 'sharePercent', 'amount'] as const
 
-function decodeInstalment(value: unknown): InvoiceInstalment | null {
+export function decodeInstalment(value: unknown): InvoiceInstalment | null {
   const o = exact(value, INSTALMENT_FIELDS)
   if (o === null || !isPositiveCount(o.sequenceNo) || !isDateOnly(o.dueDate) || !isAmount(o.sharePercent) || !isAmount(o.amount)) return null
   return { sequenceNo: o.sequenceNo, dueDate: o.dueDate, sharePercent: o.sharePercent, amount: o.amount }
@@ -253,7 +253,7 @@ export interface InvoiceDecision {
   readonly cancellationReason: string | null
 }
 
-function decodeDecision(value: unknown): InvoiceDecision | null {
+export function decodeDecision(value: unknown): InvoiceDecision | null {
   const o = exact(value, SALES_INVOICE_DECISION_FIELDS)
   if (
     o === null || !isNullableText(o.submittedBy) || !isNullableInstant(o.submittedAtUtc) || !isNullableText(o.decidedBy)
@@ -352,7 +352,7 @@ function decodeMatchTaxes(o: Obj): InvoiceMatchTaxes | null | undefined {
   }
 }
 
-function decodeMatch(value: unknown): InvoiceMatch | null {
+export function decodeMatch(value: unknown): InvoiceMatch | null {
   const o = exact(value, MATCH_FIELDS)
   if (
     o === null || !isText(o.officialInvoiceNo) || !isText(o.ettn) || !isAmount(o.invoiceAmount) || !isAmount(o.officialAmount)
@@ -415,7 +415,7 @@ const FINALIZATION_FIELDS = [
   'lastAttemptAtUtc', 'lastOutcome', 'accountingStatus', 'instalments',
 ] as const
 
-function decodeFinalization(value: unknown): InvoiceFinalization | null {
+export function decodeFinalization(value: unknown): InvoiceFinalization | null {
   const o = exact(value, FINALIZATION_FIELDS)
   if (
     o === null || !isReferenceId(o.admissionId) || !isVersionString(o.finalizedVersion) || !isText(o.finalizedBy)

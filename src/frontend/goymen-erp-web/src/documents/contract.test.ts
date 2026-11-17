@@ -50,6 +50,7 @@ describe('document owner contract', () => {
       counterpartyParty: 'counterparty.party',
       inventoryMaterialLabel: 'inventory.material-label',
       purchasingPurchaseOrder: 'purchasing.purchase-order',
+      purchasingInvoiceImport: 'purchasing.invoice-import',
       salesOrder: 'sales.order',
     });
   });

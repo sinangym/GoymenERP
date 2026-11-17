@@ -176,6 +176,11 @@ public sealed class AccountingPurchaseInvoiceFinalizedInboxConsumer(
         var vat = foreignCurrency ? line.FunctionalVat : line.Vat;
         var withholding = foreignCurrency ? line.FunctionalWithholding : line.Withholding;
         if (line.LineId == Guid.Empty || !AccountingPurchaseLinePurposesV1.IsKnown(line.LinePurpose)
+            // ALC-S7: the producer's frozen Settings service identity is metadata, never a stock item selector.
+            // Older events omit it; a supplied identity must agree with the existing service accounting purpose.
+            || (line.ServiceTypeId is { } serviceTypeId && (serviceTypeId == Guid.Empty
+                || !string.Equals(line.ItemType, "Service", StringComparison.Ordinal)
+                || !string.Equals(line.LinePurpose, AccountingPurchaseLinePurposesV1.Service, StringComparison.Ordinal)))
             || line.LineNo < 1 || line.VatPercent is not { } vatPercent || net is not { } n || vat is not { } v
             || withholding is not { } w || line.Net is null || line.Vat is null || line.Withholding is null
             || (!foreignCurrency && (line.FunctionalNet is not null || line.FunctionalVat is not null

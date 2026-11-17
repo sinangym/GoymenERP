@@ -77,8 +77,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(24, declarations.Count);
-        Assert.Equal("1.11", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(28, declarations.Count);
+        Assert.Equal("1.13", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 
@@ -132,6 +132,8 @@ public sealed class SettingsShellAuthorityTests
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
         (string Id, string Path, string ScreenId, string Permission)[] screens =
         [
+            ("settings.purchase-invoice-variance-policies.manage", "/ayarlar/alis-fatura-fark-toleransi", "AY-AFF-01",
+                SettingsPurchaseInvoiceVariancePolicyPermissionsV1.Manage),
             ("settings.sales-delivery-tolerances.manage", "/ayarlar/teslim-toleransi", "AY-TSL-01",
                 SettingsSalesPolicyPermissionManifestV1.DeliveryToleranceManage),
             ("settings.sales-approval-thresholds.manage", "/ayarlar/onay-esikleri", "AY-ONY-01",

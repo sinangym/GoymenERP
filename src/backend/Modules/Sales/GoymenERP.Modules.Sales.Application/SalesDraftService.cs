@@ -79,7 +79,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderAllocationReadPortV2? allocationsV2 = null,
     ISalesOrderFutureAllocationReleaseParticipantV1? futureAllocationRelease = null,
     ISalesOrderPlannedQuantityReadPortV1? plannedQuantities = null,
-    ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
+    ISalesMarginCostReadPortV1? marginCosts = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -1048,13 +1049,23 @@ public sealed partial class SalesDraftService(
             ? await OrderRiskWarningAsync(scope, permission, current, cancellationToken)
             : null;
 
+        var approvalCosts = commandName == SalesDraftCommands.ApproveV1
+            && current.Version == expectedVersion && current.ApprovalState == InternalApprovalState.PendingApproval
+            ? await PrepareMarginCostsAsync(scope, permission, current, cancellationToken)
+            : [];
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
         SalesDraftStateResult? result;
         try
         {
-            Action<SalesOrderDraft, DateTimeOffset> mutate = (draft, now) => transition(draft, scope.ActorId, expectedVersion, now);
+            Action<SalesOrderDraft, DateTimeOffset> mutate = (draft, now) =>
+            {
+                transition(draft, scope.ActorId, expectedVersion, now);
+                if (approvalCosts.Count > 0)
+                    draft.PinMarginCosts([.. approvalCosts.Select(cost => cost with { RecordedAtUtc = now.ToUniversalTime() })]);
+            };
             if (CompletesReducedRevision(current, expectedVersion, commandName))
             {
                 result = await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,

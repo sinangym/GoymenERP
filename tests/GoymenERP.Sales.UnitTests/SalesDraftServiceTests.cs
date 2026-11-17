@@ -1684,6 +1684,7 @@ public sealed partial class SalesDraftServiceTests
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        public ISalesMarginCostReadPortV1? MarginCosts { get; set; }
         /// <summary>API-20 / API-21: the in-memory request store; null = not composed (503).</summary>
         public FakeRequestStore? Requests { get; set; } = new();
         /// <summary>API-22…24: the in-memory quote store over the same draft and request fakes; null = not composed (503).</summary>
@@ -1759,7 +1760,7 @@ public sealed partial class SalesDraftServiceTests
                 LineTaxes, RateLists, ExchangeRates, ItemTypes, SubcontractBindings, OwnerAxes, LinkedSupplies, LinkedSupplyRecorders,
                 InvoiceRecords, PostedShares,
                 NoFutureAllocations ? null : FutureAllocations ?? (Allocations is null ? null : new NoFutureSupplyAllocations()),
-                FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this), FutureDemandReduction);
+                FutureAllocationRelease, NoPlannedQuantities ? null : PlannedQuantities ?? new ApprovedLessShippedPlan(this), FutureDemandReduction, MarginCosts);
         }
 
         /// <summary>

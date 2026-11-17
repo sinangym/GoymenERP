@@ -1,4 +1,7 @@
 using GoymenERP.Api.FinanceRuntime;
+using GoymenERP.Api.LogisticsRuntime;
+using GoymenERP.Api.AccountingRuntime;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.ManufacturingRuntime;
@@ -8,6 +11,7 @@ using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -16,6 +20,8 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Outbox;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Infrastructure.Outbox;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Work.Infrastructure;
 
 namespace GoymenERP.Api.Shell;
@@ -26,6 +32,12 @@ public static class TrainCompletionHostComposition
     public static IServiceCollection AddTrainCompletionOwnerBindings(this IServiceCollection services)
     {
         services.AddFinanceCreditLenderOwnerRead();
+        services.AddPurchaseInvoiceFinanceAdmissionHost();
+        services.AddPurchaseServiceOrderHostV1();
+        services.AddInventoryTransferPolicyHostPorts();
+        services.AddFinancePartyBalanceTransfersV1();
+        services.AddAccountingInvoiceLineCogsRuntime();
+        services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();
         services.AddScoped<IPurchasingPartyAccountPortV2>(provider =>
             (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());
         services.AddProductPurchaseUnitConversion(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
@@ -48,7 +60,11 @@ public static class TrainCompletionHostComposition
             new(PurchasingOrderLineRevivedEventV1.EventType, 1),
             new(AccountingPurchaseInvoiceFinalizedInboxV1.EventType, AccountingPurchaseInvoiceFinalizedInboxV1.Version));
         services.AddWorkOutboxEventSource<FinanceCreditOutboxEventSourceV1>(CreditMovementProposalInboxV1.SourceName,
-            new WorkOutboxEventTypeV1(CreditMovementProposalInboxV1.EventType, 1));
+            new WorkOutboxEventTypeV1(CreditMovementProposalInboxV1.EventType, 1),
+            new(FinanceFinancialMovementEventsV1.ExpensePaymentRecorded, FinanceFinancialMovementEventsV1.SchemaVersion),
+            new(FinanceFinancialMovementEventsV1.CashTransferRecorded, FinanceFinancialMovementEventsV1.SchemaVersion));
+        services.AddWorkOutboxEventSource<SalesOutboxEventSourceV1>(SalesOutboxContractV1.SourceName,
+            SalesOutboxContractV1.Publishes.ToArray());
         services.AddWorkNotificationHostV1(InventoryOutboxContractV1.SourceName, AccountingPurchaseInvoiceFinalizedInboxV1.SourceName);
         services.AddWorkInboxConsumer<ManufacturingCostDifferenceInboxConsumerV1>(ManufacturingCostDifferenceInboxV1.ConsumerName,
             ManufacturingCostDifferenceInboxV1.Subscriptions.ToArray());
@@ -56,6 +72,10 @@ public static class TrainCompletionHostComposition
             CreditMovementProposalInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<AccountingPurchaseInvoiceFinalizedInboxConsumer>(AccountingPurchaseInvoiceFinalizedInboxV1.ConsumerName,
             AccountingPurchaseInvoiceFinalizedInboxV1.Subscriptions.ToArray());
+        services.AddWorkInboxConsumer<AccountingSalesInvoiceFinalizedInboxConsumer>(AccountingSalesInvoiceFinalizedInboxV1.ConsumerName,
+            AccountingSalesInvoiceFinalizedInboxV1.Subscriptions.ToArray());
+        services.AddWorkInboxConsumer<FinanceJournalSourceInboxConsumerV1>(FinanceJournalSourceInboxV1.ConsumerName,
+            FinanceJournalSourceInboxV1.Subscriptions.ToArray());
         return services;
     }
 }

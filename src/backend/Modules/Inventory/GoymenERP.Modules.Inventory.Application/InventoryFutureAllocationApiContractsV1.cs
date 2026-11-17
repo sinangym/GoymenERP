@@ -10,7 +10,12 @@ public static class InventoryFutureAllocationApiV1
 }
 
 public sealed record InventoryFutureAllocationListV1(Guid CompanyId, Guid SalesOrderId, Guid SalesOrderLineId,
-    IReadOnlyList<InventoryFutureAllocationViewV1> Items, bool WindowFull, IReadOnlyDictionary<Guid, string> UnitCodes);
+    IReadOnlyList<InventoryFutureAllocationViewV1> Items, bool WindowFull, IReadOnlyDictionary<Guid, string> UnitCodes,
+    DateOnly EvaluatedOn, IReadOnlyDictionary<Guid, InventoryFutureAllocationScheduleViewV1> Schedules);
+
+/// <summary>ALS-D90: advisory read-time warning only. Unavailable is never an undated or on-time source.
+/// The key in Schedules is the allocation id; no expiry, release or event is created.</summary>
+public sealed record InventoryFutureAllocationScheduleViewV1(string Status, DateOnly? DeliveryDate, bool? IsOverdue);
 
 /// <summary>User command boundary; trusted actor, company, roles and a freshly measured company-wide permission are derived here.</summary>
 public interface IInventoryFutureAllocationCommandV1

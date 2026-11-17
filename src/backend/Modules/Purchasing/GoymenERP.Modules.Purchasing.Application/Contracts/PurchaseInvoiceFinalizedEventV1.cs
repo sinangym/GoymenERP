@@ -12,7 +12,9 @@ public static class PurchaseInvoiceFinalizedEventV1
 /// <summary>Frozen source amounts, including the actual Product owner's type and the explicitly selected line purpose.</summary>
 public sealed record PurchaseInvoiceFinalizedLineV1(Guid LineId, int LineNo, string ItemType, string LinePurpose,
     decimal VatPercent, decimal Net, decimal Vat, decimal Withholding,
-    decimal? FunctionalNet, decimal? FunctionalVat, decimal? FunctionalWithholding);
+    decimal? FunctionalNet, decimal? FunctionalVat, decimal? FunctionalWithholding,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null);
 
 /// <summary>The admission identity is allocated once with finalisation. Functional values and rate are absent for TL,
 /// and use the supplier invoice's own rate for foreign currency (ALS-D41). The consumer does not choose an exchange rate.</summary>

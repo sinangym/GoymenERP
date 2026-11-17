@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(12, declarations.Count);
+        Assert.Equal(17, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.9", provider.ContractVersion);
+        Assert.Equal("1.11", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -75,7 +75,7 @@ public sealed class InventoryShellCapabilityProviderTests
                 || item.ParentCapabilityId == InventoryShellCapabilityProvider.StockPositionsCapabilityId)
             .ToArray();
 
-        Assert.Equal(9, declarations.Length);
+        Assert.Equal(13, declarations.Length);
         Assert.All(declarations, declaration =>
             Assert.Contains(ErpPermissions.ProductOperationalSelectionRead, declaration.RequiredPermissions));
         var openingStock = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
@@ -84,7 +84,7 @@ public sealed class InventoryShellCapabilityProviderTests
     }
 
     [Fact]
-    public void Transfer_cancel_control_keeps_the_existing_permission_and_fails_closed_without_real_owner_gate()
+    public void Transfer_cancel_control_keeps_the_existing_permission_with_real_owner_gates_bound_by_the_host()
     {
         var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
             item => item.CapabilityId == InventoryShellCapabilityProvider.TransferCancelCapabilityId);
@@ -104,7 +104,39 @@ public sealed class InventoryShellCapabilityProviderTests
                 ErpPermissions.InventoryStockTransferCancel,
             ],
             declaration.RequiredPermissions);
-        Assert.False(declaration.ImplementationAvailable);
+        Assert.True(declaration.ImplementationAvailable);
+    }
+
+    [Theory]
+    [InlineData(ErpPermissions.LogisticsTransferOutgoingDocumentsRead)]
+    [InlineData(ErpPermissions.LogisticsDispatchNotesCreate)]
+    [InlineData(ErpPermissions.LogisticsDispatchNotesApprove)]
+    [InlineData(ErpPermissions.LogisticsDispatchNotesCancel)]
+    public void Transfer_controls_preserve_parent_access_and_require_their_independent_purpose(string permission)
+    {
+        var controls = new InventoryShellCapabilityProvider().GetDeclarations();
+        var parent = Assert.Single(controls, item => item.CapabilityId == InventoryShellCapabilityProvider.StockPositionsCapabilityId);
+        var child = Assert.Single(controls, item => item.CapabilityId == permission);
+        Assert.Equal(parent.CapabilityId, child.ParentCapabilityId);
+        Assert.Equal(parent.RoutePath, child.RoutePath);
+        Assert.All(parent.RequiredPermissions, required => Assert.Contains(required, child.RequiredPermissions));
+        Assert.Contains(permission, child.RequiredPermissions);
+        Assert.True(child.ImplementationAvailable);
+        if (permission is ErpPermissions.LogisticsDispatchNotesCreate or ErpPermissions.LogisticsDispatchNotesApprove or ErpPermissions.LogisticsDispatchNotesCancel)
+            Assert.Contains(ErpPermissions.LogisticsTransferOutgoingDocumentsRead, child.RequiredPermissions);
+    }
+
+    [Fact]
+    public void Transfer_planning_uses_its_command_permission_without_granting_general_stock_reports()
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            item => item.CapabilityId == InventoryShellCapabilityProvider.TransferPlanningCapabilityId);
+        Assert.Null(declaration.ParentCapabilityId);
+        Assert.Equal("/stok/transferler/planla", declaration.RoutePath);
+        Assert.Equal([ErpPermissions.InventoryStockTransferWrite], declaration.RequiredPermissions);
+        Assert.DoesNotContain(ErpPermissions.InventoryBalancesRead, declaration.RequiredPermissions);
+        Assert.DoesNotContain(ErpPermissions.InventoryLabelsRead, declaration.RequiredPermissions);
+        Assert.True(declaration.ImplementationAvailable);
     }
 
     [Fact]

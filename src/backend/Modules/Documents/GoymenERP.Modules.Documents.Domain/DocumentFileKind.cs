@@ -27,6 +27,9 @@ public enum DocumentFileKind
 
     /// <summary>A delimited text table (FNS-D52); its column mapping is a per-bank setting outside this module.</summary>
     Csv = 6,
+
+    /// <summary>A passive UBL invoice XML source. Only the incoming purchase invoice owner opts in (ALS-D7).</summary>
+    UblInvoiceXml = 7,
 }
 
 /// <summary>One allowlisted kind: its canonical media type (the only one the server ever serves) and its extensions.</summary>

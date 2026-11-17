@@ -45,12 +45,25 @@ public static class PurchasingModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PurchasingStore>();
+        services.AddScoped<PurchaseServiceOrderStoreV1>();
+        services.AddScoped<IPurchaseServiceOrderStoreV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseSubcontractOrderReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseServiceAcceptanceReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
+        services.AddScoped<IPurchaseServiceOrderServiceV1, PurchaseServiceOrderServiceV1>();
+        services.AddScoped<IPurchaseAdditionalCostStoreV1, PurchaseAdditionalCostStoreV1>();
+        services.AddScoped<IPurchaseAdditionalCostServiceV1, PurchaseAdditionalCostServiceV1>();
+        // Direct ALC-S8 answer: the existing purchase-order reviser records expenses. Registration grants nothing.
+        services.TryAddSingleton(new PurchaseAdditionalCostWriteAdmissionV1(PurchasingPermissionManifestV1.OrdersRevise,
+            "Issue #1189 issuecomment-6946921285: alış siparişini revize etme yetkilisi"));
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchaseIncomingInvoiceWorkflowV1, PurchaseIncomingInvoiceWorkflow>();
         services.AddScoped<IPurchaseIncomingInvoiceMatchSourceV1, PurchaseIncomingInvoiceMatchSource>();
         services.AddScoped<IPurchaseIncomingInvoiceWorkspaceV1, PurchaseIncomingInvoiceWorkspace>();
         services.AddScoped<IPurchaseIncomingInvoiceDiagnosticsV1, PurchaseIncomingInvoiceDiagnostics>();
+        services.AddScoped<IPurchaseInvoiceImportReservationStoreV1>(provider => provider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchaseInvoiceFileReaderV1, Imports.PurchaseInvoiceFileReader>();
+        services.AddScoped<IPurchaseInvoiceImportV1, PurchaseInvoiceImport>();
         services.AddScoped<PurchaseUnitVerifier>();
         services.TryAddSingleton(new PurchasingServiceBindings());
         services.AddScoped<PurchasingService>(CreatePurchasingService);

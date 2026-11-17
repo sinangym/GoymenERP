@@ -80,7 +80,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.15";
+    public const string OwnerContractVersion = "1.16";
+    public const string PartyBalanceTransferCapabilityId = "finance.party-balance-transfers.record";
+    public const string PartyBalanceTransferPath = "/finans/cari-bakiye-devri";
     public const string OfficialInvoiceRecordCapabilityId = "finance.official-sales-invoices.record";
     public const string OfficialInvoiceApproveCapabilityId = "finance.official-sales-invoices.approve";
     public const string OfficialInvoiceWithdrawCapabilityId = "finance.official-sales-invoices.withdraw";
@@ -238,6 +240,10 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             [FinanceOfficialSalesInvoicePermissionNamesV1.Record]) with { ImplementationAvailable = false };
         return
         [
+            Declaration(PartyBalanceTransferCapabilityId, PartyBalanceTransferCapabilityId, PartyBalanceTransferPath,
+                "F-32-PARTY-BALANCE-TRANSFER", ShellCapabilityRoutePrecedence.Static,
+                [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
+                    FinancePermissionNames.PartyLedgerAmountRead]) with { ImplementationAvailable = false },
             officialRecord,
             Declaration(OfficialInvoiceApproveCapabilityId, OfficialInvoiceApproveCapabilityId, OfficialInvoiceApprovePath,
                 "F-005-OFFICIAL-APPROVAL", ShellCapabilityRoutePrecedence.Static,
