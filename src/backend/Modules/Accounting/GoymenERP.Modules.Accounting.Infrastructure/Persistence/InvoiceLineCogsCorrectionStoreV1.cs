@@ -17,7 +17,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <summary>Append-only line choices and component corrections, never a Sales/Inventory write or invoice-total reversal.</summary>
 public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICompanyContext company,
     IActiveAccountPlanReaderV1 accountPlans, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter,
-    TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null) : IInvoiceLineCogsCorrectionStoreV1
+    TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null,
+    IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null) : IInvoiceLineCogsCorrectionStoreV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string Entity = "Accounting.InvoiceLineCogsCorrection";
@@ -75,7 +76,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         var history = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x.RevisionJson)).ToArray();
         var (state, evidence) = await Evidence(source, history.LastOrDefault(), cancellationToken);
         var attributed = await AttributedEvidence(source, cancellationToken);
-        if (attributed is { Count: > 0 })
+        var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
+        if (attributed is { Count: > 0 } || purchased is { Count: > 0 })
         {
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             await RequireMixedPosting(source, evidence, cancellationToken);
@@ -85,7 +87,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         return new(companyId, source.InvoiceId, source.InvoiceLineId, FinalizedInvoiceLineReferenceV1.From(source), history.LastOrDefault()?.Version ?? 0,
             history.LastOrDefault(), history, proposals.Select(x => approved.TryGetValue(x.Id, out var decision)
                 ? Decode<InvoiceLineCogsCorrectionViewV1>(decision.ViewJson) : Decode<InvoiceLineCogsCorrectionViewV1>(x.ViewJson)).ToArray(), state, evidence,
-                AttributedEvidence: attributed);
+                AttributedEvidence: attributed, PurchaseAttributedEvidence: purchased);
     }
 
     public async Task<InvoiceLineCogsCorrectionViewV1?> FindAsync(Guid proposalId, CancellationToken cancellationToken = default)
@@ -114,11 +116,13 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             var (state, evidence) = await Evidence(source, current, cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             var attributed = await AttributedEvidence(source, cancellationToken);
-            if (attributed is not null) await RequireMixedPosting(source, evidence, cancellationToken);
+            var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
+            if (attributed is not null || purchased is not null) await RequireMixedPosting(source, evidence, cancellationToken);
             var view = new InvoiceLineCogsCorrectionViewV1(request.ProposalId, source.CompanyId, source.InvoiceId,
                 source.InvoiceLineId, source.FinalizedVersion, 1, request.ExpectedLineVersion, "Prepared", request.Classification,
                 plan, request.PeriodId, request.TransactionDate, request.AccountingDate, request.ValueDate,
-                actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null, attributed);
+                actorId, clock.GetUtcNow(), null, null, request.Reason, evidence, null, null, attributed,
+                PurchaseAttributedEvidence: purchased);
             db.InvoiceLineCogsProposals.Add(new() { CompanyId = source.CompanyId, Id = request.ProposalId,
                 InvoiceId = source.InvoiceId, InvoiceLineId = source.InvoiceLineId, ExpectedLineVersion = request.ExpectedLineVersion,
                 PreparedBy = actorId, PreparedAtUtc = view.PreparedAtUtc, SourceJson = Encode(source), ViewJson = Encode(view) });
@@ -152,9 +156,12 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             if (Encode(evidence) != Encode(prepared.PostedEvidence)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             var attributed = await AttributedEvidence(source, cancellationToken);
+            var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
             if (Encode(attributed) != Encode(prepared.AttributedEvidence))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
-            if (attributed is not null) await RequireMixedPosting(source, evidence, cancellationToken);
+            if (Encode(purchased) != Encode(prepared.PurchaseAttributedEvidence))
+                throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
+            if (attributed is not null || purchased is not null) await RequireMixedPosting(source, evidence, cancellationToken);
             Guid? reverseId = null, replacementId = null;
             if (evidence is not null && evidence.CogsAccountId != prepared.AccountPlan.Account.AccountId)
             {
@@ -175,6 +182,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
             }
             var now = clock.GetUtcNow();
             var attributedCorrections = await CorrectAttributed(attributed, prepared, period, metadata, cancellationToken);
+            var purchaseCorrections = await CorrectPurchaseAttributed(purchased, prepared, period, metadata, cancellationToken);
+            if (purchaseCorrections is not null) attributedCorrections = (attributedCorrections ?? []).Concat(purchaseCorrections).ToArray();
             var approved = prepared with { Version = 2, Status = "Approved", ApprovedBy = actorId, ApprovedAtUtc = now,
                 ReversingCorrectionJournalId = reverseId, ReplacementCorrectionJournalId = replacementId,
                 AttributedCorrections = attributedCorrections };

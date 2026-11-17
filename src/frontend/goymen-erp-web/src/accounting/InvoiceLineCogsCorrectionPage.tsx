@@ -98,6 +98,8 @@ function Page({ namespace, invoiceId, lineId, mode }: { readonly namespace: stri
             : `${T.posted}: ${state.data.postedEvidence?.amount} · ${state.data.postedEvidence?.currencyId}`}</p>
           {state.data.attributedEvidence ? <ul>{state.data.attributedEvidence.map(item => <li key={item.source.fingerprint}>
             {T.posted}: {item.source.signedAmount} · {item.currentJournalId}</li>)}</ul> : null}
+          {state.data.purchaseAttributedEvidence ? <ul>{state.data.purchaseAttributedEvidence.map(item => <li key={item.source.fingerprint}>
+            {T.purchasePosted}: {item.source.signedAmount} · {item.currentJournalId ?? T.approvedWithoutJournal}</li>)}</ul> : null}
           <h2>{T.history}</h2>{state.data.revisions.length === 0 ? <p>{T.noHistory}</p> : <ol>{state.data.revisions.map(row => <li key={row.version}>
             {row.version} · {T.classes[row.classification]} · {row.accountPlan.account.code} · {row.accountPlan.account.name} · {row.accountingDate} · {row.reason}
           </li>)}</ol>}
