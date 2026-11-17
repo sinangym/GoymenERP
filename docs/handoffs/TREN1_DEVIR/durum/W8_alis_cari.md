@@ -389,3 +389,34 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   NOT_RUN notu bu kaynak başında derleme0 ile tamamlandı. ALS-D105 yeni kesin yetki
   yanıtı `6947126872`: Satış `sales.orders.approve`, Alış `purchasing.orders.approve`.
   Bu checkpoint vergi yönetimi/override'ını henüz açmaz; ayrı kaynak takibi sürer.
+
+#### ALC-S8 takip — parçalı gerçek masraf fatura eşleştirmesi
+
+- Kaynak commit: `368216c5d102f2eb83b8012b32a16da592fa9147`; additive typed kalem
+  sözleşmesi `a3d1512a53c696b84dd057c38cda7d3624a224ff`. İnsan yanıtı `6947000365`:
+  aynı caride gerçek masraf farklı faturalara parçalı bağlanabilir, toplam aşılmaz.
+  Resmî Expense/expense satırı ayrı ExpenseTypeId taşır; ProductId/ServiceTypeId veya
+  sahte mal kabulü olarak gösterilmez. Normal mal/hizmet JSON ve request hash yolu korunur.
+- Gerçek immutable masraf satırı ile fatura arasına parasal pay ledger'ı eklendi.
+  Bütün sipariş/satır/masraf kimlikleri tek sıralı owner kilit kümesinde, Serializable
+  işlem içinde doğrulanır. Önceden faturalanan toplam ve aynı isteğin bütün payları
+  birlikte ölçülür; 6.000 + 4.000 pay mümkündür, 10.000 masrafın bütçesi aşılamaz.
+  Fatura resmî neti paylara tam bağlanır; fiziksel miktar, stok, ortalama maliyet veya
+  mal kabulü ledger'ı değişmez. Cari, şirket, para birimi, masraf tipi ve KDV kaynakları
+  tekrar doğrulanır. Audit/yazı flush'ından sonra commit öncesi fresh permission çiti vardır.
+- Gerçek bounded aday API'si, yetkili fatura eşleştirme consumer'ı, değişmez retry
+  payload'ı ve ekranda kısmi tutar seçimi hazırdır. Tarayıcı toplam/maliyet hesaplamaz.
+  Yeni endpoint mevcut fatura mount'u altındadır; ek Program çağrısı gerekmez.
+  Merkezi import mapper ve Finance/Accounting finalized-event tüketicilerinde typed
+  ExpenseTypeId/expense metadata entegrasyonu kök owner'a bildirilmiştir.
+- EF `20261117120452_AddPurchaseAdditionalCostInvoiceBindings` üretim exit0; tek
+  additive tablo, şirketli gerçek masraf/fatura FK'leri, pozitif tutar check/index.
+  Down ilk işlem **THROW51939** ile eşleştirme geçmişini korur. DB uygulanmadı.
+- API, Purchasing.UnitTests, Api.IntegrationTests kaynak derlemeleri ve TSC **exit0,
+  0 uyarı/0 hata**; `git diff --check` exit0. Birim/model, HTTP güvenli ret sözleşmeleri,
+  üç gerçek-SQL fact (iki fatura toplamı + replay/tenant/stok etkisizliği, yarışan bütçe,
+  geç yetki kaybında tam rollback + Down51939), strict decoder ve DOM test kaynakları
+  eklendi. Unit/SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**.
+- Bu checkpoint ALC-S8 parasal eşleştirme kaynağını tamamlar. Merkezi tüketici/route
+  entegrasyonu ve nihai runtime kabulü ayrı doğrulanacaktır; bütün tren için DONE
+  veya bağımsız K3 kabulü iddiası değildir. ALC-S7 ALS-D105 takip işi ayrıca sürer.
