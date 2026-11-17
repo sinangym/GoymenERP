@@ -53,7 +53,7 @@ internal sealed partial class IdentityAccessAssignmentService
         // Password and all derived password material stay out of the fingerprint, stored response, audit and logs.
         var prepared = await BeginAsync(new Intent(IdentityUserManagementV1.Create, "Create", "Identity.User",
             TargetText(request.UserId), ErpPermissions.IdentityUsersManage,
-            new { request.UserId, request.ExpectedVersion }, null, false, errors), metadata, cancellationToken);
+            new { request.UserId, request.ExpectedVersion, request.DisplayName, request.UserName, request.Reason }, null, false, errors), metadata, cancellationToken);
         if (prepared.Command is not { } command) return prepared.Early!;
         if (passwordHasher is null || passwordContext is null || localOptions is null)
             return Unstored(Answers.Unavailable(), metadata);
@@ -86,7 +86,7 @@ internal sealed partial class IdentityAccessAssignmentService
         if (userId == Guid.Empty || (action == IdentityUserManagementV1.ResetPassword && string.IsNullOrEmpty(request.Password)))
             errors.Add(new("user", FieldCodes.Invalid));
         var prepared = await BeginAsync(new Intent($"identity.user.{action}.v1", action, "Identity.User", TargetText(userId),
-            ErpPermissions.IdentityUsersManage, new { UserId = userId, request.ExpectedVersion }, request.ExpectedVersion, true, errors),
+            ErpPermissions.IdentityUsersManage, new { UserId = userId, request.ExpectedVersion, request.Reason }, request.ExpectedVersion, true, errors),
             metadata, cancellationToken, managedUserId: userId);
         if (prepared.Command is not { } command) return prepared.Early!;
         return await RunLockedAsync(command, async now =>

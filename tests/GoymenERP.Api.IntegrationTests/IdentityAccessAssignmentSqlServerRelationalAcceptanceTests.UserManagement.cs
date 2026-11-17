@@ -22,8 +22,11 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             var target = Guid.NewGuid();
             var request = new CreateLocalUserV1(target, "0", "Sentetik yeni kullanıcı", $"synthetic-{target:N}",
                 "SentetikOnly!Temporary.8291", "Sentetik oluşturma");
-            using (var created = await PostAsync(client, "/api/v1/identity/access/users", request, NewKey(), NewKey()))
+            var creationKey = NewKey();
+            using (var created = await PostAsync(client, "/api/v1/identity/access/users", request, creationKey, NewKey()))
                 Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            using (var changedUserName = await PostAsync(client, "/api/v1/identity/access/users", request with { UserName = $"different-{target:N}" }, creationKey, NewKey()))
+                await AssertProblemAsync(changedUserName, HttpStatusCode.Conflict, IdentityAccessProblemCodesV1.IdempotencyConflict);
             var reset = new ManageLocalUserV1("1", "SentetikOnly!Reset.7384", "Sentetik sıfırlama");
             var resetRoute = $"/api/v1/identity/access/users/{target}/password-reset";
             using (var noMembership = await PostAsync(client, resetRoute, reset, NewKey(), NewKey()))
