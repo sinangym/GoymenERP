@@ -247,7 +247,7 @@ export const NORMAL_JOURNAL_TEXT = {
   approvedExchangeSource: 'Döviz bozdurma — onaylı defter değeri',
   targetBookValueUnavailable: 'Hedef dövizin gerçek TL defter değeri kaydedilmemiş; muhasebe fişi hazırlanamaz.',
   sourceExactAmounts: 'Gerçek kaynak ve onaylı hesap eşlemesinin fiş satırlarını kullan',
-  sourceExactHelp: 'Bu satırlar gerçek işlem ve ayrıca onaylanan defter değerinden gelir. TCMB karşılaştırması muhasebe tutarı değildir.',
+  sourceExactHelp: 'Bu satırlar gerçek işlem, belgeli kaynak defter değeri ve onaylı hedef TL değerinden gelir. TCMB karşılaştırması muhasebe tutarı değildir.',
   sourceAmount: 'Kaynak tutarı',
   receivedSourceHelp: 'Bu listeye alınmış kaynaklar henüz muhasebe fişi değildir. Taslak hazırlama ve farklı yetkilinin onayı ayrıca gerekir.',
   bindingUnavailable: 'Bu kaynak için onaylı hesap eşlemesi yok. Eşleme tamamlanmadan fiş taslağı hazırlanamaz.',

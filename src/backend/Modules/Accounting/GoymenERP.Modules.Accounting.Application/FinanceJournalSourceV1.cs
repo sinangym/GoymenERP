@@ -10,7 +10,8 @@ public sealed record FinanceJournalSourceViewV1(Guid EventId, Guid CompanyId, Gu
     string MappingStatus, string? PreparationVersion,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceCashExchangeValueV1? CashExchange = null);
 public sealed record FinanceCashExchangeValueV1(Guid TransferId, Guid? BookValueId, Guid SourceCurrencyId, string SourceAmount,
-    Guid TargetCurrencyId, string TargetAmount, string? SourceBookValueTl, string PostingState);
+    Guid TargetCurrencyId, string TargetAmount, string? SourceBookValueTl, string PostingState,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TargetFunctionalValueTl = null);
 public interface IFinanceCashExchangeJournalSourceProviderV1
 {
     Task<NormalJournalDraftServerSourceV1?> ResolveAsync(Guid companyId, Guid sourceId, CancellationToken cancellationToken);

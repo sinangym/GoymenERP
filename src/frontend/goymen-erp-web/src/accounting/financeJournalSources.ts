@@ -9,7 +9,7 @@ export type FinanceJournalSource = {
   mappingStatus: 'BindingAvailable' | 'BindingUnavailable'; preparationVersion: string | null
   cashExchange?: { transferId: string; bookValueId: string | null; sourceCurrencyId: string; sourceAmount: string
     targetCurrencyId: string; targetAmount: string; sourceBookValueTl: string | null
-    postingState: 'SourceBookValuePending' | 'TargetBookValueUnavailable' | 'ApprovedSourceBookValue' }
+    postingState: 'SourceBookValuePending' | 'TargetBookValueUnavailable' | 'ApprovedSourceBookValue'; targetFunctionalValueTl?: string }
 }
 export type FinanceJournalSources = { companyId: string; items: FinanceJournalSource[] }
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -38,17 +38,18 @@ export function decodeFinanceJournalSources(value: unknown, company: string): Fi
     const exchangeKind = (item.sourceKind as string).startsWith('finance.cash-exchange.')
     const exchange = item.cashExchange
     if (exchangeKind) {
-      if (!record(exchange) || Object.keys(exchange).sort().join(',') !== ['transferId', 'bookValueId', 'sourceCurrencyId', 'sourceAmount', 'targetCurrencyId', 'targetAmount', 'sourceBookValueTl', 'postingState'].sort().join(',')
+      if (!record(exchange) || Object.keys(exchange).sort().join(',') !== ['transferId', 'bookValueId', 'sourceCurrencyId', 'sourceAmount', 'targetCurrencyId', 'targetAmount', 'sourceBookValueTl', 'postingState', ...('targetFunctionalValueTl' in exchange ? ['targetFunctionalValueTl'] : [])].sort().join(',')
         || !guid(exchange.transferId) || !guid(exchange.sourceCurrencyId) || !guid(exchange.targetCurrencyId)
-        || exchange.sourceCurrencyId === exchange.targetCurrencyId || !positive(exchange.sourceAmount) || !positive(exchange.targetAmount)) return null
+        || exchange.sourceCurrencyId === exchange.targetCurrencyId || !positive(exchange.sourceAmount) || !positive(exchange.targetAmount)
+        || ('targetFunctionalValueTl' in exchange && !positive(exchange.targetFunctionalValueTl))) return null
       if (item.sourceKind === 'finance.cash-exchange.recorded.v1') {
         if (item.sourceVersion !== '1' || exchange.bookValueId !== null || exchange.sourceBookValueTl !== null || exchange.postingState !== 'SourceBookValuePending'
           || exchange.transferId !== item.sourceId || exchange.sourceCurrencyId !== item.currencyId || exchange.sourceAmount !== item.amount
-          || item.mappingStatus !== 'BindingUnavailable') return null
+          || item.mappingStatus !== 'BindingUnavailable' || exchange.targetFunctionalValueTl !== undefined) return null
       } else if (item.sourceVersion !== '2' || !guid(exchange.bookValueId) || exchange.bookValueId !== item.sourceId || !positive(exchange.sourceBookValueTl)
         || exchange.sourceBookValueTl !== item.amount || !['TargetBookValueUnavailable', 'ApprovedSourceBookValue'].includes(exchange.postingState as string)
-        || (exchange.postingState === 'ApprovedSourceBookValue' ? exchange.targetCurrencyId !== item.currencyId
-          : exchange.targetCurrencyId === item.currencyId || item.mappingStatus !== 'BindingUnavailable')) return null
+        || (exchange.postingState === 'ApprovedSourceBookValue' ? exchange.targetCurrencyId !== item.currencyId && exchange.targetFunctionalValueTl === undefined
+          : exchange.targetCurrencyId === item.currencyId || item.mappingStatus !== 'BindingUnavailable' || exchange.targetFunctionalValueTl !== undefined)) return null
     } else if (exchange !== undefined) return null
     const identity = `${item.sourceKind}:${item.sourceId.toLowerCase()}:${item.sourceVersion}`
     if (events.has(item.eventId.toLowerCase()) || sources.has(identity)) return null

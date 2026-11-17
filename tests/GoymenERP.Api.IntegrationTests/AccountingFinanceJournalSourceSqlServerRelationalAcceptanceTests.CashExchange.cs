@@ -87,10 +87,11 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
     {
         await using var run = await Run.Start(); var (source, value) = ExchangeSource();
         await using (var accept = run.Open()) await accept.Store.AcceptAsync(ExchangeEnvelope(source, value), default);
-        foreach (var change in new[] { "mapping", "amount", "denied", "company", "actor", "membership", "second-approved" })
+        foreach (var change in new[] { "mapping", "amount", "target-amount", "denied", "company", "actor", "membership", "second-approved" })
         {
             await using var scope = run.Open(); var user = new ExchangeUser(); var owner = new ExchangeOwner(source, value);
             if (change == "amount") owner.Value = owner.Value with { Proposals = [value with { SourceBookValueTl = "3200" }] };
+            if (change == "target-amount") owner.Value = owner.Value with { Proposals = [value with { TargetFunctionalValueTl = "3330" }] };
             if (change == "second-approved") owner.Value = owner.Value with { Proposals = [value, value with { Id = Guid.NewGuid() }] };
             if (change == "denied") owner.Outcome = ReadOutcome.Denied;
             if (change == "company") owner.DuringRead = () => scope.Company.Set(TestCompanyIds.CompanyB);
@@ -129,15 +130,56 @@ public sealed partial class AccountingFinanceJournalSourceSqlServerRelationalAcc
     }
     private static AccountingCommandMetadata ExchangeMetadata(Guid actor) => new(actor.ToString("D"), "SENTETIK-accounting", [],
         "SENTETIK-exchange", null, Guid.NewGuid().ToString("D"), "API");
-    private static (CashTransferView, CashExchangeBookValueViewV1) ExchangeSource()
+    [SqlServerFact]
+    public async Task Foreign_target_uses_both_documented_tl_values_and_preserves_legacy_missing_target_as_unavailable()
+    {
+        await using var run = await Run.Start();
+        var (source, legacy) = ExchangeSource(SettingsCurrencyIdentitiesV1.Euro);
+        var value = legacy with { TargetFunctionalValueTl = "3330" };
+        await using (var accept = run.Open()) await accept.Store.AcceptAsync(ExchangeEnvelope(source, value), default);
+        await using var scope = run.Open(); var user = new ExchangeUser(); var owner = new ExchangeOwner(source, value);
+        var actual = Assert.IsType<NormalJournalDraftServerSourceV1>(await ExchangeProvider(scope, user, owner,
+            ExchangeBinding(source, value)).ResolveAsync(source.CompanyId, value.Id, default));
+        Assert.Equal("3330", actual.ExactSourceAmount);
+        Assert.Collection(actual.ExactSourceLines!, x => Assert.Equal("3330", x.Amount),
+            x => Assert.Equal("3100", x.Amount), x => Assert.Equal("230", x.Amount));
+        var posting = new AccountingStore(scope.Db, scope.Company, scope.Audit, TimeProvider.System,
+            new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(source.CompanyId)));
+        var periodId = Guid.NewGuid(); var checker = Guid.NewGuid();
+        await posting.ProposePeriodAsync(periodId, new(2026, 11, 1), new(2026, 11, 30), user.Actor, ExchangeMetadata(user.Actor));
+        await posting.ApprovePeriodAsync(periodId, 1, checker, ExchangeMetadata(checker));
+        var lines = actual.ExactSourceLines!.Select(line => new ProposedLine(line.MappingKey,
+            actual.Rule.Mappings.Single(x => x.MappingKey == line.MappingKey && x.Side.ToString() == line.Side).Account,
+            Enum.Parse<PostingSide>(line.Side), decimal.Parse(line.Amount, System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+        var draftId = Guid.NewGuid();
+        var request = new PostingRequest("SENTETIK-exchange", draftId.ToString("D"), draftId,
+            new(source.CompanyId, value.Id, actual.Rule.PostingPurpose), actual.Rule.Version, actual.CurrencyId,
+            new(new(2026, 11, 17), new(2026, 11, 17), null, At), lines);
+        var draft = NormalJournalDraftV1.Prepare(JournalKind.Original, request, 1, user.Actor, actual.Rule.Mirror, actual.Rule).Draft!;
+        await posting.CreateNormalDraftAsync(draft, _ => Task.CompletedTask, ExchangeMetadata(user.Actor));
+        await posting.ApproveAndPostNormalDraftAsync(draftId, 1, periodId, checker, _ => Task.CompletedTask, ExchangeMetadata(checker));
+        Assert.Equal(1, await run.Count("accounting.Journals"));
+        Assert.Equal("90", owner.Value.Transfer.Preparation.TargetMoney.Amount);
+        Assert.Equal("3240", owner.Value.Transfer.Exchange!.TargetReferenceTl!.Amount);
+        var (older, oldValue) = ExchangeSource(SettingsCurrencyIdentitiesV1.Euro);
+        await scope.Store.AcceptAsync(ExchangeEnvelope(older, oldValue), default);
+        Assert.Null(await ExchangeProvider(scope, user, new(older, oldValue), ExchangeBinding(older, oldValue))
+            .ResolveAsync(older.CompanyId, oldValue.Id, default));
+        Assert.Equal(1, await run.Count("accounting.Journals"));
+    }
+
+    private static (CashTransferView, CashExchangeBookValueViewV1) ExchangeSource(Guid? targetCurrency = null)
     {
         var company = TestCompanyIds.CompanyA; var day = new DateOnly(2026, 11, 17); var usd = SettingsCurrencyIdentitiesV1.UnitedStatesDollar;
+        var target = targetCurrency ?? SettingsCurrencyIdentitiesV1.TurkishLira;
         var preparation = new CashTransferPreparation(CashTransferKind.CurrencyExchange, CashTransferAccountKind.Bank, Guid.NewGuid(),
             new("100", usd), new("SENTETIK-usd", "1"), CashTransferAccountKind.Bank, Guid.NewGuid(),
-            new("3300", SettingsCurrencyIdentitiesV1.TurkishLira), new("SENTETIK-try", "1"), null, day, null, null, "SENTETIK exchange");
+            new(target == SettingsCurrencyIdentitiesV1.TurkishLira ? "3300" : "90", target), new("SENTETIK-target", "1"), null, day, null, null, "SENTETIK exchange");
         var exchange = CashTransferExchangeCalculatorV1.Calculate(company, day, preparation.SourceMoney, preparation.TargetMoney,
             preparation.SourceProfile, preparation.TargetProfile, new(usd, "34", day, "TCMB", Guid.NewGuid(), "1", day.AddDays(-1), "SENTETIK / NOT_ENV"),
-            new(SettingsCurrencyIdentitiesV1.TurkishLira, "1", day, "FunctionalCurrency", null, null, null, null));
+            target == SettingsCurrencyIdentitiesV1.TurkishLira
+                ? new(target, "1", day, "FunctionalCurrency", null, null, null, null)
+                : new(target, "36", day, "TCMB", Guid.NewGuid(), "1", day.AddDays(-1), "SENTETIK / NOT_ENV"));
         var source = new CashTransferView(Guid.NewGuid(), company, preparation, Guid.NewGuid().ToString("D"), At, true, "1", exchange);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(source, FinanceJson.CreateOptions())))).ToLowerInvariant();
         return (source, new(Guid.NewGuid(), company, source.Id, "1", hash, "3100", new(Guid.NewGuid(), 1, new string('a', 64)),

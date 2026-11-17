@@ -86,6 +86,38 @@ public sealed class CashExchangeJournalSourceTests
         Assert.NotEqual("90", source.Exchange!.TargetReferenceTl!.Amount);
     }
 
+    [Fact]
+    public void Two_documented_functional_values_allow_foreign_target_without_using_either_tcmb_reference()
+    {
+        var source = Source(SettingsCurrencyIdentitiesV1.Euro, "90");
+        var value = BookValue(source) with { TargetFunctionalValueTl = "3330" };
+        var company = new CompanyContext(); company.Set(Company);
+        var fact = FinanceJournalSourceReaderV1.Read(Envelope(source, value), company);
+        Assert.Equal("ApprovedSourceBookValue", fact.CashExchange!.PostingState);
+        Assert.Equal("3330", fact.CashExchange.TargetFunctionalValueTl);
+        Assert.Equal("3330", FinanceJournalSourceReaderV1.TargetFunctionalAmount(source, value));
+        Assert.Equal("90", fact.CashExchange.TargetAmount);
+        Assert.Equal("3400", source.Exchange!.SourceReferenceTl!.Amount);
+        Assert.Equal("3240", source.Exchange.TargetReferenceTl!.Amount);
+        Assert.Equal("230", CashExchangeJournalAmountsV1.TryCreate(value.SourceBookValueTl, value.TargetFunctionalValueTl!)![2].Amount);
+        var legacy = JsonSerializer.Serialize(BookValue(source), FinanceJson.CreateOptions());
+        Assert.DoesNotContain("targetFunctionalValueTl", legacy);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("1e2")]
+    [InlineData("3301")]
+    public void Documented_target_tl_must_be_positive_exact_and_match_an_actual_try_leg(string value)
+    {
+        var source = Source(); var company = new CompanyContext(); company.Set(Company);
+        Assert.Throws<OutboxPermanentFailureException>(() => FinanceJournalSourceReaderV1.Read(
+            Envelope(source, BookValue(source) with { TargetFunctionalValueTl = value }), company));
+        Assert.True(FinanceJournalSourceReaderV1.ValidApprovedExchange(source,
+            BookValue(source) with { TargetFunctionalValueTl = "3300.00" }, Company));
+    }
+
     [Theory]
     [InlineData("hash")]
     [InlineData("maker")]
