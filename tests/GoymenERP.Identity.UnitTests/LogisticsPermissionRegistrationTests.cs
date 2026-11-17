@@ -28,6 +28,7 @@ public sealed class LogisticsPermissionRegistrationTests
         ErpPermissions.LogisticsLoadingInstructionsRead,
         ErpPermissions.LogisticsLoadsRecord,
         ErpPermissions.LogisticsShipmentsRecord,
+        ErpPermissions.LogisticsShipmentPlanExcessApprove,
         ErpPermissions.LogisticsDeliveriesRecord,
         ErpPermissions.LogisticsWeighingsRecord,
         ErpPermissions.LogisticsDispatchNotesCreate,
@@ -48,6 +49,7 @@ public sealed class LogisticsPermissionRegistrationTests
         Assert.Equal("logistics.loading-instructions.read", ErpPermissions.LogisticsLoadingInstructionsRead);
         Assert.Equal("logistics.loads.record", ErpPermissions.LogisticsLoadsRecord);
         Assert.Equal("logistics.shipments.record", ErpPermissions.LogisticsShipmentsRecord);
+        Assert.Equal("logistics.shipments.plan-excess.approve", ErpPermissions.LogisticsShipmentPlanExcessApprove);
         Assert.Equal("logistics.deliveries.record", ErpPermissions.LogisticsDeliveriesRecord);
         Assert.Equal("logistics.weighings.record", ErpPermissions.LogisticsWeighingsRecord);
         Assert.Equal("logistics.dispatch-notes.create", ErpPermissions.LogisticsDispatchNotesCreate);
