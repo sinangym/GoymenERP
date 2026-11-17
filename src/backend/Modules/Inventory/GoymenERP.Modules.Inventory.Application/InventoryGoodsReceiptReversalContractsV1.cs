@@ -16,7 +16,10 @@ public interface IInventoryGoodsReceiptReversalParticipantV1 : IAsyncDisposable
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Read-only API-44 batch preflight. The host has already locked the complete Sales/Purchasing union.</summary>
+/// <summary>
+/// Business-read-only API-44 preflight, after the complete Sales/Purchasing lock union. It may acquire the
+/// transaction-owned Inventory validation mutex; no movement, allocation, audit or business terminal is written.
+/// </summary>
 public interface IInventoryGoodsReceiptReversalBatchParticipantV1
 {
     Task EvaluateBatchAsync(IReadOnlyList<InventoryGoodsReceiptReversalBatchLineV1> lines,

@@ -2721,6 +2721,200 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockAttemptResolutionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("CountBoundaryVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("StockCountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "AttemptId");
+
+                    b.HasIndex("CompanyId", "StockCountId", "CountBoundaryVersion");
+
+                    b.ToTable("NegativeStockAttemptResolutions", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryNegativeStockAttemptResolutions_Boundary", "[CountBoundaryVersion] IS NULL OR [CountBoundaryVersion] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockAttemptRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("AvailableKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("LabelCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("MissingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MovementKind")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("ObservedCountBoundaryVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PermissionCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RefusedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("RequestedKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("SourceChannel")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("SourceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "RefusedAtUtc", "Id");
+
+                    b.HasIndex("CompanyId", "MovementId", "ActorId", "KeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "ProductId", "LocationId", "Id");
+
+                    b.ToTable("NegativeStockAttempts", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryNegativeStockAttempts_Boundary", "[ObservedCountBoundaryVersion] IS NULL OR [ObservedCountBoundaryVersion] >= 0");
+
+                            t.HasCheckConstraint("CK_InventoryNegativeStockAttempts_State", "[RequestedKg] > 0 AND [AvailableKg] < [RequestedKg] AND [MissingKg] = [RequestedKg] - [AvailableKg] AND [LineNumber] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockCountBoundaryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("StockCountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "ProductId", "LocationId", "Version");
+
+                    b.HasIndex("CompanyId", "StockCountId")
+                        .IsUnique();
+
+                    b.ToTable("NegativeStockCountBoundaries", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryNegativeStockCountBoundaries_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockValidationGuardRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("NegativeStockValidationGuards", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryNegativeStockValidationGuards_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OpeningCostDecisionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3933,6 +4127,45 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "Kind", "SourceKind", "SourceId", "SourceGrain")
                         .HasPrincipalKey("CompanyId", "Kind", "SourceKind", "SourceId", "Grain")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockAttemptResolutionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockAttemptRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "AttemptId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "StockCountId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockCountBoundaryRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "StockCountId", "CountBoundaryVersion")
+                        .HasPrincipalKey("CompanyId", "StockCountId", "Version")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.NegativeStockCountBoundaryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountDecisionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "StockCountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "StockCountId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

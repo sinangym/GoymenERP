@@ -11,6 +11,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Movements;
@@ -137,6 +138,7 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
+        await store.LockPhysicalValidationAsync(cancellationToken);
         var receipt = await OriginalReceiptTraceAsync(request.GoodsAcceptanceId, cancellationToken);
         var returned = await ReturnedQuantityAsync(receipt, cancellationToken);
         if (returned + input.Quantity.Value > receipt.QuantityKg)
@@ -144,15 +146,9 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
             throw Refused(409, InventorySupplierReturnExitCodesV1.ExitExceedsReceipt);
         }
 
+        // Original receipt fixes the product. The company guard is already held before locating physical stock.
         var source = await SourcePositionAsync(receipt, request.SourceBlock, cancellationToken);
-        if (source.QuantityKg < input.Quantity.Value)
-        {
-            throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable);
-        }
-
-        await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, cancellationToken);
-        await RequireNoUnpostedCostDifferenceAsync(receipt, source, input, cancellationToken);
-
+        await store.ObservePhysicalCountBoundaryAsync(source.Position.ProductId, source.Position.LocationId, cancellationToken);
         var versionBefore = receipt.LabelRow.Version;
         var movement = new StockMovement(
             request.InventoryMovementId,
@@ -165,6 +161,15 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
                 request.SupplierReturnLineId),
             [new StockMovementLine(source.Position, StockDirection.Out, input.Quantity)],
             CostResult.NotCalculated);
+        if (source.QuantityKg < input.Quantity.Value)
+        {
+            var shortfall = new StockShortfall(movement.Kind, movement.Source, source.Position, input.Quantity,
+                GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms.Of(source.QuantityKg), 1);
+            throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable,
+                store.PhysicalStockRefusal(movement, shortfall, metadata, receipt.LabelRow.Code));
+        }
+        await RequireExitLeavesAllocationsAsync(receipt.LabelRow.Id, input.Quantity.Value, cancellationToken);
+        await RequireNoUnpostedCostDifferenceAsync(receipt, source, input, cancellationToken);
         try
         {
             store.UseSupplierReturnCost(movement.Id, input.OriginalUnitCostTryPerKg);
@@ -185,7 +190,7 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
         }
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         {
-            throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable);
+            throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable, exception);
         }
         catch (InventoryRuleException)
         {
@@ -400,8 +405,10 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
         CancellationToken cancellationToken)
     {
         var rows = await context.Balances.AsNoTracking()
-            .Where(row => row.LabelId == receipt.LabelRow.Id && row.Block == (int)block && row.QuantityKg > 0m)
+            .Where(row => row.LabelId == receipt.LabelRow.Id && row.Block == (int)block)
             .ToListAsync(cancellationToken);
+        var positive = rows.Where(row => row.QuantityKg > 0m).ToList();
+        if (positive.Count > 0) rows = positive;
         if (rows.Count != 1)
         {
             throw Refused(409, InventorySupplierReturnExitCodesV1.StockNotAvailable);
@@ -611,8 +618,8 @@ public sealed class InventorySupplierReturnExitParticipant : IInventorySupplierR
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
-    private static InventorySupplierReturnExitException Refused(int status, string code) =>
-        InventorySupplierReturnExitException.Refused(status, code);
+    private static InventorySupplierReturnExitException Refused(int status, string code, Exception? inner = null) =>
+        InventorySupplierReturnExitException.Refused(status, code, inner);
 
     public async ValueTask DisposeAsync()
     {

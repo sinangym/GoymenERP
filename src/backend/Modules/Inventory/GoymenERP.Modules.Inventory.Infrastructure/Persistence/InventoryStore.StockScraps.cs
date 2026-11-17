@@ -181,10 +181,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -265,6 +266,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
+                    await LockPhysicalValidationAsync(cancellationToken);
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == scrapRow.LabelId, cancellationToken);
                     await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -360,10 +362,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }

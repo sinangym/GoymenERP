@@ -43,6 +43,15 @@ export const INVENTORY_MOVEMENT_TIMELINE_ROUTE = '/stok/hareketler' as const
  * own. The API re-measures both reads on every request.
  */
 export const INVENTORY_SHORTAGE_WARNINGS_ROUTE = '/stok/eksik-uyarilari' as const
+/** SAT-D337: existing stock-report capability; no new permission or capability name. */
+export const INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE = '/stok/eksi-stok-denemeleri' as const
+export function inventoryNegativeStockAttemptPath(productId: string | null = null, locationId: string | null = null): string {
+  const search = new URLSearchParams()
+  if (productId !== null) search.set('productId', productId)
+  if (locationId !== null) search.set('locationId', locationId)
+  const suffix = search.toString()
+  return suffix === '' ? INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE : `${INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE}?${suffix}`
+}
 
 /**
  * STK-S33 (KLN-D44, KLN-D41) cross-module label trace and label search. Reached from a label detail, never the sidebar; it

@@ -100,7 +100,7 @@ public static class InventoryDefiniteShipmentCodesV1
 
 public sealed class InventoryDefiniteShipmentException : Exception
 {
-    private InventoryDefiniteShipmentException(int status, string code) : base(code)
+    private InventoryDefiniteShipmentException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -109,9 +109,9 @@ public sealed class InventoryDefiniteShipmentException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryDefiniteShipmentException Refused(int status, string code) =>
+    public static InventoryDefiniteShipmentException Refused(int status, string code, Exception? innerException = null) =>
         InventoryDefiniteShipmentCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory definite-shipment refusal is outside its closed contract.");
 }
 

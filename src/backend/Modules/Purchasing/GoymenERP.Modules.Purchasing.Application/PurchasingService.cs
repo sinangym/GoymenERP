@@ -772,7 +772,7 @@ public sealed partial class PurchasingService(
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId);
+            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
     }
 
@@ -811,7 +811,7 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
     }
 
     /// <summary>A create's stale-product-version refusal lost the key to a winner that stored the record (§8): the create answers that record as a replay.</summary>

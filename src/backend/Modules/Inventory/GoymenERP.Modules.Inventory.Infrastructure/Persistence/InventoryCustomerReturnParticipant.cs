@@ -131,6 +131,7 @@ public sealed class InventoryCustomerReturnParticipant : IInventoryCustomerRetur
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
+        await store.LockPhysicalValidationAsync(cancellationToken);
         var trace = await OriginalShipmentTraceAsync(request.SourceShipmentId,
             request.LoadingInstructionLineId, cancellationToken);
         var returned = await ReturnedQuantityAsync(trace, cancellationToken);

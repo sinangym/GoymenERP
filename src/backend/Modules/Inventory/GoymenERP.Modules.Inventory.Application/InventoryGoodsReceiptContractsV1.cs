@@ -126,7 +126,7 @@ public static class InventoryGoodsReceiptCodesV1
 
 public sealed class InventoryGoodsReceiptException : Exception
 {
-    private InventoryGoodsReceiptException(int status, string code) : base(code)
+    private InventoryGoodsReceiptException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -135,9 +135,9 @@ public sealed class InventoryGoodsReceiptException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryGoodsReceiptException Refused(int status, string code) =>
+    public static InventoryGoodsReceiptException Refused(int status, string code, Exception? innerException = null) =>
         InventoryGoodsReceiptCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory goods-receipt refusal is outside its closed contract.");
 }
 

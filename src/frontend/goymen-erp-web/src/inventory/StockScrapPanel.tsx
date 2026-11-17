@@ -113,7 +113,8 @@ export function StockScrapPanel({ label, companyId, namespace, routeEntry, actor
       if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, security)
       // The server says the viewer recorded it: stop offering a decision the next click would meet again.
       if (pending.kind === 'decide' && outcome.status === 409 && outcome.code === 'inventory_stock_scrap_self_approval') remember(pending.scrapId)
-      setAttempt({ phase: 'failed', message: stockScrapRefusalText(outcome.status, outcome.code) })
+      setAttempt({ phase: 'failed', message: stockScrapRefusalText(outcome.status, outcome.code)
+        + (outcome.detail === undefined ? '' : ` ${outcome.detail}`) })
       void scraps.refetch()
       return
     }

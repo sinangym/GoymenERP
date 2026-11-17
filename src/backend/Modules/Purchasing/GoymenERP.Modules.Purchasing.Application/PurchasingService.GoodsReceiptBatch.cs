@@ -620,7 +620,7 @@ public sealed partial class PurchasingService
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId);
+            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
 
         if (replay.BatchId is not { } batchId) throw new PurchasingServiceException(503, "service_unavailable");
@@ -649,7 +649,7 @@ public sealed partial class PurchasingService
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
     }
 
     private static StoredPurchaseGoodsReceiptBatch RequireOwnBatch(Scope scope, Guid orderId, StoredPurchaseGoodsReceiptBatch stored) =>
