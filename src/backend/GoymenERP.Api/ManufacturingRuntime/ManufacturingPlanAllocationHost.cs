@@ -181,7 +181,8 @@ internal sealed class ManufacturingPlanAllocationHost(
             }
             if (closedOrder is not null)
                 await costGenerations!.StageClosedAsync(closedOrder.Id, metadata, token);
-        }, cancellationToken);
+        }, cancellationToken, reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed
+            ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted);
     }
 
     /// <summary>
@@ -217,7 +218,7 @@ internal sealed class ManufacturingPlanAllocationHost(
         ManufacturingCommandMetadata metadata,
         Func<Guid, Modules.Manufacturing.Domain.Plans.ProductionPlan, IInventoryManufacturingPlanAllocationParticipantV1,
             InventoryCommandMetadata, CancellationToken, Task> stage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IsolationLevel isolation = IsolationLevel.ReadCommitted)
     {
         ArgumentNullException.ThrowIfNull(write);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -232,7 +233,7 @@ internal sealed class ManufacturingPlanAllocationHost(
                 ManufacturingApiCodes.AuthorityDenied);
 
         await using var transaction = await manufacturing.Database.BeginTransactionAsync(
-            IsolationLevel.ReadCommitted, cancellationToken);
+            isolation, cancellationToken);
         var committed = false;
         try
         {

@@ -38,4 +38,22 @@ public sealed record InventoryPurchaseInvoiceCostApplicationResultV1(Guid Compan
     Guid SourceEventId, Guid AdmissionId, DateOnly InvoiceDate, InventoryPurchaseInvoiceOfficialDocumentV1 OfficialDocument,
     string SourceSha256, IReadOnlyList<InventoryPurchaseInvoiceCostReceiptResultV1> Receipts,
     IReadOnlyList<InventoryPurchaseInvoiceCostPositionResultV1> Positions, Guid? CostDifferenceEventId,
-    InventoryExactCostRatioV1 UnabsorbedTlDifference);
+    InventoryExactCostRatioV1 UnabsorbedTlDifference,
+    IReadOnlyList<InventoryPurchaseFirstCostRecognitionV1>? InitialRecognitions = null);
+
+/// <summary>BS-1 first recognition, distinct from a late difference against a known receipt stamp.
+/// Exact physical/profile evidence is retained; uninvoiced material stays pending.</summary>
+public sealed record InventoryPurchaseFirstCostRecognitionV1(string AllocationVersion, Guid AcceptanceId,
+    Guid InvoiceLineId, int InvoiceLineNo, Guid ReceiptMovementId, Guid RootLabelId, Guid ProductId, Guid ReceiptLocationId,
+    decimal MatchedQuantity, decimal AcceptedQuantity, InventoryExactCostRatioV1 AcceptedPhysicalKg,
+    InventoryExactCostRatioV1 InvoicedPhysicalKg, InventoryExactCostRatioV1 InvoiceTlValue,
+    InventoryExactCostRatioV1 ConsumedQuantityKg, decimal ConsumedTlAmount,
+    InventoryExactCostRatioV1 ConsumedExactTlAmount, InventoryExactCostRatioV1 ConsumedRoundingResidue,
+    Guid CurrencyId, Guid MoneyProfileId, long MoneyProfileVersion, int MoneyScale, DateOnly MoneyEffectiveOn,
+    string PhysicalSourceJson, string PhysicalSourceSha256,
+    IReadOnlyList<InventoryPurchaseFirstCostPositionV1> Positions);
+
+public sealed record InventoryPurchaseFirstCostPositionV1(Guid LocationId, string LocationCode,
+    InventoryExactCostRatioV1 InvoicedQuantityKg, InventoryExactCostRatioV1 TlValue,
+    InventoryExactCostRatioV1 RecordedPoolValueEffect, InventoryExactCostRatioV1 AverageRoundingResidue,
+    long PoolVersion, bool IncludedInCompanyPool);

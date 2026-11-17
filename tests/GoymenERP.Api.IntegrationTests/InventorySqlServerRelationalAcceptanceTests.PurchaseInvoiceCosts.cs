@@ -201,6 +201,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     private static async Task ApplyInvoiceCost(Run run, WorkInboxEventV1 envelope, params IInterceptor[] interceptors)
+        => await ApplyInvoiceCostCore(run, envelope, null, interceptors);
+
+    private static async Task ApplyInvoiceCostCore(Run run, WorkInboxEventV1 envelope,
+        IInventoryFirstCostPrerequisitesV1? firstCost, params IInterceptor[] interceptors)
     {
         await using var scope = run.Factory.Services.CreateAsyncScope();
         var company = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
@@ -208,8 +212,65 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             .AddInterceptors(interceptors).Options;
         await using var db = new InventoryDbContext(options, company);
         var store = new InventoryPurchaseInvoiceCostStoreV1(db, company, scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(),
-            scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), TimeProvider.System);
+            scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), TimeProvider.System, firstCost);
         await store.ApplyAsync(envelope);
+    }
+
+    [SqlServerFact]
+    public async Task A_first_partial_invoice_prices_only_its_receipt_fraction_without_rewriting_the_unavailable_original_stamp()
+    {
+        await using var run = await Run.StartAsync();
+        var receipt = await SeedInvoiceCostReceipt(run, null);
+        var first = InvoiceCostEvent(receipt, 2m, 60m);
+        await ApplyInvoiceCostCore(run, first, new FirstCostPrerequisites());
+        await ApplyInvoiceCostCore(run, first, new FirstCostPrerequisites());
+        await using var verify = run.Context(CompanyA);
+        var recorded = Assert.Single(await verify.PurchaseInvoiceCostApplications.ToListAsync());
+        var result = JsonSerializer.Deserialize<InventoryPurchaseInvoiceCostApplicationResultV1>(recorded.ResultJson, PurchaseCostJson)!;
+        var initial = Assert.Single(result.InitialRecognitions!);
+        Assert.Equal(0m, initial.ConsumedTlAmount);
+        Assert.Equal(0, initial.InvoicedPhysicalKg.Value().CompareTo(ExactCostRatio.Of(decimal.Parse(receipt.QuantityKg,
+            CultureInfo.InvariantCulture)).Multiply(.5m)));
+        Assert.Equal(0, Assert.Single(initial.Positions).TlValue.Value().CompareTo(ExactCostRatio.Of(60m)));
+        var pool = await InventoryStore.ReadCostPoolAsync(verify, verifyCompany(), receipt.LocationId, receipt.ProductId,
+            SettingsCurrencyIdentitiesV1.TurkishLira, default);
+        Assert.True(pool.IsConsistent);
+        Assert.False(pool.IsComplete);
+        Assert.Equal(0, pool.CostedKg.CompareTo(initial.InvoicedPhysicalKg.Value()));
+        Assert.Equal((int)InventoryMovementCostStampStatusV1.Unavailable,
+            (await verify.MovementCostStamps.SingleAsync(x => x.MovementId == receipt.MovementId
+                && x.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira)).Status);
+        Assert.True(await verify.PendingMovementCosts.AnyAsync(x => x.MovementId == receipt.MovementId));
+        Assert.False(await verify.OutboxMessages.AnyAsync(x => x.EventType == InventoryPurchaseInvoiceCostDifferenceV1.EventType));
+        static ICompanyContext verifyCompany() { var company = new CompanyContext(); company.Set(CompanyA); return company; }
+    }
+
+    [SqlServerFact]
+    public async Task Two_real_partial_first_invoice_applications_complete_the_pool_without_a_second_physical_receipt()
+    {
+        await using var run = await Run.StartAsync();
+        var receipt = await SeedInvoiceCostReceipt(run, null);
+        await ApplyInvoiceCostCore(run, InvoiceCostEvent(receipt, 2m, 60m), new FirstCostPrerequisites());
+        await ApplyInvoiceCostCore(run, InvoiceCostEvent(receipt, 2m, 40m), new FirstCostPrerequisites());
+        await using var verify = run.Context(CompanyA);
+        var company = new CompanyContext(); company.Set(CompanyA);
+        var pool = await InventoryStore.ReadCostPoolAsync(verify, company, receipt.LocationId, receipt.ProductId,
+            SettingsCurrencyIdentitiesV1.TurkishLira, default);
+        Assert.True(pool.IsConsistent);
+        Assert.True(pool.IsComplete);
+        Assert.Equal(0, pool.ExactPosition!.QuantityKg.CompareTo(ExactCostRatio.Of(decimal.Parse(receipt.QuantityKg, CultureInfo.InvariantCulture))));
+        Assert.Equal(0, pool.ExactPosition.Value.CompareTo(ExactCostRatio.Of(100m)));
+        Assert.Equal(2, await verify.PurchaseInvoiceCostApplications.CountAsync());
+        Assert.Single(await verify.Movements.Where(x => x.Id == receipt.MovementId).ToListAsync());
+    }
+
+    private sealed class FirstCostPrerequisites : IInventoryFirstCostPrerequisitesV1
+    {
+        public Task<InventoryFirstCostPrerequisitesV1> ReadAsync(Guid companyId, DateOnly effectiveOn,
+            IReadOnlyCollection<Guid> locationIds, CancellationToken cancellationToken = default) => Task.FromResult(
+                new InventoryFirstCostPrerequisitesV1(new(companyId, SettingsCurrencyIdentitiesV1.TurkishLira, "TRY",
+                    "accounting.journal-amount.v1", new(Guid.Parse("7f3b931d-2c92-4c78-803b-70aa7b7469a1"), 1), 2,
+                    true, effectiveOn, null), locationIds.ToDictionary(x => x, x => "SENTETIK-" + x.ToString("N"))));
     }
 
     private sealed class SyntheticInvoiceReceiptCost(decimal? tl) : IInventoryPurchaseReceiptCostSourceV1

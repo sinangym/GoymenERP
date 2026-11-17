@@ -40,15 +40,43 @@ public sealed partial class InventoryStore
             || context.MovementCostRecognitions.Local.Any(done => done.CurrencyId == currency && done.MovementId == row.MovementId
                 && done.LineNumber == row.LineNumber && (done.GenerationId == null || context.ManufacturingCostGenerations.Local.Any(
                     generation => generation.Id == done.GenerationId && generation.State == (int)InventoryManufacturingCostGenerationStateV1.Recognized))));
+        // BS-1 partial first invoices price only their immutable receipt fraction. The original
+        // unavailable stamp/pending entry stays intact; it is not a new whole-receipt recognition.
+        var purchasePriced = new Dictionary<Guid, ExactCostRatio>();
+        if (currency == SettingsCurrencyIdentitiesV1.TurkishLira && pending.Count != 0)
+        {
+            var movements = pending.Select(row => row.MovementId).Distinct().ToArray();
+            var effects = new List<PurchaseInvoiceReceiptCostEffectRow>();
+            foreach (var batch in movements.Chunk(256))
+                effects.AddRange(await context.PurchaseInvoiceReceiptCostEffects.Where(row => batch.Contains(row.MovementId))
+                    .ToListAsync(token));
+            effects.AddRange(context.PurchaseInvoiceReceiptCostEffects.Local.Where(row => row.CompanyId == company.CompanyId
+                && movements.Contains(row.MovementId) && !effects.Contains(row)));
+            foreach (var group in effects.GroupBy(row => row.MovementId))
+            {
+                if (group.Any(row => row.AcceptedQuantity <= 0m || row.MatchedQuantity <= 0m
+                    || row.AcceptedQuantity != group.First().AcceptedQuantity))
+                    throw new InvalidOperationException("purchase_first_cost_share_unreadable");
+                var fraction = group.Aggregate(ExactCostRatio.Of(0m), (sum, row) =>
+                    sum.Add(ExactCostRatio.Of(row.MatchedQuantity).Divide(row.AcceptedQuantity)));
+                if (fraction.CompareTo(ExactCostRatio.Of(1m)) > 0)
+                    throw new InvalidOperationException("purchase_first_cost_share_unreadable");
+                purchasePriced.Add(group.Key, fraction);
+            }
+        }
         var shares = new Dictionary<Guid, ExactCostRatio>();
         var readable = true;
         foreach (var root in pending.Select(row => row.LabelId).Distinct().Order())
         {
+            var entries = pending.Where(row => row.LabelId == root).ToArray();
+            if (entries.Length != 1) { readable = false; continue; }
+            var unresolved = ExactCostRatio.Of(1m).Subtract(purchasePriced.GetValueOrDefault(entries[0].MovementId, ExactCostRatio.Of(0m)));
+            if (unresolved.Sign == 0) continue;
             var lineage = await InventoryCostLineageReader.ReadAsync(context, company.CompanyId, product, root, token);
             if (lineage.Outcome != InventoryCostLineageOutcome.Value) { readable = false; continue; }
             foreach (var label in lineage.Labels.Where(label => label.RootShare.Sign > 0))
             {
-                var share = shares.GetValueOrDefault(label.LabelId, ExactCostRatio.Of(0m)).Add(label.RootShare);
+                var share = shares.GetValueOrDefault(label.LabelId, ExactCostRatio.Of(0m)).Add(label.RootShare.Multiply(unresolved));
                 if (share.CompareTo(ExactCostRatio.Of(1m)) > 0) readable = false;
                 shares[label.LabelId] = share;
             }

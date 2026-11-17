@@ -655,7 +655,7 @@ public static class ManufacturingEndpoints
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName("ReopenManufacturingOrderV1").Accepts<ReopenManufacturingOrderRequestV1>("application/json")
             .Produces<OrderViewV1>().ProducesErpBadRequest(BadRequestCodes).AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType().ProducesErpConflict(ConflictCodes)
+            .ProducesErpUnsupportedMediaType().ProducesErpConflict([.. ConflictCodes, ManufacturingStoreCodes.CostTransferReversalRequired])
             .ProducesErpUnprocessableEntity([.. ManufacturingProblemCodes.Unprocessable, "manufacturing_order_not_closed", "manufacturing_order_reopen_period_not_open"])
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound();
 

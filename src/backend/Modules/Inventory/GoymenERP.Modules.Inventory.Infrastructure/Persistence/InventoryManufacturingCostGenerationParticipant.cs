@@ -44,8 +44,9 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
     {
         ArgumentNullException.ThrowIfNull(connection); ArgumentNullException.ThrowIfNull(transaction);
         ArgumentNullException.ThrowIfNull(audit); ArgumentNullException.ThrowIfNull(auditWriter);
-        if (companyId == Guid.Empty || connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection))
-            throw new InvalidOperationException("Üretim maliyet kaydı sahibin açık işlemini ve şirketini ister.");
+        if (companyId == Guid.Empty || connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection)
+            || transaction.IsolationLevel != IsolationLevel.Serializable)
+            throw new InvalidOperationException("Üretim maliyet kaydı sahibin açık Serializable işlemini ve şirketini ister.");
         if (auditWriter.HasPendingDrafts) throw Error(503, "inventory_manufacturing_cost_unavailable");
         var company = new CompanyContext(); company.Set(companyId);
         var db = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
@@ -162,7 +163,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 results.Add(await OutputEffectAsync(new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg,
                     output.TlUnitCostPerKg, output.UsdUnitCostPerKg, output.OriginalTlAmount),
                     before.State == InventoryManufacturingCostGenerationStateV1.Recognized, reverse: true,
-                    row.Id, before.InputFingerprint, metadata, cancellationToken, output.PoolEffects));
+                    row.Id, before.InputFingerprint, metadata, cancellationToken, output.PoolEffects, output.Positions));
             }
             var eventId = before.State == InventoryManufacturingCostGenerationStateV1.Recognized
                 && results.Any(result => result.ConsumedTlDifference is not null and not 0m) ? Guid.NewGuid() : (Guid?)null;
@@ -176,13 +177,20 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
 
     private async Task<InventoryManufacturingCostGenerationOutputResultV1> OutputEffectAsync(InventoryManufacturingCostGenerationOutputV1 output,
         bool recognized, bool reverse, Guid generationId, string sourceVersion, InventoryCommandMetadata metadata, CancellationToken token,
-        IReadOnlyList<InventoryManufacturingCostPoolEffectV1>? originalPoolEffects = null)
+        IReadOnlyList<InventoryManufacturingCostPoolEffectV1>? originalPoolEffects = null,
+        IReadOnlyList<InventoryManufacturingCostPositionEffectV1>? originalPositions = null)
     {
         var root = await db.Labels.SingleAsync(row => row.Id == output.LabelId, token);
         var lineage = await InventoryCostLineageReader.ReadAsync(db, company.CompanyId, root.ProductId, output.LabelId, token);
         if (lineage.Outcome != InventoryCostLineageOutcome.Value || lineage.RemainingKg is null || lineage.NetShippedKg is null)
             throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
         await FenceLineageAsync(lineage, token);
+        var hasMoney = output.TlAmount is not null || output.UsdUnitCostPerKg is > 0m;
+        if (recognized && reverse && hasMoney)
+            await InventoryManufacturingTransferReversalProof.RequireReversibleAsync(db, lineage, output, generationId,
+                sourceVersion, originalPositions ?? throw Error(503, InventoryManufacturingTransferReversalProof.UnavailableCode), token);
+        var transferScope = recognized && !reverse && hasMoney
+            ? await InventoryManufacturingTransferReversalProof.CaptureAsync(db, lineage, output, generationId, sourceVersion, token) : null;
         var remaining = lineage.RemainingKg;
         var consumed = ExactCostRatio.Of(output.NetQuantityKg).Subtract(remaining);
         if (consumed.Sign < 0) throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
@@ -253,7 +261,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 MovementId = output.ReceiptMovementId, LineNumber = 1, CurrencyId = currency, GenerationId = generationId,
                 UnitCostPerKg = unit, RemainingQuantityKg = MassScalar(remaining), ConsumedQuantityKg = MassScalar(consumed),
                 RemainingQuantityRatioJson = JsonSerializer.Serialize(Ratio(remaining), Json), ConsumedQuantityRatioJson = JsonSerializer.Serialize(Ratio(consumed), Json),
-                SourceVersion = sourceVersion, ResultJson = JsonSerializer.Serialize(new { output, remaining = Ratio(remaining), consumed = Ratio(consumed) }, Json),
+                SourceVersion = sourceVersion, ResultJson = JsonSerializer.Serialize(new { output, remaining = Ratio(remaining), consumed = Ratio(consumed), transferScope }, Json),
                 RecordedAtUtc = clock.GetUtcNow(), CorrelationId = metadata.CorrelationId });
         }
     }

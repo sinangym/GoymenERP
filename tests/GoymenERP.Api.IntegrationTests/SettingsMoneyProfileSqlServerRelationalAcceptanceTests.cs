@@ -152,6 +152,14 @@ public sealed partial class SettingsMoneyProfileSqlServerRelationalAcceptanceTes
             return new PortScope(database, new SettingsMoneyProfilePrerequisiteProvider(database, context, new FixedActor(company)));
         }
 
+        public async Task<MoneyProfileV1> InventoryCostProfile(Guid scopedCompany, Guid requestedCompany, DateOnly date)
+        {
+            var company = new CompanyContext(); company.Set(scopedCompany);
+            await using var database = new SettingsDbContext(new DbContextOptionsBuilder<SettingsDbContext>()
+                .UseSqlServer(factory.DatabaseConnectionString).Options, company);
+            return await new SettingsInventoryCostProfileReaderV1(database, company).ReadAsync(requestedCompany, date);
+        }
+
         public async Task<IReadOnlyList<MoneyCurrencyCandidateV1>> CandidatesAsync(Guid company, string operation)
         {
             var context = new CompanyContext(); context.Set(company);
