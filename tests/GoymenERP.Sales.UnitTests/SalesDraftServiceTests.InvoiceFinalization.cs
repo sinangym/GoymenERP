@@ -257,7 +257,7 @@ public sealed partial class SalesDraftServiceTests
         var root = payload.RootElement;
         Assert.Equal(
             ["invoiceId", "documentNo", "version", "admissionId", "partyId", "companyAccountId", "currencyId", "rate", "payable",
-                "functionalPayable", "match", "instalments", "companyId", "businessDate", "invoiceDate", "finalizedBy", "rateDay", "functionalCurrencyId", "net", "vat",
+                "functionalPayable", "match", "instalments", "companyId", "businessDate", "invoiceDate", "officialInvoiceNo", "finalizedBy", "rateDay", "functionalCurrencyId", "net", "vat",
                 "withholding", "functionalNet", "functionalVat", "functionalWithholding", "lines"],
             root.EnumerateObject().Select(member => member.Name).ToArray());
         Assert.Equal(["officialNo", "ettn", "officialFunctionalAmount", "difference", "invoiceDate", "sourceProof"],
@@ -266,6 +266,7 @@ public sealed partial class SalesDraftServiceTests
             root.GetProperty("instalments")[0].EnumerateObject().Select(member => member.Name).ToArray());
         Assert.Equal(stored.Id, root.GetProperty("invoiceId").GetGuid());
         Assert.Equal(stored.Match!.InvoiceDate!.Value.ToString("yyyy-MM-dd"), root.GetProperty("invoiceDate").GetString());
+        Assert.Equal(stored.Match.OfficialNo, root.GetProperty("officialInvoiceNo").GetString());
         Assert.Equal(stored.Finalization!.FinalizedBy, root.GetProperty("finalizedBy").GetString());
         Assert.Equal(stored.Match.SourceProof!.InvoiceId, root.GetProperty("match").GetProperty("sourceProof").GetProperty("invoiceId").GetGuid());
 
@@ -337,7 +338,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(
             ["lineId", "lineNo", "productId", "unitId", "quantity", "itemType", "buyerSituation", "vatPercent", "withholdingShare",
                 "exemptionCode", "withholdingCode", "net", "vat", "withholding", "payable", "functionalNet", "functionalVat",
-                "functionalWithholding", "functionalPayable"],
+                "functionalWithholding", "functionalPayable", "shipmentSource"],
             lines[0].EnumerateObject().Select(member => member.Name).ToArray());
         foreach (var (item, expected) in lines.EnumerateArray().Zip(expectedLines))
         {
@@ -352,6 +353,17 @@ public sealed partial class SalesDraftServiceTests
             Assert.Equal(expected.Amounts.Withholding.Amount, item.GetProperty("withholding").GetDecimal());
             Assert.Equal(expected.Amounts.Payable.Amount, item.GetProperty("payable").GetDecimal());
             Assert.Equal(expected.Functional is null, item.GetProperty("functionalPayable").ValueKind == System.Text.Json.JsonValueKind.Null);
+            var sourceJson = item.GetProperty("shipmentSource");
+            Assert.Equal(["shipmentId", "dispatchNoteId", "dispatchNoteLineNo", "salesOrderId", "salesOrderLineId",
+                    "priceBasisRevision", "productId", "unitId", "invoicedQuantity"],
+                sourceJson.EnumerateObject().Select(member => member.Name).ToArray());
+            Assert.Equal(System.Text.Json.JsonValueKind.String, sourceJson.GetProperty("invoicedQuantity").ValueKind);
+            var source = System.Text.Json.JsonSerializer.Deserialize<SalesInvoiceShipmentSourceV1>(sourceJson.GetRawText(),
+                SalesDraftJson.Options);
+            Assert.Equal(new SalesInvoiceShipmentSourceV1(expected.Share.ShipmentId, expected.Share.DispatchNoteId,
+                expected.Share.NoteLineNo, expected.Share.SalesOrderId, expected.Share.SalesOrderLineId,
+                expected.Share.PriceBasisRevision, expected.Share.ProductId, expected.Share.UnitId,
+                expected.Share.QuantityText), source);
         }
 
         // The lines add up to the totals the header carries (one calculator, never re-rounded); payable = net + VAT - withholding.
