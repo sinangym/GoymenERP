@@ -288,6 +288,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         ConfigureAllocationChanges(modelBuilder);
         ConfigureAverageCostLedger(modelBuilder);
         ConfigureMovementCosting(modelBuilder);
+        ConfigurePurchaseInvoiceCosts(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);

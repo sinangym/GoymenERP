@@ -42,6 +42,18 @@ public sealed class AuditDbContext(
         await AppendGroupSharedBatchAsync([auditEvent], cancellationToken);
     }
 
+    // A global credential has no company. This closed owner port neither resolves a fictitious company
+    // nor changes the company/Product read filters or the normal permission-bearing audit writer.
+    internal async Task AppendPlatformCredentialRecoveryAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
+    {
+        _ = auditEvent.ToLocalTwoFactorOperatorRecoveryIntegrityData();
+        if (companyContext.IsResolved || groupSharedProductId.HasValue || !Database.IsRelational()
+            || Database.CurrentTransaction is null || ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A fresh unresolved enlisted platform recovery Audit owner is required.");
+        AuditEvents.Add(auditEvent);
+        await base.SaveChangesAsync(true, cancellationToken);
+    }
+
     internal async Task AppendGroupSharedBatchAsync(IReadOnlyList<AuditEvent> auditEvents,
         CancellationToken cancellationToken)
     {

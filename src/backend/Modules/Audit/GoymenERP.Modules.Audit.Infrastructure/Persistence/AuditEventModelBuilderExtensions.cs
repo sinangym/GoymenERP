@@ -50,14 +50,7 @@ public static partial class AuditEventModelBuilderExtensions
                         "CK_AuditEvents_CompanyId_NotEmpty",
                         "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
                     table.HasCheckConstraint("CK_AuditEvents_Subject",
-                        "([SubjectKind] = N'Company' AND [CompanyId] IS NOT NULL AND [OriginCompanyId] IS NULL "
-                        + "AND [AuthorityRevision] IS NULL AND [SchemaVersion] = 1) OR "
-                        + "([SubjectKind] = N'GroupSharedProduct' AND [CompanyId] IS NULL AND [SchemaVersion] = 2 "
-                        + "AND [OriginCompanyId] IS NOT NULL AND [OriginCompanyId] <> '00000000-0000-0000-0000-000000000000' "
-                        + "AND [AuthorityRevision] IS NOT NULL AND LEN([AuthorityRevision]) > 0 "
-                        + "AND [EntityType] = N'Product.Product' AND LEN([EntityId]) = 36 "
-                        + "AND TRY_CONVERT(uniqueidentifier, [EntityId]) IS NOT NULL "
-                        + "AND TRY_CONVERT(uniqueidentifier, [EntityId]) <> '00000000-0000-0000-0000-000000000000')");
+                        CompanyAndProductSubjectCheck + " OR " + OperatorRecoveryPermissionCheck);
                     table.HasCheckConstraint(
                         "CK_AuditEvents_RoleCodesJson_Valid",
                         "ISJSON([RoleCodesJson]) = 1");

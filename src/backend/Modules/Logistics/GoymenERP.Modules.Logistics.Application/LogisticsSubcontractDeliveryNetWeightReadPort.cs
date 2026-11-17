@@ -41,7 +41,25 @@ public sealed class LogisticsSubcontractDeliveryNetWeightReadPort(ILogisticsInst
                 LogisticsSubcontractDeliveryNetWeightReasonCodesV1.RecordUnreadable);
         }
 
-        return SubcontractDeliveryNetWeightReader.Read(companyId, loadingInstructionId, weighingId, stored?.Instruction);
+        var answer = SubcontractDeliveryNetWeightReader.Read(companyId, loadingInstructionId, weighingId, stored?.Instruction);
+        if (stored?.Instruction.IsContractProcessingDelivery != true || answer.Value is not { } value) return answer;
+        // STK-S3: physical material and the Sales service product are different identities. Only the actual immutable
+        // instruction source proves the service; never infer it from the material product or a current Product catalogue.
+        try
+        {
+            if (store is not ILogisticsSubcontractDeliverySourceStoreV1 sourcesOwner) throw new InvalidOperationException();
+            var sources = await sourcesOwner.ReadSubcontractSourcesAsync(loadingInstructionId, cancellationToken);
+            if (RequireCompany() != companyId || sources.Count != value.Lines.Count
+                || value.Lines.Any(line => !sources.TryGetValue(line.LineId, out var proof) || proof.CompanyId != companyId
+                    || proof.SalesOrderId != line.SourceOrderId || proof.SalesOrderLineId != line.SourceOrderLineId
+                    || proof.SalesLineRevision != line.SourceOrderRevision || proof.ProductId != line.ProductId || proof.SalesServiceProductId == Guid.Empty))
+                throw new InvalidOperationException();
+            return answer with { Value = value with { IsContractProcessingDelivery = true,
+                Lines = value.Lines.Select(line => line with { SalesServiceProductId = sources[line.LineId].SalesServiceProductId }).ToArray() } };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return LogisticsSubcontractDeliveryNetWeightReadV1.Unavailable(companyId, loadingInstructionId, weighingId,
+            LogisticsSubcontractDeliveryNetWeightReasonCodesV1.RecordUnreadable); }
     }
 
     private Guid RequireCompany()

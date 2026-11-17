@@ -18,6 +18,7 @@ internal static class IdentityCommandLine
     internal const string BootstrapFounderCommand = "bootstrap-founder";
 
     internal const string RecoverFounderCommand = "recover-founder";
+    internal const string RecoverTwoFactorCommand = "recover-two-factor";
 
     internal const int ExitCompleted = 0;
 
@@ -45,7 +46,8 @@ internal static class IdentityCommandLine
         IFounderRecoveryConsole? recoveryConsole,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILocalTwoFactorOperatorRecoveryConsoleV1? operatorRecoveryConsole = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(args);
@@ -60,10 +62,14 @@ internal static class IdentityCommandLine
             && args.Count is 2 or 3
             && string.Equals(args[0], CommandGroup, StringComparison.Ordinal)
             && string.Equals(args[1], RecoverFounderCommand, StringComparison.Ordinal);
-        if (!isBootstrap && !isRecovery)
+        var isOperatorRecovery = operatorRecoveryConsole is not null && args.Count >= 2
+            && string.Equals(args[0], CommandGroup, StringComparison.Ordinal)
+            && string.Equals(args[1], RecoverTwoFactorCommand, StringComparison.Ordinal);
+        if (!isBootstrap && !isRecovery && !isOperatorRecovery)
         {
             await error.WriteLineAsync(FounderBootstrapTexts.Usage);
             await error.WriteLineAsync(FounderRecoveryTexts.Usage);
+            await error.WriteLineAsync(OperatorTwoFactorRecoveryTexts.Usage);
             return ExitUsage;
         }
 
@@ -81,6 +87,19 @@ internal static class IdentityCommandLine
             SourceChannels.System,
             clientIpAddress: null,
             userAgent: null);
+
+        if (isOperatorRecovery)
+        {
+            var recovery = await scope.ServiceProvider.GetRequiredService<ILocalTwoFactorOperatorRecoveryServiceV1>()
+                .RunAsync(args.Count == 2, operatorRecoveryConsole!, cancellationToken);
+            if (recovery.Completed)
+            {
+                await output.WriteLineAsync(OperatorTwoFactorRecoveryTexts.Completed(recovery));
+                return ExitCompleted;
+            }
+            await error.WriteLineAsync(OperatorTwoFactorRecoveryTexts.Refused(recovery));
+            return recovery.Status == LocalTwoFactorOperatorRecoveryStatusV1.InvalidInvocation ? ExitUsage : ExitRefused;
+        }
 
         if (isRecovery)
         {

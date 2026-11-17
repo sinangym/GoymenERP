@@ -46,8 +46,8 @@
   ],
   "toplam": 174,
   "done": 135,
-  "partial": 25,
-  "remaining_not_started": 14,
+  "partial": 27,
+  "remaining_not_started": 12,
   "last_wave": 7,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
   "w6_source_done_ids": [
@@ -246,7 +246,7 @@
    ],
    "toplam": 28,
    "done": 21,
-   "partial": 5,
+   "partial": 6,
    "kalan": [
     {
      "id": "KIM-S3",
@@ -375,10 +375,12 @@
       "recovery/release pin (recovery-inventory-repin)"
      ],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
-     "w6_report": "durum/W6_kimlik.md"
+     "w6_report": "durum/W6_kimlik.md",
+     "w8_report": "durum/W8_kimlik_kapanis.md",
+     "w8_result": "Gerçek TOTP/kurtarma kodları ve Audit owner bağlantısı merkezde kaynak/derleme tamam. Merkezi pinler, son tren FF ve ayrı runtime kabulü bekler."
     },
     {
      "id": "KIM-S9",
@@ -539,7 +541,7 @@
      "blocked_reason": ""
     }
    ],
-   "remaining_not_started": 2
+   "remaining_not_started": 1
   },
   {
    "key": "platform",
@@ -889,7 +891,7 @@
      "w6_report": "durum/W6_alis_cari.md"
     }
    ],
-   "remaining_not_started": 4
+   "remaining_not_started": 2
   },
   {
    "key": "stok_lojistik",
@@ -900,7 +902,7 @@
    ],
    "toplam": 45,
    "done": 35,
-   "partial": 5,
+   "partial": 6,
    "kalan": [
     {
      "id": "STK-S1",
@@ -1180,11 +1182,13 @@
      ],
      "files_hint": [],
      "contracts": [],
-     "status": "PLANNED",
+     "status": "PARTIAL",
      "blocked_reason": "",
      "wave": 6,
      "decision_note": "NS-05 (Issue #66 yorum 6882315732 (SINAN-CEVAP 14)): Logo/antet şirket ayarından yüklenir; şablon yayımlama ayrı izin (yeni izin adı kaydedilebilir, grant yok); hazırlayan kendi şablonunu yayımlayamaz.",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_report": "durum/W8_stok_lojistik.md",
+     "w8_result": "Documents marka/şablon owner kaydı ve üretilmiş migration kaynakları merkezde; gerçek PDF renderer/producer ve yönetim ekranı bağlantısı halen uygulanıyor."
     },
     {
      "id": "STK-SC36-a",
@@ -1259,7 +1263,7 @@
      "w6_report": "durum/W6_stok_lojistik.md"
     }
    ],
-   "remaining_not_started": 5
+   "remaining_not_started": 4
   },
   {
    "key": "uretim",

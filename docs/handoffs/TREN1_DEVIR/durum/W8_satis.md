@@ -188,3 +188,61 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - K3 review bekliyor: yeni borrowed Sales read-context construction. Guard izin
   listesi genişletilmedi. Gerçek fason Logistics host ve ekran zinciri halen açıktır;
   bu bağımlılık bütün STK-S3 diliminin DONE veya runtime kabulü değildir.
+
+### SAT-S12 ilk onay marj maliyeti koruma
+
+- Oturumdaki doğrudan insan cevabının kaynak sınırı açık aktarımı:
+  [6951607190](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951607190).
+  Müşteri reddi sonrası aynı ürün/miktarla yeniden etkinleşen satır ilk onayın
+  birim maliyetini korur; aynı revizyon içindeki miktar değişimi yeni maliyet
+  okuması gerektirmez. Gerçek yeni revizyonda değişen miktar tabanı için mevcut
+  yeniden sabitleme ve eski kayıtları geriye doldurmama kuralları korunur.
+- Yeni bir miktar değiştirme endpointi veya stok/muhasebe hareketi eklenmedi.
+  Golden kabul kapısı açık tutuldu; marjın kullanılabilir olduğu iddia edilmez.
+- Yeniden etkinleşme kaynak testi ilk sabiti ve maliyet okuma sayısını korur.
+  Sales.UnitTests ve Api.IntegrationTests derlemeleri exit 0, hata/uyarı 0;
+  `git diff --check` exit 0. Runtime testler ve SQL **NOT_RUN**.
+
+
+### SAT-SC34 / ADR-011 — özgün komut cevabının kalıcı tekrarı
+
+- Başarılı lifecycle denemesine nullable `LifecycleSequence` bağlandı. Sonraki onay,
+  kesinleştirme veya Finans yeniden gönderimi ilk komut cevabını değiştirmez. Finans
+  denemeleri aynı fatura sürümünü taşıyabildiğinden özgün ledger sıra numarası kullanılır.
+  Oluşturma tekrarı immutable ilk ledger kaydını okur; güncel fatura yazılmaz/geri sarılmaz.
+- Eski null bağlar korunur; güncel başlıktan cevap veya geçmiş sürüm tahmin edilmez.
+  Şirket filtreleri ve aktör/gövde/anahtar bağı aynen sürer. Yeni grant veya izin yoktur.
+- EF üretimi `20261117155825_AddSubcontractInvoiceReplaySequence`; nullable kolon ve
+  CHECK DDL'i. Down ilk adımda özgün cevap bağı varsa **51937** ile veri kaybını reddeder.
+  Ana dal/tren ve aktif kaynaklarda numara çakışması görülmedi. DB apply **NOT_RUN**.
+- Üç gerçek SQL fact kaynağı ilk oluşturma/komut cevabını, aynı fatura sürümündeki iki
+  Finans denemesini ve boş/dolu Down korumasını kapsar. Model/ilişkisel envanter güncel.
+- API, Sales.UnitTests ve son Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0.
+  İlk Integration denemesinde mevcut fixture'da olmayan yardımcı çağrısı üç hata verdi;
+  gerçek ScalarAsync helper'ıyla düzeltildi, son Integration yeniden derlendi. EF üretimi
+  ve `git diff --check` exit 0. Runtime Unit/SQL/HTTP/CI **NOT_RUN**.
+- Bu düzeltme SAT-SC34'ün resmî iptal üreticisi ve bağımsız muhasebe onayı kalanını
+  tamamlamaz; tüm dilim PARTIAL kalır. Kaynak ve rapor aynı dilim commit'indedir.
+
+
+### SAT-S9 / F17-5 — kaynak planında gerçek alış ayırmaları
+
+- Satırın kaynak planından gerçek Inventory ayırma okuyucusuna ve mevcut açık alış
+  satırı seçme/yönetme ekranına bağ kuruldu. Kaynak planını kaydetmek ayırma oluşturmaz;
+  gelecek tedarik fiziksel stok kısmına veya frontend hesaplamasına eklenmez.
+- Ayrı Inventory read capability olmadan çağrı yoktur. Kullanıcı tek satırı açınca
+  yalnız o satır okunur; siparişin bütün satırları için istek patlaması yapılmaz.
+  Şirket/aktör/route-entry query anahtarı ve ortak auth boundary korunur.
+- Kalan miktar, gerçek değerlendirme tarihi ve termin-geçti bayrağı aynen gösterilir.
+  Alış/Stok bırakma nedenleri ve kayıtlı gerekçe birlikte görünür; bilinmeyen neden
+  için yeni işletme kuralı türetilmez. Sınırlı owner penceresi eksiksiz geçmiş sanılmaz.
+- Kaynak testleri bağımsız yetki, lazy okuma, gerçek miktar/termin/gerekçe aktarımı,
+  loading/empty, 401/403/404/409/503, offline/ağ/bozuk yanıt ve okunamayan termin
+  ayrımını kapsar. Yeni API, migration, izin veya grant yoktur.
+- `npx tsc -b` son kaynakta exit 0. İlk denemede iç PlanView sınırında eksik props
+  bulundu; typed render prop ile düzeltildi. `git diff --check` exit 0. Runtime
+  Vitest/browser/HTTP/SQL/CI **NOT_RUN**. Merkezi entegrasyon/pin/tren FF beklenir.
+
+- SAT-S9 dar takip: sipariş sürümü de satır görüntüsünün query/mount anahtarına girdi.
+  Aynı siparişte kaydedilen revizyon eski ayırma görünümünü yeni sürüme taşımaz.
+  Bu salt istemci bağlam çiti sonrası TypeScript kaynak derlemesi exit 0; runtime NOT_RUN.

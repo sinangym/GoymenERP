@@ -7,7 +7,7 @@ Kaynak/derleme tamamlanması runtime kabulü, gerçek kullanıcı ataması veya 
 |---|---|---|
 | KIM-S6 | DONE — kaynak; merkez entegrasyonu bekliyor | `0eab5b25c`, taze aktör çiti `e1fb4bf9c`. Gerçek kullanıcı oluşturma, parola sıfırlama, kilit açma ve pasifleştirme; hedefin bütün üyelik şirketlerinde `identity.users.manage`, son Admin koruması ve gerçek atama ekranına devam. |
 | KIM-S8 | PARTIAL — kaynak tamam; merkez menü/pin ve test kanıtı bekliyor | İsteğe bağlı TOTP/kurtarma kodu akışı, taze local oturum/şirket üyeliği, aynı Serializable işlemde credential/factor/idempotency/Audit. Kaynak checkpoint'i aşağıdadır. |
-| KIM-S9 | BLOCKED — açık kapsam sorusu | KIM-D27 sunucu CLI kurtarması, eski founder-only ID-2r kapsamını aşar. Sıradan kullanıcının bütün cihaz/kodları kaybolduğunda CLI hedefi henüz açık değildir. `NEEDS-SINAN` #1189 yorum 6933574705 yanıtı beklenir; sessiz founder-only veya tüm kullanıcı politikası seçilmedi. |
+| KIM-S9 | PARTIAL — owner kaynak ve EF hazır; merkez CLI kompozisyonu ve kabul bekliyor | KIM-D27 için doğrudan oturum cevabı tüm kullanıcılarda açık hedefli sunucu kurtarmasını seçti; aktarım #1189 / 6951606530. Ayrı `identity recover-two-factor` komutu, global değişmez deneme, Audit ve SecurityEvents aynı Serializable işlemde. Ayrıntı aşağıdadır. |
 
 ## KIM-S6 — KIM-D9/D16/D17/D19
 
@@ -40,3 +40,82 @@ Kaynak/derleme tamamlanması runtime kabulü, gerçek kullanıcı ataması veya 
 - KIM-S6 komut parmak izi parola/hash içermez; oluşturmadaki kullanıcı adı, görünen ad ve gerekçe; yönetimdeki gerekçe gibi diğer gövde alanları anahtara bağlanır. Aynı anahtarla farklı kullanıcı adı ilk kullanıcıyı sessizce yeniden kullanmaz, idempotency conflict verir. Parola-only değişikliği eski password komut semantiğiyle ilk cevabı replay eder; ikinci parola uygulanmaz. Gerçek SQL test kaynağı bunu ayırır. Bu dar son kaynak değişikliği son derlemeye dahildir; test runtime **NOT_RUN**.
 
 - Son kaynak başı `1e0f0c498` için Identity.UnitTests ve Api.IntegrationTests derlemeleri **exit 0 / 0 uyarı / 0 hata**. Komutlar `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` ile sıralı çalıştı. Bu kanıt bozuk factor deposu ve parola dışı komut parmak izi düzeltmelerini içerir; runtime ve yeni OpenAPI üretimi **NOT_RUN**.
+
+## KIM-S9 / KIM-D27 — açık hedefli operatör kurtarması
+
+Bu kaynak değişikliği #1189 / 6933574705 sorusuna verilen doğrudan oturum cevabını uygular.
+6951606530, bu cevabın ajan aktarımıdır; doğrudan insan GitHub yorumu olarak gösterilmez.
+Eski `recover-founder` ve kişisel oturumun 2FA işlemleri genişletilmedi.
+
+- Tam komut `identity recover-two-factor`; hedef kullanıcı adı, işlem anahtarı ve gerekçe terminalde sorulur.
+  Fazladan komut satırı argümanı geçerli işlem sayılmaz ve argüman içeriği yazılmaz. Etkileşim ve açık hedef onayı gerekir.
+- Hedef etkin veya pasif olabilir ve hiç şirket üyeliği olmayabilir. Kullanıcı etkinliği, parola ve rol/şirket atamaları değişmez.
+  Parola, doğrulayıcı tohumu, kurtarma kodu, bunların özeti veya security stamp denetim/güvenlik/deneme kaydına taşınmaz.
+  Gerçek işletim sistemi operatörü ve makine beyanı yalnız typed Audit provenansıdır.
+- Onay kullanıcı/credential/factor sürümlerine bağlıdır. Yeni Serializable işlem bunları tekrar okur;
+  onaydan sonra değişmişse doğrulayıcıya dokunmadan değişmez ret kaydeder.
+- Başarı, doğrulayıcıyı pasifleştirme + yeni security stamp + değişmez deneme + iki modülün owner kaydıyla tek fiziksel işlemde yazılır.
+  Audit veya SecurityEvents yazımı başarısızsa bu işlem commit edilmez. Sonucu belirsiz commit başarı diye sunulmaz;
+  aynı anahtarla özgün sonuç yeniden sorgulanır.
+- Anahtar global credential komutuna, hedefe, operatöre, gerekçeye ve özgün onay sürümlerine bağlıdır.
+  Başka hedef/operatör/gerekçe özgün sonucu göremez. Aynı anahtarın replay'i sonradan kurulan doğrulayıcıyı kapatmaz;
+  özgün sonucu döndürür ve güncel 2FA durumu iddia etmez.
+- Global credential için sahte şirket oluşturulmaz ve bütün şirketlere olay yayılmaz. Yeni kapalı Audit subject'i
+  `PlatformCredentialRecovery` / schema 3'tür; normal company ve Product audit constructor'ları, permission çitleri
+  ve şirket okuma filtreleri korunur. SecurityEvents kapalı iki olayla mevcut No134 saklama kaynağını kullanır;
+  yeni saklama süresi veya toplama politikası seçilmez.
+
+### EF üretimi ve korumalar
+
+Üçü de pinned `dotnet-ef` 10.0.8 ile gerçek üretildi; Designer ve snapshot dosyaları üreticiden gelir.
+Veritabanı uygulaması yapılmadı.
+
+| Migration | Koruma |
+|---|---|
+| `20261117160905_AddOperatorTwoFactorRecoveryAttempts` | İlk Down işlemi **51922**; global deneme geçmişi varken silmez. Up'ta dar UPDATE/DELETE tetikleyicisi **51925**; EF tracker da değiştirme/silmeyi bağlantı açmadan reddeder. |
+| `20261117160915_AddPlatformCredentialRecoveryAudit` | İlk Down işlemi **51923**; platform kurtarma denetimi varken eski constraint'e dönmez. Up yalnız kapalı CHECK değişiklikleri. |
+| `20261117161010_AddOperatorTwoFactorRecoverySecurityEvents` | İlk Down işlemi **51924**; yeni olaylar varken eski olay listesini geri getirmez. Up yalnız kapalı CHECK değişiklikleri. |
+
+Numaralar ana/tren/ilgili owner kaynaklarında ve ilgili açık güvenlik PR başlarında çakışmasız doğrulandı;
+üretim öncesi yalnız değişen aktif kaynaklar ve referanslar yeniden tarandı. Geçmiş migration düzenlenmedi.
+
+### Kanıt ve kalan merkezi bağlar
+
+- API, Identity.UnitTests, Audit.UnitTests ve SecurityEvents.UnitTests kaynak derlemeleri **exit 0 / 0 uyarı / 0 hata**.
+  Üç EF üretimi de **exit 0**. IntegrationTests ilk kaynak derlemesi **exit 0**; senkron terminal yarış harness'i
+  xUnit synchronization context'ini engellemeden ayrı owner işlemi çalıştıracak şekilde hizalandı ve son incremental
+  kaynak derlemesi de **exit 0 / 0 uyarı / 0 hata** (43,04 saniye).
+- İlk Audit.UnitTests denemesi eksik `project.assets.json` nedeniyle NETSDK1004 / exit 1 idi.
+  Yalnız eksik iki owner test projesi için dar restore yapıldı, ikisi exit 0; paket/sürüm/lock değişikliği yok.
+  Nullable query-filter assertion CS8602 düzeltildikten sonra Audit.UnitTests exit 0 oldu.
+- SecurityEvents EF ve bir kaynak build başlangıcı RAM 2 GiB altında olduğu için **NOT_STARTED_RAM**;
+  çalışan başka süreçlere dokunulmadan kaynaklar korunup yeterli RAM sonrası devam edildi. Ham log ve native exit kayıtları depodışıdır.
+- Unit/model/CLI kaynakları; kapalı platform konusu, yanlış actor/permission, global anahtar, değiştirme/silme,
+  yeni/özgün sürüm geçişi, argüman içeriğini yazmama ve LocalAccount marker çitini kapsar.
+- Gerçek SQL için dört fact kaynağı vardır: etkin/pasif ve sıfır üyelikli hedef + yeni 2FA sonrası replay;
+  iki owner'ın gerçek append'inden sonraki hata/rollback ve aynı anahtarın tekrar başarısı;
+  onay sırasında gerçek factor sürüm değişimi; üç Down ve değişmez tetikleyici.
+  **Unit/gerçek SQL/CLI runtime, browser, CI ve production aktivasyonu NOT_RUN.**
+- Merkez: `IdentityCommandLine.RunAsync` mevcut recovery overload'una son optional
+  `operatorRecoveryConsole` parametresiyle gerçek `ConsoleLocalTwoFactorOperatorRecoveryConsoleV1` bağlanmalı.
+  Program ve merkezi envanter/pin dosyaları bu owner'da değiştirilmedi. Yeni izin veya grant yok.
+- K3 review bekleyen yeni yüzeyler: global CompanyId'siz credential deneme tablosu; ayrı null-permission System
+  Audit subject'i; Identity'nin iki fresh owner context construction noktası; ödünç aynı-transaction Audit/SecurityEvents
+  owner portları; UPDATE/DELETE tetikleyicisi. Guard'ı geçirmek için sessiz allowlist genişletilmedi.
+- Merkez üretici listesi: üç migration ve deneme durable-store/recovery envanteri; Audit/Identity/SecurityEvents model
+  fingerprint'leri; migration mutation kaynakları (Identity Up tetikleyici + Down guard, diğer ikisinde Down guard);
+  ilişkisel fact envanteri ve test grubu sabitlemeleri. Açık işletme kararı kalmadı.
+
+
+## KIM-S9 merkezi CLI kompozisyonu
+
+- `0b204509a` owner kaynağı merkeziye alındı. Gerçek Program, ayrı operatör
+  konsolunu `identity recover-two-factor` CLI dispatcher'ına açıkça bağlar; web host
+  başlatılmaz. Kurucu ve kişisel kurtarma yolları kendi sınırlarını korur.
+- Hedef seçimi global typed deneme/Audit/SecurityEvents aynı Serializable owner
+  transaction'ına gider. Sahte şirket/rol/grant veya şirketlere toplu denetim yazımı yoktur.
+- Son merkezi API, Identity.UnitTests ve Api.IntegrationTests kaynak derlemeleri
+  exit 0, 0 uyarı/hata; owner Audit.UnitTests/SecurityEvents.UnitTests ve üç EF
+  üretimi exit 0. Runtime Unit/SQL/CLI/CI **NOT_RUN**.
+- Merkezi CLI kaynak boşluğu kapandı. Pin üretimi, tren FF ve bağımsız K3 kabulü
+  ayrı aşamalardır; daha önceki tablonun kompozisyon bekliyor notu bu kayıtla güncellenir.

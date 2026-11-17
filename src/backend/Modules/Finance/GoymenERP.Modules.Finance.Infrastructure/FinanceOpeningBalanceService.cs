@@ -639,6 +639,9 @@ public sealed class FinanceOpeningBalanceService(
                 Issue("openingPeriod", "opening_period_version_changed"));
         }
 
+        if (status == Approved && await CarriedOpeningRefusalAsync(context, action, row.AsOfDate, cancellationToken) is { } carried)
+            return carried;
+
         var now = timeProvider.GetUtcNow();
         var versionBefore = row.Version;
         var before = BalanceAudit(row);
@@ -666,6 +669,27 @@ public sealed class FinanceOpeningBalanceService(
             BalanceAudit(row), JsonSerializer.Serialize(decision, AuditJson),
             reason is null ? auditReason : auditReason + ": " + reason);
         return await SaveAsync(context, metadata, action, command, payloadHash, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// FNS-D42: an opening movement cannot change a balance already captured by an active period carry.
+    /// Both approval paths run under FinanceTreasuryTransaction's SERIALIZABLE transaction, so this
+    /// company-filtered range read and the movement write serialize with the actual closure snapshot.
+    /// Initial setup remains possible without inventing a requirement to have an Accounting period first.
+    /// </summary>
+    private async Task<OpeningBalanceCommandResult?> CarriedOpeningRefusalAsync(FinanceContext context,
+        FinanceAction action, DateOnly asOfDate, CancellationToken cancellationToken)
+    {
+        var captured = await dbContext.PeriodCarryVouchers.AsNoTracking()
+            .AnyAsync(voucher => voucher.SourceEndsOn >= asOfDate
+                && !dbContext.PeriodCarryReversals.Any(reversal => reversal.VoucherId == voucher.Id), cancellationToken);
+        if (await FenceAsync(context, action, cancellationToken) is { } fenced)
+        {
+            dbContext.ChangeTracker.Clear(); return fenced;
+        }
+        if (!captured) return null;
+        dbContext.ChangeTracker.Clear();
+        return Refused(context, CommandOutcome.ValidationFailed, Issue("asOfDate", "opening_balance_period_carried"));
     }
 
     /// <summary>
@@ -729,6 +753,9 @@ public sealed class FinanceOpeningBalanceService(
             return Refused(context, CommandOutcome.ValidationFailed,
                 Issue("openingPeriod", "opening_period_version_changed"));
         }
+
+        if (status == Approved && await CarriedOpeningRefusalAsync(context, action, row.AsOfDate, cancellationToken) is { } carried)
+            return carried;
 
         if (status == Approved && row.TargetKind is CashAccountKind or BankAccountKind)
         {

@@ -732,6 +732,8 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Action<IServiceCollection>? configure = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<GoymenERP.Modules.Documents.Application.Contracts.IDocumentPublishedTemplateReadPortV1>();
+            services.AddSingleton<GoymenERP.Modules.Documents.Application.Contracts.IDocumentPublishedTemplateReadPortV1, TechnicalDocumentTemplateSourceForTests>();
             services.RemoveAll<ISalesDraftReadServiceV1>();
             services.AddSingleton(detail);
             services.RemoveAll<ISalesOrderPrintReadServiceV1>();

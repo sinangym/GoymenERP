@@ -47,6 +47,43 @@ public sealed class FinanceOpeningBalanceTests
     private const string ReversalGuard =
         "Açılış bakiyesi ters kaydı yalnız bekleyen öneriden bir kez, öneren dışındaki kişinin onay veya ret kararıyla değişir.";
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    public async Task Only_active_same_company_carry_blocks_initial_and_reversal_approval_without_consuming_the_attempt(
+        bool reversal, bool reversedCarry, bool foreignCarry)
+    {
+        await using var run = new Run();
+        var opening = (await run.ProposeAsync(Specialist, PartyRequest())).Resource!;
+        OpeningBalanceView? reversing = null;
+        if (reversal)
+        {
+            opening = (await run.ApproveAsync(Manager, new(opening.Id, opening.Version))).Resource!;
+            reversing = (await run.ProposeReversalAsync(Specialist, new(opening.Id, opening.Version, Reason))).Resource!;
+        }
+        await run.SeedCarryAsync(reversedCarry, foreignCarry ? CompanyB : CompanyA);
+        var commandsBefore = (await run.CommandsAsync()).Count;
+        var movementsBefore = (await run.MovementsAsync()).Count;
+        var result = reversal
+            ? await run.ApproveReversalAsync(Manager, new(opening.Id, reversing!.Reversal!.Version))
+            : await run.ApproveAsync(Manager, new(opening.Id, opening.Version));
+        if (reversedCarry || foreignCarry)
+        {
+            Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
+            Assert.Equal(movementsBefore + 1, (await run.MovementsAsync()).Count);
+        }
+        else
+        {
+            AssertIssue(result, CommandOutcome.ValidationFailed, "asOfDate", "opening_balance_period_carried");
+            Assert.Equal(movementsBefore, (await run.MovementsAsync()).Count);
+            Assert.Equal(commandsBefore, (await run.CommandsAsync()).Count);
+        }
+    }
+
     [Fact]
     public void An_opening_balance_is_a_company_row_whose_live_slot_and_two_person_decision_are_held_by_the_database()
     {
@@ -991,6 +1028,25 @@ public sealed class FinanceOpeningBalanceTests
             context.OpeningBalances.Add(row);
             await context.SaveChangesAsync();
             return row;
+        }
+
+        public async Task SeedCarryAsync(bool reversed, Guid companyId)
+        {
+            await using var context = Memory(companyId);
+            var actor = Guid.NewGuid();
+            var source = new FinancePeriodCarrySourceV1(Guid.NewGuid(), companyId, Guid.NewGuid(), 3,
+                new(2026, 10, 1), new(2026, 10, 31), Guid.NewGuid(), new(2026, 11, 1), new(2026, 11, 30), actor, At);
+            var json = JsonSerializer.Serialize(source, FinanceJson.CreateOptions());
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json + "|[]")));
+            var voucher = new FinancePeriodCarryVoucherRow { Id = Guid.NewGuid(), CompanyId = companyId, ClosureId = source.ClosureId,
+                SourcePeriodId = source.SourcePeriodId, ClosedPeriodVersion = 3, SourceEndsOn = source.SourceEndsOn,
+                TargetPeriodId = source.TargetPeriodId, TargetStartsOn = source.TargetStartsOn, SourceJson = json,
+                SourceHash = hash, LinesJson = "[]", RecordedBy = actor, RecordedAtUtc = At };
+            context.PeriodCarryVouchers.Add(voucher);
+            if (reversed) context.PeriodCarryReversals.Add(new() { Id = Guid.NewGuid(), CompanyId = companyId,
+                ClosureId = source.ClosureId, VoucherId = voucher.Id, RecordedBy = Guid.NewGuid(), RecordedAtUtc = At,
+                Reason = Reason, SourceHash = hash });
+            await context.SaveChangesAsync();
         }
 
         public async Task SeedCashAsync(int status = 2)

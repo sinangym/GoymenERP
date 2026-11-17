@@ -2,6 +2,7 @@ using GoymenERP.Api.AccountingRuntime;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.DocumentsRuntime;
+using GoymenERP.Api.FinanceRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.LogisticsRuntime;
@@ -27,6 +28,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Accounting.Application.Contracts;
+using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -187,7 +189,8 @@ builder.Services.AddFinancePersistence(
 // This grants nothing. The port reads under the CALLER's own accounting.periods.read; an actor without
 // that name is refused with finance_period_rule_unavailable, and granting it is a human decision.
 builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatusPort>();
-builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
+builder.Services.AddScoped<IFinanceRecordPeriodRule, TransactionalOccurredOnFinanceRecordPeriodRule>();
+builder.Services.AddScoped<IAccountingPeriodCarryForwardPortV1, FinancePeriodCarryForwardPortV1>();
 builder.Services.AddFinanceServices();
 builder.Services.AddFinanceOfficialInvoiceImportHost();
 builder.Services.AddFinanceOfficialSalesInvoiceHost();
@@ -286,6 +289,7 @@ builder.Services.AddProductPriceListHost(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
+builder.Services.AddProductLogisticsDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -502,6 +506,7 @@ builder.Services.AddSalesRiskExceptionUsageInbox();
 builder.Services.AddCompanySetupMessaging();
 builder.Services.AddTrainCompletionOwnerBindings();
 builder.Services.AddPurchaseInvoiceImportHost();
+builder.Services.AddPurchaseInvoiceImportProductSearch();
 builder.Services.AddCompanyLifecycleAuthorizationGate();
 // SAT-D406 / SAT-D367: the Sales risk remainder's plan quantity, answered by the Logistics owner's planned-quantity read.
 builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
@@ -509,6 +514,8 @@ builder.Services.AddSalesOrderPlannedQuantityReadAdapter();
 // EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
 // are configured, otherwise uploads and downloads answer 503, fail-closed).
 builder.Services.AddDocumentsRuntime(builder.Configuration, builder.Environment);
+builder.Services.AddDocumentBrandingPdfRuntime();
+builder.Services.AddLogisticsSubcontractDeliveryRuntime();
 // AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
 builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
@@ -610,9 +617,11 @@ app.MapInventoryTransferPlanCandidateEndpoints();
 app.MapInventoryTransferReceiptDocumentEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
+app.MapLogisticsSubcontractDeliveryEndpoints();
 app.MapLogisticsTransferDepartureEndpoints();
 app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
+app.MapLogisticsDispatchPdfEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchaseServiceOrderEndpointsV1();
@@ -623,6 +632,7 @@ app.MapAccountingSourceVouchersV1();
 app.MapAccountingInvoiceLineCogsEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
+app.MapDocumentBrandingEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
 app.MapSettingsSalesPolicyEndpoints();
@@ -691,7 +701,8 @@ if (IdentityCommandLine.IsIdentityCommand(args))
         new ConsoleFounderRecoveryConsole(Console.Out, app.Environment.EnvironmentName),
         Console.Out,
         Console.Error,
-        CancellationToken.None);
+        CancellationToken.None,
+        operatorRecoveryConsole: new ConsoleLocalTwoFactorOperatorRecoveryConsoleV1(Console.Out, app.Environment.EnvironmentName));
 }
 
 await app.RunAsync();

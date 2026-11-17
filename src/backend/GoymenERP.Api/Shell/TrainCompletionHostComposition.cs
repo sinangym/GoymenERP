@@ -14,6 +14,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -37,6 +38,7 @@ public static class TrainCompletionHostComposition
         services.AddInventoryTransferPolicyHostPorts();
         services.AddFinancePartyBalanceTransfersV1();
         services.AddAccountingInvoiceLineCogsRuntime();
+        services.AddInventoryPurchaseInvoiceCostsV1();
         services.AddScoped<ISalesMarginCostReadPortV1, InventorySalesMarginCostReadPortV1>();
         services.AddScoped<IPurchasingPartyAccountPortV2>(provider =>
             (IPurchasingPartyAccountPortV2)provider.GetRequiredService<IPurchasingPartyAccountPortV1>());
@@ -55,6 +57,7 @@ public static class TrainCompletionHostComposition
 
         services.AddWorkOutboxEventSource<InventoryOutboxEventSource>(InventoryOutboxContractV1.SourceName,
             new(InventoryFutureAllocationReleasedOutboxV1.EventType, 1),
+            new(InventoryPurchaseInvoiceCostDifferenceV1.EventType, 1),
             new(InventoryOutboxContractV1.ManufacturingCostDifferenceProposed, InventoryOutboxContractV1.ManufacturingCostDifferenceSchemaVersion));
         services.AddWorkOutboxEventSource<PurchasingOutboxEventSource>(AccountingPurchaseInvoiceFinalizedInboxV1.SourceName,
             new(PurchasingOrderLineRevivedEventV1.EventType, 1),
@@ -66,6 +69,8 @@ public static class TrainCompletionHostComposition
         services.AddWorkOutboxEventSource<SalesOutboxEventSourceV1>(SalesOutboxContractV1.SourceName,
             SalesOutboxContractV1.Publishes.ToArray());
         services.AddWorkNotificationHostV1(InventoryOutboxContractV1.SourceName, AccountingPurchaseInvoiceFinalizedInboxV1.SourceName);
+        services.AddWorkInboxConsumer<InventoryPurchaseInvoiceCostInboxConsumerV1>(InventoryPurchaseInvoiceCostInboxV1.ConsumerName,
+            InventoryPurchaseInvoiceCostInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<ManufacturingCostDifferenceInboxConsumerV1>(ManufacturingCostDifferenceInboxV1.ConsumerName,
             ManufacturingCostDifferenceInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<CreditMovementProposalInboxConsumerV1>(CreditMovementProposalInboxV1.ConsumerName,

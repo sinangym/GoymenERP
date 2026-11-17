@@ -1141,6 +1141,8 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsWeighingsRecord = "logistics.weighings.record";
+    /// <summary>STK-S3 / LOJ-D13 / SAT-D378: registered reasoned weighing correction; no grant or Critical classification.</summary>
+    public const string LogisticsWeighingsCorrect = "logistics.weighings.correct";
 
     /// <summary>
     /// AT-055: prepare a dispatch-note (irsaliye) DRAFT from an issued instruction's definite shipments (LogisticsPermissionManifestV1;
@@ -1625,6 +1627,15 @@ public static class ErpPermissions
     /// </summary>
     public const string DocumentsFilesLink = "documents.files.link";
 
+    /// <summary>STK-S29 / KLN-D33/D73/D109: company branding and separate module template duties. Registered only; no grant or Critical classification.</summary>
+    public const string DocumentsCompanyBrandingManage = "documents.company-branding.manage";
+    public const string DocumentsSalesTemplatePrepare = "documents.templates.sales.prepare";
+    public const string DocumentsSalesTemplatePublish = "documents.templates.sales.publish";
+    public const string DocumentsInventoryTemplatePrepare = "documents.templates.inventory.prepare";
+    public const string DocumentsInventoryTemplatePublish = "documents.templates.inventory.publish";
+    public const string DocumentsLogisticsTemplatePrepare = "documents.templates.logistics.prepare";
+    public const string DocumentsLogisticsTemplatePublish = "documents.templates.logistics.publish";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -1780,6 +1791,7 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsWeighingsCorrect,
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
@@ -1888,6 +1900,13 @@ public static class ErpPermissions
             DocumentsFilesRead,
             DocumentsFilesUpload,
             DocumentsFilesLink,
+            DocumentsCompanyBrandingManage,
+            DocumentsSalesTemplatePrepare,
+            DocumentsSalesTemplatePublish,
+            DocumentsInventoryTemplatePrepare,
+            DocumentsInventoryTemplatePublish,
+            DocumentsLogisticsTemplatePrepare,
+            DocumentsLogisticsTemplatePublish,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,
@@ -2069,6 +2088,7 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsWeighingsCorrect,
             LogisticsDispatchNotesCreate,
             LogisticsDispatchNotesApprove,
             LogisticsDispatchNotesCancel,
@@ -2177,6 +2197,13 @@ public static class ErpPermissions
             DocumentsFilesRead,
             DocumentsFilesUpload,
             DocumentsFilesLink,
+            DocumentsCompanyBrandingManage,
+            DocumentsSalesTemplatePrepare,
+            DocumentsSalesTemplatePublish,
+            DocumentsInventoryTemplatePrepare,
+            DocumentsInventoryTemplatePublish,
+            DocumentsLogisticsTemplatePrepare,
+            DocumentsLogisticsTemplatePublish,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
             SettingsSalesDeliveryTolerancesManage,

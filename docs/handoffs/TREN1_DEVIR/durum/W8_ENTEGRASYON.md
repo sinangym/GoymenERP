@@ -221,3 +221,99 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
   **135 DONE (%77,6), 25 PARTIAL, 14 diğer açık; toplam 174, açık 39**.
   Kaynak kodun ilerlemesi tam dilim DONE veya runtime kabulü diye sayılmadı.
   W8 son pakettir; yeni dalga yok. Pinler ve tren FF henüz tamamlanmadı.
+
+## W8 paralel devam ve yeni insan cevapları
+
+- Daha önce kota hatası veren mevcut yürütücüler yeniden yanıt verdi; üretim,
+  stok/lojistik ve finans işleri ayrı worktree/dosya sahipliğiyle yeniden başladı.
+  Tek .NET/EF ve tek Node derleme slotu, açık lease devri ve her yeni araç
+  sürecinde en az 2 GiB boş RAM koşulu korunur. Yeni dalga açılmadı.
+- `93bfba4ac` / `ba38bc6da` / `cea19b720` kaynakları merkezde alındı. Inventory
+  fason müşteri malı rezervasyon/sevk participant'ı ve Documents marka/şablon
+  depoları PARTIAL'dır; gerçek host/renderer eksikliği başarı sayılmaz.
+  Merkez API, Documents.UnitTests, Inventory.UnitTests, Api.IntegrationTests
+  derlemeleri exit 0, hata/uyarı 0; birleşik TypeScript derlemesi exit 0.
+- Oturumdaki doğrudan insan cevapları, kaynak sınırı açık ajan aktarımlarıyla
+  Issue #1189'a kaydedildi: [6951273717](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951273717)
+  yalnız faturalanan maliyet payının kesinleşmesi ve kalanın beklemesi;
+  [6951274243](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951274243)
+  ilk SMM önerisinin kesinleşen faturanın gerçek sevk maliyeti payından oluşması;
+  [6951274771](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951274771)
+  resmen iptal edilen fason faturanın ters kaydında seçilen açık dönem/tarih ve
+  farklı muhasebe onaylayanı. Bu aktarımlar bağımsız DOCS incelemesi değildir.
+- KIM-S8 ve STK-S29 ana planda gerçek mevcut kaynakları nedeniyle PARTIAL'a
+  hizalandı. **135 DONE (%77,6), 27 PARTIAL, 12 diğer açık**; toplam 174 ve
+  açık 39 değişmedi. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+
+### STK-S29 gerçek üretici ve merkezi bağlantılar
+
+- `e53576af9` gerçek PDF üretimi, yayımlı şablon/varlık kaynağı, Inventory
+  sabit yayımla tekrar üretim ve yalnız miktarlı Logistics irsaliye PDF okumasını
+  ekledi. Product görünümü gerçek sahibinden fiyat içermeyen dar sözleşmeyle
+  okunur; mevcut Product runtime kapısı korunur.
+- Yedi Documents izni yalnız kayıtlıdır; grant, rol veya Critical değişikliği
+  yoktur. Mevcut Settings shell sahibi altında dört ekran ve bağımsız
+  hazırlama/yayımlama kontrolleri bağlandı; yalnız yayımlama yetkilisi de tek
+  menü öğesinden erişebilir. Teknik kaplar runtime kabulüne kadar staged kalır.
+- API, Identity.UnitTests, Api.IntegrationTests ve Accounting.UnitTests
+  kaynak derlemeleri exit 0, uyarı/hata 0; birleşik TypeScript derlemesi exit 0;
+  `git diff --check` exit 0. SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- MIME alt kümesi yapılandırma devamı, merkezi pinler ve yayımlanmış trene
+  fast-forward beklediğinden ana plan STK-S29 halen PARTIAL'dır.
+
+
+## STK-S3 — gerçek fason teslim merkezi bağlantısı
+
+- Owner kaynakları `b6774f25c` / `415f46df4` merkeziye alındı. Gerçek Sales, Manufacturing,
+  Inventory ve Logistics zincirinin host/runtime endpoint kayıtları bağlandı; hizmet
+  ürünü ile fiziksel etiket ürünü ayrı kalır. İşlem içinde tek owner yazımı korunur.
+- Logistics provider 1.5, sekiz yeni S3 screen/action bildirimi: tamamı kabul kanıtına
+  kadar staged. Mevcut ordinary-delivery bildirimleri yayımlanmış durumunu korur.
+  `logistics.weighings.correct` yalnız All/CompanyWideOnly kayıtlarına eklendi;
+  Critical/grant/rol ataması yapılmadı.
+- Üç ekran, sekiz capability ve tek Fason teslimler menü girdisi gerçek owner sayfalarına
+  bağlandı. Normal Logistics mount-drift envanteri eski ve yeni owner kümelerini birlikte
+  korur. Yetki/route/menü karşı örnekleri ve kayıt/model test kaynakları hizalandı.
+- API, Logistics.UnitTests, Accounting.UnitTests, Identity.UnitTests ve Api.IntegrationTests
+  kaynak derlemeleri exit 0, 0 uyarı/hata. Merkezi TypeScript derlemesi exit 0; hafif
+  backlog/bootstrap doğrulayıcıları exit 0. Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
+- 100 ayrılıp 80 yüklenen kısmi sevkte kalan ayırma politikası insan cevabı bekliyor.
+  Yeni S3 host'un negatif fiziksel ret günlüğü/detail takip düzeltmesi mevcut S21
+  diliminde sürer. Bu nedenle STK-S3 bütünü PARTIAL; yeni dalga açılmadı.
+- Registry/OpenAPI/recovery/architecture/relational/test-group pin üretimi ve tren FF
+  henüz yapılmadı. Kaynak derlemesi runtime veya kullanılabilirlik kabulü değildir.
+
+
+## FIN-S17 — gerçek devir owner'ı ve transaction boyunca dönem çiti
+
+- `5edcd80b0` ve `dd46601ae` owner kaynakları merkeziye alındı. Accounting kapanışı
+  ile Finance para birimi bazlı gerçek devir fişi tek Serializable host transaction'ına
+  bağlandı. Fiziksel/finansal olay ikinci kez üretilmez; cari ekstre açılış kanıtı ve
+  aralık köprüsü toplamı çift saymaz. İki kişili yeniden açma mevcut izinlerle kalır.
+- Gerçek `FinancePeriodCarryForwardPortV1` kaydedildi. Finance kayıt dönem kuralı,
+  gerçek borrowed Accounting owner okumasıyla işlem bitimine kadar kilidi koruyan
+  `TransactionalOccurredOnFinanceRecordPeriodRule` oldu; AddFinanceServices öncesinde
+  tek scoped descriptor kaydı korunur. Tarih seçimi occurredOn olarak kalır.
+- Composition kaynak testleri tek descriptor/fallback ayrımını ve occurredOn'un
+  valueOn/recordedAt'ten bağımsız gerçek port girişine taşındığını doğrular.
+- Son merkezi API, Accounting.UnitTests, Identity.UnitTests, Logistics.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Owner Finance.Unit/TSC de exit 0.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
+- Banka işlem tarihi/muhasebe tarihi devir ayrımı ve sonraki kapalı devir zinciri
+  insan cevabı bekler; kaynak fail-closed kalır. FIN-S17 PARTIAL; pinler/tren FF bekler.
+
+
+## FIN-S13 / ALS-D7 — gerçek ürün araması ve tür sahibi merkezi bağlantısı
+
+- `AddPurchaseInvoiceImportProductSearch()` gerçek host kaydı eklendi. Aynı scoped adapter gerçek Product aday okuyucusunu ve bağımsız tür/sürüm portunu sağlar; `General` varsayımı kullanılmaz. Service ürünü mal satırına çevrilmez; hizmet/masraf için açık Ayarlar seçimi sürer.
+- Owner kaynakları `c5570b816` ve raporu `cdb3a521e` merkezi entegrasyona alındı. Yetki/şirket değişimi ve eski nullable snapshot/hash uyumluluğu owner test kaynaklarında korunur.
+- Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Standart tek süreç parametreleri ve her süreç öncesi bellek kapısı kullanıldı. Owner TSC exit 0; merkezi yeni frontend farkı için son birleşik TSC ayrıca alınacak.
+- Runtime birim/SQL/HTTP/Vitest/browser/CI ve merkezi pinler NOT_RUN. FIN-S13 bütünü için bu kayıt tek başına DONE/kabul değildir.
+
+
+## STK-SC36-a / SAT-D385/D404/D413 — gerçek geç alış faturası maliyet bağlantısı
+
+- Owner checkpoint `0501f9abd` merkezi entegrasyona alındı. `AddInventoryPurchaseInvoiceCostsV1()` gerçek Inventory store'unu scoped kaydeder; gerçek Purchasing finalized olayı Work manifestinde Inventory maliyet tüketicisine bağlanır. Inventory maliyet farkı olayı da kaynak bildirimine eklendi. Dispatcher/production ayarı değiştirilmedi.
+- Composition test kaynağı gerçek registry doğrulayıcısı, tüketici/source event eşleşmesi, gerçek scoped store türü ve dispatcher başlatılmamasını kontrol eder. Yeni tablo/migration/immutable guard kaynakları owner raporundadır; sessiz guard izin listesi eklenmedi.
+- Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve pin üretimi NOT_RUN.
+- İlk maliyet tanımasının kısmi stok/sevk payı ve parasal artık politikası için #1189 `6954342313` ve `6954297311` cevapları bekleniyor. Accounting gerçek SMM önerisi/eşleme kaynağı ilgili owner'da sürüyor. Dilim PARTIAL; bu bağlantı maliyet kabulü veya production aktivasyonu değildir.

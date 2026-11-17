@@ -26,7 +26,8 @@ public sealed class PaymentReversalProposalService(
     IFinanceRecordPeriodRule periodRule,
     IAuditEventCollector auditEvents,
     FinancePaymentReversalEnvelopes envelopes,
-    TimeProvider timeProvider) : IPaymentReversalProposalService
+    TimeProvider timeProvider,
+    IAuditTransactionWriterV1? auditOwner = null) : IPaymentReversalProposalService
 {
     public const string ProposeCommand = "finance.payment-reversal.propose";
     public const string ApproveCommand = "finance.payment-reversal.approve";
@@ -96,7 +97,16 @@ public sealed class PaymentReversalProposalService(
             succeeded, cancellationToken);
     }
 
-    public async Task<PaymentReversalProposalCommandResult> ApproveAsync(
+    public Task<PaymentReversalProposalCommandResult> ApproveAsync(FinanceContext context, CommandMetadata metadata,
+        ApprovePaymentReversalRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ApproveCoreAsync(context, metadata, request, cancellationToken),
+            () => Task.FromResult(Refused(context, CommandOutcome.Unavailable)), auditOwner, cancellationToken);
+    }
+
+    private async Task<PaymentReversalProposalCommandResult> ApproveCoreAsync(
         FinanceContext context, CommandMetadata metadata, ApprovePaymentReversalRequest request,
         CancellationToken cancellationToken)
     {
@@ -494,6 +504,7 @@ public sealed class PaymentReversalProposalService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));

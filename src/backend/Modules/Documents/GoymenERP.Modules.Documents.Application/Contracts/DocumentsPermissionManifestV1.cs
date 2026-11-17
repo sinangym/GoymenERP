@@ -21,5 +21,5 @@ public static class DocumentsPermissionManifestV1
     /// </summary>
     public const string FilesLink = "documents.files.link";
 
-    public static readonly IReadOnlyList<string> Names = [FilesRead, FilesUpload, FilesLink];
+    public static readonly IReadOnlyList<string> Names = [FilesRead, FilesUpload, FilesLink, .. DocumentBrandingPermissionsV1.Names];
 }

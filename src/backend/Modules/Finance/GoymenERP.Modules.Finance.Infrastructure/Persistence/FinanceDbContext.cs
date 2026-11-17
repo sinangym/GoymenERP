@@ -174,6 +174,7 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         ConfigureCreditMovements(modelBuilder);
         ConfigureCreditLimits(modelBuilder);
         ConfigurePartyBalanceTransfers(modelBuilder);
+        ConfigurePeriodCarry(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2296,6 +2297,9 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
 
     private void ApplyWriteGuards()
     {
+        if (ChangeTracker.Entries<FinancePeriodCarryVoucherRow>().Any(x => x.State is EntityState.Modified or EntityState.Deleted)
+            || ChangeTracker.Entries<FinancePeriodCarryReversalRow>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Dönem devir ve ters devir fişleri değişmez; para hareketi değildir.");
         FinanceAuditEventTenantGuard.Validate(this, companyContext);
 
         if (ChangeTracker.Entries<FinanceOfficialInvoiceImportBatchRow>()

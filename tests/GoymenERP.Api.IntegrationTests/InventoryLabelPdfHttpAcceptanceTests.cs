@@ -61,6 +61,8 @@ public sealed class InventoryLabelPdfHttpAcceptanceTests(GoymenErpApiFactory fac
     private WebApplicationFactory<Program> Host(IInventoryLabelDetailsV1 labels, IGeneratedDocumentStorePortV1 vault) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<IDocumentPublishedTemplateReadPortV1>();
+            services.AddSingleton<IDocumentPublishedTemplateReadPortV1, TechnicalDocumentTemplateSourceForTests>();
             services.RemoveAll<IInventoryLabelDetailsV1>(); services.AddSingleton(labels);
             services.RemoveAll<IGeneratedDocumentStorePortV1>(); services.AddSingleton(vault);
         }));

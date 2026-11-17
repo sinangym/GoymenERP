@@ -3960,6 +3960,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<long?>("LifecycleSequence")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3991,6 +3994,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SubcontractInvoiceCommandAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
 
                             t.HasCheckConstraint("CK_SubcontractInvoiceCommandAttempts_Outcome", "([RefusalStatus] IS NULL AND [RefusalCode] IS NULL AND [RefusalErrorsJson] IS NULL AND [InvoiceId] IS NOT NULL) OR ([RefusalStatus] IS NOT NULL AND [RefusalStatus] IN (400,403,404,409,422) AND [RefusalCode] IS NOT NULL AND LEN([RefusalCode]) > 0 AND [RefusalErrorsJson] IS NOT NULL AND ISJSON([RefusalErrorsJson]) = 1)");
+
+                            t.HasCheckConstraint("CK_SubcontractInvoiceCommandAttempts_Sequence", "[LifecycleSequence] IS NULL OR ([LifecycleSequence] >= 1 AND [RefusalStatus] IS NULL AND [InvoiceId] IS NOT NULL)");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);

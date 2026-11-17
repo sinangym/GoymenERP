@@ -45,6 +45,11 @@ public sealed partial class AccountingDbContext
     {
         var before = (int)entry.Property(nameof(row.Status)).OriginalValue!;
         var version = (long)entry.Property(nameof(row.Version)).OriginalValue!;
+        // A posted voucher's cancellation-reversal proposal advances only its concurrency token
+        // and update instant. Its source, amount, original posting and approval are still immutable.
+        if (before == 2 && row.Status == 2 && row.Version == checked(version + 1)
+            && entry.Properties.Where(property => property.IsModified && !property.Metadata.IsConcurrencyToken)
+                .All(property => property.Metadata.Name == nameof(row.UpdatedAtUtc))) return;
         if (before != 1 || row.Status is not (2 or 3) || row.Version != checked(version + 1))
             throw new InvalidOperationException("Kaynak fiş yalnız onay veya iptalle bir kez ilerler.");
         if (row.Status == 2 && (row.JournalId != row.Id || row.PeriodId is null || row.ApprovedBy is null

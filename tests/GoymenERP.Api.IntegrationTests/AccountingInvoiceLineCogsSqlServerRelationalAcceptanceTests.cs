@@ -128,7 +128,9 @@ public sealed class AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => scope.Store.ApproveAsync(source, prepared.ProposalId, 1, Checker, Revoke, Metadata(Checker, true)));
         Assert.Equal(0, await run.Count("accounting.InvoiceLineCogsRevisions"));
         Assert.Equal("Prepared", (await scope.Store.FindAsync(prepared.ProposalId))!.Status);
-        await scope.Posting.ClosePeriodAsync(period, (await scope.Posting.FindPeriodAsync(period))!.Version, Checker, Metadata(Checker));
+        await AccountingPeriodCarrySqlFixture.CloseAsync(run.Factory, Company, period,
+            (await scope.Posting.FindPeriodAsync(period))!.Version, Checker, Metadata(Checker));
+        scope.Db.ChangeTracker.Clear();
         Assert.Equal(InvoiceLineCogsCorrectionCodesV1.OpenPeriodRequired, (await Assert.ThrowsAsync<AccountingStoreException>(() =>
             scope.Store.ApproveAsync(source, prepared.ProposalId, 1, Checker, Fence, Metadata(Checker, true)))).Code);
         Assert.Equal(1, await run.Scalar("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Accounting.InvoiceLineCogsCorrection'"));

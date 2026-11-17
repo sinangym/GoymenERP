@@ -23,6 +23,8 @@ public sealed partial class SalesSubcontractServiceOrderSqlServerRelationalAccep
             Assert.Equal(draft.Version, initial.Order!.Version);
             Assert.Equal(draft.Header.PartyId, initial.Order.PartyId);
             Assert.Equal(Product, Assert.Single(initial.Order.Lines).ProductId);
+            Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotApproved,
+                (await reader.GetApprovedLineForLoadingAsync(CompanyA, draft.Id, draft.Lines[0].Id, Day)).Outcome);
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = "UPDATE sales.Drafts SET Version=Version+1 WHERE CompanyId=@company AND Id=@id";
@@ -64,6 +66,7 @@ public sealed partial class SalesSubcontractServiceOrderSqlServerRelationalAccep
         }
         company.CompanyId = CompanyB;
         Assert.Equal(SalesSubcontractServiceOrderOutcomeV1.Unreadable, (await reader.GetAsync(CompanyA, draft.Id)).Outcome);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.GetApprovedLineForLoadingAsync(CompanyA, draft.Id, draft.Lines[0].Id, Day));
         company.CompanyId = CompanyA;
         await transaction.RollbackAsync();
         Assert.Equal(SalesSubcontractServiceOrderOutcomeV1.Unreadable, (await reader.GetAsync(CompanyA, draft.Id)).Outcome);

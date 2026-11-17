@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Logistics.Application.Contracts;
 /// <see cref="LogisticsSubcontractDeliveryNetWeightStatusV1.Unavailable"/> (fail closed).
 /// </para>
 /// <para>
-/// Corrections (LOJ-D13: a corrected weighing with its reason; after invoicing a Sales difference invoice): the domain keeps
+/// Corrections (LOJ-D13 / newer SAT-D378: active invoices must be cancelled first): the domain keeps
 /// them append-only beside the original record and the answer states the last one with its revision
 /// (<see cref="LogisticsSubcontractDeliveryNetWeightContractV1.OriginalWeighingRevision"/> for an uncorrected record), so a
 /// correction raises the revision without a new contract version. Until the correction command and its persistence land,
@@ -130,7 +130,8 @@ public sealed record LogisticsSubcontractDeliveryNetWeightV1(
     long InstructionVersion,
     DateTimeOffset RecordedAtUtc,
     IReadOnlyList<LogisticsSubcontractDeliveryNetWeightLineV1> Lines,
-    IReadOnlyList<LogisticsSubcontractDeliveryShipmentV1> Shipments);
+    IReadOnlyList<LogisticsSubcontractDeliveryShipmentV1> Shipments,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] bool IsContractProcessingDelivery = false);
 
 /// <summary>
 /// One instruction line's kilogram facts. <see cref="LoadedKgAtWeighing"/> is the sum of the line's load shares recorded before
@@ -147,7 +148,8 @@ public sealed record LogisticsSubcontractDeliveryNetWeightLineV1(
     string LoadedKgAtWeighing,
     string LoadedKg,
     string ShippedKg,
-    string DeliveredKg);
+    string DeliveredKg,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? SalesServiceProductId = null);
 
 /// <summary>One recorded shipment share: the shipment identity, its instruction line and the declared (shipped) kilograms.</summary>
 public sealed record LogisticsSubcontractDeliveryShipmentV1(

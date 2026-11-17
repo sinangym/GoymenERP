@@ -843,8 +843,9 @@ public sealed class LogisticsPersistenceModelTests
     public void The_shell_declarations_are_published_and_bound_to_the_manifest_names()
     {
         var provider = new LogisticsShellCapabilityProvider();
-        var declarations = provider.GetDeclarations();
-        Assert.Equal("1.4", provider.ContractVersion);
+        var declarations = provider.GetDeclarations().Where(item =>
+            !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
+        Assert.Equal("1.5", provider.ContractVersion);
         Assert.Equal(12, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
@@ -860,10 +861,10 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(20, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(21, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(20, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(21, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
         // shell declaration (server-measured commands on the detail).
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);

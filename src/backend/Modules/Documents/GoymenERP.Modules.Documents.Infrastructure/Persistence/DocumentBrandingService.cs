@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence;
 public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext> options, ICompanyContext company,
     ICurrentUser user, IErpAuthorityRevalidationService authority, ICorrelationContext correlation,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, IRefusedAttemptRecorderV1 refusals,
-    DocumentsServiceBindings bindings, TimeProvider clock, IDocumentObjectStoreV1? objects = null,
+    DocumentsServiceBindings bindings, DocumentBrandingFilePolicy filePolicy, TimeProvider clock, IDocumentObjectStoreV1? objects = null,
     IDocumentBrandingAssetRenderValidatorV1? renderValidator = null)
     : ICompanyDocumentBrandingServiceV1, IDocumentPublishedTemplateReadPortV1
 {
@@ -34,7 +34,7 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         var value = row is null ? null : await BrandingAsync(db, row, cancellationToken);
         var upload = await authority.RevalidatePermissionScopeAsync(DocumentsPermissionManifestV1.FilesUpload, frame.CompanyId, cancellationToken);
         await FenceAsync(frame, cancellationToken);
-        return new(frame.CompanyId, value, new(DocumentContentPolicy.InfosOf(DocumentContentPolicy.StandardKinds)
+        return new(frame.CompanyId, value, new(DocumentContentPolicy.InfosOf(RequireFilePolicy())
             .Select(x => x.ContentType).ToArray(), bindings.MaximumUploadBytes, upload.IsGranted && upload.IsCompanyWide));
     }
 
@@ -146,8 +146,15 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         return new(answer.Value, answer.IsReplay, answer.CorrelationId);
     }
 
-    public async Task<DocumentPublishedTemplateReadV1> ReadAsync(Guid companyId, DocumentTemplateModuleV1 module, string templateCode,
-        CancellationToken cancellationToken = default)
+    public Task<DocumentPublishedTemplateReadV1> ReadAsync(Guid companyId, DocumentTemplateModuleV1 module, string templateCode,
+        CancellationToken cancellationToken = default) => ReadPublicationCoreAsync(companyId, module, templateCode, null, null, cancellationToken);
+
+    public Task<DocumentPublishedTemplateReadV1> ReadPublicationAsync(Guid companyId, DocumentTemplateModuleV1 module,
+        string templateCode, Guid publicationId, string publicationVersion, CancellationToken cancellationToken = default) =>
+        ReadPublicationCoreAsync(companyId, module, templateCode, publicationId, publicationVersion, cancellationToken);
+
+    private async Task<DocumentPublishedTemplateReadV1> ReadPublicationCoreAsync(Guid companyId, DocumentTemplateModuleV1 module,
+        string templateCode, Guid? publicationId, string? publicationVersion, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         DocumentPublishedTemplateReadV1 Closed(string why) => new(DocumentPublishedTemplateOutcomeV1.Unavailable, companyId,
@@ -155,14 +162,22 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         if (!DocumentBrandingContractV1.IsKnown(module, templateCode) || !MatchesCompany(companyId)) return Closed("source_frame_invalid");
         try
         {
+            RequireFilePolicy();
             await using var db = NewContext();
-            var row = await LatestPublicationAsync(db, module, templateCode, cancellationToken);
+            if (publicationId is not null && (publicationId == Guid.Empty || !PositiveVersion(publicationVersion!)))
+                return Closed("publication_selection_invalid");
+            var row = publicationId is null ? await LatestPublicationAsync(db, module, templateCode, cancellationToken)
+                : await db.TemplatePublications.AsNoTracking().SingleOrDefaultAsync(x => x.Id == publicationId
+                    && x.Module == (int)module && x.TemplateCode == templateCode, cancellationToken);
+            RequireFilePolicy();
             if (!MatchesCompany(companyId)) return Closed("company_changed");
+            if (publicationId is not null && (row is null || Text(row.Version) != publicationVersion)) return Closed("publication_selection_missing");
             if (row is null) return new(DocumentPublishedTemplateOutcomeV1.NoSource, companyId, module, templateCode, null, null, null);
             var branding = await db.BrandingRevisions.AsNoTracking().SingleOrDefaultAsync(x => x.Version == row.BrandingVersion, cancellationToken)
                 ?? throw Unavailable();
             var logo = await assets.ReadAsync(db, companyId, branding.LogoDocumentId, branding.LogoVersionNo, cancellationToken);
             var letterhead = await assets.ReadAsync(db, companyId, branding.LetterheadDocumentId, branding.LetterheadVersionNo, cancellationToken);
+            RequireFilePolicy();
             if (!MatchesCompany(companyId) || logo is null && letterhead is null) return Closed("publication_invalid");
             return new(DocumentPublishedTemplateOutcomeV1.Available, companyId, module, templateCode,
                 Publication(row, logo?.Proof, letterhead?.Proof), logo, letterhead);
@@ -194,6 +209,7 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
             }
             var changed = await mutate(db, frame, ct);
             await FenceAsync(frame, ct);
+            RequireMutationKinds(changed.Value);
             db.BrandingAttempts.Add(Attempt(frame, command, key, hash, metadata.CorrelationId, 200, null, JsonSerializer.Serialize(changed.Value, Json)));
             await db.SaveChangesAsync(ct);
             await FenceAsync(frame, ct);
@@ -204,6 +220,7 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
                 correlation.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
             await auditWriter.WritePendingAsync(tx.GetDbTransaction(), ct);
             await FenceAsync(frame, ct);
+            RequireMutationKinds(changed.Value);
             await tx.CommitAsync(ct);
             return new(changed.Value, false, metadata.CorrelationId);
         }
@@ -308,6 +325,7 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
     private async Task ValidateRenderAsync(DocumentsDbContext db, Guid companyId, DocumentBrandingAssetProofV1? logo,
         DocumentBrandingAssetProofV1? letterhead, CancellationToken ct)
     {
+        RequireProofKinds([logo, letterhead]);
         foreach (var (proof, slot) in new[] { (logo, DocumentBrandingAssetSlotV1.Logo), (letterhead, DocumentBrandingAssetSlotV1.Letterhead) })
         {
             if (proof is null) continue;
@@ -344,7 +362,26 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         if (!decision.IsGranted || !decision.IsCompanyWide || !MatchesCompany(companyId) || !user.IsAuthenticated || user.UserId != actor
             || !user.CanAccessCompany(companyId))
             throw new DocumentBrandingServiceException(403, "forbidden");
+        RequireFilePolicy();
         return new(companyId, actor, permission, [.. decision.RoleCodes.Order(StringComparer.Ordinal)]);
+    }
+    private IReadOnlyList<DocumentFileKind> RequireFilePolicy() => filePolicy.Read() is { Available: true } value ? value.Kinds : throw Unavailable();
+    private void RequireMutationKinds<T>(T value)
+    {
+        var proofs = value switch
+        {
+            CompanyDocumentBrandingV1 branding => new[] { branding.Logo, branding.Letterhead },
+            DocumentTemplateDraftV1 draft => new[] { draft.Logo, draft.Letterhead },
+            DocumentTemplatePublicationV1 publication => new[] { publication.Logo, publication.Letterhead },
+            _ => throw Unavailable(),
+        };
+        RequireProofKinds(proofs);
+    }
+    private void RequireProofKinds(IReadOnlyList<DocumentBrandingAssetProofV1?> proofs)
+    {
+        var allowed = DocumentContentPolicy.InfosOf(RequireFilePolicy());
+        if (proofs.Any(proof => proof is not null && !allowed.Any(info => info.ContentType == proof.ContentType)))
+            throw new DocumentBrandingServiceException(422, "document_branding_asset_type_not_allowed");
     }
     private async Task FenceAsync(Frame frame, CancellationToken ct)
     {
