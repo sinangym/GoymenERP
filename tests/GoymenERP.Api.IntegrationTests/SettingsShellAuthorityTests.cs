@@ -100,8 +100,8 @@ public sealed class SettingsShellAuthorityTests
     public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
     {
         var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(31, declarations.Count);
-        Assert.Equal("1.15", new SettingsShellCapabilityProvider().ContractVersion);
+        Assert.Equal(38, declarations.Count);
+        Assert.Equal("1.16", new SettingsShellCapabilityProvider().ContractVersion);
         var declaration = Assert.Single(declarations,
             candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
 

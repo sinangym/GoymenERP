@@ -198,6 +198,10 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'settings.warehouse-transfer-scale.manage',
   'settings.sales-subcontract-tax-default.manage',
   'settings.purchasing-subcontract-tax-default.manage',
+  'documents.company-branding.manage',
+  'documents.templates.sales.prepare',
+  'documents.templates.inventory.prepare',
+  'documents.templates.logistics.prepare',
   'settings.manufacturing-parameter-profiles.read',
   'settings.manufacturing-tolerance-profiles.read',
   /** URT-D89: the Settings work center capacity screen, drawn only where the server granted its one name. */
@@ -325,6 +329,13 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'settings.warehouse-transfer-scale.manage': 'Depo transfer tartısı',
   'settings.sales-subcontract-tax-default.manage': 'Satış fason vergi varsayılanı',
   'settings.purchasing-subcontract-tax-default.manage': 'Alış fason vergi varsayılanı',
+  'documents.company-branding.manage': 'Şirket logosu ve anteti',
+  'documents.templates.sales.prepare': 'Satış belge şablonu',
+  'documents.templates.sales.publish': '',
+  'documents.templates.inventory.prepare': 'Stok etiket şablonu',
+  'documents.templates.inventory.publish': '',
+  'documents.templates.logistics.prepare': 'Lojistik belge şablonu',
+  'documents.templates.logistics.publish': '',
   'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   'settings.exchange-rates.read': 'Kurlar',
   'settings.sales-delivery-tolerances.manage': 'Teslim toleransı',
@@ -384,6 +395,14 @@ export type PriceListNavEntry = Extract<PriceListCapabilityId, 'price-lists.list
 
 /** Anything a sidebar group may hold: a shell capability from `NAV_CAPABILITIES`, or the price list. */
 export type NavEntryId = CapabilityId | PriceListNavEntry
+
+/** One workspace entry per module; either existing action capability can open its fresh route gate.
+ * The page and its owner API separately authorize preparation and publication. */
+export const NAV_PURPOSE_CAPABILITIES: Readonly<Partial<Record<NavEntryId, readonly CapabilityId[]>>> = {
+  'documents.templates.sales.prepare': ['documents.templates.sales.prepare', 'documents.templates.sales.publish'],
+  'documents.templates.inventory.prepare': ['documents.templates.inventory.prepare', 'documents.templates.inventory.publish'],
+  'documents.templates.logistics.prepare': ['documents.templates.logistics.prepare', 'documents.templates.logistics.publish'],
+}
 
 export type NavGroupId =
   | 'sales'
@@ -513,6 +532,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'settings.warehouse-transfer-scale.manage',
       'settings.sales-subcontract-tax-default.manage',
       'settings.purchasing-subcontract-tax-default.manage',
+      'documents.company-branding.manage',
+      'documents.templates.sales.prepare',
+      'documents.templates.inventory.prepare',
+      'documents.templates.logistics.prepare',
       'settings.sales-contract-discount-limit.manage',
   'settings.collateral-types.manage',
   'settings.finance-opening-period.manage',

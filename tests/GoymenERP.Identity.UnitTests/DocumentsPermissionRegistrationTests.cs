@@ -17,6 +17,13 @@ public sealed class DocumentsPermissionRegistrationTests
         ErpPermissions.DocumentsFilesRead,
         ErpPermissions.DocumentsFilesUpload,
         ErpPermissions.DocumentsFilesLink,
+        ErpPermissions.DocumentsCompanyBrandingManage,
+        ErpPermissions.DocumentsSalesTemplatePrepare,
+        ErpPermissions.DocumentsSalesTemplatePublish,
+        ErpPermissions.DocumentsInventoryTemplatePrepare,
+        ErpPermissions.DocumentsInventoryTemplatePublish,
+        ErpPermissions.DocumentsLogisticsTemplatePrepare,
+        ErpPermissions.DocumentsLogisticsTemplatePublish,
     };
 
     [Fact]

@@ -244,3 +244,19 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - KIM-S8 ve STK-S29 ana planda gerçek mevcut kaynakları nedeniyle PARTIAL'a
   hizalandı. **135 DONE (%77,6), 27 PARTIAL, 12 diğer açık**; toplam 174 ve
   açık 39 değişmedi. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+
+### STK-S29 gerçek üretici ve merkezi bağlantılar
+
+- `e53576af9` gerçek PDF üretimi, yayımlı şablon/varlık kaynağı, Inventory
+  sabit yayımla tekrar üretim ve yalnız miktarlı Logistics irsaliye PDF okumasını
+  ekledi. Product görünümü gerçek sahibinden fiyat içermeyen dar sözleşmeyle
+  okunur; mevcut Product runtime kapısı korunur.
+- Yedi Documents izni yalnız kayıtlıdır; grant, rol veya Critical değişikliği
+  yoktur. Mevcut Settings shell sahibi altında dört ekran ve bağımsız
+  hazırlama/yayımlama kontrolleri bağlandı; yalnız yayımlama yetkilisi de tek
+  menü öğesinden erişebilir. Teknik kaplar runtime kabulüne kadar staged kalır.
+- API, Identity.UnitTests, Api.IntegrationTests ve Accounting.UnitTests
+  kaynak derlemeleri exit 0, uyarı/hata 0; birleşik TypeScript derlemesi exit 0;
+  `git diff --check` exit 0. SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- MIME alt kümesi yapılandırma devamı, merkezi pinler ve yayımlanmış trene
+  fast-forward beklediğinden ana plan STK-S29 halen PARTIAL'dır.

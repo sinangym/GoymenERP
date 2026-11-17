@@ -35,6 +35,7 @@ import {
   CAPABILITY_NAV_LABEL,
   NAV_CAPABILITIES,
   NAV_GROUPS,
+  NAV_PURPOSE_CAPABILITIES,
   NAV_HOME,
   NAV_TEXT,
   type NavEntryId,
@@ -71,7 +72,8 @@ function grantedLeaves(group: NavGroup, state: ShellState): NavLeaf[] {
   for (const entry of group.entries) {
     const declared = group.subheadings?.[entry]
     if (declared !== undefined) pending = declared
-    if (!hasCapability(state, entry)) continue
+    const purposes = NAV_PURPOSE_CAPABILITIES[entry] ?? [entry]
+    if (!purposes.some((purpose) => hasCapability(state, purpose))) continue
     leaves.push({ ...leafOf(entry), subheading: pending })
     pending = undefined
   }
