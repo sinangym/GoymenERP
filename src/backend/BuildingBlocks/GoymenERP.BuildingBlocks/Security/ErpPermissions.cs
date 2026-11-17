@@ -724,6 +724,12 @@ public static class ErpPermissions
     public const string FinancePartyLedgerRead = "finance.party-ledger.read";
     public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
 
+    /// <summary>
+    /// FNS-SC32, KLN-D72/D76: separately authorized complete party balance transfer in the resolved company.
+    /// Registered, not granted. Company-wide only; no new Critical classification or seeded assignment.
+    /// </summary>
+    public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
+
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
     public const string FinanceOpenItemsAmountRead = "finance.open-items.amount.read";
@@ -1848,6 +1854,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2127,6 +2134,7 @@ public static class ErpPermissions
         FinanceCustomerInstrumentCollect,
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
+        FinancePartyBalanceTransfersRecord,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
