@@ -124,6 +124,7 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
 
         ConfigurePeriodCalendars(modelBuilder);
         ConfigurePeriods(modelBuilder);
+        ConfigurePeriodLifecycle(modelBuilder);
         ConfigureJournals(modelBuilder);
         ConfigureJournalLines(modelBuilder);
         ConfigureDeliveries(modelBuilder);
@@ -732,14 +733,19 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
 
             if (entry.State == EntityState.Modified)
             {
+                ValidatePeriodLifecycleChange(entry);
                 if (entry.Entity is ManufacturingCostDifferenceRow difference) ValidateCostDifferenceChange(entry, difference);
                 if (entry.Entity is AccountingSourceDocumentVoucherDraftRow voucher) ValidateSourceVoucherChange(entry, voucher);
                 string[] allowed = entry.Entity switch
                 {
+                    AccountingPeriodClosureRow => [nameof(AccountingPeriodClosureRow.ReopeningId), nameof(AccountingPeriodClosureRow.ReopenedBy),
+                        nameof(AccountingPeriodClosureRow.ReopenedAtUtc)],
+                    AccountingPeriodReopeningRow => [nameof(AccountingPeriodReopeningRow.ApprovedBy), nameof(AccountingPeriodReopeningRow.ApprovedAtUtc)],
                     ManufacturingCostDifferenceRow => CostDifferenceMutableFields,
                     AccountingSourceDocumentVoucherDraftRow => SourceVoucherMutableFields,
                     PeriodCalendarRow => [nameof(PeriodCalendarRow.UpdatedAtUtc)],
-                    // Ö4: a proposal changes only by its approval, an open period only by its close.
+                    // Ö4 / FNS-D42: opening, closing, and separately approved reopening;
+                    // each close/reopening keeps its immutable source/history rows.
                     PeriodRow => [nameof(PeriodRow.Status), nameof(PeriodRow.ApprovedByUserId), nameof(PeriodRow.ApprovedAtUtc),
                         nameof(PeriodRow.ClosedByUserId), nameof(PeriodRow.ClosedAtUtc), nameof(PeriodRow.UpdatedAtUtc)],
                     PostingExceptionRow => [nameof(PostingExceptionRow.Status), nameof(PostingExceptionRow.PostingRuleVersion),

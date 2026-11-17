@@ -19,8 +19,8 @@ public enum AccountingPeriodStatus
 /// preparer (<see cref="Propose"/>) and becomes open only by <see cref="Approve"/> of ONE other
 /// authorised person; the preparer's own approval is refused. There is no other way to an open period.</item>
 /// <item><b>Closing</b> is one authorised act (Ö5); Ö4 does not list it, so no second person is added.</item>
-/// <item>No reopen, and no withdraw or reject of a proposal: neither is decided (Ö4 names only the
-/// approval; NEEDS-BUSINESS #66 5742097485). They are not modelled.</item>
+/// <item>FNS-D42 and the later human answer permit reopening by a separate preparer and approver,
+/// atomically with reversal of the closure's carry voucher. Withdraw/reject are not added.</item>
 /// </list>
 /// </summary>
 public sealed class AccountingPeriod
@@ -177,6 +177,20 @@ public sealed class AccountingPeriod
         Status = AccountingPeriodStatus.Closed;
         ClosedByUserId = closedByUserId;
         ClosedAtUtc = closedAtUtc;
+    }
+
+    /// <summary>The store retains the immutable closure and approved proposal before this current
+    /// period becomes open again. Its initial opening approval is not overwritten.</summary>
+    public void Reopen(AccountingPeriodReopening approved)
+    {
+        ArgumentNullException.ThrowIfNull(approved);
+        if (approved.CompanyId != CompanyId || approved.PeriodId != Id)
+            throw new AccountingDomainException(AccountingErrorCodes.CompanyMismatch, "The reopening belongs to another period/company.");
+        if (Status != AccountingPeriodStatus.Closed || approved.ApprovedBy is null || approved.ApprovedAtUtc is null)
+            throw new AccountingDomainException("accounting_period_reopening_not_approved", "A closed period needs an approved reopening.");
+        Status = AccountingPeriodStatus.Open;
+        ClosedByUserId = null;
+        ClosedAtUtc = null;
     }
 
     /// <summary>

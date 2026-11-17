@@ -749,7 +749,9 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             Assert.Equal("accounting_period_not_proposed", Code(await Json(twice)));
         }
 
-        // Ö5: one authorised close.
+        // FNS-D42: a close and its real carry require the next period to be open first.
+        await AccountingPeriodCarrySqlFixture.PrepareAsync(run.Factory, CompanyA, periodId, Guid.Parse(Approver));
+        // Ö5: one authorised close, with both owners in the same transaction.
         using (var closed = await approver.SendAsync(Close(periodId, "SENTETIK-c-1", 2)))
         {
             Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
@@ -776,7 +778,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             ("@id", periodId.ToString("D"))));
         // Records: propose, approve and close succeeded; the stale approval and the unknown period are terminal.
         Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Commands"));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
     }
 
     /// <summary>

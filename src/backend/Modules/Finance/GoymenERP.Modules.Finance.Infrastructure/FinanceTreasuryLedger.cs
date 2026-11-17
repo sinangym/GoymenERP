@@ -17,7 +17,7 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
 {
     internal async Task<FinanceTreasuryBalance?> ReadAsync(
         Guid companyId, ExpensePaymentSourceKind kind, Guid accountId, Guid currencyId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, DateOnly? throughDate = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!companyContext.IsResolved || companyContext.CompanyId != companyId || companyId == Guid.Empty
@@ -35,7 +35,8 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
         var openingKind = kind == ExpensePaymentSourceKind.Bank
             ? FinanceOpeningBalanceService.BankAccountKind : FinanceOpeningBalanceService.CashAccountKind;
         var openings = await dbContext.OpeningBalanceMovements.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.TargetKind == openingKind && row.TargetId == accountId)
+            .Where(row => row.CompanyId == companyId && row.TargetKind == openingKind && row.TargetId == accountId
+                && (!throughDate.HasValue || row.OccurredOn <= throughDate.Value))
             .Select(row => new { row.Kind, row.CurrencyId, row.Direction, row.AmountText })
             .ToListAsync(cancellationToken);
         foreach (var row in openings)
@@ -52,6 +53,9 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
             var credits = await dbContext.CreditMovements.AsNoTracking()
                 .Where(row => row.CompanyId == companyId && row.BankAccountId == accountId && row.Status == 2)
                 .Select(row => new { row.CurrencyId, row.Kind, row.BankAmountText }).ToListAsync(cancellationToken);
+            // The transaction-date/accounting-date choice for a period carry is awaiting the direct
+            // human answer. A current balance remains available; a dated carry never guesses.
+            if (throughDate.HasValue && credits.Count != 0) return null;
             foreach (var row in credits)
             {
                 if (row.CurrencyId != currencyId || row.BankAmountText is null) return null;
@@ -61,7 +65,8 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
             }
 
             var receipts = await dbContext.MoneyEvents.AsNoTracking()
-                .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId)
+                .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId
+                    && (!throughDate.HasValue || row.OccurredOn <= throughDate.Value))
                 .Select(row => new { row.Kind, row.CurrencyId, row.AmountText, row.PosBankNetAmountText })
                 .ToListAsync(cancellationToken);
             foreach (var row in receipts)
@@ -75,7 +80,8 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
             }
 
             var payments = await dbContext.OutgoingMoneyEvents.AsNoTracking()
-                .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId)
+                .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId
+                    && (!throughDate.HasValue || row.OccurredOn <= throughDate.Value))
                 .Select(row => new { row.CurrencyId, row.AmountText }).ToListAsync(cancellationToken);
             foreach (var row in payments)
             {
@@ -83,7 +89,8 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
                 outgoing.Add(row.AmountText);
             }
             var reversals = await dbContext.OutgoingMoneyEventReversals.AsNoTracking()
-                .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId)
+                .Where(row => row.CompanyId == companyId && row.TreasuryAccountId == accountId
+                    && (!throughDate.HasValue || row.OccurredOn <= throughDate.Value))
                 .Select(row => new { row.CurrencyId, row.AmountText }).ToListAsync(cancellationToken);
             foreach (var row in reversals)
             {
@@ -97,6 +104,7 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
         var expenses = await dbContext.ExpensePayments.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.SourceKind == storedKind
                 && row.TreasuryAccountId == accountId && row.Status == ExpensePaymentStatuses.Recorded)
+            .Where(row => !throughDate.HasValue || row.OccurredOn <= throughDate.Value)
             .Select(row => new { row.CurrencyId, row.AmountText }).ToListAsync(cancellationToken);
         foreach (var row in expenses)
         {
@@ -109,6 +117,7 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
             .Where(row => row.CompanyId == companyId
                 && ((row.SourceKind == transferKind && row.SourceAccountId == accountId)
                     || (row.TargetKind == transferKind && row.TargetAccountId == accountId)))
+            .Where(row => !throughDate.HasValue || row.OccurredOn <= throughDate.Value)
             .Select(row => new { row.SourceKind, row.SourceAccountId, row.SourceCurrencyId, row.SourceAmountText,
                 row.TargetKind, row.TargetAccountId, row.TargetCurrencyId, row.TargetAmountText })
             .ToListAsync(cancellationToken);

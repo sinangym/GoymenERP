@@ -356,7 +356,8 @@ public static class FinanceModuleExtensions
             Envelope(provider, FinancePermissionNames.DraftSave, permissions, FinanceAction.SaveDraft),
             provider.GetRequiredService<TimeProvider>(),
             Envelope(provider, FinancePermissionNames.Record, permissions, FinanceAction.Record),
-            provider.GetRequiredService<IFinanceRecordPeriodRule>());
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static ReversalProposalService CreateReversalProposalService(IServiceProvider provider)
@@ -395,7 +396,8 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposePaymentReversal),
                 Envelope(provider, FinancePermissionNames.PaymentReverseApprove, permissions,
                     FinanceAction.ApprovePaymentReversal)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static ManualBankPaymentService CreateManualBankPaymentService(IServiceProvider provider)
@@ -522,7 +524,8 @@ public static class FinanceModuleExtensions
                     FinanceAction.ChangeCustomerInstrumentStatus),
                 Envelope(provider, FinancePermissionNames.CustomerInstrumentCollect, permissions,
                     FinanceAction.CollectCustomerInstrument)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static PartyLedgerService CreatePartyLedgerService(IServiceProvider provider) =>

@@ -791,3 +791,19 @@ EF-generated migration `20261117093515_AddFinancePartyBalanceTransfers` adds thr
 nullable beneficiary pairs to receipt/payment allocations; existing rows and money facts are not rewritten.
 Down first refuses with `THROW 51984` while any voucher, position, command receipt or allocation beneficiary
 would be lost. Empty new stores with legacy null beneficiary columns can roll back. Database apply is NOT_RUN.
+
+## FIN-S17: immutable period carry (FNS-D42)
+
+Finance snapshots actual existing bank, cash and party balances by source currency at the closing boundary,
+retaining source period/version, target period, actor, exact line text and a source hash. Its borrowed Serializable
+session owns only Finance records and writes audit through the Audit owner. A carry is a representation of existing
+balances, never a second MoneyEvent, opening movement, invoice or allocation. Approved reopening adds an immutable
+counter-record. No currency conversion or new rounding is performed. Missing, malformed or incomplete balance
+sources refuse the whole close; the existing party-ledger size guard is not silently truncated.
+
+EF-generated `20261117154319_AddPeriodCarryVouchers` adds company-scoped vouchers and counter-records with
+restricted references and exact source proof. Up is DDL only. Down first refuses with **THROW 51921** while either
+store has rows; an empty store may roll back. The credit-bank source's transaction-date/accounting-date boundary
+decision is pending, so dated carry with that source is unavailable. Carry presentation in the date-range party
+ledger and temporal fences for remaining historical source writers are still follow-up work in the same FIN-S17
+slice; this checkpoint alone is not complete delivery. Runtime SQL/CI and activation are NOT_RUN.

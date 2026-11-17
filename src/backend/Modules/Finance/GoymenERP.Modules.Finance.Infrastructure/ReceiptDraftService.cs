@@ -66,7 +66,8 @@ public sealed class ReceiptDraftService(
     FinanceAuditEnvelope envelope,
     TimeProvider timeProvider,
     FinanceAuditEnvelope? recordEnvelope = null,
-    IFinanceRecordPeriodRule? periodRule = null) : IManualReceiptService
+    IFinanceRecordPeriodRule? periodRule = null,
+    IAuditTransactionWriterV1? auditOwner = null) : IManualReceiptService
 {
     public const string SaveDraftCommand = "finance.manual-receipt.draft.save";
 
@@ -454,7 +455,16 @@ public sealed class ReceiptDraftService(
     /// official document is made.</item>
     /// </list>
     /// </summary>
-    public async Task<CommandResult> RecordAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,
+    public Task<CommandResult> RecordAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => RecordCoreAsync(context, metadata, request, cancellationToken),
+            () => Task.FromResult(Refused(context, CommandOutcome.Unavailable)), auditOwner, cancellationToken);
+    }
+
+    private async Task<CommandResult> RecordCoreAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -735,6 +745,7 @@ public sealed class ReceiptDraftService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, commandName, action, keyHash, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));

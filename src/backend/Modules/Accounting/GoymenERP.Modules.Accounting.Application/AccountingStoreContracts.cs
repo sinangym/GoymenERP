@@ -20,7 +20,8 @@ public sealed record AccountingCommandMetadata(
     string SourceChannel,
     string? ClientIpAddress = null,
     string? UserAgent = null,
-    Func<object, AccountingCommandRecord>? Completion = null);
+    Func<object, AccountingCommandRecord>? Completion = null,
+    Func<CancellationToken, Task>? FreshAuthorityFence = null);
 
 /// <summary>
 /// One completed HTTP command attempt (ADR-011): unique per (company, command name, key hash). The key
