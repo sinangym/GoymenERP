@@ -114,6 +114,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var json = await run.ScalarAsync<string>("SELECT PayloadJson FROM purchasing.OutboxMessages WHERE AggregateId=@id AND EventType='purchasing.invoice.finalized.v1'", ("@id", invoice.Id));
         // The real producer serializes the Accounting public contract, not a second ad-hoc payable.
         var consumed = JsonSerializer.Deserialize<AccountingPurchaseInvoiceFinalizedEventV1>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(invoice.Source.OfficialNumber, consumed.OfficialInvoiceNo);
         Assert.Equal((invoice.Id, CompanyA, (decimal?)48m, (DateOnly?)invoice.Source.InvoiceDate, run.Actor),
             (consumed.InvoiceId, consumed.CompanyId, consumed.Payable, consumed.InvoiceDate, consumed.FinalizedBy));
         Assert.Equal("resale", Assert.IsType<AccountingPurchaseInvoiceFinalizedLineV1>(Assert.Single(consumed.Lines!)).LinePurpose);

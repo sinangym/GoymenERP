@@ -23,7 +23,7 @@ public static class PurchaseIncomingInvoiceFinalizationV1
                 line.Id, line.LineNo, line.ItemType, line.LinePurpose, line.VatPercent, line.Amounts.Net, line.Amounts.Vat,
                 line.Amounts.Withholding, line.FunctionalAmounts?.Net, line.FunctionalAmounts?.Vat, line.FunctionalAmounts?.Withholding,
                 line.ServiceTypeId, line.ExpenseTypeId, TaxSources(invoice, line.Id))).ToArray()),
-            invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn));
+            invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn), invoice.Source.OfficialNumber);
     }
 
     private static IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? TaxSources(PurchaseIncomingInvoice invoice, Guid lineId)
