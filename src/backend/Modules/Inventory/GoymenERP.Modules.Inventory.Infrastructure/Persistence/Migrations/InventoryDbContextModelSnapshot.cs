@@ -1726,6 +1726,61 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReceiptDocumentVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FinalizationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("LinesJson")
+                        .IsRequired()
+                        .HasMaxLength(64000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("PreviousVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("SourceTransferVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "DocumentId", "Version");
+
+                    b.HasIndex("CompanyId", "DocumentId", "PreviousVersion");
+
+                    b.HasIndex("CompanyId", "TransferId", "DocumentId", "Version");
+
+                    b.ToTable("TransferReceiptDocumentVersions", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferReceiptDocumentVersions_State", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [TransferId] <> '00000000-0000-0000-0000-000000000000' AND [Version] IN (1,2) AND [SourceTransferVersion] > 0 AND [Status] = [Version] AND (([Version]=1 AND [PreviousVersion] IS NULL) OR ([Version]=2 AND [PreviousVersion] IS NOT NULL AND [PreviousVersion]=1)) AND ISJSON([LinesJson]) = 1 AND JSON_QUERY([LinesJson],'$[0]') IS NOT NULL AND DATEPART(TZOFFSET,[ReceivedAtUtc]) = 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND (([Version]=1 AND [FinalizationReason] IS NULL) OR ([Version]=2 AND [FinalizationReason] IS NOT NULL AND LEN(LTRIM(RTRIM([FinalizationReason])))>0))");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReceiptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -3883,6 +3938,21 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "TransferId", "LineId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReceiptDocumentVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TransferId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReceiptDocumentVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DocumentId", "PreviousVersion")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryTransferReceiptRow", b =>

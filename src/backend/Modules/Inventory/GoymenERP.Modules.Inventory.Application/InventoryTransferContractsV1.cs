@@ -66,7 +66,8 @@ public sealed record DispatchInventoryTransferV1(
 public sealed record AcceptInventoryTransferLineV1(
     [property: JsonRequired] string ExpectedTransferVersion,
     [property: JsonRequired] DateTimeOffset AcceptedAtUtc,
-    [property: JsonRequired] InventoryTransferDocumentReferenceV1 IncomingDocument);
+    [property: JsonRequired] InventoryTransferDocumentReferenceV1 IncomingDocument,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedIncomingDocumentVersion = null);
 
 public sealed record InventoryTransferLineViewV1(
     Guid LineId,

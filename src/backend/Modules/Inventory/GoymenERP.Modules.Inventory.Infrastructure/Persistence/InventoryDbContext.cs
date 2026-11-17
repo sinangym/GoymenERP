@@ -296,6 +296,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
         ConfigureStockScraps(modelBuilder);
         ConfigureOpeningCosts(modelBuilder);
         ConfigureInventoryTransfers(modelBuilder);
+        ConfigureTransferReceiptDocuments(modelBuilder);
         ConfigureFutureSupply(modelBuilder);
         ConfigureGoodsReceiptReversals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);

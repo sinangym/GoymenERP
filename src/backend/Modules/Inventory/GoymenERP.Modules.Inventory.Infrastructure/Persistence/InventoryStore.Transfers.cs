@@ -523,6 +523,8 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
 
         var dispatchLine = dispatchLines.Single(candidate => candidate.LineId == lineId);
         var labelId = lines.Single(candidate => candidate.LineId == lineId).LabelId;
+        await RequireReceiptDocumentProofAsync(transferId, lineId, document, request.ExpectedIncomingDocumentVersion,
+            request.AcceptedAtUtc, dispatchLine.ActualKg, null, freshAuthorityFence, cancellationToken);
         if (labels.Count != labelIds.Length || !labels.TryGetValue(labelId, out var label))
         {
             throw TransferError(503, InventoryTransferCodesV1.Unavailable);
@@ -917,13 +919,21 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         }
 
         var document = ParseDocument(request.IncomingDocument);
-        var payloadHash = GenealogyPayloadHash(new
+        var payloadHash = request.ExpectedIncomingDocumentVersion is null ? GenealogyPayloadHash(new
         {
             transferId,
             lineId,
             expectedVersion,
             acceptedAtUtc = request.AcceptedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
             document,
+        }) : GenealogyPayloadHash(new
+        {
+            transferId,
+            lineId,
+            expectedVersion,
+            acceptedAtUtc = request.AcceptedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            document,
+            expectedIncomingDocumentVersion = request.ExpectedIncomingDocumentVersion,
         });
         return (expectedVersion, document, payloadHash);
     }
