@@ -87,6 +87,11 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             (original.Preparation.SourceMoney.Amount, original.Preparation.TargetMoney.Amount, original.Preparation.Rate));
         Assert.Equal(comparison.RecordId, original.Exchange!.SourceComparison.RecordId);
         Assert.Equal("7", original.Exchange.SourceComparison.RecordVersion);
+        var sourceReference = Assert.IsType<CashTransferTlReferenceV1>(original.Exchange.SourceReferenceTl);
+        var targetReference = Assert.IsType<CashTransferTlReferenceV1>(original.Exchange.TargetReferenceTl);
+        Assert.Equal("3400", sourceReference.Amount); Assert.Equal("3300", targetReference.Amount);
+        Assert.Equal(ExchangeTry, sourceReference.CurrencyId);
+        Assert.Equal(CashTransferExchangeCalculatorV1.TlReferenceSourceVersion, targetReference.SourceVersion);
         await using (var retry = run.OpenExchange(CompanyA, new SyntheticExchangeComparison { Unavailable = true }))
         {
             var replay = await retry.Service.CommitAsync(retry.Context, Key("exchange-record"), request, default);
@@ -111,8 +116,9 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'finance.cash-transfer.recorded.v1' AND EntityId=@id",
             ("@id", original.Id.ToString("D"))));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
-        // A benchmark is not an accounting exchange difference: no unapproved posting event is emitted.
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE AggregateId=@id", ("@id", original.Id)));
+        // One original two-leg fact is now published; it is not a valued journal/P&L instruction.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE AggregateId=@id AND EventType=N'finance.cash-exchange.recorded.v1'", ("@id", original.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages WHERE EventType=N'finance.cash-exchange.book-value-approved.v1'"));
         Assert.Equal(TreasuryBalanceOutcome.Sufficient, (await run.ExchangeBalanceAsync(source, ExchangeUsd, "50")).Outcome);
         Assert.Equal(TreasuryBalanceOutcome.Insufficient, (await run.ExchangeBalanceAsync(source, ExchangeUsd, "50.01")).Outcome);
         Assert.Equal(TreasuryBalanceOutcome.Sufficient, (await run.ExchangeBalanceAsync(target, ExchangeTry, "3300")).Outcome);

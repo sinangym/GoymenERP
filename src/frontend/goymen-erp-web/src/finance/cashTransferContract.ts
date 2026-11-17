@@ -93,6 +93,15 @@ export interface CashTransferExchangeSnapshot {
   readonly rateDeviation: string
   readonly sourceComparison: CashTransferComparisonSource
   readonly targetComparison: CashTransferComparisonSource
+  /** Exact recorded TCMB benchmarks only; neither is a carrying value or a journal amount. */
+  readonly sourceReferenceTl?: CashTransferTlReference
+  readonly targetReferenceTl?: CashTransferTlReference
+}
+
+export interface CashTransferTlReference {
+  readonly currencyId: string
+  readonly amount: string
+  readonly sourceVersion: 'finance.cash-transfer.tl-reference.v1'
 }
 
 export interface CashTransferPage {
@@ -274,7 +283,9 @@ const VIEW_KEYS = ['id', 'companyId', 'preparation', 'recordedBy', 'recordedAtUt
 function decodeExchange(value: unknown, preparation: CashTransferPreparation): CashTransferExchangeSnapshot | null {
   const keys = ['companyId', 'occurredOn', 'sourceMoney', 'targetMoney', 'sourceProfile', 'targetProfile',
     'transactionRate', 'exactTransactionRate', 'comparisonRate', 'exactComparisonRate', 'rateDeviation', 'sourceComparison', 'targetComparison']
-  if (!isRecord(value) || !hasExactKeys(value, keys) || !isBoundUuid(value.companyId)
+  if (!isRecord(value)) return null
+  const hasReferences = Object.hasOwn(value, 'sourceReferenceTl') || Object.hasOwn(value, 'targetReferenceTl')
+  if (!hasExactKeys(value, hasReferences ? [...keys, 'sourceReferenceTl', 'targetReferenceTl'] : keys) || !isBoundUuid(value.companyId)
     || value.occurredOn !== preparation.occurredOn || preparation.kind !== 'CurrencyExchange') return null
   const sourceMoney = decodeMoney(value.sourceMoney); const targetMoney = decodeMoney(value.targetMoney)
   const sourceProfile = decodeProfile(value.sourceProfile); const targetProfile = decodeProfile(value.targetProfile)
@@ -308,9 +319,25 @@ function decodeExchange(value: unknown, preparation: CashTransferPreparation): C
   const sourceComparison = comparison(value.sourceComparison, sourceMoney.currencyId)
   const targetComparison = comparison(value.targetComparison, targetMoney.currencyId)
   if (exactTransactionRate === null || exactComparisonRate === null || sourceComparison === null || targetComparison === null) return null
+  const sourceReferenceTl = hasReferences ? decodeCashTransferTlReference(value.sourceReferenceTl) : undefined
+  const targetReferenceTl = hasReferences ? decodeCashTransferTlReference(value.targetReferenceTl) : undefined
+  if (sourceReferenceTl === null || targetReferenceTl === null
+    || sourceReferenceTl !== undefined && targetReferenceTl !== undefined && (sourceReferenceTl.currencyId !== targetReferenceTl.currencyId
+      || sourceComparison.source === 'FunctionalCurrency' && sourceReferenceTl.currencyId !== sourceMoney.currencyId
+      || targetComparison.source === 'FunctionalCurrency' && targetReferenceTl.currencyId !== targetMoney.currencyId)) return null
   return { companyId: value.companyId, occurredOn: preparation.occurredOn, sourceMoney, targetMoney, sourceProfile, targetProfile,
     transactionRate: value.transactionRate, exactTransactionRate, comparisonRate: value.comparisonRate, exactComparisonRate,
-    rateDeviation: value.rateDeviation, sourceComparison, targetComparison }
+    rateDeviation: value.rateDeviation, sourceComparison, targetComparison,
+    ...(sourceReferenceTl === undefined ? {} : { sourceReferenceTl }), ...(targetReferenceTl === undefined ? {} : { targetReferenceTl }) }
+}
+
+/** Shape/provenance only. The UI never derives the reference amount from either money leg or rate. */
+export function decodeCashTransferTlReference(value: unknown): CashTransferTlReference | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['currencyId', 'amount', 'sourceVersion'])
+    || !isBoundUuid(value.currencyId) || value.sourceVersion !== 'finance.cash-transfer.tl-reference.v1'
+    || typeof value.amount !== 'string' || value.amount.length > 128
+    || !/^(?:0|[1-9]\d*)(?:\.\d*[1-9])?$/.test(value.amount) || !/[1-9]/.test(value.amount)) return null
+  return value as unknown as CashTransferTlReference
 }
 
 export function decodeCashTransferView(value: unknown, companyId: string): Decoded<CashTransferView> {

@@ -51,6 +51,7 @@ describe('document owner contract', () => {
       inventoryMaterialLabel: 'inventory.material-label',
       purchasingPurchaseOrder: 'purchasing.purchase-order',
       purchasingInvoiceImport: 'purchasing.invoice-import',
+      financeCashExchange: 'finance.cash-exchange',
       salesOrder: 'sales.order',
     });
   });
