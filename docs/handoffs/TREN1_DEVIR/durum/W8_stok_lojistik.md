@@ -548,3 +548,34 @@
   ayrı tutar. Linked e-belge için gerçek GİB gönderim/iptal owner kanıtı yokluğu gelecekteki dış kaynak bağlantısıdır;
   numaradan durum üretilmez, mevcut 503 korunur. Bu not mevcut planı sessiz DONE/DEFERRED yapmaz ve bugünkü
   resmî fatura iptal provider eksikliğini kullanılabilir iş akışı diye sunmaz.
+
+## STK-S3 — kullanılmayan fason ayırmasını ayrı yetkili komutla bırakma
+
+- LOJ-D1/D3, DEC-STK-005 ve doğrudan kullanıcı cevabı #1189/6957941048 için ayrı komut kaynağı
+  hazırlandı. Sevk kendiliğinden bırakmaz. Mevcut `inventory.physical-allocation.write` şirket geneli
+  yetkisi, gerçek aktör/şirket üyeliği ve her asenkron sınırdaki fresh authority kullanılır; yeni izin,
+  grant, rol veya genel stok raporu okuma gereği yoktur.
+- Gerçek şirketli fason ayırma kaynağından en çok 50 kayıt ve keyset cursor ile seçim yapılır.
+  Etiket, müşteri sahipliği, şirket saklayıcılığı ve ilk ayırmanın değişmez Sales/Manufacturing kanıtı
+  doğrulanır. Kullanıcı GUID, bırakılacak kg, sahiplik veya dış modül kanıtı giremez.
+- Ayrı Serializable owner işlemi önce mevcut Sales satır kilidini, sonra Inventory fiziksel doğrulama
+  kilidini alır; allocation/label yeniden yüklenir. Beklenen sürüm, değişmez istek/aktör/şirket/anahtar
+  bağı, özgün başarı/terminal ret replay'i ve gerçek Audit owner yazımı aynı transaction içindedir.
+  Belirsiz commit veya doğrulanamayan rollback başarı sayılmaz. Başka modül tablosuna erişim yoktur.
+- Yalnız `RemainingKg` bırakılır; kullanılan pay ve özgün tahsis toplamı korunur. 100 kg ayırma ve
+  gerçek 80 kg sevk kaynağı için cevap 20 kg bırakılan / 80 kg önceden kullanılan şeklindedir.
+  Mevcut fiziksel 20 kg ile 80 kg eski hareket değişmez; yeni fiziksel, maliyet veya outbox olayı yoktur.
+- Bağımsız purpose ekranı `SubcontractAllocationReleasePage`, rota `/stok/fason-ayirma-birak`,
+  mevcut `inventory.physical-allocation.write` capability'sini kullanır. Gerçek aday seçimi, gerekçe,
+  donmuş payload ve aynı anahtarla belirsiz sonuç retry'si, yükleniyor/boş/401/403/404/409/çevrimdışı/
+  503/bozuk cevap kaynakları vardır. UI kg veya stok uygunluğu hesaplamaz.
+- Birim yetki/şirket/aktör/scope kaybı ve bozuk owner cevabı; iki HTTP strict contract; üç gerçek SQL
+  fact kaynağı (gerçek reserve→80 kg ship→20 kg release/replay, Audit append+late fence rollback,
+  eşzamanlı sürüm ve terminal replay/aktör/payload çitleri); codec ve DOM Vitest kaynakları yazıldı.
+  SQL fixture'ın Sales/Manufacturing kimlik kanıtı sentetiktir; Inventory hareketi, kilidi, Audit owner'ı
+  ve transaction gerçektir. Cross-module uçtan uca kabul diye sunulmaz.
+- **Kaynak derlemeleri QUEUED; runtime birim/SQL/HTTP/Vitest/browser/CI NOT_RUN.** Yeni paket,
+  model/migration/EF, InventoryStore/DbContext/first-cost değişikliği veya allowlist genişletmesi yoktur.
+  Merkezi bağlama koordinatördedir: `AddInventorySubcontractAllocationRelease()` ve
+  `MapInventorySubcontractAllocationReleaseEndpoints()`; purpose ekranı mevcut izinle bağımsız mount
+  edilir. Kaynak/pin/OpenAPI/ilişkisel envanter/grup üretimi ve exact-head kabul ayrıca gereklidir.
