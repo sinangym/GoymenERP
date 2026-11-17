@@ -33,7 +33,8 @@ public sealed record IssueLoadingInstructionRequest(string ExpectedVersion);
 /// (<c>Measured</c> | <c>AllocatedFromVehicleWeight</c>). The load id is the client's (one load is one
 /// record); the quantity is exact text (Ö2).
 /// </summary>
-public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, string Quantity, string Measurement);
+public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, string Quantity, string Measurement,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessUseV1>? PlanExcessUses = null);
 
 /// <summary>
 /// POST …/{id}/weighings (AT-053): the vehicle's manual weighbridge record for an issued instruction — the two
@@ -107,7 +108,8 @@ public sealed record LoadingInstructionLineView(
     Guid LineId, int LineNo, Guid SourceOrderId, Guid SourceOrderLineId, int SourceOrderRevision,
     Guid ProductId, Guid UnitId,
     string Instructed, string Loaded, string Shipped, string Delivered,
-    string RemainingToLoad, string LoadedNotShipped, string ShippedNotDelivered, bool IsBlocked);
+    string RemainingToLoad, string LoadedNotShipped, string ShippedNotDelivered, bool IsBlocked,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApprovedPlanExcess = null);
 
 /// <summary>
 /// One recorded share of a line. <c>RecordedBy</c> is the server-side actor who recorded it (for a Shipped share,

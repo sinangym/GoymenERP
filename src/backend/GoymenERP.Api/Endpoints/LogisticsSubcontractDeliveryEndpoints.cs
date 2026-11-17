@@ -35,6 +35,9 @@ public static class LogisticsSubcontractDeliveryEndpoints
             .WithName("ShipLogisticsSubcontractDeliveryV1").Accepts<ShipSubcontractDeliveryV1>("application/json"));
         Command(group.MapPost("/{instructionId:guid}/lines/{lineId:guid}/loads", LoadAsync).RequireAuthorization(LogisticsPermissionManifestV1.LoadsRecord)
             .WithName("LoadLogisticsSubcontractDeliveryV1").Accepts<RecordLoadRequest>("application/json"));
+        Command(group.MapPost("/{instructionId:guid}/lines/{lineId:guid}/plan-excess/{exceptionId:guid}/reserve", ReservePlanExcessAsync)
+            .RequireAuthorization(LogisticsPermissionManifestV1.LoadsRecord).WithName("ReserveLogisticsSubcontractPlanExcessV1")
+            .Accepts<ReserveLogisticsPlanExcessV1>("application/json"));
         Command(group.MapPost("/{instructionId:guid}/weighing-corrections", CorrectAsync).RequireAuthorization(LogisticsPermissionManifestV1.WeighingsCorrect)
             .WithName("CorrectLogisticsSubcontractWeighingV1").Accepts<CorrectSubcontractWeighingV1>("application/json"));
         return endpoints;
@@ -42,6 +45,7 @@ public static class LogisticsSubcontractDeliveryEndpoints
     private static void Command(RouteHandlerBuilder route) => route.Produces<LogisticsSubcontractInstructionV1>().WithIdempotencyContract(200, 409)
         .ProducesErpBadRequest().AllowsCodeLessErpBadRequestBody().ProducesErpNotFound().ProducesErpUnsupportedMediaType()
         .ProducesErpUnprocessableEntity(Invalid).ProducesErpConflict(SourceConflict, ActiveInvoice,
+            LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
             LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
             "sales_order_line_busy", "logistics_shipment_risk_over_limit", "logistics_shipment_risk_credit_limit_not_set",
             "logistics_shipment_risk_unavailable", "logistics_shipment_risk_exception_used",
@@ -82,6 +86,11 @@ public static class LogisticsSubcontractDeliveryEndpoints
     private static Task<IResult> LoadAsync(Guid instructionId, Guid lineId, HttpContext http, ICorrelationContext correlation,
         [FromServices] ILogisticsSubcontractDeliveryHostV1? host, CancellationToken token) =>
         WriteAsync<RecordLoadRequest>(http, correlation, host, (body, metadata) => host!.LoadAsync(instructionId, lineId, body, metadata, token), token);
+    private static Task<IResult> ReservePlanExcessAsync(Guid instructionId, Guid lineId, Guid exceptionId, HttpContext http, ICorrelationContext correlation,
+        [FromServices] ILogisticsSubcontractDeliveryHostV1? host, [FromServices] ILogisticsSubcontractPlanExcessReservationHostV1? reservation,
+        CancellationToken token) => reservation is null ? Task.FromResult<IResult>(Results.Problem(statusCode: 503))
+            : WriteAsync<ReserveLogisticsPlanExcessV1>(http, correlation, host,
+                (body, metadata) => reservation.ReservePlanExcessAsync(instructionId, lineId, exceptionId, body, metadata, token), token);
     private static Task<IResult> CorrectAsync(Guid instructionId, HttpContext http, ICorrelationContext correlation,
         [FromServices] ILogisticsSubcontractDeliveryHostV1? host, CancellationToken token) =>
         WriteAsync<CorrectSubcontractWeighingV1>(http, correlation, host, (body, metadata) => host!.CorrectWeighingAsync(instructionId, body, metadata, token), token);

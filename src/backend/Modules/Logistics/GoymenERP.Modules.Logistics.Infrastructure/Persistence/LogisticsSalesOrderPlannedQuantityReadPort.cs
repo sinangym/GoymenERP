@@ -61,8 +61,7 @@ internal sealed class LogisticsSalesOrderPlannedQuantityReadPort(LogisticsDbCont
                 group.Key.SourceOrderLineId,
                 group.Key.UnitId,
                 group.Key.UnitIsKilogram,
-                Instructed = group.Sum(line => line.Instructed),
-                Shipped = group.Sum(line => line.Shipped),
+                Open = group.Sum(line => line.Instructed > line.Shipped ? line.Instructed - line.Shipped : 0m),
             })
             .ToListAsync(cancellationToken);
 
@@ -82,7 +81,8 @@ internal sealed class LogisticsSalesOrderPlannedQuantityReadPort(LogisticsDbCont
             try
             {
                 // The stored totals obey the share check; the subtraction refuses a contradictory row instead of answering it.
-                open = Quantity.Of(total.Instructed, unit).Subtract(Quantity.Of(total.Shipped, unit));
+                // An approved exception never expands the plan and cannot consume another instruction's planned share.
+                open = Quantity.Of(total.Open, unit);
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {

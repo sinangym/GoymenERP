@@ -107,7 +107,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost
             if (!stored.Instruction.IsContractProcessingDelivery) throw Error(404, "not_found");
             var sources = await store.ReadSubcontractSourcesAsync(instructionId, ct);
             if (sources.Count != plan.Count || sources.Any(pair => !plan.TryGetValue(pair.Key, out var old) || pair.Value != old)) throw Error(503, Unavailable);
-            return View(stored.Instruction, sources, labels, false, "");
+            return await ViewWithReservationsAsync(stored.Instruction, sources, labels, false, "", ct);
         }, token);
     }
 
@@ -131,7 +131,8 @@ public sealed partial class LogisticsSubcontractDeliveryHost
             var allocation = label?.Allocations.SingleOrDefault(allocation => allocation.AllocationId == line.AllocationId);
             return new LogisticsSubcontractLineV1(line.Id, source, line.AllocationId ?? throw Error(503, Unavailable),
                 Kg(line.InstructedQuantity.Value), Kg(line.LoadedQuantity.Value), Kg(line.ShippedQuantity.Value), Kg(line.DeliveredQuantity.Value),
-                allocation?.Version, label?.LabelVersion);
+                allocation?.Version, label?.LabelVersion,
+                line.ApprovedPlanExcessQuantity.IsZero ? null : Kg(line.ApprovedPlanExcessQuantity.Value));
         }).ToArray();
         var correction = instruction.WeighingCorrections.LastOrDefault();
         var weighing = instruction.Weighing is { } w ? new LogisticsSubcontractWeighingV1(w.WeighingId, instruction.WeighingRevision,

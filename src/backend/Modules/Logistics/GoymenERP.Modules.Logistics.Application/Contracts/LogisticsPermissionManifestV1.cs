@@ -20,6 +20,9 @@ public static class LogisticsPermissionManifestV1
     public const string ShipmentsRecord = "logistics.shipments.record";
     public const string DeliveriesRecord = "logistics.deliveries.record";
 
+    /// <summary>SAT-D417 / direct user 6963301286: approve a separate positive plan exception. Registration only; no role or maker exclusion.</summary>
+    public const string ShipmentPlanExcessApprove = LogisticsPlanExcessV1.ApprovePermission;
+
     /// <summary>
     /// AT-053: record the vehicle's manual weighbridge record on an issued instruction. Its own name, aliasing no
     /// other (master v3 §12.1 lists the Kantar kullanıcısı as its own role; the #66/5828506709 precedent). Registered
@@ -102,5 +105,5 @@ public static class LogisticsPermissionManifestV1
         [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, WeighingsCorrect, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
             DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision,
             WeighingDifferencesRecord, WeighingDifferencesApprove, WeighingDifferencesRead,
-            TransferDeparturesRecord, TransferOutgoingDocumentsRead];
+            TransferDeparturesRecord, TransferOutgoingDocumentsRead, ShipmentPlanExcessApprove];
 }

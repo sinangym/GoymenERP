@@ -75,7 +75,8 @@ public sealed record SalesOrderLoadingReadAnswerV1(
 /// owner chain is delivered ≤ shipped ≤ loaded ≤ instructed ≤ the Sales-owned approved order quantity.
 /// </summary>
 public sealed record SalesOrderLineLoadingV1(Guid OrderLineId, Guid UnitId, int InstructionLineCount, decimal Instructed,
-    decimal Loaded, decimal Shipped, decimal Delivered);
+    decimal Loaded, decimal Shipped, decimal Delivered,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] decimal? ApprovedPlanExcess = null);
 
 /// <summary>The six DEC-SAL-005 impact categories, one stable name each (the wire's <c>source</c>).</summary>
 public static class SalesCancellationImpactSourcesV1

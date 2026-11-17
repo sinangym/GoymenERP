@@ -688,3 +688,36 @@ denetimde süreç başlatılmadı, sekiz false deklarasyon veya diğer publish/g
   tüketir. Merkezi OpenAPI ve sözleşme pin'leri coordinator üretiminde yeniden üretilmelidir.
   Resmî dış iptal provider'ının bugün yokluğu ayrı dış kaynak sınırı olarak korunur; bu checkpoint
   sekiz özgün Logistics staged deklarasyonunu veya başka kabul/publish kapısını değiştirmez.
+
+
+### STK-S3 / SAT-D417 — ayrı plan üstü onay ve gerçek kullanım kaynağı
+
+- Kaynak dayanağı: SAT-D406(2), SAT-D417 ve doğrudan kullanıcı cevabının #1189/6963301286
+  aktarımı. Talimat 100 olarak kalır; ek 20 ayrı istisna olarak hazırlanır ve Satış Müdürü
+  anlamındaki ayrı izinle onaylanır. Literal rol kontrolü, grant veya Critical sınıfı yoktur.
+  Yeni bir hazırlayan/onaylayan ayrılığı seçilmemiştir.
+- **PARTIAL — SOURCE_CHECKPOINT, EF ve kaynak derlemeleri QUEUED.** Gerçek şirket/satır
+  kaynaklı öneri, tek forward onay, açık istisna seçimi, immutable load/ship kullanım satırları,
+  özgün idempotency cevapları ve aynı işlem audit kaynağı yazılmıştır. Onay stok ayırmaz.
+  Fason yolda açık ayrı reserve komutu mevcut Inventory allocation satırlarına yeni kimlikle
+  ayırır; orijinal ayırma/talimat değişmez. Tek fiziksel sevk hareketi gerçek ana ve ek
+  ayırma paylarını birlikte tüketir. Fiziksel stok, mevcut sipariş ve risk kapıları korunur.
+- Talimat detayı, Sales loading okuması ve operasyon özeti ayrı nullable approvedPlanExcess
+  kanıtını taşır; eski null şekli ek kapasite değildir. Açık plan her talimatta max(0,
+  instructed−shipped) olarak alınır; aşım başka talimatın plan payını eksiltmez. Fiyat/para
+  hesabı veya yeni miktar toleransı yoktur.
+- Yeni komutlar ve ek kullanım için ayrı Serializable host yolu, commit öncesi aynı
+  actor/company/izin çiti ve doğrulanmış rollback kullanılır. Eski komutların isolation
+  davranışı değiştirilmemiştir. Inventory model/snapshot değişikliği yoktur.
+- Birim, strict sözleşme, HTTP ve gerçek SQL fact kaynakları yazılmıştır. SQL kaynakları
+  ayrı onay/kullanım/özgün replay/tenant, rollback sonrası aynı anahtar, eşzamanlı tek cap
+  tüketimi ve fason gerçek reserve→load→tek movement ship zincirini kapsar. Frontend strict
+  decoder, bağımsız onay sayfası, hazırlama, açık kullanım ve ayrı rezervasyon formları;
+  frozen retry/remount ve hata durumları için Vitest kaynakları vardır.
+- Kaynak kontrolleri: git diff --check exit 0. Runtime birim/HTTP/SQL/Vitest/browser/CI
+  **NOT_RUN**; bu checkpoint kaynak kabulü, production veya K3 review değildir.
+- Logistics EF ileri migration beklenmektedir: 51817 Down, 51818 forward-only onay,
+  51819 immutable kullanım, 51820 immutable ek ayırma mapping guard rezervasyonları.
+  Üretici çalışmadan migration/snapshot elle yazılmaz. Merkezi Program/cap/izin/OpenAPI/
+  recovery/guard/test envanterleri coordinator bileşiminde tamamlanır. Sekiz özgün staged
+  Logistics deklarasyonu ve yeni staged hazırlama/onay kapıları değiştirilmemiştir.

@@ -54,6 +54,7 @@ public static class LogisticsModuleExtensions
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<ILogisticsRealizationServiceV1>(serviceProvider =>
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
+        services.AddScoped<ILogisticsPlanExcessServiceV1>(serviceProvider => serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<IApprovedDispatchInvoiceSourceV1>(serviceProvider =>
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
         // AT-024: Logistics answers the Sales-declared delivery read over its own company-filtered lines. Registered here,

@@ -33,13 +33,13 @@ function recordMembers(name: string): string[] {
   const body = contractText.slice(start + `public sealed record ${name}(`.length, contractText.indexOf(');', start))
   return body
     .split(',')
-    .map((part) => part.trim().split(/\s+/).at(-1) as string)
+    .map((part) => part.replace(/\[[^\]]*\]/g, '').replace(/\s*=\s*null/g, '').trim().split(/\s+/).at(-1) as string)
     .map((member) => member.charAt(0).toLowerCase() + member.slice(1))
 }
 
 describe('AT-025 operations work wire contract', () => {
   it('takes exactly the members the backend records declare, and the page names its section', () => {
-    expect([...SALES_WORK_KEYS]).toEqual(recordMembers('LogisticsSalesWorkItemView'))
+    expect([...SALES_WORK_KEYS, 'approvedPlanExcess']).toEqual(recordMembers('LogisticsSalesWorkItemView'))
     expect([...PURCHASE_WORK_KEYS]).toEqual(recordMembers('LogisticsPurchaseWorkItemView'))
     expect(recordMembers('LogisticsSalesWorkPage')).toEqual(['section', 'items', 'nextCursor'])
     expect(recordMembers('LogisticsPurchaseWorkPage')).toEqual(['section', 'items', 'nextCursor'])
@@ -74,5 +74,15 @@ describe('AT-025 operations work wire contract', () => {
     expect(decodeSalesWorkPage({ section: 'Sales', items: [salesRow(), salesRow()], nextCursor: null })).toBeNull()
     expect(decodePurchaseWorkPage({ section: 'Purchase', items: [purchaseRow({ remaining: '0' })], nextCursor: null })).toBeNull()
     expect(decodeSalesWorkPage({ section: 'Sales', items: [salesRow({ delivered: '-1' })], nextCursor: null })).toBeNull()
+  })
+})
+
+describe('SAT-D417 optional actual approved capacity', () => {
+  it('accepts the additive server proof without changing instructed and rejects malformed or null proof', () => {
+    const row = { ...salesRow(), instructed: '100', loaded: '120', shipped: '120', approvedPlanExcess: '20' }
+    const page = { section: 'Sales', items: [row], nextCursor: null }
+    expect(decodeSalesWorkPage(page)?.items[0]).toMatchObject({ instructed: '100', loaded: '120', approvedPlanExcess: '20' })
+    expect(decodeSalesWorkPage({ ...page, items: [{ ...row, approvedPlanExcess: null }] })).toBeNull()
+    expect(decodeSalesWorkPage({ ...page, items: [{ ...row, approvedPlanExcess: '-1' }] })).toBeNull()
   })
 })

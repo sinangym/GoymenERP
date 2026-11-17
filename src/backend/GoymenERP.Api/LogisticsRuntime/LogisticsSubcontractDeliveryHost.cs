@@ -166,6 +166,9 @@ public static class LogisticsSubcontractDeliveryComposition
 {
     public static IServiceCollection AddLogisticsSubcontractDeliveryRuntime(this IServiceCollection services)
     {
-        services.TryAddScoped<ILogisticsSubcontractDeliveryHostV1, LogisticsSubcontractDeliveryHost>(); return services;
+        services.TryAddScoped<LogisticsSubcontractDeliveryHost>();
+        services.TryAddScoped<ILogisticsSubcontractDeliveryHostV1>(provider => provider.GetRequiredService<LogisticsSubcontractDeliveryHost>());
+        services.TryAddScoped<ILogisticsSubcontractPlanExcessReservationHostV1>(provider => provider.GetRequiredService<LogisticsSubcontractDeliveryHost>());
+        return services;
     }
 }

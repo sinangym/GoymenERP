@@ -91,6 +91,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
         ConfigureTransferDepartures(modelBuilder);
         ConfigureWeighingDifferences(modelBuilder);
         ConfigureShipmentRiskGate(modelBuilder);
+        ConfigurePlanExcess(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -160,12 +161,13 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
             // §7.4 / §13: instructed ≥ loaded ≥ shipped ≥ delivered ≥ 0, never counted twice.
             table.HasCheckConstraint("CK_LoadingInstructionLines_Shares",
                 "[Instructed] > 0 AND [Loaded] >= 0 AND [Shipped] >= 0 AND [Delivered] >= 0 "
-                + "AND [Loaded] <= [Instructed] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]");
+                + "AND [ApprovedPlanExcess]>=0 AND [Loaded] <= [Instructed]+[ApprovedPlanExcess] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]");
         });
         entity.HasKey(x => new { x.CompanyId, x.InstructionId, x.LineNo });
         entity.HasIndex(x => new { x.CompanyId, x.InstructionId, x.LineId }).IsUnique().HasDatabaseName("UX_LoadingInstructionLines_LineId");
         entity.HasIndex(x => new { x.CompanyId, x.SourceOrderId, x.SourceOrderLineId }).HasDatabaseName("IX_LoadingInstructionLines_SourceOrderLine");
         foreach (var quantity in new[] { nameof(LoadingInstructionLineRow.Instructed), nameof(LoadingInstructionLineRow.Loaded),
+                     nameof(LoadingInstructionLineRow.ApprovedPlanExcess),
                      nameof(LoadingInstructionLineRow.Shipped), nameof(LoadingInstructionLineRow.Delivered) })
         {
             entity.Property<decimal>(quantity).HasPrecision(18, 3);
@@ -712,6 +714,19 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
             }
 
             GuardTransferDepartureChange(entry);
+            if (entry.Entity is LogisticsPlanExcessRow && entry.State == EntityState.Modified
+                && ((int)entry.OriginalValues[nameof(LogisticsPlanExcessRow.Status)]! != 1
+                    || (long)entry.OriginalValues[nameof(LogisticsPlanExcessRow.Version)]! != 1L
+                    || (int)entry.CurrentValues[nameof(LogisticsPlanExcessRow.Status)]! != 2
+                    || (long)entry.CurrentValues[nameof(LogisticsPlanExcessRow.Version)]! != 2L
+                    || entry.OriginalValues[nameof(LogisticsPlanExcessRow.ApprovedBy)] is not null
+                    || entry.CurrentValues[nameof(LogisticsPlanExcessRow.ApprovedBy)] is not string { Length: > 0 }
+                    || entry.CurrentValues[nameof(LogisticsPlanExcessRow.ApprovedAtUtc)] is not DateTimeOffset))
+                throw new InvalidOperationException("Plan excess approval is a single forward transition.");
+            if (entry.Entity is LoadingInstructionLineRow && entry.State == EntityState.Modified
+                && (decimal)entry.CurrentValues[nameof(LoadingInstructionLineRow.ApprovedPlanExcess)]!
+                    < (decimal)entry.OriginalValues[nameof(LoadingInstructionLineRow.ApprovedPlanExcess)]!)
+                throw new InvalidOperationException("Approved exception capacity cannot decrease.");
             if (entry.Entity is LoadingAttemptRow && entry.State == EntityState.Modified
                 && (Database.CurrentTransaction is not { } commandTransaction
                     || commandTransaction.GetDbTransaction().IsolationLevel != System.Data.IsolationLevel.Serializable))
@@ -729,8 +744,10 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                     [
                         nameof(LoadingInstructionLineRow.Loaded), nameof(LoadingInstructionLineRow.Shipped),
                         nameof(LoadingInstructionLineRow.Delivered), nameof(LoadingInstructionLineRow.IsBlocked),
+                        nameof(LoadingInstructionLineRow.ApprovedPlanExcess),
                     ],
                     LoadingAttemptRow => [nameof(LoadingAttemptRow.ResultJson)],
+                    LogisticsPlanExcessRow => [nameof(LogisticsPlanExcessRow.Status), nameof(LogisticsPlanExcessRow.ApprovedBy), nameof(LogisticsPlanExcessRow.ApprovedAtUtc)],
                     // AT-055 lifecycle: the status and each set-once group (approval + number, cancellation, e-İrsaliye number).
                     DispatchNoteRow => [nameof(DispatchNoteRow.Status), .. DispatchNoteSchema.SetOnceColumns],
                     DispatchNoteLineRow => [nameof(DispatchNoteLineRow.Released)],

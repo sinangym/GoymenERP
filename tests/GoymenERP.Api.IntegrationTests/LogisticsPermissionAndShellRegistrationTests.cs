@@ -29,6 +29,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.LoadsRecord, ErpPermissions.LogisticsLoadsRecord)]
     [InlineData(LogisticsPermissionManifestV1.ShipmentsRecord, ErpPermissions.LogisticsShipmentsRecord)]
     [InlineData(LogisticsPermissionManifestV1.DeliveriesRecord, ErpPermissions.LogisticsDeliveriesRecord)]
+    [InlineData(LogisticsPermissionManifestV1.ShipmentPlanExcessApprove, ErpPermissions.LogisticsShipmentPlanExcessApprove)]
     [InlineData(LogisticsPermissionManifestV1.WeighingsRecord, ErpPermissions.LogisticsWeighingsRecord)]
     [InlineData(LogisticsPermissionManifestV1.WeighingsCorrect, ErpPermissions.LogisticsWeighingsCorrect)]
     [InlineData(LogisticsPermissionManifestV1.DispatchNotesCreate, ErpPermissions.LogisticsDispatchNotesCreate)]

@@ -59,6 +59,7 @@ internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbCo
                 group.Key.UnitId,
                 Count = group.Count(),
                 Instructed = group.Sum(line => line.Instructed),
+                ApprovedPlanExcess = group.Sum(line => line.ApprovedPlanExcess),
                 Loaded = group.Sum(line => line.Loaded),
                 Shipped = group.Sum(line => line.Shipped),
                 Delivered = group.Sum(line => line.Delivered),
@@ -83,7 +84,7 @@ internal sealed class LogisticsSalesOrderLoadingReadPort(LogisticsDbContext dbCo
         return new SalesOrderLoadingReadAnswerV1(companyId, orderId,
             [.. totals.OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
                 .Select(total => new SalesOrderLineLoadingV1(total.SourceOrderLineId, total.UnitId, total.Count, total.Instructed,
-                    total.Loaded, total.Shipped, total.Delivered))],
+                    total.Loaded, total.Shipped, total.Delivered, total.ApprovedPlanExcess == 0m ? null : total.ApprovedPlanExcess))],
             activeApprovedDispatchNoteCount);
     }
 }

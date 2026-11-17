@@ -129,6 +129,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
     private sealed class SubcontractHostScope(AsyncServiceScope services, LogisticsDbContext context, LogisticsStore store, LogisticsSubcontractDeliveryHost host, S3Risk risk, Guid actor) : IAsyncDisposable
     {
+        public LogisticsDbContext Context => context;
         public LogisticsSubcontractDeliveryHost Host => host; public LogisticsStore Store => store; public S3Risk Risk => risk;
         public ICompanyContext Company => services.ServiceProvider.GetRequiredService<ICompanyContext>();
         public LogisticsWriteEnvelope Envelope(string key) => new(actor.ToString("D"), LogisticsPermissionManifestV1.InstructionsCreate, ["SYNTHETIC-MANUFACTURING"], key, null, key, "Integration");

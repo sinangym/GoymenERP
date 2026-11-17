@@ -55,7 +55,7 @@ public sealed class LogisticsPersistenceModelTests
         var lines = designModel.FindEntityType(typeof(LoadingInstructionLineRow))!;
         Assert.True(lines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingInstructionLines_LineId").IsUnique);
         Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_LoadingInstructionLines_Shares"
-            && check.Sql.Contains("[Loaded] <= [Instructed] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]", StringComparison.Ordinal));
+            && check.Sql.Contains("[Loaded] <= [Instructed]+[ApprovedPlanExcess] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]", StringComparison.Ordinal));
         var shares = designModel.FindEntityType(typeof(LoadingShareRow))!;
         Assert.True(shares.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingShares_ShareId").IsUnique);
         Assert.Equal(3, shares.FindProperty(nameof(LoadingShareRow.Quantity))!.GetScale());

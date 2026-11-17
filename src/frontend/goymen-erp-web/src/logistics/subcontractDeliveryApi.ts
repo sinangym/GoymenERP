@@ -107,6 +107,13 @@ export async function sendSubcontractAttempt(snapshot: SubcontractAttempt): Prom
         && actual.source.outputFactId === line.outputFactId && actual.source.manufacturingOrderId === line.manufacturingOrderId
         && actual.source.salesOrderId === line.salesOrderId && actual.source.salesOrderLineId === line.salesOrderLineId)))
         return { type: 'unknown', reason: 'malformed-response' }
+    } else if (snapshot.path.endsWith('/reserve')) {
+      const match = /\/lines\/([^/]+)\/plan-excess\/([^/]+)\/reserve$/.exec(snapshot.path)
+      const line = match === null ? undefined : decoded.lines.find(item => item.lineId === match[1])
+      const allocation = line?.additionalAllocations?.find(item => item.allocationId === sent.allocationId)
+      if (match === null || line === undefined || allocation === undefined || allocation.exceptionId !== match[2]
+        || allocation.version !== '1' || allocation.allocatedKg !== sent.quantityKg || allocation.remainingKg !== sent.quantityKg
+        || decoded.version !== sent.expectedInstructionVersion) return { type: 'unknown', reason: 'malformed-response' }
     } else if (snapshot.path.endsWith('/weighing-corrections') && !decoded.corrections.some(value => value.correctionId === sent.correctionId
       && value.firstKg === sent.firstWeighingKg && value.secondKg === sent.secondWeighingKg && value.direction === sent.direction && value.reason === sent.reason))
       return { type: 'unknown', reason: 'malformed-response' }

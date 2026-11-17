@@ -131,6 +131,7 @@ export interface RecordLoadRequest {
   readonly loadId: string
   readonly quantity: string
   readonly measurement: Measurement
+  readonly planExcessUses?: readonly import('./planExcessApi').PlanExcessUse[]
 }
 
 /**
@@ -237,6 +238,7 @@ export interface InstructionLine {
   readonly loadedNotShipped: string
   readonly shippedNotDelivered: string
   readonly isBlocked: boolean
+  readonly approvedPlanExcess?: string
 }
 
 export interface LoadingShare {
@@ -605,7 +607,8 @@ const LINE_KEYS = [
 ] as const
 
 function decodeLine(value: unknown): InstructionLine | null {
-  const o = exact(value, LINE_KEYS)
+  const hasExcess = typeof value === 'object' && value !== null && Object.hasOwn(value, 'approvedPlanExcess')
+  const o = exact(value, hasExcess ? [...LINE_KEYS, 'approvedPlanExcess'] : LINE_KEYS)
   if (
     o === null ||
     !isReferenceId(o.lineId) ||
@@ -622,7 +625,8 @@ function decodeLine(value: unknown): InstructionLine | null {
     !isQuantityText(o.remainingToLoad) ||
     !isQuantityText(o.loadedNotShipped) ||
     !isQuantityText(o.shippedNotDelivered) ||
-    typeof o.isBlocked !== 'boolean'
+    typeof o.isBlocked !== 'boolean' ||
+    hasExcess && !isPositiveQuantityText(o.approvedPlanExcess)
   ) {
     return null
   }
@@ -642,6 +646,7 @@ function decodeLine(value: unknown): InstructionLine | null {
     loadedNotShipped: o.loadedNotShipped,
     shippedNotDelivered: o.shippedNotDelivered,
     isBlocked: o.isBlocked,
+    ...(hasExcess ? { approvedPlanExcess: o.approvedPlanExcess as string } : {}),
   }
 }
 

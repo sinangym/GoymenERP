@@ -65,7 +65,7 @@ public sealed partial class LogisticsSubcontractDeliveryHost
                 }
                 return instruction;
             }, sources, ct);
-            var response = View(result.Instruction.Instruction, sources, labels, false, envelope.CorrelationId);
+            var response = await ViewWithReservationsAsync(result.Instruction.Instruction, sources, labels, false, envelope.CorrelationId, ct);
             await store.CompleteSubcontractResultAsync(envelope, hash, LogisticsCommands.CreateV1, response, ct); return response;
         }, token);
     }
@@ -125,16 +125,37 @@ public sealed partial class LogisticsSubcontractDeliveryHost
             }
             if (unreadable) throw Error(503, Unavailable);
             if (refusal is not null) throw Error(409, refusal);
+            // Only explicit reservations made against this actual approval/line may accompany its original allocation.
+            var reservations = await store.ReadPlanExcessReservationsAsync(instructionId, ct);
+            foreach (var input in request.Lines)
+            {
+                if (input.AdditionalAllocations is not { } extras) continue;
+                if (extras.Count is < 1 or > 500 || extras.Any(extra => extra is null)
+                    || extras.Select(extra => extra.AllocationId).Distinct().Count() != extras.Count) throw Error(422, Invalid);
+                var usedByException = new Dictionary<Guid, decimal>();
+                foreach (var extra in extras)
+                {
+                    var bound = reservations.SingleOrDefault(item => item.AllocationId == extra.AllocationId && item.LineId == input.LineId
+                        && item.LabelId == input.LabelId) ?? throw Error(409, SourceConflict);
+                    usedByException[bound.ExceptionId] = usedByException.GetValueOrDefault(bound.ExceptionId) + Quantity(extra.QuantityKg);
+                }
+                if (input.PlanExcessUses is not { } uses || uses.Any(use => use is null)
+                    || uses.Select(use => use.ExceptionId).Distinct().Count() != uses.Count
+                    || uses.Count != usedByException.Count || uses.Any(use => !usedByException.TryGetValue(use.ExceptionId, out var amount)
+                        || amount != Quantity(use.Quantity))) throw Error(409, LogisticsPlanExcessV1.Conflict);
+            }
             var lines = request.Lines.Select(line => new InventorySubcontractShipmentLineV1(line.ShipmentId, line.LineId,
                 instruction.Lines.Single(l => l.Id == line.LineId).AllocationId!.Value, line.ExpectedAllocationVersion, line.LabelId,
                 line.ExpectedLabelVersion, line.MovementId, Kg(instruction.Lines.Single(l => l.Id == line.LineId).LoadedNotShipped.Value),
-                InventorySource(current[line.LineId]))).ToArray();
+                InventorySource(current[line.LineId]), line.AdditionalAllocations?.Select(extra =>
+                    new InventorySubcontractAdditionalAllocationV1(extra.AllocationId, extra.ExpectedVersion, extra.QuantityKg)).ToArray())).ToArray();
             await stock.ShipAsync(new(scope.CompanyId, instructionId, instruction.CustomerPartyId, request.OccurredAtUtc, lines),
                 InventoryMetadata(scope, envelope), cancellation => StillAsync(scope, cancellation), ct);
             var labels = await LabelsAsync(stock, current.Values, ct);
             var result = await store.ShipSubcontractInstructionAsync(envelope, hash, instructionId, expected,
-                request.Lines.ToDictionary(line => line.LineId, line => line.ShipmentId), gates, request.OccurredAtUtc, ct) ?? throw Error(404, "not_found");
-            var response = View(result.Instruction.Instruction, original, labels, false, envelope.CorrelationId);
+                request.Lines.ToDictionary(line => line.LineId, line => line.ShipmentId), gates, request.OccurredAtUtc, ct,
+                request.Lines.ToDictionary(line => line.LineId, line => line.PlanExcessUses)) ?? throw Error(404, "not_found");
+            var response = await ViewWithReservationsAsync(result.Instruction.Instruction, original, labels, false, envelope.CorrelationId, ct);
             await store.CompleteSubcontractResultAsync(envelope, hash, ShipCommand, response, ct); return response;
         }, token);
     }
@@ -170,7 +191,9 @@ public sealed partial class LogisticsSubcontractDeliveryHost
                     LogisticsQuantity.Of(first, GoymenERP.BuildingBlocks.Quantities.QuantityUnit.Kilogram),
                     LogisticsQuantity.Of(second, GoymenERP.BuildingBlocks.Quantities.QuantityUnit.Kilogram), request.Reason, scope.ActorId, now),
                 new("logistics.loading-instruction.weighing-corrected.v1", "CorrectWeighing", request.Reason.Trim()), ct) ?? throw Error(404, "not_found");
-            var response = View(result.Instruction.Instruction, sources, null, false, envelope.CorrelationId);
+            await using var stock = await InventoryAsync(scope, ct);
+            var labels = await LabelsAsync(stock, sources.Values, ct);
+            var response = await ViewWithReservationsAsync(result.Instruction.Instruction, sources, labels, false, envelope.CorrelationId, ct);
             await store.CompleteSubcontractResultAsync(envelope, hash, LogisticsCommands.CorrectWeighingV1, response, ct); return response;
         }, token);
     }

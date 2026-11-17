@@ -14,6 +14,8 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyOutcome } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './LogisticsPages.module.css'
+import { PlanExcessUseEditor, planExcessUsePayload } from './PlanExcessUseEditor'
+import type { PlanExcessUse } from './planExcessApi'
 
 interface Props {
   readonly shell: ShellState
@@ -128,6 +130,7 @@ function ShipmentForm(props: LineProps) {
       instructionId: detail.instruction.id, idempotencyKey: snapshot.key }))
   const [allocationId, setAllocationId] = useState(attempt.initialPayload?.allocationId ?? '')
   const [quantity, setQuantity] = useState(attempt.initialPayload?.quantity ?? '')
+  const [planExcessUses, setPlanExcessUses] = useState<readonly PlanExcessUse[]>(attempt.initialPayload?.planExcessUses ?? [])
   const [error, setError] = useState(false)
   const allocations = query.data?.type === 'ok-single' ? query.data.data.items.filter((item) => item.status === 'Active') : []
   const chosen = allocations.find((item) => item.allocationId === allocationId)
@@ -136,13 +139,16 @@ function ShipmentForm(props: LineProps) {
   function submit(event: React.FormEvent) {
     event.preventDefault()
     const parsed = parseQuantityInput(quantity)
-    if (!active || chosen === undefined || !parsed.ok) { setError(true); return }
+    const exceptionSelection = planExcessUsePayload(planExcessUses)
+    if (!active || chosen === undefined || !parsed.ok || exceptionSelection === null) { setError(true); return }
     setError(false)
     const live = attempt.live?.payload
-    const payload = live !== undefined && live.allocationId === allocationId && live.quantity === parsed.value ? live : {
+    const payload = live !== undefined && live.allocationId === allocationId && live.quantity === parsed.value
+      && JSON.stringify(live.planExcessUses ?? []) === JSON.stringify(exceptionSelection.planExcessUses ?? []) ? live : {
       expectedVersion: detail.instruction.version, shipmentId: generateClientId(), allocationId,
       expectedAllocationVersion: chosen.allocationVersion, expectedLabelVersion: chosen.labelVersion,
       movementId: generateClientId(), quantity: parsed.value, occurredAtUtc: new Date().toISOString(),
+      ...exceptionSelection,
     }
     attempt.submit(payload)
   }
@@ -170,6 +176,7 @@ function ShipmentForm(props: LineProps) {
           <input id={`${id}-quantity`} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} aria-invalid={error || undefined} />
         </div>
         {error ? <p role="alert">{T.invalid}</p> : null}
+        <PlanExcessUseEditor instructionId={detail.instruction.id} lineId={line.lineId} purpose="ship" value={planExcessUses} onChange={setPlanExcessUses} disabled={!active || attempt.frozen} />
         <button className={styles.primaryButton} type="submit" disabled={chosen === undefined} data-testid={`${id}-submit`}>{T.shipment}</button>
       </fieldset>
     </form>

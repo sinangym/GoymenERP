@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
@@ -21,13 +22,26 @@ internal sealed class LogisticsRealizationTransactionRunner(
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(companyId, operation, beforeCommit, cancellationToken);
 
-    public async Task<T> ExecuteDeliveryAsync<T>(Guid companyId,
+    public Task<T> ExecutePlanExcessShipmentAsync<T>(Guid companyId,
+        Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(companyId, operation, beforeCommit, cancellationToken, serializable: true);
+
+    public Task<T> ExecutePlanExcessAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        ExecuteDeliveryCoreAsync(companyId, operation, beforeCommit, cancellationToken, serializable: true);
+
+    public Task<T> ExecuteDeliveryAsync<T>(Guid companyId,
+        Func<CancellationToken, Task<T>> operation, Func<CancellationToken, Task> beforeCommit,
+        CancellationToken cancellationToken = default) => ExecuteDeliveryCoreAsync(companyId, operation, beforeCommit, cancellationToken, serializable: false);
+
+    private async Task<T> ExecuteDeliveryCoreAsync<T>(Guid companyId,
         Func<CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken, bool serializable)
     {
         Require(companyId, operation, beforeCommit);
-        await using var transaction = await logistics.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await logistics.Database.BeginTransactionAsync(serializable ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
             var result = await operation(cancellationToken);
@@ -37,8 +51,9 @@ internal sealed class LogisticsRealizationTransactionRunner(
         }
         catch
         {
-            await RollBackAsync(transaction, cancellationToken);
+            var rolledBack = await RollBackAsync(transaction, CancellationToken.None);
             logistics.ChangeTracker.Clear();
+            if (!rolledBack && serializable) throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
             throw;
         }
     }
@@ -46,10 +61,10 @@ internal sealed class LogisticsRealizationTransactionRunner(
     private async Task<T> ExecuteAsync<T>(Guid companyId,
         Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool serializable = false)
     {
         Require(companyId, operation, beforeCommit);
-        await using var transaction = await logistics.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await logistics.Database.BeginTransactionAsync(serializable ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted, cancellationToken);
         await using var stock = new ShipmentStock(
             logistics.Database.GetDbConnection(),
             transaction.GetDbTransaction(),

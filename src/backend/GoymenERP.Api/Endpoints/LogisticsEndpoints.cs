@@ -21,7 +21,7 @@ namespace GoymenERP.Api.Endpoints;
 /// the same headers (§7). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>;
 /// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery use the line-scoped routes mapped below (D3, LOG-5).
 /// </summary>
-public static class LogisticsEndpoints
+public static partial class LogisticsEndpoints
 {
     public const string InstructionsPath = LogisticsApiV1.InstructionsPath;
     private const string IdempotencyHeaderName = LogisticsApiV1.IdempotencyHeader;
