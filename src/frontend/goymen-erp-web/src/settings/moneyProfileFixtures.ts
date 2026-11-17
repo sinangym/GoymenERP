@@ -9,3 +9,14 @@ export function moneyProfileFixture() {
       decisionReference: 'SENTETIK', recordedBy: null, recordedAtUtc: null, reason: null }],
   }] }
 }
+
+/** SENTETIK current owner response: independent transfer is unconfigured, not seeded. */
+export function cashTransferProfileFixture() {
+  const fixture = moneyProfileFixture()
+  const base = fixture.profiles[0]
+  const source = { ...base, operation: 'finance.manual-bank-payment.v1', versions: [{ ...base.versions[0],
+    scale: 4, unitPriceScale: 7, isActive: false, sourceKind: 'UserMaintained', decisionReference: null,
+    recordedBy: 'SENTETIK-profile-author', recordedAtUtc: '2026-11-15T08:00:00+00:00', reason: 'SENTETIK source' }] }
+  const target = { ...base, operation: 'finance.cash-transfer.v1', version: '0', versions: [] }
+  return { ...fixture, profiles: [source, target] }
+}

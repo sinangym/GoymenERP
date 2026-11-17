@@ -11,6 +11,7 @@ import { fetchMoneyProfiles, recordMoneyProfile } from './moneyProfileApi'
 import { type MoneyProfileSeries, type MoneyProfileView, type RecordMoneyProfileBody } from './moneyProfileContract'
 import { MONEY_PROFILE_TEXT as T, moneyOperationLabel } from './moneyProfileText'
 import { useCommandAttempt } from './useCommandAttempt'
+import { cashTransferProfileSuggestion, isFirstCashTransferProfile, type CashTransferProfileSuggestion } from './cashTransferProfileSuggestion'
 import styles from './settings.module.css'
 
 export function MoneyProfilePage() {
@@ -47,13 +48,16 @@ function Profiles({ data, company, changed }: { readonly data: MoneyProfileView;
         </tr></thead><tbody>{profile.versions.map((entry) => <tr key={entry.version}>
           <td>{entry.version}</td><td>{entry.scale}</td><td>{entry.unitPriceScale ?? T.undefined}</td><td>{entry.isActive ? T.yes : T.no}</td><MetaCells entry={entry} />
         </tr>)}</tbody></table>
-        {editing === key ? <Editor profile={profile} today={data.today} company={company} finish={(text) => { setEditing(null); setNotice(text); if (text !== null) changed() }} />
+        {editing === key ? <Editor profile={profile} today={data.today} company={company}
+          suggestion={cashTransferProfileSuggestion(data, company, profile)}
+          finish={(text) => { setEditing(null); setNotice(text); if (text !== null) changed() }} />
           : <Button type="button" disabled={editing !== null} onClick={() => setEditing(key)}>{profile.version === '0' ? T.create : T.edit}</Button>}
       </section>
     })}</section>
 }
 
-function Editor({ profile, today, company, finish }: { readonly profile: MoneyProfileSeries; readonly today: string; readonly company: string; readonly finish: (text: string | null) => void }) {
+function Editor({ profile, today, company, suggestion, finish }: { readonly profile: MoneyProfileSeries; readonly today: string;
+  readonly company: string; readonly suggestion: CashTransferProfileSuggestion | null; readonly finish: (text: string | null) => void }) {
   const current = profile.versions.find((entry) => entry.state === 'InForce') ?? null
   const [scaleText, setScale] = useState(current === null ? '' : String(current.scale))
   const [priceText, setPrice] = useState(current?.unitPriceScale === null || current === null ? '' : String(current.unitPriceScale))
@@ -63,6 +67,7 @@ function Editor({ profile, today, company, finish }: { readonly profile: MoneyPr
   const attempt = useCommandAttempt<true>()
   const boundary = useAuthBoundary()
   const [frozen, setFrozen] = useState<RecordMoneyProfileBody | null>(null)
+  const [suggestionApplied, setSuggestionApplied] = useState(false)
   const parse = (value: string) => /^(0|[1-9]\d?)$/.test(value) && Number(value) <= 28 ? Number(value) : null
   const scale = parse(scaleText)
   const price = priceText === '' ? null : parse(priceText)
@@ -82,6 +87,29 @@ function Editor({ profile, today, company, finish }: { readonly profile: MoneyPr
     if (result.status === 409 && result.code === 'settings_money_profile_version_conflict') finish(T.conflict)
   }
   return <form className={styles.form} onSubmit={(event) => void submit(event)} aria-busy={pending}>
+    {isFirstCashTransferProfile(profile) && <section aria-label={T.initialSuggestion} className={styles.notice}>
+      <h3>{T.initialSuggestion}</h3>
+      <p>{T.initialSuggestionHelp}</p>
+      {suggestion === null ? <p role="status">{T.initialSuggestionUnavailable}</p> : <>
+        <dl>
+          <div><dt>{T.sourceCompany}</dt><dd>{suggestion.companyId}</dd></div>
+          <div><dt>{T.sourceOperation}</dt><dd>{suggestion.currencyCode} · {moneyOperationLabel(suggestion.operation)}</dd></div>
+          <div><dt>{T.sourceProfile}</dt><dd>{suggestion.source.profileId}</dd></div>
+          <div><dt>{T.version}</dt><dd>{suggestion.source.version}</dd></div>
+          <div><dt>{T.scale}</dt><dd>{suggestion.source.scale}</dd></div>
+          <div><dt>{T.priceScale}</dt><dd>{suggestion.source.unitPriceScale ?? T.undefined}</dd></div>
+          <div><dt>{T.active}</dt><dd>{suggestion.source.isActive ? T.yes : T.no}</dd></div>
+        </dl>
+        <Button type="button" disabled={pending || frozen !== null} onClick={() => {
+          if (pending || frozen !== null) return
+          setScale(String(suggestion.source.scale))
+          setPrice(suggestion.source.unitPriceScale === null ? '' : String(suggestion.source.unitPriceScale))
+          setActive(suggestion.source.isActive)
+          setSuggestionApplied(true)
+        }}>{T.useInitialSuggestion}</Button>
+        {suggestionApplied && <p role="status">{T.initialSuggestionApplied}</p>}
+      </>}
+    </section>}
     <Field label={T.scale}>{(control) => <input {...control} inputMode="numeric" value={scaleText} disabled={pending || frozen !== null} onChange={(event) => setScale(event.target.value)} />}</Field>
     <Field label={T.priceScale}>{(control) => <input {...control} inputMode="numeric" value={priceText} disabled={pending || frozen !== null} onChange={(event) => setPrice(event.target.value)} />}</Field>
     <Field label={T.active}>{(control) => <input {...control} type="checkbox" checked={active} disabled={pending || frozen !== null} onChange={(event) => setActive(event.target.checked)} />}</Field>

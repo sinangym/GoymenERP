@@ -1,4 +1,6 @@
 using GoymenERP.Api.Shell;
+using GoymenERP.Api.AccountingRuntime;
+using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Finance.Contracts;
@@ -35,6 +37,19 @@ public sealed class TrainInvoiceOutboxCompositionTests
         Assert.Equal(typeof(AccountingSalesInvoiceFinalizedInboxConsumer), consumer.ImplementationType);
         foreach (var subscription in consumer.Subscriptions)
             Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        var accountingCosts = Assert.Single(registry.Consumers,
+            item => item.ConsumerName == AccountingInventoryCostInboxV1.ConsumerName);
+        Assert.Equal(typeof(AccountingInventoryCostInboxConsumerV1), accountingCosts.ImplementationType);
+        Assert.Equal(2, accountingCosts.Subscriptions.Count);
+        foreach (var subscription in accountingCosts.Subscriptions)
+        {
+            var owner = Assert.Single(registry.Sources, item => item.SourceName == subscription.SourceName);
+            Assert.Contains(owner.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        }
+        Assert.Equal(typeof(AccountingInventoryCostSourceReaderV1),
+            Assert.Single(services, item => item.ServiceType == typeof(IAccountingInventoryCostSourceReaderV1)).ImplementationType);
+        Assert.Equal(typeof(AccountingInventoryCostStoreV1),
+            Assert.Single(services, item => item.ServiceType == typeof(IAccountingInventoryCostStoreV1)).ImplementationType);
         var purchaseCostConsumer = Assert.Single(registry.Consumers,
             item => item.ConsumerName == InventoryPurchaseInvoiceCostInboxV1.ConsumerName);
         Assert.Equal(typeof(InventoryPurchaseInvoiceCostInboxConsumerV1), purchaseCostConsumer.ImplementationType);

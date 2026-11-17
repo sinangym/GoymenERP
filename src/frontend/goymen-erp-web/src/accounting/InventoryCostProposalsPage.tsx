@@ -24,7 +24,9 @@ export function InventoryCostProposalsPage(props: Props) {
 function Page({ kind, canPrepare, canApprove, canProposeReversal, namespace }: Props & { readonly namespace: string | null }) {
   const shell = useShellState(); const boundary = useAuthBoundary(); const actor = shell.activeContext?.userId ?? ''
   const company = shell.activeContext?.companyId ?? ''; const single = namespace !== null && company !== '' && shell.activeContext?.scopeMode === 'single'
-  const slot = `${namespace}:${kind}`; const held = pending.get(slot) ?? null
+  // Authority/cache generations may change while a command's outcome is unknown. Keep its immutable retry
+  // identity within this session, actor and company; the query namespace still fences every fresh read.
+  const slot = JSON.stringify([shell.sessionEpoch, actor, company, kind]); const held = pending.get(slot) ?? null
   const [selected, setSelected] = useState<string | null>(held?.id ?? null)
   const [attempt, setAttempt] = useState<InventoryCostAttempt | null>(held)
   const [outcome, setOutcome] = useState<InventoryCostOutcome | null>(held ? { type: 'unknown' } : null)

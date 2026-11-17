@@ -631,6 +631,7 @@ app.MapAccountingEndpoints();
 app.MapAccountingSourceVouchersV1();
 app.MapAccountingInvoiceLineCogsEndpoints();
 app.MapAccountingPostingMappingWorkspaceV1();
+app.MapAccountingInventoryCostsV1();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
 app.MapDocumentBrandingEndpoints();
