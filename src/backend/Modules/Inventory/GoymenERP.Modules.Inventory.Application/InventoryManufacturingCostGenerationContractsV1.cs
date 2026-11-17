@@ -46,12 +46,16 @@ public sealed record InventoryManufacturingCostGenerationOutputResultV1(Guid Out
     decimal? TlUnitCostPerKg, decimal? RemainingTlValue, decimal? ConsumedTlDifference,
     decimal? UsdUnitCostPerKg, IReadOnlyList<InventoryManufacturingCostPositionEffectV1> Positions,
     decimal? OriginalTlAmount = null, IReadOnlyList<InventoryManufacturingCostPoolEffectV1>? PoolEffects = null,
-    InventoryExactCostRatioV1? RemainingQuantityKgRatio = null, InventoryExactCostRatioV1? ConsumedQuantityKgRatio = null);
+    InventoryExactCostRatioV1? RemainingQuantityKgRatio = null, InventoryExactCostRatioV1? ConsumedQuantityKgRatio = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventoryManufacturingConsumedCostLineageV1? ConsumedCostLineage = null);
 
 public sealed record InventoryManufacturingCostGenerationResultV1(Guid CompanyId, Guid ManufacturingOrderId,
     Guid GenerationId, string GenerationVersion, string ClosedOrderVersion, InventoryManufacturingCostGenerationStateV1 State,
     string InputFingerprint, IReadOnlyList<InventoryManufacturingCostGenerationOutputResultV1> Outputs,
-    Guid? CostDifferenceEventId, bool IsReplay, string OriginalCorrelationId);
+    Guid? CostDifferenceEventId, bool IsReplay, string OriginalCorrelationId,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    InventoryManufacturingConsumedCostLineageReferenceV1? ConsumedLineageReference = null);
 
 /// <summary>
 /// Single-use Inventory participant enlisted in Manufacturing's existing open DbConnection/DbTransaction. Inventory writes

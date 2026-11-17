@@ -23,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// and the guarded rollback (51221). The invoice is built by the domain from SYNTHETIC shares: it proves the store and the schema,
 /// not any owner's rule. Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesInvoiceSqlServerRelationalAcceptanceTests
+public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

@@ -230,9 +230,19 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             if (output.TlAmount is not null) await AddRecognitionAsync(SettingsCurrencyIdentitiesV1.TurkishLira, output.TlUnitCostPerKg!.Value);
             if (output.UsdUnitCostPerKg is > 0m) await AddRecognitionAsync(ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"), output.UsdUnitCostPerKg.Value);
         }
+        var consumedLineage = InventoryManufacturingConsumedCostLineageEvidenceV1.Create(company.CompanyId, output.OutputId,
+            output.ReceiptMovementId, output.LabelId, output.NetQuantityKg, Ratio(lineage.NetShippedKg),
+            Array.AsReadOnly(lineage.Shipments.Select(shipment => new InventoryManufacturingConsumedCostShipmentV1(
+                shipment.ShipmentId, shipment.MovementId, shipment.LineNumber, shipment.LoadingInstructionLineId,
+                shipment.LabelId, shipment.ProductId, shipment.ProductVersion, shipment.Owner.Kind, shipment.Owner.Id,
+                shipment.Custodian.Kind, shipment.Custodian.Id, shipment.LocationId, shipment.Block, shipment.QuantityKg,
+                Ratio(shipment.RootShare), Ratio(shipment.NetRootQuantityKg), Array.AsReadOnly(shipment.Returns.Select(item =>
+                    new InventoryManufacturingConsumedCostReturnV1(item.ReturnId, item.MovementId, item.LineNumber,
+                        item.SourceIssueMovementId, item.QuantityKg, item.RecordedAtUtc)).ToArray()), shipment.RecordedAtUtc)).ToArray()));
         return new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg, Scalar(remaining), Scalar(consumed),
             recognized ? output.TlUnitCostPerKg : null, sign * remainingTl, sign * consumedTl,
-            recognized ? output.UsdUnitCostPerKg : null, positions, recognized ? output.TlAmount : null, poolEffects, Ratio(remaining), Ratio(consumed));
+            recognized ? output.UsdUnitCostPerKg : null, positions, recognized ? output.TlAmount : null, poolEffects, Ratio(remaining), Ratio(consumed),
+            consumedLineage);
 
         async Task AddRecognitionAsync(Guid currency, decimal unit)
         {
@@ -361,7 +371,8 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         if (result.CostDifferenceEventId is { } eventId)
             db.OutboxMessages.Add(new() { CompanyId = company.CompanyId, Id = eventId, EventType = DifferenceEvent, SchemaVersion = 1,
                 SourceOperation = operation, AggregateType = "Inventory.ManufacturingCostGeneration", AggregateId = row.Id,
-                AggregateVersion = row.Version, Sequence = row.Version, PayloadJson = json, OccurredAtUtc = occurredAt,
+                AggregateVersion = row.Version, Sequence = row.Version,
+                PayloadJson = JsonSerializer.Serialize(InventoryManufacturingConsumedCostLineageEvidenceV1.ForOutbox(result, json), Json), OccurredAtUtc = occurredAt,
                 CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, RecordedAtUtc = clock.GetUtcNow() });
         try { await db.SaveChangesAsync(token); await auditWriter.WritePendingAsync(transaction, token); }
         catch (DbUpdateConcurrencyException) { throw Error(409, "inventory_manufacturing_cost_version_conflict"); }

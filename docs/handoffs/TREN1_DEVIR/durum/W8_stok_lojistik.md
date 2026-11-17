@@ -447,3 +447,43 @@
   sonrası final build exit0'dır. Üretim kaynağı değişmediğinden başarılı API derlemesi tekrar edilmedi. Yeni paket/sürüm/
   lock değişimi yok; her süreç öncesi ≥2GiB kapısı ölçüldü, native exit/ilk hata/ham loglar depodışında korundu.
   **DONE — bu dar owner read kaynak kapsamı**; ilk SMM finansal producer veya uçtan uca kabul iddiası değildir.
+
+### STK-SC36-a — üretim maliyet neslinde değişmez sevk tüketim izi
+
+- URT-D67, SAT-D419/D422 ve doğrudan kullanıcı cevabı #1189/6956807403 için dar teknik kaynak tamamlandı.
+  Mevcut generation transaction'ı ve `FenceLineageAsync` çiti altında gerçek çıkış hareketi/satırı, shipment kimliği,
+  loading-instruction-line, etiket/ürün/sürüm, owner/custodian/konum/blok, özgün kg, tam kök payı, net kök kg ve o çıkışa
+  gerçekten bağlı müşteri dönüş hareketleri/kimlikleri immutable generation history JSON'una kaydedilir. Tam iade edilmiş
+  sevk sıfır net payıyla geçmişte kalır; daha sonraki gerçek dönüş kaydedilmiş neslin geçmişini yeniden yazmaz.
+- Yeni `IInventoryManufacturingConsumedCostLineageReadPortV1.ReadAsync(companyId, generationId, generationVersion)`
+  gerçek scoped Inventory provider'ına bağlıdır. Tek canonical pozitif nesil sürümü okunur; şirket her await sonrasında
+  tekrar ölçülür. Kayıtlı history/başlık/output-set ve varsa gerçek event envelope/reference bütünlüğü doğrulanır.
+  `Available`, `NotFound`, `Unreadable` ve `UnreadableLegacy` ayrıdır. Eski JSON'da iz bulunmaması bugünkü material
+  graph'ı, sıfır liste veya güncel ortalama ile doldurulmaz. Consumer'ın aktör/şirket/izin ve gerçek Sales/Logistics/
+  Accounting admission çiti ayrıca zorunludur; bu internal port maliyet veya fiş yetkisi vermez.
+- Kaynak sürümü `inventory.manufacturing-consumed-cost-lineage.v1`'dir. Her output kanıtının hash'i gerçek şirket,
+  output/receipt/root kimlikleri ve tam fiziksel snapshot'ı bağlar. Outbox mevcut parasal alanları korur; büyük fiziksel
+  listeyi aynı transaction'da yazılan history JSON'unun generation/version/SHA-256 referansıyla taşır. Mevcut movement
+  bound'u genişletilmez; yeni fiziksel iş sınırı konmaz. 4096 gerçekçi kanıt satırının büyük history/küçük event referansı
+  sözleşme kaynağında kapsanır. Null ekler eski JSON'da yazılmaz; mevcut request hash'i ve replay biçimi korunur.
+- `RecordedAtUtc` doğrudan gerçek immutable hareketten gelir. Sonradan eklenmiş outbox rowversion'ı ilk oluşturulma
+  sırası diye sunulmaz; `CreationSequence` bu sürümde null'dır. Tam eşit kayıt zamanında önce kaydedilen sevk kanıtı
+  bulunmadığından o eşitlik çözümlenmemiş kalır; GUID sırası işletme kuralı değildir. Parasal pay/yuvarlama/artık,
+  ikinci SMM fişi, Accounting journal veya geçmiş orijinal TL damgası bu değişiklikte hesaplanmaz/değiştirilmez.
+- Yedi sözleşme test metodu (12 case), mevcut tam-pay/1÷3/dönüş model kaynakları ve altı gerçek SQL fact kaynağı
+  eklendi: aynı-TX rollback/commit+outbox bağı; sonraki gerçek dönüşte geçmişin korunması; önceki gerçek dönüşün
+  sıfır net izde kalması; bozuk/legacy history'de güncel graph fallback yasağı; başka şirket/SQL await sonrası scope
+  kaybı; immutable outbox update yasağı ve bozuk event bağı. SQL veri bozma ve scope kaybı fault'ları sentetiktir;
+  asıl hareket, generation participant, history/outbox ve transaction gerçektir. Bütün runtime unit/SQL/HTTP/Vitest/
+  browser/CI **NOT_RUN**; kaynak derlemesi test çalıştırması değildir.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:38,67; Inventory.UnitTests 6,69sn; Api.IntegrationTests
+  44,77sn. İlk Integration denemesi test fixture'ında overload tür belirsizliği CS0121/exit1 verdi; yalnız açık
+  `InventoryCustomerReturnRequestV1` tipiyle düzeltilip tekrar derlendi. Başarılı üretim kaynakları gereksiz tekrar
+  derlenmedi. Her native süreç öncesi >=2GiB RAM ölçüldü; ilk hata, exit kodları ve ham loglar depodışında korundu.
+  Yeni paket/restore/model/migration/EF/DB apply, başka modül tablo okuması, ham SQL üretim yüzeyi veya allowlist yok.
+- **SOURCE_COMPLETE — yalnız bu dar immutable lineage owner kapsamı.** Finansal consumer eşlemesi ve canonical
+  generation discovery koordinatörde/Accounting owner'ındadır: gerçek event/proposal kimliğiyle okunan nesilden kendi
+  indexed attribution kaydını üretmek uygundur; shipment'tan sınırsız history JSON taraması bu portta yoktur. Merkezi
+  ilişkisel fact envanteri/grup/pin üretimi, birleşik exact-head doğrulama ve K3 kabulü koordinatörde kalır. Altı fact
+  `InventorySqlServerRelationalAcceptanceTests.ManufacturingConsumedLineage` partial kaynak dosyasındadır; enclosing
+  SC36-a veya uçtan uca SMM akışı bu dar tamamlamayla DONE sayılmaz.

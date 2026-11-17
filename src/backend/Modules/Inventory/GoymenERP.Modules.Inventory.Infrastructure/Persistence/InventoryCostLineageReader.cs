@@ -13,6 +13,14 @@ internal enum InventoryCostLineageOutcome { Value = 1, NotFound = 2, Unreadable 
 internal sealed record InventoryCostLineagePositionSnapshot(
     StockOwner Owner, StockCustodian Custodian, Guid LocationId, BlockState Block, decimal QuantityKg);
 
+internal sealed record InventoryCostLineageReturnSnapshot(Guid ReturnId, Guid MovementId, int LineNumber,
+    Guid SourceIssueMovementId, decimal QuantityKg, DateTimeOffset RecordedAtUtc);
+
+internal sealed record InventoryCostLineageShipmentSnapshot(Guid ShipmentId, Guid MovementId, int LineNumber,
+    Guid LoadingInstructionLineId, Guid LabelId, Guid ProductId, string ProductVersion, StockOwner Owner,
+    StockCustodian Custodian, Guid LocationId, BlockState Block, decimal QuantityKg, ExactCostRatio RootShare,
+    ExactCostRatio NetRootQuantityKg, IReadOnlyList<InventoryCostLineageReturnSnapshot> Returns, DateTimeOffset RecordedAtUtc);
+
 internal sealed class InventoryCostLineageLabelSnapshot
 {
     internal InventoryCostLineageLabelSnapshot(Guid labelId, long version, string productVersion, ExactCostRatio rootShare,
@@ -36,7 +44,7 @@ internal sealed class InventoryCostLineageSnapshot
 {
     internal InventoryCostLineageSnapshot(InventoryCostLineageOutcome outcome, Guid companyId, Guid productId, Guid rootLabelId,
         IEnumerable<InventoryCostLineageLabelSnapshot> labels, ExactCostRatio? remainingKg, ExactCostRatio? shippedKg,
-        ExactCostRatio? customerReturnedKg, string? reason)
+        ExactCostRatio? customerReturnedKg, string? reason, IEnumerable<InventoryCostLineageShipmentSnapshot>? shipments = null)
     {
         Outcome = outcome;
         CompanyId = companyId;
@@ -47,6 +55,7 @@ internal sealed class InventoryCostLineageSnapshot
         ShippedKg = shippedKg;
         CustomerReturnedKg = customerReturnedKg;
         Reason = reason;
+        Shipments = Array.AsReadOnly((shipments ?? []).ToArray());
     }
 
     public InventoryCostLineageOutcome Outcome { get; }
@@ -60,6 +69,7 @@ internal sealed class InventoryCostLineageSnapshot
     public ExactCostRatio? NetShippedKg => ShippedKg is not null && CustomerReturnedKg is not null
         ? ShippedKg.Subtract(CustomerReturnedKg) : null;
     public string? Reason { get; }
+    public IReadOnlyList<InventoryCostLineageShipmentSnapshot> Shipments { get; }
 }
 
 /// <summary>
@@ -70,7 +80,7 @@ internal sealed class InventoryCostLineageSnapshot
 /// </summary>
 internal static class InventoryCostLineageReader
 {
-    internal const int MaximumMovementLines = 65536;
+    internal const int MaximumMovementLines = InventoryManufacturingConsumedCostLineageEvidenceV1.MaximumMovementLines;
     internal const int MaximumBalanceRows = 65536;
     private const int QueryBatchSize = 256;
     internal const string UnreadableReason = "inventory_cost_lineage_source_unreadable";
@@ -207,7 +217,7 @@ internal static class InventoryCostLineageReader
             {
                 var found = await context.Movements.AsNoTracking().Where(row => row.CompanyId == companyId && batch.Contains(row.Id))
                     .Select(row => new InventoryCostLineageMovementFact(row.CompanyId, row.Id, row.Kind, row.SourceKind,
-                        row.SourceId, row.SourceLineId, row.SourceGrain)).Take(batch.Length + 1).ToListAsync(cancellationToken);
+                        row.SourceId, row.SourceLineId, row.SourceGrain, row.RecordedAtUtc)).Take(batch.Length + 1).ToListAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (found.Count != batch.Length) return Failed(InventoryCostLineageOutcome.Unreadable, companyId, productId, rootLabelId);
                 movements.AddRange(found);
@@ -376,7 +386,27 @@ internal static class InventoryCostLineageReader
                     .ThenBy(row => row.Custodian.Kind).ThenBy(row => row.Custodian.Id).ThenBy(row => row.Block)));
         }
         if (shippedKg.Subtract(returnedKg).Sign < 0) return Fault();
-        return new(InventoryCostLineageOutcome.Value, companyId, productId, rootLabelId, snapshots, remainingKg, shippedKg, returnedKg, null);
+        // Keep every actual positive-share issue, including fully returned ones. These are physical source facts,
+        // not an allocation of the generation's rounded consumed TL amount to a shipment or invoice.
+        var shipmentSnapshots = shipments.Values.OrderBy(row => row.MovementId).ThenBy(row => row.LineNumber)
+            .Where(row => coefficients.TryGetValue(row.LabelId, out var share) && share.Sign > 0)
+            .Select(issue =>
+            {
+                var movement = movements[issue.MovementId];
+                var share = coefficients[issue.LabelId];
+                var returned = returnedByIssue.GetValueOrDefault(issue.MovementId) ?? ExactCostRatio.Of(0m);
+                var returnSnapshots = returns.Where(row => movements[row.MovementId].SourceId == issue.MovementId)
+                    .OrderBy(row => row.MovementId).ThenBy(row => row.LineNumber)
+                    .Select(row => new InventoryCostLineageReturnSnapshot(movements[row.MovementId].SourceLineId!.Value,
+                        row.MovementId, row.LineNumber, issue.MovementId, row.QuantityKg, movements[row.MovementId].RecordedAtUtc)).ToArray();
+                return new InventoryCostLineageShipmentSnapshot(movement.SourceId, issue.MovementId, issue.LineNumber,
+                    movement.SourceLineId!.Value, issue.LabelId, issue.ProductId, labels[issue.LabelId].ProductVersion!,
+                    new((StockPartyKind)issue.OwnerKind, issue.OwnerId), new((StockPartyKind)issue.CustodianKind, issue.CustodianId),
+                    issue.LocationId, (BlockState)issue.Block, issue.QuantityKg, share,
+                    ExactCostRatio.Of(issue.QuantityKg).Subtract(returned).Multiply(share), Array.AsReadOnly(returnSnapshots), movement.RecordedAtUtc);
+            }).ToArray();
+        return new(InventoryCostLineageOutcome.Value, companyId, productId, rootLabelId, snapshots, remainingKg, shippedKg, returnedKg,
+            null, shipmentSnapshots);
     }
 
     private static bool Consecutive(InventoryCostLineageEdgeFact[] edges) =>
@@ -408,7 +438,8 @@ internal static class InventoryCostLineageReader
 internal sealed record InventoryCostLineageLabelFact(Guid CompanyId, Guid LabelId, Guid ProductId, string? ProductVersion, long Version);
 internal sealed record InventoryCostLineageTransformationFact(Guid CompanyId, Guid TransformationId, int Kind);
 internal sealed record InventoryCostLineageEdgeFact(Guid CompanyId, Guid TransformationId, int Sequence, Guid LabelId, long LabelVersion, decimal QuantityKg);
-internal sealed record InventoryCostLineageMovementFact(Guid CompanyId, Guid MovementId, int Kind, string SourceKind, Guid SourceId, Guid? SourceLineId, int SourceGrain);
+internal sealed record InventoryCostLineageMovementFact(Guid CompanyId, Guid MovementId, int Kind, string SourceKind,
+    Guid SourceId, Guid? SourceLineId, int SourceGrain, DateTimeOffset RecordedAtUtc = default);
 internal sealed record InventoryCostLineageMovementLineFact(Guid CompanyId, Guid MovementId, int LineNumber, Guid LabelId, Guid ProductId,
     int Direction, int OwnerKind, Guid OwnerId, int CustodianKind, Guid CustodianId, Guid LocationId, int Block, decimal QuantityKg);
 internal sealed record InventoryCostLineageBalanceFact(Guid CompanyId, Guid LabelId, Guid ProductId, int OwnerKind, Guid OwnerId,

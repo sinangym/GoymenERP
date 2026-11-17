@@ -15,6 +15,16 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class AccountingInventoryCostSourceReaderTests
 {
     [Fact]
+    public async Task Original_commercial_revision_zero_is_valid_while_missing_frozen_source_remains_unavailable()
+    {
+        var f = new Fixture();
+        var originalRevision = f.Line with { ShipmentSource = f.Line.ShipmentSource! with { PriceBasisRevision = 0 } };
+        Assert.Single((await f.Reader.ReadAsync(f.Envelope([originalRevision]))).Components);
+        Assert.Equal("sales_cost_shipment_source_missing", (await Assert.ThrowsAsync<AccountingInvoiceJournalRetryException>(
+            () => f.Reader.ReadAsync(f.Envelope([f.Line with { ShipmentSource = null }])))).Reason);
+    }
+
+    [Fact]
     public async Task Initial_cogs_uses_the_whole_physical_stamp_and_never_scales_by_commercial_invoice_kg_or_revision()
     {
         var f = new Fixture();
