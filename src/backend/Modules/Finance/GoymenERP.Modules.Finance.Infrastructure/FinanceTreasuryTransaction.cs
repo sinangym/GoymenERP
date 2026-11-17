@@ -16,7 +16,15 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </summary>
 internal static class FinanceTreasuryTransaction
 {
-    private static readonly ConditionalWeakTable<FinanceDbContext, object> ActiveAttempts = new();
+    private sealed class Attempt { internal bool NumberReservationAttempted; }
+    private static readonly ConditionalWeakTable<FinanceDbContext, Attempt> ActiveAttempts = new();
+
+    internal static void MarkNumberReservation(FinanceDbContext dbContext)
+    {
+        if (!ActiveAttempts.TryGetValue(dbContext, out var attempt))
+            throw new InvalidOperationException("Belge numarası yalnız aktif kayıt işlemi içinde ayrılır.");
+        attempt.NumberReservationAttempted = true;
+    }
 
     // The marker survives a provider aborting/disconnecting the DbTransaction. Save helpers must
     // rethrow before a legacy conflict/replay conversion can hide a partially executed SQL save.
@@ -24,12 +32,12 @@ internal static class FinanceTreasuryTransaction
 
     internal static async Task<T> ExecuteAsync<T>(
         FinanceDbContext dbContext, Func<Task<T>> operation, Func<Task<T>> unavailable,
-        IAuditTransactionWriterV1? auditOwner, CancellationToken cancellationToken)
+        IAuditTransactionWriterV1? auditOwner, CancellationToken cancellationToken, Func<T, bool>? successful = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (dbContext.ChangeTracker.HasChanges() || auditOwner is { HasPendingDrafts: true })
             return await unavailable();
-        var attempt = new object();
+        var attempt = new Attempt();
         if (!ReferenceEquals(ActiveAttempts.GetValue(dbContext, _ => attempt), attempt)) return await unavailable();
         IDbContextTransaction? transaction = null;
         var ownsTransaction = false;
@@ -57,6 +65,14 @@ internal static class FinanceTreasuryTransaction
 
             operationStarted = true;
             var result = await operation();
+            // Settings can already have flushed its reservation/audit to this SAME transaction.
+            // A subsequent denial or unavailable result must not commit a consumed number alone.
+            if (attempt.NumberReservationAttempted && successful?.Invoke(result) != true)
+            {
+                await RollbackAsync();
+                completed = true;
+                return result;
+            }
             if (ownsTransaction) await transaction!.CommitAsync(cancellationToken);
             completed = true;
             return result;

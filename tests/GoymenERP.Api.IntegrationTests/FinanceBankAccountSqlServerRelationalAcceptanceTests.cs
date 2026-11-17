@@ -678,7 +678,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             // The draft service reads bank accounts through the REAL persisted reader above.
             var drafts = new ReceiptDraftService(dbContext, companyContext, currentUser, permissions, accounts,
                 new SyntheticParty(company), new SyntheticSettings(company), collector, new FinanceReceiptDraftBinding(Operation),
-                new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System);
+                new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(dbContext, accounts, drafts, new FinanceContext(company, actor, Correlation, null));
         }
 

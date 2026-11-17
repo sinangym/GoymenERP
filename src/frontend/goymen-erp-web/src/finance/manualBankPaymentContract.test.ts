@@ -81,3 +81,17 @@ describe('manual bank payment v1 decoder', () => {
     expect(decodeManualBankPaymentView(recorded({ status: 'Approved', recordedBy: null }), COMPANY).ok).toBe(false)
   })
 })
+
+
+describe('Q7 actual recorded document number', () => {
+  it('accepts additive number proof and preserves a legacy missing proof without a fallback', () => {
+    expect(decodeManualBankPaymentView(recorded(), COMPANY).ok).toBe(true)
+    const number = { number: 'DEK-2026-000001', formatVersion: '9007199254740993' }
+    const decoded = decodeManualBankPaymentView(recorded({ documentNumber: number }), COMPANY)
+    expect(decoded.ok).toBe(true)
+    if (decoded.ok) expect(decoded.value.documentNumber).toEqual(number)
+    for (const bad of [null, { ...number, formatVersion: 1 }, { ...number, extra: true }])
+      expect(decodeManualBankPaymentView(recorded({ documentNumber: bad }), COMPANY).ok).toBe(false)
+    expect(decodeManualBankPaymentView(recorded({ companyId: '99999999-9999-4999-8999-999999999999', documentNumber: number }), COMPANY).ok).toBe(false)
+  })
+})

@@ -483,7 +483,7 @@ public sealed class CashTransferServiceTests
                 rate ?? new UnavailableCurrencyExchangeRateRule(), new SettingsPort(), period ?? new FixedPeriod(
                     RecordPeriodOutcome.Open), collector, new CashTransferBinding(operation),
                 new CashTransferAuditEnvelopes(Envelope(FinancePermissionNames.CashTransferCommit)),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(context, service,
                 new FinanceContext(Company, actor, $"fns-d24-{Guid.NewGuid():N}", null));
         }

@@ -69,7 +69,8 @@ public sealed record ExpensePaymentView(
     string? RecordedBy,
     DateTimeOffset? RecordedAtUtc,
     bool PaymentConfirmed,
-    string Version);
+    string Version,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] FinanceDocumentNumberV1? DocumentNumber = null);
 
 public sealed record ExpensePaymentPage(
     Guid CompanyId,

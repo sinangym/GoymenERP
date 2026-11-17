@@ -6,8 +6,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// the transaction rate; it is the single money fact of the transfer, so no separate outgoing and incoming movement is
 /// written. Append-only: a correction is a separate, later decision (never an update or a delete).
 /// </summary>
-internal sealed class CashTransferRow : IFinanceTenantRow
+internal sealed class CashTransferRow : IFinanceNumberedSource
 {
+    public string? DocumentNumber { get; set; }
+    public string? DocumentNumberFormatVersion { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public long Version { get; set; }

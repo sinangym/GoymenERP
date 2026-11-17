@@ -565,7 +565,7 @@ public sealed class PartyLedgerServiceTests
             var service = new ReceiptDraftService(context, companyContext, new User(actor, Company), new AllowAll(),
                 new BankReader(), new PartyPort(), new SettingsPort(), collector, new FinanceReceiptDraftBinding(Operation),
                 Envelope(FinancePermissionNames.DraftSave), TimeProvider.System, Envelope(FinancePermissionNames.Record),
-                new OpenPeriod());
+                new OpenPeriod(), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<IManualReceiptService>(context, service, Finance(Company, actor));
         }
 
@@ -589,7 +589,7 @@ public sealed class PartyLedgerServiceTests
                 new CustomerInstrumentAuditEnvelopes(Envelope(FinancePermissionNames.CustomerInstrumentReceive),
                     Envelope(FinancePermissionNames.CustomerInstrumentStatusChange),
                     Envelope(FinancePermissionNames.CustomerInstrumentCollect)),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<ICustomerInstrumentService>(context, service, Finance(Company, actor));
         }
 

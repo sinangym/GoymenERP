@@ -5,8 +5,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// recorded row is the single money fact of the payment (no second movement is written for it). The expense item
 /// is kept by identity (<see cref="ExpenseItemId"/>), never by text.
 /// </summary>
-internal sealed class ExpensePaymentRow : IFinanceTenantRow
+internal sealed class ExpensePaymentRow : IFinanceNumberedSource
 {
+    public string? DocumentNumber { get; set; }
+    public string? DocumentNumberFormatVersion { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public long Version { get; set; }

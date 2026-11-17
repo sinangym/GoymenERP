@@ -452,7 +452,7 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
                     new FinanceAuditEnvelope(FinancePermissionNames.CustomerInstrumentReceive, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(FinancePermissionNames.CustomerInstrumentStatusChange, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(FinancePermissionNames.CustomerInstrumentCollect, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<ICustomerInstrumentService>(dbContext, service,
                 new FinanceContext(company, actor ?? Actor, correlation ?? Correlation, null));
         }

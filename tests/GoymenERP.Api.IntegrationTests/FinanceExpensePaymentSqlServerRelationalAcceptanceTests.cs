@@ -408,7 +408,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                     Envelope(FinancePermissionNames.ExpensePaymentDraftSave),
                     Envelope(FinancePermissionNames.ExpensePaymentApprove),
                     Envelope(FinancePermissionNames.ExpensePaymentRecord)),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(dbContext, payments, new FinanceContext(company, actor, Correlation, null));
         }
 

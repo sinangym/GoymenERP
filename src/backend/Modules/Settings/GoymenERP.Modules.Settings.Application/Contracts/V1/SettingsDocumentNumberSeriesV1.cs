@@ -2,7 +2,10 @@ using System.Data;
 
 namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 
-public enum SettingsDocumentSeriesV1 { SalesOrder = 1, SalesInvoice = 2, DispatchNote = 3, PurchaseOrder = 4 }
+public enum SettingsDocumentSeriesV1 { SalesOrder = 1, SalesInvoice = 2, DispatchNote = 3, PurchaseOrder = 4, FinanceReceipt = 5, FinanceVoucher = 6 }
+/// <summary>Closed technical callers of the existing Finance record permissions. Drafts, approvals,
+/// portfolio receipt and credit financing are not number-producing operations (KIM-D53 / Q7).</summary>
+public enum SettingsFinanceDocumentPurposeV1 { ManualReceiptRecord = 1, CustomerInstrumentCollect = 2, ManualBankPaymentRecord = 3, ExpensePaymentRecord = 4, CashTransferCommit = 5 }
 public static class SettingsDocumentNumberSeriesPermissionsV1
 {
     public const string Manage = "settings.document-number-series.manage"; // Registration only; no grants or Critical classification.
@@ -21,6 +24,10 @@ public sealed record SettingsDocumentNumberFormatViewV1(Guid CompanyId, Settings
 /// <summary>N-12/KIM-D53: reservations join the enclosing owner's open Serializable SQL transaction; this port never commits it.</summary>
 public interface ISettingsDocumentNumberSeriesV1
 {
+    Task<SettingsDocumentNumberReservationV1> ReserveFinanceNumberAsync(IDbTransaction transaction, Guid companyId,
+        SettingsFinanceDocumentPurposeV1 purpose, Guid sourceId, DateOnly businessDate,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+        => throw new SettingsPrerequisiteException(SettingsDocumentNumberSeriesProblemCodesV1.Unavailable);
     Task<SettingsDocumentNumberFormatV1> GetPolicyAsync(Guid companyId, SettingsDocumentSeriesV1 series, CancellationToken cancellationToken = default);
     Task<SettingsDocumentNumberReservationV1> ReserveAsync(IDbTransaction transaction, Guid companyId,
         SettingsDocumentSeriesV1 series, Guid documentId, DateOnly businessDate, string expectedFormatVersion,

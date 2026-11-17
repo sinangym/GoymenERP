@@ -48,7 +48,8 @@ public sealed class ExpensePaymentService(
     ExpensePaymentBinding binding,
     ExpensePaymentAuditEnvelopes envelopes,
     TimeProvider timeProvider,
-    IAuditTransactionWriterV1? auditOwner = null) : IExpensePaymentService
+    IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceDocumentNumberReservationV1? documentNumbers = null) : IExpensePaymentService
 {
     public const string DraftCommand = "finance.expense-payment.draft.save";
     public const string ApproveCommand = "finance.expense-payment.approve";
@@ -207,9 +208,14 @@ public sealed class ExpensePaymentService(
         if (await FenceAsync(context, FinanceAction.RecordExpensePayment, request.PaymentId, cancellationToken)
             is { } denied) return denied;
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
-            () => RecordTreasuryCoreAsync(context, metadata, request, cancellationToken),
+            async () =>
+            {
+                var result = await RecordTreasuryCoreAsync(context, metadata, request, cancellationToken);
+                return result.Outcome == CommandOutcome.Succeeded
+                    ? await FenceAsync(context, FinanceAction.RecordExpensePayment, request.PaymentId, cancellationToken) ?? result : result;
+            },
             async () => await FenceAsync(context, FinanceAction.RecordExpensePayment, request.PaymentId, cancellationToken)
-                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken, result => result.Outcome == CommandOutcome.Succeeded);
     }
 
     private async Task<ExpensePaymentCommandResult> RecordTreasuryCoreAsync(
@@ -284,6 +290,15 @@ public sealed class ExpensePaymentService(
                 Issue("money.amount", TreasuryBalanceAnswer.InsufficientCode));
 
         var before = AuditJson(row);
+        var numbering = await FinanceDocumentNumbering.ReserveAsync(dbContext, documentNumbers, context, metadata,
+            envelopes.Record, SettingsFinanceDocumentPurposeV1.ExpensePaymentRecord, row.Id, row.OccurredOn, cancellationToken);
+        if (await FenceAsync(context, action, row.Id, cancellationToken) is { } afterNumber) return afterNumber;
+        if (numbering.Number is not { } number) return Refused(context,
+            numbering.Denied ? CommandOutcome.Denied : CommandOutcome.Unavailable,
+            Issue("documentNumber", numbering.Code ?? SettingsDocumentNumberSeriesProblemCodesV1.Unavailable));
+        row.DocumentNumber = number.Number;
+        row.DocumentNumberFormatVersion = number.FormatVersion;
+
         var versionBefore = row.Version;
         row.Status = ExpensePaymentStatuses.Recorded;
         row.RecordedBy = context.ActorId;
@@ -713,7 +728,7 @@ public sealed class ExpensePaymentService(
         row.Id, row.CompanyId, ToStatus(row.Status), Preparation(row),
         row.PreparedBy, row.PreparedAtUtc,
         row.ApprovedBy, row.ApprovedAtUtc, row.RecordedBy, row.RecordedAtUtc, row.PaymentConfirmed,
-        VersionText(row.Version));
+        VersionText(row.Version), FinanceDocumentNumbering.View(row));
 
     private static ExpensePaymentCommandResult Succeeded(FinanceContext context, ExpensePaymentRow row) =>
         new ExpensePaymentCommandResult(CommandOutcome.Succeeded, View(row), IsReplay: false, context.CorrelationId, []);
@@ -735,6 +750,7 @@ public sealed class ExpensePaymentService(
     private static string AuditJson(ExpensePaymentRow row) => JsonSerializer.Serialize(new
     {
         row.Id,
+        documentNumber = FinanceDocumentNumbering.View(row),
         version = VersionText(row.Version),
         status = ToStatus(row.Status).ToString(),
         sourceKind = ToSourceKind(row.SourceKind).ToString(),

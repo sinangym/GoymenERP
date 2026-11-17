@@ -88,7 +88,8 @@ public sealed record ManualBankPaymentView(
     string? RecordedBy,
     DateTimeOffset? RecordedAtUtc,
     bool BankResultConfirmed,
-    string Version);
+    string Version,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceDocumentNumberV1? DocumentNumber = null);
 
 public sealed record ManualBankPaymentPage(
     Guid CompanyId,

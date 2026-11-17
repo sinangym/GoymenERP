@@ -1,3 +1,4 @@
+import { FinanceDocumentNumberFacts } from './FinanceDocumentNumberFacts'
 /**
  * F-25 — Finans → Masraf ödemeleri (FNS-D25): a payment not tied to a party, under the one "Masraf" item kept by
  * identity, with a mandatory description.
@@ -462,6 +463,7 @@ function PaymentFacts({ payment, codes, itemCodes }: {
 }) {
   const { preparation } = payment
   return <dl className={styles.facts}>
+    <FinanceDocumentNumberFacts number={payment.documentNumber} kind="voucher" recorded={payment.status === 'Recorded'} />
     <div><dt>{T.columnStatus}</dt><dd><Status status={payment.status} /></dd></div>
     <div><dt>{T.columnSource}</dt><dd>{SOURCE_KIND_LABEL[preparation.sourceKind]}</dd></div>
     <div><dt>{T.columnItem}</dt><dd>{itemShown(preparation.expenseItemId, itemCodes)}</dd></div>

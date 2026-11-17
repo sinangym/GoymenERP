@@ -259,7 +259,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                 new SingleExpenseItemCatalog(), decorate?.Invoke(guard) ?? guard, new SyntheticSettings(company),
                 new SyntheticOpenPeriod(), collector, new ExpensePaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
                 new ExpensePaymentAuditEnvelopes(Envelope(FinancePermissionNames.ExpensePaymentDraftSave),
-                    Envelope(FinancePermissionNames.ExpensePaymentApprove), Envelope(FinancePermissionNames.ExpensePaymentRecord)), TimeProvider.System);
+                    Envelope(FinancePermissionNames.ExpensePaymentApprove), Envelope(FinancePermissionNames.ExpensePaymentRecord)), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(db, service, new FinanceContext(company, actor, Correlation, null));
         }
 

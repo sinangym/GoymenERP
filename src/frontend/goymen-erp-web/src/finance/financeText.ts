@@ -271,6 +271,11 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_permission_mapping_unavailable: 'Yetki eşlemesi doğrulanamadı; işlem kapalı.',
   concurrent_change: 'Bu kaynak başka bir işlemle değişti; güncel durumu yeniden okuyun.',
   idempotency_key_invalid: 'İşlem anahtarı geçersiz.',
+  settings_number_series_format_missing: 'Bu şirketin belge numara biçimi henüz tanımlanmamış. Ayarlar yetkilisi makbuz ve dekont serilerini açıkça kaydetmelidir.',
+  settings_number_series_unavailable: 'Belge numarası kaynağı okunamadı; kesin kayıt tamamlanmadı. Aynı anahtarla tekrar deneyin.',
+  settings_number_series_version_conflict: 'Belge numara biçimi değişti; kayıt tamamlanmadı. Güncel ayarla tekrar deneyin.',
+  settings_number_series_idempotency_conflict: 'Belge numarası işlem anahtarı başka bir kayıt için kullanılmış.',
+  settings_document_already_numbered: 'Bu gerçek kayıt zaten belge numarası taşıyor.',
   settings_money_profile_not_found: 'Seçilen para birimi için onaylı tutar profili yok.',
   // DEC-FIN-014
   pos_commission_invalid: 'POS komisyonu geçerli bir tutar değil (sıfır veya pozitif, yalnız rakam).',
