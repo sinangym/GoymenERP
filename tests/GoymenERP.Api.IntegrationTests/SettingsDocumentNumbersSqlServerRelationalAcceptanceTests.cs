@@ -112,6 +112,8 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
     {
         public SettingsDbContext Database { get; } = database;
         public ISettingsDocumentNumberSeriesV1 Value { get; } = value;
+        public IAuditEventCollector Audit => scope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
+        public IAuditTransactionWriterV1 AuditWriter => scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
         public ValueTask DisposeAsync() => scope.DisposeAsync();
     }
 }

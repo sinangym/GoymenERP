@@ -14,8 +14,8 @@ public sealed class SettingsDocumentNumberPersistenceModelTests
     public void The_number_series_and_operational_policy_migration_is_DDL_with_a_first_forward_fix_guard_and_matching_snapshot()
     {
         using var database = Create();
-        Assert.Equal(new[] { "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers" },
-            database.Database.GetMigrations().TakeLast(2));
+        Assert.Equal(new[] { "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers", "20261117085524_AddPurchaseInvoiceVariancePolicies" },
+            database.Database.GetMigrations().TakeLast(3));
         Assert.False(database.Database.HasPendingModelChanges());
         var migration = new AddDocumentNumberSeriesAndOperationalPolicies();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
