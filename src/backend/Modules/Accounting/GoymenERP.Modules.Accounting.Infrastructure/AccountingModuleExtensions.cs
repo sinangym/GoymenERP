@@ -65,8 +65,11 @@ public static class AccountingModuleExtensions
         services.TryAddSingleton<NormalJournalPermissionBindingV1>();
         services.AddScoped<IApprovedNormalJournalSourceBindingCatalogV1>(serviceProvider =>
             serviceProvider.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>());
+        services.AddScoped<IApprovedNormalJournalSourceKindCatalogV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>());
+        services.TryAddScoped<FinanceManualReceiptNormalJournalSourceProviderV1>();
         services.TryAddScoped<INormalJournalDraftServerSourceProviderV1,
-            FinanceManualReceiptNormalJournalSourceProviderV1>();
+            FinanceFinancialMovementNormalJournalSourceProviderV1>();
         services.AddScoped<NormalJournalDraftApprovalPolicyV1>();
         services.AddScoped<NormalJournalDraftServiceV1>();
         services.AddScoped<INormalJournalDraftLifecycleV1>(serviceProvider =>

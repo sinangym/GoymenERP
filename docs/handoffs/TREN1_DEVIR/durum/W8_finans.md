@@ -102,3 +102,10 @@ Tam test, gerçek SQL, arayüz kabulü, CI ve bağımsız K3 incelemesi: NOT_RUN
 - Birim, HTTP/host, gerçek SQL fact ve strict istemci kaynakları yazıldı. Müşteri owner kaybı hem kayıttan önce hem onayda kalıcılık/makbuz oluşmasını engeller; SQL fact'i runtime çalıştırılmadı. TSC, API, Finance.UnitTests ve IntegrationTests kaynak derlemeleri exit 0; .NET uyarı/hata 0. Runtime test/SQL/Vitest/browser/CI NOT_RUN.
 - Yeni migration/THROW/izin yok. Finance shell sözleşmesi 1.15: `finance.official-sales-invoices.record`, `.approve`, `.withdraw`; ekran yolları `/finans/resmi-satis-faturalari` ve `/finans/resmi-satis-faturasi-onaylari`. Capability'ler merkez mount/pin tamamlanana kadar `ImplementationAvailable=false` kalır; gerçek grant veya aktivasyon yapılmadı.
 - Gelen alış faturası çekirdeği ALS-EK4 §2 uyarınca Purchasing sahibindedir; bu checkpoint gelen fatura için ikinci Finance kaydı oluşturmaz. Tüm dilimin kabulü veya kullanıcıya açılmışlığı iddia edilmez.
+
+## FIN-S14 — PARTIAL, B-28 gider ödeme ve aynı para birimli virman kaynağı
+
+- Onaylı Accounting paketindeki kaynak türü, gerçek kaydedilmiş Finance gider ödemesine veya aynı para birimli virman sahibine yönlendirir. Tür, kaynak sürümü, para profili ve hesap eşlemesi paket sahibinden okunur; kaynak kimliği birden çok türe karşılık geliyorsa cevap kullanılamaz olur.
+- Kayıt/onay kanıtı eksik gider, teyitsiz hareket, şirket/aktör değişimi ve son okuma yetkisinin kaybı fiş kaynağı olmaz. Virman iki bacağıyla tek kaynaktır; ikinci para hareketi oluşturulmaz. Döviz çevrimi, kur farkı, banka masrafı veya kredi faizi metinden tahmin edilmez.
+- Birim test kaynakları ve gerçek SQL'de aktif/superseded paket, şirket sınırı, değişen kaynak sürümü ve belirsiz tür testi yazıldı. API, IntegrationTests ve Accounting.UnitTests kaynak derlemeleri exit 0, uyarı/hata 0. Yeni migration, THROW veya izin yok; runtime test/SQL/CI NOT_RUN.
+- FIN-S14 bütünü PARTIAL kalır: diğer B-28 kaynakları, gerçek outbox/host bağlantısı ve kullanıcı akışı bu kayıtla tamamlanmış sayılmaz.
