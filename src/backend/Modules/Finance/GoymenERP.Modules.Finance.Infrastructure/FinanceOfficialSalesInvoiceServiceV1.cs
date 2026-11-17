@@ -28,7 +28,7 @@ public sealed record FinanceOfficialSalesInvoiceAuditEnvelopesV1(
 /// withdrawn by its recorder; the row and its trail stay, and its official number, ETTN and PDF content become free
 /// for a new record (uniqueness covers live records only).
 /// </summary>
-public sealed class FinanceOfficialSalesInvoiceServiceV1(
+public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -173,6 +173,11 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         }
 
         var officialNo = request.OfficialNo;
+        // Kept after receipt lookup: a legacy successful request can replay without inventing its missing date.
+        if (request.InvoiceDate is null || request.InvoiceDate == default(DateOnly))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("invoiceDate", "invoice_date_required"));
+        }
         if (await ConflictRefusalAsync(context, action, request.InvoiceId, officialNo, ettn, pdfSha256: null,
                 cancellationToken) is { } conflict)
         {
@@ -205,6 +210,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             CompanyId = context.CompanyId,
             OfficialNo = officialNo,
             Ettn = ettn,
+            InvoiceDate = request.InvoiceDate,
             CustomerPartyId = request.CustomerPartyId,
             CurrencyId = request.CurrencyId,
             // Stored normalised, so the text kept is the value validated (the payload hash stays the request's).
@@ -318,13 +324,36 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
             return pdfRefused;
         }
 
+        IReadOnlyList<FinanceOfficialInvoiceSourceDifferenceV1>? differences;
+        try
+        {
+            differences = await SourceDifferencesAsync(context, row, cancellationToken);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            dbContext.ChangeTracker.Clear();
+            return await FenceAsync(context, action, row.Id, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("source", "finance_official_documents_unavailable"));
+        }
+        if (await FenceAsync(context, action, row.Id, cancellationToken) is { } afterSources)
+        {
+            dbContext.ChangeTracker.Clear();
+            return afterSources;
+        }
+        if (differences is null)
+        {
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.Unavailable, Issue("source", "finance_official_documents_unavailable"));
+        }
+
         var before = AuditJson(row);
         var now = timeProvider.GetUtcNow();
         row.Status = (int)FinanceOfficialSalesInvoiceStatusV1.Approved;
         row.Version = ApprovedVersion;
         row.ApprovedBy = context.ActorId;
         row.ApprovedAtUtc = now;
-        var result = Succeeded(context, View(row));
+        var result = Succeeded(context, View(row) with
+        { SourceDifferences = differences.Select(item => item with { Winner = "manual" }).ToArray() });
         AddCommand(context, ApproveCommand, keyHash, payloadHash, row.Id, result, now);
 
         if (await FenceAsync(context, action, row.Id, cancellationToken) is { } beforeSave)
@@ -336,6 +365,10 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         Audit(context, metadata, EntityType, row.Id, "finance.official-sales-invoice.approved.v1", "Approve",
             PendingVersion, ApprovedVersion, before, AuditJson(row), envelopes.Approve,
             "Kaydedenden farklı yetkili finans kullanıcısı resmî satış faturasını onayladı");
+        if (differences.Count > 0)
+            Audit(context, metadata, EntityType, row.Id, FinanceOpenItemSourceAdmissionService.SourceDifferenceEventType,
+                "SourceDifference", null, null, "{}", JsonSerializer.Serialize(result.Resource!.SourceDifferences, Json),
+                envelopes.Approve, "Elle onaylanan resmî kayıt esas alındı; ithal kaynak farkları korundu");
         return await SaveAsync(context, ApproveCommand, action, row.Id, keyHash, payloadHash, conflicts: null,
                 cancellationToken)
             ?? result;
@@ -534,11 +567,13 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         }
 
         FinanceOfficialSalesInvoiceRow? row;
+        IReadOnlyList<FinanceOfficialInvoiceSourceDifferenceV1>? differences = [];
         try
         {
             row = await dbContext.OfficialSalesInvoices.AsNoTracking()
                 .SingleOrDefaultAsync(candidate => candidate.Id == invoiceId
                     && candidate.CompanyId == context.CompanyId, cancellationToken);
+            if (row is not null) differences = await SourceDifferencesAsync(context, row, cancellationToken);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -551,7 +586,8 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         {
             return afterRead;
         }
-        return row is null ? new(ReadOutcome.NotFound, null) : new(ReadOutcome.Found, View(row));
+        return differences is null ? new(ReadOutcome.Unavailable, null)
+            : row is null ? new(ReadOutcome.NotFound, null) : new(ReadOutcome.Found, View(row) with { SourceDifferences = differences });
     }
 
     public async Task<ReadResult<FinanceOfficialSalesInvoicePageV1>> ListAsync(
@@ -986,7 +1022,7 @@ public sealed class FinanceOfficialSalesInvoiceServiceV1(
         row.WithholdingFunctionalAmountText, row.PdfDocumentId, row.PdfDocumentVersionNo, row.PdfSha256,
         (FinanceOfficialSalesInvoiceStatusV1)row.Status, VersionText(row.Version), row.RecordedBy, row.RecordedAtUtc,
         row.ApprovedBy, row.ApprovedAtUtc, row.RejectedBy, row.RejectedAtUtc, row.RejectionReason, row.WithdrawnBy,
-        row.WithdrawnAtUtc);
+        row.WithdrawnAtUtc, row.InvoiceDate);
 
     private static string AuditJson(FinanceOfficialSalesInvoiceRow row) => JsonSerializer.Serialize(View(row), Json);
 

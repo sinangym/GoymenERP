@@ -24,6 +24,16 @@ public sealed class FinanceOfficialInvoiceSourceComparisonTests
     private const string Ettn = "8a8a8a8a-8a8a-4a8a-8a8a-8a8a8a8a8a8a";
 
     [Fact]
+    public void Missing_source_TL_is_a_named_difference_and_is_never_zero_or_the_manual_value()
+    {
+        var imported = Assert.Single(Imported(Installments(("1000", Customer, Lira)), OfficialNo, Ettn))
+            with { PayableFunctionalAmount = null };
+        var difference = Assert.Single(FinanceOfficialInvoiceSourceComparison.Compare([Manual()], [imported]));
+        Assert.Equal(new[] { FinanceOfficialInvoiceSourceComparison.PayableFunctionalAmountField }, difference.Fields);
+        Assert.Null(difference.Imported.PayableFunctionalAmount);
+    }
+
+    [Fact]
     public void A_matching_import_document_is_not_a_difference_even_with_another_decimal_scale()
     {
         var imported = Imported(Installments(("600.00", Customer, Lira), ("400", Customer, Lira)), OfficialNo, Ettn,
@@ -134,6 +144,7 @@ public sealed class FinanceOfficialInvoiceSourceComparisonTests
             .ToArray();
         var batch = new ApprovedFinanceOpenItemSourceBatch(Batch, Company, "1", "checksum", rows);
         return FinanceOfficialInvoiceSourceComparison.Imported(batch,
-            new[] { new FinanceOfficialSalesInvoiceImportDocumentV2(Document, officialNo, ettn, taxBase, vat, withholding) });
+            new[] { new FinanceOfficialSalesInvoiceImportDocumentV2(Document, officialNo, ettn, taxBase, vat, withholding,
+                PayableFunctionalAmount: "1000") });
     }
 }

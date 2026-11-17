@@ -125,7 +125,10 @@ public sealed class FinanceBankAccountTests
         const string creditSourceProfiles = "20261116233417_AddCreditSourceProfiles";
         Assert.Contains(creditSourceProfiles, migrations);
         Assert.True(Array.IndexOf(migrations, creditAccounts) < Array.IndexOf(migrations, creditSourceProfiles));
-        Assert.Equal(creditSourceProfiles, migrations.Last());
+        const string sourceDates = "20261117000542_AddOfficialSalesInvoiceSourceDate";
+        Assert.Contains(sourceDates, migrations);
+        Assert.True(Array.IndexOf(migrations, creditSourceProfiles) < Array.IndexOf(migrations, sourceDates));
+        Assert.Equal(sourceDates, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

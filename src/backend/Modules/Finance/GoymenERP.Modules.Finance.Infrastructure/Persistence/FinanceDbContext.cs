@@ -990,11 +990,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [PdfSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' "
                 + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_OfficialSalesInvoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_InvoiceDate", "[InvoiceDate] IS NULL OR [InvoiceDate] > '00010101'");
             table.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", OfficialSalesInvoiceApprovalCheck);
         });
         invoice.HasKey(x => x.Id);
         invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
         invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.InvoiceDate).HasColumnType("date");
         invoice.Property(x => x.OfficialNo).HasMaxLength(OfficialSalesInvoiceMaximumOfficialNoLength)
             .UseCollation(IdentityCollation).IsRequired();
         invoice.Property(x => x.Ettn).HasMaxLength(OfficialSalesInvoiceEttnLength).IsUnicode(false).IsFixedLength()

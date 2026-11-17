@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -45,9 +46,9 @@ internal sealed class FinanceOfficialSalesInvoiceReadPortV1(FinanceDbContext dbC
             var pending = (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval;
             var approved = (int)FinanceOfficialSalesInvoiceStatusV1.Approved;
             rows = await dbContext.OfficialSalesInvoices.AsNoTracking()
-                .Where(row => row.CompanyId == companyId && row.OfficialNo == officialNo && row.Ettn == storedEttn
+                .Where(row => row.CompanyId == companyId && (row.OfficialNo == officialNo || row.Ettn == storedEttn)
                     && (row.Status == pending || row.Status == approved))
-                .Take(2)
+                .Take(3)
                 .ToListAsync(cancellationToken);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
@@ -56,19 +57,71 @@ internal sealed class FinanceOfficialSalesInvoiceReadPortV1(FinanceDbContext dbC
         }
 
         // The column collation may compare case-insensitively; the key is exact (SAT-D89), so only an exact match counts.
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
+            return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
         var exact = rows
             .Where(row => string.Equals(row.OfficialNo, officialNo, StringComparison.Ordinal)
-                && string.Equals(row.Ettn, storedEttn, StringComparison.Ordinal))
+                || string.Equals(row.Ettn, storedEttn, StringComparison.Ordinal))
             .ToList();
-        return exact switch
+        var exactPair = exact.Where(row => row.OfficialNo == officialNo && row.Ettn == storedEttn).ToArray();
+        if (exactPair.Length > 1) return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        var approvedRows = exact.Where(row => row.Status == (int)FinanceOfficialSalesInvoiceStatusV1.Approved).ToArray();
+        if (exactPair is [var approvedRow] && approvedRow.Status == (int)FinanceOfficialSalesInvoiceStatusV1.Approved)
+            return Approved(approvedRow);
+        // SAT-D89 still requires the exact pair. KLN-D104 prevents an import from bypassing a manual winner
+        // sharing either identity; it does not rewrite the supplied matching key.
+        if (approvedRows.Length != 0) return FinanceOfficialSalesInvoiceReadAnswerV1.NotFound;
+        try
         {
-            [] => FinanceOfficialSalesInvoiceReadAnswerV1.NotFound,
-            [var row] when row.CompanyId != companyId => FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable,
-            [var row] when row.Status == (int)FinanceOfficialSalesInvoiceStatusV1.PendingApproval =>
-                FinanceOfficialSalesInvoiceReadAnswerV1.PendingApproval,
-            [var row] => Approved(row),
-            _ => FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable,
-        };
+            // FNS-D90: a pending manual row is a note, never an import lock. Only an admitted, approved upload
+            // supplies facts, with its real bytes/checksum; the uploaded file does not pretend to be a manual PDF.
+            var imported = await Imported(companyId, officialNo, storedEttn, exact.Count != 0, cancellationToken);
+            return imported ?? (exact.Count == 0 ? FinanceOfficialSalesInvoiceReadAnswerV1.NotFound
+                : FinanceOfficialSalesInvoiceReadAnswerV1.PendingApproval);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        }
+    }
+
+    private async Task<FinanceOfficialSalesInvoiceReadAnswerV1?> Imported(Guid companyId, string officialNo,
+        string ettn, bool pendingManual, CancellationToken cancellationToken)
+    {
+        var claims = await dbContext.OfficialInvoiceIdentityClaims.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && (row.IdentityKind == FinanceOfficialInvoiceIdentityKinds.OfficialNo
+                && row.IdentityValue == officialNo || row.IdentityKind == FinanceOfficialInvoiceIdentityKinds.Ettn && row.IdentityValue == ettn))
+            .ToListAsync(cancellationToken);
+        var holders = FinanceOfficialInvoiceIdentityClaimPolicy.CurrentHolders(claims);
+        if (holders.Count == 0) return null;
+        if (!holders.TryGetValue((FinanceOfficialInvoiceIdentityKinds.OfficialNo, officialNo), out var number)
+            || !holders.TryGetValue((FinanceOfficialInvoiceIdentityKinds.Ettn, ettn), out var identity)
+            || number.HolderBatchId != identity.HolderBatchId || number.HolderSourceDocumentId != identity.HolderSourceDocumentId)
+            return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        var upload = await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == number.HolderBatchId, cancellationToken);
+        var approval = await dbContext.OfficialInvoiceImportApprovals.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.BatchId == number.HolderBatchId, cancellationToken);
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId || upload is null || approval is null
+            || upload.CompanyId != companyId || approval.CompanyId != companyId)
+            return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        var sourceRows = JsonSerializer.Deserialize<ApprovedFinanceOpenItemSourceRow[]>(upload.SourceRowsJson, FinanceJson.CreateOptions());
+        if (sourceRows is null) return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        var context = new FinanceContext(companyId, approval.ApprovedBy, approval.CorrelationId, approval.CausationId);
+        var batch = new ApprovedFinanceOpenItemSourceBatch(upload.Id, companyId, upload.BatchVersion, upload.BatchChecksum, sourceRows);
+        var documents = FinanceOfficialInvoiceIdentityClaimPolicy.ReadDocuments(context, upload, batch);
+        var document = documents?.SingleOrDefault(row => row.SourceDocumentId == number.HolderSourceDocumentId
+            && row.OfficialNo == officialNo && row.Ettn == ettn);
+        if (document is null) return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        var imported = FinanceOfficialInvoiceSourceComparison.Imported(batch, [document]).Single();
+        if (imported.CustomerPartyId is not { } party || imported.CurrencyId is not { } currency
+            || !IsExact(imported.PayableAmount, true) || !IsExact(imported.PayableFunctionalAmount, true))
+            return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        return new(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, new(document.SourceDocumentId, companyId,
+            officialNo, ettn, party, currency, imported.PayableAmount!, imported.PayableFunctionalAmount!,
+            document.TaxBaseFunctionalAmount, document.VatFunctionalAmount, document.WithholdingFunctionalAmount,
+            null, null, null, upload.BatchVersion, approval.ApprovedAtUtc, document.InvoiceDate,
+            "approved-import", upload.Id, upload.BatchChecksum, pendingManual));
     }
 
     private static FinanceOfficialSalesInvoiceReadAnswerV1 Approved(FinanceOfficialSalesInvoiceRow row)
@@ -102,7 +155,7 @@ internal sealed class FinanceOfficialSalesInvoiceReadPortV1(FinanceDbContext dbC
             row.PdfDocumentVersionNo,
             row.PdfSha256,
             row.Version.ToString(CultureInfo.InvariantCulture),
-            approvedAtUtc));
+            approvedAtUtc, row.InvoiceDate));
     }
 
     /// <summary>

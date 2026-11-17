@@ -658,7 +658,7 @@ public sealed class FinanceOfficialSalesInvoiceHttpAcceptanceTests(GoymenErpApiF
 
     private static FinanceOfficialSalesInvoiceRecordRequestV1 Request(Guid invoiceId) => new(
         invoiceId, "GYM" + invoiceId.ToString("N")[..13].ToUpperInvariant(), Guid.NewGuid().ToString("D"),
-        Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf);
+        Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, new(2026, 11, 16));
 
     private static FinanceOfficialSalesInvoiceApproveRequestV1 Approval(Guid invoiceId) => new(invoiceId, "1");
 

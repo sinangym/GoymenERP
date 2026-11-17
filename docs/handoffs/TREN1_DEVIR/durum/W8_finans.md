@@ -3,6 +3,18 @@
 Sabit kapsam: FIN-S13, FIN-S14, FIN-S17, FNS-SC32, FIN-SC36, FIN-SC47-KREDI.
 Bu rapor kaynak geliştirmesini, derlemeyi ve çalıştırılmış kabul kanıtını ayrı tutar.
 
+## FIN-SC36 — PARTIAL, resmî belge kaynak tarihi ve TL karşılığı
+
+Kararlar: FNS-D76/D89/D90, KLN-D104 ve resmî belge kaynağını esas alma cevapları.
+
+- Yeni elle kayıtta gerçek fatura tarihi zorunludur. Eski tarihsiz kayıtlar nullable kalır; kayıt saati fatura tarihi yerine geçirilmez. `AddOfficialSalesInvoiceSourceDate` EF ile üretildi; gerçek tarihli kayıt varken Down ilk işlemde `THROW 51965` ile reddeder.
+- CSV v3 gerçek fatura tarihini ve kaynakta varsa TL karşılığını taşır. Eksik TL karşılığı null kalır; kurla veya sıfırla tamamlanmaz. V1/V2 sözleşmeleri korunur. Güncel onaylı ithal kaynağın sahibi, tam resmî numara/ETTN çifti, belge tarihi ve immutable dosya özeti owner okumasında korunur; sahte PDF kimliği üretilmez.
+- Bekleyen elle kayıt ithali engellemez. Ayrı yetkili elle kaydı onaylayınca o kaynak esas alınır; kaynak farkları alan adıyla detayda ve onay yanıtında görünür, bir kez denetlenir. İthal belge ve eski hareket değiştirilmez. Bozuk kaynak veya sonradan yetki kaybı başarılı sonuç sayılmaz.
+- İthal kaynak ekranı belge tarihi, bilinmeyen TL, bekleyen elle kayıt ve esas alınan elle kaynak farklarını gösterir. Para değerleri string doğrulanır; sayıya dönüşmüş para veya başka kaynak belge kimliği reddedilir.
+- API, Finance.UnitTests ve IntegrationTests kaynak derlemeleri exit 0; son kaynak-fark testi eklemesinden sonra kısa tekrar derlemesi sıradadır. TypeScript app/node derlemeleri exit 0. Birim, HTTP, sözleşme, Vitest ve gerçek SQL fact kaynakları yazıldı; runtime test/SQL/CI NOT_RUN.
+- SQL fact: `GoymenERP.Api.IntegrationTests.FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTests.Official_source_date_persists_and_its_Down_refuses_loss_of_known_dates`.
+- Kalan: Sales owner tarih alanı merkez entegrasyonunda taşınacak; elle resmî fatura kullanıcı ekranı tamamlanacak. Bu checkpoint tüm FIN-SC36 dilimini DONE yapmaz.
+
 ## FIN-S13 — PARTIAL
 
 Kararlar: FNS-D105, KLN-D6/D7/D8/D10/D11/D13. Dilim commit'i bu raporla aynı kaynak checkpoint'indedir.

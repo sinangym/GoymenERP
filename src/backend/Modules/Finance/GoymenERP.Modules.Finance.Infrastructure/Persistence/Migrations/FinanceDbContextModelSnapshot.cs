@@ -2172,6 +2172,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .IsFixedLength()
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<DateOnly?>("InvoiceDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("OfficialNo")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -2280,6 +2283,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [Version] = 1 AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 3 AND [RejectedBy] IS NOT NULL AND [RejectedAtUtc] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedBy] COLLATE Latin1_General_100_BIN2 <> [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL) OR ([Status] = 4 AND [WithdrawnBy] IS NOT NULL AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [RecordedBy] COLLATE Latin1_General_100_BIN2 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)");
 
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CustomerPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [PdfDocumentId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_OfficialSalesInvoices_InvoiceDate", "[InvoiceDate] IS NULL OR [InvoiceDate] > '00010101'");
 
                             t.HasCheckConstraint("CK_OfficialSalesInvoices_Text", "LEN([OfficialNo]) > 0 AND DATALENGTH([Ettn]) = 36 AND [Ettn] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f-]%' AND LEN([PayableAmountText]) > 0 AND LEN([PayableFunctionalAmountText]) > 0 AND LEN([TaxBaseFunctionalAmountText]) > 0 AND LEN([VatFunctionalAmountText]) > 0 AND LEN([WithholdingFunctionalAmountText]) > 0 AND [PdfDocumentVersionNo] >= 1 AND DATALENGTH([PdfSha256]) = 64 AND [PdfSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
 

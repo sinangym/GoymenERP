@@ -1019,7 +1019,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1Tests
     }
 
     private static FinanceOfficialSalesInvoiceRecordRequestV1 Request() => new(
-        Invoice, "GYM2026000000001", Ettn, Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf);
+        Invoice, "GYM2026000000001", Ettn, Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, new(2026, 11, 16));
 
     private static FinanceOfficialSalesInvoiceApproveRequestV1 Approve() => new(Invoice, "1");
 

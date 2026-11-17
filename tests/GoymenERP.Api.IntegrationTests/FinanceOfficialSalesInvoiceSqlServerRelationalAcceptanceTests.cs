@@ -39,6 +39,23 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
     private const string BeforeDecisionsMigration = "20261111233047_AddOfficialSalesInvoices";
 
     [SqlServerFact]
+    public async Task Official_source_date_persists_and_its_Down_refuses_loss_of_known_dates()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = await RecordAsync(run);
+        Assert.Equal("2026-11-16", await run.ScalarAsync<string>(
+            "SELECT CONVERT(varchar(10), InvoiceDate, 23) FROM finance.OfficialSalesInvoices WHERE Id=@id", ("@id", invoice)));
+        var invalid = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE finance.OfficialSalesInvoices SET InvoiceDate='00010101' WHERE Id=@id", ("@id", invoice)));
+        Assert.Equal(547, invalid.Number);
+        var migration = new GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations.AddOfficialSalesInvoiceSourceDate();
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard.Sql));
+        Assert.Equal(51965, refused.Number);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialSalesInvoices WHERE InvoiceDate IS NOT NULL"));
+    }
+
+    [SqlServerFact]
     public async Task A_different_actor_approves_the_record_and_rows_commands_and_audits_persist_together()
     {
         await using var run = await Run.StartAsync();
@@ -560,14 +577,10 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
             {
                 var rollback = await Assert.ThrowsAsync<SqlException>(() =>
                     context.GetService<IMigrator>().MigrateAsync(BeforeDecisionsMigration));
-                Assert.Equal(51273, rollback.Number);
-                // The newer AddPartyCollaterals (no collateral stored, so its Down guard passes),
-                // RestorePartyCreditLimitOneStep (no direct record stored, so its Down guard passes),
-                // AddCashTransfers, AddOfficialInvoiceIdentityClaims, RequirePartyCreditLimitSecondPerson (its Down
-                // only widens a check), AddExpensePayments, AddCustomerReturnCredits
-                // and AddPartyCreditLimits rolled back first on
-                // their empty stores (each in its own transaction).
-                Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal",
+                // The latest source-date guard protects these new, dated records before the older decision guard.
+                // The older guard was independently executed and proven above; no record is cleared for rollback.
+                Assert.Equal(51965, rollback.Number);
+                Assert.EndsWith("_AddOfficialSalesInvoiceSourceDate",
                     (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
             }
 
@@ -654,7 +667,7 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
     }
 
     private static FinanceOfficialSalesInvoiceRecordRequestV1 Request(Guid invoice) => new(invoice, OfficialNo, Ettn,
-        Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf);
+        Customer, Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, new(2026, 11, 16));
 
     /// <summary>A second invoice: its own number, ETTN and document.</summary>
     private static FinanceOfficialSalesInvoiceRecordRequestV1 Second(Guid invoice) => Request(invoice) with
