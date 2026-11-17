@@ -56,12 +56,18 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
         }
 
         var keyHash = AccountingApiService.Sha256(request.IdempotencyKey);
-        var requestHash = AccountingApiService.Sha256(JsonSerializer.Serialize(Canonical(request), Json));
+        // Preserve hashes of legacy sources that carried no display number.
+        var requestHash = AccountingApiService.Sha256(JsonSerializer.Serialize(Canonical(request), Json)
+            + (request.OfficialInvoiceNo is null ? "" : "|official-invoice-no:" + JsonSerializer.Serialize(request.OfficialInvoiceNo, Json)));
         AccountingSourceDocumentAdmissionRecordV1? prior;
         try
         {
             prior = await store.FindAdmissionAsync(keyHash, request.DocumentKind, request.InvoiceId, request.FinalizedVersion,
                 cancellationToken);
+        }
+        catch (AccountingStoreException exception) when (exception.Code == AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled)
+        {
+            return AccountingSourceDocumentAdmissionAnswerV1.Refused(AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled);
         }
         catch (AccountingStoreException)
         {
@@ -124,7 +130,9 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
             || string.IsNullOrWhiteSpace(request.CorrelationId)
             || request.CorrelationId.Length > AccountingSourceDocumentLimitsV1.MaximumCorrelationIdLength
             || request.CausationId is { Length: > AccountingSourceDocumentLimitsV1.MaximumCorrelationIdLength }
-            || request.SourceDocumentId == Guid.Empty || request.InvoiceId == Guid.Empty || request.FinalizedVersion < 1)
+            || request.SourceDocumentId == Guid.Empty || request.InvoiceId == Guid.Empty || request.FinalizedVersion < 1
+            || request.OfficialInvoiceNo is not null && (string.IsNullOrWhiteSpace(request.OfficialInvoiceNo)
+                || request.OfficialInvoiceNo != request.OfficialInvoiceNo.Trim() || request.OfficialInvoiceNo.Length > 256))
         {
             return AccountingSourceDocumentAdmissionReasonsV1.RequestInvalid;
         }
@@ -320,6 +328,10 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
         catch (AccountingStoreException exception) when (exception.Code == AccountingSourceDocumentStoreCodesV1.ContentConflict)
         {
             return AccountingSourceDocumentAdmissionAnswerV1.Refused(AccountingSourceDocumentAdmissionReasonsV1.IdempotencyConflict);
+        }
+        catch (AccountingStoreException exception) when (exception.Code == AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled)
+        {
+            return AccountingSourceDocumentAdmissionAnswerV1.Refused(AccountingSourceDocumentAdmissionReasonsV1.SourceCancelled);
         }
         catch (AccountingStoreException)
         {

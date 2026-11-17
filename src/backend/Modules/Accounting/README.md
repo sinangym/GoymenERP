@@ -466,3 +466,25 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
 - `AddFinanceJournalSources` adds only this source queue. Down refuses with **THROW 51989** while any received
   source exists; an empty queue may roll back. Use a forward fix to retain financial provenance. Database apply and
   runtime SQL/browser/CI acceptance remain separate from source generation and compilation.
+
+## FIN-S13 / B-04: source voucher approval and cancellation ordering
+
+- Finalized Sales/Purchasing sources retain their real official invoice number when supplied; legacy sources keep a
+  missing number explicit. Additive purchase ExpenseTypeId metadata selects the existing expense mapping only for
+  an explicit Expense line. Missing approved mapping remains waiting; no physical inventory effect is introduced.
+- `GET /api/v1/accounting/source-vouchers` uses the existing journal-read authority. The existing normal-journal
+  approval authority posts a frozen source voucher at its actual invoice date and requires a different actor from
+  the source invoice finalizer (KLN-D8/D10/D15/D17). Missing/closed invoice periods remain waiting; no alternative
+  date or period is selected. Posting, state/version, audit and command completion commit in one Serializable transaction.
+- The Sales cancellation consumer retains the original admission/invoice/finalized-version identity. An unapproved
+  voucher is cancelled without deleting its lines or creating a reversal. A cancellation received before finalization
+  prevents that later delivery from creating a voucher. The cancellation identity range is held through admission
+  and approval. A posted journal remains unchanged and exposes `CancellationReversalPending`: its reversal period/date
+  question is still pending, not inferred from the line-classification correction workflow.
+- The list/approval screen selects actual source rows, displays frozen account/amount/date facts, and retains the same
+  command identity after an unknown outcome. It never calculates tax, balances, FX or journal amounts in the browser.
+  Central endpoint/Work/screen composition remains a separate integration step; dispatcher activation is not included.
+- EF-generated `20261117123611_AddSourceVoucherLifecycle` adds the cancellation receipt and nullable official-number/
+  approval facts with company-scoped journal/period references. Up is DDL only. Down's first SQL operation refuses
+  with **THROW 51938** while cancellation, approval or official-number facts exist; an untouched legacy draft may
+  roll back. No history is backfilled, erased or applied to a database by this checkpoint.

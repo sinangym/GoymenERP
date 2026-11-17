@@ -27,7 +27,7 @@ internal sealed class AccountingSourceDocumentAdmissionRow : IAccountingTenantRo
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
-/// <summary>B-04b: the draft voucher of one admitted source document. Immutable; its approval is a later slice.</summary>
+/// <summary>B-04: frozen source and lines; status 1 draft, 2 posted, 3 cancelled before approval.</summary>
 internal sealed class AccountingSourceDocumentVoucherDraftRow : IAccountingTenantRow
 {
     public Guid CompanyId { get; set; }
@@ -45,6 +45,10 @@ internal sealed class AccountingSourceDocumentVoucherDraftRow : IAccountingTenan
     public Guid? PeriodId { get; set; }
     public long MappingVersion { get; set; }
     public int Status { get; set; }
+    public Guid? JournalId { get; set; }
+    public string? OfficialInvoiceNo { get; set; }
+    public Guid? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
     public decimal DocumentNet { get; set; }
     public decimal DocumentVat { get; set; }
     public decimal DocumentWithholding { get; set; }
