@@ -55,15 +55,18 @@ public sealed partial class InventoryStore
                 var poolKey = (position.LocationId, position.ProductId, currency);
                 if (!pools.TryGetValue(poolKey, out var pool))
                     pool = await ReadCostPoolAsync(dbContext, companyContext, position.LocationId, position.ProductId, currency, token);
-                AverageCostPosition? afterPosition = pool.Position;
+                ExactAverageCostPool? afterPosition = pool.ExactPosition;
                 var afterVersion = pool.Version;
-                var costedDelta = 0m;
+                var costedDelta = ExactCostRatio.Of(0m);
                 var incoming = line.Direction == StockDirection.In;
                 var originalCostExit = movement.Kind is StockMovementKind.SupplierReturnExit or StockMovementKind.PurchaseAcceptanceReversal
                     or StockMovementKind.TransferReceiptShortage;
                 decimal? unit = null;
                 ExactCostRatio? exactUnit = null;
                 ExactCostRatio? reversalPoolUnit = null;
+                ExactCostRatio? restoredPricedKg = null;
+                ExactCostRatio? restoredPricedValue = null;
+                var partialSourceChanged = false;
                 var knownZeroReceipt = false;
                 long? sourceVersion = null;
                 if (movement.Kind is StockMovementKind.TransferAccept or StockMovementKind.TransferDispatchCancellation
@@ -75,12 +78,15 @@ public sealed partial class InventoryStore
                         unit = original.UnitCostPerKg; exactUnit = StampUnit(original); sourceVersion = original.LedgerVersion; CopyCurrency(stamp, original);
                         knownZeroReceipt = incoming && exactUnit.Sign == 0;
                     }
+                    else if (incoming && original is not null) await RestorePartialSourceAsync(original);
                 }
                 else if (incoming && movement.Source.Kind == InventoryGoodsReceiptContractV1.SourceKind && proof is not null)
                 {
                     unit = currency == SettingsCurrencyIdentitiesV1.TurkishLira ? proof.TlUnitCostPerKg : proof.UsdUnitCostPerKg;
-                    exactUnit = (currency == SettingsCurrencyIdentitiesV1.TurkishLira ? proof.TlUnitCostRatio : proof.UsdUnitCostRatio)?.Value();
                     stamp.Reason = currency == SettingsCurrencyIdentitiesV1.TurkishLira ? proof.TlUnavailableReason : proof.UsdUnavailableReason;
+                    try { exactUnit = AdmittedReceiptUnit(unit,
+                        currency == SettingsCurrencyIdentitiesV1.TurkishLira ? proof.TlUnitCostRatio : proof.UsdUnitCostRatio, stamp.Reason); }
+                    catch (InvalidOperationException) { unit = null; exactUnit = null; stamp.Reason = "receipt_cost_proof_conflict"; }
                 }
                 else if (incoming && (movement.Source.Kind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind
                         || IsCustomerReturn(movement))
@@ -95,6 +101,7 @@ public sealed partial class InventoryStore
                         knownZeroReceipt = exactUnit.Sign == 0;
                         CopyCurrency(stamp, original);
                     }
+                    else if (original is not null) await RestorePartialSourceAsync(original);
                 }
                 else if (!incoming && movement.Kind is StockMovementKind.SupplierReturnExit or StockMovementKind.PurchaseAcceptanceReversal)
                 {
@@ -127,9 +134,9 @@ public sealed partial class InventoryStore
                 }
                 else if (!incoming && (movement.Kind is StockMovementKind.Issue or StockMovementKind.Scrap or StockMovementKind.CountAdjustment
                         or StockMovementKind.TransferDispatch or StockMovementKind.TransferReceiptShortage or StockMovementKind.TransferTransitLoss)
-                    && pool.IsComplete && pool.Position is { Status: AverageCostStatus.Known })
+                    && pool.IsComplete && pool.ExactPosition is not null)
                 {
-                    unit = pool.Position.AverageCostPerKg; sourceVersion = pool.Version;
+                    unit = pool.ExactPosition.AverageCostPerKg; sourceVersion = pool.Version;
                 }
                 exactUnit ??= unit is { } scalar ? ExactCostRatio.Of(scalar) : null;
 
@@ -146,69 +153,93 @@ public sealed partial class InventoryStore
                 }
                 if (incoming)
                 {
-                    if ((exactUnit is { Sign: > 0 } || knownZeroReceipt && exactUnit is { Sign: 0 }) && pool.IsConsistent)
+                    if (partialSourceChanged)
+                    {
+                        // The old issue was not fully costed. A later generation cannot rewrite that historical return
+                        // price or invent a new valuation epoch. Preserve the physical return and the explicit unknown.
+                        afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId,
+                            position.ProductId, currency, pool, null, token, AverageCostUnreadableReason.Return);
+                        afterPosition = null; stamp.Reason = "original_partial_issue_cost_no_longer_reconciles";
+                        AddPending(movement.Id, number, currency, position, kg, stamp.Reason);
+                    }
+                    else if (restoredPricedKg is { Sign: > 0 } partialKg && restoredPricedValue is { Sign: >= 0 } partialValue && pool.IsConsistent)
+                    {
+                        var after = (pool.ExactPosition ?? new(ExactCostRatio.Of(0m), 0m)).Add(partialKg, partialValue);
+                        afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId,
+                            position.ProductId, currency, pool, after, token);
+                        afterPosition = after; costedDelta = partialKg;
+                        stamp.LedgerVersion = afterVersion;
+                        stamp.PoolEffectJson = PoolEffect(pool.ExactPosition, after, partialValue, partialKg);
+                        stamp.Reason = "movement_contains_unpriced_lineage";
+                    }
+                    else if ((exactUnit is { Sign: > 0 } || knownZeroReceipt && exactUnit is { Sign: 0 }) && pool.IsConsistent)
                     {
                         SetKnown(stamp, exactUnit, kg, sourceVersion ?? checked(pool.Version + 1));
-                        AverageCostPosition? after = null;
-                        if (stamp.Status == (int)InventoryMovementCostStampStatusV1.Known)
+                        ExactAverageCostPool? after = null;
+                        try
                         {
-                            try { after = knownZeroReceipt
-                                ? AverageCostCalculator.RestoreKnownMovementValue(pool.Position, pool.CostedKg, kg, exactUnit!.Multiply(kg))
-                                : AverageCostCalculator.Apply(pool.Position, new(IsCustomerReturn(movement)
-                                ? AverageCostMovementKind.CustomerReturn : AverageCostMovementKind.PurchaseReceipt,
-                                kg, pool.CostedKg, unit), exactUnit);
-                                if (after.AverageCostPerKg is >= 100_000_000_000_000m) throw new OverflowException(); }
-                            catch (OverflowException)
-                            {
-                                stamp.Status = (int)InventoryMovementCostStampStatusV1.Unavailable;
-                                stamp.UnitCostPerKg = null; stamp.Amount = null; stamp.LedgerVersion = null;
-                                stamp.UnitCostRatioJson = null;
-                                stamp.Reason = "movement_cost_not_representable";
-                            }
+                            after = (pool.ExactPosition ?? new(ExactCostRatio.Of(0m), 0m)).Add(ExactCostRatio.Of(kg), exactUnit!.Multiply(kg));
+                            if (after.AverageCostPerKg >= 100_000_000_000_000m) throw new OverflowException();
+                        }
+                        catch (OverflowException)
+                        {
+                            stamp.Status = (int)InventoryMovementCostStampStatusV1.Unavailable;
+                            stamp.UnitCostPerKg = null; stamp.Amount = null; stamp.LedgerVersion = null;
+                            stamp.UnitCostRatioJson = null; stamp.Reason = "movement_cost_not_representable";
                         }
                         if (after is not null && stamp.Status == (int)InventoryMovementCostStampStatusV1.Known)
                         {
-                            afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId, position.ProductId, currency, pool, after, token);
-                            afterPosition = after; costedDelta = kg;
-                            stamp.PoolEffectJson = PoolEffect(pool.Position, after, exactUnit.Multiply(kg));
+                            afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId,
+                                position.ProductId, currency, pool, after, token);
+                            afterPosition = after; costedDelta = ExactCostRatio.Of(kg);
+                            stamp.LedgerVersion = sourceVersion ?? afterVersion;
+                            stamp.PoolEffectJson = PoolEffect(pool.ExactPosition, after, exactUnit!.Multiply(kg), costedDelta);
                         }
-                        else AddPending(movement.Id, number, currency, position, kg, stamp.Reason!);
+                        else RecordPending(stamp.Reason!);
                     }
-                    else
-                    {
-                        AddPending(movement.Id, number, currency, position, kg, stamp.Reason ?? "entry_cost_not_readable");
-                    }
+                    else RecordPending(stamp.Reason ?? "entry_cost_not_readable");
                 }
-                else if (pool.IsConsistent && !pool.PendingLabels.Contains(position.LabelId)
-                    && pool.Position is { Status: AverageCostStatus.Known })
+                else if (pool.IsConsistent && pool.ExactPosition is not null)
                 {
-                    AverageCostPosition after;
-                    try
+                    var pricedKg = pool.PricedQuantity(position.LabelId, kg);
+                    if (pricedKg.Sign > 0)
                     {
-                        after = reversalPoolUnit is not null
-                            ? AverageCostCalculator.ReverseRecordedPoolEffect(pool.Position, pool.CostedKg, kg, reversalPoolUnit.Multiply(kg))
-                            : AverageCostCalculator.Apply(pool.Position, new(originalCostExit
-                            ? AverageCostMovementKind.PurchaseReturn : AverageCostMovementKind.Issue, kg, pool.CostedKg,
-                            originalCostExit ? unit : null), originalCostExit ? exactUnit : null);
-                        if (after.AverageCostPerKg is >= 100_000_000_000_000m) throw new OverflowException();
-                    }
-                    catch (OverflowException) { after = AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return); }
-                    afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId, position.ProductId, currency, pool, after, token);
-                    afterPosition = after; costedDelta = -kg;
-                    if (exactUnit is { Sign: >= 0 } && sourceVersion is >= 1)
-                    {
-                        SetKnown(stamp, exactUnit, kg, sourceVersion.Value);
-                        if (after.Status == AverageCostStatus.Known)
-                            stamp.PoolEffectJson = PoolEffect(pool.Position, after, exactUnit.Multiply(-kg));
+                        ExactAverageCostPool? after = null;
+                        try
+                        {
+                            var actualValue = reversalPoolUnit?.Multiply(pricedKg)
+                                ?? (originalCostExit && exactUnit is not null ? exactUnit.Multiply(pricedKg) : null);
+                            // A purchase return without its admitted original cost never becomes a generic average issue.
+                            if (originalCostExit && exactUnit is null) throw new InvalidOperationException();
+                            after = pool.ExactPosition.Remove(pricedKg, actualValue);
+                            if (after.AverageCostPerKg >= 100_000_000_000_000m) throw new OverflowException();
+                        }
+                        catch (Exception exception) when (exception is OverflowException or InvalidOperationException)
+                        { stamp.Reason = "movement_cost_reversal_unreadable"; }
+                        afterVersion = await WriteCostPoolAsync(dbContext, companyContext, timeProvider, position.LocationId,
+                            position.ProductId, currency, pool, after, token, AverageCostUnreadableReason.Return);
+                        afterPosition = after; costedDelta = ExactCostRatio.Of(0m).Subtract(pricedKg);
+                        if (after is not null)
+                        {
+                            var authoritative = (exactUnit ?? ExactCostRatio.Of(pool.ExactPosition.AverageCostPerKg)).Multiply(costedDelta);
+                            stamp.PoolEffectJson = PoolEffect(pool.ExactPosition, after, authoritative, pricedKg);
+                            stamp.LedgerVersion = afterVersion;
+                            if (pricedKg.CompareTo(ExactCostRatio.Of(kg)) == 0 && exactUnit is { Sign: >= 0 } && sourceVersion is >= 1)
+                                SetKnown(stamp, exactUnit, kg, sourceVersion.Value);
+                            else stamp.Reason ??= "movement_contains_unpriced_lineage";
+                        }
                     }
                 }
-                var pendingLabels = pool.PendingLabels.ToHashSet();
-                if (incoming && costedDelta == 0m) pendingLabels.Add(position.LabelId);
+                var pendingShares = pool.UnpricedShares.ToDictionary(pair => pair.Key, pair => pair.Value);
+                if (incoming && costedDelta.Sign == 0 && !InheritedPending()) pendingShares[position.LabelId] = ExactCostRatio.Of(1m);
                 pools[poolKey] = pool with
                 {
-                    Position = afterPosition, Version = afterVersion,
-                    PhysicalKg = pool.PhysicalKg + (incoming ? kg : -kg), CostedKg = pool.CostedKg + costedDelta,
-                    PendingLabels = pendingLabels,
+                    ExactPosition = afterPosition, Version = afterVersion,
+                    PhysicalKg = pool.PhysicalKg + (incoming ? kg : -kg), CostedKg = pool.CostedKg.Add(costedDelta),
+                    UnpricedShares = pendingShares,
+                    Reason = afterPosition is null && afterVersion != pool.Version ? AverageCostUnreadableReason.Return : pool.Reason,
+                    ExactRow = dbContext.ExactCostPools.Local.SingleOrDefault(row => row.LocationId == position.LocationId
+                        && row.ProductId == position.ProductId && row.CurrencyId == currency),
                     TlRow = currency == SettingsCurrencyIdentitiesV1.TurkishLira
                         ? dbContext.AverageCostLedger.Local.SingleOrDefault(r => r.LocationId == position.LocationId && r.ProductId == position.ProductId) : null,
                     ForeignRow = currency != SettingsCurrencyIdentitiesV1.TurkishLira
@@ -216,6 +247,31 @@ public sealed partial class InventoryStore
                 };
                 stamp.Reason ??= stamp.Status == (int)InventoryMovementCostStampStatusV1.Known ? null : "movement_cost_source_unreadable";
                 dbContext.MovementCostStamps.Add(stamp);
+
+                bool InheritedPending() => (movement.Kind is StockMovementKind.TransferAccept or StockMovementKind.TransferDispatchCancellation
+                    || movement.Source.Kind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind || IsCustomerReturn(movement))
+                    && pool.UnpricedShares.GetValueOrDefault(position.LabelId)?.Sign > 0;
+                void RecordPending(string reason)
+                {
+                    // A transport/return does not create a second unknown material root over the existing cohort.
+                    if (!InheritedPending()) AddPending(movement.Id, number, currency, position, kg, reason);
+                }
+                async Task RestorePartialSourceAsync(MovementCostStampRow original)
+                {
+                    if (original.PoolEffectJson is null || original.LedgerVersion is not >= 1) return;
+                    var effect = JsonSerializer.Deserialize<MovementPoolEffect>(original.PoolEffectJson, CostJson)
+                        ?? throw new InvalidOperationException("Kısmi hareket maliyeti kanıtı eksik.");
+                    if (effect.PricedQuantityKgRatio is null) return;
+                    var originalKg = await dbContext.MovementLines.AsNoTracking().Where(row => row.MovementId == original.MovementId
+                        && row.LineNumber == original.LineNumber).Select(row => row.QuantityKg).SingleAsync(token);
+                    var priced = effect.PricedQuantityKgRatio.Value().Multiply(kg).Divide(originalKg);
+                    var value = effect.RecordedValue.Value().Multiply(-kg).Divide(originalKg);
+                    if (priced.Sign <= 0 || priced.CompareTo(ExactCostRatio.Of(kg)) > 0 || value.Sign < 0) return;
+                    var originalUnpricedFraction = ExactCostRatio.Of(1m).Subtract(priced.Divide(kg));
+                    if (originalUnpricedFraction.CompareTo(pool.UnpricedShares.GetValueOrDefault(position.LabelId, ExactCostRatio.Of(0m))) != 0)
+                    { partialSourceChanged = true; CopyCurrency(stamp, original); return; }
+                    restoredPricedKg = priced; restoredPricedValue = value; CopyCurrency(stamp, original);
+                }
             }
         }
 
@@ -253,20 +309,36 @@ public sealed partial class InventoryStore
     }
 
     private static readonly JsonSerializerOptions CostJson = new(JsonSerializerDefaults.Web);
-    private static ExactCostRatio StampUnit(MovementCostStampRow stamp) => stamp.UnitCostRatioJson is { } ratio
-        ? (JsonSerializer.Deserialize<InventoryExactCostRatioV1>(ratio, CostJson) ?? throw new InvalidOperationException()).Value()
-        : ExactCostRatio.Of(stamp.UnitCostPerKg ?? throw new InvalidOperationException());
+    private static ExactCostRatio StampUnit(MovementCostStampRow stamp) => InventoryExactCostRatioV1.Resolve(stamp.UnitCostPerKg,
+        stamp.UnitCostRatioJson is { } ratio ? JsonSerializer.Deserialize<InventoryExactCostRatioV1>(ratio, CostJson) : null);
 
-    private static string PoolEffect(AverageCostPosition? before, AverageCostPosition after, ExactCostRatio authoritative)
+    internal static ExactCostRatio? AdmittedReceiptUnit(decimal? scalar, InventoryExactCostRatioV1? ratio, string? unavailableReason)
     {
-        var beforeValue = ExactCostRatio.Of(before?.QuantityKg ?? 0m).Multiply(before?.AverageCostPerKg ?? 0m);
-        var afterValue = ExactCostRatio.Of(after.QuantityKg!.Value).Multiply(after.AverageCostPerKg!.Value);
-        return JsonSerializer.Serialize(new MovementPoolEffect(before?.QuantityKg ?? 0m, before?.AverageCostPerKg,
-            after.QuantityKg.Value, after.AverageCostPerKg.Value, InventoryExactCostRatioV1.From(authoritative),
-            InventoryExactCostRatioV1.From(afterValue.Subtract(beforeValue))), CostJson);
+        if (unavailableReason is not null)
+        {
+            if (scalar is not null || ratio is not null) throw new InvalidOperationException("Unavailable receipt cost carries a value.");
+            return null;
+        }
+        if (scalar is null && ratio is null) return null;
+        var value = InventoryExactCostRatioV1.Resolve(scalar, ratio);
+        if (value.Sign < 0) throw new InvalidOperationException("Receipt unit cost is negative.");
+        return value;
     }
-    private sealed record MovementPoolEffect(decimal BeforeQuantityKg, decimal? BeforeAverageCostPerKg, decimal AfterQuantityKg,
-        decimal AfterAverageCostPerKg, InventoryExactCostRatioV1 AuthoritativeValue, InventoryExactCostRatioV1 RecordedValue);
+
+    private static string PoolEffect(ExactAverageCostPool? before, ExactAverageCostPool after, ExactCostRatio authoritative,
+        ExactCostRatio pricedQuantity)
+    {
+        var beforeQuantity = before?.QuantityKg ?? ExactCostRatio.Of(0m);
+        var beforeValue = before?.Value ?? ExactCostRatio.Of(0m);
+        return JsonSerializer.Serialize(new MovementPoolEffect(InventoryExactCostRatioV1.ScalarOf(beforeQuantity), before?.AverageCostPerKg,
+            InventoryExactCostRatioV1.ScalarOf(after.QuantityKg), after.AverageCostPerKg, InventoryExactCostRatioV1.From(authoritative),
+            InventoryExactCostRatioV1.From(after.Value.Subtract(beforeValue)), InventoryExactCostRatioV1.From(beforeQuantity),
+            InventoryExactCostRatioV1.From(after.QuantityKg), InventoryExactCostRatioV1.From(pricedQuantity)), CostJson);
+    }
+    private sealed record MovementPoolEffect(decimal? BeforeQuantityKg, decimal? BeforeAverageCostPerKg, decimal? AfterQuantityKg,
+        decimal AfterAverageCostPerKg, InventoryExactCostRatioV1 AuthoritativeValue, InventoryExactCostRatioV1 RecordedValue,
+        InventoryExactCostRatioV1? BeforeQuantityKgRatio = null, InventoryExactCostRatioV1? AfterQuantityKgRatio = null,
+        InventoryExactCostRatioV1? PricedQuantityKgRatio = null);
 
     private void AddPending(Guid movement, int line, Guid currency, StockPosition position, decimal kg, string reason) =>
         dbContext.PendingMovementCosts.Add(new PendingMovementCostRow
@@ -334,81 +406,4 @@ public sealed partial class InventoryStore
                 "inventory.entry-currency.v1/unreadable", "entry_currency_source_unreadable");
     }
 
-    internal static async Task<CostPool> ReadCostPoolAsync(InventoryDbContext dbContext, GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext companyContext, Guid location, Guid product, Guid currency, CancellationToken token)
-    {
-        var physical = await dbContext.Balances.Where(row => row.LocationId == location && row.ProductId == product
-            && row.OwnerKind == (int)StockPartyKind.Company && row.OwnerId == companyContext.CompanyId
-            && row.CustodianKind == (int)StockPartyKind.Company && row.CustodianId == companyContext.CompanyId).ToListAsync(token);
-        physical.AddRange(dbContext.Balances.Local.Where(row => row.LocationId == location && row.ProductId == product
-            && row.CompanyId == companyContext.CompanyId && row.OwnerKind == (int)StockPartyKind.Company && row.OwnerId == companyContext.CompanyId
-            && row.CustodianKind == (int)StockPartyKind.Company && row.CustodianId == companyContext.CompanyId && !physical.Contains(row)));
-        var pending = await dbContext.PendingMovementCosts.Where(row => row.ProductId == product && row.CurrencyId == currency).ToListAsync(token);
-        pending.AddRange(dbContext.PendingMovementCosts.Local.Where(row => row.ProductId == product && row.CurrencyId == currency && !pending.Contains(row)));
-        if (currency == SettingsCurrencyIdentitiesV1.TurkishLira)
-        {
-            // An approved opening cost is the explicit valuation of the whole position at that decision. It does not
-            // backfill any historical movement stamp, but old pending entries at that position no longer hide its pool.
-            var openings = await (from opening in dbContext.OpeningCosts.AsNoTracking()
-                join decision in dbContext.OpeningCostDecisions.AsNoTracking() on opening.Id equals decision.OpeningCostId
-                where opening.ProductId == product && decision.Decision == 1
-                select new { opening.LocationId, decision.DecidedAtUtc }).ToListAsync(token);
-            pending.RemoveAll(entry => openings.Any(opening => opening.LocationId == entry.LocationId
-                && opening.DecidedAtUtc >= entry.RecordedAtUtc));
-        }
-        var recognized = await (from recognition in dbContext.MovementCostRecognitions
-            join generation in dbContext.ManufacturingCostGenerations on recognition.GenerationId equals (Guid?)generation.Id into generations
-            from generation in generations.DefaultIfEmpty()
-            where recognition.CurrencyId == currency && (recognition.GenerationId == null || generation!.State == (int)InventoryManufacturingCostGenerationStateV1.Recognized)
-            select recognition).ToListAsync(token);
-        recognized.AddRange(dbContext.MovementCostRecognitions.Local.Where(row => row.CurrencyId == currency
-            && (row.GenerationId == null || dbContext.ManufacturingCostGenerations.Local.Any(g => g.Id == row.GenerationId
-                && g.State == (int)InventoryManufacturingCostGenerationStateV1.Recognized)) && !recognized.Contains(row)));
-        var pendingLabels = pending.Where(row => !recognized.Any(done => done.MovementId == row.MovementId && done.LineNumber == row.LineNumber))
-            .Select(row => row.LabelId).ToHashSet();
-        var total = physical.Sum(row => row.QuantityKg);
-        var pendingKg = physical.Where(row => pendingLabels.Contains(row.LabelId)).Sum(row => row.QuantityKg);
-        if (currency == SettingsCurrencyIdentitiesV1.TurkishLira)
-        {
-            var row = dbContext.AverageCostLedger.Local.SingleOrDefault(row => row.LocationId == location && row.ProductId == product)
-                ?? await dbContext.AverageCostLedger.SingleOrDefaultAsync(row => row.LocationId == location && row.ProductId == product, token);
-            return new(row is null ? null : InventoryAverageCostLedgerRows.PositionOf(row), row?.Version ?? 0, total, total - pendingKg, pendingLabels, row, null);
-        }
-        var foreign = dbContext.CurrencyAverageCostLedger.Local.SingleOrDefault(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency)
-            ?? await dbContext.CurrencyAverageCostLedger.SingleOrDefaultAsync(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency, token);
-        var position = foreign is null ? null : foreign.Status == (int)AverageCostStatus.Known
-            ? AverageCostPosition.Known(foreign.QuantityKg!.Value, foreign.AverageCostPerKg!.Value)
-            : AverageCostPosition.Unreadable((AverageCostUnreadableReason)foreign.UnreadableReason!.Value);
-        return new(position, foreign?.Version ?? 0, total, total - pendingKg, pendingLabels, null, foreign);
-    }
-
-    internal static Task<long> WriteCostPoolAsync(InventoryDbContext dbContext, GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext companyContext, TimeProvider timeProvider, Guid location, Guid product, Guid currency, CostPool before, AverageCostPosition after, CancellationToken token)
-    {
-        token.ThrowIfCancellationRequested();
-        if (currency == SettingsCurrencyIdentitiesV1.TurkishLira)
-        {
-            var row = before.TlRow ?? new AverageCostLedgerRow { Id = Guid.NewGuid(), CompanyId = companyContext.CompanyId, LocationId = location, ProductId = product };
-            var firstChange = dbContext.Entry(row).State is EntityState.Detached or EntityState.Unchanged;
-            InventoryAverageCostLedgerRows.Write(row, after);
-            if (firstChange) row.Version = checked(row.Version + 1);
-            row.UpdatedAtUtc = timeProvider.GetUtcNow();
-            if (before.TlRow is null) dbContext.AverageCostLedger.Add(row);
-            return Task.FromResult(row.Version);
-        }
-        var foreign = before.ForeignRow ?? new CurrencyAverageCostLedgerRow { Id = Guid.NewGuid(), CompanyId = companyContext.CompanyId,
-            LocationId = location, ProductId = product, CurrencyId = currency };
-        var firstForeignChange = dbContext.Entry(foreign).State is EntityState.Detached or EntityState.Unchanged;
-        foreign.Status = (int)after.Status; foreign.QuantityKg = after.QuantityKg; foreign.AverageCostPerKg = after.AverageCostPerKg;
-        foreign.UnreadableReason = after.UnreadableReason is { } reason ? (int)reason : null;
-        if (firstForeignChange) foreign.Version = checked(foreign.Version + 1);
-        foreign.UpdatedAtUtc = timeProvider.GetUtcNow();
-        if (before.ForeignRow is null) dbContext.CurrencyAverageCostLedger.Add(foreign);
-        return Task.FromResult(foreign.Version);
-    }
-
-    internal sealed record CostPool(AverageCostPosition? Position, long Version, decimal PhysicalKg, decimal CostedKg,
-        IReadOnlySet<Guid> PendingLabels, AverageCostLedgerRow? TlRow, CurrencyAverageCostLedgerRow? ForeignRow)
-    {
-        public bool IsConsistent => Position is null ? CostedKg == 0m : Position.Status == AverageCostStatus.Known && Position.QuantityKg == CostedKg;
-        public bool IsComplete => IsConsistent && CostedKg == PhysicalKg;
-    }
 }

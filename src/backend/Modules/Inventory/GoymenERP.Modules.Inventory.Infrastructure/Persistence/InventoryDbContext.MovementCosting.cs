@@ -12,6 +12,7 @@ public sealed partial class InventoryDbContext
     internal DbSet<MovementCostRecognitionRow> MovementCostRecognitions => Set<MovementCostRecognitionRow>();
     internal DbSet<ManufacturingCostGenerationRow> ManufacturingCostGenerations => Set<ManufacturingCostGenerationRow>();
     internal DbSet<ManufacturingCostGenerationHistoryRow> ManufacturingCostGenerationHistory => Set<ManufacturingCostGenerationHistoryRow>();
+    internal DbSet<ExactCostPoolRow> ExactCostPools => Set<ExactCostPoolRow>();
 
     private void ConfigureMovementCosting(ModelBuilder modelBuilder)
     {
@@ -81,6 +82,21 @@ public sealed partial class InventoryDbContext
         ledger.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);
         LocationOf(ledger);
         ledger.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
+        var exactPool = modelBuilder.Entity<ExactCostPoolRow>();
+        exactPool.ToTable("ExactCostPools", Schema, table => table.HasCheckConstraint("CK_ExactCostPools_State",
+            "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000' "
+            + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+            + "AND [Version] >= 1 AND DATEPART(TZOFFSET,[UpdatedAtUtc]) = 0 AND (([Status] = 1 AND [QuantityRatioJson] IS NOT NULL "
+            + "AND ISJSON([QuantityRatioJson], OBJECT) = 1 AND [AverageCostPerKg] >= 0 AND [AverageCostPerKg] IS NOT NULL "
+            + "AND [UnreadableReason] IS NULL) OR ([Status] = 2 AND [QuantityRatioJson] IS NULL AND [AverageCostPerKg] IS NULL "
+            + "AND [UnreadableReason] BETWEEN 1 AND 9 AND [UnreadableReason] IS NOT NULL))"));
+        exactPool.HasKey(row => new { row.CompanyId, row.LocationId, row.ProductId, row.CurrencyId });
+        exactPool.Property(row => row.QuantityRatioJson).HasColumnType("nvarchar(max)");
+        exactPool.Property(row => row.AverageCostPerKg).HasPrecision(18, 4);
+        exactPool.Property(row => row.RowVersion).IsRowVersion();
+        exactPool.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        LocationOf(exactPool);
+        exactPool.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
         ConfigurePendingCostRecognition(modelBuilder);
     }
 
@@ -114,8 +130,12 @@ public sealed partial class InventoryDbContext
 
         var recognition = modelBuilder.Entity<MovementCostRecognitionRow>();
         recognition.ToTable("MovementCostRecognitions", Schema, table => table.HasCheckConstraint("CK_MovementCostRecognitions_State",
-            "[Id] <> '00000000-0000-0000-0000-000000000000' AND [UnitCostPerKg] > 0 AND [RemainingQuantityKg] >= 0 "
-            + "AND [ConsumedQuantityKg] >= 0 AND LEN([SourceVersion]) > 0 AND ISJSON([ResultJson], OBJECT) = 1 "
+            "[Id] <> '00000000-0000-0000-0000-000000000000' AND [UnitCostPerKg] > 0 "
+            + "AND (([RemainingQuantityKg] >= 0 AND [RemainingQuantityKg] IS NOT NULL) OR ([RemainingQuantityRatioJson] IS NOT NULL AND ISJSON([RemainingQuantityRatioJson], OBJECT) = 1)) "
+            + "AND (([ConsumedQuantityKg] >= 0 AND [ConsumedQuantityKg] IS NOT NULL) OR ([ConsumedQuantityRatioJson] IS NOT NULL AND ISJSON([ConsumedQuantityRatioJson], OBJECT) = 1)) "
+            + "AND ([RemainingQuantityRatioJson] IS NULL OR ISJSON([RemainingQuantityRatioJson], OBJECT) = 1) "
+            + "AND ([ConsumedQuantityRatioJson] IS NULL OR ISJSON([ConsumedQuantityRatioJson], OBJECT) = 1) "
+            + "AND LEN([SourceVersion]) > 0 AND ISJSON([ResultJson], OBJECT) = 1 "
             + "AND LEN([CorrelationId]) > 0 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0"));
         recognition.HasKey(row => row.Id);
         recognition.Property(row => row.Id).ValueGeneratedNever();
@@ -126,6 +146,8 @@ public sealed partial class InventoryDbContext
         recognition.Property(row => row.UnitCostPerKg).HasPrecision(38, 18);
         recognition.Property(row => row.RemainingQuantityKg).HasPrecision(18, 3);
         recognition.Property(row => row.ConsumedQuantityKg).HasPrecision(18, 3);
+        recognition.Property(row => row.RemainingQuantityRatioJson).HasColumnType("nvarchar(max)");
+        recognition.Property(row => row.ConsumedQuantityRatioJson).HasColumnType("nvarchar(max)");
         recognition.Property(row => row.SourceVersion).HasMaxLength(160).IsUnicode(false).IsRequired();
         recognition.Property(row => row.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
         recognition.Property(row => row.CorrelationId).HasMaxLength(100).IsRequired();

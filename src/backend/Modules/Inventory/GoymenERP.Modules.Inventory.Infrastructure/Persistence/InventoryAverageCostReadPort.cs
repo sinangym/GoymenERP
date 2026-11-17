@@ -52,6 +52,13 @@ internal sealed class InventoryAverageCostReadPort(InventoryDbContext dbContext,
         if (row.Status == (int)AverageCostStatus.Known && row.QuantityKg != physicalKg)
             return InventoryAverageCostReadAnswerV1.ForUnreadable(companyId, locationId, productId,
                 InventoryAverageCostUnreadableCodesV1.LedgerStockMismatch, row.Version);
+        var exact = await dbContext.ExactCostPools.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.CompanyId == companyId
+            && candidate.LocationId == locationId && candidate.ProductId == productId
+            && candidate.CurrencyId == GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsCurrencyIdentitiesV1.TurkishLira,
+            cancellationToken);
+        if (row.Status == (int)AverageCostStatus.Known && exact is not null && !ExactMatches(exact, row, physicalKg))
+            return InventoryAverageCostReadAnswerV1.ForUnreadable(companyId, locationId, productId,
+                InventoryAverageCostUnreadableCodesV1.LedgerStockMismatch, row.Version);
 
         return (AverageCostStatus)row.Status switch
         {
@@ -62,6 +69,20 @@ internal sealed class InventoryAverageCostReadPort(InventoryDbContext dbContext,
             // A row the schema checks forbid: fail closed, never a figure.
             _ => throw new InvalidOperationException("Maliyet defteri satırı tanınmayan durumda."),
         };
+    }
+
+    internal static bool ExactMatches(ExactCostPoolRow exact, AverageCostLedgerRow legacy, decimal physicalKg)
+    {
+        try
+        {
+            var quantity = System.Text.Json.JsonSerializer.Deserialize<InventoryExactCostRatioV1>(exact.QuantityRatioJson ?? "null",
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))?.Value();
+            return exact.Status == (int)AverageCostStatus.Known && quantity is not null && quantity.Sign >= 0
+                && quantity.CompareTo(ExactCostRatio.Of(physicalKg)) == 0 && exact.AverageCostPerKg == legacy.AverageCostPerKg
+                && exact.Version == legacy.Version;
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidOperationException or ArgumentException)
+        { return false; }
     }
 
     internal static string CodeOf(int reason) => (AverageCostUnreadableReason)reason switch

@@ -1681,6 +1681,12 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                         nameof(CurrencyAverageCostLedgerRow.QuantityKg), nameof(CurrencyAverageCostLedgerRow.AverageCostPerKg),
                         nameof(CurrencyAverageCostLedgerRow.Version), nameof(CurrencyAverageCostLedgerRow.UpdatedAtUtc),
                     ],
+                    ExactCostPoolRow =>
+                    [
+                        nameof(ExactCostPoolRow.Status), nameof(ExactCostPoolRow.UnreadableReason),
+                        nameof(ExactCostPoolRow.QuantityRatioJson), nameof(ExactCostPoolRow.AverageCostPerKg),
+                        nameof(ExactCostPoolRow.Version), nameof(ExactCostPoolRow.UpdatedAtUtc),
+                    ],
                     ManufacturingCostGenerationRow =>
                     [
                         nameof(ManufacturingCostGenerationRow.Version), nameof(ManufacturingCostGenerationRow.State),

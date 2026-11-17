@@ -887,6 +887,8 @@ Decision: `docs/decisions/SINAN_KARARLARI_2026-11-10_SATIS_EK52.md`. Inventory o
 
 ## Existing central dependencies
 
+- `AddInventoryExactCostPools` preserves the private priced mass as canonical exact ratios, with the existing average at 4dp. Recognition keeps nullable 3dp projections plus exact ratio provenance; no physical kg is rounded into a new quantity. Down first refuses with **THROW 51968** while a private pool or exact recognition mass exists (forward fix). Old movement stamps remain unchanged. Split/merge, partial issues, original partial returns and late Manufacturing recognition have source tests; runtime is **NOT_RUN**.
+
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
 - **INV-3 central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs` and `InventoryStore.cs`, which changed here (no new raw SQL; the SqlClient use is unchanged); add the four new names of `InventorySqlServerRelationalAcceptanceTests` to the relational verifier's BROAD list and counts.
 - **INV-3:** command/query surface, permissions (registered centrally, granted by a human), host wiring with the audit interceptor, and UI.

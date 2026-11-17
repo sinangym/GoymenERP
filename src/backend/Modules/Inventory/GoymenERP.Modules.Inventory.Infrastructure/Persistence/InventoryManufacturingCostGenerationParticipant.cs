@@ -118,7 +118,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             {
                 var label = factual[output.LabelId];
                 // Version + rowversion fence with every physical writer, including transfers after this read.
-                label.Version = checked(label.Version + 1); label.UpdatedAtUtc = clock.GetUtcNow();
+                _ = label; // Every actual positive-share descendant is fenced by OutputEffectAsync.
                 results.Add(await OutputEffectAsync(output, command.State == InventoryManufacturingCostGenerationStateV1.Recognized,
                     reverse: false, command.GenerationId, command.InputFingerprint, metadata, cancellationToken));
             }
@@ -158,7 +158,7 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             {
                 var label = await db.Labels.SingleOrDefaultAsync(candidate => candidate.Id == output.LabelId, cancellationToken)
                     ?? throw Error(503, "inventory_manufacturing_cost_unavailable");
-                label.Version = checked(label.Version + 1); label.UpdatedAtUtc = clock.GetUtcNow();
+                _ = label; // Every actual positive-share descendant is fenced by OutputEffectAsync.
                 results.Add(await OutputEffectAsync(new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg,
                     output.TlUnitCostPerKg, output.UsdUnitCostPerKg, output.OriginalTlAmount),
                     before.State == InventoryManufacturingCostGenerationStateV1.Recognized, reverse: true,
@@ -178,58 +178,61 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         bool recognized, bool reverse, Guid generationId, string sourceVersion, InventoryCommandMetadata metadata, CancellationToken token,
         IReadOnlyList<InventoryManufacturingCostPoolEffectV1>? originalPoolEffects = null)
     {
-        var balances = await db.Balances.Where(row => row.LabelId == output.LabelId && row.QuantityKg > 0m).ToListAsync(token);
-        var remaining = balances.Sum(row => row.QuantityKg);
-        if (remaining > output.NetQuantityKg) throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
-        var consumed = output.NetQuantityKg - remaining;
-        if (recognized && output.TlAmount is not null)
-        {
-            var disposition = await InventoryLabelDispositionReader.ReadAsync(db, company.CompanyId, output.LabelId, token);
-            var shipped = disposition.ShippedKg - disposition.CustomerReturnedKg;
-            // Missing balances include transit and downstream transformations. Only a real net definite shipment is
-            // evidence for this SMM proposal. Other lineage needs its owner cost propagation; no missing-kg guess.
-            if (shipped < 0m || consumed != shipped)
-                throw Error(503, "inventory_manufacturing_cost_consumption_source_unreadable");
-        }
-        var tlAmount = recognized ? output.TlAmount : null;
-        var split = tlAmount is { } amount ? InventoryManufacturingCostSplitCalculatorV1.Split(amount, output.NetQuantityKg, consumed) : null;
+        var root = await db.Labels.SingleAsync(row => row.Id == output.LabelId, token);
+        var lineage = await InventoryCostLineageReader.ReadAsync(db, company.CompanyId, root.ProductId, output.LabelId, token);
+        if (lineage.Outcome != InventoryCostLineageOutcome.Value || lineage.RemainingKg is null || lineage.NetShippedKg is null)
+            throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
+        await FenceLineageAsync(lineage, token);
+        var remaining = lineage.RemainingKg;
+        var consumed = ExactCostRatio.Of(output.NetQuantityKg).Subtract(remaining);
+        if (consumed.Sign < 0) throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
+        if (recognized && output.TlAmount is not null && (lineage.NetShippedKg.Sign < 0 || consumed.CompareTo(lineage.NetShippedKg) != 0))
+            // Transit or a non-shipment exit is not a sale. This exact refusal is still before every save.
+            throw Error(503, "inventory_manufacturing_cost_consumption_source_unreadable");
+        var split = recognized && output.TlAmount is { } amount
+            ? InventoryManufacturingCostSplitCalculatorV1.Split(amount, output.NetQuantityKg, consumed) : null;
         var remainingTl = split?.RemainingTlAmount;
         var consumedTl = split?.ConsumedTlAmount;
         var sign = reverse ? -1m : 1m;
         var positions = new List<InventoryManufacturingCostPositionEffectV1>();
         var poolEffects = new List<InventoryManufacturingCostPoolEffectV1>();
-        var groups = balances.GroupBy(row => (row.LocationId, Included: row.OwnerKind == (int)StockPartyKind.Company
-                     && row.OwnerId == company.CompanyId && row.CustodianKind == (int)StockPartyKind.Company && row.CustodianId == company.CompanyId))
-                 .OrderBy(group => group.Key.LocationId).ThenBy(group => group.Key.Included).ToArray();
-        var allocatedValue = 0m;
+        var groups = lineage.Labels.Where(label => label.RootShare.Sign > 0)
+            .SelectMany(label => label.Positions.Where(position => position.QuantityKg > 0m).Select(position => new
+            {
+                position.LocationId, Included = position.Owner.Kind == StockPartyKind.Company && position.Owner.Id == company.CompanyId
+                    && position.Custodian.Kind == StockPartyKind.Company && position.Custodian.Id == company.CompanyId,
+                Quantity = label.RootShare.Multiply(position.QuantityKg),
+            })).GroupBy(position => (position.LocationId, position.Included))
+            .OrderBy(group => group.Key.LocationId).ThenBy(group => group.Key.Included).ToArray();
+        var allocatedValue = ExactCostRatio.Of(0m);
         for (var index = 0; index < groups.Length; index++)
         {
             var group = groups[index];
-            var kg = group.Sum(row => row.QuantityKg);
-            var value = index == groups.Length - 1 ? (remainingTl ?? 0m) - allocatedValue
-                : remainingTl is { } fullRemaining && remaining > 0m ? fullRemaining * kg / remaining : 0m;
-            allocatedValue += value;
-            if (recognized && output.TlAmount is not null) positions.Add(new(group.Key.LocationId, kg, sign * value, group.Key.Included));
+            var kg = group.Aggregate(ExactCostRatio.Of(0m), (sum, row) => sum.Add(row.Quantity));
+            var value = index == groups.Length - 1 ? ExactCostRatio.Of(remainingTl ?? 0m).Subtract(allocatedValue)
+                : remainingTl is { } fullRemaining && remaining.Sign > 0 ? ExactCostRatio.Of(fullRemaining).Multiply(kg).Divide(remaining) : ExactCostRatio.Of(0m);
+            allocatedValue = allocatedValue.Add(value);
+            var signedValue = value.Multiply(sign);
+            if (recognized && output.TlAmount is not null) positions.Add(new(group.Key.LocationId, Scalar(kg), Scalar(signedValue),
+                group.Key.Included, Ratio(kg), Ratio(signedValue)));
             if (!recognized || !group.Key.Included) continue;
-            var product = group.Select(row => row.ProductId).Distinct().Single();
             if (output.TlAmount is not null)
-                poolEffects.Add(await ApplyPoolEffectAsync(group.Key.LocationId, product, SettingsCurrencyIdentitiesV1.TurkishLira, kg,
-                    value, reverse, Original(SettingsCurrencyIdentitiesV1.TurkishLira), token));
+                poolEffects.Add(await ApplyPoolEffectAsync(group.Key.LocationId, root.ProductId, SettingsCurrencyIdentitiesV1.TurkishLira,
+                    kg, value, reverse, Original(SettingsCurrencyIdentitiesV1.TurkishLira), token));
             if (output.UsdUnitCostPerKg is > 0m)
-                poolEffects.Add(await ApplyPoolEffectAsync(group.Key.LocationId, product, ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"), kg,
-                    output.UsdUnitCostPerKg.Value * kg, reverse, Original(ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")), token));
-
+                poolEffects.Add(await ApplyPoolEffectAsync(group.Key.LocationId, root.ProductId, ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"),
+                    kg, kg.Multiply(output.UsdUnitCostPerKg.Value), reverse, Original(ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD")), token));
             InventoryManufacturingCostPoolEffectV1? Original(Guid currency) => originalPoolEffects?.SingleOrDefault(effect =>
-                effect.LocationId == group.Key.LocationId && effect.ProductId == product && effect.CurrencyId == currency);
+                effect.LocationId == group.Key.LocationId && effect.ProductId == root.ProductId && effect.CurrencyId == currency);
         }
         if (recognized && !reverse && output.NetQuantityKg > 0m)
         {
             if (output.TlAmount is not null) await AddRecognitionAsync(SettingsCurrencyIdentitiesV1.TurkishLira, output.TlUnitCostPerKg!.Value);
             if (output.UsdUnitCostPerKg is > 0m) await AddRecognitionAsync(ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD"), output.UsdUnitCostPerKg.Value);
         }
-        return new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg, remaining, consumed,
+        return new(output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg, Scalar(remaining), Scalar(consumed),
             recognized ? output.TlUnitCostPerKg : null, sign * remainingTl, sign * consumedTl,
-            recognized ? output.UsdUnitCostPerKg : null, positions, recognized ? output.TlAmount : null, poolEffects);
+            recognized ? output.UsdUnitCostPerKg : null, positions, recognized ? output.TlAmount : null, poolEffects, Ratio(remaining), Ratio(consumed));
 
         async Task AddRecognitionAsync(Guid currency, decimal unit)
         {
@@ -238,43 +241,63 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
             if (pending is null) throw Error(503, "inventory_manufacturing_cost_pending_source_missing");
             db.MovementCostRecognitions.Add(new() { Id = Guid.NewGuid(), CompanyId = company.CompanyId,
                 MovementId = output.ReceiptMovementId, LineNumber = 1, CurrencyId = currency, GenerationId = generationId,
-                UnitCostPerKg = unit, RemainingQuantityKg = remaining, ConsumedQuantityKg = consumed,
-                SourceVersion = sourceVersion, ResultJson = JsonSerializer.Serialize(new { output, remaining, consumed }, Json),
+                UnitCostPerKg = unit, RemainingQuantityKg = MassScalar(remaining), ConsumedQuantityKg = MassScalar(consumed),
+                RemainingQuantityRatioJson = JsonSerializer.Serialize(Ratio(remaining), Json), ConsumedQuantityRatioJson = JsonSerializer.Serialize(Ratio(consumed), Json),
+                SourceVersion = sourceVersion, ResultJson = JsonSerializer.Serialize(new { output, remaining = Ratio(remaining), consumed = Ratio(consumed) }, Json),
                 RecordedAtUtc = clock.GetUtcNow(), CorrelationId = metadata.CorrelationId });
         }
     }
 
+    private readonly HashSet<Guid> fencedLineage = [];
+    private async Task FenceLineageAsync(InventoryCostLineageSnapshot lineage, CancellationToken token)
+    {
+        foreach (var label in lineage.Labels.Where(label => label.RootShare.Sign > 0).OrderBy(label => label.LabelId))
+        {
+            var tracked = await db.Labels.SingleOrDefaultAsync(row => row.Id == label.LabelId, token)
+                ?? throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
+            if (db.Entry(tracked).OriginalValues.GetValue<long>(nameof(LabelRow.Version)) != label.Version
+                || tracked.ProductId != lineage.ProductId || tracked.ProductVersion != label.ProductVersion)
+                throw Error(409, "inventory_manufacturing_cost_version_conflict");
+            if (fencedLineage.Add(label.LabelId))
+            { tracked.Version = checked(tracked.Version + 1); tracked.UpdatedAtUtc = clock.GetUtcNow(); }
+        }
+    }
+
+    private static decimal? Scalar(ExactCostRatio value) => InventoryExactCostRatioV1.ScalarOf(value);
+    private static decimal? MassScalar(ExactCostRatio value) => Scalar(value) is { } scalar && decimal.Round(scalar, 3) == scalar ? scalar : null;
+    private static InventoryExactCostRatioV1 Ratio(ExactCostRatio value) => InventoryExactCostRatioV1.From(value);
     private readonly Dictionary<(Guid, Guid, Guid), InventoryStore.CostPool> pools = [];
     private async Task<InventoryManufacturingCostPoolEffectV1> ApplyPoolEffectAsync(Guid location, Guid product, Guid currency,
-        decimal kg, decimal authoritativeValue, bool reverse, InventoryManufacturingCostPoolEffectV1? original, CancellationToken token)
+        ExactCostRatio kg, ExactCostRatio authoritativeValue, bool reverse, InventoryManufacturingCostPoolEffectV1? original, CancellationToken token)
     {
         var key = (location, product, currency);
         if (!pools.TryGetValue(key, out var pool)) pool = await InventoryStore.ReadCostPoolAsync(db, company, location, product, currency, token);
-        if (!pool.IsConsistent || authoritativeValue < 0m) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
-        var beforeValue = pool.CostedKg * (pool.Position?.AverageCostPerKg ?? 0m);
-        AverageCostPosition after;
-        if (!reverse)
-            // A zero remaining value can be the approved cent residual after all label value was recognized in SMM;
-            // it is not an unpriced zero-cost receipt and never changes the original positive recorded label amount.
-            after = AverageCostPosition.Known(pool.CostedKg + kg, ExactCostRatio.Of(beforeValue).Add(ExactCostRatio.Of(authoritativeValue))
-                .Divide(pool.CostedKg + kg).Round(AverageCostPrecision.InternalScale));
+        if (!pool.IsConsistent || authoritativeValue.Sign < 0) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
+        var current = pool.ExactPosition ?? new(ExactCostRatio.Of(0m), 0m);
+        ExactAverageCostPool after;
+        if (!reverse) after = current.Add(kg, authoritativeValue);
         else
         {
-            if (original is null || original.QuantityKg <= 0m || original.QuantityKg < kg)
-                throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
-            var actualOriginalValue = ExactCostRatio.Of(original.RecordedPoolValueEffect).Multiply(kg).Divide(original.QuantityKg);
-            after = AverageCostCalculator.ReverseRecordedPoolEffect(pool.Position ?? throw Error(503,
-                "inventory_manufacturing_cost_reversal_effect_unreadable"), pool.CostedKg, kg, actualOriginalValue);
+            if (original is null) throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
+            var originalKg = InventoryExactCostRatioV1.Resolve(original.QuantityKg, original.QuantityKgRatio);
+            if (originalKg.Sign <= 0 || originalKg.CompareTo(kg) < 0) throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
+            var actual = InventoryExactCostRatioV1.Resolve(original.RecordedPoolValueEffect, original.RecordedPoolValueEffectRatio)
+                .Multiply(kg).Divide(originalKg);
+            try { after = current.Remove(kg, actual); }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException)
+            { throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable"); }
         }
-        if (after.Status != AverageCostStatus.Known) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
         var version = await InventoryStore.WriteCostPoolAsync(db, company, clock, location, product, currency, pool, after, token);
-        pools[key] = pool with { Position = after, Version = version, CostedKg = pool.CostedKg + (reverse ? -kg : kg),
+        pools[key] = pool with { ExactPosition = after, Version = version, CostedKg = after.QuantityKg,
+            ExactRow = db.ExactCostPools.Local.Single(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency),
             TlRow = currency == SettingsCurrencyIdentitiesV1.TurkishLira ? db.AverageCostLedger.Local.Single(row => row.LocationId == location && row.ProductId == product) : null,
             ForeignRow = currency != SettingsCurrencyIdentitiesV1.TurkishLira ? db.CurrencyAverageCostLedger.Local.Single(row => row.LocationId == location && row.ProductId == product && row.CurrencyId == currency) : null };
-        var actualDelta = after.QuantityKg!.Value * after.AverageCostPerKg!.Value - beforeValue;
-        var signedAuthoritative = reverse ? -authoritativeValue : authoritativeValue;
-        return new(currency, location, product, kg, pool.CostedKg, pool.Position?.AverageCostPerKg,
-            after.QuantityKg.Value, after.AverageCostPerKg.Value, signedAuthoritative, actualDelta, actualDelta - signedAuthoritative);
+        var actualDelta = after.Value.Subtract(current.Value);
+        var signedAuthoritative = authoritativeValue.Multiply(reverse ? -1m : 1m);
+        var difference = actualDelta.Subtract(signedAuthoritative);
+        return new(currency, location, product, Scalar(kg), Scalar(current.QuantityKg), pool.ExactPosition?.AverageCostPerKg,
+            Scalar(after.QuantityKg), after.AverageCostPerKg, Scalar(signedAuthoritative), Scalar(actualDelta), Scalar(difference),
+            Ratio(kg), Ratio(current.QuantityKg), Ratio(after.QuantityKg), Ratio(signedAuthoritative), Ratio(actualDelta), Ratio(difference));
     }
 
     private async Task<Dictionary<Guid, LabelRow>> ValidateOutputsAsync(InventoryManufacturingCostGenerationCommandV1 command, CancellationToken token)
@@ -286,9 +309,13 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         {
             var fact = read.Outputs.SingleOrDefault(row => row.FactId == output.OutputId && row.ReceiptMovementId == output.ReceiptMovementId
                 && row.LabelId == output.LabelId);
-            var disposition = await InventoryLabelDispositionReader.ReadAsync(db, company.CompanyId, output.LabelId, token);
-            if (fact is null || disposition.Output is not { } state || state.ManufacturingOrderId != command.ManufacturingOrderId
-                || state.OutputId != output.OutputId || state.ProducedKg - state.ReversedKg != output.NetQuantityKg)
+            var reversals = await (from movement in db.Movements.AsNoTracking()
+                join line in db.MovementLines.AsNoTracking() on movement.Id equals line.MovementId
+                where line.LabelId == output.LabelId && movement.SourceId == command.ManufacturingOrderId
+                    && movement.SourceKind == InventoryManufacturingOutputReversalContractV1.OutputReversalSourceKind
+                    && line.Direction == (int)GoymenERP.Modules.Inventory.Domain.Movements.StockDirection.Out
+                select (decimal?)line.QuantityKg).SumAsync(token) ?? 0m;
+            if (fact is null || fact.DeclaredQuantityKg - reversals != output.NetQuantityKg)
                 throw Error(503, "inventory_manufacturing_cost_physical_source_unreadable");
             if (command.State == InventoryManufacturingCostGenerationStateV1.Recognized && output.NetQuantityKg > 0m && output.TlAmount is null)
             {
@@ -348,8 +375,12 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         if (row is null) return null;
         if (row.ActorId != metadata.ActorId || row.PayloadHash != Hash(JsonSerializer.Serialize(command, Json)))
             throw Error(409, "inventory_manufacturing_cost_idempotency_conflict");
-        return (JsonSerializer.Deserialize<InventoryManufacturingCostGenerationResultV1>(row.ResultJson, Json)
-            ?? throw Error(503, "inventory_manufacturing_cost_unavailable")) with { IsReplay = true, OriginalCorrelationId = row.CorrelationId };
+        var result = JsonSerializer.Deserialize<InventoryManufacturingCostGenerationResultV1>(row.ResultJson, Json)
+            ?? throw Error(503, "inventory_manufacturing_cost_unavailable");
+        if (result.CompanyId != company.CompanyId || result.GenerationId != row.TargetId)
+            throw Error(503, "inventory_manufacturing_cost_unavailable");
+        ValidateResultExactValues(result);
+        return result with { IsReplay = true, OriginalCorrelationId = row.CorrelationId };
     }
 
     private static void Validate(InventoryManufacturingCostGenerationCommandV1 command)
@@ -410,7 +441,41 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
         if (result is null || result.CompanyId != row.CompanyId || result.GenerationId != row.Id || result.ManufacturingOrderId != row.ManufacturingOrderId
             || result.GenerationVersion != Text(row.Version) || (int)result.State != row.State)
             throw Error(503, "inventory_manufacturing_cost_unavailable");
+        ValidateResultExactValues(result);
         return result;
+    }
+    private static void ValidateResultExactValues(InventoryManufacturingCostGenerationResultV1 result)
+    {
+        try
+        {
+            foreach (var output in result.Outputs)
+            {
+                var remaining = InventoryExactCostRatioV1.Resolve(output.RemainingQuantityKg, output.RemainingQuantityKgRatio);
+                var consumed = InventoryExactCostRatioV1.Resolve(output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio);
+                if (remaining.Sign < 0 || consumed.Sign < 0 || remaining.Add(consumed).CompareTo(ExactCostRatio.Of(output.NetQuantityKg)) != 0)
+                    throw new InvalidOperationException();
+                foreach (var position in output.Positions)
+                {
+                    if (InventoryExactCostRatioV1.Resolve(position.QuantityKg, position.QuantityKgRatio).Sign < 0)
+                        throw new InvalidOperationException();
+                    _ = InventoryExactCostRatioV1.Resolve(position.TlValue, position.TlValueRatio);
+                }
+                foreach (var effect in output.PoolEffects ?? [])
+                {
+                    var quantity = InventoryExactCostRatioV1.Resolve(effect.QuantityKg, effect.QuantityKgRatio);
+                    var before = InventoryExactCostRatioV1.Resolve(effect.BeforeQuantityKg, effect.BeforeQuantityKgRatio);
+                    var after = InventoryExactCostRatioV1.Resolve(effect.AfterQuantityKg, effect.AfterQuantityKgRatio);
+                    var authoritative = InventoryExactCostRatioV1.Resolve(effect.AuthoritativeValue, effect.AuthoritativeValueRatio);
+                    var actual = InventoryExactCostRatioV1.Resolve(effect.RecordedPoolValueEffect, effect.RecordedPoolValueEffectRatio);
+                    var difference = InventoryExactCostRatioV1.Resolve(effect.AverageRoundingDifference, effect.AverageRoundingDifferenceRatio);
+                    if (quantity.Sign < 0 || before.Sign < 0 || after.Sign < 0 || actual.Subtract(authoritative).CompareTo(difference) != 0
+                        || after.Multiply(effect.AfterAverageCostPerKg).Subtract(before.Multiply(effect.BeforeAverageCostPerKg ?? 0m)).CompareTo(actual) != 0)
+                        throw new InvalidOperationException();
+                }
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or NullReferenceException)
+        { throw Error(503, "inventory_manufacturing_cost_unavailable"); }
     }
     private static string Facts(IReadOnlyList<InventoryManufacturingCostGenerationOutputV1> outputs) => JsonSerializer.Serialize(outputs
         .OrderBy(output => output.OutputId).Select(output => new { output.OutputId, output.ReceiptMovementId, output.LabelId, output.NetQuantityKg }), Json);

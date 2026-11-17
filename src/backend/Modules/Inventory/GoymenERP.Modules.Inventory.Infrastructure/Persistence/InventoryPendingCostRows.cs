@@ -25,8 +25,10 @@ internal sealed class MovementCostRecognitionRow : IInventoryTenantRow
     public Guid CurrencyId { get; set; }
     public Guid? GenerationId { get; set; }
     public decimal UnitCostPerKg { get; set; }
-    public decimal RemainingQuantityKg { get; set; }
-    public decimal ConsumedQuantityKg { get; set; }
+    public decimal? RemainingQuantityKg { get; set; }
+    public decimal? ConsumedQuantityKg { get; set; }
+    public string? RemainingQuantityRatioJson { get; set; }
+    public string? ConsumedQuantityRatioJson { get; set; }
     public string SourceVersion { get; set; } = string.Empty;
     public string ResultJson { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
