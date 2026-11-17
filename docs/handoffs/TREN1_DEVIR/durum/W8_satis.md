@@ -16,3 +16,12 @@ Kararlar: SAT-D343, SAT-D421, SAT-D424, SAT-D425. İrsaliye kg kaydı ve ekranı
 - K3 review listesi: immutable JSON kaynak+strict decoder, gerçek Documents owner bağlama/sürüm sabitleme ve commit öncesi yeniden okuma, Sales kg taşıma ve physical quantity ayrımı, 51973 Down. Yeni tenant bypass allowlist girdisi eklenmedi.
 
 SAT-S9, SAT-S12 ve SAT-SC34 ile sipariş kurunun gerçek üretim tüketicisine bağlanması mevcut açık W8 kapsamı olarak sürer.
+
+## URT-SC36 bağlantısı — gerçek satış siparişi kur kaynağı
+
+FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon ve arşivlenmiş onaylı revizyon kendi satır kimliğiyle doğrulanır. Siparişte ayrı kur türü/tarihi alanı bulunmadığından FNS-D83'ün sipariş tarihi ve TCMB döviz satış varsayılanı, mevcut Ayarlar SAT-D54/D170 çözümleyicisine aktarılır. Tarih algoritması burada tekrarlanmaz. Üretimin talep ettiği kaynak para birimi açıkça iletilir; okunamayan sipariş veya kur için mal kabul kuruna geçilmez. TL stok maliyeti değiştirilmez.
+
+- Üretim Application sözleşmesi bağımlılığı: `64d0e3495` (bu dalda `9d256f2e3`); kesin oran türü üretim yazarının `f65b9026b` kaynağıyla aynıdır.
+- Kaynak testleri: gerçek Sales owner, ilk revizyonun sıfır olması, arşivlenmiş onay, yanlış şirket/satır/revizyon, değişen kaynak sürümü, aktör/şirket kaybı, kur hassasiyeti ve iptal. Gerçek SQL fact'i actual Sales store üzerinden kalıcı kayıt okumasını ve yazma oluşmamasını kapsar.
+- Api, Sales.UnitTests ve Api.IntegrationTests derlemeleri exit 0; 0 uyarı/hata. İlk Integration derlemesindeki sentetik şirket bağlamının eksik arayüz üyesi tamamlandı; yeniden derleme exit 0. OpenAPI üretimi kapalı, merkezi entegrasyon bekliyor.
+- Test çalıştırılması, SQL ve CI: **NOT_RUN**. Yeni migration, izin veya grant yok. Üretimin gerçek tüketicisiyle birleştirme ve pin üretimi tamamlanmadan dilim DONE sayılmaz.

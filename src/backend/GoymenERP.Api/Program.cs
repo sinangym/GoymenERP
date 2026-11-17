@@ -354,6 +354,7 @@ builder.Services.AddManufacturingModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // MFG realization v1: the host composes the approved Manufacturing ports with their API-owned adapters.
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
+builder.Services.AddScoped<IManufacturingInputOrderRateReadPortV1, ManufacturingSalesOrderInputRateReadPortV1>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
 // F-009 D3 (URT-S2): the output correction shares the return/output host and its one transaction per command.
 builder.Services.AddScoped<ManufacturingInventoryReturnOutputHost>();
