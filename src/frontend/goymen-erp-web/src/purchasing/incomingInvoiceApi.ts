@@ -1,6 +1,6 @@
 import { API_BASE, purchasingHeaders } from './api'
 import { post } from './receiptAdjustmentApi'
-import { decodeIncomingInvoice, decodeInvoiceCommand, decodeInvoicePage, decodeInvoiceReceipts,
+import { decodeIncomingInvoice, decodeInvoiceCommand, decodeInvoicePage, decodeInvoiceReceipts, decodeInvoiceAdditionalCosts,
   type IncomingInvoice, type IncomingInvoiceLine, type InvoiceCommand } from './incomingInvoiceContract'
 import type { ViewOutcome } from '../shell/uiState'
 const base = `${API_BASE}/purchasing/invoices`
@@ -23,6 +23,9 @@ export const fetchIncomingInvoice = (company: string, id: string, signal: AbortS
 export const fetchInvoiceReceipts = (company: string, invoice: IncomingInvoice, line: IncomingInvoiceLine, pageIndex: number, signal: AbortSignal) =>
   read(company, `${base}/${encodeURIComponent(invoice.id)}/lines/${encodeURIComponent(line.id)}/receipt-candidates?pageIndex=${pageIndex}`,
     signal, (body) => decodeInvoiceReceipts(body, invoice, line, pageIndex))
+export const fetchInvoiceAdditionalCosts = (company: string, invoice: IncomingInvoice, line: IncomingInvoiceLine, pageIndex: number, signal: AbortSignal) =>
+  read(company, `${base}/${encodeURIComponent(invoice.id)}/lines/${encodeURIComponent(line.id)}/additional-cost-candidates?pageIndex=${pageIndex}`,
+    signal, body => decodeInvoiceAdditionalCosts(body, invoice, line, pageIndex))
 export const submitInvoiceCommand = (company: string, id: string, command: InvoiceCommand, key: string) =>
   post(company, `${base}/${encodeURIComponent(id)}/${command.action}`, command.request, key, 200,
     (body, replay) => decodeInvoiceCommand(body, company, id, replay))

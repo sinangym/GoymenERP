@@ -316,6 +316,34 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAdditionalCostInvoiceBindingRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CostId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("NetAmount")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("decimal(24,6)");
+
+                    b.HasKey("CompanyId", "InvoiceId", "InvoiceLineId", "CostId");
+
+                    b.HasIndex("CompanyId", "CostId");
+
+                    b.ToTable("AdditionalCostInvoiceBindings", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_AdditionalCostInvoiceBindings_Net", "[NetAmount] > 0 AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAdditionalCostRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2227,6 +2255,21 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAdditionalCostInvoiceBindingRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseAdditionalCostRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "CostId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseIncomingInvoiceRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InvoiceId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
