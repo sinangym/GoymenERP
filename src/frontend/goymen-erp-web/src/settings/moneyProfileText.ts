@@ -12,6 +12,12 @@ export const MONEY_PROFILE_TEXT = {
   unknown: 'Sonuç doğrulanamadı. Aynı isteği aynı anahtarla yeniden deneyin.', retry: 'Aynı isteği yeniden dene',
   refused: 'İstek kabul edilmedi. Güncel bilgilerle yeniden deneyin.', pending: 'Kaydediliyor…',
   conflict: 'Profil değişti. Güncel bilgiler yüklendi.',
+  initialSuggestion: 'Virman ve bozdurma için başlangıç önerisi',
+  initialSuggestionHelp: 'Aynı şirket ve para birimindeki yürürlükte olan banka ödeme profilinin değerlerini ayrı taslağa alabilirsiniz. Bu işlem profil oluşturmaz veya yayımlamaz.',
+  initialSuggestionUnavailable: 'Aynı şirket ve para biriminde tek bir yürürlükte banka ödeme profili doğrulanamadı. Başlangıç değeri önerilmedi.',
+  useInitialSuggestion: 'Banka ödeme değerlerini taslağa al',
+  initialSuggestionApplied: 'Kaynak değerler taslak alanlarına alındı. Yayımlamak için yürürlük tarihini ve gerekçeyi doğrulayın.',
+  sourceCompany: 'Kaynak şirket', sourceOperation: 'Kaynak işlem ve para birimi', sourceProfile: 'Kaynak profil kimliği',
 } as const
 
 export function moneyOperationLabel(operation: string): string {
@@ -20,6 +26,7 @@ export function moneyOperationLabel(operation: string): string {
     'finance.manual-bank-payment.v1': 'Banka ödemesi',
     'finance.manual-bank-receipt.v1': 'Banka tahsilatı',
     'finance.credit-plan': 'Banka kaynaklı kredi planı',
+    'finance.cash-transfer.v1': 'Virman ve döviz bozdurma',
     'purchasing.order.v1': 'Alış siparişi',
     'sales.order-draft.v1': 'Satış siparişi',
   }
