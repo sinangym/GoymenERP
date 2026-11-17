@@ -260,16 +260,11 @@ public sealed class InventoryManufacturingCostGenerationParticipant : IInventory
                 .Divide(pool.CostedKg + kg).Round(AverageCostPrecision.InternalScale));
         else
         {
-            if (original is null || original.QuantityKg < kg || original.RecordedPoolValueEffect < 0m)
+            if (original is null || original.QuantityKg <= 0m || original.QuantityKg < kg)
                 throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
-            var remainingKg = pool.CostedKg - kg;
             var actualOriginalValue = ExactCostRatio.Of(original.RecordedPoolValueEffect).Multiply(kg).Divide(original.QuantityKg);
-            var remainingValue = ExactCostRatio.Of(beforeValue).Subtract(actualOriginalValue);
-            if (remainingKg < 0m || remainingValue.Sign < 0 || remainingKg == 0m && remainingValue.Sign != 0
-                || remainingKg > 0m && remainingValue.Sign < 0)
-                throw Error(503, "inventory_manufacturing_cost_reversal_effect_unreadable");
-            after = AverageCostPosition.Known(remainingKg, remainingKg == 0m ? pool.Position!.AverageCostPerKg!.Value
-                : remainingValue.Divide(remainingKg).Round(AverageCostPrecision.InternalScale));
+            after = AverageCostCalculator.ReverseRecordedPoolEffect(pool.Position ?? throw Error(503,
+                "inventory_manufacturing_cost_reversal_effect_unreadable"), pool.CostedKg, kg, actualOriginalValue);
         }
         if (after.Status != AverageCostStatus.Known) throw Error(503, "inventory_manufacturing_cost_ledger_unreadable");
         var version = await InventoryStore.WriteCostPoolAsync(db, company, clock, location, product, currency, pool, after, token);

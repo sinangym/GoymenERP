@@ -64,13 +64,17 @@ public sealed partial class InventoryStore
                 decimal? unit = null;
                 ExactCostRatio? exactUnit = null;
                 ExactCostRatio? reversalPoolUnit = null;
+                var knownZeroReceipt = false;
                 long? sourceVersion = null;
                 if (movement.Kind is StockMovementKind.TransferAccept or StockMovementKind.TransferDispatchCancellation
                     or StockMovementKind.TransferReceiptShortage or StockMovementKind.TransferTransitLoss)
                 {
                     var original = await TransferDispatchCostAsync(movement.Source.Id, line.Position, currency, token);
                     if (original is { Status: (int)InventoryMovementCostStampStatusV1.Known })
-                    { unit = original.UnitCostPerKg; exactUnit = StampUnit(original); sourceVersion = original.LedgerVersion; CopyCurrency(stamp, original); }
+                    {
+                        unit = original.UnitCostPerKg; exactUnit = StampUnit(original); sourceVersion = original.LedgerVersion; CopyCurrency(stamp, original);
+                        knownZeroReceipt = incoming && exactUnit.Sign == 0;
+                    }
                 }
                 else if (incoming && movement.Source.Kind == InventoryGoodsReceiptContractV1.SourceKind && proof is not null)
                 {
@@ -88,6 +92,7 @@ public sealed partial class InventoryStore
                     {
                         unit = original.UnitCostPerKg; sourceVersion = original.LedgerVersion;
                         exactUnit = StampUnit(original);
+                        knownZeroReceipt = exactUnit.Sign == 0;
                         CopyCurrency(stamp, original);
                     }
                 }
@@ -141,13 +146,15 @@ public sealed partial class InventoryStore
                 }
                 if (incoming)
                 {
-                    if (exactUnit is { Sign: > 0 } && pool.IsConsistent)
+                    if ((exactUnit is { Sign: > 0 } || knownZeroReceipt && exactUnit is { Sign: 0 }) && pool.IsConsistent)
                     {
                         SetKnown(stamp, exactUnit, kg, sourceVersion ?? checked(pool.Version + 1));
                         AverageCostPosition? after = null;
                         if (stamp.Status == (int)InventoryMovementCostStampStatusV1.Known)
                         {
-                            try { after = AverageCostCalculator.Apply(pool.Position, new(IsCustomerReturn(movement)
+                            try { after = knownZeroReceipt
+                                ? AverageCostCalculator.RestoreKnownMovementValue(pool.Position, pool.CostedKg, kg, exactUnit!.Multiply(kg))
+                                : AverageCostCalculator.Apply(pool.Position, new(IsCustomerReturn(movement)
                                 ? AverageCostMovementKind.CustomerReturn : AverageCostMovementKind.PurchaseReceipt,
                                 kg, pool.CostedKg, unit), exactUnit);
                                 if (after.AverageCostPerKg is >= 100_000_000_000_000m) throw new OverflowException(); }
@@ -178,9 +185,11 @@ public sealed partial class InventoryStore
                     AverageCostPosition after;
                     try
                     {
-                        after = AverageCostCalculator.Apply(pool.Position, new(originalCostExit
+                        after = reversalPoolUnit is not null
+                            ? AverageCostCalculator.ReverseRecordedPoolEffect(pool.Position, pool.CostedKg, kg, reversalPoolUnit.Multiply(kg))
+                            : AverageCostCalculator.Apply(pool.Position, new(originalCostExit
                             ? AverageCostMovementKind.PurchaseReturn : AverageCostMovementKind.Issue, kg, pool.CostedKg,
-                            originalCostExit ? unit : null), originalCostExit ? reversalPoolUnit ?? exactUnit : null);
+                            originalCostExit ? unit : null), originalCostExit ? exactUnit : null);
                         if (after.AverageCostPerKg is >= 100_000_000_000_000m) throw new OverflowException();
                     }
                     catch (OverflowException) { after = AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return); }

@@ -18,6 +18,98 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Acceptance_undo_reverses_a_negative_written_pool_effect_without_treating_it_as_a_negative_price()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        await CostedLabelAsync(run, location, 10000m, 1m, 1m);
+        var added = await CostedLabelAsync(run, location, 1m, 0.01m, 0.01m);
+        Guid original;
+        await using (var context = run.Context(CompanyA))
+        {
+            original = await context.MovementLines.Where(row => row.LabelId == added.Id).Select(row => row.MovementId).SingleAsync();
+            var pool = await context.AverageCostLedger.SingleAsync();
+            Assert.Equal((10001m, 0.9999m), (pool.QuantityKg, pool.AverageCostPerKg));
+        }
+        var undo = Movement(CompanyA, StockMovementKind.PurchaseAcceptanceReversal,
+            new StockSourceReference(InventoryGoodsReceiptReversalCodesV1.SourceKind, original, Guid.NewGuid()),
+            Out(Position(CompanyA, location, added, BlockState.Free), 1m));
+        await using (var owner = run.Store(CompanyA)) await owner.Store.RecordMovementAsync(undo, Metadata(run));
+        await using var final = run.Context(CompanyA);
+        var restored = await final.AverageCostLedger.SingleAsync();
+        Assert.Equal((10000m, 1m), (restored.QuantityKg, restored.AverageCostPerKg));
+        Assert.Equal(0.01m, (await final.MovementCostStamps.SingleAsync(row => row.MovementId == undo.Id
+            && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira)).UnitCostPerKg);
+    }
+
+    [SqlServerFact]
+    public async Task A_positive_generation_with_a_negative_written_pool_effect_can_be_reopened_exactly()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var parent = await CostedLabelAsync(run, location, 10001m, 1m, 1m);
+        var orderId = Guid.NewGuid();
+        var issue = await CommitIssueAsync(run, IssueRequest(orderId, parent.Id, "2", "1"), ManufacturingMetadata(run, "negative-effect-issue"));
+        var output = OutputRequest(orderId, parent.Id, issue.ParentLabelVersion, location, "1");
+        await CommitOutputAsync(run, output, ManufacturingMetadata(run, "negative-effect-output"));
+        var command = new InventoryManufacturingCostGenerationCommandV1(CompanyA, orderId, Guid.NewGuid(), "0", "8",
+            InventoryManufacturingCostGenerationStateV1.Recognized, "SENTETIK-negative-written-effect", "SENTETIK-calculator-v1", "{}",
+            [new(output.OutputId, output.MovementId, output.LabelId, 1m, 0.01m, null, 0.01m)], "SENTETIK actual positive cost", ManufacturingAt.AddHours(1));
+        var recognized = await StageCostGenerationAsync(run, command, ManufacturingMetadata(run, "negative-effect-recognize"), true);
+        Assert.Equal(-0.0001m, Assert.Single(recognized.Outputs[0].PoolEffects!).RecordedPoolValueEffect);
+        await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString); await connection.OpenAsync();
+        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+        await using var scope = run.Factory.Services.CreateAsyncScope(); scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+        await using var owner = await InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, CompanyA,
+            scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
+        var reverse = await owner.ReverseAsync(new(CompanyA, orderId, command.GenerationId, recognized.GenerationVersion, "8",
+            "SENTETIK reopen actual signed effect", ManufacturingAt.AddHours(2)), ManufacturingMetadata(run, "negative-effect-reopen"));
+        await transaction.CommitAsync();
+        Assert.Equal(0.0001m, Assert.Single(reverse.Outputs[0].PoolEffects!).RecordedPoolValueEffect);
+        await using var final = run.Context(CompanyA);
+        var pool = await final.AverageCostLedger.SingleAsync();
+        Assert.Equal((10000m, 1m), (pool.QuantityKg, pool.AverageCostPerKg));
+    }
+
+    [SqlServerFact]
+    public async Task A_customer_return_of_a_known_zero_residual_issue_restores_known_zero_instead_of_an_unknown_price()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var parent = await CostedLabelAsync(run, location, 100m, 1m, 1m);
+        var orderId = Guid.NewGuid();
+        var issue = await CommitIssueAsync(run, IssueRequest(orderId, parent.Id, "2", "100"), ManufacturingMetadata(run, "zero-return-issue"));
+        var output = OutputRequest(orderId, parent.Id, issue.ParentLabelVersion, location, "100");
+        await CommitOutputAsync(run, output, ManufacturingMetadata(run, "zero-return-output"));
+        GoymenERP.Modules.Inventory.Domain.Labels.MaterialLabel produced;
+        await using (var owner = run.Store(CompanyA)) produced = (await owner.Labels.FindLabelAsync(output.LabelId))!;
+        var firstShipment = Movement(CompanyA, StockMovementKind.Issue,
+            new StockSourceReference(InventoryLabelDispositionReader.DefiniteShipmentSourceKind, Guid.NewGuid(), Guid.NewGuid()),
+            Out(Position(CompanyA, location, produced, BlockState.Free), 99m));
+        await using (var owner = run.Store(CompanyA)) await owner.Store.RecordMovementAsync(firstShipment, Metadata(run));
+        await StageCostGenerationAsync(run, new(CompanyA, orderId, Guid.NewGuid(), "0", "8",
+            InventoryManufacturingCostGenerationStateV1.Recognized, "SENTETIK-known-zero-residual", "SENTETIK-calculator-v1", "{}",
+            [new(output.OutputId, output.MovementId, output.LabelId, 100m, 0.0001m, null, 0.01m)], "SENTETIK recorded amount",
+            ManufacturingAt.AddHours(1)), ManufacturingMetadata(run, "zero-return-recognize"), true);
+        var lastShipment = Movement(CompanyA, StockMovementKind.Issue,
+            new StockSourceReference(InventoryLabelDispositionReader.DefiniteShipmentSourceKind, Guid.NewGuid(), Guid.NewGuid()),
+            Out(Position(CompanyA, location, produced, BlockState.Free), 1m));
+        await using (var owner = run.Store(CompanyA)) await owner.Store.RecordMovementAsync(lastShipment, Metadata(run));
+        var returned = Movement(CompanyA, StockMovementKind.Return,
+            new StockSourceReference(InventoryCustomerReturnContractV1.SourceKind, lastShipment.Id, Guid.NewGuid()),
+            In(Position(CompanyA, location, produced, BlockState.Free), 1m));
+        await using (var owner = run.Store(CompanyA)) await owner.Store.RecordMovementAsync(returned, Metadata(run));
+        await using var final = run.Context(CompanyA);
+        var pool = await final.AverageCostLedger.SingleAsync();
+        Assert.Equal((1m, 0m, (int)GoymenERP.Modules.Inventory.Domain.Costing.AverageCostStatus.Known),
+            (pool.QuantityKg, pool.AverageCostPerKg, pool.Status));
+        var stamp = await final.MovementCostStamps.SingleAsync(row => row.MovementId == returned.Id
+            && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira);
+        Assert.Equal(((int)InventoryMovementCostStampStatusV1.Known, 0m, lastShipment.Id), (stamp.Status, stamp.UnitCostPerKg, stamp.SourceIssueMovementId));
+        Assert.False(await final.PendingMovementCosts.AnyAsync(row => row.MovementId == returned.Id && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira));
+    }
+
+    [SqlServerFact]
     public async Task Forward_cost_and_cursor_Down_guards_refuse_their_own_real_rows_without_removing_them()
     {
         await using var run = await Run.StartAsync();

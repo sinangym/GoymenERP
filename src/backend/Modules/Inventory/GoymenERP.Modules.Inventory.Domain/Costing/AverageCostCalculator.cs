@@ -54,6 +54,41 @@ public sealed record AverageCostTransferShortageValuation(decimal QuantityKg, de
 /// </summary>
 public static class AverageCostCalculator
 {
+    /// <summary>Restores the value of a previously Known movement, including the approved zero stock residual. A new
+    /// zero-priced purchase receipt still follows Apply/ZeroCostReceipt; a recorded zero is never an unknown price.</summary>
+    public static AverageCostPosition RestoreKnownMovementValue(AverageCostPosition? current, decimal stockOnHandBeforeKg,
+        decimal quantityKg, ExactCostRatio knownValue)
+    {
+        ArgumentNullException.ThrowIfNull(knownValue);
+        if (quantityKg <= 0m || stockOnHandBeforeKg < 0m || knownValue.Sign < 0) throw new ArgumentOutOfRangeException(nameof(quantityKg));
+        if (current?.Status == AverageCostStatus.Unreadable) return current;
+        if ((current?.QuantityKg ?? 0m) != stockOnHandBeforeKg)
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch);
+        var totalKg = stockOnHandBeforeKg + quantityKg;
+        var total = ExactCostRatio.Of(stockOnHandBeforeKg).Multiply(current?.AverageCostPerKg ?? 0m).Add(knownValue);
+        return AverageCostPosition.Known(totalKg, total.Divide(totalKg).Round(AverageCostPrecision.InternalScale));
+    }
+
+    /// <summary>Reverses an immutable effect actually written to the rounded pool. That effect is signed: a valid positive
+    /// receipt may lower the total rounded pool value. It is not an economic unit price and may be zero or negative.</summary>
+    public static AverageCostPosition ReverseRecordedPoolEffect(AverageCostPosition current, decimal stockOnHandBeforeKg,
+        decimal quantityKg, ExactCostRatio recordedValueEffect)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(recordedValueEffect);
+        if (quantityKg <= 0m || stockOnHandBeforeKg < 0m) throw new ArgumentOutOfRangeException(nameof(quantityKg));
+        if (current.Status == AverageCostStatus.Unreadable) return current;
+        if (current.QuantityKg != stockOnHandBeforeKg)
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.LedgerStockMismatch);
+        if (quantityKg > stockOnHandBeforeKg) return AverageCostPosition.Unreadable(AverageCostUnreadableReason.NegativeStock);
+        var remainingKg = stockOnHandBeforeKg - quantityKg;
+        var remainingValue = ExactCostRatio.Of(stockOnHandBeforeKg).Multiply(current.AverageCostPerKg!.Value).Subtract(recordedValueEffect);
+        if (remainingValue.Sign < 0 || remainingKg == 0m && remainingValue.Sign != 0)
+            return AverageCostPosition.Unreadable(AverageCostUnreadableReason.Return);
+        return AverageCostPosition.Known(remainingKg, remainingKg == 0m ? current.AverageCostPerKg!.Value
+            : remainingValue.Divide(remainingKg).Round(AverageCostPrecision.InternalScale));
+    }
+
     public static AverageCostPosition Apply(AverageCostPosition? current, AverageCostMovement movement, ExactCostRatio? exactUnitCost = null)
     {
         ArgumentNullException.ThrowIfNull(movement);

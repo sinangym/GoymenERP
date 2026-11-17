@@ -40,6 +40,28 @@ public sealed class InventoryCostExactArithmeticTests
     }
 
     [Fact]
+    public void A_positive_receipt_can_have_a_signed_recorded_pool_effect_that_reverses_without_a_negative_price()
+    {
+        var before = AverageCostPosition.Known(10000m, 1m);
+        var after = AverageCostCalculator.Apply(before, new(AverageCostMovementKind.PurchaseReceipt, 1m, 10000m, 0.01m));
+        var delta = ExactCostRatio.Of(after.QuantityKg!.Value).Multiply(after.AverageCostPerKg!.Value).Subtract(ExactCostRatio.Of(10000m));
+        Assert.Equal(-1, delta.Sign);
+        var reversed = AverageCostCalculator.ReverseRecordedPoolEffect(after, 10001m, 1m, delta);
+        Assert.Equal((10000m, 1m), (reversed.QuantityKg, reversed.AverageCostPerKg));
+        var zero = AverageCostCalculator.ReverseRecordedPoolEffect(AverageCostPosition.Known(1m, 0m), 1m, 1m, ExactCostRatio.Of(0m));
+        Assert.Equal((0m, 0m), (zero.QuantityKg, zero.AverageCostPerKg));
+    }
+
+    [Fact]
+    public void Restoring_a_known_zero_issue_preserves_its_value_while_a_new_zero_price_receipt_remains_unknown()
+    {
+        var returned = AverageCostCalculator.RestoreKnownMovementValue(AverageCostPosition.Known(0m, 0m), 0m, 1m, ExactCostRatio.Of(0m));
+        Assert.Equal((1m, 0m), (returned.QuantityKg, returned.AverageCostPerKg));
+        var unknown = AverageCostCalculator.Apply(null, new(AverageCostMovementKind.PurchaseReceipt, 1m, 0m, 0m));
+        Assert.Equal((AverageCostStatus.Unreadable, AverageCostUnreadableReason.ZeroCostReceipt), (unknown.Status, unknown.UnreadableReason));
+    }
+
+    [Fact]
     public void Exact_decimal_costs_preserve_all_significant_digits_and_refuse_overflow_and_scale_loss()
     {
         Assert.True(InventoryCostExactArithmetic.TryDivide(1m, 8m, out var value)); Assert.Equal(0.125m, value);
