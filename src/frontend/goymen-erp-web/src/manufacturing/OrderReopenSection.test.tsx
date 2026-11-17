@@ -39,4 +39,11 @@ describe('reasoned order reopening', () => {
     const refresh = vi.fn(async () => {}); render(ui(true, refresh)); submit()
     expect(await screen.findByText(T.period)).toBeTruthy(); expect(refresh).toHaveBeenCalledTimes(1); expect(sessionStorage.length).toBe(0)
   })
+  it('explains that a recognized output transfer must be undone through its own flow before retrying reopening', async () => {
+    vi.mocked(reopenOrder).mockResolvedValue({ type: 'failed', status: 409, code: 'manufacturing_cost_transfer_reversal_required' })
+    const refresh = vi.fn(async () => {}); render(ui(true, refresh)); submit()
+    expect(await screen.findByText(T.transfer)).toBeTruthy()
+    expect(refresh).toHaveBeenCalledTimes(1); expect(sessionStorage.length).toBe(0)
+    expect(reopenOrder).toHaveBeenCalledTimes(1)
+  })
 })

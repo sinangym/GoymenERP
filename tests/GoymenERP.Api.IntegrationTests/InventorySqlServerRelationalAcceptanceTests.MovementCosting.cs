@@ -58,7 +58,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var recognized = await StageCostGenerationAsync(run, command, ManufacturingMetadata(run, "negative-effect-recognize"), true);
         Assert.Equal(-0.0001m, Assert.Single(recognized.Outputs[0].PoolEffects!).RecordedPoolValueEffect);
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString); await connection.OpenAsync();
-        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         await using var scope = run.Factory.Services.CreateAsyncScope(); scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
         await using var owner = await InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, CompanyA,
             scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
@@ -265,7 +265,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal((1.01m, 1.0101m, 0.0001m, 0.3367m),
             (line.OriginalTlAmount, effect.RecordedPoolValueEffect, effect.AverageRoundingDifference, effect.AfterAverageCostPerKg));
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString); await connection.OpenAsync();
-        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         await using var scope = run.Factory.Services.CreateAsyncScope(); scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
         await using var owner = await InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, CompanyA,
             scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
@@ -373,7 +373,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         InventoryManufacturingCostGenerationCommandV1 command, InventoryCommandMetadata metadata, bool commit)
     {
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString); await connection.OpenAsync();
-        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         await using var scope = run.Factory.Services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
         await using var owner = await InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, CompanyA,
