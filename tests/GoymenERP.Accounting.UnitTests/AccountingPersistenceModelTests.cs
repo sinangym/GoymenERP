@@ -138,8 +138,8 @@ public sealed class AccountingPersistenceModelTests
         Assert.Equal(["20261117000534_AddManufacturingCostDifferenceProposals", "20261117005516_AddCreditMovementProposals",
                 "20261117095844_AddInvoiceLineCogsCorrections", "20261117102540_AddFinanceJournalSources",
                 "20261117123611_AddSourceVoucherLifecycle", "20261117154311_AddPeriodClosureCarryAndReopening",
-                "20261117171929_WidenPostingMappingsToCogs"],
-            context.Database.GetMigrations().TakeLast(7));
+                "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals"],
+            context.Database.GetMigrations().TakeLast(8));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -182,6 +182,30 @@ public sealed class AccountingPersistenceModelTests
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("THROW 51212", guard.Sql, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void Inventory_cost_sources_and_proposal_versions_have_company_foreign_keys_unique_economic_identity_and_append_only_guards()
+    {
+        using var context = Context();
+        var sources = context.Model.FindEntityType(typeof(AccountingInventoryCostSourceRow))!;
+        var proposals = context.Model.FindEntityType(typeof(AccountingInventoryCostProposalRow))!;
+        Assert.Equal(["CompanyId", "EventId"], sources.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.Equal(["CompanyId", "Id", "Version"], proposals.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.Contains(sources.GetIndexes(), x => x.IsUnique && x.Properties.Select(y => y.Name)
+            .SequenceEqual(["CompanyId", "Kind", "InvoiceId", "InvoiceVersion"]));
+        Assert.Contains(proposals.GetIndexes(), x => x.IsUnique && x.Properties.Select(y => y.Name)
+            .SequenceEqual(["CompanyId", "EventId", "ComponentKey", "Version"]));
+        Assert.All(proposals.GetForeignKeys(), fk => Assert.Equal("CompanyId", fk.Properties[0].Name));
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddInventoryCostProposals();
+        Assert.Equal(2, migration.UpOperations.OfType<CreateTableOperation>().Count());
+        var triggers = migration.UpOperations.OfType<SqlOperation>().ToArray();
+        Assert.Equal(2, triggers.Length);
+        Assert.Contains("THROW 51931", triggers[0].Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51932", triggers[1].Sql, StringComparison.Ordinal);
+        Assert.All(triggers, x => Assert.Contains("AFTER UPDATE, DELETE", x.Sql, StringComparison.Ordinal));
+        Assert.Contains("THROW 51930", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations, x => x is SqlOperation);
     }
 
     [Fact]

@@ -26,7 +26,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Actual SQL owner/audit/commands. Commercial source and approved account plan are explicitly synthetic owner responses.</summary>
-public sealed class AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests
+public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Maker = Guid.Parse("c0870000-0000-4000-8000-000000000001");
