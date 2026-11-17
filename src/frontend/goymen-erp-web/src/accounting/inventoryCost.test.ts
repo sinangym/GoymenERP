@@ -77,7 +77,8 @@ describe('immutable inventory cost proposal contract', () => {
     expect(value?.currentPostedJournalId).toBe(correctedJournal)
     expect(value?.reversalProposal?.sourceJournalId).toBe(correctedJournal)
     expect(decodeInventoryCost(cancelled({ currentPostedJournalId: null }), COMPANY_A, 1)).toBeNull()
-    const { currentPostedJournalId: _omitted, ...legacyReversal } = cancelled()
+    const legacyReversal: Record<string, unknown> = { ...cancelled() }
+    delete legacyReversal.currentPostedJournalId
     expect(decodeInventoryCost(legacyReversal, COMPANY_A, 1)).toBeNull()
     expect(decodeInventoryCost(cancelled({ reversalProposal: reversalProposal({ sourceJournalId: source }) }), COMPANY_A, 1)).toBeNull()
     expect(decodeInventoryCost(cancelled({ reversalProposal: reversalProposal({ sourceJournalId: JOURNAL }) }), COMPANY_A, 1)).toBeNull()
