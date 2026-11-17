@@ -58,7 +58,8 @@ public static class PurchaseIncomingInvoiceWireV1
         var result = JsonSerializer.Deserialize<PurchaseIncomingInvoiceMatchRequestV1>(json, PurchasingJson.Options)
             ?? throw new JsonException("Request is required.");
         Version(result.ExpectedVersion);
-        if (result.Receipts is not { Count: > 0 }) throw new JsonException("Receipt shares are required.");
+        if (result.Receipts is null || result.Receipts.Count + (result.AdditionalCosts?.Count ?? 0) == 0)
+            throw new JsonException("Receipt or expense shares are required.");
         return result;
     }
     private static void Version(string value)

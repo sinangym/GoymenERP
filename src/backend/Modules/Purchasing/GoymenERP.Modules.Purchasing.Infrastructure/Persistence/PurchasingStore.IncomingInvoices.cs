@@ -88,10 +88,12 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
             .Select(line => line.LineId).ToArrayAsync(cancellationToken);
         var serviceLineIds = await dbContext.ServiceAcceptances.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
             .Select(row => row.LineId).Distinct().ToArrayAsync(cancellationToken);
+        var expenseIds = await dbContext.AdditionalCosts.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
+            .Select(row => row.CostId).ToArrayAsync(cancellationToken);
         try
         {
             await PurchaseLineSerializationLock.Bind(dbContext.Database.GetDbConnection(), owned.GetDbTransaction(), company)
-                .AcquireAllAsync(generalLineIds.Concat(serviceLineIds), cancellationToken);
+                .AcquireAllAsync(generalLineIds.Concat(serviceLineIds).Concat(expenseIds), cancellationToken);
         }
         catch (PurchaseLineBusyException exception)
         { throw Refused(PurchasingStoreCodes.LineBusy, "Sipariş satırı başka bir işlem tarafından kilitli; hiçbir şey kaydedilmedi.", exception); }
@@ -123,6 +125,7 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, command.Replace(".v1", ".recorded.v1", StringComparison.Ordinal),
             command, before.Version, after.Version, JsonSerializer.Serialize(before, Json), json, "Alış faturası işlem geçmişi");
         await SaveAsync(cancellationToken);
+        await requireStillAuthorized(cancellationToken);
         await owned.CommitAsync(cancellationToken);
         return new(after, null, false, envelope.CorrelationId.Trim());
     }
@@ -148,6 +151,7 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
     {
         var receipts = new List<PurchaseInvoiceReceiptBindingRow>();
         var services = new List<PurchaseServiceInvoiceBindingRow>();
+        var expenses = await PrepareAdditionalCostInvoiceBindingsAsync(invoice, lockedOrders, token);
         foreach (var match in invoice.Matches)
         {
             if (!lockedOrders.Contains(match.OrderId)) throw new InvalidOperationException("Fatura bağı sipariş kilidi gerektirir.");
@@ -180,7 +184,8 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
                 OrderId = match.OrderId, OrderLineId = match.OrderLineId, OrderVersion = match.OrderVersion,
                 SupplierPartyId = invoice.SupplierPartyId, RecordedAtUtc = timeProvider.GetUtcNow(),
             }).ToArray();
-        return () => { dbContext.InvoiceReceiptBindings.AddRange(receipts); dbContext.InvoiceOrderBindings.AddRange(orders); dbContext.ServiceInvoiceBindings.AddRange(services); };
+        return () => { dbContext.InvoiceReceiptBindings.AddRange(receipts); dbContext.InvoiceOrderBindings.AddRange(orders);
+            dbContext.ServiceInvoiceBindings.AddRange(services); dbContext.AdditionalCostInvoiceBindings.AddRange(expenses); };
     }
 
     private void AddInvoiceRevision(PurchaseIncomingInvoiceSnapshot snapshot, string json, DateTimeOffset now) => dbContext.IncomingInvoiceRevisions.Add(new()

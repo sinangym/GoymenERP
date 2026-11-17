@@ -42,20 +42,24 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(PurchaseIncomingInvoicePermissionNamesV1.Match, cancellationToken);
         var expected = Version(request.ExpectedVersion);
-        if (request.Receipts is not { Count: > 0 } || request.Receipts.Any(item => item is null
+        var expenses = request.AdditionalCosts ?? [];
+        if (request.Receipts is null || request.Receipts.Count + expenses.Count == 0 || request.Receipts.Any(item => item is null
             || item.InvoiceLineId == Guid.Empty || item.PurchaseOrderId == Guid.Empty || item.AcceptanceId == Guid.Empty
             || !ValidQuantity(item.Quantity))
-            || request.Receipts.Select(item => item.AcceptanceId).Distinct().Count() != request.Receipts.Count)
+            || request.Receipts.Select(item => item.AcceptanceId).Distinct().Count() != request.Receipts.Count
+            || expenses.Any(item => item is null || item.InvoiceLineId == Guid.Empty || item.PurchaseOrderId == Guid.Empty
+                || item.CostId == Guid.Empty || !ValidQuantity(item.NetAmount))
+            || expenses.Select(item => (item.InvoiceLineId, item.CostId)).Distinct().Count() != expenses.Count)
             throw new PurchasingServiceException(400, "validation_failed");
         return await MutateAsync(scope, invoiceId, PurchaseIncomingInvoiceCommandsV1.Match, request, metadata,
-            request.Receipts.Select(item => item.PurchaseOrderId).Distinct().Order().ToArray(), async (invoice, token) =>
+            request.Receipts.Select(item => item.PurchaseOrderId).Concat(expenses.Select(item => item.PurchaseOrderId)).Distinct().Order().ToArray(), async (invoice, token) =>
             {
                 if (invoice.Version != expected) throw new PurchasingVersionConflictException(expected, invoice.Version);
                 if (invoice.Status != PurchaseIncomingInvoiceStatus.Recorded)
                     throw new PurchasingRuleException(PurchaseIncomingInvoice.StateConflict, "Fatura eşleştirme durumunda değil.");
                 if (matching is null) throw new PurchasingServiceException(503, "service_unavailable");
                 PurchaseIncomingInvoiceMatchSourceV1 source;
-                try { source = await matching.ReadAsync(invoice, request.Receipts, token); }
+                try { source = await matching.ReadWithAdditionalCostsAsync(invoice, request.Receipts, expenses, token); }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception exception)
                 {
@@ -65,7 +69,7 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
                 }
                 await FenceAsync(scope, token);
                 if (source is null) throw new PurchasingServiceException(503, "service_unavailable");
-                invoice.Match(expected, source.Receipts, source.Policy, scope.Actor);
+                invoice.Match(expected, source.Receipts, source.Policy, scope.Actor, source.AdditionalCosts);
             }, cancellationToken);
     }
 

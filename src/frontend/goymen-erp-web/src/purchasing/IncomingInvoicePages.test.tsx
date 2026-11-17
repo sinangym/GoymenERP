@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initialShellState, type ShellState } from '../shell/shellState'
 import type { ViewOutcome } from '../shell/uiState'
 import { IncomingInvoiceDetailPage, IncomingInvoiceListPage } from './IncomingInvoicePages'
-import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, submitInvoiceCommand } from './incomingInvoiceApi'
+import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, submitInvoiceCommand } from './incomingInvoiceApi'
 import { incomingInvoiceFixture, invoiceReceiptFixture, invoiceTestId as id } from './incomingInvoiceFixtures.testSupport'
 import { INCOMING_INVOICE_TEXT as T } from './incomingInvoiceText'
 import { resetAdjustmentAttemptsForTests } from './useReceiptAdjustmentAttempt'
@@ -15,7 +15,7 @@ let currentShell: ShellState
 const auth = vi.hoisted(() => ({ capture: vi.fn(() => ({ synthetic: true })), report: vi.fn() }))
 vi.mock('../shell/shellContext', () => ({ useShellState: () => currentShell }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
-vi.mock('./incomingInvoiceApi', () => ({ fetchIncomingInvoice: vi.fn(), fetchIncomingInvoices: vi.fn(), fetchInvoiceReceipts: vi.fn(), submitInvoiceCommand: vi.fn() }))
+vi.mock('./incomingInvoiceApi', () => ({ fetchIncomingInvoice: vi.fn(), fetchIncomingInvoices: vi.fn(), fetchInvoiceReceipts: vi.fn(), fetchInvoiceAdditionalCosts: vi.fn(), submitInvoiceCommand: vi.fn() }))
 const clients: QueryClient[] = []
 function mount(detail = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false } } }); clients.push(client)
@@ -38,6 +38,26 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); resetAdjustmentAttemptsForTests() })
 describe('Incoming invoice workspace (synthetic, NOT_ENV)', () => {
+  it('submits a partial expense as money, keeps official quantities intact and retries the exact expense selection and key', async () => {
+    const existing = incomingInvoiceFixture(), line = { ...existing.lines[0], productId: '00000000-0000-0000-0000-000000000000', itemType: 'Expense', linePurpose: 'expense' }
+    const invoice = { ...existing, lines: [line] }
+    vi.mocked(fetchIncomingInvoice).mockResolvedValue({ type: 'ok-single', data: invoice })
+    vi.mocked(fetchInvoiceAdditionalCosts).mockResolvedValue({ type: 'ok-single', data: { invoiceId: invoice.id, invoiceLineId: line.id,
+      invoiceVersion: invoice.version, currencyId: invoice.currencyId, pageIndex: 0, hasNext: false,
+      items: [{ costId: id(90), purchaseOrderId: id(91), purchaseOrderNumber: 'SENTETIK-EXP-1', description: 'SENTETIK taşıma', expenseTypeId: null,
+        expenseTypeName: null, businessDate: '2026-11-17', netAmount: '10000', availableNetAmount: '4000', vatPercent: line.vatPercent }] } })
+    mount(true); await screen.findByText(/SENTETIK taşıma/)
+    expect(fetchInvoiceReceipts).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('checkbox', { name: T.select }))
+    fireEvent.change(screen.getByLabelText(T.expenseShare), { target: { value: '4000,00' } })
+    fireEvent.click(screen.getByRole('button', { name: T.match })); await screen.findByText(T.unknown)
+    const first = vi.mocked(submitInvoiceCommand).mock.calls[0]
+    expect(first[2]).toEqual({ action: 'matching', request: { expectedVersion: '1', receipts: [], additionalCosts: [
+      { invoiceLineId: line.id, purchaseOrderId: id(91), costId: id(90), netAmount: '4000' }] } })
+    fireEvent.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(submitInvoiceCommand).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(submitInvoiceCommand).mock.calls[1]).toEqual(first)
+  })
   it('searches by the official number and opens the actual record without a technical-id field', async () => {
     mount()
     expect((await screen.findByRole('link', { name: 'SENTETIK-2026-0001' })).getAttribute('href')).toBe(`/satinalma/faturalar/${id(1)}`)
