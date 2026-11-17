@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Globalization;
 using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Documents.Domain;
 
@@ -69,7 +71,12 @@ public sealed partial class DocumentService : IGeneratedDocumentStorePortV1
         }
 
         var metadata = RequireGeneratedMetadata(request);
-        var template = GeneratedDocumentTemplate.TryCreate(request.TemplateCode, request.TemplateVersion)
+        var publication = PublicationSnapshot(request.Publication);
+        if (request.Publication is not null && publication is null)
+            throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed);
+        if (publication is not null && publication.CompanyId != scope.CompanyId)
+            throw new DocumentServiceException(403, "forbidden");
+        var template = GeneratedDocumentTemplate.TryCreate(request.TemplateCode, request.TemplateVersion, publication)
             ?? throw new DocumentServiceException(400, DocumentProblemCodesV1.ValidationFailed,
                 [new("template", GeneratedDocumentStoreCodesV1.TemplateInvalid)]);
         var producer = GeneratedDocumentProducerCommand.TryCreate(request.ProducerCommand)
@@ -210,8 +217,29 @@ public sealed partial class DocumentService : IGeneratedDocumentStorePortV1
     /// another template or producer is another request (ADR-011).
     /// </summary>
     private static string GeneratedRequestHash(DocumentOwnerLink owner, DocumentFileName fileName, DocumentFileKindInfo kind, string sha256,
-        GeneratedDocumentTemplate template, string producerPermission, GeneratedDocumentProducerCommand producer) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', DocumentCommands.StoreGeneratedV1, owner.Kind,
-            owner.OwnerId.ToString("D"), fileName.Value, kind.ContentType, sha256, template.Code, template.Version, producerPermission,
-            producer.Value))));
+        GeneratedDocumentTemplate template, string producerPermission, GeneratedDocumentProducerCommand producer)
+    {
+        // Preserve the exact old input for legacy/null publications.
+        var canonical = string.Join('\n', DocumentCommands.StoreGeneratedV1, owner.Kind, owner.OwnerId.ToString("D"), fileName.Value,
+            kind.ContentType, sha256, template.Code, template.Version, producerPermission, producer.Value);
+        if (template.Publication is { } publication) canonical += "\npublication:" + JsonSerializer.Serialize(publication);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+
+    private static GeneratedDocumentPublicationSnapshot? PublicationSnapshot(DocumentTemplatePublicationV1? value)
+    {
+        if (value is null) return null;
+        static bool Parse(string text, out long number) => long.TryParse(text, System.Globalization.NumberStyles.None,
+            CultureInfo.InvariantCulture, out number) && number > 0 && number.ToString(CultureInfo.InvariantCulture) == text;
+        if (!DocumentBrandingContractV1.IsKnown(value.Module, value.TemplateCode) || !Parse(value.Version, out var publication)
+            || !Parse(value.DraftVersion, out var draft) || !Parse(value.BrandingVersion, out var branding)
+            || value.TemplateVersion != "pub." + value.Version || value.PreparedBy == value.PublishedBy
+            || value.Logo is { } logo && logo.CompanyId != value.CompanyId
+            || value.Letterhead is { } letterhead && letterhead.CompanyId != value.CompanyId) return null;
+        var result = new GeneratedDocumentPublicationSnapshot(value.CompanyId, value.PublicationId, (int)value.Module,
+            value.TemplateCode, publication, draft, branding,
+            value.Logo is null ? null : new(value.Logo.DocumentId, value.Logo.VersionNo, value.Logo.Sha256),
+            value.Letterhead is null ? null : new(value.Letterhead.DocumentId, value.Letterhead.VersionNo, value.Letterhead.Sha256));
+        return result.IsWellFormed() ? result : null;
+    }
 }

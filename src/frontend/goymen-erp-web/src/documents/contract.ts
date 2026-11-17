@@ -35,6 +35,7 @@ export const CREATED_STATUS = 201
 
 /** The owner-declared link kinds the client knows. */
 export const OWNER_KIND = {
+  companyBranding: 'documents.company-branding',
   counterpartyParty: 'counterparty.party',
   inventoryMaterialLabel: 'inventory.material-label',
   purchasingPurchaseOrder: 'purchasing.purchase-order',

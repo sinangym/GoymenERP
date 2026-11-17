@@ -43,7 +43,9 @@ public sealed record GeneratedDocumentStoreRequestV1(
     string CorrelationId,
     string? CausationId,
     string? ProducerPermission,
-    string? ProducerCommand);
+    string? ProducerCommand,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    DocumentTemplatePublicationV1? Publication = null);
 
 public enum GeneratedDocumentStoreOutcomeV1
 {
