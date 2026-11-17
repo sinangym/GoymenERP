@@ -8,9 +8,10 @@ namespace GoymenERP.Modules.Sales.Application;
 
 public sealed partial class SalesDraftService
 {
-    // SAT-D265(5): calculator test vectors are source evidence, not the independent golden acceptance.
-    // Kept closed until that exact decision artifact is in main; this is not an ERP activation setting.
-    private static bool MarginGoldenAccepted => false;
+    // SAT-D265(5): the independent golden is in main via PR1200, merge 3c1b47878447570210b933b83d874646f9c52e4b.
+    // This separate implementation change still requires the train's final exact-head K3 acceptance.
+    // It neither grants margin disclosure nor supplies missing costs, currencies or historical snapshots.
+    private static bool MarginGoldenAccepted => true;
 
     private static SalesMarginCostSnapshot? LastMarginCost(SalesOrderDraft draft, Guid lineId) =>
         draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)
@@ -122,8 +123,8 @@ public sealed partial class SalesDraftService
             draft.ApprovalState == InternalApprovalState.Approved ? SalesDraftMarginTextsV1.Snapshot : SalesDraftMarginTextsV1.Preview, lines);
     }
 
-    // SAT-D259 / OPEN-INV-AVGCOST-FX: a restored snapshot is data, never the currency authority.
-    // This binding is shared by the live read and the regression tests; the independent golden gate stays above it.
+    // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority.
+    // Foreign sale conversion remains undecided; the actual owner supplies TL cost or Unavailable.
     internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
         decimal quantity, SalesMarginCostSnapshot cost) => cost.CostPerUnit == 0m
         ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
