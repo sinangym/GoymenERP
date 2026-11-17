@@ -299,3 +299,10 @@ export const RECEIPT_DRAFT_NEEDS_PARTY =
 export const RECEIPT_DETAIL_TITLE = 'Tahsilat taslağı'
 export const OPEN_SAVED_DRAFT = 'Kaydedilen taslağı aç'
 export const BACK_TO_RECEIPTS = 'Tahsilat taslaklarına dön'
+
+
+export const MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT = {
+  unknown: 'Sonuç bilinmiyor. Aynı anahtar ve değişmeyen istekle yeniden deneyin.',
+  retry: 'Aynı isteği yeniden gönder',
+  busy: 'Gönderiliyor',
+} as const
