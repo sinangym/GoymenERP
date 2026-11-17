@@ -13,7 +13,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     public async Task Fully_returned_purchase_shipments_keep_a_different_actor_zero_approval_witness_without_a_journal_or_a_fake_stock_claim()
     {
         await using var run = await Run.Start(); var period = await run.Period();
-        var owner = AllReturnedPurchaseSource(); var reader = new ActualPurchaseCostReader(owner);
+        var owner = AccountingPurchaseInvoiceCostSourceTests.FirstReturnedSource(Company); var reader = new ActualPurchaseCostReader(owner);
         await using var scope = run.Open(); var store = Costs(scope, reader, lineage: new PurchaseFirstCostLineageReaderV1(scope.CompanyContext));
         await store.AcceptAsync(reader.Envelope); var proposal = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.PurchaseInvoiceDifference));
         Assert.Equal("AwaitingPreparation", proposal.Status); Assert.Equal("0", proposal.ExactTlAmount);
@@ -48,36 +48,11 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         }).ToArray() }] };
         var emptyReader = new ActualPurchaseCostReader(allStock); var emptyStore = Costs(scope, emptyReader,
             lineage: new PurchaseFirstCostLineageReaderV1(scope.CompanyContext));
-        await emptyStore.AcceptAsync(emptyReader.Envelope);
-        var noCost = Assert.Single((await emptyStore.ListAsync(AccountingInventoryCostKindV1.PurchaseInvoiceDifference))
-            .Where(x => x.EventId == emptyReader.Envelope.EventId));
-        Assert.Equal("NoCost", noCost.Status); Assert.Null(noCost.JournalId);
-        await Assert.ThrowsAsync<AccountingStoreException>(() => emptyStore.PrepareAsync(noCost.ProposalId, noCost.Kind,
-            CostPreparation(period), Maker, Fence, Metadata(Maker)));
-        Assert.Equal(2, await run.Count("accounting.PurchaseCostAttributionSources"));
+        await Assert.ThrowsAsync<GoymenERP.BuildingBlocks.Messaging.OutboxPermanentFailureException>(
+            () => emptyStore.AcceptAsync(emptyReader.Envelope));
+        Assert.Equal(1, await run.Count("accounting.PurchaseCostAttributionSources"));
         Assert.Equal(2, await run.Count("accounting.PurchaseCostAttributionCandidates"));
         Assert.Equal(1, await run.Count("accounting.PurchaseCostAttributionApprovals"));
     }
 
-    private static InventoryPurchaseInvoiceCostApplicationResultV1 AllReturnedPurchaseSource()
-    {
-        var source = AccountingPurchaseInvoiceCostSourceTests.FirstSource(100m, Company); var line = source.InitialRecognitions![0];
-        var receipts = line.Receipts.Select(receipt => {
-            var physical = JsonSerializer.Deserialize<InventoryPurchaseFirstCostPhysicalSourceV1>(receipt.PhysicalSourceJson, Json)!;
-            var shipment = physical.Shipments[0];
-            physical = physical with { RemainingRootQuantityKg = new("1", "1"), NetShippedRootQuantityKg = new("0", "1"),
-                Labels = [physical.Labels[0] with { Positions = [new(StockPartyKind.Company, Company, StockPartyKind.Company,
-                    Company, receipt.ReceiptLocationId, BlockState.Free, 1m)] }],
-                Shipments = [shipment with { NetRootQuantityKg = new("0", "1"), Returns = [new(Guid.NewGuid(), Guid.NewGuid(), 1,
-                    shipment.MovementId, 1m, shipment.RecordedAtUtc.AddMinutes(1))] }] };
-            var json = JsonSerializer.Serialize(physical, Json);
-            return receipt with { ConsumedQuantityKg = new("0", "1"), ConsumedExactTlAmount = new("0", "1"),
-                PhysicalSourceJson = json, PhysicalSourceSha256 = AccountingInventoryCostSourceValidationV1.Sha256(json) };
-        }).ToArray();
-        line = line with { ConsumedQuantityKg = new("0", "1"), ConsumedTlAmount = 0m, ConsumedExactTlAmount = new("0", "1"),
-            ConsumedRoundingResidue = new("0", "1"), Receipts = receipts,
-            Positions = receipts.Select((receipt, index) => new InventoryPurchaseFirstCostPositionV1(receipt.ReceiptLocationId,
-                $"SENTETIK-{index}", new("1", "1"), new("50", "1"), new("50", "1"), new("0", "1"), 1, true)).ToArray() };
-        return source with { InitialRecognitions = [line], UnabsorbedTlDifference = new("0", "1") };
-    }
 }
