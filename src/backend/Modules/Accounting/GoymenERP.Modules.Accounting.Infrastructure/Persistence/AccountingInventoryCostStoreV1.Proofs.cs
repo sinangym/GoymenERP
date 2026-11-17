@@ -29,7 +29,8 @@ public sealed partial class AccountingInventoryCostStoreV1
             || component.SourceProofSha256 != AccountingInventoryCostSourceValidationV1.Sha256(component.SourceProofJson)
             || !AccountingInventoryCostAmountsV1.TryRead(component.SignedTlAmount, out _, out _)
             || view.Preparation?.PreparedBy != row.PreparedBy || view.Preparation?.PeriodId != row.PeriodId
-            || view.ApprovedBy != row.ApprovedBy || view.JournalId != row.JournalId || view.CancellationId is not null || view.ReversalProposal is not null)
+            || view.ApprovedBy != row.ApprovedBy || view.JournalId != row.JournalId || view.CancellationId is not null
+            || view.ReversalProposal is not null || view.ComponentCancellation is not null)
             throw Refuse("inventory_cost_source_unavailable");
         if (view.Preparation?.Rounding is { } rounding && (!AccountingInventoryCostRoundingV1Rules.TryResolve(component,
                 view.Preparation.CurrencyId, view.Preparation.MoneyProfileId, view.Preparation.MoneyProfileVersion,
@@ -125,6 +126,8 @@ public sealed partial class AccountingInventoryCostStoreV1
     {
         var cancelled = await Cancellation(view, token);
         if (cancelled is null) return view;
+        if (view.Component.SalesPhysicalClaims is { Count: > 0 })
+            return await ComponentCancellationState(view, cancelled, token);
         if (view.Component.HasPostedComponents)
             return view with { Status = view.Component.UnpostedTlAmount is null ? "AttributedCancellationPending" : "MixedCancellationPending",
                 CancellationId = cancelled.CancellationId };
@@ -157,6 +160,8 @@ public sealed partial class AccountingInventoryCostStoreV1
             var row = await db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == proposalId).OrderByDescending(x => x.Version).FirstAsync(cancellationToken);
             if (request.ExpectedVersion != row.Version) throw new AccountingVersionConflictException(request.ExpectedVersion, row.Version);
             var view = await ReadStored(row, cancellationToken);
+            if (view.Component.SalesPhysicalClaims is { Count: > 0 })
+                return await PrepareComponentCancellation(view, request, actorId, freshFence, metadata, cancellationToken);
             if (view.Status != "Posted" || view.Component.HasPostedComponents)
                 throw Refuse("inventory_cost_reversal_not_proposable");
             var journal = await CurrentPostedJournal(view, cancellationToken);

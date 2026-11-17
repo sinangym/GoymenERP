@@ -35,6 +35,11 @@ public static partial class AccountingEndpoints
             HttpContext http, CancellationToken token) => await WriteAsync(http, key => service.ProposeReversalAsync(proposalId, request, key, token))))
             .RequireAuthorization(AccountingJournalReversalPermissionNamesV1.Propose)
             .WithName("ProposeAccountingInventoryCostCancellationReversalV1").Accepts<ProposeAccountingInventoryCostReversalV1>("application/json");
+        InventoryCostProblems(group.MapPost("/{proposalId:guid}/component-cancellation-approval", async (Guid proposalId,
+            ApproveInventoryCostCancellationV1 request, AccountingInventoryCostServiceV1 service,
+            HttpContext http, CancellationToken token) => await WriteAsync(http, key => service.ApproveCancellationAsync(proposalId, request, key, token))))
+            .RequireAuthorization(AccountingJournalReversalPermissionNamesV1.Approve)
+            .WithName("ApproveAccountingInventoryCostComponentCancellationV1").Accepts<ApproveInventoryCostCancellationV1>("application/json");
         return app;
     }
 

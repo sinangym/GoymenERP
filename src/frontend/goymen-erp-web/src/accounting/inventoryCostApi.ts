@@ -4,6 +4,7 @@ import { ACCOUNTING_BASE, devHeaders } from './api'
 import { decodeJournalReversalProposal, type JournalReversalProposal } from './journalReversalContract'
 import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
 import { postedPurchaseCostShare, type PostedPurchaseCostShare } from './postedPurchaseCostProof'
+import { decodeInventoryCostCancellation, type InventoryCostCancellation } from './inventoryCostCancellation'
 
 export type InventoryCostKind = 1 | 2
 export interface InventoryCostAccount { readonly accountId: string; readonly code: string; readonly name: string }
@@ -40,13 +41,15 @@ export interface InventoryCostProposal {
   readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly journalId: string | null
   readonly currentPostedJournalId: string | null
   readonly cancellationId: string | null; readonly reversalProposal: JournalReversalProposal | null
+  readonly componentCancellation?: InventoryCostCancellation | null
 }
 export type InventoryCostAttempt = { readonly id: string; readonly kind: InventoryCostKind; readonly key: string; readonly actor: string } & (
   { readonly operation: 'prepare'; readonly request: { readonly expectedVersion: number; readonly periodId: string; readonly accountingDate: string
     readonly transactionDate: string; readonly counterAccountId: string; readonly reason: string } }
   | { readonly operation: 'approve'; readonly request: { readonly expectedVersion: number } }
+  | { readonly operation: 'approve-cancellation'; readonly request: { readonly expectedVersion: number; readonly expectedCancellationVersion: number } }
   | { readonly operation: 'reverse'; readonly request: { readonly expectedVersion: number; readonly proposalId: string
-    readonly periodId: string; readonly accountingDate: string; readonly transactionDate: string; readonly reason: string } })
+    readonly periodId: string; readonly accountingDate: string; readonly transactionDate: string; readonly reason: string; readonly expectedCancellationVersion?: number } })
 export type InventoryCostOutcome = { readonly type: 'applied'; readonly value: InventoryCostProposal }
   | { readonly type: 'refused'; readonly status: number; readonly code: string | null } | { readonly type: 'unknown' }
 
@@ -78,6 +81,22 @@ const equalRounding = (a: InventoryCostRounding, b: InventoryCostRounding) => a.
   && a.exactSignedResidue.numerator === b.exactSignedResidue.numerator && a.exactSignedResidue.denominator === b.exactSignedResidue.denominator
 
 export function decodeInventoryCost(body: unknown, company: string, kind: InventoryCostKind): InventoryCostProposal | null {
+  if (rec(body) && ['ComponentCancellationPending', 'ComponentCancellationPrepared', 'CancelledByComponentReversal'].includes(body.status as string)) {
+    if (kind !== 1 || !guid(body.cancellationId) || body.reversalProposal !== null || !rec(body.component)) return null
+    const c = body.component
+    const baseStatus = body.journalId !== null ? 'Posted' : body.approvedBy !== null ? 'RoundedNoCost'
+      : body.preparation !== null ? 'Prepared' : c.alreadyPostedComponents || c.alreadyPostedPurchaseComponents ? 'AlreadyAccounted'
+        : rec(c.signedTlAmount) && c.signedTlAmount.numerator === '0' ? 'NoCost' : 'AwaitingPreparation'
+    const baseValue = decodeInventoryCost({ ...body, status: baseStatus, cancellationId: null,
+      componentCancellation: undefined, currentPostedJournalId: null }, company, kind)
+    if (baseValue === null) return null
+    const nested = body.componentCancellation === undefined || body.componentCancellation === null ? null
+      : decodeInventoryCostCancellation(body.componentCancellation, company, baseValue.proposalId, body.cancellationId, baseValue.component.sourceProofSha256)
+    if (body.componentCancellation !== undefined && body.componentCancellation !== null && nested === null
+      || body.status === 'ComponentCancellationPrepared' && nested?.status !== 'Prepared'
+      || body.status === 'CancelledByComponentReversal' && nested?.status !== 'Approved') return null
+    return { ...baseValue, status: body.status as string, cancellationId: body.cancellationId, componentCancellation: nested }
+  }
   if (!rec(body) || !['proposalId', 'companyId', 'eventId', 'invoiceId', 'admissionId'].every(k => guid(body[k]))
     || !same(body.companyId as string, company) || body.kind !== kind || !version(body.invoiceVersion) || !version(body.version)
     || !date(body.invoiceDate) || !utc(body.sourceOccurredAtUtc) || !text(body.exactTlAmount) || body.officialInvoiceNumber !== null && !text(body.officialInvoiceNumber)
@@ -94,7 +113,8 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   const recorded = c.recordedRounding
   if (firstPurchase ? kind !== 2 || !rec(recorded) || !guid(recorded.currencyId) || !guid(recorded.moneyProfileId)
       || !version(recorded.moneyProfileVersion) || !Number.isSafeInteger(recorded.moneyScale) || (recorded.moneyScale as number) < 0 || (recorded.moneyScale as number) > 28
-      || !roundingProof(recorded.rounding) || recorded.rounding.exactSignedAmount.numerator === '0' || recorded.rounding.exactSignedAmount.numerator.startsWith('-')
+      || !roundingProof(recorded.rounding) || recorded.rounding.exactSignedAmount.numerator.startsWith('-')
+      || recorded.rounding.exactSignedAmount.numerator === '0' && (recorded.rounding.roundedSignedAmount !== '0' || recorded.rounding.exactSignedResidue.numerator !== '0')
       || recorded.rounding.roundedSignedAmount !== body.exactTlAmount
     : recorded !== undefined && recorded !== null) return null
   if (kind === 1 ? !guid(c.invoiceLineId) || !version(c.invoiceLineNumber) || c.locationId !== null
@@ -168,6 +188,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   const currentJournal = body.currentPostedJournalId === undefined ? null : body.currentPostedJournalId
   if (currentJournal !== null && (!guid(currentJournal) || !guid(body.journalId))) return null
   const reversal = body.reversalProposal === null ? null : decodeJournalReversalProposal(body.reversalProposal, company)
+  if (body.componentCancellation !== undefined && body.componentCancellation !== null) return null
   if (body.reversalProposal !== null && reversal === null) return null
   if (reversal !== null && (typeof currentJournal !== 'string' || !same(reversal.sourceJournalId, currentJournal)
     || !['CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string))) return null
@@ -200,6 +221,7 @@ const definitive = new Set(['idempotency_conflict', 'accounting_version_conflict
   'inventory_cost_amount_unaccepted', 'inventory_cost_source_money_profile_changed', 'inventory_cost_posting_refused', 'inventory_cost_source_cancelled', 'inventory_cost_reversal_not_proposable'])
 export async function sendInventoryCost(company: string, attempt: InventoryCostAttempt): Promise<InventoryCostOutcome> {
   const path = attempt.operation === 'reverse' ? `${base}/${attempt.id}/cancellation-reversal-proposals`
+    : attempt.operation === 'approve-cancellation' ? `${base}/${attempt.id}/component-cancellation-approval`
     : `${base}/${attempt.kind}/${attempt.id}/${attempt.operation === 'prepare' ? 'preparation' : 'approval'}`
   try {
     const response = await fetch(path, { method: 'POST', headers: { ...devHeaders(), 'X-Company-Id': company,
@@ -213,6 +235,14 @@ export async function sendInventoryCost(company: string, attempt: InventoryCostA
         && value.preparation.accountingDate === attempt.request.accountingDate && value.preparation.transactionDate === attempt.request.transactionDate
         && same(value.preparation.counterAccount.accountId, attempt.request.counterAccountId) && value.preparation.reason === attempt.request.reason
         : attempt.operation === 'approve' ? ['Posted', 'RoundedNoCost'].includes(value.status) && value.version === attempt.request.expectedVersion + 1 && value.approvedBy !== null && same(value.approvedBy, attempt.actor)
+          : attempt.operation === 'approve-cancellation' ? value.status === 'CancelledByComponentReversal' && value.version === attempt.request.expectedVersion
+            && value.componentCancellation?.version === attempt.request.expectedCancellationVersion + 1
+            && value.componentCancellation.approvedBy !== null && same(value.componentCancellation.approvedBy, attempt.actor)
+          : value.status === 'ComponentCancellationPrepared' ? value.version === attempt.request.expectedVersion
+            && value.componentCancellation?.status === 'Prepared' && value.componentCancellation.version === (attempt.request.expectedCancellationVersion ?? 0) + 1
+            && same(value.componentCancellation.id, attempt.request.proposalId) && same(value.componentCancellation.preparedBy, attempt.actor)
+            && same(value.componentCancellation.periodId, attempt.request.periodId) && value.componentCancellation.accountingDate === attempt.request.accountingDate
+            && value.componentCancellation.transactionDate === attempt.request.transactionDate && value.componentCancellation.reason === attempt.request.reason
           : value.status === 'CancellationReversalPending' && value.version === attempt.request.expectedVersion && value.reversalProposal !== null
             && same(value.reversalProposal.proposalId, attempt.request.proposalId) && same(value.reversalProposal.proposedBy, attempt.actor)
             && same(value.reversalProposal.periodId, attempt.request.periodId) && value.reversalProposal.accountingDate === attempt.request.accountingDate

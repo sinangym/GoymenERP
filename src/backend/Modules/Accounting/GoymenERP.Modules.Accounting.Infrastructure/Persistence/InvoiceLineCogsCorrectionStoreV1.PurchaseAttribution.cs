@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed partial class InvoiceLineCogsCorrectionStoreV1
 {
     private async Task<(IReadOnlyList<PostedManufacturingCostShareV1> Manufacturing, IReadOnlyList<PostedPurchaseCostShareV1> Purchase)>
-        ReadAttributedPhysical(FinalizedInvoiceLineSourceV1 source, InvoiceCogsEconomicClaimRow claim,
+        ReadAttributedPhysical(CogsEvidenceIdentityV1 source, InvoiceCogsEconomicClaimRow claim,
             AccountingInventoryCostComponentV1 component, AccountingSalesPhysicalCostClaimV1 physical, CancellationToken token)
     {
         var proof = Encode(new { source.CompanyId, EventId = claim.SalesEventId, source.InvoiceId,
@@ -27,7 +27,9 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
             RequireCompany(source.CompanyId);
             if (deltas is null) return (manufacturing, purchase);
-            await RequireCompletedKnownSource(source, claim.SalesEventId, component, token);
+            // Cancellation can answer an actual posted delta even if the separate initial known proposal
+            // was never posted. It never creates that initial journal or claims its amount as accounted.
+            if (!source.CancellationRead) await RequireCompletedKnownSource(source, claim.SalesEventId, component, token);
             // The original known source already proves physical coverage. These are only independently posted
             // changes; they cannot be reused by the unavailable-original-cost admission path.
             return (deltas.Shares, purchase);
@@ -57,7 +59,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     }
 
     private async Task<IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>?> PurchaseAttributedEvidence(
-        FinalizedInvoiceLineSourceV1 source, CancellationToken token)
+        CogsEvidenceIdentityV1 source, CancellationToken token)
     {
         var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
             && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion && x.Origin == 2).ToListAsync(token);

@@ -25,7 +25,48 @@ const cancelled = (patch: Record<string, unknown> = {}) => fixture({ status: 'Ca
   reversalProposal: reversalProposal({ sourceJournalId: correctedJournal }), ...patch })
 
 afterEach(() => vi.unstubAllGlobals())
+const componentCancellation = (patch: Record<string, unknown> = {}) => ({ id: PROPOSAL, companyId: COMPANY_A, inventoryCostProposalId: id,
+  cancellationId: source, version: 1, status: 'Prepared', invoiceLineRevision: 2, periodId: PERIOD_SEPTEMBER,
+  accountingDate: '2026-09-24', transactionDate: '2026-09-23', reason: 'SENTETIK pay iptali', preparedBy: PREPARER,
+  preparedAtUtc: '2026-09-24T10:00:00Z', approvedBy: null, approvedAtUtc: null,
+  moneyProfiles: [{ currencyId: source, profileId: source, version: 2, scale: 2 }],
+  components: [{ economicKey: 'b'.repeat(64), origin: 'Known', sourceJournalId: correctedJournal, journalSourceId: source,
+    postingPurpose: `invoice-line-cogs:${line}:3`, currencyId: source, journalTotal: '100.01', signedAmount: '100.01',
+    cogsAccountId: ACCOUNT_DEBIT, counterAccountId: ACCOUNT_CREDIT, sourceFingerprint: 'a'.repeat(64) }], ...patch })
+const componentCancelled = (nested: unknown = componentCancellation(), patch: Record<string, unknown> = {}) =>
+  cancelled({ status: 'ComponentCancellationPrepared', currentPostedJournalId: undefined, reversalProposal: null, componentCancellation: nested, ...patch })
 describe('immutable inventory cost proposal contract', () => {
+  it('binds a component cancellation to the actual parent, source evidence and different checker without reversing its aggregate', () => {
+    expect(decodeInventoryCost(componentCancelled(), COMPANY_A, 1)?.componentCancellation?.components[0].signedAmount).toBe('100.01')
+    for (const nested of [componentCancellation({ companyId: COMPANY_B }), componentCancellation({ inventoryCostProposalId: source }),
+      componentCancellation({ cancellationId: line }), componentCancellation({ moneyProfiles: [] }),
+      componentCancellation({ components: [{ ...componentCancellation().components[0], sourceFingerprint: 'd'.repeat(64) }] })])
+      expect(decodeInventoryCost(componentCancelled(nested), COMPANY_A, 1)).toBeNull()
+    const approved = componentCancellation({ version: 2, status: 'Approved', approvedBy: APPROVER, approvedAtUtc: '2026-09-24T10:05:00Z',
+      components: [{ ...componentCancellation().components[0], reversingJournalId: PROPOSAL }] })
+    expect(decodeInventoryCost(componentCancelled(approved, { status: 'CancelledByComponentReversal' }), COMPANY_A, 1)).not.toBeNull()
+    expect(decodeInventoryCost(componentCancelled({ ...approved, approvedBy: PREPARER }, { status: 'CancelledByComponentReversal' }), COMPANY_A, 1)).toBeNull()
+  })
+  it('preserves a zero purchase approval witness but rejects a fabricated zero reversal journal', () => {
+    const zero = { ...componentCancellation().components[0], origin: 'Purchase', sourceJournalId: null,
+      journalTotal: '0', signedAmount: '0', sourceFingerprint: 'c'.repeat(64) }
+    const nested = componentCancellation({ version: 2, status: 'Approved', approvedBy: APPROVER,
+      approvedAtUtc: '2026-09-24T10:05:00Z', components: [zero] })
+    expect(decodeInventoryCost(componentCancelled(nested, { status: 'CancelledByComponentReversal' }), COMPANY_A, 1)).not.toBeNull()
+    expect(decodeInventoryCost(componentCancelled({ ...nested, components: [{ ...zero, reversingJournalId: PROPOSAL }] },
+      { status: 'CancelledByComponentReversal' }), COMPANY_A, 1)).toBeNull()
+  })
+  it('keeps mismatched cancellation success unknown and resends the exact nested version and idempotency key', async () => {
+    const attempt: InventoryCostAttempt = { id, kind: 1, actor: APPROVER, key: 'SENTETIK-cancel-key', operation: 'approve-cancellation',
+      request: { expectedVersion: 3, expectedCancellationVersion: 1 } }
+    const nested = componentCancellation({ version: 2, status: 'Approved', approvedBy: APPROVER, approvedAtUtc: '2026-09-24T10:05:00Z',
+      components: [{ ...componentCancellation().components[0], reversingJournalId: PROPOSAL }] })
+    const fetch = vi.fn(async () => json(componentCancelled({ ...nested, version: 3 }, { status: 'CancelledByComponentReversal' })))
+    vi.stubGlobal('fetch', fetch); expect(await sendInventoryCost(COMPANY_A, attempt)).toEqual({ type: 'unknown' })
+    fetch.mockImplementation(async () => json(componentCancelled(nested, { status: 'CancelledByComponentReversal' })))
+    expect((await sendInventoryCost(COMPANY_A, attempt)).type).toBe('applied')
+    expect(fetch.mock.calls[0]).toEqual(fetch.mock.calls[1])
+  })
   it('keeps exact source text and refuses foreign, incomplete, and self-approved responses', () => {
     expect(decodeInventoryCost(fixture(), COMPANY_A, 1)?.exactTlAmount).toBe('100.01')
     expect(decodeInventoryCost(fixture({ companyId: COMPANY_B }), COMPANY_A, 1)).toBeNull()

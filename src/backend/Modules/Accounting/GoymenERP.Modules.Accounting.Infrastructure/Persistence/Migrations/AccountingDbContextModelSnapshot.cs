@@ -1172,6 +1172,135 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InventoryCostCancellationClaimRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InvoiceLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("FinalizedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EconomicKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("CancellationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("InventoryCostProposalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ReversingJournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid?>("SourceJournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "InvoiceId", "InvoiceLineId", "FinalizedVersion", "EconomicKey");
+
+                    b.HasIndex("CompanyId", "ReversingJournalId")
+                        .IsUnique()
+                        .HasFilter("[ReversingJournalId] IS NOT NULL");
+
+                    b.HasIndex("CompanyId", "SourceJournalId");
+
+                    b.HasIndex("CompanyId", "InventoryCostProposalId", "CancellationVersion");
+
+                    b.ToTable("InventoryCostCancellationClaims", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryCostCancellationClaims_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceId] <> '00000000-0000-0000-0000-000000000000' AND [InvoiceLineId] <> '00000000-0000-0000-0000-000000000000' AND [FinalizedVersion] >= 1 AND [CancellationVersion] >= 2 AND LEN([EconomicKey]) = 64");
+
+                            t.HasCheckConstraint("CK_InventoryCostCancellationClaims_Proof", "ISJSON([ViewJson]) = 1 AND LEN([Sha256]) = 64 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0 AND ([ReversingJournalId] IS NULL OR [SourceJournalId] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InventoryCostCancellationVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InventoryCostProposalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CancellationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("InitialProposalVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PreparedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ViewJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "InventoryCostProposalId", "Version");
+
+                    b.HasIndex("CompanyId", "PeriodId");
+
+                    b.HasIndex("CompanyId", "Id", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "InventoryCostProposalId", "InitialProposalVersion");
+
+                    b.ToTable("InventoryCostCancellationVersions", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryCostCancellationVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [InventoryCostProposalId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [CancellationId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND [InitialProposalVersion] >= 1 AND [PreparedBy] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_InventoryCostCancellationVersions_Proof", "ISJSON([ViewJson]) = 1 AND LEN([Sha256]) = 64 AND DATEPART(TZOFFSET,[RecordedAtUtc]) = 0");
+
+                            t.HasCheckConstraint("CK_InventoryCostCancellationVersions_State", "([Status] = 1 AND [ApprovedBy] IS NULL) OR ([Status] = 2 AND [Version] >= 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedBy] <> [PreparedBy] AND [ApprovedBy] <> '00000000-0000-0000-0000-000000000000')");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InvoiceCogsEconomicClaimRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2626,6 +2755,43 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InventoryCostCancellationClaimRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ReversingJournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SourceJournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InventoryCostCancellationVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InventoryCostProposalId", "CancellationVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.InventoryCostCancellationVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PeriodId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingInventoryCostProposalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InventoryCostProposalId", "InitialProposalVersion")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 public sealed partial class InvoiceLineCogsCorrectionStoreV1
 {
-    private async Task<IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>?> AttributedEvidence(FinalizedInvoiceLineSourceV1 source,
+    private async Task<IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>?> AttributedEvidence(CogsEvidenceIdentityV1 source,
         CancellationToken token)
     {
         var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
@@ -78,7 +78,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     /// Original unavailable shares are disjoint; later deltas may affect the same proven known physical line.
     /// This does not weaken the ordinary journal's two-line proof.
     /// </summary>
-    private async Task RequireMixedPosting(FinalizedInvoiceLineSourceV1 source, InvoiceLineCogsPostedEvidenceV1? evidence,
+    private async Task RequireMixedPosting(CogsEvidenceIdentityV1 source, InvoiceLineCogsPostedEvidenceV1? evidence,
         CancellationToken token)
     {
         if (evidence is null) return;
