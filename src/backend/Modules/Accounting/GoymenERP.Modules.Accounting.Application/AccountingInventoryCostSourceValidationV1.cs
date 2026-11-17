@@ -125,8 +125,19 @@ public static class AccountingInventoryCostSourceValidationV1
                                 CultureInfo.InvariantCulture, out var signed)) throw Invalid("inventory_cost_attribution_invalid");
                         sum = AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(signed));
                     }
+                    if (component.UnpostedTlAmount is { } unposted)
+                    {
+                        if (!AccountingInventoryCostAmountsV1.TryRead(unposted, out var remaining, out _) || remaining < 0
+                            || !physical.Any(p => !posted.Any(x => x.Shipment.MovementId == p.MovementId
+                                && x.Shipment.MovementLineNumber == p.MovementLineNumber)))
+                            throw Invalid("inventory_cost_attribution_invalid");
+                        sum = AccountingInventoryCostAmountsV1.Add(sum, unposted);
+                    }
+                    else if (physical.Any(p => !posted.Any(x => x.Shipment.MovementId == p.MovementId
+                        && x.Shipment.MovementLineNumber == p.MovementLineNumber))) throw Invalid("inventory_cost_attribution_invalid");
                     if (sum != component.SignedTlAmount) throw Invalid("inventory_cost_attribution_invalid");
                 }
+                else if (component.UnpostedTlAmount is not null) throw Invalid("inventory_cost_attribution_invalid");
             }
             else
             {
@@ -145,7 +156,7 @@ public static class AccountingInventoryCostSourceValidationV1
                         throw Invalid("inventory_cost_component_invalid");
                     (aggregate ? firstAggregateLines : firstLegacyLines).Add(line);
                 }
-                if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null)
+                if (component.SalesPhysicalClaims is not null || component.AlreadyPostedComponents is not null || component.UnpostedTlAmount is not null)
                     throw Invalid("inventory_cost_attribution_invalid");
                 if (first ? component.RecordedRounding is not { } recorded || amount < 0
                         || !AccountingInventoryCostRoundingV1Rules.IsValidRecorded(component.SignedTlAmount, recorded)

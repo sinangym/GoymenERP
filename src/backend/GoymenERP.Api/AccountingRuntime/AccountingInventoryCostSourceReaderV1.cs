@@ -70,6 +70,7 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 || stock.Lines is not { Count: > 0 and <= 10000 }) throw Pending("sales_cost_inventory_proof_unavailable");
             // The owner currently proves one physical movement line. Reject extra unrelated lines rather than drop them.
             var total = AccountingInventoryCostAmountsV1.FromDecimal(0m);
+            var unposted = AccountingInventoryCostAmountsV1.FromDecimal(0m);
             var physicalClaims = new List<AccountingSalesPhysicalCostClaimV1>();
             var alreadyPosted = new List<PostedManufacturingCostShareV1>();
             var hasOriginalCost = false;
@@ -115,9 +116,9 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 if (stamp.Amount is { } amount && AccountingInventoryCostAmountsV1.FromDecimal(amount) != exactAmount)
                     throw Pending("sales_cost_inventory_proof_unavailable");
                 total = AccountingInventoryCostAmountsV1.Add(total, exactAmount);
+                unposted = AccountingInventoryCostAmountsV1.Add(unposted, exactAmount);
                 hasOriginalCost = true;
             }
-            if (hasOriginalCost && alreadyPosted.Count != 0) throw Pending("sales_cost_mixed_physical_components_unavailable");
             if (alreadyPosted.Count != 0)
             {
                 if (salesClaims is null) throw Pending("sales_cost_owner_claim_unavailable");
@@ -146,7 +147,8 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 AlreadyPosted = alreadyPosted.Count == 0 ? null : alreadyPosted }, Json);
             components.Add(new(AccountingInventoryCostTraceV1.SalesComponent(line.LineId), claim.ProductId, line.LineId,
                 line.LineNo, null, total, body, AccountingInventoryCostSourceValidationV1.Sha256(body), physicalClaims,
-                alreadyPosted.Count == 0 ? null : alreadyPosted));
+                alreadyPosted.Count == 0 ? null : alreadyPosted,
+                UnpostedTlAmount: hasOriginalCost && alreadyPosted.Count != 0 ? unposted : null));
         }
         var result = new AccountingInventoryCostSourceV1(captured, envelope.EventId, AccountingInventoryCostKindV1.SalesInvoicedShipment,
             source.InvoiceId, source.Version, source.AdmissionId, source.InvoiceDate.Value, source.OfficialInvoiceNo, actor,

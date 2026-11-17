@@ -67,10 +67,10 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             foreach (var component in source.Components)
             {
                 await ClaimPhysicalCost(source, component, cancellationToken);
-                AccountingInventoryCostAmountsV1.TryRead(component.SignedTlAmount, out var amount, out _);
+                AccountingInventoryCostAmountsV1.TryRead(component.UnpostedTlAmount ?? component.SignedTlAmount, out var amount, out _);
                 var view = new AccountingInventoryCostProposalV1(Guid.NewGuid(), captured, source.EventId, source.Kind,
                     source.InvoiceId, source.InvoiceVersion, source.AdmissionId, source.InvoiceDate, source.OfficialInvoiceNumber,
-                    component, 1, component.AlreadyPostedComponents is { Count: > 0 } ? "AlreadyAccounted"
+                    component, 1, component.AlreadyPostedComponents is { Count: > 0 } && (component.UnpostedTlAmount is null || amount == 0) ? "AlreadyAccounted"
                         : amount == 0 && component.RecordedRounding is null ? "NoCost" : "AwaitingPreparation", envelope.OccurredAtUtc);
                 Add(view);
                 Audit(view, metadata, "received", null, system: true);
@@ -166,7 +166,8 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                     || recordedRounding.RoundedSignedAmount != prepared.SignedAmount)
                     throw Refuse("inventory_cost_source_conflict");
             }
-            else if (!AccountingInventoryCostAmountsV1.TryExactDecimal(view.Component.SignedTlAmount, 28, out signed)
+            else if (view.Component.UnpostedTlAmount is not null
+                || !AccountingInventoryCostAmountsV1.TryExactDecimal(view.Component.SignedTlAmount, 28, out signed)
                 || signed.ToString("0.############################", CultureInfo.InvariantCulture) != prepared.SignedAmount)
                 throw Refuse("inventory_cost_source_conflict"); // An old exact preparation retains its original semantics.
             await freshFence(cancellationToken);

@@ -19,10 +19,12 @@ export interface InventoryCostProposal {
   readonly proposalId: string; readonly companyId: string; readonly eventId: string; readonly kind: InventoryCostKind
   readonly invoiceId: string; readonly invoiceVersion: number; readonly admissionId: string; readonly invoiceDate: string
   readonly officialInvoiceNumber: string | null; readonly version: number; readonly status: string; readonly sourceOccurredAtUtc: string; readonly exactTlAmount: string
+  readonly unpostedTlAmountText?: string
   readonly component: { readonly componentKey: string; readonly productId: string; readonly invoiceLineId: string | null
     readonly invoiceLineNumber: number | null; readonly locationId: string | null
     readonly signedTlAmount: { readonly numerator: string; readonly denominator: string }; readonly sourceProofSha256: string
     readonly alreadyPostedComponents?: readonly PostedManufacturingCostShare[]
+    readonly unpostedTlAmount?: { readonly numerator: string; readonly denominator: string }
     readonly recordedRounding?: { readonly currencyId: string; readonly moneyProfileId: string; readonly moneyProfileVersion: number
       readonly moneyScale: number; readonly rounding: InventoryCostRounding } }
   readonly preparation: { readonly periodId: string; readonly accountingDate: string; readonly transactionDate: string
@@ -77,7 +79,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (!rec(body) || !['proposalId', 'companyId', 'eventId', 'invoiceId', 'admissionId'].every(k => guid(body[k]))
     || !same(body.companyId as string, company) || body.kind !== kind || !version(body.invoiceVersion) || !version(body.version)
     || !date(body.invoiceDate) || !utc(body.sourceOccurredAtUtc) || !text(body.exactTlAmount) || body.officialInvoiceNumber !== null && !text(body.officialInvoiceNumber)
-    || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'RoundedNoCost', 'RoundedNoCostCancelled', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AlreadyAccounted', 'AttributedCancellationPending'].includes(body.status as string)) return null
+    || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'RoundedNoCost', 'RoundedNoCostCancelled', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AlreadyAccounted', 'AttributedCancellationPending', 'MixedCancellationPending'].includes(body.status as string)) return null
   const c = body.component
   if (!rec(c) || !text(c.componentKey) || !guid(c.productId) || !hash(c.sourceProofSha256) || !rec(c.signedTlAmount)
     || typeof c.signedTlAmount.numerator !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(c.signedTlAmount.numerator)
@@ -102,10 +104,20 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
     && body.exactTlAmount !== `${c.signedTlAmount.numerator} / ${c.signedTlAmount.denominator}`) return null
   const p = body.preparation
   const attributed = ['AlreadyAccounted', 'AttributedCancellationPending'].includes(body.status as string)
-  if (attributed ? kind !== 1 || !Array.isArray(c.alreadyPostedComponents) || c.alreadyPostedComponents.length === 0
+  const hasPosted = c.alreadyPostedComponents !== undefined && c.alreadyPostedComponents !== null
+  const mixed = c.unpostedTlAmount !== undefined && c.unpostedTlAmount !== null
+  const mixedCancelled = body.status === 'MixedCancellationPending'
+  if (hasPosted ? kind !== 1 || !Array.isArray(c.alreadyPostedComponents) || c.alreadyPostedComponents.length === 0
       || c.alreadyPostedComponents.some(value => !postedManufacturingCostShare(value, company, c.productId as string))
       || new Set(c.alreadyPostedComponents.map(value => (value as PostedManufacturingCostShare).fingerprint)).size !== c.alreadyPostedComponents.length
-    : c.alreadyPostedComponents !== undefined && c.alreadyPostedComponents !== null) return null
+    : attributed || mixed || mixedCancelled) return null
+  if (mixed ? !hasPosted || !costRatio(c.unpostedTlAmount) || c.unpostedTlAmount.numerator.startsWith('-')
+      || !ratioDisplay(body.unpostedTlAmountText, c.unpostedTlAmount)
+    : body.unpostedTlAmountText !== undefined && body.unpostedTlAmountText !== null) return null
+  if (hasPosted && !mixed && !attributed || mixed && ['NoCost', 'AttributedCancellationPending', 'Cancelled', 'RoundedNoCostCancelled', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)
+    || mixedCancelled && !mixed || mixed && attributed && (c.unpostedTlAmount as { numerator: string }).numerator !== '0') return null
+  const postingRatio = mixed ? c.unpostedTlAmount as { numerator: string; denominator: string } : c.signedTlAmount
+  const postingText = mixed ? body.unpostedTlAmountText : body.exactTlAmount
   if (p !== null) {
     if (!rec(p) || !guid(p.periodId) || !guid(p.currencyId) || !guid(p.preparedBy) || !utc(p.preparedAtUtc)
       || !date(p.accountingDate) || !date(p.transactionDate) || !canonicalDecimal(p.signedAmount)
@@ -120,9 +132,9 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
         // Source and posting dates can have different profiles. Keep the source evidence unchanged;
         // the backend verifies that its rounded amount fits the separately frozen journal profile.
         if (!equalRounding(rounding, recorded.rounding) || recorded.currencyId !== p.currencyId) return null
-      } else if (rounding.exactSignedAmount.numerator !== c.signedTlAmount.numerator || rounding.exactSignedAmount.denominator !== c.signedTlAmount.denominator
-        || rounding.exactSignedAmountText !== body.exactTlAmount) return null
-    } else if (firstPurchase || body.exactTlAmount !== p.signedAmount) return null
+      } else if (rounding.exactSignedAmount.numerator !== postingRatio.numerator || rounding.exactSignedAmount.denominator !== postingRatio.denominator
+        || rounding.exactSignedAmountText !== postingText) return null
+    } else if (firstPurchase || mixed || body.exactTlAmount !== p.signedAmount) return null
     const cl = p.classification
     if (![1, 2].includes(cl.classification as number) || !guid(cl.accountId) || same(cl.accountId, p.counterAccount.accountId)
       || cl.origin === 'Product' && (!text(cl.productVersion) || !text(cl.classificationVersion) || !version(cl.mappingVersion) || cl.invoiceLineRevision !== 0)
@@ -132,17 +144,20 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (['Prepared', 'Posted', 'CancellationReversalPending', 'CancelledByReversal', 'RoundedNoCost', 'RoundedNoCostCancelled'].includes(body.status as string) && p === null) return null
   if ((['AwaitingPreparation', 'NoCost'].includes(body.status as string) || attributed) && p !== null) return null
   if (body.status === 'NoCost' ? firstPurchase || c.signedTlAmount.numerator !== '0' || c.signedTlAmount.denominator !== '1' || body.exactTlAmount !== '0'
-    : body.status !== 'Cancelled' && !attributed && !firstPurchase && c.signedTlAmount.numerator === '0') return null
+    : body.status !== 'Cancelled' && !attributed && !firstPurchase && !mixedCancelled && postingRatio.numerator === '0') return null
   if ((['AwaitingPreparation', 'NoCost'].includes(body.status as string) || attributed) && body.version !== 1
     || body.status === 'Prepared' && (body.version as number) < 2) return null
-  if (['Posted', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)) {
+  if (mixedCancelled && (p === null ? body.version !== 1 : (body.version as number) < 2)) return null
+  if (['Posted', 'CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string)
+    || mixedCancelled && body.approvedBy !== null && rec(p) && p.signedAmount !== '0') {
     if (!rec(p) || p.signedAmount === '0' || !guid(body.approvedBy) || !guid(body.journalId) || !utc(body.approvedAtUtc) || same(body.approvedBy, p.preparedBy as string)) return null
-  } else if (['RoundedNoCost', 'RoundedNoCostCancelled'].includes(body.status as string)) {
+  } else if (['RoundedNoCost', 'RoundedNoCostCancelled'].includes(body.status as string)
+    || mixedCancelled && body.approvedBy !== null && rec(p) && p.signedAmount === '0') {
     if (!rec(p) || !rec(p.rounding) || p.signedAmount !== '0' || !guid(body.approvedBy) || !utc(body.approvedAtUtc)
       || same(body.approvedBy, p.preparedBy as string) || body.journalId !== null || (body.version as number) < 3) return null
   } else if (body.approvedBy !== null || body.approvedAtUtc !== null || body.journalId !== null) return null
   if (body.cancellationId !== null && !guid(body.cancellationId)) return null
-  if (['Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AttributedCancellationPending', 'RoundedNoCostCancelled'].includes(body.status as string) && !guid(body.cancellationId)) return null
+  if (['Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AttributedCancellationPending', 'MixedCancellationPending', 'RoundedNoCostCancelled'].includes(body.status as string) && !guid(body.cancellationId)) return null
   const currentJournal = body.currentPostedJournalId === undefined ? null : body.currentPostedJournalId
   if (currentJournal !== null && (!guid(currentJournal) || !guid(body.journalId))) return null
   const reversal = body.reversalProposal === null ? null : decodeJournalReversalProposal(body.reversalProposal, company)

@@ -25,7 +25,11 @@ public sealed record AccountingInventoryCostComponentV1(string ComponentKey, Gui
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<PostedManufacturingCostShareV1>? AlreadyPostedComponents = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    AccountingInventoryCostRecordedRoundingV1? RecordedRounding = null);
+    AccountingInventoryCostRecordedRoundingV1? RecordedRounding = null,
+    // Only a mixed Sales line uses this partition: source total = already posted shares + unposted original stamps.
+    // Zero is meaningful when the remaining original stamps prove zero; null retains the legacy all-or-none shape.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AccountingInventoryCostRatioV1? UnpostedTlAmount = null);
 
 public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid MovementId, int MovementLineNumber,
     Guid ProductId, decimal QuantityKg);
@@ -65,6 +69,10 @@ public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid Com
     public string ExactTlAmount => AccountingInventoryCostAmountsV1.TryExactDecimal(Component.SignedTlAmount, 28, out var amount)
         ? amount.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture)
         : Component.SignedTlAmount.Numerator + " / " + Component.SignedTlAmount.Denominator;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UnpostedTlAmountText => Component.UnpostedTlAmount is { } amount
+        ? AccountingInventoryCostRoundingV1Rules.Display(amount) : null;
 }
 
 public sealed record AccountingInventoryCostListV1(Guid CompanyId, IReadOnlyList<AccountingInventoryCostProposalV1> Items);

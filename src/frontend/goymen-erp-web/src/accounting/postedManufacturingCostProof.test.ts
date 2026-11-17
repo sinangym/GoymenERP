@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { postedManufacturingCostShare } from './postedManufacturingCostProof'
 import { decodeInventoryCost } from './inventoryCostApi'
-import { decodeCogsProposal } from './invoiceLineCogsApi'
+import { decodeCogsHistory, decodeCogsProposal } from './invoiceLineCogsApi'
 
 const id = (suffix: string) => `c0871000-0000-4000-8000-${suffix.padStart(12, '0')}`
 const company = id('1'); const product = id('2'); const line = id('3')
@@ -19,6 +19,29 @@ const proposal = () => ({ proposalId: id('15'), companyId: company, eventId: id(
   preparation: null, approvedBy: null, approvedAtUtc: null, journalId: null, cancellationId: null, reversalProposal: null })
 
 describe('existing posted manufacturing attribution proof', () => {
+  it('shows the mixed source total separately from its sole new journal amount and rejects a doubled preparation', () => {
+    const value = proposal()
+    const mixed = { ...value, version: 2, status: 'Prepared', exactTlAmount: '58.465', unpostedTlAmountText: '25.125',
+      component: { ...value.component, signedTlAmount: { numerator: '11693', denominator: '200' }, unpostedTlAmount: { numerator: '201', denominator: '8' } },
+      preparation: { periodId: id('40'), accountingDate: '2026-11-17', transactionDate: '2026-11-17', currencyId: id('9'),
+        signedAmount: '25.13', moneyProfileId: id('12'), moneyProfileVersion: 2, moneyScale: 2, preparedBy: id('41'),
+        preparedAtUtc: '2026-11-17T10:00:00Z', reason: 'SENTETIK unposted original cost',
+        classification: { classification: 1, accountId: id('10'), origin: 'Product', productVersion: '1', classificationVersion: '1', mappingVersion: 1, invoiceLineRevision: 0 },
+        counterAccount: { accountId: id('11'), code: '153', name: 'SENTETIK' }, accountPlanPackageId: id('42'),
+        accountPlanPackageVersion: 1, accountPlanCatalogVersion: 1, accountPlanSourceVersion: 'SENTETIK', accountPlanSha256: 'a'.repeat(64),
+        rounding: { exactSignedAmount: { numerator: '201', denominator: '8' }, roundedSignedAmount: '25.13', exactSignedResidue: { numerator: '-1', denominator: '200' },
+          exactSignedAmountText: '25.125', exactSignedResidueText: '-0.005', ruleVersion: 'accounting.inventory-cost-component-total.v1' } } }
+    expect(decodeInventoryCost(mixed, company, 1)?.unpostedTlAmountText).toBe('25.125')
+    expect(decodeInventoryCost({ ...mixed, preparation: { ...mixed.preparation, signedAmount: '58.47' } }, company, 1)).toBeNull()
+    expect(decodeInventoryCost({ ...mixed, unpostedTlAmountText: '58.465' }, company, 1)).toBeNull()
+    expect(decodeInventoryCost({ ...mixed, component: { ...mixed.component, unpostedTlAmount: undefined } }, company, 1)).toBeNull()
+    expect(decodeInventoryCost({ ...mixed, component: { ...mixed.component, alreadyPostedComponents: [] } }, company, 1)).toBeNull()
+    const posted = { ...mixed, version: 3, status: 'Posted', approvedBy: id('43'), approvedAtUtc: '2026-11-17T11:00:00Z', journalId: id('44') }
+    expect(decodeInventoryCost(posted, company, 1)?.journalId).toBe(id('44'))
+    expect(decodeInventoryCost({ ...posted, status: 'MixedCancellationPending', cancellationId: id('45') }, company, 1)?.status).toBe('MixedCancellationPending')
+    expect(decodeInventoryCost({ ...posted, status: 'AlreadyAccounted' }, company, 1)).toBeNull()
+    expect(decodeInventoryCost({ ...posted, status: 'MixedCancellationPending' }, company, 1)).toBeNull()
+  })
   it('requires explicit same-issue return evidence while keeping legacy no-return sources', () => {
     const original = share()
     const returned = { returnId: id('70'), movementId: id('71'), movementLineNumber: 1,
@@ -72,5 +95,21 @@ describe('existing posted manufacturing attribution proof', () => {
     expect(decodeCogsProposal({ ...value, attributedCorrections: [{ ...correction, sourceJournalId: id('99') }] }, company, invoice, line)).toBeNull()
     expect(decodeCogsProposal({ ...value, attributedCorrections: [{ ...correction, attributionFingerprint: 'f'.repeat(64) }] }, company, invoice, line)).toBeNull()
     expect(decodeCogsProposal({ ...value, attributedEvidence: [{ ...evidence, source: { ...share(), companyId: id('99') } }] }, company, invoice, line)).toBeNull()
+    const normal = { companyId: company, invoiceId: invoice, invoiceLineId: line, finalizedVersion: 3,
+      journalId: id('50'), cogsJournalLineNumber: 1, counterJournalLineNumber: 2, cogsAccountId: id('10'), counterAccountId: id('11'),
+      currencyId: id('9'), amount: '25.13', sourceFingerprint: 'A'.repeat(64) }
+    const mixed = { ...value, postedEvidence: normal, reversingCorrectionJournalId: id('51'), replacementCorrectionJournalId: id('52') }
+    expect(decodeCogsProposal(mixed, company, invoice, line)?.attributedCorrections).toHaveLength(1)
+    expect(decodeCogsProposal({ ...mixed, postedEvidence: null }, company, invoice, line)).toBeNull()
+    const history = { companyId: company, invoiceId: invoice, invoiceLineId: line, lineVersion: 0, current: null, revisions: [], proposals: [],
+      source: { companyId: company, invoiceId: invoice, invoiceLineId: line, finalizedVersion: 3, finalizationAdmissionId: id('18'), productId: product,
+        shipmentId: id('13'), dispatchNoteId: id('53'), dispatchNoteLineNo: 1, invoiceLineNo: 1, invoiceDate: '2026-11-17',
+        officialInvoiceNumber: 'SENTETIK-001', ettn: id('54'), fingerprint: 'A'.repeat(64) },
+      productReference: { companyId: company, productId: product, outcome: 'NotSet', classification: null, productVersion: null, classificationVersion: null },
+      postingEvidenceState: 'MixedPostedCogs', postedEvidence: normal, attributedEvidence: [evidence] }
+    expect(decodeCogsHistory(history, company, invoice, line)?.postingEvidenceState).toBe('MixedPostedCogs')
+    expect(decodeCogsHistory({ ...history, postedEvidence: null }, company, invoice, line)).toBeNull()
+    expect(decodeCogsHistory({ ...history, attributedEvidence: undefined }, company, invoice, line)).toBeNull()
+    expect(decodeCogsHistory({ ...history, postingEvidenceState: 'PostedCogs' }, company, invoice, line)).toBeNull()
   })
 })
