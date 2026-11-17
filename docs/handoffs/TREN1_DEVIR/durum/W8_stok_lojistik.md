@@ -611,3 +611,45 @@
 - **SOURCE_READY; kaynak derlemeleri QUEUED.** Bu delta için birim/SQL/runtime/CI **NOT_RUN**.
   Merkezi Accounting host okuyucusunun sıfır gerçek sevk/iade bileşenini kabul bağı ayrı owner
   düzeltmesidir; bu kayıt enclosing dilim için DONE veya kullanılabilirlik iddiası değildir.
+
+## SAT-SC34 — KLN-D100 gerçek müşteri iadesinin kalan miktara bağlanması
+
+- Canlı kaynak kapanış denetimi, `SalesDraftService.DeliveryProgress` okumasının onaylı fiziksel
+  müşteri iadesini sıfır varsayarak mevcut hesaplayıcıya geçirdiğini gösterdi. Kilitli KLN-D100 ve
+  KLN-D106 uyarınca 100 kg sipariş / 100 kg gerçek sevk / 20 kg onaylı iade için kalan 20 kg olmalıdır.
+- Aynı mevcut `ISalesOrderCustomerReturnReadPortV1` artık her progress okumasında çağrılır.
+  `CustomerReturns` doğrulaması şirket/sipariş/satır/birim/ondalık ve toplam sınırlarını korur;
+  mevcut `SalesOrderLineOpenQuantity` net sevkten kalan ve fazla miktarı hesaplar. Özgün gross
+  Shipped/Delivered alanları değişmez; frontend veya yeni owner formülü yoktur. Wire şekli değişmedi,
+  DTO açıklaması gerçek net sayaç anlamına hizalandı.
+- Her owner await'i mevcut `GuardedAsync` ile özgün actor/company ve güncel read authority'ye
+  bağlıdır. Eksik veya hata veren iade kaynağı 503, bozuk veya sevki aşan iade 503 verir; okunamayan
+  iade sıfıra çevrilmez. Okuma attempt, Audit, stok veya muhasebe kaydı oluşturmaz.
+- Odaklı birim kaynakları gerçek dönüş bağını, kalan/fazla miktarı, yeni okuma, eksik/bozuk
+  kaynak ve son await'te actor/company/permission kaybını kapsar. Eski teslim testleri ve iptal/
+  kapatma tarihçesinin iki test fixture'ı artık açık empty-return owner cevabı taşır; production
+  fallback yoktur. Mevcut iki gerçek-SQL customer-return fact kaynağı progress GET, pending/
+  rejected hariç tutma, approved miktar, tenant ve salt-okuma yan etkisizliğiyle genişletildi.
+- **SOURCE_READY; kaynak derlemeleri QUEUED.** Bu delta için runtime birim/SQL/HTTP/CI **NOT_RUN**.
+  Model, migration, izin veya DTO shape değişmedi. KLN-D100'de ayrıca istenen teslim edilmiş fakat
+  faturalanmamış miktar bu progress DTO'sunda henüz yoktur; bu düzeltme o sunum açığını kapatmış
+  sayılmaz. Enclosing SAT-SC34 dış resmî iptal sağlayıcısı sınırı da ayrıca korunur.
+
+## STK-S3 / STK-S8 / SAT-SC34 — sınırlı kaynak kapanış denetimi
+
+Denetim tabanı `2b281de7c53294e064201277c042f5859de0ea9e`; ilgili owner kaynakları okuma boyunca
+değişmedi. Merkezi Settings/Program WIP'i bu denetimin dışında bırakıldı; mevcut mount'lar committed
+Program kaynağında doğrulandı. Bu bir K3 incelemesi veya runtime kabulü değildir.
+
+| Mevcut kapsam | Gerçek kaynak zinciri | Kaynaktan ayrı kalan kapı |
+|---|---|---|
+| STK-S3 LOJ-D1..5 | `LogisticsSubcontractDeliveryHost` → Sales/Manufacturing V2 borrowed okuyucular → `InventorySubcontractDeliveryParticipant` müşteri mülkiyeti/şirket custody → Logistics store; üç `SubcontractDeliveryPages` ekranı, gerçek bounded seçiciler ve endpoint mount'ları vardır. Kaynak `b6774f25c`, fiziksel ret devamı `dfef53c6a`. | Logistics provider 1.5'teki sekiz özgün deklarasyon kendi kabul kanıtını beklediği için staged false kalır. |
+| STK-S3 LOJ-D12/D13/D14 | Gerçek teslim tartısı typed reader ve Sales kg paylaşımı; gerekçeli append-only tartı düzeltmesi/active invoice claim çiti; aynı Sales risk gate, bütün talimatta transient-dominance ve tek-use tüketimi vardır. Host, HTTP, SQL ve DOM test kaynakları mevcuttur. | SQL/browser/failure kabulü çalıştırılmadı; kaynak varlığı publish veya grant değildir. |
+| STK-S3 ayrı unused-release | `InventorySubcontractAllocationReleaseStoreV1` ve service → gerçek endpoint → bağımsız `SubcontractAllocationReleasePage`; `372e27303`/`7b4c5532f`, merkezi DI/route/cap mount'u vardır. | Yalnız kullanılmayan pay bırakılır; enclosing S3 kabul kapısı bundan ayrı kalır. |
+| STK-S8 plan/sevk/iptal/kabul/fark | `TransferPlanPanel`, `TransferDispatchPanel`, `TransferCancelPanel`, `TransferReceiptPanel`; gerçek purpose adayları/kabul belgesi, Settings kantar ve Logistics çıkış owner'ı/adapterları bağlıdır. Checkpoint `1127e5993`; API/Inventory/Counterparty/Organization/Integration ve TSC kaynak derlemeleri raporda exit0'dır. | E-İrsaliyesiz kaynak yolu vardır. Linked e-belgede gerçek GİB gönderim/iptal provider'ı yoktur; typed missing/unavailable 503 korunur, numaradan dış durum türetilmez. Runtime kabulü ayrıca eksiktir. |
+| SAT-SC34 özgün hesap/guard | Gerçek fason invoice service net tartı paylaşımını tüketir; HeaderRevision aktif future-allocation çiti vardır. Bu checkpoint onaylı iadenin progress Remaining bağı eksiğini kapatır. | Teslim edilmiş fakat faturalanmamış miktarın ayrı ekran alanı hâlâ gerçek kaynak/sunum eksiğidir; risk tutarı bu miktarın yerine geçmez. |
+| SAT-SC34 resmî iptal kaydı | `SalesOfficialInvoiceCancellationServiceV1` → immutable Sales store/event → `SalesFinanceCancellationHost` ve Accounting consumer; normal/fason ekran/API, gerçek terminal/replay test kaynakları ve EF checkpoint `5455cb849` vardır. | Q12'ye göre gerçek dış provider bugün yoktur. `UnavailableSalesOfficialCancellationEvidenceReadPortV1` başarı üretmez; bu dış kaynak açığı STK-S3'e taşınmaz. |
+
+STK-S3 eski owner ve merkezi kaynak derlemeleri `W8_uretim`/`W8_ENTEGRASYON` kayıtlarında exit0'dır;
+ayrı unused-release ve resmî iptal owner build/EF/TSC kanıtları yukarıdaki bölümlerdedir. Bu dar
+denetimde süreç başlatılmadı, sekiz false deklarasyon veya diğer publish/grant ayarı değiştirilmedi.
