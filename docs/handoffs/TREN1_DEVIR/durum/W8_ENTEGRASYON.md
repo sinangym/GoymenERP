@@ -333,3 +333,12 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Gerçek workspace endpoint'i ve scoped resolver bağlandı. Muhasebe altında tek hesap eşleme rotası/menü girişi ve ayrı hazırlama/etkinleştirme kontrolleri eklendi. Üç yetenek mevcut muhasebe eşleme izinlerini kullanır, şirket bazlıdır ve `ImplementationAvailable:false` kalır. Provider 1.8; yeni izin, grant veya Critical sınıf değişikliği yoktur.
 - Shell/route drift ve owner capability test kaynakları yeni kaydı ve mevcut yayımlanmış kümenin korunmasını doğrular. Birleşik API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests derlemeleri exit 0, 0 uyarı/hata; merkezi TSC exit 0. Owner gerçek EF `20261117171929_WidenPostingMappingsToCogs`, Down 51929 ve SQL fact kaynakları raporundadır.
 - Runtime SQL/Vitest/browser/CI, merkezi pin üretimi ve tren FF NOT_RUN. Bu kayıt ilk SMM veya geç fatura farkı önerisinin tamamlandığı anlamına gelmez; ilgili Accounting sahibi kaynak akışını sürdürür.
+
+
+## STK-SC36-a / SAT-D419 — ilk SMM için gerçek sevk kimlik zinciri
+
+- Sales owner `fdc417b38` / rapor `c0a799e09` normal kesinleşmiş fatura satırına değişmez `ShipmentSource` ekler; bu yeni bir stok/para olayı değildir. Ticari fatura kg'sı fiziksel çıkış kg'sı sayılmaz ve geçmiş outbox yeniden yazılmaz.
+- Inventory owner `0eedb43ba` gerçek shipment kimliğinden kendi tek komut/sonuç/hareket/outbox izini çözerek mevcut orijinal TL damgası okuyucusuna bağlanır. Available yalnız fiziksel iz kanıtıdır, Known TL iddiası değildir. Yeni model/EF yoktur.
+- Logistics owner iç `ILogisticsInvoicedShipmentProofReadPortV1` okuması aynı şirket ve dayanıklı sürümde onaylı irsaliye satırı, gerçek sevk payı, talimat satırı, sipariş/ürün/birim kimliklerini çapraz doğrular. Fiyat, maliyet ve oran üretmez. Kullanıcı yetkili irsaliye seçicisi değiştirilmez; yeni browser route veya grant yoktur. Bu sistem amaçlı çapraz modül okuma yüzeyi K3 review bekler; guard izin listesine sessiz eklenmedi.
+- Altı unit fact kaynağı ve mevcut gerçek SQL source fact'inde çoklu sipariş, yabancı şirket, yanlış sevk ve iptal kanıtları eklendi. API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests birleşik kaynak derlemeleri exit 0, 0 uyarı/hata; runtime NOT_RUN. Yeni ilişkisel FQN yok; Inventory owner üç yeni SQL fact'i final envanter üretiminde alınacak.
+- Accounting gerçek hazırlama/onay ve iptal zincirini diğer kaynaklarla birleştirir; ilk SMM bütünü henüz DONE değildir. Merkezi pinler, tren FF ve gerçek kabul NOT_RUN.

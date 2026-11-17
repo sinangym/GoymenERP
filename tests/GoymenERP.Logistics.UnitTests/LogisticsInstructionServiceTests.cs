@@ -943,6 +943,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public int SalesOrderReads { get; private set; }
 
         public int InvoiceSourceReads { get; private set; }
+        public Action? AfterInvoiceSourceRead { get; set; }
         public int? InvoiceSourceRevisionOverride { get; set; }
         public string? InvoiceSourceIntegrityFault { get; set; }
 
@@ -950,6 +951,7 @@ public sealed partial class LogisticsInstructionServiceTests
             CancellationToken cancellationToken = default)
         {
             InvoiceSourceReads++;
+            AfterInvoiceSourceRead?.Invoke();
             if (InvoiceSourceIntegrityFault is not null)
             {
                 throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid, InvoiceSourceIntegrityFault);

@@ -46,6 +46,7 @@ public static class LogisticsModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<LogisticsStore>();
         services.AddScoped<ILogisticsInstructionStore>(serviceProvider => serviceProvider.GetRequiredService<LogisticsStore>());
+        services.AddScoped<ILogisticsInvoicedShipmentProofReadPortV1, LogisticsInvoicedShipmentProofReadPortV1>();
         services.AddScoped<LoadingUnitVerifier>();
         services.TryAddSingleton(new LogisticsInstructionServiceBindings());
         services.AddScoped(CreateInstructionService);
