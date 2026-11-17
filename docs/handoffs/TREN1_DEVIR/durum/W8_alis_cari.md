@@ -326,3 +326,30 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
   hizmet siparişinde sonradan gerçek fiyat giriş/revizyon yolu henüz yoktur. Mevcut genel
   siparişte de yalnız tedarikçi revizyonuna özel fiyat komutu bulunur. Yeni onay/finans
   politikası seçilmedi; mevcut karar/spec fiyat lifecycle'ı ayrıca dar doğrulanacaktır.
+
+#### ALC-S7 takip — ALS-D9/D18 fiyat tamamlama, ALS-D105/D106
+
+- Kaynak commit: `7e3aad912`. Önceki checkpoint'te belirtilen fiyatsız fiyat tamamlama
+  boşluğu mevcut ALS-D18 metniyle çözüldü: sonradan fiyat girişi yeni Draft revision
+  oluşturur; yeni hazırlayan kendi revizyonunu onaylayamaz. Gerçek hizmet kabulü,
+  miktarlar ve önceki fiyat/onay sürümleri değişmez. Tekrar onay olmadan fatura
+  eşleştirme çalışmaz. Yapılmış fiziksel işlem fiyat revizyonunda yeniden yapılmaz.
+- Mevcut OrdersRevise izni kullanılır; yeni izin/grant yoktur. Şirket/aktör/yetki,
+  expected version, reason, idempotency ve aynı işlem Audit çitleri korunur. Backend,
+  HTTP ve ekran komutu ile gerçek SQL kabulü→eksik fiyat503→revision→yeniden
+  onay→eşleşme test kaynağı eklendi. Shell owner 1.12, toplam 26 bildirimdir;
+  altıncı hizmet capability `purchasing.service-orders.prices-revise` mevcut izinlere bağlıdır.
+- ALS-D106: giden kendi malı fasonun fiyat birimi actual UnitProfile.IsKilogram
+  kanıtıyla kg olmak zorundadır; kod metni 'kg' diye birim anlamı türetilmez. UI de
+  gerçek unit identity IsKilogram alanıyla seçim sunar; server profili tekrar okur.
+- ALS-D105 READ bağı: yalnız actual Settings Purchasing-side vergi varsayılanı okunur;
+  şirket/side/version ve değer snapshot'ı satırda saklanır/gösterilir. Kaynak yoksa503;
+  sıfır vergi, Sales varsayılanı veya mevzuat kodu uydurulmaz. İlk onay, güncel owner
+  sürümüyle snapshot eşleşmesini ölçer. Fiyat-only revision tarihsel vergi kaynağını korur.
+- **PARTIAL kalan:** ALS-D105 alış fasonu vergi varsayılanı yönetimi ve satır override
+  yazma yetkileri için açık insan cevabı beklenir; bu yazmalar kapalıdır. Gerçek yönetim/
+  override kaynağı olmadan tüm giden fason kullanıcı workflow'u tamamlandı sayılmaz.
+- Bu son C# kaynak takibi **BUILD NOT_RUN**; önceki checkpoint'in derleme0 kanıtı bu
+  yeni head'e taşınmaz. Erken fiyat UI takibi TSC0 verdi; son vergi DTO/UI ekleri sonrası
+  **TSC NOT_RUN**. Kök owner merkezi import derlemelerine dahil edecektir. Unit/SQL/HTTP/
+  Vitest/browser/CI runtime **NOT_RUN**. Yeni migration/THROW yok;51992 aynen kalır.
