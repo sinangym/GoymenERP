@@ -52,6 +52,7 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource
         }
         return new(invoice.CompanyId, line.Id, accepted.AcceptanceId, order.OrderId, service.LineId, order.Version,
             value.SupplierPartyId, value.CompanyAccountId, value.Money.CurrencyId, service.UnitId, quantity,
-            CommercialLinePriceCalculator.ExactLineAmount(quantity, unitPrice, null, null, null, null), control, accepted.AcceptedOn, type);
+            CommercialLinePriceCalculator.ExactLineAmount(quantity, unitPrice, null, null, null, null), control, accepted.AcceptedOn, type,
+            value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract ? service.Tax ?? throw Unavailable() : null);
     }
 }
