@@ -45,6 +45,7 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
             RequireScope(invoice.CompanyId);
             if (accepted is null || accepted.CompanyId != invoice.CompanyId || accepted.PurchaseOrderId != item.PurchaseOrderId
                 || accepted.AcceptanceId != item.AcceptanceId || accepted.PurchaseOrderLineId == Guid.Empty) throw Mismatch();
+            var acceptedQuantity = Quantity(accepted.AcceptedQuantity);
             var order = await context.Orders.AsNoTracking().Where(row => row.Id == item.PurchaseOrderId)
                 .Select(row => new { row.CompanyId, row.Id, row.Version, row.SupplierPartyId, row.CompanyAccountId, row.CurrencyId })
                 .SingleOrDefaultAsync(cancellationToken);
@@ -80,7 +81,7 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
             catch (Exception exception) when (exception is ArgumentException or OverflowException) { throw Unavailable(); }
             matches.Add(new(invoice.CompanyId, line.Id, accepted.AcceptanceId, order.Id, accepted.PurchaseOrderLineId,
                 order.Version, order.SupplierPartyId, order.CompanyAccountId, invoice.CurrencyId, line.UnitId,
-                quantity, expected, control, day));
+                quantity, expected, control, day, AcceptedQuantity: acceptedQuantity));
         }
         RequireScope(invoice.CompanyId);
         return new(matches, new(policy.PolicyId, policy.Version, policy.AmountTolerance, policy.RateTolerance));

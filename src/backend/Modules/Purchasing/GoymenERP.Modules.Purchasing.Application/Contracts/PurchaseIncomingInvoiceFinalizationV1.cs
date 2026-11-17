@@ -22,8 +22,20 @@ public static class PurchaseIncomingInvoiceFinalizationV1
             invoice.FunctionalAmounts?.Withholding, Array.AsReadOnly(invoice.Lines.Select(line => new PurchaseInvoiceFinalizedLineV1(
                 line.Id, line.LineNo, line.ItemType, line.LinePurpose, line.VatPercent, line.Amounts.Net, line.Amounts.Vat,
                 line.Amounts.Withholding, line.FunctionalAmounts?.Net, line.FunctionalAmounts?.Vat, line.FunctionalAmounts?.Withholding,
-                line.ServiceTypeId, line.ExpenseTypeId, TaxSources(invoice, line.Id))).ToArray()),
-            invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn), invoice.Source.OfficialNumber);
+                line.ServiceTypeId, line.ExpenseTypeId, TaxSources(invoice, line.Id), GoodsCostSource(invoice, line))).ToArray()),
+            invoice.Source.InvoiceDate, invoice.FinalizedBy, invoice.Installments.Min(item => item.DueOn), invoice.Source.OfficialNumber,
+            new(invoice.Source.DocumentId, invoice.Source.DocumentVersion, invoice.Source.Sha256, invoice.Source.Ettn));
+    }
+
+    private static PurchaseInvoiceGoodsCostSourceV1? GoodsCostSource(PurchaseIncomingInvoice invoice, PurchaseInvoiceLine line)
+    {
+        if (line.ProductId == Guid.Empty || line.ServiceTypeId is not null || line.ExpenseTypeId is not null
+            || line.LinePurpose is "service" or "expense") return null;
+        var matches = invoice.Matches.Where(x => x.InvoiceLineId == line.Id).OrderBy(x => x.AcceptanceId).ToArray();
+        // Historical matches may predate the owner quantity proof. Never fill their gap from current rows.
+        if (matches.Length == 0 || matches.Any(x => x.AcceptedQuantity is not > 0)) return null;
+        return new(line.ProductId, line.UnitId, line.Quantity, Array.AsReadOnly(matches.Select(x =>
+            new PurchaseInvoiceReceiptCostShareV1(x.AcceptanceId, x.OrderId, x.OrderLineId, x.OrderVersion, x.Quantity, x.AcceptedQuantity!.Value)).ToArray()));
     }
 
     private static IReadOnlyList<PurchaseInvoiceSubcontractTaxSourceV1>? TaxSources(PurchaseIncomingInvoice invoice, Guid lineId)
