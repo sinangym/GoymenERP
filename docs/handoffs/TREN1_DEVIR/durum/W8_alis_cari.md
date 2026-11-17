@@ -279,3 +279,50 @@ kırmızıların geçtiği veya bu kaynakların kabul aldığı iddia edilmez.
 - Son shell assertion güncellemesi (20 bildirim, 15 eski yayında + 5 fatura staged)
   merkezi Integration derlemesine dahildir; authority hash üreticisi entegrasyonda
   çalışacaktır. Kayıt veya yayına alma yerine test beklentisi gerçek metadata ile hizalanmıştır.
+
+### ALC-S7 — hizmet ve kendi malı giden fason siparişi
+
+- Kaynak commit: `b2e39a331` (ALS-D29, ALS-D40, KIM-D49; API70–72).
+  **PARTIAL:** fiyatlı hizmet siparişi hazırlama → ayrı kişi onayı → gerçek hizmet kabulü →
+  gerçek hizmet kabulüyle fatura eşleştirme kaynakları tamamdır. Fiyatsız siparişin
+  sonradan fiyat tamamlama yolu aşağıda açık kalır; genel dilim DONE sayılmamıştır.
+- Etkin hizmet tipi gerçek Settings listesinden, birim ve para profili gerçek owner'dan,
+  tedarikçi ve Supplier/Tolling rolü gerçek Cari kaynağından okunur. Yapay katalog,
+  numara, fiyat veya ürün varsayımı yoktur. Kendi malı fason için etiketin şirket mülkiyeti
+  ve ürün/sürüm, beklenen çıktı için gerçek ürün kimliği doğrulanır. Müşteri malı
+  fasonuyla karıştırılmaz. Fiziksel gönderim/dönüş ve STK-S3 bu siparişin hareketi değildir.
+- Mevcut OrdersCreate/Read/Approve ve GoodsReceiptsRecord izinleri kullanılır. Şirket,
+  aktör ve company-wide yetki await sonrasında ve commit öncesinde yeniden ölçülür.
+  Hazırlayan kendi siparişini onaylayamaz. Expected version, aynı aktör/anahtar/içerik
+  replay, correlation/causation ve Audit owner kaydı aynı owned Serializable işlemdedir.
+  Ticari numara gerçek Settings PurchaseOrder serisinden aynı işlemde ayrılır.
+- Gerçek hizmet kabulü append-only revision ve ayrı immutable kabul faktı olarak saklanır;
+  mal kabulü/stok hareketi üretilmez. API72 `IPurchaseSubcontractOrderReadPortV1`
+  yalnız trusted server şirketiyle fiyat içermeyen onay/açıklık/tedarikçi/hizmet/malzeme
+  kaynağı verir. Ayrı `IPurchaseServiceAcceptanceReadPortV1` gerçek kabul kaynağını sunar.
+- Fatura satırı `ItemType=Service`, `LinePurpose=service`, boş ProductId ve açık typed
+  ServiceTypeId taşır. Nullable alan eski mal JSON'una yazılmaz. Aynı gerçek kabulün
+  faturalanan miktarı tekrar kullanılamaz; aynı global sıralı alış satır kilitlerinde ve
+  Serializable işlemde yeniden okunur. Yeni service invoice binding kendi composite
+  FK'sına sahiptir; mal kabul FK'sı gevşetilmez. Hizmet, Inventory mal maliyeti bağına girmez.
+  Finalized producer typed hizmet kimliğini korur; Accounting tüketici hizası merkezde
+  ayrı owner tarafından alınacaktır.
+- Numaralı liste/detay, gerçek kaynak seçimiyle çok satırlı form, onay ve kabul ekranı
+  yazıldı. Fiyat backend'de esirgenir; fiyat/kur/tolerans hesapları UI'de kopyalanmaz.
+  Şirket/aktör değişimi, yetkisiz, bulunamadı, boş kaynak, 503, bozuk yanıt ve bilinmeyen
+  yazma sonucu ayrıdır. Bilinmeyen yazma aynı içerik/anahtarla doğrulanır.
+- EF üretimi `20261117110054_AddPurchaseServiceOrders` exit 0. Up yalnız beş yeni tablo/
+  indeks/FK DDL'sidir. Down ilk işlemde **THROW 51992** ile sipariş, revision, kabul,
+  fatura bağı veya terminal geçmiş varken veri kaybını reddeder. DB uygulanmadı.
+- Kaynak doğrulaması: API, Purchasing.UnitTests, Api.IntegrationTests ve frontend
+  `tsc -b` exit 0; uyarı/hata 0. Unit/model, HTTP, gerçek SQL, transport/strict decoder
+  ve DOM test kaynakları yazıldı. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+  SQL hizmet siparişi/Audit/numara, rollback, replay, şirket, Down ve gerçek kabul
+  eşleştirmesini ölçer; Settings hizmet kataloğu/Finans uçtan uca kabulü iddia edilmez.
+- Merkezi mount gereksinimi: `AddPurchaseServiceOrderHostV1()` ve
+  `MapPurchaseServiceOrderEndpointsV1()`; shell provider 1.11, beş capability ve üç
+  frontend route kaynağı hazırdır. Merkezi nav/OpenAPI/pin/envanter üretimi kök owner'dadır.
+- Açık somut eksik: ALS-D18 fiyatsız siparişi kabul eder. Matcher eksik fiyatı 503 tutar;
+  hizmet siparişinde sonradan gerçek fiyat giriş/revizyon yolu henüz yoktur. Mevcut genel
+  siparişte de yalnız tedarikçi revizyonuna özel fiyat komutu bulunur. Yeni onay/finans
+  politikası seçilmedi; mevcut karar/spec fiyat lifecycle'ı ayrıca dar doğrulanacaktır.
