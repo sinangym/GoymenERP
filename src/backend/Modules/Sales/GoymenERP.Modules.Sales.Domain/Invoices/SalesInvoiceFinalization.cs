@@ -63,6 +63,12 @@ public sealed partial class SalesInvoice
                 "Resmî belgeyle eşleşmede fark bulunduğundan fatura, fark çözülene kadar kesinleştirilemez.");
         }
 
+        if (!Match.HasCompleteSourceProof(CompanyId))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InvoiceMatchSourceProofRequired,
+                "Resmî fatura tarihi ve onaylı kaynak kanıtı eksik; fatura kesinleştirilemez.");
+        }
+
         var payable = FunctionalTotals?.Payable;
 
         var split = SalesInvoiceInstalmentCalculator.FunctionalAmounts(instalments, Header.Rate, Header.CurrencyId, payable);

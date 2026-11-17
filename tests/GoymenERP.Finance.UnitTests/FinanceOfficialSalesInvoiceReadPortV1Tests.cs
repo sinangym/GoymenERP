@@ -43,6 +43,15 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
         Assert.Null(answer.Invoice.PdfDocumentId);
         Assert.NotNull(answer.Invoice.SourceBatchId);
         Assert.Equal(64, answer.Invoice.SourceChecksum!.Length);
+        var sales = await run.SalesPort(Company).LookupAsync(Company, OfficialNo, Ettn);
+        Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, sales.Outcome);
+        Assert.Equal(answer.Invoice.InvoiceDate, sales.Invoice!.InvoiceDate);
+        Assert.Equal(answer.Invoice.SourceBatchId, sales.Invoice.SourceProof!.SourceBatchId);
+        Assert.Equal(answer.Invoice.SourceChecksum, sales.Invoice.SourceProof.SourceChecksum);
+        Assert.Equal(document, sales.Invoice.SourceProof.InvoiceId);
+        Assert.True(sales.Invoice.SourceProof.HasPendingManual);
+        Assert.Equal("approved-import", sales.Invoice.SourceProof.SourceKind);
+
     }
 
     [Fact]
@@ -112,7 +121,8 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
         var sales = await run.SalesPort(Company).LookupAsync(Company, OfficialNo, Ettn);
         Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, sales.Outcome);
         // The tax base is not part of the Sales facts (FNS-D21); the scale of the stored text is kept in the decimal.
-        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m),
+        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m, facts.InvoiceDate,
+            new(Company, invoice, "manual", "2", ApprovedAt, Pdf, 1, new string('d', 64), null, null, false)),
             sales.Invoice);
         Assert.Equal("1250.50", sales.Invoice!.PayableAmount.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.False(run.Db.ChangeTracker.HasChanges());
@@ -321,6 +331,34 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
             (answer.Outcome, answer.Invoice));
     }
 
+    [Theory]
+    [InlineData("missing-date")]
+    [InlineData("missing-source-id")]
+    [InlineData("missing-version")]
+    [InlineData("missing-pdf")]
+    [InlineData("bad-hash")]
+    [InlineData("unknown-source")]
+    [InlineData("import-without-batch")]
+    public async Task Sales_refuses_incomplete_official_source_evidence_without_substituting_a_draft_date(string variant)
+    {
+        var facts = Facts();
+        facts = variant switch
+        {
+            "missing-date" => facts with { InvoiceDate = null },
+            "missing-source-id" => facts with { InvoiceId = Guid.Empty },
+            "missing-version" => facts with { Version = "" },
+            "missing-pdf" => facts with { PdfDocumentId = null },
+            "bad-hash" => facts with { PdfSha256 = new string('x', 64) },
+            "unknown-source" => facts with { SourceKind = "unknown" },
+            "import-without-batch" => facts with { SourceKind = "approved-import", PdfDocumentId = null,
+                PdfDocumentVersionNo = null, PdfSha256 = null, SourceChecksum = new string('a', 64) },
+            _ => throw new ArgumentOutOfRangeException(nameof(variant)),
+        };
+        var port = new FinanceSalesOfficialInvoiceReadPortV1(new FixedFinanceAnswer(new(
+            FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, facts)));
+        Assert.Equal(SalesOfficialInvoiceAnswerV1.Unavailable, await port.LookupAsync(Company, OfficialNo, Ettn));
+    }
+
     [Fact]
     public async Task A_cancelled_lookup_is_never_read_as_unavailable()
     {
@@ -346,6 +384,7 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
             Id = id,
             CompanyId = company ?? Company,
             OfficialNo = officialNo,
+            InvoiceDate = new DateOnly(2026, 11, 14),
             Ettn = ettn,
             CustomerPartyId = Customer,
             CurrencyId = Currency,
@@ -383,7 +422,7 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
     }
 
     private static FinanceOfficialSalesInvoiceFactsV1 Facts() => new(Guid.NewGuid(), Company, OfficialNo, Ettn, Customer,
-        Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, 1, new string('d', 64), "2", ApprovedAt);
+        Currency, "1250.50", "1250.50", "1042.08", "208.42", "0", Pdf, 1, new string('d', 64), "2", ApprovedAt, new DateOnly(2026, 11, 14));
 
     private sealed class FixedFinanceAnswer(FinanceOfficialSalesInvoiceReadAnswerV1? answer)
         : IFinanceOfficialSalesInvoiceReadPortV1

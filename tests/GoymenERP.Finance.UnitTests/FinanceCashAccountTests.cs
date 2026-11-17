@@ -766,7 +766,7 @@ public sealed class FinanceCashAccountTests
         var audits = await run.AuditsAsync(account);
         Assert.Equal(new[]
             {
-                ("finance.cash-account.passivation-proposed.v1", "Propose", ErpPermissions.FinanceCashAccountPassivationPropose,
+                ("finance.cash-account.passivation-proposed.v1", "Propose", (string?)ErpPermissions.FinanceCashAccountPassivationPropose,
                     Actor, (long?)2, (long?)3),
                 ("finance.cash-account.passivation-approved.v1", "Approve", ErpPermissions.FinanceCashAccountPassivationApprove,
                     Approver, (long?)3, (long?)4),

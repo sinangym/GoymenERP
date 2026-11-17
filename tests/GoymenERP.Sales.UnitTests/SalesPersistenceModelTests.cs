@@ -26,6 +26,23 @@ public sealed class SalesPersistenceModelTests
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Official_source_proof_columns_are_nullable_for_legacy_rows_and_down_51982_guards_first()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(InvoiceMatchRow))!;
+        Assert.True(design.FindProperty(nameof(InvoiceMatchRow.OfficialInvoiceDate))!.IsNullable);
+        Assert.True(design.FindProperty(nameof(InvoiceMatchRow.OfficialSourceProofJson))!.IsNullable);
+        Assert.Equal(2048, design.FindProperty(nameof(InvoiceMatchRow.OfficialSourceProofJson))!.GetMaxLength());
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_InvoiceMatches_SourceProof"
+            && check.Sql == SalesDbContext.InvoiceMatchSourceProofConstraint);
+        var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesInvoiceOfficialSourceProof();
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51982,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
     public void Every_sales_table_is_in_its_schema_and_filtered_by_the_active_company()
     {
         using var context = Context();
