@@ -2,7 +2,7 @@
 
 17 Kasım 2026 kaynak kontrolü. Bu dosya yeni iş kapsamı veya karar oluşturmaz.
 İlk kayıtta aşağıdaki 12 soru bekliyordu. Güncel durumda 1–12 doğrudan kullanıcı
-tarafından yanıtlandı. Kullanıcıdan beklenen yeni bir işletme kararı yoktur. 12: bugün API sağlayıcısı yok; ileride Mikro ePortal/AI kontrolü fikri mevcut aktivasyon yetkisi değildir. [Ajan aktarımı](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6959047458). Gerçek sağlayıcı kanıtı bulunmayan akış 503 ile kapalı kalır.
+tarafından yanıtlandı. Bu ilk 12 soru için bekleyen işletme kararı yoktur; sonradan kaynak taramasında bulunan üç KIM-S19 açıklığı aşağıda ayrıca listelenmiştir. 12: bugün API sağlayıcısı yok; ileride Mikro ePortal/AI kontrolü fikri mevcut aktivasyon yetkisi değildir. [Ajan aktarımı](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6959047458). Gerçek sağlayıcı kanıtı bulunmayan akış 503 ile kapalı kalır.
 Tam eski soru ve seçenekler tablodaki kaynak bağlantılarındadır.
 Bu başlıklardan bağımsız mevcut kaynak işleri devam eder. Yanıt bekleyen dal
 başarıya çevrilmez ve ilgili dilim bütün olarak DONE sayılmaz.
@@ -43,3 +43,26 @@ ve diğer yukarıdaki sorular bu iki cevapla seçilmiş değildir.
 Bu bağlantıların tamamı doğrudan çalışma sohbetindeki insan cevaplarının açıkça
 etiketlenmiş ajan aktarımıdır. Bağımsız insan GitHub yazarlığı değildir. Yanıtlanan
 karar, ilgili kaynağın yazılıp trene alındığı veya runtime kabulünün geçtiği anlamına gelmez.
+
+
+## İlk alış SMM tutarının gerçek sevklere parasal atfı — yanıtlandı
+
+[6960115841](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6960115841) doğrudan oturum yanıtının ajan aktarımıdır. Kullanıcı üretimdeki artık kuralını alışa da seçti. Her sevkin kendi exact maliyeti korunur; yalnız yuvarlama farkı en yüksek kg/eşitlikte önce kaydedilen sevkten başlayarak, sıfırı aşmadan sonraki paya geçer. Tek 0,01 TL iki eşit payda 0,01+0,00 olur; ikinci fiş/fiziksel hareket olmaz. Soru açık değildir.
+
+## KIM-S19 / mevcut B-13 — üç dar semantik yanıtlandı
+
+[6960365506](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6960365506) soru kaydıdır, karar değildir. Kullanıcıya doğrudan üç ayrı kısa soru gösterildi:
+
+1. Tanımlanan genel onay eşiğinde tam sınır dahil mi, yalnız üstü mü?
+2. Kasa farkı eşiği kasa+para birimi başına tutar mı, kayıtlı kasa bakiyesinin yüzdesi mi?
+3. K6 teminat vade aralığı bitişine kalan gün mü, başlangıç-bitiş toplam süre mi?
+
+[6960531086](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6960531086) doğrudan kullanıcı cevaplarının ajan aktarımıdır: (1) eşik dahil; (2) her kasa ve para birimi için tutar; (3) bitişine kalan gün. Bu üç soru açık değildir. Sayısal eşik/varsayılan/grant seçilmedi. Mevcut zorunlu maker-checker, yayın lifecycle, OPEN ve Finance STOP sınırları korunur. Teminat tür/oranının zaten seçilmiş FNS-D31/D70 ve iş gününün FNS-D75 hükmü bu sorulara yeniden açılmadı.
+
+## FIN-S14 — belgeli gerçek TL defter değeri yanıtlandı
+
+[6960684942](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6960684942) doğrudan oturum cevabının ajan aktarımıdır: “Belgeli gerçek değer ve farklı kişi onayı (Önerilen)”. Bozdurulan dövizin mevcut muhasebedeki gerçek TL defter değerini muhasebe yetkilisi kaynak belgesiyle girer; farklı muhasebe yetkilisi onaylar. TCMB karşılaştırması gerçek değerin yerine geçmez; FIFO/ortalama yöntemi veya hedef yabancı döviz için yeni değerleme politikası seçilmez. Kaynak uygulaması FIN-S14 sahibi tarafından sürdürülür.
+
+## SAT-S12 — bağımsız golden incelemesi geldi, açılış kapısı sürüyor
+
+Kullanıcının ilettiği bağımsız inceleme kaynak adayı `e20f0ad14a44ecfe927060dbe0a2ff7e3eda9c8c` formül çekirdeğini şartlı APPROVE etti. Bu bir GitHub DOCS/K3 imzası değildir. P2-1: çağrıdaki fonksiyonel para birimi maliyetin kendi para birimi olmamalı; gerçek Settings TL kimliğiyle bağlanmalı. Düzeltme kaynakta hazırlanıyor. Golden yeni tek dosyalık DOCS adayı olarak hazırlanacak; iki bağımsız exact-head DOCS imzası ve main koşulu tamamlanmadan `MarginGoldenAccepted` açılmaz. Sıfır maliyetin Satış katmanında reddi, kg dışı Stok dönüşümü ve yalnız yüzde taşmasında tutarın da düşmesi bu incelemeyle yeni politika olarak seçilmedi.

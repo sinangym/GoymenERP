@@ -405,3 +405,13 @@ edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonr
 - Inventory shell 1.13 bağımsız `/stok/fason-ayirma-birak` ekranını yalnız mevcut `inventory.physical-allocation.write` izniyle yayımlar. Teknik route capability `inventory.subcontract-allocations.release-unused` bir ERP izni değildir; eski stok-detail control'ünün ekstra okuma izinleri yeni write-purpose gateway'e yüklenmez. Sayfa, route ve menü aynı teknik capability'ye bağlandı.
 - Kayıtlı fresh izin/version/idempotency/Audit/replay ve HTTP/fiziksel rollback kaynakları owner'dadır. Merkezi mount/provider test kaynakları ve üç gerçek SQL fact tam adı güncellendi. Şema/migration, yeni izin/grant/rol veya production aktivasyonu yoktur.
 - Kaynak derleme owner zinciri sürüyor; merkez delta için son birleşik derleme QUEUED. Runtime/SQL/Vitest/browser/CI NOT_RUN. Pinler final üretici sırasındadır; elle hash yazılmadı.
+
+
+## Birleşik kaynak derleme checkpoint'i — 398a55566
+
+- Kaynak bu head'de bütün zincir boyunca donduruldu. API **exit0**, Inventory.UnitTests **exit0**, Sales.UnitTests **exit0**, Api.IntegrationTests **exit0**; tamamı 0 uyarı/0 hata. Parametreler `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false -v:q`. Native log/exit kayıtları depodışında korundu.
+- Aynı kaynakta `npx tsc -b` **exit0**. .NET ve Node ayrı lease'lerle, her süreç başlangıcında >=2GiB fiziksel boş bellek ölçülerek çalıştı. Sonrasında iki lease bırakıldı; model/SQL çalıştırılmadı.
+- Bu kaynak ilk alış invoice-line aggregate + API adapter/Q11 recorded rounding/Mixed tüketimi, Q7 numaralama/gerçek EF, resmî iptal host/subscription ve iki yeni standalone route'u beraber derler. Eski ayrı owner compile sonuçlarından birleşik PASS türetilmedi.
+- Hafif kontroller: `validate_delivery_backlog` exit0; `validate_dotnet_bootstrap_integrity` exit0; delivery Python paketi 64 test/skip0/exit0; bootstrap Python paketi 56 test/9 koşullu skip/exit0. Skipler mevcut dosya sistemi symlink/case-variant yetenek sınırlarındandır; skip0 kanıtı değildir, koşumlar değiştirilmedi. `git diff --check` exit0.
+- Bunlar kaynak derlemeleri ve izinli hafif doğrulayıcılardır. Tam runtime Unit/mimari/gerçek SQL/HTTP/Vitest/browser/CI, OpenAPI/pin üretimi, tren FF ve K3 kabulü henüz tamamlanmadı. Yeni Accounting purchase attribution ve KIM-S19 kaynakları owner dallarında sürer; bu checkpoint onları kapsamaz.
+- STK-S3 sekiz fason shell deklarasyonunun `ImplementationAvailable:false` bekleyişi kendi staged-profile kabul kapısıdır. Kabul koşmadan sunum kapısını true'ya çevirip testi atlamadık; gerçek endpoint/route/maliyet kaynaklarının varlığı kullanılabilirlik kanıtı sayılmaz. Son kabul/publish işi açık kayıtlıdır.
