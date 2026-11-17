@@ -15,7 +15,7 @@ public sealed class SettingsPurchaseInvoiceVariancePolicyPersistenceModelTests
     {
         using var context = Context();
         Assert.False(context.Database.HasPendingModelChanges());
-        Assert.EndsWith("_AddPurchaseInvoiceVariancePolicies", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddPurchaseInvoiceVariancePolicies", StringComparison.Ordinal));
         var migration = new AddPurchaseInvoiceVariancePolicies();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation or InsertDataOperation or UpdateDataOperation or DeleteDataOperation);
         Assert.Equal("PurchaseInvoiceVariancePolicies", Assert.Single(migration.UpOperations.OfType<CreateTableOperation>()).Name);

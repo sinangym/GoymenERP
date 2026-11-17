@@ -80,6 +80,9 @@ public static class SettingsModuleExtensions
         services.AddScoped<SettingsPurchaseInvoiceVariancePolicy>();
         services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyProviderV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
         services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyAdministrationV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
+        services.AddScoped<SettingsWarehouseTransferScalePolicy>();
+        services.AddScoped<ISettingsWarehouseTransferScaleProviderV1>(sp => sp.GetRequiredService<SettingsWarehouseTransferScalePolicy>());
+        services.AddScoped<ISettingsWarehouseTransferScaleAdministrationV1>(sp => sp.GetRequiredService<SettingsWarehouseTransferScalePolicy>());
         // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
         // port approving modules consume. No row answers the decided default: the preparer may not approve.
         services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();

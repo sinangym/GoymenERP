@@ -12,6 +12,7 @@ import type { TransferDetail, TransferList } from './transferContract'
 import { TRANSFER_TEXT as T } from './transferText'
 import { INVENTORY_STOCK_POSITIONS_ROUTE, INVENTORY_TRANSFER_CANCEL_CAPABILITY } from './capabilities'
 import { TransferCancelPanel } from './TransferCancelPanel'
+import { TransferDispatchPanel } from './TransferDispatchPanel'
 import { transferCancelBinding } from './transferCancelAttempt'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
@@ -62,7 +63,8 @@ function TransferView({ namespace }: { readonly namespace: string | null }) {
         <tbody>{detailState.data.lines.map((line, index) => <tr key={line.lineId}><td>{index + 1}</td><td>{line.plannedKg}</td>
           <td>{line.actualShippedKg ?? T.unknown}</td><td>{line.differenceKg ?? T.unknown}</td><td>{T.statuses[line.status]}</td>
           <td><Link to={inventoryLabelDetailPath(line.labelId)}>{T.openLabel}</Link></td></tr>)}</tbody>
-      </table><TransferCancelPanel transfer={detailState.data} binding={transferCancelBinding(shell, selected)}
+      </table><TransferDispatchPanel transfer={detailState.data} onChanged={() => { void list.refetch(); void detail.refetch() }} />
+      <TransferCancelPanel transfer={detailState.data} binding={transferCancelBinding(shell, selected)}
         canCancel={hasCapability(shell, INVENTORY_TRANSFER_CANCEL_CAPABILITY)} onChanged={() => { void list.refetch(); void detail.refetch() }} /></>}
     </section>}
   </main>
