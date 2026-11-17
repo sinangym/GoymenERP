@@ -6,8 +6,8 @@ namespace GoymenERP.Modules.Finance.Contracts;
 // money events of recorded receipts, their reversals and cheque / note collections, the outgoing money events of
 // recorded payments, and the admitted open items — never a draft, never a second copy of a fact. DEC-FIN-006: an F-03
 // allocation is not a ledger movement (it only applies an existing source to an open item), so it is not a row and
-// never moves the balance. OPEN-018 (carry-forward / devir) is open: there is NO opening balance; the running balance
-// starts at zero on the first day of the range and says so. OPEN-012: currencies are never converted or added — every
+// never moves the balance. FNS-D42: a real, unreversed period carry can supply the range opening balance; it is a
+// boundary proof, not another movement. Without that proof the legacy zero start remains explicit. OPEN-012: currencies are never converted or added — every
 // currency has its own rows, totals and balance.
 
 /// <summary>What recorded Finance fact a ledger row is.</summary>
@@ -91,13 +91,14 @@ public enum PartyLedgerBalanceSide
 }
 
 /// <summary>
-/// How the range's first balance is found. OPEN-018 is open, so the only value is <see cref="NoneOpen018"/>: nothing
-/// before the range is carried in, the running balance starts at zero, and the screen says so.
+/// How the range's first balance is found. The legacy wire value remains when there is no applicable actual carry.
+/// A real period carry and subsequent recorded facts before the requested range supply PeriodClosureVoucher.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<PartyLedgerCarryForward>))]
 public enum PartyLedgerCarryForward
 {
     NoneOpen018 = 1,
+    PeriodClosureVoucher = 2,
 }
 
 /// <summary>One party account of the context company and an inclusive business-date range.</summary>
@@ -140,7 +141,12 @@ public sealed record PartyLedgerCurrency(
     IReadOnlyList<PartyLedgerEntry> Entries,
     AmountView DebitTotal,
     AmountView CreditTotal,
-    PartyLedgerBalanceView ClosingBalance);
+    PartyLedgerBalanceView ClosingBalance,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PartyLedgerBalanceView? OpeningBalance = null);
+
+/// <summary>Immutable period boundary proof; no amounts or duplicated ledger movements are carried in this header.</summary>
+public sealed record PartyLedgerPeriodCarryV1(Guid VoucherId, Guid SourcePeriodId, DateOnly SourceEndsOn,
+    Guid TargetPeriodId, DateOnly TargetStartsOn, string SourceHash);
 
 public sealed record PartyLedgerView(
     Guid CompanyId,
@@ -149,7 +155,8 @@ public sealed record PartyLedgerView(
     DateOnly From,
     DateOnly To,
     PartyLedgerCarryForward CarryForward,
-    IReadOnlyList<PartyLedgerCurrency> Currencies);
+    IReadOnlyList<PartyLedgerCurrency> Currencies,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PartyLedgerPeriodCarryV1? PeriodCarry = null);
 
 public enum PartyLedgerOutcome
 {

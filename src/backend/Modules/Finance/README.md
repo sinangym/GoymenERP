@@ -804,6 +804,12 @@ sources refuse the whole close; the existing party-ledger size guard is not sile
 EF-generated `20261117154319_AddPeriodCarryVouchers` adds company-scoped vouchers and counter-records with
 restricted references and exact source proof. Up is DDL only. Down first refuses with **THROW 51921** while either
 store has rows; an empty store may roll back. The credit-bank source's transaction-date/accounting-date boundary
-decision is pending, so dated carry with that source is unavailable. Carry presentation in the date-range party
-ledger and temporal fences for remaining historical source writers are still follow-up work in the same FIN-S17
-slice; this checkpoint alone is not complete delivery. Runtime SQL/CI and activation are NOT_RUN.
+decision is pending, so dated carry with that source is unavailable. The date-range party ledger now reads an actual
+unreversed carry as an opening balance, advances it only by actual intervening facts, and discloses it under the same
+fresh amount authority as all other balances. It is not a movement or part of the range debit/credit totals, and the
+all-time summary never adds carry again. The owner boundary read uses the established complete-summary 20000-fact
+cap; the public 1000-row range cap remains. Excess is refused, not truncated. Initial opening and opening-reversal
+approval lock/read the Finance carry range in their existing Serializable transaction and refuse dates captured by
+an active carry. A first setup without a carry is not required to invent an Accounting period.
+Temporal fences for other historical source writers and the later-closed-period reopening chain remain follow-up
+work in this FIN-S17 slice; this checkpoint alone is not complete delivery. Runtime SQL/CI and activation are NOT_RUN.

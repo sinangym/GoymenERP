@@ -10,9 +10,12 @@ export const LEDGER_OPEN_HINT = 'Bu cari hesabın kesinleşmiş finans kayıtlar
 export const LEDGER_NOTICE =
   'Yalnız kesinleşmiş kayıtlar: fatura taksitleri (açık kalem), tahsilatlar, ters kayıtlar, çek/senet tahsilleri ve '
   + 'ödemeler. Taslaklar ve dağıtımlar (kapama) satır değildir; dağıtım bakiyeyi değiştirmez.'
-/** OPEN-018: carry-forward is an open decision — say so, never imply an opening balance. */
 export const LEDGER_NO_CARRY_FORWARD =
-  'Devir yok (OPEN-018): bakiye seçilen aralığın ilk gününde sıfırdan başlar; aralıktan önceki kayıtlar taşınmaz.'
+  'Bu aralık için geçerli dönem devir fişi yok: bakiye sıfırdan başlar; önceki kayıtlar taşınmaz.'
+export const LEDGER_PERIOD_CARRY =
+  'Aralık başlangıç bakiyesi kesinleşmiş dönem devir fişi ve aralık öncesi kayıtlarından gelir; yeni hareket değildir.'
+export const LEDGER_OPENING_BALANCE = 'Aralık başlangıç bakiyesi'
+export const LEDGER_CARRY_SOURCE = 'Dönem devir fişi'
 export const LEDGER_PER_CURRENCY = 'Her para birimi ayrı gösterilir; tutarlar çevrilmez ve toplanmaz.'
 export const LEDGER_FROM = 'Başlangıç tarihi'
 export const LEDGER_TO = 'Bitiş tarihi'

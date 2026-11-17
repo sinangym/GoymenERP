@@ -155,7 +155,7 @@ public sealed class FinancePeriodCarryForwardSession : IAsyncDisposable
         var ledger = new PartyLedgerService(db, company, user, permissions);
         foreach (var party in parties.OrderBy(x => x.PartyId).ThenBy(x => x.AccountId))
         {
-            var answer = await ledger.ReadAuthorizedAsync(context, new(party.PartyId, party.AccountId, DateOnly.MinValue, through), cancellationToken);
+            var answer = await ledger.ReadBoundaryAuthorizedAsync(context, party.PartyId, party.AccountId, through, cancellationToken);
             if (answer.Outcome != PartyLedgerOutcome.Found || answer.Ledger is not { } value)
                 throw new InvalidOperationException("The complete, authorized party ledger source is unavailable.");
             foreach (var currency in value.Currencies)
