@@ -76,6 +76,7 @@ public sealed partial class SettingsCollateralTypeSqlServerRelationalAcceptanceT
     {
         public bool IsResolved => CompanyId != Guid.Empty;
         public Guid CompanyId { get; set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
 
     private sealed class ReboundCatalogActor : ICurrentUser
