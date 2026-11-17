@@ -13,7 +13,8 @@ public sealed partial class PurchaseInvoiceFileReader
         "PrepaidAmount", "PayableRoundingAmount", "LineTaxCode", "LineTaxPercent", "LineTaxAmount", "LineTaxableAmount",
         "LineWithholdingCode", "LineWithholdingPercent", "LineWithholdingAmount", "LineWithholdingTaxableAmount",
         "TaxCode", "TaxPercent", "TaxAmount", "TaxableAmount", "WithholdingCode", "WithholdingPercent", "WithholdingAmount", "WithholdingTaxableAmount",
-        "OfficialRate", "RateSourceCurrency", "RateTargetCurrency", "RateDate", "PaymentDueDate", "PaymentAmount"];
+        "OfficialRate", "RateSourceCurrency", "RateTargetCurrency", "RateDate", "PaymentDueDate", "PaymentAmount",
+        "FunctionalNet", "FunctionalVat", "FunctionalWithholding", "FunctionalLineNet", "FunctionalLineVat", "FunctionalLineWithholding"];
 
     /// <summary>Each row is one source invoice line; explicitly mapped header facts must repeat identically.
     /// The map describes an export's fields. It is not a vendor adapter or permission to invent missing facts.</summary>
@@ -44,7 +45,8 @@ public sealed partial class PurchaseInvoiceFileReader
         if (rows.Skip(1).Any(row => row.Count != headers.Count)) throw Invalid("rows", "row_shape_invalid");
         var currency = Currency(Required(first, "Currency"));
         PurchaseInvoiceFileAmountV1? Money(IReadOnlyList<string> row, string field) => Read(row, field) is { } value ? new(currency, Scalar(value)) : null;
-        var headerFields = map.Keys.Where(field => !field.StartsWith("Line", StringComparison.Ordinal) || field == "LineExtensionAmount")
+        var headerFields = map.Keys.Where(field => !field.StartsWith("FunctionalLine", StringComparison.Ordinal)
+            && (!field.StartsWith("Line", StringComparison.Ordinal) || field == "LineExtensionAmount"))
             .Except(["SellerCode", "BuyerCode", "Description", "UnitCode", "Quantity"], StringComparer.Ordinal).ToArray();
         foreach (var row in rows.Skip(2))
             if (headerFields.Any(field => Read(row, field) != Read(first, field))) throw Invalid("header", "multiple_invoice_headers");
@@ -67,6 +69,13 @@ public sealed partial class PurchaseInvoiceFileReader
             }
             return result;
         }
+        PurchaseInvoiceFileFunctionalAmountsV1? Functional(IReadOnlyList<string> row, string prefix)
+        {
+            var values = new[] { "Net", "Vat", "Withholding" }.Select(field => Read(row, prefix + field)).ToArray();
+            if (values.All(value => value is null)) return null;
+            if (values.Any(value => value is null)) throw Invalid(prefix, "functional_amounts_incomplete");
+            return new(Scalar(values[0]!), Scalar(values[1]!), Scalar(values[2]!));
+        }
         var rates = new List<PurchaseInvoiceFileRateV1>();
         if (Read(first, "OfficialRate") is { } rate)
             rates.Add(new("OfficialInvoiceRate", Currency(Required(first, "RateSourceCurrency")), Currency(Required(first, "RateTargetCurrency")),
@@ -83,7 +92,8 @@ public sealed partial class PurchaseInvoiceFileReader
             dueOn is null && paymentAmount is null ? [] : [new(dueOn is null ? null : Date(dueOn, options.DateFormat), paymentAmount, Source: "MappedExport")],
             rows.Skip(1).Select(row => new PurchaseInvoiceFileLineV1(Required(row, "LineId"), Read(row, "SellerCode"), Read(row, "BuyerCode"),
                 Required(row, "Description"), Required(row, "UnitCode"), Scalar(Required(row, "Quantity")),
-                Money(row, "LineNet") ?? throw Invalid("LineNet", "field_required"), RowTaxes(row, true), [])).ToArray());
+                Money(row, "LineNet") ?? throw Invalid("LineNet", "field_required"), RowTaxes(row, true), [], Functional(row, "FunctionalLine"))).ToArray(),
+            Functional(first, "Functional"));
     }
 
     private static IReadOnlyList<IReadOnlyList<string>> ReadCsv(byte[] bytes, char delimiter)

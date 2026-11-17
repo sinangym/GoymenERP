@@ -7,7 +7,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Imports;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
-public sealed class PurchaseInvoiceFileReaderTests
+public sealed partial class PurchaseInvoiceFileReaderTests
 {
     private readonly PurchaseInvoiceFileReader _reader = new();
     private static readonly XNamespace Cbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";

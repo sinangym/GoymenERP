@@ -5,13 +5,14 @@ namespace GoymenERP.Modules.Purchasing.Domain.Invoices;
 
 /// <summary>ALS-D7/D44: imported supplier facts. Amounts are from the official document, never recomputed as tax policy.</summary>
 public sealed record PurchaseInvoiceSource(Guid DocumentId, long DocumentVersion, string Sha256,
-    string OfficialNumber, Guid Ettn, DateOnly InvoiceDate);
+    string OfficialNumber, Guid Ettn, DateOnly InvoiceDate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseInvoiceImportProof? ImportProof = null);
 
 public sealed record PurchaseInvoiceAmounts(decimal Net, decimal Vat, decimal Withholding)
 {
     public decimal Payable => checked(Net + Vat - Withholding);
 
-    internal void Validate(int scale)
+    public void Validate(int scale)
     {
         if (Net < 0 || Vat < 0 || Withholding < 0 || Withholding > Vat
             || new[] { Net, Vat, Withholding }.Any(value => decimal.Round(value, scale) != value))
