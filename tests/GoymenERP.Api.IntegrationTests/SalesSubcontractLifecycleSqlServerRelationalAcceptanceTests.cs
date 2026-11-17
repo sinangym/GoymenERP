@@ -13,6 +13,28 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Subcontract_invoice_selection_pages_real_order_headers_and_rejects_foreign_company_or_order_cursor()
+    {
+        await using var run = await Run.StartAsync();
+        await run.StoreAsync("list-first", Weighing);
+        await run.StoreAsync("list-second", Guid.NewGuid());
+        await using var own = run.SalesStore(CompanyA);
+        var first = await own.Store.ListSubcontractInvoicesAsync(Order, 1, null);
+        Assert.Single(first.Items);
+        Assert.NotNull(first.NextCursor);
+        var second = await own.Store.ListSubcontractInvoicesAsync(Order, 1, first.NextCursor);
+        Assert.Single(second.Items);
+        Assert.NotEqual(first.Items[0].Id, second.Items[0].Id);
+        Assert.Null(second.NextCursor);
+        var wrongOrder = await Assert.ThrowsAsync<SalesDraftStoreException>(() => own.Store.ListSubcontractInvoicesAsync(Guid.NewGuid(), 1, first.NextCursor));
+        Assert.Equal(SalesDraftStoreCodes.InvalidCursor, wrongOrder.Code);
+        await using var other = run.SalesStore(CompanyB);
+        Assert.Empty((await other.Store.ListSubcontractInvoicesAsync(Order, 1, null)).Items);
+        var wrongCompany = await Assert.ThrowsAsync<SalesDraftStoreException>(() => other.Store.ListSubcontractInvoicesAsync(Order, 1, first.NextCursor));
+        Assert.Equal(SalesDraftStoreCodes.InvalidCursor, wrongCompany.Code);
+    }
+
+    [SqlServerFact]
     public async Task Subcontract_lifecycle_Down_reverses_empty_storage_but_preserves_evidence_with_51994()
     {
         await using var run = await Run.StartAsync();

@@ -86,7 +86,9 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractInvoiceLifecy
         try
         {
             var automatic = metadata with { IdempotencyKey = $"subcontract-finance:{invoiceId:D}:{committed.Invoice.Version}" };
-            return await ResendSubcontractInvoiceToFinanceAsync(invoiceId, new(committed.Invoice.Version), automatic, cancellationToken);
+            var delivered = await ResendSubcontractInvoiceToFinanceAsync(invoiceId, new(committed.Invoice.Version), automatic, cancellationToken);
+            // The HTTP answer belongs to the finalisation key, even when a concurrent internal hand-off was replayed.
+            return new(delivered.Invoice with { IsReplay = false }, false, committed.OriginalCorrelationId);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

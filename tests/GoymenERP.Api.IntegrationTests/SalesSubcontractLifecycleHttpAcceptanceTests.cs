@@ -12,6 +12,41 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>SENTETIK HTTP boundary only; real authority and business state are covered in service/SQL fact sources.</summary>
 public sealed class SalesSubcontractLifecycleHttpAcceptanceTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
 {
+    [Fact]
+    public async Task Subcontract_invoice_selection_returns_only_order_metadata_and_rejects_unsupported_or_repeated_query_fields()
+    {
+        var service = new ListStub();
+        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ISalesSubcontractInvoiceListServiceV1>();
+            services.AddSingleton<ISalesSubcontractInvoiceListServiceV1>(service);
+        }));
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        client.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString("D"));
+        var orderId = Guid.NewGuid();
+        var path = $"{SalesEndpoints.SubcontractServiceInvoicesPath}/by-order/{orderId:D}";
+        foreach (var query in new[] { "?pageSize=1&pageSize=2", "?cursor=one&cursor=two", "?companyId=other", "?price=true" })
+        {
+            using var invalid = await client.GetAsync(path + query);
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+        Assert.Equal(0, service.Calls);
+        using var response = await client.GetAsync(path + "?pageSize=3&cursor=SENTETIK-cursor");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+        Assert.Equal(orderId, service.OrderId);
+        Assert.Equal(3, service.Query?.PageSize);
+        Assert.Equal("SENTETIK-cursor", service.Query?.Cursor);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(orderId, json.RootElement.GetProperty("salesOrderId").GetGuid());
+        var item = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(["id", "documentNo", "state", "version", "businessDate", "createdAtUtc"],
+            item.EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal(JsonValueKind.String, item.GetProperty("version").ValueKind);
+        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("nextCursor").ValueKind);
+    }
+
     [Theory]
     [InlineData("submit")]
     [InlineData("approve")]
@@ -57,6 +92,20 @@ public sealed class SalesSubcontractLifecycleHttpAcceptanceTests(GoymenErpApiFac
         Assert.Equal(id, json.RootElement.GetProperty("id").GetGuid());
         Assert.Equal(JsonValueKind.String, json.RootElement.GetProperty("totals").GetProperty("payableAmount").ValueKind);
         Assert.True(json.RootElement.TryGetProperty("lifecycle", out _));
+    }
+
+    private sealed class ListStub : ISalesSubcontractInvoiceListServiceV1
+    {
+        public int Calls { get; private set; }
+        public Guid OrderId { get; private set; }
+        public SalesInvoiceListQuery? Query { get; private set; }
+        public Task<SalesSubcontractInvoiceListV1> ListSubcontractInvoicesAsync(Guid salesOrderId, SalesInvoiceListQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++; OrderId = salesOrderId; Query = query;
+            return Task.FromResult(new SalesSubcontractInvoiceListV1(salesOrderId,
+                [new(Guid.NewGuid(), "SENTETIK-SFH", "Approved", "3", new(2026, 11, 17), DateTimeOffset.UnixEpoch)], null));
+        }
     }
 
     private sealed class Stub : ISalesSubcontractInvoiceLifecycleServiceV1

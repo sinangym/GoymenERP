@@ -91,3 +91,28 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - K3 review: ortak resmî belge kimliği backfill'i, dört trigger ve guarded Down,
   tarihli kur/para snapshotı, tek Finance kabulü/outbox, kaynak kanıtı ve yetki
   kaybı kontrolleri. Yeni bypass allowlist girdisi, rol/grant veya aktivasyon yok.
+
+### SAT-SC34 kullanıcı akışı eki — siparişin gerçek faturalarını seçme
+
+- Serbest teknik fatura kimliği girişi kaldırıldı. Şirket ve satış siparişiyle sınırlı,
+  sayfalı gerçek liste belge numarası, tarih ve durum gösterir; kullanıcı bu listeden
+  faturayı açar. Liste yalnız mevcut `sales.invoices.read` yetkisini ister; yazma veya
+  fiyat okuma yetkisi istemez ve parasal alan taşımaz. Ayrıntı/komutların kendi yetki
+  çitleri korunur. Cursor başka şirket veya siparişte kullanılamaz.
+- Boş, yetkisiz, bozuk ve yabancı sipariş yanıtları işlem açmaz. Şirket/oturum/yetki
+  nesli değişiminde seçim sınırı yenilenir; belirsiz komutun saklanan anahtarı korunur.
+  Kesinleştirmenin ilk yanıtı, eşzamanlı otomatik Finans aktarımı replay olsa bile
+  kesinleştirme komutunun kendi correlation/replay makbuzunu korur.
+- Unit, HTTP sözleşmesi, gerçek SQL sayfalama/şirket-cursor sınırı ve Vitest kaynakları
+  eklendi. Yeni migration, izin, grant veya aktivasyon yok. Api, Sales.UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri exit 0; 0 uyarı/hata. OpenAPI üretimi kapalıdır.
+  İlk TypeScript derlemesindeki test matcher türleri mevcut doğal DOM kontrolleriyle
+  düzeltildi; tekrar `npx --no-install tsc -b` exit 0. `git diff --check` exit 0.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Merkezi panel yerleştirmesi kök yazardadır.
+- SAT-D378 kalan kaynak incelemesi: SAT-D96 dışarıdaki resmî iptalin ERP'de kaydını ve
+  Finans ters açık kalemini tanımlar. Gerçek Finance F2b iptal portu vardır; üretici
+  bağlantısı eksiktir. KLN-D16, onaysız fiş taslağını iptal etmeyi ve onaylı fiş için
+  onaylanacak ters taslak açmayı seçer; Accounting kaynak iptal tüketicisi eksiktir.
+  Aynı karar belgesinin Sınırlar bölümü ters fiş dönemini seçmez. FNS-D112 yalnız
+  satır sınıfı/SMM düzeltmesi kapsamında olduğundan tam iptale sessizce genişletilmedi;
+  kalan dönem/tarih sorusu koordinatöre iletildi. Bu ek dilimi DONE yapmaz.

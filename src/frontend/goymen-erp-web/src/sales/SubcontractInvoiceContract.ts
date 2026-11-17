@@ -223,3 +223,29 @@ export function decodeSubcontractLifecycle(value: unknown): SubcontractLifecycle
     || (match !== null && (match.invoiceDate === null || match.sourceProof === null))) return null
   return { decision, instalments: instalments as InvoiceInstalment[], exchangeRate: rate, functionalTotals: totals, match, finalization }
 }
+
+export interface SubcontractInvoiceListItem {
+  readonly id: string; readonly documentNo: string; readonly state: SubcontractInvoiceDetail['state']
+  readonly version: string; readonly businessDate: string; readonly createdAtUtc: string
+}
+export interface SubcontractInvoiceList {
+  readonly salesOrderId: string; readonly items: readonly SubcontractInvoiceListItem[]; readonly nextCursor: string | null
+}
+export const subcontractInvoicesOfOrderPath = (orderId: string) => `${SUBCONTRACT_SERVICE_INVOICES_PATH}/by-order/${encodeURIComponent(orderId)}`
+export function decodeSubcontractInvoiceList(value: unknown, salesOrderId: string): SubcontractInvoiceList | null {
+  const o = exact(value, ['salesOrderId', 'items', 'nextCursor'])
+  if (o === null || !isReferenceId(o.salesOrderId) || o.salesOrderId.toLowerCase() !== salesOrderId.toLowerCase()
+    || !Array.isArray(o.items) || o.items.length > 100
+    || (o.nextCursor !== null && (typeof o.nextCursor !== 'string' || o.nextCursor.length === 0 || o.nextCursor.length > 8192))) return null
+  const items: SubcontractInvoiceListItem[] = []
+  const seen = new Set<string>()
+  for (const value of o.items) {
+    const item = exact(value, ['id', 'documentNo', 'state', 'version', 'businessDate', 'createdAtUtc'])
+    if (item === null || !isReferenceId(item.id) || seen.has(item.id.toLowerCase()) || !isText(item.documentNo)
+      || !isState(item.state) || !isVersionString(item.version) || !isDateOnly(item.businessDate) || !isInstant(item.createdAtUtc)) return null
+    seen.add(item.id.toLowerCase())
+    items.push({ id: item.id, documentNo: item.documentNo, state: item.state, version: item.version,
+      businessDate: item.businessDate, createdAtUtc: item.createdAtUtc })
+  }
+  return { salesOrderId: o.salesOrderId, items, nextCursor: o.nextCursor }
+}

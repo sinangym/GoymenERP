@@ -51,7 +51,8 @@ public sealed partial class SalesInvoiceService(
     ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null,
     ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null,
     ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null,
-    ISalesSubcontractInvoiceLifecycleStoreV1? subcontractLifecycle = null) : ISalesInvoiceService
+    ISalesSubcontractInvoiceLifecycleStoreV1? subcontractLifecycle = null,
+    ISalesSubcontractInvoiceListStoreV1? subcontractInvoiceList = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;

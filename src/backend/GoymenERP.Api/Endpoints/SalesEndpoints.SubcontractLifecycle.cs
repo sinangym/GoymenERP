@@ -11,6 +11,24 @@ public static partial class SalesEndpoints
 {
     private static void MapSubcontractInvoiceLifecycleEndpoints(RouteGroupBuilder routes)
     {
+        routes.MapGet("/by-order/{salesOrderId:guid}", async (Guid salesOrderId, int? pageSize, string? cursor, HttpContext context,
+            [FromServices] ISalesSubcontractInvoiceListServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(context.Response);
+            if (context.Request.Query.Any(item => item.Key is not ("pageSize" or "cursor") || item.Value.Count != 1))
+                return DraftProblem(400, "validation_failed", correlation);
+            try
+            {
+                return Results.Json(await service.ListSubcontractInvoicesAsync(salesOrderId,
+                    new(pageSize ?? SalesInvoiceApiV1.DefaultPageSize, cursor), token), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception) { return DraftProblem(exception, correlation); }
+        }).WithName("ListSalesSubcontractServiceInvoicesOfOrderV1")
+            .Produces<SalesSubcontractInvoiceListV1>()
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.InvalidCursor).AllowsEmptyErpBadRequestBody()
+            .ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable(SalesDraftProblemCodesV1.ReferenceProviderInvalid)
+            .ProducesErpAuthenticatedProblems();
+
         foreach (var (action, name) in new[] { ("submit", "Submit"), ("approve", "Approve"), ("reject", "Reject"),
             ("cancel", "Cancel"), ("match", "Match"), ("finalize", "Finalize"), ("resend-finance", "ResendFinance") })
         {

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
-import { commandSubcontractInvoice, fetchSubcontractInvoice, type SubcontractAction, type SubcontractActionPayload } from './SubcontractInvoiceApi'
-import { subcontractServiceInvoicePath, type SubcontractInvoiceDetail } from './SubcontractInvoiceContract'
+import { commandSubcontractInvoice, fetchSubcontractInvoice, fetchSubcontractInvoiceList, type SubcontractAction, type SubcontractActionPayload } from './SubcontractInvoiceApi'
+import { subcontractServiceInvoicePath, type SubcontractInvoiceDetail, type SubcontractInvoiceList } from './SubcontractInvoiceContract'
 import { SUBCONTRACT_LIFECYCLE_TEXT as L } from './SubcontractLifecycleText'
 import { INVOICE_FINALIZATION_TEXT as T, INVOICE_STATE_TEXT } from './invoiceText'
 import { usePoolAttempt, poolNotice } from './poolAttempt'
@@ -21,20 +21,53 @@ export function SubcontractInvoiceLifecycle({ salesOrderId, initialInvoiceId = '
   readonly initialInvoiceId?: string
 }) {
   const shell = useShellState()
-  const inputId = useId()
-  const [id, setId] = useState(initialInvoiceId)
-  const [opened, setOpened] = useState('')
   const companyId = shell.activeContext?.companyId
   return <section className={styles.section}>
     <h3>{L.heading}</h3>
-    <label htmlFor={inputId}>{L.invoiceId}</label>
-    <input id={inputId} value={id} onChange={event => setId(event.target.value)} className={styles.control} />
-    <Button type="button" disabled={!isReferenceId(id.trim())} onClick={() => setOpened(id.trim())}>{L.open}</Button>
     {companyId == null ? <StateBlock state={{ kind: 'no-authorized-company' }} subject={L.subject} />
-      : opened === '' ? <p role="status">{L.empty}</p>
-        : <LifecyclePanel key={`${companyId}:${shell.sessionEpoch}:${shell.committedContextRevision}:${shell.requestFenceGeneration}:${shell.activeContext?.capabilityGeneration}:${shell.routeEntryGeneration}:${opened}`}
-          invoiceId={opened} salesOrderId={salesOrderId} companyId={companyId} />}
+      : <InvoiceSelector key={`${companyId}:${shell.sessionEpoch}:${shell.committedContextRevision}:${shell.requestFenceGeneration}:${shell.activeContext?.capabilityGeneration}:${shell.routeEntryGeneration}:${salesOrderId}`}
+          companyId={companyId} salesOrderId={salesOrderId} initialInvoiceId={initialInvoiceId} />}
   </section>
+}
+
+function InvoiceSelector({ companyId, salesOrderId, initialInvoiceId }: {
+  readonly companyId: string; readonly salesOrderId: string; readonly initialInvoiceId: string
+}) {
+  const boundary = useAuthBoundary()
+  const inputId = useId()
+  const [selected, setSelected] = useState('')
+  const [opened, setOpened] = useState('')
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [refresh, setRefresh] = useState(0)
+  const [outcome, setOutcome] = useState<ViewOutcome<SubcontractInvoiceList>>({ type: 'loading' })
+  useEffect(() => {
+    const controller = new AbortController()
+    const security = boundary.capture()
+    void fetchSubcontractInvoiceList(salesOrderId, companyId, cursor, controller.signal).then(result => {
+      if (controller.signal.aborted) return
+      if (result.type === 'http') boundary.report(result.status, security)
+      setOutcome(result)
+    })
+    return () => controller.abort()
+  }, [salesOrderId, companyId, cursor, refresh, boundary])
+  const page = outcome.type === 'ok-single' ? outcome.data : null
+  const choice = page?.items.find(item => item.id === selected) ?? page?.items.find(item => item.id === initialInvoiceId) ?? page?.items[0]
+  const load = (next: string | null) => { setOutcome({ type: 'loading' }); setSelected(''); setCursor(next); setRefresh(value => value + 1) }
+  return <>
+    <Button type="button" onClick={() => load(null)}>{L.refresh}</Button>
+    {page === null ? <StateBlock state={classifyOutcome(outcome)} subject={L.subject} onRetry={() => load(cursor)} />
+      : page.items.length === 0 ? <p role="status">{L.emptyList}</p> : <>
+        <label htmlFor={inputId}>{L.invoice}</label>
+        <select id={inputId} value={choice?.id ?? ''} onChange={event => setSelected(event.target.value)} className={styles.control}>
+          {page.items.map(item => <option key={item.id} value={item.id}>{item.documentNo} — {INVOICE_STATE_TEXT[item.state]} — {formatBusinessDate(item.businessDate)}</option>)}
+        </select>
+        <Button type="button" disabled={choice === undefined} onClick={() => { if (choice) setOpened(choice.id) }}>{L.open}</Button>
+        {page.nextCursor === null ? null : <Button type="button" onClick={() => load(page.nextCursor)}>{L.nextPage}</Button>}
+        {cursor === null ? null : <Button type="button" onClick={() => load(null)}>{L.firstPage}</Button>}
+      </>}
+    {opened === '' ? <p role="status">{L.empty}</p>
+      : <LifecyclePanel key={opened} invoiceId={opened} salesOrderId={salesOrderId} companyId={companyId} />}
+  </>
 }
 
 function LifecyclePanel({ invoiceId, salesOrderId, companyId }: {

@@ -100,6 +100,8 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesSubcontractServiceInvoiceService>(CreateInvoiceService);
         services.AddScoped<ISalesSubcontractInvoiceLifecycleStoreV1>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesSubcontractInvoiceLifecycleServiceV1>(CreateInvoiceService);
+        services.AddScoped<ISalesSubcontractInvoiceListStoreV1>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesSubcontractInvoiceListServiceV1>(CreateInvoiceService);
         // API-35 (SAT-D229): the tolerance policy defaults to the decided 0.05 TL; the Ayarlar link is deferred (SAT-D209). The official
         // invoice read port is the Finance owner's and Finance's AddFinanceServices registers it (FIN-S6, SAT-S1); Sales never registers a
         // default, so a host without Finance answers the match with 503, never an assumed document.
@@ -203,7 +205,8 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesSubcontractDeliveryWeighingReadPortV1>(),
         // SAT-S13 (SAT-D389 / SAT-D319 (6)): absent, every share waits with weighing_difference_unavailable — never invoiced unread.
         serviceProvider.GetService<ISalesDispatchWeighingDifferenceReadPortV1>(),
-        serviceProvider.GetService<ISalesSubcontractInvoiceLifecycleStoreV1>());
+        serviceProvider.GetService<ISalesSubcontractInvoiceLifecycleStoreV1>(),
+        serviceProvider.GetService<ISalesSubcontractInvoiceListStoreV1>());
 
     // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
     // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
