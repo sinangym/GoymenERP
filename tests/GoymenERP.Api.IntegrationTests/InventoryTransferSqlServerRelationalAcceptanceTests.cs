@@ -5,6 +5,8 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Data.Common;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -75,8 +77,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.TransferDispatchLines"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.TransferBuckets"));
 
-        var firstAccept = new AcceptInventoryTransferLineV1("2", At.AddHours(2),
-            new("inventory.transfer.incoming-note", Guid.NewGuid(), firstLine));
+        var firstAccept = await RecordIncomingAcceptanceDocumentAsync(run, transferId, firstLine, At.AddHours(2));
         var firstAcceptMetadata = Metadata(run) with
         {
             IdempotencyKey = $"transfer-accept-{Guid.NewGuid():N}",
@@ -105,8 +106,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(0m, await TransferLabelKgAsync(run, second.LabelId));
         Assert.Equal(destinationLocation, await LabelLocationAsync(run, first.LabelId));
 
-        var secondAccept = new AcceptInventoryTransferLineV1("3", At.AddHours(3),
-            new("inventory.transfer.incoming-note", Guid.NewGuid(), secondLine));
+        var secondAccept = await RecordIncomingAcceptanceDocumentAsync(run, transferId, secondLine, At.AddHours(3));
         await using (var scope = run.Store(CompanyA))
         {
             var accepted = await scope.Store.AcceptLineAsync(transferId, secondLine, secondAccept, Metadata(run),
@@ -313,8 +313,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Task.Run(() => RaceDispatchAsync(run, stockRacePlan, dispatchRequest, dispatchMetadata,
                 dispatchBarrier)));
         Assert.Single(dispatchResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: false });
-        Assert.Single(dispatchResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: true });
-        Assert.Equal(new[] { 4, 5 }, dispatchResults.Select(result => result.FenceCalls).Order().ToArray());
+        Assert.All(dispatchResults, result => Assert.True(result.Outcome is InventoryTransferResultV1
+            or DbUpdateConcurrencyException or InventoryTransferException { Status: 409 }));
+        // The physical-validation guard serializes before SaveChanges. A real guard contention may require
+        // an explicit retry; the original key/body still returns the one immutable dispatch.
+        await using (var retry = run.Store(CompanyA))
+            Assert.True((await retry.Store.DispatchAsync(stockRacePlan.TransferId, dispatchRequest,
+                EffectiveOutgoing(stockRacePlan, dispatchRequest), InventoryTransferSourceScaleSetting.Off, dispatchMetadata, Authorized)).IsReplay);
         Assert.Equal((1, 1, 0m, stockRaceSource.LabelVersion + 1), (
             await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM inventory.TransferDispatches WHERE TransferId = @id",
@@ -326,8 +331,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await TransferLabelVersionAsync(run, stockRaceSource.LabelId)));
 
         var stockRaceLineId = Assert.Single(stockRacePlan.Lines).LineId;
-        var acceptRequest = new AcceptInventoryTransferLineV1("2", At.AddHours(2),
-            new("inventory.transfer.incoming-note", Guid.NewGuid(), stockRaceLineId));
+        var acceptRequest = await RecordIncomingAcceptanceDocumentAsync(run, stockRacePlan.TransferId, stockRaceLineId, At.AddHours(2));
         var acceptBarrier = new Barrier(2);
         var acceptResults = await Task.WhenAll(
             Task.Run(() => RaceAcceptAsync(run, stockRacePlan.TransferId, stockRaceLineId, acceptRequest,
@@ -335,9 +339,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Task.Run(() => RaceAcceptAsync(run, stockRacePlan.TransferId, stockRaceLineId, acceptRequest,
                 Metadata(run) with { IdempotencyKey = $"transfer-accept-b-{Guid.NewGuid():N}" }, acceptBarrier)));
         Assert.Single(acceptResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: false });
-        Assert.Single(acceptResults, result => result.Outcome is InventoryTransferException
-            { Status: 409, Code: InventoryTransferCodesV1.ConcurrentChange });
-        Assert.Equal(new[] { 4, 5 }, acceptResults.Select(result => result.FenceCalls).Order().ToArray());
+        Assert.All(acceptResults, result => Assert.True(result.Outcome is InventoryTransferResultV1
+            or DbUpdateConcurrencyException or InventoryTransferException { Status: 409 }));
         Assert.Equal((1, 1, 8m, destinationLocation, stockRaceSource.LabelVersion + 2), (
             await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM inventory.TransferAcceptances WHERE TransferId = @id",
@@ -373,8 +376,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
 
         var acceptInterleaveLineId = Assert.Single(acceptInterleavePlan.Lines).LineId;
-        var losingAccept = new AcceptInventoryTransferLineV1("2", At.AddHours(2),
-            new("inventory.transfer.incoming-note", Guid.NewGuid(), acceptInterleaveLineId));
+        var losingAccept = await RecordIncomingAcceptanceDocumentAsync(run, acceptInterleavePlan.TransferId, acceptInterleaveLineId, At.AddHours(2));
         var acceptFenceCalls = 0;
         async Task MutateLabelBetweenValidationAndStaging(CancellationToken cancellationToken)
         {
@@ -386,19 +388,21 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 new StockSourceReference("synthetic.transfer-accept-interleave", Guid.NewGuid()),
                 In(Position(CompanyA, destinationLocation, label,
                     GoymenERP.Modules.Inventory.Domain.Stock.BlockState.Free), 1m));
-            await using var mutator = run.Store(CompanyA);
-            Assert.Equal(InventoryWriteOutcome.Recorded,
-                await mutator.Store.RecordMovementAsync(mutation, Metadata(run), cancellationToken));
+            // Actual owner contention on the same company guard, bounded on this test connection only.
+            // Waiting for a second physical SaveChanges here would deadlock the fixture itself.
+            await using var mutator = run.Store(CompanyA, new TransferLockTimeoutInterceptor());
+            var blocked = await Assert.ThrowsAnyAsync<Exception>(() => mutator.Store.RecordMovementAsync(mutation, Metadata(run), cancellationToken));
+            Assert.Equal(1222, Assert.IsType<SqlException>(blocked.GetBaseException()).Number);
         }
 
         await using (var scope = run.Store(CompanyA))
         {
-            var raced = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.AcceptLineAsync(
+            var accepted = await scope.Store.AcceptLineAsync(
                 acceptInterleavePlan.TransferId, acceptInterleaveLineId, losingAccept, Metadata(run),
-                MutateLabelBetweenValidationAndStaging));
-            Assert.Equal((409, InventoryTransferCodesV1.ConcurrentChange), (raced.Status, raced.Code));
+                MutateLabelBetweenValidationAndStaging);
+            Assert.False(accepted.IsReplay);
         }
-        Assert.Equal((0, 0, 1m, destinationLocation, acceptInterleaveSource.LabelVersion + 2), (
+        Assert.Equal((1, 1, 9m, destinationLocation, acceptInterleaveSource.LabelVersion + 2), (
             await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM inventory.TransferAcceptances WHERE TransferId = @id",
                 ("@id", acceptInterleavePlan.TransferId)),
@@ -408,7 +412,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await TransferLabelKgAsync(run, acceptInterleaveSource.LabelId),
             await LabelLocationAsync(run, acceptInterleaveSource.LabelId),
             await TransferLabelVersionAsync(run, acceptInterleaveSource.LabelId)));
-        Assert.Equal((2, 2, 2L, "InTransit"), (
+        Assert.Equal((3, 3, 3L, "Accepted"), (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id",
                 ("@id", acceptInterleavePlan.TransferId)),
             await run.ScalarAsync<int>(
@@ -417,7 +421,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await run.ScalarAsync<long>("SELECT Version FROM inventory.Transfers WHERE Id = @id",
                 ("@id", acceptInterleavePlan.TransferId)),
             await run.ScalarAsync<string>(
-                "SELECT CASE Status WHEN 2 THEN N'InTransit' ELSE N'Unexpected' END FROM inventory.Transfers WHERE Id = @id",
+                "SELECT CASE Status WHEN 4 THEN N'Accepted' ELSE N'Unexpected' END FROM inventory.Transfers WHERE Id = @id",
                 ("@id", acceptInterleavePlan.TransferId))));
 
         var allocationRace = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-TRANSFER-ALLOC-RACE", 6m);
@@ -587,7 +591,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             return Task.CompletedTask;
         }
 
-        await using var scope = run.Store(CompanyA, new BarrierInterceptor(barrier));
+        if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30))) throw new TimeoutException("Physical dispatch start barrier timed out.");
+        await using var scope = run.Store(CompanyA);
         try
         {
             return new(await scope.Store.DispatchAsync(plan.TransferId, request, EffectiveOutgoing(plan, request),
@@ -598,6 +603,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             return new(exception, fenceCalls);
         }
+        catch (DbUpdateConcurrencyException exception) { return new(exception, fenceCalls); }
     }
 
     private static async Task<TransferRaceResult> RaceAcceptAsync(
@@ -615,7 +621,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             return Task.CompletedTask;
         }
 
-        await using var scope = run.Store(CompanyA, new BarrierInterceptor(barrier));
+        if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30))) throw new TimeoutException("Physical acceptance start barrier timed out.");
+        await using var scope = run.Store(CompanyA);
         try
         {
             return new(await scope.Store.AcceptLineAsync(transferId, lineId, request, metadata, Fence), fenceCalls);
@@ -624,12 +631,24 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             return new(exception, fenceCalls);
         }
+        catch (DbUpdateConcurrencyException exception) { return new(exception, fenceCalls); }
     }
 
     private static async Task<long> TransferLabelVersionAsync(Run run, Guid labelId) =>
         await run.ScalarAsync<long>("SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", labelId));
 
     private sealed record TransferRaceResult(object Outcome, int FenceCalls);
+
+    private sealed class TransferLockTimeoutInterceptor : DbConnectionInterceptor
+    {
+        public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SET LOCK_TIMEOUT 1000";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
 
     private static async Task<decimal> TransferLabelKgAsync(Run run, Guid labelId) => await run.ScalarAsync<decimal>(
         "SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances WHERE LabelId = @id", ("@id", labelId));

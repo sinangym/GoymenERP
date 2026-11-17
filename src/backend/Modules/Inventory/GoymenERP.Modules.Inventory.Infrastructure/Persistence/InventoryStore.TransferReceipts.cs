@@ -112,6 +112,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
 
         var dispatchedKg = state.DispatchLine.ActualKg;
         var receivedKg = parsed.Received.Value;
+        await RequireReceiptDocumentProofAsync(transferId, lineId, parsed.Document, request.ExpectedIncomingDocumentVersion,
+            request.ReceivedAtUtc, receivedKg, parsed.OverageReason, freshAuthorityFence, cancellationToken);
         if (receivedKg != dispatchedKg && state.Buckets.Count(bucket => bucket.LineId == lineId) != 1)
         {
             // KLN-D91: a label dispatched in more than one block/lot bucket is received only with its full dispatched
@@ -1008,7 +1010,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         }
 
         var document = ParseDocument(request.IncomingDocument);
-        var payloadHash = GenealogyPayloadHash(new
+        var payloadHash = request.ExpectedIncomingDocumentVersion is null ? GenealogyPayloadHash(new
         {
             transferId,
             lineId,
@@ -1017,6 +1019,16 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             document,
             receivedKg = received.ToString(),
             overageReason,
+        }) : GenealogyPayloadHash(new
+        {
+            transferId,
+            lineId,
+            expectedVersion,
+            receivedAtUtc = request.ReceivedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            document,
+            receivedKg = received.ToString(),
+            overageReason,
+            expectedIncomingDocumentVersion = request.ExpectedIncomingDocumentVersion,
         });
         return new(expectedVersion, document, received, overageReason, payloadHash);
     }

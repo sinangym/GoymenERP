@@ -103,8 +103,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var accepted = await scope.Store.AcceptLineAsync(request.ReverseTransferId, reverseLineId,
-                new AcceptInventoryTransferLineV1("2", At.AddDays(1).AddHours(2),
-                    new("inventory.transfer.incoming-note", Guid.NewGuid(), reverseLineId)), Metadata(run), Authorized);
+                await RecordIncomingAcceptanceDocumentAsync(run, request.ReverseTransferId, reverseLineId, At.AddDays(1).AddHours(2)), Metadata(run), Authorized);
             Assert.Equal(("3", nameof(InventoryTransferStatus.Accepted)),
                 (accepted.Transfer.Version, accepted.Transfer.Status));
             var originalAfter = await scope.Transfers.ReadAsync(original.TransferId);
@@ -223,8 +222,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.DispatchAsync(plan.TransferId, dispatch, EffectiveOutgoing(plan, dispatch),
                 InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized);
             await scope.Store.ReceiveLineAsync(plan.TransferId, lineId,
-                new ReceiveInventoryTransferLineV1("2", At.AddHours(2),
-                    new("inventory.transfer.incoming-note", Guid.NewGuid(), lineId), "12", "SENTETIK tarti fazlasi"),
+                await RecordIncomingReceiptDocumentAsync(run, plan.TransferId, lineId, "12", "SENTETIK tarti fazlasi"),
                 Metadata(run), Authorized);
         }
 
@@ -288,8 +286,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await scope.Store.DispatchAsync(plan.TransferId, dispatch, EffectiveOutgoing(plan, dispatch),
             InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized);
         var accepted = await scope.Store.AcceptLineAsync(plan.TransferId, lineId,
-            new AcceptInventoryTransferLineV1("2", At.AddHours(2),
-                new("inventory.transfer.incoming-note", Guid.NewGuid(), lineId)), Metadata(run), Authorized);
+            await RecordIncomingAcceptanceDocumentAsync(run, plan.TransferId, lineId, At.AddHours(2)), Metadata(run), Authorized);
         Assert.Equal(nameof(InventoryTransferStatus.Accepted), accepted.Transfer.Status);
         return plan;
     }
