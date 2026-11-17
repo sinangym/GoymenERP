@@ -38,6 +38,41 @@ internal static class FinanceFinancialMovementOutboxV1
             JsonSerializer.Serialize(new FinanceCashTransferRecordedV1(id, source), Json));
     }
 
+    internal static void Exchange(FinanceDbContext database, FinanceContext context, CashTransferView source)
+    {
+        RequireExchange(context, source);
+        var id = Guid.NewGuid();
+        Add(database, context, source.Id, source.CompanyId, source.Version, source.RecordedAtUtc,
+            FinanceFinancialMovementEventsV1.CashExchangeRecorded, id,
+            JsonSerializer.Serialize(new FinanceCashExchangeRecordedV1(id, source), Json));
+    }
+
+    internal static void ExchangeBookValue(FinanceDbContext database, FinanceContext context, CashTransferView source,
+        CashExchangeBookValueViewV1 value)
+    {
+        // The checker need not be the original treasurer. The source keeps that original actor unchanged.
+        RequireExchange(context with { ActorId = source.RecordedBy }, source);
+        if (value.CompanyId != source.CompanyId || value.TransferId != source.Id || value.TransferVersion != source.Version
+            || value.TransferSourceHash != CashExchangeBookValueServiceV1.Hash(JsonSerializer.Serialize(source, FinanceJson.CreateOptions()))
+            || value.Status != CashExchangeBookValueStatusV1.Approved || value.Version != "2"
+            || value.DecidedBy != context.ActorId || value.PreparedBy == value.DecidedBy || value.DecidedAtUtc is null)
+            throw new InvalidOperationException("An exchange book value needs its exact source and a distinct checker.");
+        var id = Guid.NewGuid();
+        Add(database, context, value.Id, value.CompanyId, value.Version, value.DecidedAtUtc.Value,
+            FinanceFinancialMovementEventsV1.CashExchangeBookValueApproved, id,
+            JsonSerializer.Serialize(new FinanceCashExchangeBookValueApprovedV1(id, source, value), Json));
+    }
+
+    private static void RequireExchange(FinanceContext context, CashTransferView source)
+    {
+        if (source.Preparation.Kind != CashTransferKind.CurrencyExchange || !source.TransferConfirmed
+            || source.RecordedBy != context.ActorId || source.Exchange is not { } exchange
+            || source.Preparation.SourceMoney != exchange.SourceMoney || source.Preparation.TargetMoney != exchange.TargetMoney
+            || source.Preparation.SourceMoney.CurrencyId == source.Preparation.TargetMoney.CurrencyId
+            || !CashTransferExchangeCalculatorV1.HasValidTlReferences(exchange))
+            throw new InvalidOperationException("Only an actual, bound two-leg exchange is published by this contract.");
+    }
+
     private static void Add(FinanceDbContext database, FinanceContext context, Guid sourceId, Guid companyId,
         string sourceVersion, DateTimeOffset recordedAt, string eventType, Guid eventId, string payload)
     {

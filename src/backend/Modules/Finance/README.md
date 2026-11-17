@@ -841,3 +841,21 @@ filtered company/number unique indexes and four pair/record-state CHECKs. It per
 operation refuses with **THROW 51911** while any of the four source tables carries number/version proof; unnumbered
 legacy rows remain eligible for rollback. Credit money-event numbering is not inferred from this bounded decision.
 SQL/Unit/HTTP/UI acceptance sources are written; runtime remains **NOT_RUN**.
+
+### FIN-S14: document-backed source book value — FNS-D63 / Q10 / 6960684942
+
+The TCMB leg references remain comparison evidence. An authorized Accounting preparer may separately attest the
+actual source-leg TL carrying value with a readable, pinned Documents version/hash; a different Accounting
+approver decides it. These commands use the existing normal-journal prepare/approve permissions, not treasury
+read grants. The original transfer and two money legs never change. A separate approved-proof event supplies
+the Accounting owner; it is not an automatic journal or a valuation method. A foreign target's TL value is not
+inferred from its TCMB reference.
+
+EF-generated `20261117212319_AddCashExchangeBookValues` adds immutable proposal, separate decision and original
+command-receipt stores. Their triggers refuse UPDATE/DELETE with **51912**, **51913** and **51914**. The first Down
+operation refuses with **51915** while any store contains evidence. A company/transfer filtered unique approved
+index and an exact maker foreign key protect one economic approval and a distinct checker. The own Serializable
+transaction includes Finance evidence, original receipt, approved outbox and the Audit owner's enlisted append;
+late authority loss or Audit failure rolls all of it back. No table in another module is written directly.
+Migration SQL, new entity construction and the owner Audit binding remain in the K3 review scope. Model/SQL/HTTP
+and UI test sources are written; runtime, DB apply, browser and CI remain **NOT_RUN**.
