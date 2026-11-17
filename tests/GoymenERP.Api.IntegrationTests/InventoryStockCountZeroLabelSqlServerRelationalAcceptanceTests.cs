@@ -7,6 +7,8 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -24,6 +26,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-ZERO", 10m);
+        await ApproveCountOpeningCostAsync(run, source.ProductId, "12.5");
         await CountAndApproveAsync(run, Count(source.LabelId, source.LabelVersion, "0"));
         Assert.Equal(0m, await LabelKgAsync(run, source.LabelId));
         // The emptied position keeps its zero balance row; nothing is deleted.
@@ -76,6 +79,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         const string code = "SYN-COUNT-OVER-ISSUE";
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, code, 10m);
+        await ApproveCountOpeningCostAsync(run, source.ProductId, "12.5");
         var position = Position(CompanyA, await run.LocationOfAsync(CompanyA),
             new MaterialLabel(source.LabelId, CompanyA, code, Product, LotA, "product-v1"), BlockState.Free);
         var movementsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements");
@@ -108,23 +112,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Zero_book_stock_count_migration_rolls_back_without_one_and_blocks_after_one()
     {
-        const string previousMigration = "20261115205912_AddInventorySupplierReturnExit";
-        const string currentMigration = "20261116000110_AllowInventoryZeroBookStockCounts";
+        var migration = new AllowInventoryZeroBookStockCounts();
         const string strictBookCheck =
             "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'CK_StockCounts_State' "
             + "AND definition LIKE N'%[[]BookKg]>(0)%'";
         await using var run = await Run.StartAsync();
-        await using (var context = run.Context(CompanyA))
-        {
-            // No zero-book count yet: Down restores the strict book check.
-            await context.GetService<IMigrator>().MigrateAsync(previousMigration);
-            Assert.DoesNotContain(currentMigration, await context.Database.GetAppliedMigrationsAsync());
-            Assert.Equal(1, await run.ScalarAsync<int>(strictBookCheck));
-            await context.GetService<IMigrator>().MigrateAsync(currentMigration);
-            Assert.Equal(0, await run.ScalarAsync<int>(strictBookCheck));
-        }
+        // Execute the actual target migration operations on the current owner schema. Downgrading every later
+        // W8 migration would remove tables that the current count/movement writer legitimately requires.
+        await ApplyCountMigrationOperationsAsync(run, migration.DownOperations);
+        Assert.Equal(1, await run.ScalarAsync<int>(strictBookCheck));
+        await ApplyCountMigrationOperationsAsync(run, migration.UpOperations);
+        Assert.Equal(0, await run.ScalarAsync<int>(strictBookCheck));
 
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-ZERO-DOWN", 10m);
+        await ApproveCountOpeningCostAsync(run, source.ProductId, "12.5");
         await CountAndApproveAsync(run, Count(source.LabelId, source.LabelVersion, "0"));
         await using (var scope = run.Store(CompanyA))
         {
@@ -132,17 +133,21 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 static _ => Task.CompletedTask);
         }
 
-        await using (var context = run.Context(CompanyA))
-        {
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
-            Assert.Equal(51748, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
-        }
+        var rejected = await Assert.ThrowsAsync<SqlException>(() => ApplyCountMigrationOperationsAsync(run, migration.DownOperations));
+        Assert.Equal(51748, rejected.Number);
 
         Assert.Equal(0, await run.ScalarAsync<int>(strictBookCheck));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCounts"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.StockCounts WHERE BookKg = 0"));
+    }
+
+    private static async Task ApplyCountMigrationOperationsAsync(Run run, IReadOnlyList<MigrationOperation> operations)
+    {
+        await using var context = run.Context(CompanyA);
+        await using var transaction = await context.Database.BeginTransactionAsync();
+        foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate(operations, context.Model))
+            await context.Database.ExecuteSqlRawAsync(command.CommandText);
+        await transaction.CommitAsync();
     }
 
     private static async Task CountAndApproveAsync(Run run, RecordInventoryStockCountV1 request)

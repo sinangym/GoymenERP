@@ -9,6 +9,7 @@ import {
   isReason,
   REASON_MAX_LENGTH,
   STOCK_COUNT_STATUS_TEXT,
+  STOCK_COUNT_COST_TEXT,
   stockCountRefusalText,
   type StockCountDecisionKind,
   type StockCountDecisionRequest,
@@ -247,6 +248,7 @@ export function StockCountPanel({ label, companyId, namespace, routeEntry, actor
           <td>
             <strong>{STOCK_COUNT_STATUS_TEXT[item.status]}</strong>
             {item.decision === null ? null : <><br />{item.decision.decidedAtUtc}: {item.decision.reason}</>}
+            {item.decision?.costStatus === undefined ? null : <p>{STOCK_COUNT_COST_TEXT[item.decision.costStatus]}</p>}
             {canApprove && item.status === 'PendingApproval' && mine.has(item.countId)
               ? <p>Bu sayımı siz kaydettiniz; farkı başka bir yetkili onaylar veya reddeder.</p>
               : null}

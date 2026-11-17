@@ -23,6 +23,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-SHORT", 100m);
+        await ApproveCountOpeningCostAsync(run, source.ProductId, "12.5");
         var counter = Metadata(run) with { IdempotencyKey = $"count-{Guid.NewGuid():N}", CorrelationId = $"count-{Guid.NewGuid():N}" };
         var request = new RecordInventoryStockCountV1(Guid.NewGuid(), source.LabelId, source.LabelVersion.ToString(), "97.5",
             At.AddHours(2), "Sentetik sayım: rulo tartımı eksik çıktı.");
@@ -260,6 +261,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-LATE-AUTH", 100m);
+        await ApproveCountOpeningCostAsync(run, source.ProductId, "12.5");
         var request = Count(source.LabelId, source.LabelVersion, "97.5");
         var recorder = Metadata(run) with
         {
