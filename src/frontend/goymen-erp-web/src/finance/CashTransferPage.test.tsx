@@ -362,6 +362,8 @@ describe('CashTransferPage preview and commit', () => {
         recordId: SOURCE, recordVersion: '7', bulletinDate: '2026-11-09', provenance: 'SENTETIK / NOT_ENV' },
       targetComparison: { currencyId: TRY, sellingRate: '1', rateDay: p.occurredOn, source: 'FunctionalCurrency',
         recordId: null, recordVersion: null, bulletinDate: null, provenance: null },
+      sourceReferenceTl: { currencyId: TRY, amount: '3600', sourceVersion: 'finance.cash-transfer.tl-reference.v1' },
+      targetReferenceTl: { currencyId: TRY, amount: '3650', sourceVersion: 'finance.cash-transfer.tl-reference.v1' },
     }
     const calls = reads(() => json(page([])), (call) => call.method === 'POST' && call.url === PREVIEW_URL
       ? json({ outcome: 'Succeeded', preparation: p, issues: [], exchange }) : undefined)
@@ -371,6 +373,9 @@ describe('CashTransferPage preview and commit', () => {
     await user.click(within(form).getByRole('button', { name: T.preview }))
     expect(await within(form).findByText(T.previewAccepted)).toBeTruthy()
     expect(within(form).getByText(T.comparisonIsNotProfit)).toBeTruthy()
+    expect(within(form).getByText(T.referenceIsNotBookValue)).toBeTruthy()
+    expect(within(form).getByText(T.sourceReferenceTl).nextElementSibling?.textContent).toBe('3.600')
+    expect(within(form).getByText(T.targetReferenceTl).nextElementSibling?.textContent).toBe('3.650')
     expect(within(form).getByText('36,50')).toBeTruthy()
     expect(calls.find((call) => call.url === PREVIEW_URL)?.body).toEqual(p)
   })
