@@ -23,6 +23,13 @@ public static partial class PurchasingEndpoints
         ServiceRead(group.MapGet("/{id:guid}", async (Guid id, HttpContext http, [FromServices] IPurchaseServiceOrderServiceV1 service,
             ICorrelationContext correlation, CancellationToken token) => await ServiceReadAsync(http, correlation, () => service.ReadAsync(id, token)))
             .WithName("GetPurchaseServiceOrderV1").Produces<PurchaseServiceOrderViewV1>());
+        ServiceRead(group.MapGet("/{id:guid}/tax-options", async (Guid id, HttpContext http, [FromServices] IPurchaseServiceOrderServiceV1 service,
+            ICorrelationContext correlation, CancellationToken token) => await ServiceReadAsync(http, correlation, () => service.TaxOptionsAsync(id, token)))
+            .WithName("GetPurchaseServiceOrderTaxOptionsV1").Produces<GoymenERP.Modules.Settings.Application.Contracts.V1.SubcontractTaxOptionsV1>());
+        ServiceWrite(group.MapPost("/{id:guid}/tax", (Guid id, HttpContext http, [FromServices] IPurchaseServiceOrderServiceV1 service,
+            ICorrelationContext correlation, CancellationToken token) => ServiceMutateAsync<RevisePurchaseServiceOrderTaxV1>(http, correlation,
+                (request, metadata) => service.ReviseTaxAsync(id, request, metadata, token), token))
+            .WithName("RevisePurchaseServiceOrderTaxV1").Accepts<RevisePurchaseServiceOrderTaxV1>("application/json"));
         ServiceWrite(group.MapPost("", (HttpContext http, [FromServices] IPurchaseServiceOrderServiceV1 service,
             ICorrelationContext correlation, CancellationToken token) => ServiceMutateAsync<CreatePurchaseServiceOrderV1>(http, correlation,
                 (request, metadata) => service.CreateAsync(request, metadata, token), token))
@@ -54,6 +61,7 @@ public static partial class PurchasingEndpoints
         Func<T, PurchasingCommandMetadata, Task<PurchaseServiceOrderResponseV1>> action, CancellationToken token) where T : class
     {
         SetPrivateNoStore(http.Response);
+        if (http.Request.Query.Count != 0) return Problem(400, "validation_failed", correlation);
         if (!TryReadIdempotencyKey(http.Request.Headers, out var key) || !correlation.IsResolved)
             return Problem(400, PurchasingProblemCodesV1.CommandMetadataInvalid, correlation);
         if (!http.Request.HasJsonContentType()) return Results.StatusCode(415);

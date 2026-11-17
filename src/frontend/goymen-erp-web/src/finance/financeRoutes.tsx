@@ -39,6 +39,7 @@ import {
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import { PartyLedgerWorkspacePage } from './PartyLedgerWorkspacePage'
+import { PartyBalanceTransferPage } from './PartyBalanceTransferPage'
 import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CARI } from './partyLedgerText'
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
@@ -212,6 +213,8 @@ function ManualBankPaymentDetailRoute() {
     canRecord={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsRecord)}
     canReversePropose={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsReversePropose)}
     canReverseApprove={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsReverseApprove)}
+    canReadAllocations={hasCapability(shell, FINANCE_CAPABILITY.allocationsList)}
+    canWriteAllocations={hasCapability(shell, FINANCE_CAPABILITY.allocationsWrite)}
     onOpen={(id) => navigate(manualBankPaymentDetailPath(id))} />
 }
 
@@ -231,7 +234,13 @@ function OfficialInvoiceImportApprovalsRoute() {
           attemptContext={transport.context} />
 }
 
+function PartyBalanceTransferRoute() {
+  const shell = useShellState()
+  return <PartyBalanceTransferPage canRecord={hasCapability(shell, FINANCE_CAPABILITY.partyBalanceTransfers)} />
+}
+
 export const financeRoutes: RouteObject[] = [
+  { path: FINANCE_ROUTE.partyBalanceTransfers.slice(1), element: gate(FINANCE_CAPABILITY.partyBalanceTransfers, <PartyBalanceTransferRoute />) },
   { path: FINANCE_ROUTE.creditsWorkspace.slice(1), element: gate(FINANCE_CAPABILITY.creditsWorkspace, <CreditAccountsPage />) },
   { path: FINANCE_ROUTE.officialInvoicesRecord.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesRecord, <OfficialSalesInvoicesPage />) },
   { path: FINANCE_ROUTE.officialInvoicesApprove.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesApprove, <OfficialSalesInvoicesPage />) },

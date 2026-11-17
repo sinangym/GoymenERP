@@ -10,7 +10,10 @@ public sealed record PurchaseServiceLine(Guid LineId, Guid ServiceTypeId, long S
     decimal Quantity, decimal? UnitPrice, decimal AcceptedQuantity,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceTax? Tax = null);
 public sealed record PurchaseServiceTax(bool VatApplies, decimal? VatPercent, string? ExemptionCode,
-    bool WithholdingApplies, decimal? WithholdingPercent, string? WithholdingCode, long SettingsVersion);
+    bool WithholdingApplies, decimal? WithholdingPercent, string? WithholdingCode, long SettingsVersion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceTaxChange? Change = null);
+public sealed record PurchaseServiceTaxChange(string SourceVersion, string? VatRateCode, string? WithholdingRatioCode,
+    string ChangedBy, string Reason, DateTimeOffset ChangedAtUtc);
 public sealed record PurchaseServiceMaterial(Guid LabelId, string LabelVersion, Guid ProductId, string ProductVersion, decimal QuantityKg);
 public sealed record PurchaseServiceOutput(Guid ProductId, string ProductVersion, decimal ExpectedQuantityKg);
 public sealed record PurchaseServiceAcceptance(Guid AcceptanceId, Guid LineId, decimal Quantity, DateOnly AcceptedOn,
@@ -86,6 +89,22 @@ public static class PurchaseServiceOrder
         Validate(result); return result;
     }
 
+    /// <summary>ALS-D9/D105: a changed approved tax line archives by immutable store revision and re-enters normal approval.</summary>
+    public static PurchaseServiceOrderState ReviseTax(PurchaseServiceOrderState value, long expected, Guid lineId,
+        PurchaseServiceTax tax, string actor, string reason, DateTimeOffset now)
+    {
+        RequireVersion(value, expected); RequireActor(actor, now); RequireReason(reason);
+        if (value.Kind != PurchaseServiceOrderKind.OwnMaterialSubcontract || value.Status is not (PurchaseServiceOrderStatus.Draft or PurchaseServiceOrderStatus.Approved))
+            throw new PurchaseServiceOrderException(StateConflict);
+        var line = value.Lines.SingleOrDefault(x => x.LineId == lineId) ?? throw new ArgumentException("Fason hizmet satırı bulunamadı.");
+        if (line.Tax == tax) throw new PurchaseServiceOrderException(StateConflict);
+        var result = value with { Version = checked(value.Version + 1), Status = PurchaseServiceOrderStatus.Draft,
+            PreparedBy = value.Status == PurchaseServiceOrderStatus.Approved ? actor : value.PreparedBy,
+            ApprovedBy = null, UpdatedAtUtc = now,
+            Lines = value.Lines.Select(x => x.LineId == lineId ? x with { Tax = tax } : x).ToArray() };
+        Validate(result); return result;
+    }
+
     public static void Validate(PurchaseServiceOrderState value)
     {
         ArgumentNullException.ThrowIfNull(value);
@@ -113,6 +132,13 @@ public static class PurchaseServiceOrder
                 || tax.WithholdingApplies && (!tax.VatApplies || tax.WithholdingPercent is not (> 0 and <= 100) || string.IsNullOrWhiteSpace(tax.WithholdingCode))
                 || !tax.WithholdingApplies && (tax.WithholdingPercent is not null || tax.WithholdingCode is not null)))
                 throw new ArgumentException("Alış fason vergi görüntüsü geçersiz.");
+            if (line.Tax?.Change is { } change)
+            {
+                if (string.IsNullOrWhiteSpace(change.SourceVersion) || change.SourceVersion.Length > 200
+                    || change.VatRateCode is { Length: > 64 } || change.WithholdingRatioCode is { Length: > 64 })
+                    throw new ArgumentException("Vergi listesi kaynak sürümü geçersiz.");
+                RequireActor(change.ChangedBy, change.ChangedAtUtc); RequireReason(change.Reason);
+            }
             if (value.Acceptances.Where(x => x.LineId == line.LineId).Sum(x => x.Quantity) != line.AcceptedQuantity)
                 throw new ArgumentException("Hizmet kabul geçmişi toplamı uyuşmuyor.");
         }

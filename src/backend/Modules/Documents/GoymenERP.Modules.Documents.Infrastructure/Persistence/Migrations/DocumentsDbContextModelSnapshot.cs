@@ -185,6 +185,58 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.CompanyBrandingRevisionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("LetterheadDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("LetterheadVersionNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("LogoDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("LogoVersionNo")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("CompanyId", "Version");
+
+                    b.HasIndex("CompanyId", "LetterheadDocumentId", "LetterheadVersionNo");
+
+                    b.HasIndex("CompanyId", "LogoDocumentId", "LogoVersionNo");
+
+                    b.ToTable("CompanyBrandingRevisions", "documents", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyBrandingRevisions_Letterhead", "([LetterheadDocumentId] IS NULL AND [LetterheadVersionNo] IS NULL) OR ([LetterheadDocumentId] IS NOT NULL AND [LetterheadDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [LetterheadVersionNo] IS NOT NULL AND [LetterheadVersionNo] >= 1)");
+
+                            t.HasCheckConstraint("CK_CompanyBrandingRevisions_Logo", "([LogoDocumentId] IS NULL AND [LogoVersionNo] IS NULL) OR ([LogoDocumentId] IS NOT NULL AND [LogoDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [LogoVersionNo] IS NOT NULL AND [LogoVersionNo] >= 1)");
+
+                            t.HasCheckConstraint("CK_CompanyBrandingRevisions_Text", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_CompanyBrandingRevisions_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.ContentBlobRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -283,6 +335,61 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentBrandingAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.ToTable("DocumentBrandingAttempts", "documents", t =>
+                        {
+                            t.HasCheckConstraint("CK_DocumentBrandingAttempts_Command", "[CommandName] IN ('documents.company-branding.set.v1','documents.template.prepare.v1','documents.template.publish.v1')");
+
+                            t.HasCheckConstraint("CK_DocumentBrandingAttempts_Identity", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_DocumentBrandingAttempts_Result", "([Status] = 200 AND [Code] IS NULL AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR ([Status] = 409 AND [Code] IS NOT NULL AND LEN([Code]) > 0 AND [ResultJson] IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentLinkRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -356,6 +463,118 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentTemplateDraftRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Module")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TemplateCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("BrandingVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("CompanyId", "Module", "TemplateCode", "Version");
+
+                    b.HasIndex("CompanyId", "BrandingVersion");
+
+                    b.ToTable("DocumentTemplateDrafts", "documents", t =>
+                        {
+                            t.HasCheckConstraint("CK_DocumentTemplateDrafts_Module", "([Module] = 1 AND [TemplateCode] = 'sales.order-pdf') OR ([Module] = 2 AND [TemplateCode] = 'inventory.material-label.technical') OR ([Module] = 3 AND [TemplateCode] = 'logistics.dispatch-note')");
+
+                            t.HasCheckConstraint("CK_DocumentTemplateDrafts_Text", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_DocumentTemplateDrafts_Versions", "[Version] >= 1 AND [BrandingVersion] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentTemplatePublicationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Module")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TemplateCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("BrandingVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("DraftVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("PublishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PublishedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("CompanyId", "Module", "TemplateCode", "Version");
+
+                    b.HasIndex("CompanyId", "Id")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Module", "TemplateCode", "DraftVersion")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Module", "TemplateCode", "DraftVersion", "BrandingVersion", "PreparedBy");
+
+                    b.ToTable("DocumentTemplatePublications", "documents", t =>
+                        {
+                            t.HasCheckConstraint("CK_DocumentTemplatePublications_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND [DraftVersion] >= 1 AND [BrandingVersion] >= 1");
+
+                            t.HasCheckConstraint("CK_DocumentTemplatePublications_MakerChecker", "[PreparedBy] <> [PublishedBy] AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_DocumentTemplatePublications_Module", "([Module] = 1 AND [TemplateCode] = 'sales.order-pdf') OR ([Module] = 2 AND [TemplateCode] = 'inventory.material-label.technical') OR ([Module] = 3 AND [TemplateCode] = 'logistics.dispatch-note')");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentVersionRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -393,6 +612,12 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         .IsFixedLength()
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<Guid?>("TemplatePublicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplatePublicationJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTimeOffset>("UploadedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -403,11 +628,15 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
 
                     b.HasKey("CompanyId", "DocumentId", "VersionNo");
 
+                    b.HasIndex("CompanyId", "TemplatePublicationId");
+
                     b.HasIndex("CompanyId", "Sha256", "UploadedAtUtc")
                         .HasDatabaseName("IX_DocumentVersions_CompanyId_Sha256_UploadedAtUtc");
 
                     b.ToTable("DocumentVersions", "documents", t =>
                         {
+                            t.HasCheckConstraint("CK_DocumentVersions_Publication", "([TemplatePublicationId] IS NULL AND [TemplatePublicationJson] IS NULL) OR ([TemplatePublicationId] IS NOT NULL AND [TemplatePublicationId] <> '00000000-0000-0000-0000-000000000000' AND [TemplatePublicationJson] IS NOT NULL AND ISJSON([TemplatePublicationJson]) = 1 AND [ScanState] = 3)");
+
                             t.HasCheckConstraint("CK_DocumentVersions_Scan", "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL) OR ([ScanState] = 3 AND [ScannerId] IS NULL)");
 
                             t.HasCheckConstraint("CK_DocumentVersions_Text", "LEN([FileName]) > 0 AND LEN([UploadedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -430,6 +659,25 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.CompanyBrandingRevisionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LetterheadDocumentId", "LetterheadVersionNo")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LogoDocumentId", "LogoVersionNo")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.ContentBlobRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.OrganizationCompanyReference", null)
@@ -445,6 +693,15 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "DocumentId")
                         .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentBrandingAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -468,6 +725,25 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentTemplateDraftRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.CompanyBrandingRevisionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "BrandingVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentTemplatePublicationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentTemplateDraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Module", "TemplateCode", "DraftVersion", "BrandingVersion", "PreparedBy")
+                        .HasPrincipalKey("CompanyId", "Module", "TemplateCode", "Version", "BrandingVersion", "PreparedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentVersionRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentRow", null)
@@ -482,6 +758,12 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "Sha256")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Documents.Infrastructure.Persistence.DocumentTemplatePublicationRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TemplatePublicationId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618
         }

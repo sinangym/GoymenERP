@@ -46,6 +46,9 @@ public static class CounterpartyModuleExtensions
             ICounterpartyPartyDisplayBatchReadServiceV1,
             CounterpartyPartyDisplayBatchReadServiceV1>();
         services.AddScoped<
+            ICounterpartyProductPackageStandardCustomerSourceV1,
+            CounterpartyProductPackageStandardCustomerSourceV1>();
+        services.AddScoped<
             ICounterpartySalesRecordPartyDisplaySourceV1,
             CounterpartySalesRecordPartyDisplaySourceV1>();
         services.AddScoped<

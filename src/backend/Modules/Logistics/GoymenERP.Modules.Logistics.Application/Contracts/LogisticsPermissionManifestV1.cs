@@ -90,8 +90,14 @@ public static class LogisticsPermissionManifestV1
     /// <summary>STK-S24: read weighing-difference records of the context company.</summary>
     public const string WeighingDifferencesRead = "logistics.weighing-differences.read";
 
+    /// <summary>LOJ-D11 / KLN-D25: actual transfer exit records only; company-wide registration, no grant or Critical classification.</summary>
+    public const string TransferDeparturesRecord = LogisticsTransferDepartureV1.RecordPermission;
+    /// <summary>Read the actual internal transfer document; company-wide registration, no inferred instruction read or grant.</summary>
+    public const string TransferOutgoingDocumentsRead = LogisticsTransferOutgoingDocumentPermissionsV1.Read;
+
     public static readonly IReadOnlyList<string> Names =
         [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
             DispatchNotesCreate, DispatchNotesApprove, DispatchNotesCancel, InstructionsCancel, CustomerReturnsRead, CustomerReturnsRequest, CustomerReturnsDecision,
-            WeighingDifferencesRecord, WeighingDifferencesApprove, WeighingDifferencesRead];
+            WeighingDifferencesRecord, WeighingDifferencesApprove, WeighingDifferencesRead,
+            TransferDeparturesRecord, TransferOutgoingDocumentsRead];
 }

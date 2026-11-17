@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
+public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "logistics";
@@ -86,6 +86,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureTransferOutgoingDocuments(modelBuilder);
+        ConfigureTransferDepartures(modelBuilder);
         ConfigureWeighingDifferences(modelBuilder);
         ConfigureShipmentRiskGate(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -706,6 +707,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 throw new InvalidOperationException("Sevkiyat kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
             }
 
+            GuardTransferDepartureChange(entry);
             if (entry.State == EntityState.Modified)
             {
                 string[] allowed = entry.Entity switch
@@ -737,6 +739,11 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(TransferOutgoingDocumentRow.EffectiveBy), nameof(TransferOutgoingDocumentRow.EffectiveAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancelledBy), nameof(TransferOutgoingDocumentRow.CancelledAtUtc),
                         nameof(TransferOutgoingDocumentRow.CancellationReason),
+                    ],
+                    TransferDepartureStateRow =>
+                    [
+                        nameof(TransferDepartureStateRow.Version), nameof(TransferDepartureStateRow.ExitWeighingAtUtc),
+                        nameof(TransferDepartureStateRow.VehicleExitAtUtc), nameof(TransferDepartureStateRow.NoFurtherExitVersion),
                     ],
                     // STK-S24: only the approval moves; the evaluation, products, actors and attempts are append only.
                     WeighingDifferenceRecordRow =>

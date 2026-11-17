@@ -13,6 +13,7 @@
  */
 
 export const FINANCE_CAPABILITY = {
+  partyBalanceTransfers: 'finance.party-balance-transfers.record',
   officialInvoicesRecord: 'finance.official-sales-invoices.record',
   officialInvoicesApprove: 'finance.official-sales-invoices.approve',
   officialInvoicesWithdraw: 'finance.official-sales-invoices.withdraw',
@@ -97,6 +98,7 @@ export const FINANCE_CAPABILITY = {
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
 
 export const FINANCE_ROUTE = {
+  partyBalanceTransfers: '/finans/cari-bakiye-devri',
   officialInvoicesRecord: '/finans/resmi-satis-faturalari',
   officialInvoicesApprove: '/finans/resmi-satis-faturasi-onaylari',
   creditsWorkspace: '/finans/krediler',

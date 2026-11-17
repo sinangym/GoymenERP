@@ -1070,3 +1070,20 @@ EF-generated migration `20261117085524_AddPurchaseInvoiceVariancePolicies` adds 
 Down operation refuses with **THROW 51985** while any policy history exists; an empty table may roll back. The API
 mount, shell capability/route and global generated inventories remain central integration work. Unit, SQL/HTTP and
 frontend test sources are supplied; runtime acceptance is **NOT_RUN**.
+
+### Warehouse transfer exit weighing — STK-S8 / LOJ-D11
+
+`ISettingsWarehouseTransferScaleProviderV1` reads the current company's real internal warehouse and its append-only
+choice. A valid warehouse with no record is `NotConfigured`, false, with no recorded version (the default-Off
+metadata in `SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md:48`). Explicit Off is a recorded version; unavailable or foreign
+sources are not Off. Publishing On requires the actual Logistics departure capability. No policy is seeded.
+
+The `settings.warehouse-transfer-scale.manage` name is registration only. The editor uses actual Organization
+warehouse candidates, expected version, actor-bound idempotency, reason, fresh authority and same-transaction Audit
+owner writes. It rejects borrowed transactions and pending caller state before clearing any owner work. Replay
+returns its immutable original answer before reading a warehouse that may subsequently be unavailable.
+
+EF-generated `20261117111242_AddWarehouseTransferScalePolicies` adds only the version history and checks. Down first
+refuses with **THROW 51990** while any history exists. The real provider and administrator are module-registered;
+`MapSettingsWarehouseTransferScaleEndpoints` and `/ayarlar/depo-transfer-tartisi` are coordinator mounts. Runtime unit,
+SQL, Vitest, browser and CI acceptance remains **NOT_RUN**.

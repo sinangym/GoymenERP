@@ -7,7 +7,8 @@ export const serviceOrderPath = (id: string) => `${SERVICE_ORDER_PATH}/${encodeU
 export interface ServiceLine { readonly lineId: string; readonly serviceTypeId: string; readonly serviceTypeVersion: string; readonly serviceName: string
   readonly unitId: string; readonly unitCode: string; readonly quantity: string; readonly acceptedQuantity: string; readonly unitPrice: string | null; readonly amount: string | null
   readonly tax?: { readonly vatApplies: boolean; readonly vatPercent: string | null; readonly exemptionCode: string | null; readonly withholdingApplies: boolean
-    readonly withholdingPercent: string | null; readonly withholdingCode: string | null; readonly settingsVersion: string } }
+    readonly withholdingPercent: string | null; readonly withholdingCode: string | null; readonly settingsVersion: string
+    readonly change?: { readonly sourceVersion: string; readonly vatRateCode: string | null; readonly withholdingRatioCode: string | null; readonly changedBy: string; readonly reason: string; readonly changedAtUtc: string } } }
 export interface ServiceMaterial { readonly labelId: string; readonly labelVersion: string; readonly productId: string; readonly productVersion: string; readonly quantityKg: string }
 export interface ServiceOutput { readonly productId: string; readonly productVersion: string; readonly expectedQuantityKg: string }
 export interface ServiceAcceptance { readonly acceptanceId: string; readonly lineId: string; readonly quantity: string; readonly acceptedOn: string
@@ -75,10 +76,13 @@ export function decodeServiceReferences(v: unknown, company: string): ServiceRef
   return unique(v.serviceTypes, x => x.id) && unique(v.units, x => x.unitId) ? v as unknown as ServiceReferences : null
 }
 function tax(v: unknown): boolean {
-  return record(v) && exact(v, ['vatApplies', 'vatPercent', 'exemptionCode', 'withholdingApplies', 'withholdingPercent', 'withholdingCode', 'settingsVersion'])
+  return record(v) && exact(v, ['vatApplies', 'vatPercent', 'exemptionCode', 'withholdingApplies', 'withholdingPercent', 'withholdingCode', 'settingsVersion', ...(Object.hasOwn(v, 'change') ? ['change'] : [])])
     && typeof v.vatApplies === 'boolean' && (v.vatPercent === null || quantity(v.vatPercent))
     && (v.exemptionCode === null || text(v.exemptionCode)) && typeof v.withholdingApplies === 'boolean'
     && (v.withholdingPercent === null || quantity(v.withholdingPercent)) && (v.withholdingCode === null || text(v.withholdingCode))
+    && (!Object.hasOwn(v, 'change') || record(v.change) && exact(v.change, ['sourceVersion', 'vatRateCode', 'withholdingRatioCode', 'changedBy', 'reason', 'changedAtUtc'])
+      && text(v.change.sourceVersion) && (v.change.vatRateCode === null || text(v.change.vatRateCode)) && (v.change.withholdingRatioCode === null || text(v.change.withholdingRatioCode))
+      && text(v.change.changedBy) && text(v.change.reason) && typeof v.change.changedAtUtc === 'string' && /(?:Z|\+00:00)$/.test(v.change.changedAtUtc) && Number.isFinite(Date.parse(v.change.changedAtUtc)))
     && version(v.settingsVersion) && (v.vatApplies ? v.vatPercent !== null : v.vatPercent === null && v.exemptionCode !== null)
     && (v.withholdingApplies ? v.vatApplies && v.withholdingPercent !== null && v.withholdingCode !== null
       : v.withholdingPercent === null && v.withholdingCode === null)

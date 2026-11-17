@@ -609,10 +609,10 @@ public sealed partial class InventoryStore
 
     internal sealed record ManufacturingGenealogyInput(Guid LabelId, long LabelVersion, Kilograms Quantity);
 
-    private static string GenealogyHash(string value) =>
+    internal static string GenealogyHash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
-    private static string GenealogyPayloadHash<T>(T value) =>
+    internal static string GenealogyPayloadHash<T>(T value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json))))
             .ToLowerInvariant();
 

@@ -46,7 +46,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.13";
+    public const string OwnerContractVersion = "1.14";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -58,6 +58,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string ServiceOrderRevisePricesCapabilityId = "purchasing.service-orders.prices-revise";
 
     public const string InvoiceListCapabilityId = "purchasing.invoices.list";
+    public const string InvoiceImportCapabilityId = "purchasing.invoices.import";
     public const string InvoiceDetailCapabilityId = "purchasing.invoices.detail";
     public const string InvoiceMatchCapabilityId = "purchasing.invoices.match";
     public const string InvoiceApproveVarianceCapabilityId = "purchasing.invoices.approve-variance";
@@ -109,6 +110,8 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
             "/satinalma/faturalar/:invoiceId", "P-INV-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
             [PurchaseIncomingInvoicePermissionNamesV1.Read, PurchasingPermissionManifestV1.OrdersPriceRead], ImplementationAvailable: false);
+        var invoiceList = invoiceDetail with { CapabilityId = InvoiceListCapabilityId, RouteId = InvoiceListCapabilityId,
+            RoutePath = "/satinalma/faturalar", ScreenId = "P-INV-LIST", RoutePrecedence = ShellCapabilityRoutePrecedence.Static };
 
         return
         [
@@ -144,8 +147,9 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersRevise],
                 ImplementationAvailable: true, ParentCapabilityId: ServiceOrderDetailCapabilityId),
-            invoiceDetail with { CapabilityId = InvoiceListCapabilityId, RouteId = InvoiceListCapabilityId,
-                RoutePath = "/satinalma/faturalar", ScreenId = "P-INV-LIST", RoutePrecedence = ShellCapabilityRoutePrecedence.Static },
+            invoiceList,
+            invoiceList with { CapabilityId = InvoiceImportCapabilityId, ParentCapabilityId = InvoiceListCapabilityId,
+                RequiredPermissions = [PurchaseIncomingInvoicePermissionNamesV1.Read, PurchasingPermissionManifestV1.OrdersPriceRead, PurchaseIncomingInvoicePermissionNamesV1.Import] },
             invoiceDetail,
             invoiceDetail with { CapabilityId = InvoiceMatchCapabilityId, ParentCapabilityId = InvoiceDetailCapabilityId,
                 RequiredPermissions = [PurchaseIncomingInvoicePermissionNamesV1.Read, PurchasingPermissionManifestV1.OrdersPriceRead, PurchaseIncomingInvoicePermissionNamesV1.Match] },

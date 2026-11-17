@@ -61,12 +61,67 @@ public sealed class LogisticsTransferOutgoingDocumentServiceTests
         Assert.False(store.Completed);
     }
 
-    private static LogisticsTransferOutgoingDocumentService Create(FakeScope scope, FakeStore store) => new(
+    [Fact]
+    public async Task Explicit_new_no_link_requires_the_owner_V2_writer_and_never_falls_back_to_legacy_creation()
+    {
+        var legacy = new FakeStore();
+        var error = await Assert.ThrowsAsync<LogisticsTransferOutgoingDocumentServiceException>(() => Create(new(), legacy)
+            .CreateDraftAsync(new(Document, Transfer, [Line], null, LogisticsTransferEDispatchAssociationV1.NotLinked), Metadata("explicit-link")));
+        Assert.Equal(503, error.Status); Assert.False(legacy.Completed);
+        var owner = new AssociationStore();
+        var result = await Create(new(), owner).CreateDraftAsync(new(Document, Transfer, [Line], null,
+            LogisticsTransferEDispatchAssociationV1.NotLinked), Metadata("explicit-link"));
+        Assert.Equal("Draft", result.Document.Status);
+        Assert.Equal(LogisticsTransferEDispatchAssociationV1.NotLinked, owner.Association);
+        Assert.False(owner.LegacyCalled);
+    }
+
+    [Theory]
+    [InlineData(LogisticsTransferEDispatchAssociationV1.Unknown, null)]
+    [InlineData((LogisticsTransferEDispatchAssociationV1)99, null)]
+    [InlineData(LogisticsTransferEDispatchAssociationV1.NotLinked, "EXTERNAL-DOCUMENT")]
+    public async Task Invalid_or_contradictory_client_association_is_validation_failure_without_calling_the_owner(
+        LogisticsTransferEDispatchAssociationV1 association, string? number)
+    {
+        var store = new AssociationStore();
+        var error = await Assert.ThrowsAsync<LogisticsTransferOutgoingDocumentServiceException>(() => Create(new(), store)
+            .CreateDraftAsync(new(Document, Transfer, [Line], number, association), Metadata("invalid-link")));
+        Assert.Equal((422, "validation_failed"), (error.Status, error.Code));
+        Assert.Null(store.Association); Assert.False(store.LegacyCalled);
+    }
+
+    [Fact]
+    public void Omitted_association_keeps_the_original_create_hash_payload_shape()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new CreateTransferOutgoingDocumentV1(Document, Transfer, [Line]),
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("eDispatchAssociation", json, StringComparison.Ordinal);
+    }
+
+    private static LogisticsTransferOutgoingDocumentService Create(FakeScope scope, ILogisticsTransferOutgoingDocumentStoreV1 store) => new(
         scope, store,
         new(LogisticsPermissionManifestV1.DispatchNotesCreate,
             LogisticsPermissionManifestV1.DispatchNotesApprove,
             LogisticsPermissionManifestV1.DispatchNotesCancel),
         new FixedCorrelation(), new FixedTimeProvider(Now));
+
+    private sealed class AssociationStore : ILogisticsTransferOutgoingDocumentStoreV2
+    {
+        public LogisticsTransferEDispatchAssociationV1? Association { get; private set; }
+        public bool LegacyCalled { get; private set; }
+        public Task<TransferOutgoingDocumentStoreResultV1> StoreDraftAsync(LogisticsWriteEnvelope envelope, string requestHash,
+            TransferOutgoingDocument document, Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default)
+        { LegacyCalled = true; throw new InvalidOperationException("Explicit association must not enter the legacy path."); }
+        public async Task<TransferOutgoingDocumentStoreResultV1> StoreDraftWithAssociationAsync(LogisticsWriteEnvelope envelope,
+            string requestHash, TransferOutgoingDocument document, LogisticsTransferEDispatchAssociationV1 association,
+            Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default)
+        { Association = association; await beforeCommit(cancellationToken); return new(document, LogisticsWriteOutcome.Recorded, envelope.CorrelationId); }
+        public Task<TransferOutgoingDocumentStoreResultV1> MutateAsync(LogisticsWriteEnvelope envelope, string requestHash, string command,
+            Guid documentId, Action<TransferOutgoingDocument, DateTimeOffset> mutate, Func<CancellationToken, Task> beforeCommit,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<LogisticsTransferOutgoingDocumentOwnerSnapshotV1?> FindProofSnapshotAsync(Guid documentId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
     private static LogisticsCommandMetadata Metadata(string key) => new(key, "corr", null, Now);
 

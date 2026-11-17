@@ -201,3 +201,14 @@ ayrılan üyeler sonraki snapshot'tan çıkar, önceki history korunur. Yeni DB 
 - Altı dilimde yeni işletme kararı bekleyen kaynak eksiği bulunmadı. Kaynak checklist'i **6/6**; bu oran toplam 174 dilimin resmî tamamlanma hesabı veya runtime kabulü değildir. Önceki raporun yalnız merkezi composition çağrısı bekleyen notları güncel `Program.cs` gerçek çağrısıyla aşılmıştır. Bu son dönem-yarışı commit'inin merkezi entegrasyonu, final pin/guard ve runtime kabulü entegrasyon sahibindedir.
 - Son kaynak derlemeleri **API, Manufacturing.UnitTests, Accounting.UnitTests ve Api.IntegrationTests: exit 0; 0 uyarı / 0 hata**. Integration'ın ilk denemesindeki yalnız eksik `Domain.Common` using'i düzeltildikten sonra final derleme exit 0'dır. Önceki Accounting exact-index assertion'ı da bu Accounting.Unit derlemesine dahil edilmiştir. Bu checkpoint backend-only olduğu için TSC yeniden çalıştırılmadı; önceki değişmeyen UI kaynakları final TSC exit 0'dır. **Unit/gerçek SQL/HTTP/Vitest/browser/CI runtime NOT_RUN**, K3 imzası yoktur.
 - W5 raporundaki **13 Manufacturing test hatası** isimleriyle verilmemiştir. Bilinen migration/model/shell ve karar golden beklentileri kaynakta hizalanmıştır; test atlama/silme/karantina yapılmamıştır. İsimleri bulunmayan eski kırmızıların tümünün kapandığı iddia edilmez; final runtime turunda gerçek sonuçla doğrulanmalıdır.
+
+### URT-SC36 — üçüncü dövizden USD gösterimine gerçek kur köprüsü
+
+- Kullanıcının çapraz dönüşüm cevabı, Issue #1189 yorum 6943061620 ajan aktarımında kayıtlıdır.
+  EUR gibi bir para biriminde kayıtlı resmî fatura TL maliyeti, kabul gününün gerçek TCMB
+  USD döviz satış kuruna bölünür. TL ana maliyet oranı aynen korunur; ara tutar yuvarlanmaz.
+- Eksik resmî fatura kuru veya USD bülteni için değer tahmin edilmez. Kur kaydının kimliği,
+  sürümü, kaynak/hedef para birimi ve bülten tarihi doğrulanır. USD eksikliği TL'yi silmez.
+- Dört host test kaynağı eklendi: EUR çapraz kur, tam oran hassasiyeti, eksik resmî kur,
+  eksik USD kaynağında TL'nin korunması. Birleşik API ve Integration kaynak derlemeleri
+  exit 0, uyarı/hata 0. Runtime test ve gerçek SQL **NOT_RUN**; yeni migration/izin yoktur.

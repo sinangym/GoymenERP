@@ -27,6 +27,10 @@ public static class InventoryStockPositionRegistration
     {
         services.AddSingleton(new InventoryStockPositionCursorRuntimeOptions(signingKeyBase64));
         services.AddSingleton<IInventoryStockPositionCursorCodec, InventoryStockPositionCursorCodec>();
+        services.AddSingleton<IInventoryTransferReceiptDocumentCursorV1>(provider =>
+            (InventoryStockPositionCursorCodec)provider.GetRequiredService<IInventoryStockPositionCursorCodec>());
+        services.AddSingleton<IInventoryTransferReceiptWorkCursorV1>(provider =>
+            (InventoryStockPositionCursorCodec)provider.GetRequiredService<IInventoryStockPositionCursorCodec>());
         return services;
     }
 

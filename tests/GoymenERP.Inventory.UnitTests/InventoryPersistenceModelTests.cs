@@ -213,7 +213,7 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryOpeningCosts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryTransferOverageRenewalsAndLossWithdrawals", StringComparison.Ordinal));
-        Assert.Equal(["AddInventoryNegativeStockAttempts", "AddInventoryNegativeStockCountBoundaries"],
+        Assert.Equal(["AddInventoryTransferReceiptDocuments", "AddInventorySubcontractDeliverySources"],
             context.Database.GetMigrations().TakeLast(2).Select(migration => migration[15..]));
         Assert.False(context.Database.HasPendingModelChanges());
     }

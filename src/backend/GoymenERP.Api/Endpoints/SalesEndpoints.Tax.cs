@@ -18,6 +18,7 @@ public static partial class SalesEndpoints
 
     private static void MapDraftTax(RouteGroupBuilder drafts)
     {
+        MapSubcontractTax(drafts);
         drafts.MapGet("/{id:guid}/tax", async (
             Guid id,
             HttpContext httpContext,

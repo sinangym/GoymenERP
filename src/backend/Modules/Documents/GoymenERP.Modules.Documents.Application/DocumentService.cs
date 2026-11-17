@@ -922,6 +922,7 @@ public sealed partial class DocumentService(
 
     private static DocumentServiceException Store(DocumentStoreException exception) => exception.Code switch
     {
+        "document_publication_invalid" => new DocumentServiceException(400, GeneratedDocumentStoreCodesV1.TemplateInvalid),
         DocumentStoreCodes.SameKeyPayloadMismatch => new DocumentServiceException(409, DocumentProblemCodesV1.SameKeyPayloadMismatch,
             [new("Idempotency-Key", DocumentProblemCodesV1.SameKeyPayloadMismatch)]),
         DocumentStoreCodes.ConcurrentChange => new DocumentServiceException(409, DocumentProblemCodesV1.ConcurrentChange,

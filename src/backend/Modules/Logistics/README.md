@@ -127,6 +127,31 @@ The Logistics owner records an immutable per-shipment kilogram allocation on a d
 
 Unit, endpoint contract, SQL persistence/rollback/Down and frontend test sources accompany the change. Runtime acceptance is deferred to the final train gate; build evidence is recorded in the W8 Sales report. Central OpenAPI, recovery, architecture and relational inventories must be regenerated on integration. No external submission, permission grant or production activation is included.
 
+### Actual transfer departure and cancellation evidence — STK-S8
+
+Sources: LOJ-D11 and KLN-D25(7)/D27. Explicit new internal transfer documents record `NotLinked` only after actual
+Inventory plan, source warehouse, ordered line and version proof. Omitted legacy association stays `Unknown`.
+`Linked` requires an actual external e-dispatch owner response; this train has no real GİB provider, so a missing
+response is unavailable, never proof of not-sent or not-linked. No GİB transport or manual success button is added.
+
+The real owner appends exit weighing or vehicle departure, its immutable original command answer, and Audit in its
+own Serializable transaction. Weighing stores the two actual measurements and the existing backend calculator's net;
+it creates no physical stock movement. Cancellation rechecks the current Inventory version and time, then records a
+permanent no-further-exit fence. That independent safety fence remains if the later Inventory reversal rolls back.
+Concurrent exit and fence have a single database winner. Replay never repeats an external owner confirmation.
+
+`logistics.transfer-departures.record` and `logistics.transfer-outgoing-documents.read` are registration-only names.
+Document creation, finalization and cancellation retain their separate existing dispatch-note permissions. The new
+read returns the actual transfer-bound document; the UI never uses a typed GUID as evidence of an effective document.
+`AddInventoryTransferPolicyHostPorts` composes actual Organization, Settings, Inventory and Logistics providers.
+The coordinator mounts `MapLogisticsTransferDepartureEndpoints` and `MapLogisticsTransferOutgoingDocumentEndpoints`,
+and the `/lojistik/transfer-cikislari` page. No extra Cari/Organization grant is inferred.
+
+EF-generated `20261117111253_AddTransferDepartures` adds company-bound state, immutable event and terminal histories.
+Down first refuses with **THROW 51991** while any of these histories exists. No bypass or SQL allowlist was widened.
+Unit, contract, real-SQL race/rollback/Down and frontend test sources accompany the change. Runtime acceptance remains
+**NOT_RUN**. Transfer planning/receiving UI and real linked GİB evidence are still explicit delivery gaps.
+
 ### Operations work list (AT-025, "Satış ve satın alma belgeleri operasyon listelerinde karışmaz")
 
 Sources: ACCEPTANCE_70 / MATRIX AT-025 (P0/P1, E2E+Contract, module TBD), master v3 §27.8 (L-01 Sevk Edilebilir Siparişler, L-09 Beklenen Alış / Kapı Kabulü), §32.1 ("Satış/Alış operasyon ayrımı"), DEC-SAL-001 (separate status axes), DEC-SAL-005 (a cancelled order is no longer an approved demand), Sinan §4 #66 5738113623 (each read its own name; the Sevkiyatçı never sees prices). No screen spec, filter set or persona exists for AT-025 beyond these, so this is the minimal decided version; everything else is listed as open below.

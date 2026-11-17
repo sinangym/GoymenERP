@@ -26,6 +26,7 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY.logisticsInstructionsDetail).toBe(LOGISTICS_CAPABILITY.instructionsDetail)
     expect(CAPABILITY.logisticsOperationsSales).toBe(LOGISTICS_CAPABILITY.operationsSales)
     expect(CAPABILITY.logisticsOperationsPurchase).toBe(LOGISTICS_CAPABILITY.operationsPurchase)
+    expect(CAPABILITY.logisticsTransferDepartures).toBe(LOGISTICS_CAPABILITY.transferDepartures)
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('logistics.'))
     expect([...shellIds].sort()).toEqual([...(Object.values(LOGISTICS_CAPABILITY) as string[])].sort())
   })
@@ -36,6 +37,7 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.logisticsInstructionsDetail]).toBe(LOGISTICS_ROUTE.detail)
     expect(CAPABILITY_ROUTE[CAPABILITY.logisticsOperationsSales]).toBe(LOGISTICS_ROUTE.operationsSales)
     expect(CAPABILITY_ROUTE[CAPABILITY.logisticsOperationsPurchase]).toBe(LOGISTICS_ROUTE.operationsPurchase)
+    expect(CAPABILITY_ROUTE[CAPABILITY.logisticsTransferDepartures]).toBe(LOGISTICS_ROUTE.transferDepartures)
   })
 
   it('matches the lane’s own link helper, and the static create route is never an instruction id', () => {

@@ -24,8 +24,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <item><b>Manufacturing due-date buffer</b> (URT-D96/URT-D100): whole working days ≥ 0, company default, start value 0
 /// without a row; authority <see cref="ErpPermissions.ManufacturingPlansApprove"/> (URT-D100).</item>
 /// <item><b>Sales subcontract tax default</b> (SAT-D381): one default VAT/withholding code a line may change; authority
-/// <see cref="ErpPermissions.PurchasingOrdersApprove"/> (SAT-D395). Codes must be in the tax master list in force today.
-/// The purchasing-side record (ALS-D105) is read-only here until its write authority is decided (NEEDS-SINAN).</item>
+/// <see cref="ErpPermissions.SalesOrdersApprove"/> (Issue #1189, 6947126872, superseding SAT-D395).
+/// Purchasing uses its separate <see cref="ErpPermissions.PurchasingOrdersApprove"/> authority and record (ALS-D105).
+/// Codes must be in the tax master list in force today.</item>
 /// <item><b>Every command</b>: the key's permission company-wide, measured first and re-measured fresh before every save;
 /// a mandatory reason (≤ 4000); one Idempotency-Key per command (the stored terminal answer replays; another body under the
 /// key is 409); the expected version as decimal text; correlation/causation; one audit event per real change, none for a
@@ -64,11 +65,19 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
 
     private static readonly KeySpec SalesSubcontractTaxDefault = new KeySpec(
         CompanyPolicyKeysV1.SalesSubcontractTaxDefault,
-        ErpPermissions.PurchasingOrdersApprove,
+        ErpPermissions.SalesOrdersApprove,
         "settings.sales-subcontract-tax-default.record.v1",
         "settings.sales-subcontract-tax-default.recorded.v1",
         "Settings.SalesSubcontractTaxDefault",
         "Satış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
+
+    private static readonly KeySpec PurchasingSubcontractTaxDefault = new(
+        CompanyPolicyKeysV1.PurchasingSubcontractTaxDefault,
+        ErpPermissions.PurchasingOrdersApprove,
+        "settings.purchasing-subcontract-tax-default.record.v1",
+        "settings.purchasing-subcontract-tax-default.recorded.v1",
+        "Settings.PurchasingSubcontractTaxDefault",
+        "Alış fason vergi varsayılanı sürümü kaydedildi; gerekçe kayıt içeriğindedir");
 
     private static readonly KeySpec SalesContractDiscountLimit = new(
         CompanyPolicyKeysV1.SalesContractDiscountLimit,
@@ -181,10 +190,15 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
             }), cancellationToken);
     }
 
-    public async Task<SubcontractTaxDefaultViewV1> GetSalesSubcontractTaxDefaultAsync(
-        CancellationToken cancellationToken = default)
+    public Task<SubcontractTaxDefaultViewV1> GetSalesSubcontractTaxDefaultAsync(CancellationToken cancellationToken = default) =>
+        ReadSubcontractTaxDefaultAsync(SalesSubcontractTaxDefault, cancellationToken);
+
+    public Task<SubcontractTaxDefaultViewV1> GetPurchasingSubcontractTaxDefaultAsync(CancellationToken cancellationToken = default) =>
+        ReadSubcontractTaxDefaultAsync(PurchasingSubcontractTaxDefault, cancellationToken);
+
+    private async Task<SubcontractTaxDefaultViewV1> ReadSubcontractTaxDefaultAsync(KeySpec spec, CancellationToken cancellationToken)
     {
-        var (companyId, rows) = await ReadHistoryAsync(SalesSubcontractTaxDefault, cancellationToken);
+        var (companyId, rows) = await ReadHistoryAsync(spec, cancellationToken);
         var versions = rows.Select(row => (Row: row, Value: CompanyPolicyRowValues.TaxDefault(row))).ToArray();
         if (versions.Any(version => version.Value is null))
         {
@@ -201,12 +215,21 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
 
     public Task<CompanyPolicyCommandResultV1> RecordSalesSubcontractTaxDefaultAsync(
         RecordSubcontractTaxDefaultRequestV1 request, SettingsCommandMetadataV1 metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        RecordSubcontractTaxDefaultAsync(SalesSubcontractTaxDefault, request, metadata, cancellationToken);
+
+    public Task<CompanyPolicyCommandResultV1> RecordPurchasingSubcontractTaxDefaultAsync(
+        RecordSubcontractTaxDefaultRequestV1 request, SettingsCommandMetadataV1 metadata,
+        CancellationToken cancellationToken = default) =>
+        RecordSubcontractTaxDefaultAsync(PurchasingSubcontractTaxDefault, request, metadata, cancellationToken);
+
+    private Task<CompanyPolicyCommandResultV1> RecordSubcontractTaxDefaultAsync(KeySpec spec,
+        RecordSubcontractTaxDefaultRequestV1 request, SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.VatApplies is not { } vatApplies || request.WithholdingApplies is not { } withholdingApplies)
         {
-            return RecordAsync(SalesSubcontractTaxDefault, request.ExpectedVersion, request.Reason, metadata,
+            return RecordAsync(spec, request.ExpectedVersion, request.Reason, metadata,
                 Answers.Invalid("\"KDV uygulanır\" ve \"tevkifat uygulanır\" seçimleri (evet/hayır) zorunludur."), null,
                 cancellationToken);
         }
@@ -214,11 +237,11 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         if (!CompanyPolicyRulesV1.TryReadTaxDefault(vatApplies, request.VatPercent, request.ExemptionCode, withholdingApplies,
                 request.WithholdingPercent, request.WithholdingCode, out var value, out var detail))
         {
-            return RecordAsync(SalesSubcontractTaxDefault, request.ExpectedVersion, request.Reason, metadata,
+            return RecordAsync(spec, request.ExpectedVersion, request.Reason, metadata,
                 Answers.Invalid(detail), null, cancellationToken);
         }
 
-        return RecordAsync(SalesSubcontractTaxDefault, request.ExpectedVersion, request.Reason, metadata, null, new Change(
+        return RecordAsync(spec, request.ExpectedVersion, request.Reason, metadata, null, new Change(
             new
             {
                 value.VatApplies,
@@ -252,13 +275,15 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
     private async Task<CompanyPolicyCommandAnswerV1?> CheckListedCodesAsync(SettingsSubcontractTaxDefaultV1 value,
         Guid companyId, CancellationToken cancellationToken)
     {
-        if (value.ExemptionCode is null && value.WithholdingCode is null)
-        {
-            return null;
-        }
-
         var data = (await ReadAsync(() => TaxMasterRows.ReadAsync(database, track: false, cancellationToken))).ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
+        var versions = (await ReadAsync(() => TaxRateListRows.ReadAsync(database, track: false, cancellationToken))).ToVersions(companyId);
+        var vatRates = ApprovedTaxRateListCatalog.InForce(versions, TaxRateListKindsV1.VatRate, today);
+        var ratios = ApprovedTaxRateListCatalog.InForce(versions, TaxRateListKindsV1.WithholdingRatio, today);
+        if (value.VatApplies && vatRates?.Entries.Any(x => x.Percent == value.VatPercent) != true
+            || value.WithholdingApplies && ratios?.Entries.Any(x => x.Percent == value.WithholdingPercent && x.TaxCode == value.WithholdingCode) != true)
+            return Answers.Problem(422, CompanyPolicyProblemCodesV1.RateUnknown, "Vergi oranı listede yok.",
+                "KDV ve tevkifat oranı bugün yürürlükteki gerçek Ayarlar listesinden seçilmelidir.");
         if (value.ExemptionCode is { } exemption
             && !TaxMasterCalculatorV1.IsListed(data, TaxCodeListKindsV1.Exemption, exemption, today))
         {
@@ -274,6 +299,19 @@ internal sealed partial class SettingsCompanyPolicyAdministration(
         }
 
         return null;
+    }
+
+    public async Task<SubcontractTaxOptionsV1> GetSubcontractTaxOptionsAsync(SubcontractTaxSideV1 side, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(side)) throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.RequestInvalid);
+        var spec = side == SubcontractTaxSideV1.Sales ? SalesSubcontractTaxDefault : PurchasingSubcontractTaxDefault;
+        var (companyId, _) = await ReadHistoryAsync(spec, cancellationToken);
+        var actor = currentUser.UserId;
+        var result = await new SettingsSubcontractTaxCatalogV1(database, companyContext, currentUser)
+            .GetAsync(companyId, side, SettingsBusinessDate.Today(timeProvider), cancellationToken);
+        await RequireStillAsync(spec.Permission, companyId, cancellationToken);
+        if (RequireContextCompany() != companyId || currentUser.UserId != actor) throw new UnauthorizedAccessException();
+        return result;
     }
 
     private static SubcontractTaxDefaultValueViewV1 View(SettingsSubcontractTaxDefaultV1 value) =>

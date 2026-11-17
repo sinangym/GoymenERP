@@ -133,6 +133,7 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
     private sealed class SalesScope(SalesDbContext dbContext, SalesStore store) : IAsyncDisposable
     {
         public SalesStore Store => store;
+        public void SetCommandTimeout(int seconds) => dbContext.Database.SetCommandTimeout(seconds);
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
@@ -192,7 +193,9 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
             var dbContext = new SalesDbContext(new DbContextOptionsBuilder<SalesDbContext>()
                 .UseSqlServer(Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext)).Options, companyContext);
-            return new SalesScope(dbContext, new SalesStore(dbContext, companyContext, collector, TimeProvider.System));
+            // These facts isolate the real Sales SQL store. Logistics owner integration is covered separately.
+            return new SalesScope(dbContext, new SalesStore(dbContext, companyContext, collector, TimeProvider.System,
+                new SyntheticCommitWeighingRead()));
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -224,5 +227,14 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
                 """;
             await command.ExecuteNonQueryAsync();
         }
+    }
+
+    private sealed class SyntheticCommitWeighingRead : ISalesSubcontractWeighingCommitReadPortV1
+    {
+        public Task<SalesSubcontractDeliveryWeighingReadV1> ReadAsync(System.Data.Common.DbConnection connection,
+            System.Data.Common.DbTransaction transaction, Guid companyId, Guid instructionId, Guid weighingId,
+            CancellationToken cancellationToken = default) => Task.FromResult(new SalesSubcontractDeliveryWeighingReadV1(
+                SalesSubcontractDeliveryWeighingStatusV1.Available, companyId, instructionId, weighingId,
+                new(NetKg, 1, 1, [new(Order, OrderLine, Product, Kg, NetKg)])));
     }
 }
