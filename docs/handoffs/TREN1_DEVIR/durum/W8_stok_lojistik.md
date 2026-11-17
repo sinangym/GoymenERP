@@ -267,3 +267,52 @@
 - Dedicated Documents context construction, maker-checker, uploaded kaynak ispatı,
   immutable publication/request hash ve iki Down guard **K3 review bekliyor**.
   Kaynak checkpoint'leri tam dilim DONE değildir; merkezi pin ve tren FF bekler.
+
+### STK-S29 — gerçek renderer, producer ve yönetim ekranı checkpoint'i
+
+- KLN-D33 / KLN-D73 / KLN-D109 / DEC-DOC-010: mevcut PDFsharp **6.2.4** ile gerçek PNG/JPEG ve tek sayfalı PDF
+  logo/antet çizimi bağlandı. Yayımlanmış şirket/modül şablonunun sabit document/version/hash kanıtı PDF metadata'sına
+  taşınır; çok sayfalı iş belgelerinde her sayfada çizilir. Kapalı backend business-content vocabulary korunur; fiyat,
+  vergi, kg dağılımı ve tolerans yeniden hesaplanmaz. Yeni bağımlılık, HTML/script şablonu, URL/path girişi veya dış
+  e-belge gönderimi eklenmedi. Parser yokluğu/bozuk kanıt başarıya veya sessiz teknik fallback'e dönüşmez.
+- Sales order GET PDF gerçek güncel publication'a bağlandı; read-only GET olarak kaldı. Inventory label POST gerçek
+  Documents generated-store publication snapshot'ını kullanır. Yeni label-scope GET `pdf-template` seçimi gerçek owner'dan
+  alır; public komuttaki trailing nullable PublicationId/PublicationVersion UI attempt'iyle dondurulur. Owner exact
+  historical publication okur; yeni yayım sonrasında kayıp yanıtın tekrarında son yayımı yeniden seçmez. Eski null
+  istek teknik içerik/hash biçimini korur; yeni UI her yeni işlem öncesinde gerçek seçimi okur. Farklı payload aynı key
+  mevcut 409'dur. Üç producer özgün actor/company frame'ini bütün awaited owner çağrıları boyunca korur ve gerçek
+  record-scope okumalarını tazeler.
+- Logistics onaylı irsaliye için read-only GET PDF ve buton kaynağı eklendi. Cari owner gerçek müşteri adını; yeni dar
+  Product-owned Logistics-purpose known-id portu gerçek code/name/version'ı; Settings gerçek birim kodunu; Logistics
+  gerçek kayıtlı sevk miktarı ve varsa frozen kg snapshot'ını verir. Parasal tutar yoktur (SAT-D425). Ürün/fiyat/rol
+  kataloğu veya yeni Product grant'i açılmaz; mevcut Logistics read ve gerçek owner-record fence geçerlidir. Teknik PDF
+  resmî e-İrsaliye gönderim kanıtı sayılmaz. Eski kayıtta bulunmayan kg dağılımı üretilmez veya mevcut ortalamayla doldurulmaz.
+- `CompanyDocumentBrandingPage` ve modül bazlı `DocumentTemplatePage` gerçek upload → Clean fixed version seçimi →
+  company branding → module draft → farklı publisher akışını kullanır. Template sayfası prepare OR publish amaç
+  yetkisiyle çalışır; şirket branding-manage veya genel Documents-read grant'i eklemez. Mevcut upload izni olmadan upload
+  açılmaz. Loading/empty/401/403/404/409/offline/network/503/bozuk yanıt ayrıdır; belirsiz command/upload aynı key ve
+  payload/file ile actor/session/company/origin'e bağlı tutulur. İrsaliye 422 sayfa sınırı kesik belge başarısı sayılmaz.
+- Test kaynakları: gerçek renderer, per-page form/metadata/Türkçe içerik ve deterministik retry; bozuk hash/parser,
+  fixed publication/unknown outcome ve company/actor/permission kaybı; kapalı fiyat-sız irsaliye composer'ı; frontend
+  strict decoder/state/maker/retry kaynakları. Üç gerçek SQL fact kaynağı: (1) gerçek Clean upload, maker≠publisher,
+  pub1 → gerçek label/vault → pub2 sonrasında özgün immutable publication/PDF replay; (2) Audit append sonrası hata,
+  tüm revision/attempt/audit rollback ve aynı-key success/replay; (3) gerçek Product SQL identity'nin yalnız Logistics
+  amaç izni altında price-free okunması. Bu fact'ler **NOT_RUN**; sahte grant'ler yalnız disposable acceptance fixture'ıdır.
+- Kaynak derlemeleri: API, DocumentGeneration.Pdf.Tests, Documents.UnitTests, Product.UnitTests ve Api.IntegrationTests
+  final **exit0 / 0 uyarı / 0 hata**. İlk API 2:47, final incremental API 24,70sn; PDF test projesi 3,07sn, Documents
+  Unit 3,51sn, Product Unit 9,91sn; Integration yeni testteki tek CS0819 düzeltmesinden sonra 45,78sn exit0. Komutlar
+  `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false -v:q` kullandı.
+  Her süreçten önce ≥2GiB RAM ölçüldü, native exit anında kaydedildi, ham loglar depodışında korundu. Runtime unit/SQL/
+  HTTP/Vitest/browser/CI **NOT_RUN**; bu checkpoint'te EF/DB apply yok. Önceki 51936 migration değiştirilmedi.
+  Frontend son `npx tsc -b` **exit0**; Vitest/browser çalıştırılmadı. İlk TS union-generic hatası dar düzeltildi.
+- Merkezi entegrasyon: `AddDocumentBrandingPdfRuntime()`, `MapDocumentBrandingEndpoints()`,
+  `MapLogisticsDispatchPdfEndpoints()`; mevcut Product runtime kapısı ile
+  `AddProductLogisticsDocumentDisplay(Func<IServiceProvider,bool>)`. Kapalı/unconfigured Product sonucu Unavailable/503'tür.
+  Yedi permission kaydı, Settings purpose gateway/nav, page mounts ve Approved note satırında
+  `DispatchNotePdfButton(instructionId,dispatchNoteId,companyId)` merkez sahibindedir. UI action cap kimlikleri owner'daki
+  yedi permission adıyla aynıdır. OpenAPI/registry/architecture/relational/grup pin'leri koordinatörde kalır.
+- **PARTIAL kalan dar kapsam:** KLN-D33 MIME allowlist şu an PDF/PNG/JPEG StandardKinds'tır; boyut gerçek
+  `Documents:MaximumUploadBytes` owner kaynağından gelir. Aynı kayıtlı S29 kapsamındaki konfigüre altküme reader ve
+  negatif test kaynağı ayrı takip checkpoint'inde tamamlanacaktır; config/env dosyası değiştirilmeyecektir. Merkezi
+  mount/pin/derleme birleşmeden tam dilim DONE denmez. Gerçek kurumsal asset'ler, izin ataması, UAT/production ayrı insan
+  kapısıdır; OPEN-019 kapanmadı. Yeni Product purpose projection ve fixed-publication/hash bağı **K3 review bekliyor**.

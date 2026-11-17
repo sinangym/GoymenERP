@@ -74,10 +74,11 @@ public sealed class DocumentPdfGenerator
         PdfFontResolverRegistration.EnsureRegistered();
 
         using var document = new PdfDocument();
+        using var branding = DocumentPdfBrandingImages.Open(request.Branding, document);
         document.Info.Title = title;
         var fonts = new Fonts();
         var pages = new List<PdfPage>();
-        using (var layout = new Layout(document, pages, fonts))
+        using (var layout = new Layout(document, pages, fonts, branding))
         {
             layout.Title(title);
             foreach (var block in blocks)
@@ -300,7 +301,7 @@ public sealed class DocumentPdfGenerator
     }
 
     /// <summary>The cursor over the pages: it opens a page when the next piece does not fit and refuses what never fits.</summary>
-    private sealed class Layout(PdfDocument document, List<PdfPage> pages, Fonts fonts) : IDisposable
+    private sealed class Layout(PdfDocument document, List<PdfPage> pages, Fonts fonts, DocumentPdfBrandingImages? branding) : IDisposable
     {
         private XGraphics? graphics;
         private double y;
@@ -536,9 +537,10 @@ public sealed class DocumentPdfGenerator
             page.Height = XUnit.FromMillimeter(PageHeightMillimeters);
             pages.Add(page);
             graphics = XGraphics.FromPdfPage(page);
+            branding?.Draw(graphics, page.Width.Point, page.Height.Point, MarginPoints);
             left = MarginPoints;
             right = page.Width.Point - MarginPoints;
-            top = MarginPoints;
+            top = MarginPoints + (branding?.HeaderReservePoints ?? 0);
             bottom = page.Height.Point - MarginPoints - FooterReservePoints;
             y = top;
             pageHasContent = false;

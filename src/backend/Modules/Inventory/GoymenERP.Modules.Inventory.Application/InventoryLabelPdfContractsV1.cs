@@ -14,4 +14,10 @@ public static class InventoryLabelPdfApiV1
 
 /// <summary>The client keeps this transport instant with the same key when the result is unknown; no business date is changed.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record GenerateInventoryLabelPdfV1([property: JsonRequired] DateTimeOffset RequestedAtUtc);
+public sealed record GenerateInventoryLabelPdfV1([property: JsonRequired] DateTimeOffset RequestedAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? PublicationId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PublicationVersion = null);
+
+/// <summary>The producer-scoped immutable choice to freeze with RequestedAtUtc before sending a command. Null/null is
+/// the legacy technical layout; it never means reselecting the latest publication during a lost-answer retry.</summary>
+public sealed record InventoryLabelPdfTemplateV1(Guid CompanyId, Guid LabelId, Guid? PublicationId, string? PublicationVersion);

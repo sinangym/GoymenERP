@@ -66,6 +66,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
     private const string InitialDocumentsMigration = "20260930120000_InitialDocuments";
     private const string PrimaryLinkMarkerMigration = "20261115132357_AddDocumentLinkPrimaryMarker";
     private const string WidenContentKindsMigration = "20261115134058_WidenDocumentContentKinds";
+    private const string BrandingPublicationsMigration = "20261117140908_AddDocumentBrandingPublications";
     private static readonly byte[] OtherPdf = "%PDF-1.7\n% SENTETIK başka belge\n"u8.ToArray();
     private static Task PermitWriteAsync(CancellationToken _) => Task.CompletedTask;
 
@@ -297,7 +298,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
-            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration, InvoiceXmlContentKindMigration],
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration, InvoiceXmlContentKindMigration, BrandingPublicationsMigration],
                 await context.Database.GetAppliedMigrationsAsync());
             await context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
@@ -320,7 +321,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
             Assert.Equal(51058, error.Number);
             Assert.Equal([InitialDocumentsMigration], await context.Database.GetAppliedMigrationsAsync());
             await context.Database.MigrateAsync();
-            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration, InvoiceXmlContentKindMigration],
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration, InvoiceXmlContentKindMigration, BrandingPublicationsMigration],
                 await context.Database.GetAppliedMigrationsAsync());
         }
 
@@ -821,8 +822,9 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
             return Task.FromResult(new InventoryLabelDetailV1(
                 "1",
-                new InventoryLabelViewV1(labelId, CompanyA, "LBL-AT065", Guid.NewGuid(), Guid.NewGuid(), null, null, null,
-                    "Complete", [], [], [], null!),
+                new InventoryLabelViewV1(labelId, CompanyA, "LBL-AT065", Guid.Parse("58000000-0000-4000-8000-000000000030"),
+                    Guid.Parse("58000000-0000-4000-8000-000000000031"), null, null, null,
+                    "Complete", [], [], [], new(Guid.Parse("58000000-0000-4000-8000-000000000031"), null, null)),
                 null!,
                 null!,
                 null!));
@@ -845,16 +847,20 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
         public string Correlation { get; } = $"at-065-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync(InventoryOwnerFixture? inventoryOwner = null)
+        public static async Task<Run> StartAsync(InventoryOwnerFixture? inventoryOwner = null, Action<IServiceCollection>? configure = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var objectRoot = Path.Combine(Path.GetTempPath(), $"goymen-docvault-sql-{Guid.NewGuid():N}");
             var factory = new SqlServerRelationalApiFactory(baseConnectionString,
-                configureServices: inventoryOwner is null ? null : services =>
+                configureServices: services =>
                 {
-                    services.RemoveAll<IInventoryLabelDetailsV1>();
-                    services.AddScoped<IInventoryLabelDetailsV1>(provider => new FixedInventoryLabelDetails(
-                        provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(), inventoryOwner));
+                    if (inventoryOwner is not null)
+                    {
+                        services.RemoveAll<IInventoryLabelDetailsV1>();
+                        services.AddScoped<IInventoryLabelDetailsV1>(provider => new FixedInventoryLabelDetails(
+                            provider.GetRequiredService<ICompanyContext>(), provider.GetRequiredService<ICurrentUser>(), inventoryOwner));
+                    }
+                    configure?.Invoke(services);
                 },
                 configurationOverrides: new Dictionary<string, string?> { ["Documents:ObjectStore:RootPath"] = objectRoot });
             var run = new Run(factory, objectRoot);
