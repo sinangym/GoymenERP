@@ -19,7 +19,7 @@ namespace GoymenERP.Accounting.UnitTests;
 /// command log on one in-memory Accounting database per test. What SQL Server enforces itself (the single active
 /// version index, the maker-checker check, the Down guard) is proven by the relational acceptance tests.
 /// </summary>
-public sealed class AccountingPostingAccountMappingLifecycleV1Tests
+public sealed partial class AccountingPostingAccountMappingLifecycleV1Tests
 {
     private static readonly Guid Preparer = Guid.Parse("b0400000-0000-4000-8000-000000000001");
     private static readonly Guid Checker = Guid.Parse("b0400000-0000-4000-8000-000000000002");
