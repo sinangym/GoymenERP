@@ -124,3 +124,34 @@ K3 bekleyen kaynak incelemesi: yeni üç immutable store, migration SQL/trigger'
 Audit owner append. Guard izin listeleri genişletilmedi. DB apply, runtime unit/SQL/HTTP/Vitest/browser,
 CI ve üretim aktivasyonu yapılmadı. Merkezi mount/consumer/pin ve kabul kanıtları tamamlanmadan
 FIN-S14 kaynak checkpoint'i kullanıma hazır veya tüm dilim DONE sayılmaz.
+
+## İkinci gerçek TL tutarı — 6961618871
+
+Doğrudan kullanıcı cevabı: **“İki TL tutarı da belgeli girilsin (Önerilen)”**; aktarım #1189/6961618871.
+Kaynak dövizin gerçek TL defter değeri ile alınan tutarın gerçek TL karşılığı ayrı tutulur. TCMB referansı,
+FIFO, ortalama veya yeni kur bu alanların yerine geçmez.
+
+- Paylaşılan sözleşme `619d55e54`: öneri ve görünümde trailing nullable `TargetFunctionalValueTl` vardır.
+  Null alan yazılmaz. Mevcut `PreparationJson` ve `ResultJson` iki değeri zaten kalıcı ve değişmez taşır;
+  model, context, kolon, migration veya yeni THROW gerekmedi. Finance modelinin diğer sahibi korunur.
+- Yeni öneride iki alan da pozitif exact ondalık metindir. Hedef para gerçek Settings TRY kimliği ise girilen
+  hedef TL, orijinal `TargetMoney` ile tam sayısal olarak aynı olmalıdır; `3300` ile `3300.00` eşittir,
+  `3400` TCMB referansı yerine geçirilemez. Başka dövizdeki hedef TL belgeden girilir; hesaplanmaz.
+- Mevcut gerçek Documents sürümü/hash'i iki değeri birlikte belgeleyen öneriye bağlıdır. Hazırlayanın farklı
+  onaylayanı iki değeri ve aynı kayıtlı belgeyi görür. Yeni onay olayı, audit ve komut cevabı ikisini birlikte
+  taşır; ikinci para hareketi veya otomatik fiş yoktur. `TransferSourceHash` orijinal transferin hash'i kalır.
+- Yeni-request doğrulaması ile eski stored-proof doğrulaması ayrıdır. Önce immutable replay çiti çalışır.
+  Eski eksik JSON serialize edildiğinde byte şekli/hash korunur; saklanan ilk yanıt sonradan doldurulmaz. Eksik hedefli
+  Pending öneri okunur ve farklı yetkili tarafından reddedilebilir; iki değerli öneri yeni key ile hazırlanır.
+  Eksik hedefle yeni onay/event üretilemez. Önceden Approved legacy kayıt yerinde değiştirilmez; yabancı hedefte
+  gerçek TL eksikse consumer bunu kaynak eksikliği olarak korur, quote veya bugünkü kurdan tamamlamaz.
+- UI iki actual tutarı açıkça gösterir ve aynı belirsiz tekrar gövdesinde kilitler. Legacy hedef eksikliği
+  gösterilir; yeni onay düğmesi bu kayıt için kapalı, gerçek ret akışı açıktır. Tutar/kur UI'de hesaplanmaz.
+- Birim kaynakları iki yabancı bacakta `3600 TL` actual hedefi `3240 TL` TCMB referansından ayırır; exact TRY
+  eşliği, küçük fark, sıfır/bozuk değer, null-omit/hash/replay ve legacy onayı yeni olay yapmama kapsanır.
+  HTTP fixture ve strict UI kaynakları yeni alanı taşır. İki yeni gerçek SQL kaynak adı:
+  `GoymenERP.Api.IntegrationTests.FinanceExpensePaymentSqlServerRelationalAcceptanceTests.Exchange_book_value_legacy_null_proof_replays_unchanged_and_requires_explicit_rejection_before_new_preparation`
+  ve `GoymenERP.Api.IntegrationTests.FinanceExpensePaymentSqlServerRelationalAcceptanceTests.Exchange_book_value_requires_both_actual_TL_values_and_rejects_a_target_TRY_mismatch_before_writing`.
+- Bu delta için kaynak derlemeleri **QUEUED**; önceki `80745f89f` başarılı derlemeleri bu değişikliğe PASS
+  sayılmaz. Runtime unit/SQL/HTTP/Vitest/browser/CI ve DB apply **NOT_RUN**. Accounting tüketici/köprüsü ayrı
+  owner'dadır; optional alan aynı gerçek typed sözleşmeyle paylaşıldı. Merkezi Program/shell/pin değişmedi.

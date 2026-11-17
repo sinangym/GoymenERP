@@ -41,6 +41,7 @@ public sealed class CashExchangeBookValueProofTests
         var row = Proposal();
         var pending = CashExchangeBookValueServiceV1.View(row, null);
         Assert.Equal(("3500.00", "1", CashExchangeBookValueStatusV1.Pending), (pending.SourceBookValueTl, pending.Version, pending.Status));
+        Assert.Equal("3300.00", pending.TargetFunctionalValueTl);
         var decision = Decision(row);
         var approved = CashExchangeBookValueServiceV1.View(row, decision);
         Assert.Equal((pending.SourceBookValueTl, pending.Evidence, "2", CashExchangeBookValueStatusV1.Approved),
@@ -64,8 +65,56 @@ public sealed class CashExchangeBookValueProofTests
         var payload = JsonSerializer.Deserialize<FinanceCashExchangeBookValueApprovedV1>(row.PayloadJson, Json)!;
         Assert.Equal((value.Id, 2L, value.DecidedAtUtc), (row.AggregateId, row.AggregateVersion, (DateTimeOffset?)row.OccurredAtUtc));
         Assert.Equal("3500.00", payload.BookValue.SourceBookValueTl);
+        Assert.Equal("3300.00", payload.BookValue.TargetFunctionalValueTl);
         Assert.Equal("3400", payload.Source.Exchange!.SourceReferenceTl!.Amount);
         Assert.Empty(db.CashTransfers.Local); Assert.Empty(db.OutgoingMoneyEvents.Local);
+    }
+
+    [Fact]
+    public void Two_foreign_legs_preserve_the_documented_target_TL_value_independently_of_TCMB()
+    {
+        using var db = Database();
+        var proposal = Proposal(foreignTarget: true);
+        var value = CashExchangeBookValueServiceV1.View(proposal, Decision(proposal));
+        Assert.Equal("3600.00", value.TargetFunctionalValueTl);
+        var source = Source(foreignTarget: true);
+        Assert.Equal("3240", source.Exchange!.TargetReferenceTl!.Amount);
+        FinanceFinancialMovementOutboxV1.ExchangeBookValue(db, new(Company, value.DecidedBy!, "SENTETIK-two-FX", null), source, value);
+        var payload = JsonSerializer.Deserialize<FinanceCashExchangeBookValueApprovedV1>(Assert.Single(db.OutboxMessages.Local).PayloadJson, Json)!;
+        Assert.Equal(("3500.00", "3600.00", "3240"), (payload.BookValue.SourceBookValueTl, payload.BookValue.TargetFunctionalValueTl, payload.Source.Exchange!.TargetReferenceTl!.Amount));
+        Assert.Empty(db.CashTransfers.Local); Assert.Empty(db.OutgoingMoneyEvents.Local);
+    }
+
+    [Theory]
+    [InlineData("3300", true)]
+    [InlineData("3300.00", true)]
+    [InlineData("3300.0000000000000000000000000001", false)]
+    [InlineData("3400", false)]
+    [InlineData("0", false)]
+    [InlineData("-3300", false)]
+    [InlineData("3.3e3", false)]
+    public void Target_TRY_admission_uses_exact_numeric_identity_and_never_the_benchmark(string target, bool matches)
+        => Assert.Equal(matches, CashExchangeBookValueServiceV1.TargetMatchesSource(Source(), target));
+
+    [Fact]
+    public void Legacy_null_target_roundtrips_without_changing_hash_but_cannot_publish_a_new_two_value_approval()
+    {
+        using var db = Database();
+        var row = Proposal(legacy: true);
+        var oldJson = row.PreparationJson;
+        Assert.DoesNotContain("targetFunctionalValueTl", oldJson);
+        var request = JsonSerializer.Deserialize<ProposeCashExchangeBookValueV1>(oldJson, Json)!;
+        Assert.True(CashExchangeBookValueServiceV1.Valid(request));
+        Assert.False(CashExchangeBookValueServiceV1.ValidNew(request));
+        Assert.Equal(oldJson, JsonSerializer.Serialize(request, Json));
+        Assert.Equal(CashExchangeBookValueServiceV1.Hash(oldJson), CashExchangeBookValueServiceV1.Hash(JsonSerializer.Serialize(request, Json)));
+        var pending = CashExchangeBookValueServiceV1.View(row, null);
+        var approved = CashExchangeBookValueServiceV1.View(row, Decision(row));
+        Assert.Null(pending.TargetFunctionalValueTl); Assert.Null(approved.TargetFunctionalValueTl);
+        Assert.DoesNotContain("targetFunctionalValueTl", JsonSerializer.Serialize(approved, Json));
+        Assert.Throws<InvalidOperationException>(() => FinanceFinancialMovementOutboxV1.ExchangeBookValue(db,
+            new(Company, approved.DecidedBy!, "SENTETIK-legacy", null), Source(), approved));
+        Assert.Empty(db.OutboxMessages.Local);
     }
 
     [Fact]
@@ -106,23 +155,27 @@ public sealed class CashExchangeBookValueProofTests
         Assert.Equal(3, migration.DownOperations.OfType<DropTableOperation>().Count());
     }
 
-    internal static CashTransferView Source()
+    internal static CashTransferView Source(bool foreignTarget = false)
     {
         var source = new MoneyText("100", SettingsCurrencyIdentitiesV1.UnitedStatesDollar);
-        var target = new MoneyText("3300", SettingsCurrencyIdentitiesV1.TurkishLira);
+        var target = new MoneyText(foreignTarget ? "90" : "3300", foreignTarget
+            ? Guid.Parse("f1400000-0000-4000-8000-000000000009") : SettingsCurrencyIdentitiesV1.TurkishLira);
         var profile = new ProfileReference("f1400000-0000-4000-8000-000000000002", "1");
         var comparison = new CashTransferComparisonSourceV1(source.CurrencyId, "34", new(2026, 11, 18), "Tcmb", Guid.Parse("f1400000-0000-4000-8000-000000000004"), "1", new(2026, 11, 18), "SENTETIK-source");
-        var functional = new CashTransferComparisonSourceV1(target.CurrencyId, "1", new(2026, 11, 18), "FunctionalCurrency", null, null, null, null);
+        var functional = foreignTarget
+            ? new CashTransferComparisonSourceV1(target.CurrencyId, "36", new(2026, 11, 18), "Tcmb", Guid.Parse("f1400000-0000-4000-8000-000000000010"), "1", new(2026, 11, 18), "SENTETIK-target")
+            : new CashTransferComparisonSourceV1(target.CurrencyId, "1", new(2026, 11, 18), "FunctionalCurrency", null, null, null, null);
         var snapshot = CashTransferExchangeCalculatorV1.Calculate(Company, new(2026, 11, 18), source, target, profile, profile, comparison, functional);
         return new(Guid.Parse("f1400000-0000-4000-8000-000000000003"), Company,
             new(CashTransferKind.CurrencyExchange, CashTransferAccountKind.Bank, Guid.Parse("f1400000-0000-4000-8000-000000000005"), source, profile,
                 CashTransferAccountKind.Bank, Guid.Parse("f1400000-0000-4000-8000-000000000006"), target, profile, snapshot.TransactionRate, new(2026, 11, 18), null, null, null),
             "SENTETIK-treasurer", At, true, "1", snapshot);
     }
-    private static CashExchangeBookValueProposalRow Proposal()
+    private static CashExchangeBookValueProposalRow Proposal(bool legacy = false, bool foreignTarget = false)
     {
-        var source = Source(); var json = JsonSerializer.Serialize(source, Json);
-        var request = new ProposeCashExchangeBookValueV1(source.Id, "1", "3500.00", new(Guid.NewGuid(), 1, new string('b', 64)), "SENTETIK gerçek kayıt");
+        var source = Source(foreignTarget); var json = JsonSerializer.Serialize(source, Json);
+        var request = new ProposeCashExchangeBookValueV1(source.Id, "1", "3500.00", new(Guid.NewGuid(), 1, new string('b', 64)), "SENTETIK gerçek kayıt",
+            legacy ? null : foreignTarget ? "3600.00" : "3300.00");
         return new() { Id = Guid.NewGuid(), CompanyId = Company, TransferId = source.Id, TransferSourceJson = json,
             TransferSourceHash = CashExchangeBookValueServiceV1.Hash(json), PreparationJson = JsonSerializer.Serialize(request, Json),
             PreparedBy = "SENTETIK-accountant-maker", PreparedAtUtc = At };
