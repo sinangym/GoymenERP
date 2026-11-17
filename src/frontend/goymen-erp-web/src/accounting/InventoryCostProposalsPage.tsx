@@ -68,6 +68,7 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
       {row !== undefined ? <>
         <h2>{row.officialInvoiceNumber ?? T.sourceNumberMissing} · {T.statuses[row.status]}</h2><p>{T.amount}: {row.exactTlAmount}</p>
         {row.unpostedTlAmountText !== undefined && <p>{T.unposted}: {row.unpostedTlAmountText}</p>}
+        {row.component.claimSuccession && <p>{T.succession}</p>}
         {row.component.recordedRounding ? <><p>{T.ownerRounded}</p><dl>
           <dt>{T.beforeRounding}</dt><dd>{row.component.recordedRounding.rounding.exactSignedAmountText}</dd>
           <dt>{T.roundingResidue}</dt><dd>{row.component.recordedRounding.rounding.exactSignedResidueText}</dd>

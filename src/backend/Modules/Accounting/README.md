@@ -658,3 +658,19 @@ Down first refuses retained preparation/approval/claim evidence with **51812**; 
 **51813/51814**. Fixed migration SQL guards await K3 review; no guard allowlist or database application occurred.
 The historical ordering where official cancellation precedes first cost-source acceptance remains a separate
 technical continuation; this checkpoint does not claim its completion or runtime acceptance.
+
+SAT-D96 / SAT-D228 reinvoicing now retains the original economic-claim anchor and appends a proven
+ownership generation. The old invoice must have an actual official-cancellation receipt and every actual posted
+share must have its approved component reversal; never-posted sources need no invented journal. The successor
+restores the exact known source plus the actual posted attributed shares through the existing normal COGS
+preparation/different-checker approval. Prior manufacturing/purchase aggregate journals remain untouched.
+Captured component fingerprints delimit generations, so subsequent real deltas and SAT-D422 corrections belong
+only to the current invoice. The original source proof, cancellation, approval and reversal evidence remain immutable.
+
+EF-generated `20261117232712_AddInvoiceCogsClaimSuccessions` adds only `InvoiceCogsEconomicClaimSuccessions`.
+Down **51840** refuses retained generations; update/delete guards **51842/51843** protect append-only history.
+The fixed migration SQL awaits K3 review. No bypass/SQL allowlist was extended and no database was applied.
+The strict UI decoder accepts the additive generation proof while legacy null-omitted payloads retain their shape.
+API, Accounting.UnitTests, IntegrationTests and TypeScript source builds exit0; SQL/unit/Vitest/browser/CI runtime
+acceptance remains NOT_RUN. Generation exclusivity is serialized in Accounting; the separate Sales owner reread
+is a freshness check, not a cross-module borrowed-transaction claim.

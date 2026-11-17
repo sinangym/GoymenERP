@@ -32,6 +32,7 @@ public sealed class AccountingPersistenceModelTests
         typeof(ManufacturingCostDifferenceRow), typeof(CreditMovementProposalRow),
         typeof(InvoiceLineCogsProposalRow), typeof(InvoiceLineCogsRevisionRow),
         typeof(ManufacturingCostAttributionRow), typeof(ManufacturingCostAttributionShareRow), typeof(InvoiceCogsEconomicClaimRow),
+        typeof(InvoiceCogsEconomicClaimSuccessionRow),
         typeof(PurchaseCostAttributionSourceRow), typeof(PurchaseCostAttributionCandidateRow), typeof(PurchaseCostAttributionApprovalRow),
     ];
 
@@ -200,9 +201,28 @@ public sealed class AccountingPersistenceModelTests
                 "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
                 "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding",
                 "20261117205436_AddPostedPurchaseCostAttribution", "20261117213704_AllowCashExchangeJournalSources",
-                "20261117223234_AddInventoryCostComponentCancellations"],
-            context.Database.GetMigrations().TakeLast(13));
+                "20261117223234_AddInventoryCostComponentCancellations", "20261117232712_AddInvoiceCogsClaimSuccessions"],
+            context.Database.GetMigrations().TakeLast(14));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Cost_claim_successions_keep_the_original_anchor_and_append_one_company_scoped_generation_with_forward_only_guards()
+    {
+        using var context = Context();
+        var row = context.Model.FindEntityType(typeof(InvoiceCogsEconomicClaimSuccessionRow))!;
+        Assert.Equal(["CompanyId", "MovementId", "MovementLineNumber", "Generation"], row.FindPrimaryKey()!.Properties.Select(x => x.Name));
+        Assert.Contains(row.GetIndexes(), x => x.IsUnique && x.Properties.Select(p => p.Name)
+            .SequenceEqual(["CompanyId", "SalesEventId", "MovementId", "MovementLineNumber"]));
+        Assert.All(row.GetForeignKeys(), x => Assert.Equal(DeleteBehavior.Restrict, x.DeleteBehavior));
+        Assert.Contains(row.GetForeignKeys(), x => x.PrincipalEntityType.ClrType == typeof(InvoiceCogsEconomicClaimRow));
+        Assert.False(row.FindProperty("SuccessionJson")!.IsNullable); Assert.False(row.FindProperty("PreviousClaimSha256")!.IsNullable);
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddInvoiceCogsClaimSuccessions();
+        Assert.Contains("THROW 51840", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        var guard = Assert.Single(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Contains("THROW 51842", guard.Sql); Assert.Contains("THROW 51843", guard.Sql);
+        Assert.Single(migration.UpOperations.OfType<CreateTableOperation>());
     }
 
     [Fact]

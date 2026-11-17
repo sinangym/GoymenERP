@@ -20,6 +20,23 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         Task Fence(CancellationToken _) { RequireCompany(source.CompanyId); return Task.CompletedTask; }
         IReadOnlyList<PostedManufacturingCostShareV1> manufacturing = [];
         IReadOnlyList<PostedPurchaseCostShareV1> purchase = [];
+        if (component.ClaimSuccession is { } succession)
+        {
+            if (claim.Origin != 1 || postedManufacturing is null || postedPurchasing is null)
+                throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            var deltas = await postedManufacturing.ReadPostedDeltasAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            RequireCompany(source.CompanyId);
+            var purchases = await postedPurchasing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            RequireCompany(source.CompanyId);
+            if (purchases.HasPendingCandidate) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            if (!source.CancellationRead) await RequireCompletedKnownSource(source, claim.SalesEventId, component, token);
+            // Prior aggregate postings were actually reversed for this invoice share. They remain immutable historical
+            // evidence, not another AlreadyAccounted amount. Only newly received actual cost components follow the current owner.
+            return (deltas?.Shares.Where(x => !succession.CapturedCostFingerprints.Contains(x.Fingerprint, StringComparer.Ordinal)).ToArray() ?? [],
+                purchases.Shares.Where(x => !succession.CapturedCostFingerprints.Contains(x.Fingerprint, StringComparer.Ordinal)).ToArray());
+        }
         if (claim.Origin == 1)
         {
             if (postedManufacturing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
@@ -61,8 +78,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     private async Task<IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>?> PurchaseAttributedEvidence(
         CogsEvidenceIdentityV1 source, CancellationToken token)
     {
-        var claims = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
-            && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion && x.Origin == 2).ToListAsync(token);
+        var claims = await InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0) return null;
         var revisions = await Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token);
@@ -82,7 +99,9 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 || recorded.InvoiceVersion != source.FinalizedVersion || recorded.EventId != claim.SalesEventId
                 || claim.AdmissionId != source.FinalizationAdmissionId || claim.ShipmentId != source.ShipmentId
                 || physical is null || physical.ProductId != source.ProductId || physical.ShipmentId != source.ShipmentId
-                || component?.HasPostedComponents != true) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+                || component is null || claim.Origin == 2 && !component.HasPostedComponents)
+                throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+            if (claim.Origin == 1 && component.ClaimSuccession is null) continue;
             var actual = await ReadAttributedPhysical(source, claim, component, physical, token);
             foreach (var share in actual.Purchase)
             {

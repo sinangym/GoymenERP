@@ -56,10 +56,22 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             var source = await sources.ReadAsync(envelope, cancellationToken);
             RequireCompany(captured);
             AccountingInventoryCostSourceValidationV1.Require(envelope, source, captured);
+            var observedSource = Encode(source);
             await RequireHistoricalCancellation(source, cancellationToken);
             if (await db.InventoryCostSources.AnyAsync(x => x.Kind == (int)source.Kind && x.InvoiceId == source.InvoiceId
                 && x.InvoiceVersion == source.InvoiceVersion, cancellationToken)) throw Refuse("inventory_cost_source_conflict");
             source = await RecordObsoleteComponents(source, cancellationToken);
+            source = await NormalizeSuccessions(source, cancellationToken);
+            if (source.Components.Any(x => x.ClaimSuccession is not null))
+            {
+                // Re-check the actual Sales/Inventory owner after the awaited release proof reads.
+                // Economic ownership itself is serialized by this Accounting transaction; this is a freshness fence,
+                // not a claim that the external owner's separate connection shares this transaction.
+                var fresh = await sources.ReadAsync(envelope, cancellationToken);
+                RequireCompany(captured);
+                AccountingInventoryCostSourceValidationV1.Require(envelope, fresh, captured);
+                if (Encode(fresh) != observedSource) throw Refuse("inventory_cost_source_changed");
+            }
             db.InventoryCostSources.Add(new() { CompanyId = captured, EventId = source.EventId, Kind = (int)source.Kind,
                 InvoiceId = source.InvoiceId, InvoiceVersion = source.InvoiceVersion, AdmissionId = source.AdmissionId,
                 SourceJson = Encode(source), PayloadHash = source.SourcePayloadSha256,

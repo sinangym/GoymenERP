@@ -18,11 +18,31 @@ public sealed class AccountingInventoryCostProposalContractTests
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("recordedRounding", out _));
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("alreadyPostedPurchaseComponents", out _));
         Assert.False(document.RootElement.GetProperty("component").TryGetProperty("hasPostedComponents", out _));
+        Assert.False(document.RootElement.GetProperty("component").TryGetProperty("claimSuccession", out _));
         Assert.Equal("100.01", document.RootElement.GetProperty("exactTlAmount").GetString());
         var restored = Assert.IsType<AccountingInventoryCostProposalV1>(JsonSerializer.Deserialize<AccountingInventoryCostProposalV1>(encoded, Json));
         Assert.Null(restored.CurrentPostedJournalId);
         Assert.Equal(proposal.ProposalId, restored.ProposalId);
         Assert.Equal(proposal.Component, restored.Component);
+    }
+
+    [Fact]
+    public void Claim_succession_preserves_exact_source_and_release_proof_without_rewriting_the_prior_identity()
+    {
+        var proposal = Source(); var physical = new AccountingSalesPhysicalCostClaimV1(Guid.NewGuid(), Guid.NewGuid(), 1, proposal.Component.ProductId, 1m);
+        var proof = new InventoryCostClaimSuccessionV1(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 3,
+            Guid.NewGuid(), 1, new string('c', 64), Guid.NewGuid(), 0,
+            [new(physical, 2, new string('d', 64))], [], [], new("1", "3"), new("1", "3"), new("1", "3"));
+        var source = proposal with { Component = proposal.Component with { SignedTlAmount = new("1", "3"),
+            SalesPhysicalClaims = [physical], ClaimSuccession = proof } };
+        var json = JsonSerializer.Serialize(source, Json);
+        var restored = Assert.IsType<AccountingInventoryCostProposalV1>(JsonSerializer.Deserialize<AccountingInventoryCostProposalV1>(json, Json));
+        Assert.Equal(source.InvoiceId, restored.InvoiceId);
+        Assert.Equal(proof.PreviousInvoiceId, restored.Component.ClaimSuccession!.PreviousInvoiceId);
+        Assert.NotEqual(restored.InvoiceId, restored.Component.ClaimSuccession.PreviousInvoiceId);
+        Assert.Equal(proof.RestoredAmount, restored.Component.SignedTlAmount);
+        Assert.Equal(2, Assert.Single(restored.Component.ClaimSuccession.Claims).PreviousGeneration);
+        Assert.Equal(json, JsonSerializer.Serialize(restored, Json));
     }
 
     [Fact]

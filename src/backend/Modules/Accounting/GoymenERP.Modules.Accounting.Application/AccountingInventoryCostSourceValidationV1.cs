@@ -101,7 +101,7 @@ public static partial class AccountingInventoryCostSourceValidationV1
         var firstLegacyLines = new HashSet<Guid>();
         foreach (var component in source.Components)
         {
-            if (component is null || component.ProductId == Guid.Empty || !identities.Add(component.ComponentKey)
+            if (component is null || component.ClaimSuccession is not null || component.ProductId == Guid.Empty || !identities.Add(component.ComponentKey)
                 || !AccountingInventoryCostAmountsV1.TryRead(component.SignedTlAmount, out var amount, out _)
                 || !Text(component.SourceProofJson, 1_048_576)
                 || component.SourceProofSha256 != Sha256(component.SourceProofJson)) throw Invalid("inventory_cost_component_invalid");

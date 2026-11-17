@@ -5,6 +5,7 @@ import { decodeJournalReversalProposal, type JournalReversalProposal } from './j
 import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
 import { postedPurchaseCostShare, type PostedPurchaseCostShare } from './postedPurchaseCostProof'
 import { decodeInventoryCostCancellation, type InventoryCostCancellation } from './inventoryCostCancellation'
+import { decodeInventoryCostSuccession, type InventoryCostClaimSuccession } from './inventoryCostSuccession'
 
 export type InventoryCostKind = 1 | 2
 export interface InventoryCostAccount { readonly accountId: string; readonly code: string; readonly name: string }
@@ -28,6 +29,7 @@ export interface InventoryCostProposal {
     readonly alreadyPostedComponents?: readonly PostedManufacturingCostShare[]
     readonly alreadyPostedPurchaseComponents?: readonly PostedPurchaseCostShare[]
     readonly unpostedTlAmount?: { readonly numerator: string; readonly denominator: string }
+    readonly claimSuccession?: InventoryCostClaimSuccession
     readonly recordedRounding?: { readonly currencyId: string; readonly moneyProfileId: string; readonly moneyProfileVersion: number
       readonly moneyScale: number; readonly rounding: InventoryCostRounding } }
   readonly preparation: { readonly periodId: string; readonly accountingDate: string; readonly transactionDate: string
@@ -105,6 +107,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (!rec(c) || !text(c.componentKey) || !guid(c.productId) || !hash(c.sourceProofSha256) || !rec(c.signedTlAmount)
     || typeof c.signedTlAmount.numerator !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(c.signedTlAmount.numerator)
     || typeof c.signedTlAmount.denominator !== 'string' || !/^[1-9][0-9]*$/.test(c.signedTlAmount.denominator)) return null
+  if (c.claimSuccession != null && (kind !== 1 || decodeInventoryCostSuccession(c.claimSuccession, body, c) === null)) return null
   const firstParts = c.componentKey.split('/')
   const firstLine = firstParts.length === 2 && firstParts[0] === 'purchase-first-line' && guid(firstParts[1])
     && c.componentKey === `purchase-first-line/${firstParts[1].toLowerCase()}`

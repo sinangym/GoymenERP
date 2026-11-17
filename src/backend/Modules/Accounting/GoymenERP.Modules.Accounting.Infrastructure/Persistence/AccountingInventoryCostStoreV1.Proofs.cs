@@ -40,6 +40,19 @@ public sealed partial class AccountingInventoryCostStoreV1
             || component.UnpostedTlAmount is not null && view.Preparation is { Rounding: null }
             || status == "RoundedNoCost" && view.Preparation is not { Rounding: not null, SignedAmount: "0" })
             throw Refuse("inventory_cost_source_unavailable");
+        if (component.ClaimSuccession is { } succession)
+        {
+            if (view.Kind != AccountingInventoryCostKindV1.SalesInvoicedShipment || component.SalesPhysicalClaims is not { Count: > 0 } claims
+                || component.HasPostedComponents || component.UnpostedTlAmount is not null || component.SignedTlAmount != succession.RestoredAmount)
+                throw Refuse("inventory_cost_source_unavailable");
+            foreach (var physical in claims)
+            {
+                var history = await InvoiceCogsClaimHistoryV1.ReadAsync(db, view.CompanyId, physical.MovementId, physical.MovementLineNumber,
+                    () => RequireCompany(view.CompanyId), token);
+                var own = history.SingleOrDefault(x => x.Claim.SalesEventId == view.EventId && x.Claim.InvoiceLineId == component.InvoiceLineId);
+                if (own?.Succession is null || Encode(own.Succession) != Encode(succession)) throw Refuse("inventory_cost_source_unavailable");
+            }
+        }
         return view;
     }
 
