@@ -246,3 +246,30 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - SAT-S9 dar takip: sipariş sürümü de satır görüntüsünün query/mount anahtarına girdi.
   Aynı siparişte kaydedilen revizyon eski ayırma görünümünü yeni sürüme taşımaz.
   Bu salt istemci bağlam çiti sonrası TypeScript kaynak derlemesi exit 0; runtime NOT_RUN.
+
+### SAT-S13 / STK-SC36 — kesinleşen faturanın değişmez sevk kaynağı
+
+- Dar Satış üretici bağı **SOURCE_COMPLETE**; kaynak commit'i
+  `fdc417b38620920439cbbc08b689008709e6e084`. SAT-D94 / AT-055 ve SAT-D424 / SAT-D425
+  dayanağıyla normal `sales.invoice.finalized.v1` olayının her satırına additive
+  `ShipmentSource` eklendi. Gerçek saklı paydan sevk, irsaliye ve satır numarası,
+  satış siparişi/satırı, fiyat tabanı revizyonu, ürün, birim ve fatura miktar metni taşınır.
+- `SalesInvoiceShipmentSourceV1.InvoicedQuantity` saklı `QuantityText` değeridir.
+  Fiziksel Inventory Issue kg'sı veya maliyet tutarı olarak kullanılmaz. Mevcut API
+  yalnız bütün `ShipmentId` payını ister; miktar/parça alanı kabul etmez. Gerçek SQL
+  kaynağında aktif sevk unique index'i ve yükleme sonrası değişmez pay eşitliği korunur.
+- Yeni olay yalnız kesinleştirmenin mevcut tek kayıt işlemiyle üretilir. Eski outbox
+  kayıtları zenginleştirilmez; mevcut tutar/vergi alanları değişmez. Tekrar komutunun
+  ikinci kaynak olayı üretmemesi, Finans cevabından sonra JSON'ın aynen kalması ve
+  eski Muhasebe okuyucusunun additive alanla uyumu test kaynaklarına bağlandı.
+- Bir yeni ASCII unit fact eklendi: `SalesInvoiceShipmentSourceContractTests.`
+  `An_invoice_create_claims_whole_shipments_and_refuses_client_quantity_overrides`.
+  İki mevcut SQL fact genişletildi; yeni ilişkisel fact kimliği eklenmedi. Mevcut
+  header sözleşme beklentisindeki `officialInvoiceNo` eksikliği gerçek üreticiyle hizalandı.
+- API, Sales.UnitTests ve Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0.
+  OpenAPI build üretimi kapalıydı; OpenAPI kabulü olarak sayılmaz. `git diff --check`
+  exit 0. Unit/SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**.
+- Bu dar üretici bağı, ilk SMM'nin bütün akışını tamamlamaz. Gerçek stok hareketi ve
+  kayıtlı TL maliyeti Inventory sahibinden doğrulanmalı, fiş önerisi Accounting sahibi
+  üzerinden yürümelidir. Birleşik owner kabulü ve merkezi entegrasyon beklenir;
+  STK-SC36'nın tamamına DONE verilmez. Yeni DB/EF veya yetki/grant değişikliği yoktur.
