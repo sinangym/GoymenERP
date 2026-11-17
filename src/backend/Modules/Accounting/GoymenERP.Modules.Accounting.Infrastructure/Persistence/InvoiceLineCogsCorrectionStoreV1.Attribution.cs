@@ -15,8 +15,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion).ToListAsync(token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0 || claims.All(x => x.Origin == 1)) return null;
-        if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId)
-            || postedManufacturing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
+        if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId))
+            throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         var revisions = await Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token);
         RequireCompany(source.CompanyId);
         var prior = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).ToArray();
@@ -33,15 +33,11 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             if (recorded.CompanyId != source.CompanyId || recorded.InvoiceId != source.InvoiceId || recorded.AdmissionId != source.FinalizationAdmissionId
                 || recorded.InvoiceVersion != source.FinalizedVersion || recorded.EventId != claim.SalesEventId
                 || physical is null || physical.ProductId != source.ProductId || physical.ShipmentId != source.ShipmentId
-                || component?.AlreadyPostedComponents is not { Count: > 0 }
+                || component?.HasPostedComponents != true
                 || claim.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(claim.ViewJson))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var actual = await postedManufacturing.ReadAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg,
-                _ => { RequireCompany(source.CompanyId); return Task.CompletedTask; }, token);
-            RequireCompany(source.CompanyId);
-            if (actual is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            foreach (var share in actual.Shares)
+            var actual = await ReadAttributedPhysical(source, claim, component, physical, token);
+            foreach (var share in actual.Manufacturing)
             {
                 var signed = decimal.Parse(share.SignedAmount, CultureInfo.InvariantCulture);
                 var corrected = prior.SelectMany(x => x.AttributedCorrections ?? []).LastOrDefault(x => x.AttributionFingerprint == share.Fingerprint);
@@ -73,7 +69,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         }
         if (result.Select(x => x.Source.Fingerprint).Distinct().Count() != result.Count)
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-        return result.OrderBy(x => x.Source.SourceEventId).ThenBy(x => x.Source.OutputId)
+        return result.Count == 0 ? null : result.OrderBy(x => x.Source.SourceEventId).ThenBy(x => x.Source.OutputId)
             .ThenBy(x => x.Source.Shipment.MovementId).ThenBy(x => x.Source.Shipment.MovementLineNumber).ToArray();
     }
 
@@ -100,11 +96,12 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         var component = owner.Components.SingleOrDefault(x => x.InvoiceLineId == source.InvoiceLineId);
         if (owner.CompanyId != source.CompanyId || owner.InvoiceId != source.InvoiceId || owner.EventId != eventId
             || owner.AdmissionId != source.FinalizationAdmissionId || owner.InvoiceVersion != source.FinalizedVersion
-            || component is not { UnpostedTlAmount: { } unposted, AlreadyPostedComponents: { Count: > 0 } posted,
+            || component is not { UnpostedTlAmount: { } unposted, HasPostedComponents: true,
                 SalesPhysicalClaims: { } physical } || component.ProductId != source.ProductId || physical.Count != claims.Count
             || claims.Any(c => !physical.Any(p => p.MovementId == c.MovementId && p.MovementLineNumber == c.MovementLineNumber
                 && p.ShipmentId == c.ShipmentId && p.ProductId == source.ProductId)
-                || (c.Origin == 2) != posted.Any(p => p.Shipment.MovementId == c.MovementId && p.Shipment.MovementLineNumber == c.MovementLineNumber)))
+                || (c.Origin == 2) != ((component.AlreadyPostedComponents ?? []).Any(p => p.Shipment.MovementId == c.MovementId && p.Shipment.MovementLineNumber == c.MovementLineNumber)
+                    || (component.AlreadyPostedPurchaseComponents ?? []).Any(p => p.MovementId == c.MovementId && p.MovementLineNumber == c.MovementLineNumber))))
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         foreach (var claim in claims)
         {

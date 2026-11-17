@@ -2,8 +2,11 @@ import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
 import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
+import { postedPurchaseCostShare, type PostedPurchaseCostShare } from './postedPurchaseCostProof'
 
 export interface CogsAttributedEvidence { readonly source: PostedManufacturingCostShare; readonly currentJournalId: string
+  readonly currentCogsAccountId: string; readonly counterAccountId: string; readonly currentJournalTotal: string }
+export interface CogsPurchaseAttributedEvidence { readonly source: PostedPurchaseCostShare; readonly currentJournalId: string | null
   readonly currentCogsAccountId: string; readonly counterAccountId: string; readonly currentJournalTotal: string }
 export interface CogsAttributedCorrection { readonly attributionFingerprint: string; readonly sourceJournalId: string
   readonly reversingCorrectionJournalId: string; readonly replacementCorrectionJournalId: string }
@@ -20,7 +23,8 @@ export interface CogsProposal { readonly proposalId: string; readonly companyId:
   readonly accountingDate: string; readonly valueDate: string | null; readonly preparedBy: string; readonly preparedAtUtc: string
   readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly reason: string; readonly postedEvidence: CogsEvidence | null
   readonly reversingCorrectionJournalId: string | null; readonly replacementCorrectionJournalId: string | null
-  readonly attributedEvidence?: readonly CogsAttributedEvidence[]; readonly attributedCorrections?: readonly CogsAttributedCorrection[] }
+  readonly attributedEvidence?: readonly CogsAttributedEvidence[]; readonly attributedCorrections?: readonly CogsAttributedCorrection[]
+  readonly purchaseAttributedEvidence?: readonly CogsPurchaseAttributedEvidence[] }
 export interface CogsRevision { readonly version: number; readonly proposalId: string; readonly classification: 1 | 2
   readonly accountPlan: CogsAccountPlan; readonly preparedBy: string; readonly approvedBy: string; readonly approvedAtUtc: string
   readonly periodId: string; readonly transactionDate: string; readonly accountingDate: string; readonly reason: string
@@ -34,6 +38,7 @@ export interface CogsHistory { readonly companyId: string; readonly invoiceId: s
   readonly lineVersion: number; readonly current: CogsRevision | null; readonly revisions: readonly CogsRevision[]
   readonly proposals: readonly CogsProposal[]; readonly postingEvidenceState: 'NoPostedCogs' | 'PostedCogs' | 'Unreadable' | 'AttributedPostedCogs' | 'MixedPostedCogs'
   readonly attributedEvidence?: readonly CogsAttributedEvidence[]
+  readonly purchaseAttributedEvidence?: readonly CogsPurchaseAttributedEvidence[]
   readonly postedEvidence: CogsEvidence | null; readonly productReference: { readonly companyId: string; readonly productId: string
     readonly outcome: 'Available' | 'NotSet' | 'NotFound' | 'Unavailable'; readonly classification: 1 | 2 | null
     readonly productVersion: string | null; readonly classificationVersion: string | null } }
@@ -80,6 +85,18 @@ function attributedCorrections(v: unknown): boolean {
     && !same(item.sourceJournalId, item.reversingCorrectionJournalId) && !same(item.sourceJournalId, item.replacementCorrectionJournalId))
     && new Set(v.map(item => (item as CogsAttributedCorrection).attributionFingerprint)).size === v.length
 }
+function purchaseAttributedEvidence(v: unknown, company: string): boolean {
+  return v === undefined || Array.isArray(v) && v.length > 0 && v.every(item => record(item)
+    && record(item.source) && guid(item.source.productId) && postedPurchaseCostShare(item.source, company, item.source.productId)
+    && nullableGuid(item.currentJournalId) && guid(item.currentCogsAccountId)
+    && guid(item.counterAccountId) && !same(item.currentCogsAccountId, item.counterAccountId)
+    && same(item.counterAccountId, item.source.approval.counterAccountId) && typeof item.currentJournalTotal === 'string'
+    && /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(item.currentJournalTotal)
+    && (item.source.approval.status === 'RoundedNoCost'
+      ? item.currentJournalId === null && item.currentJournalTotal === '0' && item.source.signedAmount === '0'
+      : guid(item.currentJournalId) && /[1-9]/.test(item.currentJournalTotal)))
+    && new Set(v.map(item => (item as CogsPurchaseAttributedEvidence).source.fingerprint)).size === v.length
+}
 function evidence(v: unknown, company: string, invoice: string, line: string): boolean {
   return v === null || record(v) && same(v.companyId, company) && same(v.invoiceId, invoice) && same(v.invoiceLineId, line)
     && integer(v.finalizedVersion) && guid(v.journalId) && v.cogsJournalLineNumber === 1 && v.counterJournalLineNumber === 2
@@ -91,14 +108,16 @@ export function decodeCogsProposal(v: unknown, company: string, invoice: string,
     || !integer(v.finalizedVersion) || !integer(v.expectedLineVersion, 0) || !classification(v.classification) || !plan(v.accountPlan)
     || !guid(v.periodId) || !date(v.transactionDate) || !date(v.accountingDate) || v.valueDate !== null && !date(v.valueDate)
     || !guid(v.preparedBy) || !instant(v.preparedAtUtc) || !text(v.reason) || !pair(v) || !evidence(v.postedEvidence, company, invoice, line)
-    || !attributedEvidence(v.attributedEvidence, company) || !attributedCorrections(v.attributedCorrections)
+    || !attributedEvidence(v.attributedEvidence, company) || !purchaseAttributedEvidence(v.purchaseAttributedEvidence, company)
+    || !attributedCorrections(v.attributedCorrections)
     || v.postedEvidence === null && v.reversingCorrectionJournalId !== null) return null
   if (v.status === 'Prepared' ? v.version !== 1 || v.approvedBy !== null || v.approvedAtUtc !== null || v.reversingCorrectionJournalId !== null
     : v.status !== 'Approved' || v.version !== 2 || !guid(v.approvedBy) || !instant(v.approvedAtUtc)
       || v.preparedBy.toLowerCase() === v.approvedBy.toLowerCase()) return null
   if (v.status === 'Prepared' && v.attributedCorrections !== undefined || Array.isArray(v.attributedCorrections)
-    && (v.attributedEvidence === undefined || v.attributedCorrections.some(c => !(v.attributedEvidence as CogsAttributedEvidence[])
-      .some(e => e.source.fingerprint === c.attributionFingerprint && same(c.sourceJournalId, e.currentJournalId))))) return null
+    && v.attributedCorrections.some(c => ![...((v.attributedEvidence as CogsAttributedEvidence[] | undefined) ?? []),
+      ...((v.purchaseAttributedEvidence as CogsPurchaseAttributedEvidence[] | undefined) ?? [])]
+      .some(e => e.source.fingerprint === c.attributionFingerprint && e.currentJournalId !== null && same(c.sourceJournalId, e.currentJournalId)))) return null
   return v as unknown as CogsProposal
 }
 function revision(v: unknown): v is CogsRevision {
@@ -127,6 +146,12 @@ function attributedSourceMatches(value: unknown, source: unknown): boolean {
   const product = source.productId; const shipment = source.shipmentId
   return value.every((entry: CogsAttributedEvidence) => same(entry.source.shipment.productId, product) && same(entry.source.shipment.shipmentId, shipment))
 }
+function purchaseAttributedSourceMatches(value: unknown, source: unknown): boolean {
+  if (value === undefined) return true
+  if (!Array.isArray(value) || !record(source) || !guid(source.productId) || !guid(source.shipmentId)) return false
+  const product = source.productId; const shipment = source.shipmentId
+  return value.every((entry: CogsPurchaseAttributedEvidence) => same(entry.source.productId, product) && same(entry.source.shipmentId, shipment))
+}
 export function decodeCogsHistory(v: unknown, company: string, invoice: string, line: string): CogsHistory | null {
   if (!record(v) || !same(v.companyId, company) || !same(v.invoiceId, invoice) || !same(v.invoiceLineId, line) || !integer(v.lineVersion, 0)
     || !record(v.source) || !sourceReference(v.source, company, invoice, line) || !Array.isArray(v.proposals) || !Array.isArray(v.revisions)
@@ -136,8 +161,10 @@ export function decodeCogsHistory(v: unknown, company: string, invoice: string, 
     || (v.lineVersion === 0 ? v.current !== null : !revision(v.current) || JSON.stringify(v.current) !== JSON.stringify(v.revisions.at(-1)))
     || !['NoPostedCogs', 'PostedCogs', 'Unreadable', 'AttributedPostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string)
     || !evidence(v.postedEvidence, company, invoice, line) || ['PostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string) !== (v.postedEvidence !== null)
-    || !attributedEvidence(v.attributedEvidence, company) || ['AttributedPostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string) !== (v.attributedEvidence !== undefined)
+    || !attributedEvidence(v.attributedEvidence, company) || !purchaseAttributedEvidence(v.purchaseAttributedEvidence, company)
+    || ['AttributedPostedCogs', 'MixedPostedCogs'].includes(v.postingEvidenceState as string) !== (v.attributedEvidence !== undefined || v.purchaseAttributedEvidence !== undefined)
     || !attributedSourceMatches(v.attributedEvidence, v.source)
+    || !purchaseAttributedSourceMatches(v.purchaseAttributedEvidence, v.source)
     || !record(v.productReference) || !same(v.productReference.companyId, company) || !same(v.productReference.productId, v.source.productId as string)
     || !['Available', 'NotSet', 'NotFound', 'Unavailable'].includes(v.productReference.outcome as string)
     || (v.productReference.outcome === 'Available' ? !classification(v.productReference.classification) || !text(v.productReference.productVersion)

@@ -617,5 +617,11 @@ become a zero cost, and no second SMM journal or physical movement is produced.
 EF-generated `20261117205436_AddPostedPurchaseCostAttribution` adds three company-scoped append-only tables.
 Down refuses any retained candidate/source/approval evidence with **51804**; update/delete triggers use
 **51805/51806**. These fixed migration SQL guards await K3 review and were not allowlisted. No database application
-or historical backfill occurred. The purchase-specific SAT-D422 correction binding remains a separate technical
-follow-up within the same slice; source build and test sources do not constitute runtime acceptance.
+or historical backfill occurred. Purchase-specific SAT-D422 correction now reads the actual approved purchase
+share, proposal, physical claim and current journal accounts. It corrects only that share in one transaction,
+leaving the original aggregate unchanged. Repeated corrections follow the share's actual latest replacement;
+approved rounded-zero shares can change classification without a fabricated journal. The existing two-line
+journal guard and different-approver rule are preserved. This binding needs the actual
+`IPostedPurchaseShipmentCostReaderV1` in the correction store composition. Source build and test sources do not
+constitute runtime acceptance; attributed cancellation and later manufacturing-delta composition remain separate
+technical follow-ups in the existing slice.

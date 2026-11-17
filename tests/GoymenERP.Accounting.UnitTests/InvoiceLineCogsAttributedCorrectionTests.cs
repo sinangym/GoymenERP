@@ -6,6 +6,32 @@ namespace GoymenERP.Accounting.UnitTests;
 
 public sealed class InvoiceLineCogsAttributedCorrectionTests
 {
+    [Fact]
+    public void A_purchase_share_uses_its_real_proposal_and_invoice_line_without_a_manufacturing_output_identity()
+    {
+        var world = new AccountingWorld();
+        var original = world.Ledger.Receive(world.Request("purchase", 100m, purpose: "purchase-invoice-cost-difference"), world.OpenPeriod).Journal!;
+        var proof = new PurchaseAttributedPostedJournalComponent(world.Company, Guid.NewGuid(), Guid.NewGuid(), world.SourceId,
+            Guid.NewGuid(), 1, original.Id, original.Source.PostingPurpose, world.Currency, 100m, 33.34m,
+            world.DebitAccount.AccountId, world.CreditAccount.AccountId, new('a', 64));
+        var next = Guid.NewGuid();
+        var pair = InvoiceLineCogsCorrection.CreatePurchaseAttributed(original, proof, next, world.OpenPeriod, world.InPeriod,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        Assert.Equal(100m, original.Lines[0].Debit);
+        Assert.Equal(33.34m, pair.Replacement.Lines[0].Debit);
+        Assert.Equal(next, pair.Replacement.Lines[0].Account.AccountId);
+        Assert.Equal(original.Source, pair.Replacement.Source);
+        Assert.Throws<AccountingDomainException>(() => InvoiceLineCogsCorrection.CreatePurchaseAttributed(original,
+            proof with { ProposalId = Guid.NewGuid() }, next, world.OpenPeriod, world.InPeriod,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Throws<AccountingDomainException>(() => InvoiceLineCogsCorrection.CreatePurchaseAttributed(original,
+            proof with { InvoiceLineId = Guid.Empty }, next, world.OpenPeriod, world.InPeriod,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Throws<AccountingDomainException>(() => InvoiceLineCogsCorrection.CreatePurchaseAttributed(original,
+            proof with { Amount = 0 }, next, world.OpenPeriod, world.InPeriod,
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(-1)]
