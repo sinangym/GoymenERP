@@ -750,14 +750,20 @@ Settings opening period adapter is KIM-S19.
 | Part | What |
 |---|---|
 | HTTP | `GET /api/v1/finance/credit-accounts` (list), `GET …/credit-accounts/currency-candidates`, `GET …/credit-accounts/{creditAccountId}`, `POST …/credit-accounts/plan-validation` (side-effect free), `POST …/credit-accounts` (propose), `POST …/credit-accounts/{creditAccountId}/approve`, `POST …/credit-accounts/{creditAccountId}/reject` (written reason) |
-| Permissions | `finance.credits.read`, `finance.credits.propose`, `finance.credits.approve`: registered, company-wide, **not Critical, not granted** (FNS-D88). Approve does not imply propose. Granting them to a role or persona stays a human step |
-| Groups (FNS-D87) | One type field on the account: Cash (nakdi), NonCash (gayrinakdi), InstrumentAndFactoring (çek/senet + faktoring), Leasing; `CK_CreditAccounts_Group` holds the four. Group-specific fields are not built |
-| Plan (FNS-D93, FNS-D94) | The bank's installment, principal, interest, BSMV and KKDF are stored AS GIVEN (exact decimal text). `FinanceCreditPlanCalculator` checks each line (installment = principal + interest + BSMV + KKDF) and the plan (sum of principals = credit amount), exactly; interest is never calculated. A failing plan cannot be proposed, and the approval re-checks the stored plan |
+| Permissions | `finance.credits.read`, `finance.credits.propose`, `finance.credits.approve`: registered, company-wide, not granted. FNS-D109 makes approve Critical; propose is not Critical. Approve does not imply propose. Granting them to a role or persona stays a human step |
+| Groups (FNS-D87) | Cash, NonCash, InstrumentAndFactoring and Leasing carry mutually exclusive, source-backed typed profiles. Noncash retains its beneficiary/indefinite-or-expiry data without fictional installments; factoring carries explicit recourse and receivable references. No profile writes a cash movement, removes instrument risk or measures a TFRS 16 asset |
+| Plan (FNS-D93, FNS-D94, FNS-D99 and subsequent user replies) | Original decimal texts remain unchanged. The installment sum includes only source-declared included charges; separate collections stay separate. Each line uses one smallest unit from its actual Settings money profile; principal total remains exact. No currency conversion, source rounding, interest or tax calculation. Missing profile refuses; approval re-checks the frozen profile version |
 | Two people (FNS-D88) | The holder of `propose` proposes, a different holder of `approve` approves or rejects; never the proposer (`finance_approver_is_proposer`), checked in the service, the save guard and `CK_CreditAccounts_Decision` (BIN2 collation). One live (proposed or approved) account per lender and contract reference (`UX_CreditAccounts_Live`) |
 | Idempotency / audit | `finance.CreditAccountCommands` holds key hash, payload hash, actor and answer in the same save as the record and the audit event (`finance.credit-account.proposed.v1` / `approved.v1` / `rejected.v1`). An approval moves no money and writes no voucher |
 | Migration `20261116111738_AddCreditAccounts` | Pure DDL up (accounts, installments, commands). `Down` refuses with `THROW 51861` while any credit account or recorded attempt exists (forward fix); an empty store rolls back |
+| Migration `20261116233417_AddCreditSourceProfiles` | EF-generated nullable source/lender/profile columns, source-charge JSON, identity index and completeness checks. First Down operation refuses with `THROW 51961` while any source proof or source charge exists; historical rows without these fields can roll back. No data backfill or guessed identity |
 
-Not in this slice (W6): the screen and shell capability; the per bank + type limit warning (FNS-D95: a warning only,
-never a block; the limit's owner and form are NEEDS-SINAN); the voucher proposal (FNS-D97: Settings mapping, "eşleme
-eksik" when missing, idempotent, never final; the mapping keys are NEEDS-SINAN). The lender is free text until a bank
-master is decided.
+New proposals select actual Counterparty `PartyId` + `CompanyPartyAccountId`; its authorized owner read checks
+company, activity and versions. The host registers `AddFinanceCreditLenderOwnerRead`. Display name never supplies
+identity. The new identity-backed live-contract index coexists with the historical text-backed index for legacy rows.
+`finance.credit-plan` must resolve an actual Settings currency profile. A missing foreign-currency profile remains
+unavailable, not a default 0.01 success. New optional source fields are omitted from old hashes when null.
+
+W8 checkpoint still PARTIAL: actual usage/repayment/accrual and voucher proposals, per-lender/type warning,
+closed-period correction and the user-completable screens remain to be integrated. Mapping absence remains visible;
+neither a source profile nor a mock provider establishes usable delivery. Finance STOP and production are unchanged.

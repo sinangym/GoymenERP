@@ -22,6 +22,16 @@ const line = {
 }
 
 describe('purchasing read contract', () => {
+  it('carries the owner document number exactly and keeps old unnumbered rows explicit', () => {
+    const numbered = { ...summary, documentNumber: 'ALI-2027-000001' }
+    expect(decodePurchaseOrderList({ items: [numbered], nextCursor: null })?.items[0].documentNumber).toBe('ALI-2027-000001')
+    expect(decodePurchaseOrderDetail({ order: numbered, lines: [line] })?.order.documentNumber).toBe('ALI-2027-000001')
+    expect(decodePurchaseOrderList({ items: [summary], nextCursor: null })?.items[0].documentNumber).toBeUndefined()
+    for (const documentNumber of [null, '', 1, 'ALI-2027-1\n', 'invented']) {
+      expect(decodePurchaseOrderList({ items: [{ ...summary, documentNumber }], nextCursor: null })).toBeNull()
+    }
+  })
+
   it('decodes exact list and detail shapes', () => {
     expect(decodePurchaseOrderList({ items: [summary], nextCursor: null })?.items[0].companyId).toBe(COMPANY_GDC)
     const detail = decodePurchaseOrderDetail({ order: summary, lines: [line] })

@@ -20,8 +20,8 @@ export function decodeMoneyProfiles(raw: unknown, company: string): MoneyProfile
   for (const item of raw.profiles) {
     if (!record(item) || !exact(item, ['currencyId', 'currencyCode', 'operation', 'version', 'versions']) || !isUuid(item.currencyId)
       || typeof item.currencyCode !== 'string' || !item.currencyCode.trim() || item.currencyCode.length > 32
-      || typeof item.operation !== 'string' || !item.operation.trim() || item.operation.length > 128 || !version(item.version)
-      || !Array.isArray(item.versions) || !item.versions.length) return null
+      || typeof item.operation !== 'string' || !item.operation.trim() || item.operation.length > 128 || !(item.version === '0' || version(item.version))
+      || !Array.isArray(item.versions) || (item.version === '0') !== (item.versions.length === 0)) return null
     const key = `${item.currencyId}:${item.operation}`
     if (seen.has(key)) return null
     seen.add(key)
@@ -34,7 +34,7 @@ export function decodeMoneyProfiles(raw: unknown, company: string): MoneyProfile
       numbers.add(meta.version)
       versions.push({ ...meta, scale: value.scale, unitPriceScale: value.unitPriceScale as number | null })
     }
-    if (!numbers.has(item.version)) return null
+    if (item.version !== '0' && !numbers.has(item.version)) return null
     profiles.push({ currencyId: item.currencyId, currencyCode: item.currencyCode, operation: item.operation, version: item.version, versions })
   }
   return { companyId: company, today: raw.today, profiles }

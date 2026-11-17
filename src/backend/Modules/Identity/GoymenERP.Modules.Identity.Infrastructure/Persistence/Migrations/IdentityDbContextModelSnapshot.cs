@@ -186,7 +186,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                     b.ToTable("AccessGrantRequests", "identity", t =>
                         {
-                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_ApprovalMode", "([Status] = N'Approved' AND [ApprovalMode] IN (N'SecondApproval', N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority')) OR ([Status] <> N'Approved' AND [ApprovalMode] IS NULL)");
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_DecisionReason", "[DecisionReasonCode] IS NULL OR [Status] = N'Rejected'");
 
@@ -194,7 +194,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_ResultingAssignment", "[ResultingRoleAssignmentId] IS NULL OR [Status] = N'Approved'");
 
-                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener') AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
+                            t.HasCheckConstraint("CK_AccessGrantRequests_SecondApproval", "[RequiresSecondApproval] = 0 OR [DecidedByUserId] IS NULL OR ([Status] = N'Withdrawn' AND [DecidedByUserId] = [RequestedByUserId]) OR ([Status] = N'Approved' AND [ApprovalMode] IN (N'FounderDirect', N'CompanyOpener', N'CompanySetupAuthority') AND [DecidedByUserId] = [RequestedByUserId]) OR ([DecidedByUserId] <> [RequestedByUserId] AND [DecidedByUserId] <> [TargetUserId])");
 
                             t.HasCheckConstraint("CK_AccessGrantRequests_Validity", "[ValidUntilUtc] IS NULL OR ([ValidFromUtc] IS NOT NULL AND [ValidUntilUtc] > [ValidFromUtc])");
                         });
@@ -396,6 +396,74 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.CompanySetup.CompanySetupGroupAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DecisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecisionReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Operation")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("RevocationDecisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RevocationDecisionReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ValidFromUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ValidUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecisionId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Operation")
+                        .IsUnique()
+                        .HasFilter("[IsActive] = 1");
+
+                    b.ToTable("CompanySetupGroupAssignments", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanySetupGroup_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [UserId] <> '00000000-0000-0000-0000-000000000000' AND [DecisionId] <> '00000000-0000-0000-0000-000000000000' AND LEN([DecisionReference]) > 0");
+
+                            t.HasCheckConstraint("CK_CompanySetupGroup_Operation", "[Operation] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_CompanySetupGroup_Revocation", "([IsActive] = 1 AND [RevocationDecisionId] IS NULL AND [RevocationDecisionReference] IS NULL AND [RevokedAtUtc] IS NULL) OR ([IsActive] = 0 AND [RevocationDecisionId] IS NOT NULL AND [RevocationDecisionId] <> [DecisionId] AND [RevocationDecisionId] <> '00000000-0000-0000-0000-000000000000' AND [RevocationDecisionReference] IS NOT NULL AND LEN([RevocationDecisionReference]) > 0 AND [RevokedAtUtc] IS NOT NULL AND DATEPART(TZOFFSET, [RevokedAtUtc]) = 0)");
+
+                            t.HasCheckConstraint("CK_CompanySetupGroup_Validity", "DATEPART(TZOFFSET, [ValidFromUtc]) = 0 AND ([ValidUntilUtc] IS NULL OR ([ValidUntilUtc] > [ValidFromUtc] AND DATEPART(TZOFFSET, [ValidUntilUtc]) = 0))");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.CompanySetup.CompanySetupInboxReceipt", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -508,6 +576,10 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(100)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<string>("OriginalCorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<byte[]>("RequestFingerprint")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -529,6 +601,38 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("LocalCredentialCommands", "identity", t =>
                         {
                             t.HasCheckConstraint("CK_LocalCredentialCommands_Shape", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [ResultVersion] >= 1 AND DATALENGTH([RequestFingerprint]) = 32 AND LEN([IdempotencyKey]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("LastAcceptedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ProtectedSecret")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("RecoveryHashesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("LocalTwoFactorSecrets", "identity", t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalTwoFactorSecrets_State", "[UserId] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1 AND ([LastAcceptedStep] IS NULL OR [LastAcceptedStep] >= 0) AND ISJSON([RecoveryHashesJson]) = 1");
                         });
                 });
 
@@ -864,6 +968,15 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.CompanySetup.CompanySetupGroupAssignment", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Users.UserAccount", null)
@@ -878,6 +991,15 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Identity.Domain.Credentials.LocalCredential", null)
+                        .WithOne()
+                        .HasForeignKey("GoymenERP.Modules.Identity.Domain.Credentials.LocalTwoFactorSecret", "UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

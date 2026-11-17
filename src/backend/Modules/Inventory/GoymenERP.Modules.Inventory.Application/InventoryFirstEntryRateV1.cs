@@ -1,3 +1,9 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+
 namespace GoymenERP.Modules.Inventory.Application;
 
 public enum InventoryFirstEntryRateStateV1 { Rated = 1, NotRequired = 2, Unavailable = 3 }
@@ -16,4 +22,54 @@ public static class InventoryFirstEntryRateSourcesV1
     public const string EntryDayTcmb = "settings.tcmb-entry-day-rate.v1";
     public const string FunctionalCurrency = "inventory.first-entry-functional-currency.v1";
     public const string Unavailable = "inventory.first-entry-rate-unavailable.v1";
+}
+
+/// <summary>Strict receipt-owned envelope admission, shared by persistence and the exact public read contract.</summary>
+public static class InventoryFirstEntryRateAdmissionV1
+{
+    /// <summary>Binds every immutable outer fact as well as the exact owner evidence; no rate/currency/version can drift
+    /// while retaining a previously recorded source version. This hash grants no authority to an external caller.</summary>
+    public static string SourceVersionOf(InventoryFirstEntryRateV1 value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        var envelope = JsonSerializer.Serialize(new { value.CompanyId, value.AcceptanceId, value.PurchaseOrderId,
+            value.EntryDay, value.State, value.SourceCurrencyId, value.TargetCurrencyId, value.Rate, value.RateRatio,
+            value.SourceKind, value.EvidenceJson, value.Reason, value.PurchaseOrderVersion }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        return value.SourceKind + "/" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(envelope))).ToLowerInvariant();
+    }
+
+    public static bool IsValid(InventoryFirstEntryRateV1? value, Guid companyId, Guid acceptanceId, Guid? orderId = null)
+    {
+        if (value is null || value.CompanyId != companyId || value.AcceptanceId != acceptanceId || companyId == Guid.Empty
+            || acceptanceId == Guid.Empty || value.PurchaseOrderId == Guid.Empty || orderId is { } order && order != value.PurchaseOrderId
+            || value.SourceCurrencyId == Guid.Empty || value.TargetCurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
+            || string.IsNullOrWhiteSpace(value.SourceVersion) || value.SourceVersion.Length > 160)
+            return false;
+        try
+        {
+            using var evidence = JsonDocument.Parse(value.EvidenceJson);
+            var root = evidence.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || root.GetProperty("companyId").GetGuid() != companyId
+                || root.GetProperty("acceptanceId").GetGuid() != acceptanceId
+                || root.GetProperty("purchaseOrderId").GetGuid() != value.PurchaseOrderId
+                || root.GetProperty("entryDay").GetString() != value.EntryDay.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                || value.SourceVersion != SourceVersionOf(value)) return false;
+            return value.State switch
+            {
+                InventoryFirstEntryRateStateV1.Rated => value.SourceCurrencyId is not null
+                    && value.SourceCurrencyId != value.TargetCurrencyId && value.PurchaseOrderVersion is > 0
+                    && value.Reason is null && (value.SourceKind is InventoryFirstEntryRateSourcesV1.ApprovedPurchaseOrder or InventoryFirstEntryRateSourcesV1.EntryDayTcmb)
+                    && InventoryExactCostRatioV1.Resolve(value.Rate, value.RateRatio).Sign > 0,
+                InventoryFirstEntryRateStateV1.NotRequired => value.SourceCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira
+                    && value.PurchaseOrderVersion is > 0 && value.Rate is null && value.RateRatio is null && value.Reason is null
+                    && value.SourceKind == InventoryFirstEntryRateSourcesV1.FunctionalCurrency,
+                InventoryFirstEntryRateStateV1.Unavailable => value.Rate is null && value.RateRatio is null
+                    && !string.IsNullOrWhiteSpace(value.Reason) && value.SourceKind == InventoryFirstEntryRateSourcesV1.Unavailable,
+                _ => false,
+            };
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException
+            or FormatException or KeyNotFoundException or OverflowException) { return false; }
+    }
+
 }

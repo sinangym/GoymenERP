@@ -584,7 +584,8 @@ internal sealed class InMemoryLocalCredentialStore(LocalCredential credential, b
                 credential.SecurityStamp,
                 UserIsActive,
                 credential.TemporaryPasswordExpiresAtUtc,
-                credential.TemporaryPasswordConsumedAtUtc)
+                credential.TemporaryPasswordConsumedAtUtc,
+                credential.TwoFactorEnabled)
             : null);
     }
 

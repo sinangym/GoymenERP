@@ -258,6 +258,9 @@ public sealed record PurchaseOrderSummaryView(
     Guid Id, Guid CompanyId, string Status, string Version, Guid SupplierPartyId, Guid CompanyAccountId, Guid? SourceRequestId,
     DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DocumentNumber { get; init; }
+
     /// <summary>
     /// A2a-2 (ALS-D18, plan A2a-2 "listede fiyat bekliyor"): on a LIST item only, true while a general line has no price; never
     /// written when null — on a detail or a command answer, or when the caller lacks <c>purchasing.orders.price.read</c> (PRS-02).
@@ -275,6 +278,9 @@ public sealed record PurchaseOrderReadSummaryViewV1(
     DateOnly EffectiveOn, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int LineCount,
     PurchasingSupplierDisplayV1 SupplierDisplay)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DocumentNumber { get; init; }
+
     /// <summary>A2a-2: "fiyat bekliyor" on a list item (see <see cref="PurchaseOrderSummaryView.PricePending"/>); never written when null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? PricePending { get; init; }

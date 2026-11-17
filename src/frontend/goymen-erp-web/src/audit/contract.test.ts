@@ -114,3 +114,31 @@ describe('audit event page decoder (OpenAPI AuditEventPage / AuditEventItem)', (
     expect(decodeAuditEventPage(page([auditEvent(), refused]), COMPANY_A, 'Succeeded')).toBeNull()
   })
 })
+
+
+describe('KIM-S7 typed System recovery audit permission', () => {
+  const system = () => auditEvent({ actorType: 'System', actorId: 'identity.recover-founder', entityType: 'Identity.User', entityId: COMPANY_A,
+    eventType: 'identity.founder.recovered', operation: 'RecoverFounder', permissionCode: null, roleCodes: [], sourceChannel: 'System',
+    aiInvolvement: 'None', aiContextJson: null, clientIpAddress: null, userAgent: null, schemaVersion: 1,
+    approvalContextJson: JSON.stringify({ kind: 'IdentityFounderRecoveryV1', operatingSystemUser: 'SENTETIK-os', machineName: 'SENTETIK-machine' }) })
+  it('accepts only the closed successful CLI variant with its operator evidence', () => {
+    expect(decodeAuditEventPage(page([system()]), COMPANY_A)?.items[0].permissionCode).toBeNull()
+    for (const extra of [{ actorType: 'User' }, { actorType: 'Ai' }, { actorType: 'Integration' }, { actorId: 'SENTETIK-other' }, { operation: 'Other' }, { sourceChannel: 'Web' }, { roleCodes: ['Admin'] }, { approvalContextJson: '{}' }, { approvalContextJson: null }, { eventType: 'identity.founder.password_reset' }])
+      expect(decodeAuditEventPage(page([{ ...system(), ...extra }]), COMPANY_A)).toBeNull()
+    expect(decodeAuditEventPage(page([auditEvent({ permissionCode: null })]), COMPANY_A)).toBeNull()
+  })
+})
+
+describe('KIM-S8 typed authenticated self credential audit', () => {
+  const self = () => auditEvent({ actorType: 'User', actorId: COMPANY_A, entityId: COMPANY_A, entityType: 'Identity.LocalCredential',
+    eventType: 'identity.local-credentials.two-factor-enabled.v1', operation: 'EnableTwoFactor', entityVersionBefore: 0, entityVersionAfter: 1,
+    permissionCode: null, roleCodes: [], sourceChannel: 'Web', aiInvolvement: 'None', aiContextJson: null, clientIpAddress: null, userAgent: null,
+    approvalContextJson: JSON.stringify({ kind: 'IdentityLocalCredentialSelfServiceV1', method: 'TOTP' }) })
+  it('accepts the self transition and rejects target substitution, invented authority, malformed evidence and versions', () => {
+    expect(decodeAuditEventPage(page([self()]), COMPANY_A)?.items[0].permissionCode).toBeNull()
+    for (const extra of [{ entityId: COMPANY_B }, { actorType: 'System' }, { actorType: 'Ai' }, { roleCodes: ['Admin'] },
+      { eventType: 'identity.local-credentials.two-factor-disabled.v1' }, { operation: 'ResetPassword' }, { entityVersionAfter: 2 },
+      { entityVersionBefore: null }, { approvalContextJson: '{}' }, { sourceChannel: 'System' }, { outcome: 'Refused' }])
+      expect(decodeAuditEventPage(page([{ ...self(), ...extra }]), COMPANY_A)).toBeNull()
+  })
+})

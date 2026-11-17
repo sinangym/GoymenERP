@@ -177,7 +177,7 @@ public sealed record InventoryFirstReceiptExchangeRateV1
         {
             if (source is null || source.Entry is null || source.Snapshot is null
                 || source.Entry.GoodsAcceptanceId is null || !movements.Add(source.Entry.MovementId)
-                || source.Snapshot.CompanyId != companyId || source.Snapshot.AcceptanceId != source.Entry.GoodsAcceptanceId
+                || !InventoryFirstEntryRateAdmissionV1.IsValid(source.Snapshot, companyId, source.Entry.GoodsAcceptanceId.Value)
                 || source.Snapshot.PurchaseOrderId == Guid.Empty || source.Snapshot.PurchaseOrderVersion is not > 0
                 || source.Snapshot.State != InventoryFirstEntryRateStateV1.Rated
                 || source.Snapshot.SourceCurrencyId != sourceCurrencyId || source.Snapshot.TargetCurrencyId != targetCurrencyId

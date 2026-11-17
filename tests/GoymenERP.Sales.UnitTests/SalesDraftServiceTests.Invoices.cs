@@ -356,6 +356,13 @@ public sealed partial class SalesDraftServiceTests
                 new SalesInvoiceableShipmentV1(Guid.NewGuid(), "IRS-2026-000001", null, Approved, Party, Account, 1, ShipmentId, Shipped,
                     order.Draft.Id, order.Lines[0].LineId, Product, KgUnit, 1.25m),
             ], false, SalesInvoicedStateSourceV1.NoSource);
+            Weighings.Answer = note =>
+            {
+                var lines = Shipments.LastAnswer!.Shares.Where(share => share.DispatchNoteId == note)
+                    .Select(share => new SalesDispatchKilogramLineV1(share.NoteLineNo, share.ShipmentId, share.ProductId, share.Quantity, share.Quantity)).ToArray();
+                var recorded = WeighingRecorded(note, theoretical: lines.Sum(line => line.TheoreticalKg), scale: lines.Sum(line => line.Kilograms));
+                return recorded with { Value = recorded.Value! with { KilogramAllocation = new(lines) } };
+            };
         }
 
         public World World { get; }

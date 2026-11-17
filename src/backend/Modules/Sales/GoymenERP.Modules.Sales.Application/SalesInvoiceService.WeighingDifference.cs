@@ -12,24 +12,35 @@ namespace GoymenERP.Modules.Sales.Application;
 /// </summary>
 public sealed partial class SalesInvoiceService
 {
-    private async Task AddWeighingDifferenceWaitsAsync(Scope scope, IReadOnlyList<PreparedShare> prepared,
+    private async Task<IReadOnlyDictionary<Guid, decimal>> AddWeighingDifferenceWaitsAsync(Scope scope, IReadOnlyList<PreparedShare> prepared,
         List<SalesDraftFieldError> reasons, CancellationToken cancellationToken)
     {
+        var kilograms = new Dictionary<Guid, decimal>();
         foreach (var note in prepared.GroupBy(item => item.Share.DispatchNoteId))
         {
-            var reason = await WeighingDifferenceWaitAsync(scope, note.Key, cancellationToken);
+            var (reason, value) = await WeighingDifferenceWaitAsync(scope, note.Key, cancellationToken);
             if (reason is not null)
             {
                 reasons.AddRange(note.Select(item => new SalesDraftFieldError(item.Field, reason)));
+                continue;
+            }
+            foreach (var item in note)
+            {
+                var source = value!.KilogramAllocation!.Lines.SingleOrDefault(line => line.ShipmentId == item.Share.ShipmentId);
+                if (source is null || source.ProductId != item.Share.ProductId || source.LineNo != item.Share.NoteLineNo
+                    || source.TheoreticalKg != item.Share.Quantity)
+                    reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable));
+                else kilograms.Add(item.Share.ShipmentId, source.Kilograms);
             }
         }
+        return kilograms;
     }
 
-    private async Task<string?> WeighingDifferenceWaitAsync(Scope scope, Guid dispatchNoteId, CancellationToken cancellationToken)
+    private async Task<(string? Reason, SalesDispatchWeighingDifferenceV1? Value)> WeighingDifferenceWaitAsync(Scope scope, Guid dispatchNoteId, CancellationToken cancellationToken)
     {
         if (weighingDifferences is null || dispatchNoteId == Guid.Empty)
         {
-            return SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable;
+            return (SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable, null);
         }
 
         SalesDispatchWeighingDifferenceReadV1? answer;
@@ -40,7 +51,7 @@ public sealed partial class SalesInvoiceService
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             await RequireStillAsync(scope, WritePermission, cancellationToken);
-            return SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable;
+            return (SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable, null);
         }
 
         await RequireStillAsync(scope, WritePermission, cancellationToken);
@@ -49,10 +60,10 @@ public sealed partial class SalesInvoiceService
                 || answer.Status == SalesDispatchWeighingDifferenceStatusV1.NotRecorded && answer.Value is null);
         if (!consistent)
         {
-            return SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable;
+            return (SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable, null);
         }
 
-        return SalesDispatchWeighingInvoiceRule.Wait(answer!) switch
+        var wait = SalesDispatchWeighingInvoiceRule.Wait(answer!) switch
         {
             null => null,
             SalesDispatchWeighingInvoiceWaitView.NotRecorded => SalesInvoiceReasonCodesV1.WeighingDifferenceNotRecorded,
@@ -60,5 +71,6 @@ public sealed partial class SalesInvoiceService
             SalesDispatchWeighingInvoiceWaitView.KgTransferPending => SalesInvoiceReasonCodesV1.WeighingKgTransferPending,
             _ => SalesInvoiceReasonCodesV1.WeighingDifferenceUnavailable,
         };
+        return (wait, answer!.Value);
     }
 }

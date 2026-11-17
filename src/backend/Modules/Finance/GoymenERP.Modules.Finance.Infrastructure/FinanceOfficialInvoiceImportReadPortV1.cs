@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
@@ -54,6 +55,9 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
                 row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)))
             .ToListAsync(cancellationToken);
 
+        IReadOnlyList<FinanceOfficialInvoiceImportedDocumentViewV1>? documents;
+        try { documents = await ReadDocuments(context, batchId, cancellationToken); }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested) { documents = null; }
         var after = await authority.CheckAsync(context, batchId, cancellationToken);
         if (after != PermissionDecision.Allowed || !SameContext(context))
         {
@@ -64,6 +68,7 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
         {
             return Refused(ReadOutcome.NotFound);
         }
+        if (documents is null) return Refused(ReadOutcome.Unavailable);
 
         var first = rows[0];
         if (rows.Any(row => row.CompanyId != context.CompanyId
@@ -79,7 +84,38 @@ public sealed class FinanceOfficialInvoiceImportReadPortV1(
             context.CompanyId,
             first.SourceBatchVersion,
             first.SourceBatchChecksum,
-            rows));
+            rows, documents));
+    }
+
+    private async Task<IReadOnlyList<FinanceOfficialInvoiceImportedDocumentViewV1>?> ReadDocuments(
+        FinanceContext context, Guid batchId, CancellationToken cancellationToken)
+    {
+        var upload = await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == batchId, cancellationToken);
+        if (upload is null || !FinanceOfficialSalesInvoiceImportTemplateV3.HasDocumentColumns(upload.TemplateVersion)) return [];
+        var sourceRows = JsonSerializer.Deserialize<ApprovedFinanceOpenItemSourceRow[]>(upload.SourceRowsJson, FinanceJson.CreateOptions());
+        if (sourceRows is null) return null;
+        var batch = new ApprovedFinanceOpenItemSourceBatch(upload.Id, context.CompanyId, upload.BatchVersion, upload.BatchChecksum, sourceRows);
+        var documents = FinanceOfficialInvoiceIdentityClaimPolicy.ReadDocuments(context, upload, batch);
+        if (documents is null) return null;
+        var numbers = documents.Select(row => row.OfficialNo).ToArray();
+        var identities = documents.Select(row => row.Ettn).ToArray();
+        var manual = await dbContext.OfficialSalesInvoices.AsNoTracking()
+            .Where(row => (row.Status == 1 || row.Status == 2) && (numbers.Contains(row.OfficialNo) || identities.Contains(row.Ettn)))
+            .ToListAsync(cancellationToken);
+        var result = new List<FinanceOfficialInvoiceImportedDocumentViewV1>();
+        foreach (var imported in FinanceOfficialInvoiceSourceComparison.Imported(batch, documents))
+        {
+            var matching = manual.Where(row => row.OfficialNo == imported.OfficialNo || row.Ettn == imported.Ettn).ToArray();
+            var approved = matching.Where(row => row.Status == 2).ToArray();
+            if (approved.Length > 1) return null;
+            var winner = approved.SingleOrDefault();
+            result.Add(new(imported.SourceDocumentId, imported.OfficialNo, imported.Ettn, imported.InvoiceDate,
+                imported.PayableFunctionalAmount, matching.Any(row => row.Status == 1), winner?.Id,
+                winner?.PayableFunctionalAmountText ?? imported.PayableFunctionalAmount,
+                winner is null ? [] : FinanceOfficialInvoiceSourceComparison.Differences(winner, imported)));
+        }
+        return result;
     }
 
     private bool SameContext(FinanceContext context) =>

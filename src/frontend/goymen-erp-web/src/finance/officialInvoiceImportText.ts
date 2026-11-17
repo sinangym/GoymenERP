@@ -6,9 +6,18 @@
 
 export const OFFICIAL_INVOICE_IMPORT_TEXT = {
   templateHint:
-    'Resmî satış faturası için v2 şablonu kullanılır: v1 sütunlarının ardından officialNo, ettn, '
-    + 'taxBaseFunctionalAmount, vatFunctionalAmount ve withholdingFunctionalAmount gelir. Belge sütunları aynı '
-    + 'belgenin her taksit satırında aynı olmalıdır.',
+    'Resmî satış faturası için v3 şablonu kullanılır: v1 sütunlarının ardından officialNo, ettn, '
+    + 'taxBaseFunctionalAmount, vatFunctionalAmount, withholdingFunctionalAmount, invoiceDate ve payableFunctionalAmount gelir. '
+    + 'Belge sütunları aynı belgenin her taksit satırında aynı olmalıdır. Eski v1/v2 dosyaları korunur; '
+    + 'kaynakta bulunmayan tarih veya TL karşılığı tahmin edilmez.',
+  invoiceDate: 'Resmî fatura tarihi',
+  importedTl: 'İthal belgedeki ödenecek TL',
+  effectiveTl: 'Esas alınan ödenecek TL',
+  unknown: 'Kaynakta yok',
+  notCalculated: 'Hesaplanamadı; kaynak TL karşılığı yok',
+  pendingManual: 'Onay bekleyen elle kayıt var; ithal kaynağı engellemez.',
+  manualWins: 'Onaylı elle kayıt esas alınır; ithal belge korunur.',
+  differences: 'Kaynaklar arasındaki farklı alanlar',
   identityHint:
     'Aynı resmî numara veya ETTN ile iptal edilmemiş bir alacak varken dosya kabul edilmez; kapanmış alacak da '
     + 'engeller. Belge numarası mükerrerliği kabul anında yeniden denetlenir.',

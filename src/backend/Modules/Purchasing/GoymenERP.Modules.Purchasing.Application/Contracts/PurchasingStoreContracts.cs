@@ -46,6 +46,8 @@ public static class PurchasingCommands
 
     public const string OrderCreateV1 = "purchasing.purchase-order.create.v1";
     public const string OrderApproveV1 = "purchasing.purchase-order.approve.v1";
+    public const string OrderSupplierReviseV1 = "purchasing.purchase-order.supplier-revise.v1";
+    public const string OrderSupplierRevisionPriceV1 = "purchasing.purchase-order.supplier-revision-price.v1";
 
     /// <summary>A1-3 (plan API-10, No.161 §2): Approved → Cancelled — the whole unaccepted remainder, with a reason, under <c>purchasing.orders.cancel</c>.</summary>
     public const string OrderCancelV1 = "purchasing.purchase-order.cancel.v1";
@@ -90,14 +92,14 @@ public static class PurchasingCommands
     public static bool IsOrderCommand(string commandName) =>
         commandName is OrderCreateV1 or OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1
             or OrderExchangeRateChangeV1 or OrderFutureAllocationReleaseV1 or OrderCancelWithAllocationReleaseV1
-            or OrderLineCloseWithAllocationReleaseV1;
+            or OrderLineCloseWithAllocationReleaseV1 or OrderSupplierReviseV1 or OrderSupplierRevisionPriceV1;
 
     public static bool IsRequestMutation(string commandName) =>
         commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1 or RequestWithdrawV1;
 
     public static bool IsOrderMutation(string commandName) =>
         commandName is OrderApproveV1 or OrderCancelV1 or OrderLineScheduleV1 or OrderLineCloseV1 or OrderLineReopenV1 or OrderExchangeRateChangeV1
-            or OrderCancelWithAllocationReleaseV1 or OrderLineCloseWithAllocationReleaseV1;
+            or OrderCancelWithAllocationReleaseV1 or OrderLineCloseWithAllocationReleaseV1 or OrderSupplierReviseV1 or OrderSupplierRevisionPriceV1;
 
     /// <summary>API-11: the line closure commands (all take the §3.4 line lock and write a closure event + outbox message).</summary>
     public static bool IsLineClosure(string commandName) =>
@@ -166,7 +168,10 @@ public sealed record StoredPurchaseRequest(PurchaseRequest Request, DateOnly Eff
 
 /// <summary>A stored order, the same way, plus the supplier's Cari company account (the domain record names the party only).</summary>
 public sealed record StoredPurchaseOrder(PurchaseOrder Order, Guid CompanyAccountId, DateOnly EffectiveOn,
-    IReadOnlyDictionary<Guid, string> ProductVersionsByLineId);
+    IReadOnlyDictionary<Guid, string> ProductVersionsByLineId)
+{
+    public string? DocumentNumber { get; init; }
+}
 
 public sealed record PurchasingRequestStoreResult(StoredPurchaseRequest Request, PurchasingWriteOutcome Outcome, string OriginalCorrelationId);
 

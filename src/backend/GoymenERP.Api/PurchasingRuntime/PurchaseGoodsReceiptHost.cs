@@ -40,9 +40,11 @@ internal sealed class PurchaseGoodsReceiptHost(
                 await using var transaction = await purchasing.Database.BeginTransactionAsync(cancellationToken);
                 await using var purchase = await PurchaseAcceptanceParticipant.EnlistAsync(
                     purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId, cancellationToken);
+                await using var cost = await PurchaseReceiptCostScope.EnlistAsync(purchasing.Database.GetDbConnection(),
+                    transaction.GetDbTransaction(), companyId, services, cancellationToken);
                 await using var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(
                     purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
-                    services.GetRequiredService<ISettingsPrerequisiteProvider>(), cancellationToken, clock);
+                    services.GetRequiredService<ISettingsPrerequisiteProvider>(), cancellationToken, clock, costSource: cost.Source);
                 var participants = new Participants(companyId, purchase, inventory, locationStatus,
                     services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
                     services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(),

@@ -1,5 +1,16 @@
 # Purchasing (PUR-1 … PUR-4a, goods receipt and AT-025 — the implemented slices of T08)
 
+## ALC-S14 account contract v2 (source checkpoint)
+
+`IPurchasingPartyAccountPortV2` extends the authorized Counterparty owner projection with its
+actual `Tolling` flag while keeping v1 unchanged. It does not assign roles. B-16's payment-terms
+item is governed by ALS-D24/D28: terms are chosen per order, never a party-level default or an
+implied zero-day term. `PaymentTermsScope = OrderSpecific` makes that distinction explicit.
+The caller/company fences and exact party-account ownership apply to both versions. Unit and
+real SQL test sources cover role combinations, fresh stored changes and foreign-account refusal;
+runtime acceptance is pending the final train verification. V2 host registration is recorded in
+the W8 integration handoff.
+
 ## Current state (2026-11-02)
 
 This section is the current summary; the sections below it are the slice history and are kept as written, with
@@ -393,3 +404,34 @@ uses **51949** for immutable receipt/cancellation history; its recorded-cancella
 cursor history. Batch identity, detail ordering and first response remain immutable. The outbox's fixed
 `MIN_ACTIVE_ROWVERSION` read protects commit ordering and awaits K3 review; tenant filters remain in place.
 Runtime SQL acceptance is not yet run; these migrations are generated source, not deployment evidence.
+
+## KIM-S19 / N-12 purchase-order numbering
+
+KIM-D53 and the later decision replacing ALS-D36 include purchase orders in prefix/year/annual-sequence numbering.
+New orders require the company's explicitly configured Settings series; missing configuration fails closed rather
+than inventing a prefix. The real Settings owner reserves the number within the order's Serializable transaction.
+The number, format version and sequence are immutable order facts. Replay preserves the stored number.
+Cancellation records the Settings gap in the same transaction and does not release that number for reuse.
+Existing orders remain unnumbered; no historical backfill or artificial document number is produced.
+The EF-generated `20261117002600_AddPurchaseOrderDocumentNumbers` additive nullable snapshot has a company-scoped
+filtered unique index and an all-or-none check; its Up contains only DDL and does not backfill old orders.
+Down starts with **THROW 51957** while any numbering fact exists. SQL test sources cover annual reset, replay,
+missing configuration, cancellation/non-reuse, and permission loss after save rolling back the entire unit.
+The direct-store fixtures use the real Settings/Audit owners with explicitly synthetic fixture authority; HTTP
+authorization remains real. Runtime SQL/HTTP/Unit/Vitest/CI acceptance is **NOT_RUN**.
+
+## ALC-SC47 / ALS-D112 and ALS-D115 supplier revision
+
+An approved order can change supplier through the existing order-revision permission only when no receipt history
+or invoice binding exists. The supplier and company account are selected again through the actual Cari owner.
+The new revision returns to Draft, clears current prices, preserves original prices and approval in an append-only
+history, and requires price entry and another actor's approval. The original order creator is never overwritten.
+The order, attempt and audit commit together; company and authority are checked again before and after save.
+The invoice owner must record immutable order-line bindings under the shared order-line locks when recording invoices;
+this binding table alone does not implement incoming invoice production. Legacy orders without a money snapshot
+fail closed before changing supplier or approval, because required replacement prices cannot be entered without it.
+No historical currency/profile is guessed; that missing legacy workflow remains separate work.
+EF-generated `20261117072202_AddPurchaseSupplierRevisions` adds nullable revision history and the tenant-filtered
+invoice binding table. Down starts with **THROW 51977** while either history exists. No backfill, grant or database
+application occurs in this slice. Test sources cover replay, maker/checker, tenant isolation, historical restoration,
+post-save authority loss rollback and the Down guard. Runtime acceptance is **NOT_RUN**.

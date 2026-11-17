@@ -39,6 +39,14 @@ public sealed class UserAccount
 
     public long Version { get; private set; }
 
+    public void Deactivate(DateTimeOffset changedAtUtc)
+    {
+        if (!IsActive) throw new InvalidOperationException("Kullanıcı zaten pasif.");
+        IsActive = false;
+        UpdatedAtUtc = changedAtUtc;
+        Version++;
+    }
+
     /// <summary>
     /// ID-2r <c>recover-founder reactivate</c> (KIM-D22): an inactive account becomes active again and
     /// <see cref="Version"/> rises by one. No role assignment is created; access comes back only through the

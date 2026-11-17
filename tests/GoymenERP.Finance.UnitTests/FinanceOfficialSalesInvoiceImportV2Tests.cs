@@ -16,6 +16,35 @@ public sealed class FinanceOfficialSalesInvoiceImportV2Tests
     private const string EttnA = "aa000000-0000-4000-8000-000000000001";
     private const string EttnB = "bb000000-0000-4000-8000-000000000002";
 
+    [Theory]
+    [InlineData("2050.15", "2050.15")]
+    [InlineData("", null)]
+    public void V3_keeps_the_source_date_and_optional_TL_without_calculating_an_exchange_rate(string value, string? expected)
+    {
+        var bytes = Encoding.UTF8.GetBytes(FinanceOfficialSalesInvoiceImportTemplateV3.Header + "\n"
+            + Row(1, DocumentA, "SNT1", EttnA) + ",2026-11-16," + value + "\n");
+        var parsed = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v3", bytes));
+        Assert.True(parsed.Preview.IsValid);
+        Assert.Equal(FinanceOfficialSalesInvoiceImportTemplateV3.Version, parsed.Preview.TemplateVersion);
+        var document = Assert.Single(parsed.Documents);
+        Assert.Equal(new DateOnly(2026, 11, 16), document.InvoiceDate);
+        Assert.Equal(expected, document.PayableFunctionalAmount);
+    }
+
+    [Theory]
+    [InlineData("2026-02-30", "1200", "invoiceDate")]
+    [InlineData("", "1200", "invoiceDate")]
+    [InlineData("2026-11-16", "0", "payableFunctionalAmount")]
+    [InlineData("2026-11-16", "1e3", "payableFunctionalAmount")]
+    public void V3_refuses_invalid_source_date_or_supplied_TL(string date, string value, string field)
+    {
+        var bytes = Encoding.UTF8.GetBytes(FinanceOfficialSalesInvoiceImportTemplateV3.Header + "\n"
+            + Row(1, DocumentA, "SNT1", EttnA) + "," + date + "," + value + "\n");
+        var parsed = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v3", bytes));
+        Assert.False(parsed.Preview.IsValid);
+        Assert.Contains(parsed.Preview.Issues, issue => issue.Field == field);
+    }
+
     [Fact]
     public void A_v2_file_keeps_the_v1_batch_and_returns_one_document_per_source_document_in_first_row_order()
     {

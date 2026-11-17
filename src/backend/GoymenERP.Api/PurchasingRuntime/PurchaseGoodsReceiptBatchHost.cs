@@ -42,7 +42,7 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                 var enlisted = new BatchParticipants(companyId, purchasing.Database.GetDbConnection(), transaction.GetDbTransaction(),
                     services.GetRequiredService<ISettingsPrerequisiteProvider>(), locationStatus,
                     services.GetRequiredService<IInventoryGoodsReceiptFutureSupplyPortV1>(),
-                    services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock);
+                    services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>(), clock, services);
                 try
                 {
                     await using var readSet = await services.GetRequiredService<IInventoryFutureAllocationReleasePortV1>()
@@ -100,7 +100,7 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
     private sealed class BatchParticipants(Guid companyId, System.Data.Common.DbConnection connection,
         System.Data.Common.DbTransaction transaction, ISettingsPrerequisiteProvider settings,
         IOrganizationLocationStatusReaderV1 locations, IInventoryGoodsReceiptFutureSupplyPortV1 futureSupply,
-        IInventoryFutureAllocationReleasePortV1 futureReleases, TimeProvider clock) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
+        IInventoryFutureAllocationReleasePortV1 futureReleases, TimeProvider clock, IServiceProvider services) : IPurchaseGoodsReceiptBatchParticipantsV1, IAsyncDisposable
     {
         private readonly List<IAsyncDisposable> owned = [];
         private readonly HashSet<int> labels = [];
@@ -111,8 +111,10 @@ internal sealed class PurchaseGoodsReceiptBatchHost(
                 throw new InvalidOperationException("Each bulk receipt label enlists its participants once.");
             var purchase = await PurchaseAcceptanceParticipant.EnlistAsync(connection, transaction, companyId, cancellationToken);
             owned.Add(purchase);
+            var cost = await PurchaseReceiptCostScope.EnlistAsync(connection, transaction, companyId, services, cancellationToken);
+            owned.Add(cost);
             var inventory = await InventoryGoodsReceiptParticipant.EnlistAsync(connection, transaction, companyId, settings,
-                cancellationToken, clock);
+                cancellationToken, clock, costSource: cost.Source);
             owned.Add(inventory);
             return new LabelParticipants(labelIndex,
                 new PurchaseGoodsReceiptHost.Participants(companyId, purchase, inventory, locations, futureSupply,

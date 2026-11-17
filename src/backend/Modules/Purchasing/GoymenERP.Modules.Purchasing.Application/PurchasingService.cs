@@ -1058,7 +1058,7 @@ public sealed partial class PurchasingService(
     {
         var order = stored.Order;
         return new PurchaseOrderSummaryView(order.Id, order.CompanyId, order.Status.ToString(), order.Version.ToString(CultureInfo.InvariantCulture),
-            order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count);
+            order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count) { DocumentNumber = stored.DocumentNumber };
     }
 
     /// <summary>

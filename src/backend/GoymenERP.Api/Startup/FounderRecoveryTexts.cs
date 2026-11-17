@@ -43,6 +43,8 @@ internal static class FounderRecoveryTexts
 
     internal static string FounderUserName(string userName) => $"  Kurucu kullanıcı adı: {userName}";
 
+    internal static string Operator(FounderRecoveryOperatorDeclaration declaration) => $"  Operatör beyanı: {declaration.OperatingSystemUser} / {declaration.MachineName}";
+
     internal static string Operation(FounderRecoverySubcommand subcommand) => $"  İşlem: {Subcommand(subcommand)}";
 
     internal const string CompaniesHeader = "  Şirketler:";
@@ -84,6 +86,8 @@ internal static class FounderRecoveryTexts
         FounderRecoveryStatus.PasswordMismatch => "Parolalar eşleşmiyor.",
         FounderRecoveryStatus.PolicyViolation => "Parola politikası karşılanmadı.",
         FounderRecoveryStatus.NotConfirmed => "İşlem onaylanmadı; hiçbir değişiklik yazılmadı.",
+        FounderRecoveryStatus.AuditRefused => "Şirket denetim kaydı yazılamadı; hiçbir değişiklik yazılmadı.",
+        FounderRecoveryStatus.OperatorDeclarationMissing => "İşletim sistemi kullanıcısı ve makine beyanı doğrulanamadı; hiçbir değişiklik yazılmadı.",
         FounderRecoveryStatus.SecurityEventRefused => "Güvenlik olayı kaydedilemedi; hiçbir değişiklik yazılmadı.",
         _ => "Kurucu hesabı kurtarılamadı.",
     };

@@ -19,6 +19,8 @@ public static class DocumentOwnerLinkKindsV1
 
     /// <summary>A Sales order readable in the context company (Sales owner).</summary>
     public const string SalesOrder = "sales.order";
+    /// <summary>An existing Logistics dispatch note in the context company, read through its owner authority.</summary>
+    public const string LogisticsDispatchNote = "logistics.dispatch-note";
 
     /// <summary>
     /// A Finance official sales invoice record, or its reserved id before the record exists, in the context company

@@ -20,6 +20,7 @@ internal sealed class PriceListProductReference
     public Guid Id { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public long Version { get; set; }
     public int Lifecycle { get; set; }
     public bool? SellableValue { get; set; }
     public string ReferencesJson { get; set; } = string.Empty;

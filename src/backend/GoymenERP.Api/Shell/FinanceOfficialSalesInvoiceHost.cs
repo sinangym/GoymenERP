@@ -20,6 +20,8 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
         services.AddScoped<IFinanceOfficialSalesInvoiceDocumentPortV1, FinanceOfficialSalesInvoiceDocumentPort>();
         services.AddScoped<IFinanceOfficialSalesInvoiceOwnerReadV1, FinanceOfficialSalesInvoiceOwnerReadV1>();
         services.AddScoped<IFinanceOfficialSalesInvoiceServiceV1>(CreateService);
+        services.AddScoped<IFinanceOfficialSalesInvoiceCandidatesV1>(CreateService);
+        services.AddScoped<IFinanceOfficialSalesInvoiceCustomerPortV1, CounterpartyFinanceOfficialInvoiceCustomerPortV1>();
         return services;
     }
 
@@ -44,7 +46,8 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
                     authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Reject), correlation),
                 Envelope(FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw,
                     authority.RoleCodesOf(FinanceOfficialSalesInvoiceAuthorityActionV1.Withdraw), correlation)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceOfficialSalesInvoiceCustomerPortV1>());
     }
 
     private static FinanceAuditEnvelope Envelope(string permission,

@@ -145,4 +145,3 @@ ayrılan üyeler sonraki snapshot'tan çıkar, önceki history korunur. Yeni DB 
   composition'ın diğer endpointlerin başlangıcını bozması engellendi. Gerçek Product üyelik kaynağı,
   Cari/Settings adapteri ve ManufacturingCommandService bağlantısı merkezi entegrasyonda tamamlanmalıdır.
   Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; bağımsız K3 kabulü verilmedi.
-

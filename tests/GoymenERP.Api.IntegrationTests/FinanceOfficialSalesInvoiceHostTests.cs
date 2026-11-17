@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -15,6 +16,11 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class FinanceOfficialSalesInvoiceHostTests
 {
+    private sealed class EmptyCustomerOwner : ICounterpartyReadService
+    {
+        public Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(Guid partyId, CancellationToken cancellationToken = default) => Task.FromResult<CounterpartyDetailView?>(null);
+        public Task<CounterpartyPageExecution> GetAuthorizedPageAsync(CounterpartyReadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-1111111111a5");
     private static readonly Guid Document = Guid.Parse("22222222-2222-4222-8222-2222222222a5");
     private static readonly Guid Invoice = Guid.Parse("33333333-3333-4333-8333-3333333333a5");
@@ -30,6 +36,7 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
         services.AddSingleton<ICurrentUser>(new User(Actor, Company));
         services.AddSingleton<IDocumentService>(new Documents());
         services.AddSingleton<ISettingsMoneyCandidateReader>(new NoCandidates());
+        services.AddSingleton<ICounterpartyReadService>(new EmptyCustomerOwner());
         services.AddScoped<IAuditEventCollector>(_ => new NoOpAuditCollector());
         services.AddScoped<ICorrelationContext>(_ =>
         {
@@ -45,6 +52,8 @@ public sealed class FinanceOfficialSalesInvoiceHostTests
         using var provider = services.BuildServiceProvider(validateScopes: true);
         using var scope = provider.CreateScope();
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceServiceV1>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceCandidatesV1>());
+        Assert.IsType<CounterpartyFinanceOfficialInvoiceCustomerPortV1>(scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceCustomerPortV1>());
         Assert.Same(scope.ServiceProvider.GetRequiredService<FinanceOfficialSalesInvoiceAuthority>(),
             scope.ServiceProvider.GetRequiredService<IFinanceOfficialSalesInvoiceAuthorityV1>());
         Assert.IsType<FinanceOfficialSalesInvoiceDocumentPort>(

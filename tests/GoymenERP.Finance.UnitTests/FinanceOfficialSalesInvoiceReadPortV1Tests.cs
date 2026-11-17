@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -24,6 +26,69 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
     private static readonly Guid Pdf = Guid.Parse("99999999-9999-4999-8999-999999999999");
     private const string OfficialNo = "SNT2026000000001";
     private const string Ettn = "a5000000-0000-4000-8000-0000000000bc";
+
+    [Fact]
+    public async Task Approved_import_supplies_exact_source_date_and_TL_despite_a_pending_manual_record()
+    {
+        await using var run = await Run.CreateAsync(Row(Guid.NewGuid(), FinanceOfficialSalesInvoiceStatusV1.PendingApproval));
+        var port = run.Port(Company);
+        var document = await SeedImport(run.Db, "1500.55");
+        var answer = await port.LookupAsync(Company, OfficialNo, Ettn);
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.Approved, answer.Outcome);
+        Assert.Equal(document, answer.Invoice!.InvoiceId);
+        Assert.Equal("approved-import", answer.Invoice.SourceKind);
+        Assert.Equal("1500.55", answer.Invoice.PayableFunctionalAmount);
+        Assert.Equal(new DateOnly(2026, 11, 16), answer.Invoice.InvoiceDate);
+        Assert.True(answer.Invoice.HasPendingManual);
+        Assert.Null(answer.Invoice.PdfDocumentId);
+        Assert.NotNull(answer.Invoice.SourceBatchId);
+        Assert.Equal(64, answer.Invoice.SourceChecksum!.Length);
+    }
+
+    [Fact]
+    public async Task Missing_import_TL_is_unavailable_and_approved_manual_wins_without_rewriting_the_import()
+    {
+        await using (var missing = await Run.CreateAsync())
+        {
+            var port = missing.Port(Company);
+            await SeedImport(missing.Db, "");
+            Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.Unavailable,
+                (await port.LookupAsync(Company, OfficialNo, Ettn)).Outcome);
+        }
+        var manual = Row(Guid.NewGuid()); manual.InvoiceDate = new(2026, 11, 15);
+        await using var run = await Run.CreateAsync(manual);
+        var winner = run.Port(Company);
+        await SeedImport(run.Db, "1500.55");
+        var answer = await winner.LookupAsync(Company, OfficialNo, Ettn);
+        Assert.Equal(manual.Id, answer.Invoice!.InvoiceId);
+        Assert.Equal("manual", answer.Invoice.SourceKind);
+        Assert.Equal("1250.50", answer.Invoice.PayableFunctionalAmount);
+        Assert.Equal(manual.InvoiceDate, answer.Invoice.InvoiceDate);
+        Assert.Single(await run.Db.OfficialInvoiceImportBatches.ToListAsync());
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    private static async Task<Guid> SeedImport(FinanceDbContext db, string tl)
+    {
+        var batchId = Guid.NewGuid(); var documentId = Guid.NewGuid();
+        var row = string.Join(',', Guid.NewGuid(), documentId, Guid.NewGuid(), "1", Customer,
+            Guid.NewGuid(), Currency, "1250.50", "2026-12-01", OfficialNo, Ettn, "1042.08", "208.42", "0", "2026-11-16", tl);
+        var bytes = Encoding.UTF8.GetBytes(FinanceOfficialSalesInvoiceImportTemplateV3.Header + "\n" + row + "\n");
+        var parsed = FinanceOfficialInvoiceImportParserV1.Parse(new(Company, "SENTETIK-checker", "SENTETIK", null), new(batchId, "1", bytes));
+        Assert.True(parsed.Preview.IsValid);
+        db.OfficialInvoiceImportBatches.Add(new() { Id = batchId, CompanyId = Company, BatchVersion = "1",
+            BatchChecksum = parsed.Preview.SourceSha256, TemplateVersion = parsed.Preview.TemplateVersion, FileBytes = bytes,
+            SourceRowsJson = JsonSerializer.Serialize(parsed.Preview.Batch!.Rows, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            RowCount = 1, UploadedBy = "SENTETIK-maker", UploadedAtUtc = ApprovedAt.AddMinutes(-1), CorrelationId = "SENTETIK" });
+        db.OfficialInvoiceImportApprovals.Add(new() { Id = Guid.NewGuid(), CompanyId = Company, BatchId = batchId,
+            UploadedBy = "SENTETIK-maker", ApprovedBy = "SENTETIK-checker", ApprovedAtUtc = ApprovedAt, CorrelationId = "SENTETIK" });
+        foreach (var (kind, value) in new[] { (FinanceOfficialInvoiceIdentityKinds.OfficialNo, OfficialNo), (FinanceOfficialInvoiceIdentityKinds.Ettn, Ettn) })
+            db.OfficialInvoiceIdentityClaims.Add(new() { Id = Guid.NewGuid(), CompanyId = Company, IdentityKind = kind,
+                IdentityValue = value, Generation = 1, HolderBatchId = batchId, HolderSourceDocumentId = documentId,
+                ClaimedBy = "SENTETIK-checker", ClaimedAtUtc = ApprovedAt, CorrelationId = "SENTETIK" });
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        return documentId;
+    }
 
     [Fact]
     public async Task An_approved_record_answers_its_stored_exact_facts_and_the_sales_adapter_its_decimals_without_writing()

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Work.Infrastructure.Persistence;
 
-public sealed class WorkDbContext(
+public sealed partial class WorkDbContext(
     DbContextOptions<WorkDbContext> options,
     ICompanyContext companyContext) : DbContext(options)
 {
@@ -34,6 +34,7 @@ public sealed class WorkDbContext(
         ConfigureInbox(modelBuilder);
         ConfigureOutbox(modelBuilder);
         ConfigureOutboxDispatch(modelBuilder);
+        ConfigureNotifications(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -228,7 +229,7 @@ public sealed class WorkDbContext(
                 throw new InvalidOperationException("Work records cannot be deleted.");
             }
 
-            if (entry.Entity is WorkObservationInboxRow or WorkOutboxRow
+            if (entry.Entity is WorkObservationInboxRow or WorkOutboxRow or WorkNotificationRow or WorkNotificationInboxRow or WorkNotificationPassivationRow
                 && entry.State != EntityState.Added)
             {
                 throw new InvalidOperationException("Work inbox and outbox records are append-only.");

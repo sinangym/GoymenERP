@@ -134,27 +134,47 @@ internal static class AccountingSourceDocumentVoucherPlanV1
         }
 
         var planned = new List<AccountingSourceDocumentPlannedLineV1>();
+        var purchase = request.DocumentKind == AccountingSourceDocumentKindsV1.PurchaseInvoice;
+        if (purchase && parsed.Any(item => !AccountingPurchaseLinePurposesV1.IsKnown(item.Line.LinePurpose)))
+        {
+            return AccountingSourceDocumentPlanV1.Refuse(AccountingSourceDocumentAdmissionReasonsV1.LineInvalid);
+        }
+
         if (functional.Payable > 0m)
         {
-            planned.Add(new(AccountingPostingAccountMappingKeysV1.Receivable, AccountingSourceDocumentSidesV1.Debit,
+            planned.Add(new(purchase ? AccountingPostingAccountMappingKeysV1.Payable : AccountingPostingAccountMappingKeysV1.Receivable,
+                purchase ? AccountingSourceDocumentSidesV1.Credit : AccountingSourceDocumentSidesV1.Debit,
                 functional.Payable, null, null, null, null, null));
         }
 
         foreach (var item in parsed.Where(item => item.Net > 0m).OrderBy(item => item.Line.LineNumber))
         {
-            planned.Add(new(AccountingPostingAccountMappingKeysV1.Revenue, AccountingSourceDocumentSidesV1.Credit, item.Net,
+            var key = purchase
+                ? item.Line.LinePurpose == AccountingPurchaseLinePurposesV1.Service
+                    ? AccountingPostingAccountMappingKeysV1.Expense
+                    : AccountingPostingAccountMappingKeysV1.Inventory
+                : AccountingPostingAccountMappingKeysV1.Revenue;
+            planned.Add(new(key, purchase ? AccountingSourceDocumentSidesV1.Debit : AccountingSourceDocumentSidesV1.Credit, item.Net,
                 item.Line.LineNumber, item.Line.ItemType, item.Line.LinePurpose, item.Line.IsExport, null));
         }
 
         foreach (var group in parsed.GroupBy(item => item.Line.VatRateCode, StringComparer.Ordinal)
                      .OrderBy(group => group.Key, StringComparer.Ordinal))
         {
-            var amount = group.Sum(item => item.Vat - item.Withholding);
+            var amount = group.Sum(item => purchase ? item.Vat : item.Vat - item.Withholding);
             if (amount > 0m)
             {
-                planned.Add(new(AccountingPostingAccountMappingKeysV1.VatOutput, AccountingSourceDocumentSidesV1.Credit,
+                planned.Add(new(purchase ? AccountingPostingAccountMappingKeysV1.VatInput : AccountingPostingAccountMappingKeysV1.VatOutput,
+                    purchase ? AccountingSourceDocumentSidesV1.Debit : AccountingSourceDocumentSidesV1.Credit,
                     amount, null, null, null, null, group.Key));
             }
+
+        }
+
+        if (purchase && functional.Withholding > 0m)
+        {
+            planned.Add(new(AccountingPostingAccountMappingKeysV1.WithholdingPayable, AccountingSourceDocumentSidesV1.Credit,
+                functional.Withholding, null, null, null, null, null));
         }
 
         var debit = planned.Where(line => line.Side == AccountingSourceDocumentSidesV1.Debit).Sum(line => line.Amount);

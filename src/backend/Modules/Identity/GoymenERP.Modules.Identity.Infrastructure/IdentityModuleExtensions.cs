@@ -80,9 +80,13 @@ public static class IdentityModuleExtensions
         services.AddScoped<IIdentityAccessReadService, IdentityAccessReadService>();
         // ID-3 role assignment, revocation and the Critical role request (KIM-D1/D5/D15/D17). It grants nothing by
         // itself: who holds identity.roles.manage and identity.access.approve stays a human gate.
-        services.AddScoped<IIdentityAccessAssignmentService, IdentityAccessAssignmentService>();
+        services.AddScoped<IdentityAccessAssignmentService>();
+        services.AddScoped<IIdentityAccessAssignmentService>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
+        services.AddScoped<IIdentityUserManagementServiceV1>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
+        services.AddScoped<ICompanySetupGroupAuthorityV1, SqlCompanySetupGroupAuthorityV1>();
         services.AddScoped<IdentityCompanySetupService>();
         services.AddScoped<IIdentityCompanySetupServiceV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
+        services.AddScoped<IIdentityFirstAdminCandidatesV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
         // MOD-08 user directory: a company-fenced, read-only display-name port for another module's central adapter.
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).
@@ -95,6 +99,8 @@ public static class IdentityModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ILocalCredentialStore, SqlLocalCredentialStore>();
         services.AddScoped<ILocalAccountLoginService, LocalAccountLoginService>();
+        services.AddScoped<ILocalTwoFactorLoginV1, SqlLocalTwoFactorLoginV1>();
+        services.AddScoped<ILocalTwoFactorServiceV1, LocalTwoFactorServiceV1>();
         services.AddScoped<ILocalAccountSessionValidator, LocalAccountSessionValidator>();
         // KIM-D30: logout renews the security stamp; every open session then fails the per-request check.
         services.AddScoped<ILocalAccountLogoutService, LocalAccountLogoutService>();
@@ -111,6 +117,7 @@ public static class IdentityModuleExtensions
             .Bind(configuration.GetSection(FounderRecoveryOptions.SectionName));
         services.AddScoped<IdentityUserManagementEvaluator>();
         services.AddScoped<IFounderRecoveryCompanyLock, SqlFounderRecoveryCompanyLock>();
+        services.AddScoped<IFounderRecoveryAuditParticipant, FounderRecoveryAuditParticipant>();
         services.AddScoped<IFounderRecoveryService, FounderRecoveryService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();

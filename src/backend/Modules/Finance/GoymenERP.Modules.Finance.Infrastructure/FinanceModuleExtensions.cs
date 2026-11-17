@@ -88,7 +88,11 @@ public static class FinanceModuleExtensions
         // API-85b (F018 §L2; FNS-D57/D31/D58): the customer collateral master, one step. The type and its rate are
         // Settings' (FNS-D31); until a Settings adapter registers its catalog the default answers Unavailable, so a
         // record and the weighted collateral fail closed.
-        services.TryAddScoped<IFinanceCollateralTypeCatalogReader, UnavailableFinanceCollateralTypeCatalogReader>();
+        services.TryAddScoped<IFinanceCollateralTypeCatalogReader>(provider =>
+            provider.GetService<ISettingsCollateralTypeCatalogV1>() is { } catalog
+                ? new SettingsFinanceCollateralTypeCatalogReaderV1(provider.GetRequiredService<ICompanyContext>(),
+                    provider.GetRequiredService<ICurrentUser>(), catalog, provider.GetRequiredService<TimeProvider>())
+                : new UnavailableFinanceCollateralTypeCatalogReader());
         services.AddScoped<IFinancePartyCollateralMaster>(CreatePartyCollateralService);
         // FIN-S9 (FNS-D23): the opening balances, proposed and approved by two people while the Settings opening period
         // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and
@@ -97,6 +101,9 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceOpeningBalanceService>(CreateOpeningBalanceService);
         // FIN-SC47 (FNS-D87/FNS-D88/FNS-D93/FNS-D94): the credit account with its imported plan; no grant.
         services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
+        services.TryAddScoped<IFinanceCreditAccountingPeriodPortV1, UnavailableFinanceCreditAccountingPeriodPortV1>();
+        services.AddScoped<IFinanceCreditMovementServiceV1>(CreateCreditMovementService);
+        services.AddScoped<IFinanceCreditLimitServiceV1>(CreateCreditLimitService);
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
         services.AddScoped<IFinancePartyCreditPanelReader>(CreatePartyCreditPanelService);
@@ -299,13 +306,38 @@ public static class FinanceModuleExtensions
             companyContext,
             currentUser,
             permissions,
-            provider.GetService<ISettingsMoneyCandidateReader>()
+            provider.GetService<ISettingsMoneyCandidateReaderV2>()
                 ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
             provider.GetRequiredService<IAuditEventCollector>(),
             new FinanceCreditAccountEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<ISettingsPrerequisiteProvider>(),
+            provider.GetService<IFinanceCreditLenderPortV1>());
+    }
+
+    private static FinanceCreditMovementServiceV1 CreateCreditMovementService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceOpeningPeriodReader>(), provider.GetRequiredService<IFinanceCreditAccountingPeriodPortV1>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(), provider.GetRequiredService<IAuditEventCollector>(),
+            new(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
+    }
+
+    private static FinanceCreditLimitServiceV1 CreateCreditLimitService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<IFinanceCreditLenderPortV1>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static ReceiptDraftService CreateReceiptDraftService(IServiceProvider provider)
