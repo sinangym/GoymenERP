@@ -92,7 +92,7 @@ public sealed class OrganizationCompanyTaxIdStatusSqlServerRelationalAcceptanceT
         await WithDatabaseAsync(async factory =>
         {
             var companyId = await PlaceholderAsync(factory);
-            var context = new CompanyContext(); context.Set(companyId);
+            var context = new ReboundTestContext(companyId);
             var observer = new ReadObserver(context, fail: true);
             await using (var db = Database(factory, context, observer))
             {
@@ -110,7 +110,16 @@ public sealed class OrganizationCompanyTaxIdStatusSqlServerRelationalAcceptanceT
         new DbContextOptionsBuilder<OrganizationDbContext>().UseSqlServer(factory.DatabaseConnectionString).AddInterceptors(observer).Options,
         context, new OrganizationBootstrapWriteScope());
 
-    private sealed class ReadObserver(CompanyContext context, bool fail) : DbCommandInterceptor
+    // Production CompanyContext itself rejects a rebind. This explicit interface double isolates the reader's
+    // own post-await defence without weakening that production implementation or mutating another request.
+    private sealed class ReboundTestContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
+    }
+
+    private sealed class ReadObserver(ReboundTestContext context, bool fail) : DbCommandInterceptor
     {
         public int SourceReads { get; private set; }
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
