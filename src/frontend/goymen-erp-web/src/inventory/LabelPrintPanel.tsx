@@ -1,20 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
-import type { RemoteViewState } from '../shell/uiState'
+import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { Button } from '../ui/Button'
-import { generateLabelPdf } from './labelPrintApi'
+import { fetchLabelPdfTemplate, generateLabelPdf, type LabelPdfTemplateSelection } from './labelPrintApi'
+import { brandingGuid, brandingVersion } from '../documents/brandingContract'
 import { LABEL_PRINT_TEXT as T } from './labelPrintText'
 
-interface Pending { readonly key: string; readonly requestedAtUtc: string }
+interface Pending { readonly key: string; readonly requestedAtUtc: string; readonly template?: LabelPdfTemplateSelection }
 
 function recall(storageKey: string): Pending | null {
   try {
     const raw: unknown = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
     return typeof raw === 'object' && raw !== null && 'key' in raw && 'requestedAtUtc' in raw
       && typeof raw.key === 'string' && raw.key.length > 0 && typeof raw.requestedAtUtc === 'string'
-      && /^\d{4}-\d{2}-\d{2}T/.test(raw.requestedAtUtc) ? { key: raw.key, requestedAtUtc: raw.requestedAtUtc } : null
+      && /^\d{4}-\d{2}-\d{2}T/.test(raw.requestedAtUtc)
+      && (!('template' in raw) || validTemplate(raw.template))
+      ? { key: raw.key, requestedAtUtc: raw.requestedAtUtc, ...('template' in raw ? { template: raw.template as LabelPdfTemplateSelection } : {}) } : null
   } catch { return null }
+}
+function validTemplate(raw: unknown): raw is LabelPdfTemplateSelection {
+  return raw !== null && typeof raw === 'object' && 'publicationId' in raw && 'publicationVersion' in raw
+    && (raw.publicationId === null && raw.publicationVersion === null || brandingGuid(raw.publicationId) && brandingVersion(raw.publicationVersion))
 }
 
 export function LabelPrintPanel({ labelId, companyId, actorId, namespace }: {
@@ -35,13 +42,25 @@ export function LabelPrintPanel({ labelId, companyId, actorId, namespace }: {
   async function generate() {
     if (flight.current) return
     flight.current = true
-    const attempt = pending ?? { key: crypto.randomUUID(), requestedAtUtc: new Date().toISOString() }
-    setPending(attempt)
-    try { sessionStorage.setItem(storageKey, JSON.stringify(attempt)) } catch { /* current mounted attempt remains available */ }
     const current = ++generation.current
     const snapshot = boundary.capture()
     setBusy(true); setState(null); setMessage(null)
-    const outcome = await generateLabelPdf(labelId, attempt.requestedAtUtc, companyId, attempt.key)
+    let attempt = pending
+    if (attempt === null) {
+      const selected = await fetchLabelPdfTemplate(labelId, companyId)
+      if (current !== generation.current) return
+      if (selected.type !== 'ok-single') {
+        flight.current = false; setBusy(false)
+        if (selected.type === 'http') boundary.report(selected.status, snapshot)
+        const failure = classifyOutcome(selected)
+        setState(failure.kind === 'ready' ? { kind: 'malformed-response' } : failure)
+        return
+      }
+      attempt = { key: crypto.randomUUID(), requestedAtUtc: new Date().toISOString(), template: selected.data }
+      setPending(attempt)
+      try { sessionStorage.setItem(storageKey, JSON.stringify(attempt)) } catch { /* mounted attempt remains available */ }
+    }
+    const outcome = await generateLabelPdf(labelId, attempt.requestedAtUtc, companyId, attempt.key, attempt.template)
     if (outcome.type === 'applied' || (outcome.type === 'failed' && ![401, 403].includes(outcome.status))) {
       try { sessionStorage.removeItem(storageKey) } catch { /* no transport retry is needed after a definite answer */ }
     }

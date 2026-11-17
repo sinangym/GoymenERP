@@ -146,8 +146,15 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         return new(answer.Value, answer.IsReplay, answer.CorrelationId);
     }
 
-    public async Task<DocumentPublishedTemplateReadV1> ReadAsync(Guid companyId, DocumentTemplateModuleV1 module, string templateCode,
-        CancellationToken cancellationToken = default)
+    public Task<DocumentPublishedTemplateReadV1> ReadAsync(Guid companyId, DocumentTemplateModuleV1 module, string templateCode,
+        CancellationToken cancellationToken = default) => ReadPublicationCoreAsync(companyId, module, templateCode, null, null, cancellationToken);
+
+    public Task<DocumentPublishedTemplateReadV1> ReadPublicationAsync(Guid companyId, DocumentTemplateModuleV1 module,
+        string templateCode, Guid publicationId, string publicationVersion, CancellationToken cancellationToken = default) =>
+        ReadPublicationCoreAsync(companyId, module, templateCode, publicationId, publicationVersion, cancellationToken);
+
+    private async Task<DocumentPublishedTemplateReadV1> ReadPublicationCoreAsync(Guid companyId, DocumentTemplateModuleV1 module,
+        string templateCode, Guid? publicationId, string? publicationVersion, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         DocumentPublishedTemplateReadV1 Closed(string why) => new(DocumentPublishedTemplateOutcomeV1.Unavailable, companyId,
@@ -156,8 +163,13 @@ public sealed class DocumentBrandingService(DbContextOptions<DocumentsDbContext>
         try
         {
             await using var db = NewContext();
-            var row = await LatestPublicationAsync(db, module, templateCode, cancellationToken);
+            if (publicationId is not null && (publicationId == Guid.Empty || !PositiveVersion(publicationVersion!)))
+                return Closed("publication_selection_invalid");
+            var row = publicationId is null ? await LatestPublicationAsync(db, module, templateCode, cancellationToken)
+                : await db.TemplatePublications.AsNoTracking().SingleOrDefaultAsync(x => x.Id == publicationId
+                    && x.Module == (int)module && x.TemplateCode == templateCode, cancellationToken);
             if (!MatchesCompany(companyId)) return Closed("company_changed");
+            if (publicationId is not null && (row is null || Text(row.Version) != publicationVersion)) return Closed("publication_selection_missing");
             if (row is null) return new(DocumentPublishedTemplateOutcomeV1.NoSource, companyId, module, templateCode, null, null, null);
             var branding = await db.BrandingRevisions.AsNoTracking().SingleOrDefaultAsync(x => x.Version == row.BrandingVersion, cancellationToken)
                 ?? throw Unavailable();
