@@ -8,6 +8,13 @@ public static partial class AccountingEndpoints
 {
     private static void MapManufacturingCostDifferences(RouteGroupBuilder group)
     {
+        group.MapGet("/credit-movement-proposals", async (CreditMovementProposalServiceV1 service, HttpContext http, CancellationToken token) =>
+        {
+            SetPrivateNoStore(http.Response.Headers);
+            return ToHttpResult(http, await service.ListAsync(token), null);
+        }).RequireCompanyContext().RequireAuthorization(GoymenERP.BuildingBlocks.Security.ErpPermissions.AccountingJournalsRead)
+            .WithName("ListAccountingCreditMovementProposalsV1").Produces<CreditMovementProposalListV1>().WithReadProblems(notFound: false);
+
         // Read authorization is propose OR approve, measured by the owner service before and after its read.
         group.MapGet("/manufacturing-cost-differences", async (ManufacturingCostDifferenceServiceV1 service,
             HttpContext http, CancellationToken token) =>

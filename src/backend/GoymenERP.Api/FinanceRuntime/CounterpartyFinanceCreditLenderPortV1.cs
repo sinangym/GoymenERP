@@ -48,6 +48,9 @@ public sealed class CounterpartyFinanceCreditLenderPortV1(ICompanyContext compan
 
 public static class FinanceCreditRuntimeExtensions
 {
-    public static IServiceCollection AddFinanceCreditLenderOwnerRead(this IServiceCollection services) =>
-        services.AddScoped<IFinanceCreditLenderPortV1, CounterpartyFinanceCreditLenderPortV1>();
+    public static IServiceCollection AddFinanceCreditLenderOwnerRead(this IServiceCollection services)
+    {
+        services.AddScoped<IFinanceCreditAccountingPeriodPortV1, FinanceCreditAccountingPeriodPortV1>();
+        return services.AddScoped<IFinanceCreditLenderPortV1, CounterpartyFinanceCreditLenderPortV1>();
+    }
 }

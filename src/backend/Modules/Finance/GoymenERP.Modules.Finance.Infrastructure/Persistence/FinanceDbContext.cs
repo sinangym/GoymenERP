@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options, ICompanyContext companyContext)
+public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "finance";
@@ -171,6 +171,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureExpensePayments(modelBuilder);
         ConfigureCashTransfers(modelBuilder);
         ConfigureCreditAccounts(modelBuilder);
+        ConfigureCreditMovements(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -2364,6 +2365,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is FinanceCreditMovementRow movement && !CreditMovementChangeAllowed(entry, movement))
+                    throw new InvalidOperationException("Kredi hareketi yalnız ayrı kişinin kararı veya açık dönem ters kaydıyla değişir.");
                 if (entry.Entity is ManualBankPaymentRow payment
                     && !IsAllowedManualBankPaymentTransition(entry, payment))
                 {
@@ -2459,6 +2462,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
                 string[] allowed = entry.Entity switch
                 {
+                    FinanceCreditMovementRow => [nameof(FinanceCreditMovementRow.Status), nameof(FinanceCreditMovementRow.DecidedBy),
+                        nameof(FinanceCreditMovementRow.DecidedAtUtc), nameof(FinanceCreditMovementRow.RejectionReason), nameof(FinanceCreditMovementRow.ReversedByMovementId)],
                     FinanceOfficialSalesInvoiceRow =>
                     [
                         nameof(FinanceOfficialSalesInvoiceRow.Status), nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy),

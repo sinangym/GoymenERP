@@ -7,6 +7,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { fetchCreditAccounts, sendCreditAccount, type CreditAccount, type CreditAttempt, type CreditCommandOutcome } from './creditAccountApi'
 import { CreditAccountProposalForm } from './CreditAccountProposalForm'
+import { CreditMovementsPanel } from './CreditMovementsPanel'
 import { currencyShown } from './currencyCodes'
 import { CREDIT_TEXT as T } from './creditAccountText'
 import styles from './Finance.module.css'
@@ -40,8 +41,9 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
     inFlight.current = true; setSending(true); setAttempt(next); setOutcome(null); unresolved.set(namespace!, next)
     try { const stamp = boundary.capture(); const result = await sendCreditAccount(company, next)
       if (result.type === 'refused' && (result.status === 401 || result.status === 403)) boundary.report(result.status, stamp)
-      if (result.type !== 'unknown') unresolved.delete(namespace!)
-      if (mounted.current) { setOutcome(result)
+      const unresolvedRetry = retry && result.type === 'refused' && [400, 401, 403, 404, 415].includes(result.status)
+      if (result.type !== 'unknown' && !unresolvedRetry) unresolved.delete(namespace!)
+      if (mounted.current) { setOutcome(unresolvedRetry ? { type: 'unknown' } : result)
         if (result.type === 'applied') { setCreating(false); setSelected(result.value.id); setReason(''); void query.refetch() }
         if (result.type === 'refused' && result.status === 409) void query.refetch()
       }
@@ -88,6 +90,7 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
               <label>{T.reason}<textarea value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>
               <button disabled={reason.trim() === ''} onClick={() => void send({ operation: 'reject', key: crypto.randomUUID(), id: row.id, request: { expectedVersion: row.version, reason: reason.trim() } })}>{T.reject}</button>
             </fieldset> : null}
+            {row.status === 'Approved' ? <CreditMovementsPanel key={row.id} account={row} namespace={namespace!} /> : null}
           </> : null}
         </>}
     </>}

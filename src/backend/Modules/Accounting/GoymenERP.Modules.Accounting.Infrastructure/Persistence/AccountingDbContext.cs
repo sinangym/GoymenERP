@@ -140,6 +140,7 @@ public sealed partial class AccountingDbContext(DbContextOptions<AccountingDbCon
         ConfigureSourceDocumentVoucherDrafts(modelBuilder);
         ConfigureSourceDocumentVoucherDraftLines(modelBuilder);
         ConfigureManufacturingCostDifferences(modelBuilder);
+        ConfigureCreditMovementProposals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);

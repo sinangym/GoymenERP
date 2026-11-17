@@ -67,6 +67,18 @@ Settings para profili yoksa `credit_plan_profile_unavailable` döner; örnek par
 Çalışma mevcut FIN-SC47-KREDI içinde sürer; yeni dalga veya dilim açılmaz. Bu belge `OPEN-*`
 durumunu veya Finance STOP'ı değiştirmez.
 
+Kaynak uygulamasındaki gerçekleşmiş hareket kaydı kullanım, geri ödeme, faiz tahakkuku ve
+açılışı ayrı türlerle taşır. Kaynak bileşenleri ve varsa belgede açık banka net tutarı birbirinden
+türetilmez. Onaylı banka bacağı iç defterde bir kez görünür; aynı tutar ayrıca tahsilat/ödeme
+olarak kopyalanmaz. Geri ödeme bakiyesi ve hareketin kararı aynı SERIALIZABLE işlemdedir.
+Kapalı açılışın düzeltmesi, eski kaynak ve kararını koruyan ters olay + yeni olay olarak
+kullanıcının seçtiği açık muhasebe tarihinde kaydedilir. Ayrı onaylayan zorunludur.
+
+Accounting, Finance'ın gerçek transactional outbox olayını kendi immutable kaynak ve de-dup
+kaydıyla alır. TK-30 eşlemesi eksikken öneri `MappingMissing` olarak bekler; eksik TL karşılığı
+ayrıca gösterilir. Bu kayıt veya ekran, muhasebe fişinin üretildiği/onaylandığı anlamına gelmez.
+İrsaliye/fatura miktarı, vergi oranı, kur veya henüz belirlenmemiş hesap eşlemesi buradan türetilmez.
+
 ## Resmî kaynaklardan uyarlama
 
 - Microsoft Dynamics [teminat mektupları](https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/letters-of-guarantee)

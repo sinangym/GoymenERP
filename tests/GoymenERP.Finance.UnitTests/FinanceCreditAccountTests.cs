@@ -694,7 +694,7 @@ public sealed partial class FinanceCreditAccountTests
     /// The real service over one in-memory store: every call is a fresh scope (context, company, user, audit collector
     /// and interceptor) like a request, on a fixed clock.
     /// </summary>
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string databaseName = $"finance-credit-accounts-{Guid.NewGuid():N}";
         public Func<Guid, ISettingsPrerequisiteProvider?> Settings { get; set; } = company => new SyntheticCreditSources(company);

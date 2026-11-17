@@ -22,7 +22,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// SENTETIK / NOT_ENV test data. A credit account approval moves no money and writes no voucher.
 /// </para>
 /// </summary>
-public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTests
 {
     private const string Maker = "SENTETIK-credit-maker";
     private const string Checker = "SENTETIK-credit-checker";
@@ -223,7 +223,7 @@ public sealed class FinanceCreditAccountSqlServerRelationalAcceptanceTests
 
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 

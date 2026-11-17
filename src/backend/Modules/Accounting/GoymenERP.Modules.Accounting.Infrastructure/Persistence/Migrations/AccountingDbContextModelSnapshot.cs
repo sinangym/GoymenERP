@@ -669,6 +669,59 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.CreditMovementProposalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsReversal")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MappingStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long?>("MappingVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("MovementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("WaitingReasonsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "MovementId", "IsReversal")
+                        .IsUnique();
+
+                    b.ToTable("CreditMovementProposals", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_CreditMovementProposals_Mapping", "([MappingStatus] = N'MappingMissing' AND [MappingVersion] IS NULL) OR ([MappingStatus] = N'MappingDetailsPending' AND [MappingVersion] > 0)");
+
+                            t.HasCheckConstraint("CK_CreditMovementProposals_Source", "ISJSON([SourceJson]) = 1 AND LEN([SourceHash]) = 64 AND ISJSON([WaitingReasonsJson]) = 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.DeliveryRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1594,6 +1647,15 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.ApprovedAccountingSourceCatalogRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.CreditMovementProposalRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
