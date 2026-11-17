@@ -1582,6 +1582,22 @@ public static class ErpPermissions
     /// </summary>
     public const string SettingsManufacturingParameterProfilesRead = "settings.manufacturing-parameter-profiles.read";
 
+    /// <summary>
+    /// 2026-10-21 No133 / K16: generic policy names are registered, not granted. Company-wide only.
+    /// URN-D3/D4 govern the actual family lifecycle; registering approve does not add an approval step.
+    /// The publish-critical name is an additional authority name, not a new Critical classification.
+    /// </summary>
+    public const string SettingsPoliciesPrepare = "settings.policies.prepare";
+
+    /// <inheritdoc cref="SettingsPoliciesPrepare"/>
+    public const string SettingsPoliciesApprove = "settings.policies.approve";
+
+    /// <inheritdoc cref="SettingsPoliciesPrepare"/>
+    public const string SettingsPoliciesPublish = "settings.policies.publish";
+
+    /// <inheritdoc cref="SettingsPoliciesPrepare"/>
+    public const string SettingsPoliciesPublishCritical = "settings.policies.publish-critical";
+
     /// <inheritdoc cref="SettingsManufacturingParameterProfilesRead"/>
     public const string SettingsManufacturingParameterProfilesPrepare = "settings.manufacturing-parameter-profiles.prepare";
 
@@ -1935,6 +1951,10 @@ public static class ErpPermissions
             SettingsExchangeRatesImport,
             SettingsExchangeRatesHalfDayMark,
             SettingsManufacturingParameterProfilesRead,
+            SettingsPoliciesPrepare,
+            SettingsPoliciesApprove,
+            SettingsPoliciesPublish,
+            SettingsPoliciesPublishCritical,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
             SettingsManufacturingParameterProfilesPublish,
@@ -2232,6 +2252,10 @@ public static class ErpPermissions
             SettingsExchangeRatesImport,
             SettingsExchangeRatesHalfDayMark,
             SettingsManufacturingParameterProfilesRead,
+            SettingsPoliciesPrepare,
+            SettingsPoliciesApprove,
+            SettingsPoliciesPublish,
+            SettingsPoliciesPublishCritical,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
             SettingsManufacturingParameterProfilesPublish,
