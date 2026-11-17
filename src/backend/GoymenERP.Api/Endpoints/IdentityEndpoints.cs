@@ -52,6 +52,7 @@ public static partial class IdentityEndpoints
 
         MapAccessView(group);
         MapAccessAssignments(group);
+        MapUserManagement(group);
         MapFirstCompanyAdmin(group);
         MapLocalAccountSession(group);
 

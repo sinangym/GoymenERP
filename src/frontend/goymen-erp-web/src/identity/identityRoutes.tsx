@@ -14,12 +14,14 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { IDENTITY_CAPABILITY, IDENTITY_ROUTE, type IdentityCapabilityId } from './capabilities'
 import { IdentityAccessPage } from './IdentityAccessPage'
 import { IdentityRoleDetailPage } from './IdentityRoleDetailPage'
+import { IdentityUserManagementPage } from './IdentityUserManagementPage'
 
 function gate(capability: IdentityCapabilityId, children: ReactNode) {
-  return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
+  return <CapabilityRoute capability={[capability]}>{children}</CapabilityRoute>
 }
 
 export const identityRoutes: RouteObject[] = [
+  { path: IDENTITY_ROUTE[IDENTITY_CAPABILITY.userManagement].slice(1), element: gate(IDENTITY_CAPABILITY.userManagement, <IdentityUserManagementPage />) },
   {
     path: IDENTITY_ROUTE[IDENTITY_CAPABILITY.accessList].slice(1),
     element: gate(IDENTITY_CAPABILITY.accessList, <IdentityAccessPage />),

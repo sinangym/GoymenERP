@@ -273,4 +273,20 @@ public sealed class LocalCredential
             throw new ArgumentException("Yeni güvenlik damgası boş olamaz ve eskisinden farklı olmalıdır.", nameof(newSecurityStamp));
         }
     }
+
+    /// <summary>KIM-D16 administrative reset: forced change, no founder temporary-password lifetime.</summary>
+    public void ResetPassword(string hash, int formatVersion, DateTimeOffset now, Guid stamp)
+    {
+        ChangePassword(hash, formatVersion, now, stamp);
+        MustChangePassword = true;
+    }
+
+    public void Unlock()
+    {
+        FailedAccessCount = 0;
+        LockoutEndUtc = null;
+        Version++;
+    }
+
 }
+

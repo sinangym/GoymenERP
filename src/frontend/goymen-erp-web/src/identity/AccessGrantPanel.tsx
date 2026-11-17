@@ -32,7 +32,7 @@ export function AccessGrantPanel({ company, user, roles, changed }: { readonly c
   </section>
 }
 
-function AssignmentForm({ company, user, roles, finish }: { readonly company: string; readonly user: AccessUserDetail; readonly roles: readonly AccessRoleSummary[]; readonly finish: Finish }) {
+export function AssignmentForm({ company, user, roles, finish }: { readonly company: string; readonly user: Pick<AccessUserDetail, 'userId' | 'displayName'>; readonly roles: readonly AccessRoleSummary[]; readonly finish: Finish }) {
   const [roleId, setRole] = useState('')
   const [from, setFrom] = useState('')
   const [until, setUntil] = useState('')
