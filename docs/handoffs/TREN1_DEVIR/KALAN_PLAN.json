@@ -108,7 +108,7 @@
     "work": "EK24 geç fatura farkının satılan malın maliyetine aktarımı",
     "slice": "STK-SC36-a",
     "status": "PARTIAL",
-    "note": "Actual Inventory cost and Accounting source/posting connected; historical cancellation and late cost ordering remains STK-SC36-a."
+    "note": "Actual cost, posting and historical cancellation proofs connected through16cf9dccd. Accepted/cancelled/reversed invoice A then real reinvoice B requires immutable economic claim succession; source implementation remains PARTIAL."
    },
    {
     "work": "EK24 mal kabul otomatik kuru ve birleşen etikette kg ağırlıklı kur",
@@ -1358,7 +1358,7 @@
      "w5_raporu": "durum/W5_stok_lojistik.md",
      "w6_report": "durum/W6_stok_lojistik.md",
      "w8_report": "durum/W8_finans.md",
-     "w8_source_note": "PARTIAL: actual purchase posted attribution 3ea0f8300 integrated and mounted at 65618ac1e, combined source builds exit0. SAT-D422 purchase correction in next owner checkpoint; cancellation/generation and full-return witness gaps remain explicit."
+     "w8_source_note": "PARTIAL: actual cost/source/posting, attributed cancellation and historical finalized/cancelled invoice proofs integrated through16cf9dccd. Final missing case: accepted invoice A is officially cancelled/reversed then actual reinvoice B must acquire the same physical economic claim without reviving A or creating duplicate global cost. Append-only claim succession source/model/tests in progress; no policy guess or runtime acceptance."
     },
     {
      "id": "STK-SC36-b",

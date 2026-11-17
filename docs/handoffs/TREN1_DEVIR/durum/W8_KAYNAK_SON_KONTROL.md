@@ -37,3 +37,9 @@ Backend 0 uyarı/hata; her süreç öncesi en az2GiB boş fiziksel bellek ölç�
 ## SAT-D417 doğrudan kullanıcı cevabı
 
 Kullanıcı: “100 kg kalıp 20 kg için ayrı istisna kaydedilsin, satış müdürü,”. [6963301286](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6963301286) bu doğrudan oturum cevabının açıkça işaretlenmiş ajan aktarımıdır. Talimat miktarı korunacak, ek miktar ayrı kalıcı istisna ve satış müdürü onayıyla yürütülecek. Aynı STK-S3 içinde kaynak çalışması başlatıldı; fiziksel yükleme/sevk ve diğer gerçek owner limitleri korunur. Yeni soru/OPEN kapanışı/grant/production kararı türetilmez. Mevcut172/174 kaynak sayısı değişmedi; iki kalan iş de uygulama aşamasındadır.
+
+## Maliyet iptal zincirinin son kaynak ayrimi
+
+`16cf9dccd` tarihsel kesinlesmis/iptal edilmis fatura kanitini, gercek Sales claim owner okumasini ve kanitli sifir-pay sinirini tamamlar. Owner API, Accounting.UnitTests, Sales.UnitTests ve IntegrationTests kaynak derlemeleri exit0; merkez sonraki birlesik derleme QUEUED. Bu runtime kabul degildir.
+
+Son acik vaka ters olay sirasidir: A faturasi ekonomik payi once kabul edilmisken resmen iptal edilip ilgili muhasebe ters kayitlari onaylandiktan sonra B gercek faturasi ayni fiziksel payi devralabilmelidir. SAT-D96/SAT-D228 yeniden faturalamaya izin verir. Eski claim silinmez/degistirilmez; append-only nesil ardilligi gercek iptal/ters kayit kanitina baglanir. Eski A tutari B icin kendiliginden muhasebelesmis sayilmaz; gercek yeni SMM oneri/onay akisi korunur. Bu kaynak/model/test calismasi ayni STK-SC36-a icinde suruyor; mevcut172/174 sayisi degismez.
