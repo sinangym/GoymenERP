@@ -1,0 +1,9 @@
+.filters { display: flex; flex-wrap: wrap; gap: .85rem 1rem; align-items: end; }
+.filters > div { flex: 1 1 16rem; min-width: 0; }
+.filters input[type='text'] { box-sizing: border-box; min-height: 2.5rem; padding: .5rem; width: 100%; }
+.check { display: flex; align-items: center; gap: .5rem; min-height: 2.5rem; }
+.details { display: grid; gap: .2rem; overflow-wrap: anywhere; }
+.details small { color: var(--goy-ds-color-text-muted, #475569); }
+.table { max-width: 100%; min-width: 0; }
+.notes { display: grid; gap: .5rem; }
+.notes p { margin: 0; }

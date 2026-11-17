@@ -7,6 +7,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.FutureSupply;
 using GoymenERP.Modules.Inventory.Domain.Labels;
@@ -350,18 +351,28 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
     private async Task<string> StageAcceptanceExitAsync(InventoryGoodsReceiptRequestV1 original,
         InventoryGoodsReceiptReversalRequestV1 request, InventoryCommandMetadata metadata, CancellationToken token)
     {
+        await store.ObservePhysicalCountBoundaryAsync(original.ProductId, original.LocationId, token);
         var label = await context.Labels.SingleAsync(row => row.Id == original.LabelId, token);
         var physical = await context.Balances.AsNoTracking().Where(row => row.LabelId == label.Id)
             .SumAsync(row => (decimal?)row.QuantityKg, token) ?? 0m;
         var allocated = await context.Allocations.AsNoTracking().Where(row => row.LabelId == label.Id
             && row.Status == (int)StockAllocationStatus.Active).SumAsync(row => (decimal?)row.RemainingKg, token) ?? 0m;
-        if (allocated > physical - Quantity(request.QuantityKg)) throw Error(409, Codes.StockAllocated);
         var position = new StockPosition(companyId, new StockOwner(original.OwnerKind, original.OwnerId),
             new StockCustodian(original.CustodianKind, original.CustodianId), original.LocationId,
             new MaterialLabel(label.Id, companyId, label.Code, label.ProductId, label.LotId, label.ProductVersion), request.SourceBlock);
         var movement = new StockMovement(request.InventoryMovementId, companyId, StockMovementKind.PurchaseAcceptanceReversal,
             request.OccurredAtUtc, new StockSourceReference(Codes.SourceKind, original.MovementId, request.ReversalLineId),
             [new StockMovementLine(position, StockDirection.Out, Kilograms.Positive(Quantity(request.QuantityKg)))], CostResult.NotCalculated);
+        var atPosition = await context.Balances.AsNoTracking().Where(row => row.LabelId == label.Id
+            && row.OwnerKind == (int)original.OwnerKind && row.OwnerId == original.OwnerId
+            && row.CustodianKind == (int)original.CustodianKind && row.CustodianId == original.CustodianId
+            && row.LocationId == original.LocationId && row.Block == (int)request.SourceBlock)
+            .SumAsync(row => (decimal?)row.QuantityKg, token) ?? 0m;
+        if (atPosition < Quantity(request.QuantityKg))
+            throw Error(409, Codes.StockNotAvailable, store.PhysicalStockRefusal(movement,
+                new StockShortfall(movement.Kind, movement.Source, position, movement.Lines[0].Quantity,
+                    Kilograms.Of(atPosition), 1), metadata, label.Code));
+        if (allocated > physical - Quantity(request.QuantityKg)) throw Error(409, Codes.StockAllocated);
         if (await store.StageMovementAsync(movement, metadata, recordAudit: true, token) != InventoryWriteOutcome.Recorded)
             throw Error(409, Codes.IdempotencyConflict);
         return Text(label.Version);

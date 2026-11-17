@@ -52,6 +52,21 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); resetAdjustmentAttemptsForTests(); vi.resetAllMocks() })
 describe('Receipt undo, correction and supplier return workflow, synthetic NOT_ENV', () => {
+  it('shows the physical owner kg refusal in the supplier return workflow', async () => {
+    const detail = 'Sistemde 1 kg var, 1.9 kg istendi.'
+    vi.mocked(createSupplierReturn).mockResolvedValue({ type: 'failed', status: 409, code: 'SENTETIK-physical', detail })
+    mount({ canAdjust: false }); await openAndFill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(detail)).toBeTruthy()
+    expect(createSupplierReturn).toHaveBeenCalledOnce()
+  })
+  it('shows the server physical stock refusal alongside the conflict state', async () => {
+    const detail = 'Sistemde 1 kg var, 1.9 kg istendi.'
+    vi.mocked(reverseReceipt).mockResolvedValue({ type: 'failed', status: 409, code: 'SENTETIK-physical', detail })
+    mount(); await openAndFill(); await userEvent.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(detail)).toBeTruthy()
+    expect(reverseReceipt).toHaveBeenCalledOnce()
+  })
   it('keeps an unresolved operation frozen and retries identical payload and key after a read capability refresh', async () => {
     vi.mocked(reverseReceipt).mockResolvedValueOnce({ type: 'unknown', reason: 'service-unavailable', status: 503 })
       .mockResolvedValueOnce({ type: 'applied', response: answer })

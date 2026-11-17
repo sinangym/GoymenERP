@@ -1,4 +1,5 @@
 using System.Data.Common;
+using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -62,10 +63,17 @@ internal sealed class LogisticsRealizationTransactionRunner(
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception exception)
         {
-            await RollBackAsync(transaction, cancellationToken);
+            var rolledBack = await RollBackAsync(transaction, CancellationToken.None);
             logistics.ChangeTracker.Clear();
+            var cause = stock.PhysicalRefusal ?? exception;
+            if (InventoryNegativeStockAttemptEvidenceException.Find(cause) is not null)
+            {
+                if (!rolledBack) throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
+                try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, cause); }
+                catch (Exception) { throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable); }
+            }
             throw;
         }
     }
@@ -81,16 +89,14 @@ internal sealed class LogisticsRealizationTransactionRunner(
         ArgumentNullException.ThrowIfNull(beforeCommit);
     }
 
-    private static async Task RollBackAsync(IDbContextTransaction transaction, CancellationToken cancellationToken)
+    private static async Task<bool> RollBackAsync(IDbContextTransaction transaction, CancellationToken cancellationToken)
     {
         try
         {
             await transaction.RollbackAsync(cancellationToken);
+            return true;
         }
-        catch
-        {
-            // Preserve the operation failure; disposing the transaction remains mandatory.
-        }
+        catch { return false; }
     }
 
     private sealed class ShipmentStock(
@@ -101,6 +107,7 @@ internal sealed class LogisticsRealizationTransactionRunner(
         TimeProvider clock) : ILogisticsShipmentStockV1, IAsyncDisposable
     {
         private IInventoryDefiniteShipmentParticipantV1? participant;
+        public Exception? PhysicalRefusal { get; private set; }
 
         public async Task<LogisticsShipmentAllocationV1?> FindAllocationAsync(
             Guid salesOrderId,
@@ -219,7 +226,9 @@ internal sealed class LogisticsRealizationTransactionRunner(
             }
             catch (InventoryDefiniteShipmentException exception)
             {
-                throw new LogisticsInstructionServiceException(exception.Status, exception.Code);
+                PhysicalRefusal = exception;
+                throw new LogisticsInstructionServiceException(exception.Status, exception.Code, innerException: exception,
+                    detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
             }
         }
 

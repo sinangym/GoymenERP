@@ -20,6 +20,15 @@ const mount = (binding = 'read-1', attemptBinding = 'synthetic-actor-company') =
   binding={binding} attemptBinding={attemptBinding} onSettled={vi.fn()} />)
 afterEach(() => { cleanup(); resetAdjustmentAttemptsForTests(); vi.resetAllMocks() })
 describe('Batch correction journey, synthetic NOT_ENV', () => {
+  it('shows authoritative physical kg when a selected receipt cannot be reversed', async () => {
+    const detail = 'Sistemde 1 kg var, 1.9 kg istendi.'
+    vi.mocked(reverseReceiptBatch).mockResolvedValue({ type: 'failed', status: 409, code: 'SENTETIK-physical', detail })
+    mount(); await userEvent.click(screen.getByLabelText(T.choose))
+    await userEvent.type(screen.getByLabelText(T.quantity), '2'); await userEvent.type(screen.getByLabelText(T.kg), '1,9')
+    await userEvent.type(screen.getByLabelText(T.reason), 'SENTETIK correction')
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(detail)).toBeTruthy()
+  })
   it('freezes exact selected content and key across refresh/remount after an unknown response', async () => {
     vi.mocked(reverseReceiptBatch).mockResolvedValue({ type: 'unknown', reason: 'service-unavailable', status: 503 })
     const first = mount(); await userEvent.click(screen.getByLabelText(T.choose))

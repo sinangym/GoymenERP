@@ -24,12 +24,12 @@ public sealed partial class PurchasingService
             try
             {
                 await store.RecordRefusalAsync(envelope, hash, command,
-                    new(exception.Status, exception.Code, exception.Errors), cancellationToken);
+                    new(exception.Status, exception.Code, exception.Errors, exception.Detail), cancellationToken);
             }
             catch (PurchasingStoreException concurrent) when (concurrent.Code == PurchasingStoreCodes.ConcurrentChange)
             { return await ExecuteOwnerAsync(); }
             throw new PurchasingServiceException(exception.Status, exception.Code, exception.Errors,
-                isReplay: false, originalCorrelationId: envelope.CorrelationId);
+                isReplay: false, originalCorrelationId: envelope.CorrelationId, detail: exception.Detail);
         }
         catch { await RequireStillAsync(scope, permission, cancellationToken); throw; }
 

@@ -40,6 +40,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsApproveOverdelivery, ErpPermissions.PurchasingGoodsReceiptsApproveOverdelivery)]
     [InlineData(PurchasingPermissionManifestV1.FutureAllocationRelease, ErpPermissions.PurchasingFutureAllocationRelease)]
     [InlineData(PurchasingPermissionManifestV1.SupplierReturnsRecord, ErpPermissions.PurchasingSupplierReturnsRecord)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Read, ErpPermissions.PurchasingInvoicesRead)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Import, ErpPermissions.PurchasingInvoicesImport)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Match, ErpPermissions.PurchasingInvoicesMatch)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance, ErpPermissions.PurchasingInvoicesApproveVariance)]
+    [InlineData(PurchaseIncomingInvoicePermissionNamesV1.Finalize, ErpPermissions.PurchasingInvoicesFinalize)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -89,7 +94,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(14, purchasing.Length);
+        Assert.Equal(20, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
@@ -110,6 +115,16 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        string[] staged = [PurchasingShellCapabilityProvider.InvoiceApproveVarianceCapabilityId,
+            PurchasingShellCapabilityProvider.InvoiceDetailCapabilityId, PurchasingShellCapabilityProvider.InvoiceFinalizeCapabilityId,
+            PurchasingShellCapabilityProvider.InvoiceListCapabilityId, PurchasingShellCapabilityProvider.InvoiceMatchCapabilityId];
+        Assert.Equal(staged, purchasing.Where(item => !item.Declaration.ImplementationAvailable)
+            .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        Assert.All(purchasing.Where(item => !item.Declaration.ImplementationAvailable), item =>
+        {
+            Assert.Contains(PurchaseIncomingInvoicePermissionNamesV1.Read, item.Declaration.RequiredPermissions);
+            Assert.Contains(PurchasingPermissionManifestV1.OrdersPriceRead, item.Declaration.RequiredPermissions);
+        });
 
         var create = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);

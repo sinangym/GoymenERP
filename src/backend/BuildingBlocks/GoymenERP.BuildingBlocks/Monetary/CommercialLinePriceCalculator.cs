@@ -38,6 +38,16 @@ public static class CommercialLinePriceCalculator
         decimal? surchargeAmount) =>
         ToDecimal(ExactNet(unitPrice, discountPercent, discountAmount, surchargePercent, surchargeAmount));
 
+    /// <summary>An unrounded receipt share for a later invoice-line sum. Refuses values that decimal cannot hold exactly.
+    /// The consumer rounds only the complete line with its recorded money profile; no per-receipt money allocation is made.</summary>
+    public static decimal ExactLineAmount(decimal quantity, decimal unitPrice, decimal? discountPercent, decimal? discountAmount,
+        decimal? surchargePercent, decimal? surchargeAmount)
+    {
+        if (quantity < 0m) throw new ArgumentOutOfRangeException(nameof(quantity));
+        return ToDecimal(ExactNet(unitPrice, discountPercent, discountAmount, surchargePercent, surchargeAmount)
+            .Multiply(ExactDecimal.Of(quantity)));
+    }
+
     /// <summary>
     /// The line amount: <paramref name="quantity"/> (in the price unit) × the exact net unit price, rounded once half away from
     /// zero to <paramref name="scale"/>.

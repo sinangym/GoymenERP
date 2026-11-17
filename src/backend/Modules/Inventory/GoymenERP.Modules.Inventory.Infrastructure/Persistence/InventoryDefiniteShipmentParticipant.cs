@@ -122,6 +122,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
+        await store.LockPhysicalValidationAsync(cancellationToken);
         var allocationRow = await context.Allocations.SingleOrDefaultAsync(row => row.Id == request.AllocationId,
             cancellationToken) ?? throw Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference);
         // B-01: a definite shipment consumes only a Sales order line's allocation (or a legacy row without demand); a
@@ -190,16 +191,6 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             };
         }
 
-        var balance = await context.Balances.SingleOrDefaultAsync(row =>
-            row.LabelId == position.LabelId && row.OwnerKind == (int)position.Owner.Kind
-            && row.OwnerId == position.Owner.Id && row.CustodianKind == (int)position.Custodian.Kind
-            && row.CustodianId == position.Custodian.Id && row.LocationId == position.LocationId
-            && row.ProductId == position.ProductId && row.Block == (int)BlockState.Free, cancellationToken);
-        if (balance is null || balance.QuantityKg < quantity.Value)
-        {
-            throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient);
-        }
-
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
             request.OccurredAtUtc,
             new StockSourceReference("logistics.definite-shipment", request.ShipmentId,
@@ -212,7 +203,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         }
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         {
-            throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient);
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, exception);
         }
         catch (InventoryStoreException exception) when (exception.Code is
             InventoryStoreCodes.MovementIdConflict or InventoryStoreCodes.DuplicateSource)
@@ -357,8 +348,8 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();
 
-    private static InventoryDefiniteShipmentException Refused(int status, string code) =>
-        InventoryDefiniteShipmentException.Refused(status, code);
+    private static InventoryDefiniteShipmentException Refused(int status, string code, Exception? inner = null) =>
+        InventoryDefiniteShipmentException.Refused(status, code, inner);
 
     public async ValueTask DisposeAsync()
     {

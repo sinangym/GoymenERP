@@ -1,4 +1,5 @@
 using System.Data.Common;
+using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -42,10 +43,16 @@ internal sealed class PurchaseSupplierReturnHost(
                 await transaction.CommitAsync(cancellationToken);
                 return result;
             }
-            catch
+            catch (Exception exception)
             {
-                await RollbackQuietlyAsync(transaction);
+                var rolledBack = await RollbackQuietlyAsync(transaction);
                 purchasing.ChangeTracker.Clear();
+                if (InventoryNegativeStockAttemptEvidenceException.Find(exception) is not null)
+                {
+                    if (!rolledBack) throw new PurchasingServiceException(503, InventorySupplierReturnExitCodesV1.Unavailable);
+                    try { await InventoryNegativeStockAttemptRecording.AfterRollbackAsync(services, exception); }
+                    catch (Exception) { throw new PurchasingServiceException(503, InventorySupplierReturnExitCodesV1.Unavailable); }
+                }
                 throw;
             }
             finally
@@ -55,14 +62,15 @@ internal sealed class PurchaseSupplierReturnHost(
         }
         catch (InventorySupplierReturnExitException exception)
         {
-            throw new PurchasingServiceException(exception.Status, exception.Code);
+            throw new PurchasingServiceException(exception.Status, exception.Code, innerException: exception,
+                detail: InventoryPhysicalStockRefusalProblem.Apply(exception.Status, exception, new Dictionary<string, object?>()));
         }
     }
 
-    private static async Task RollbackQuietlyAsync(IDbContextTransaction transaction)
+    private static async Task<bool> RollbackQuietlyAsync(IDbContextTransaction transaction)
     {
-        try { await transaction.RollbackAsync(CancellationToken.None); }
-        catch { /* Preserve the original operation failure. */ }
+        try { await transaction.RollbackAsync(CancellationToken.None); return true; }
+        catch { return false; }
     }
 
     /// <summary>Adapts the Purchasing exit request to Inventory's port; the source block text is parsed strictly (Free or Blocked).</summary>

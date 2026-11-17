@@ -222,7 +222,14 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         return null;
     }
 
-    public async Task<InventoryTransferResultV1> DispatchAsync(
+    public Task<InventoryTransferResultV1> DispatchAsync(Guid transferId, DispatchInventoryTransferV1 request,
+        InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
+        InventoryTransferSourceScaleSetting sourceScaleSettingAtDispatch, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+        WithinPhysicalValidationTransactionAsync(() => DispatchCoreAsync(transferId, request, effectiveOutgoingDocument,
+            sourceScaleSettingAtDispatch, metadata, freshAuthorityFence, cancellationToken), cancellationToken);
+
+    private async Task<InventoryTransferResultV1> DispatchCoreAsync(
         Guid transferId,
         DispatchInventoryTransferV1 request,
         InventoryTransferOutgoingDocumentOwnerSnapshotV1 effectiveOutgoingDocument,
@@ -260,6 +267,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             return new(priorView, true, prior.CorrelationId);
         }
 
+        await LockPhysicalValidationAsync(cancellationToken);
         var row = await dbContext.Transfers.SingleOrDefaultAsync(candidate => candidate.Id == transferId, cancellationToken);
         if (row is null)
         {
@@ -421,7 +429,13 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             freshAuthorityFence, cancellationToken);
     }
 
-    public async Task<InventoryTransferResultV1> AcceptLineAsync(
+    public Task<InventoryTransferResultV1> AcceptLineAsync(Guid transferId, Guid lineId,
+        AcceptInventoryTransferLineV1 request, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+        WithinPhysicalValidationTransactionAsync(() => AcceptLineCoreAsync(transferId, lineId, request, metadata,
+            freshAuthorityFence, cancellationToken), cancellationToken);
+
+    private async Task<InventoryTransferResultV1> AcceptLineCoreAsync(
         Guid transferId,
         Guid lineId,
         AcceptInventoryTransferLineV1 request,
@@ -454,6 +468,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
             return new(priorView, true, prior.CorrelationId);
         }
 
+        await LockPhysicalValidationAsync(cancellationToken);
         var row = await dbContext.Transfers.SingleOrDefaultAsync(candidate => candidate.Id == transferId, cancellationToken);
         if (row is null)
         {
@@ -622,6 +637,11 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         catch (InventoryRuleException exception)
         {
             await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            if (dbContext.Database.CurrentTransaction is null)
+            {
+                dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
+            }
             throw TransferError(409, InventoryTransferCodesV1.SourcePositionConflict, exception);
         }
     }

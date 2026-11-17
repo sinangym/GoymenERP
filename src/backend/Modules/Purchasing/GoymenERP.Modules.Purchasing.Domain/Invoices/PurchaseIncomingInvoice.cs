@@ -1,3 +1,5 @@
+using GoymenERP.BuildingBlocks.Monetary;
+
 namespace GoymenERP.Modules.Purchasing.Domain.Invoices;
 
 /// <summary>ALS-D7/D44: imported supplier facts. Amounts are from the official document, never recomputed as tax policy.</summary>
@@ -177,7 +179,9 @@ public sealed class PurchaseIncomingInvoice
         {
             var shares = frozen.Where(item => item.InvoiceLineId == line.Id).ToArray();
             if (shares.Length == 0) throw new PurchasingRuleException(MatchRequired, "Her fatura satırı kabul kaynağına bağlanmalıdır.");
-            var quantity = shares.Sum(item => item.Quantity); var expectedNet = shares.Sum(item => item.ExpectedNet);
+            var quantity = CommercialLinePriceCalculator.ExactSum(shares.Select(item => item.Quantity));
+            // ALS-D8: compare the whole invoice line, not independently rounded receipt shares.
+            var expectedNet = Money.Round(CommercialLinePriceCalculator.ExactSum(shares.Select(item => item.ExpectedNet)), CurrencyId, MoneyScale).Amount;
             if (quantity != line.Quantity) differences.Add(new(line.Id, "Quantity", quantity, line.Quantity));
             if (Math.Abs(expectedNet - line.Amounts.Net) > policy.AmountTolerance)
                 differences.Add(new(line.Id, "Price", expectedNet, line.Amounts.Net));

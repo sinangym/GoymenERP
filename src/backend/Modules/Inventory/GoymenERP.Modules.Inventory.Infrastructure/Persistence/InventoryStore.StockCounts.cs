@@ -179,10 +179,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -259,7 +260,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         }
 
         DbUpdateException? concurrentChange = null;
-        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken))
         {
             try
             {
@@ -267,6 +268,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
+                    await LockPhysicalValidationAsync(cancellationToken);
+                    await ObservePhysicalCountBoundaryAsync(countRow.ProductId, countRow.LocationId, cancellationToken);
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == countRow.LabelId, cancellationToken);
                     await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -348,6 +351,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     CorrelationId = metadata.CorrelationId.Trim(),
                 };
                 dbContext.StockCountDecisions.Add(decision);
+                if (decisionCode == DecisionApproved)
+                    await ResolveNegativeStockAttemptsAsync(countRow, now, metadata, cancellationToken);
                 var before = StockCountView(countRow, decision: null);
                 var view = StockCountView(countRow, decision);
                 dbContext.Commands.Add(StockCountCommandRow(DecideStockCountCommand, companyId, keyHash, payloadHash,
@@ -372,10 +377,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }

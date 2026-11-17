@@ -18,8 +18,8 @@ public sealed class InventoryRuleException : Exception
     /// A negative-stock refusal that names the line it stopped (SAT-D318). The code is always
     /// <see cref="InventoryRuleCodes.NegativePhysicalStock"/>; the shortfall only adds which line and which bucket.
     /// </summary>
-    public InventoryRuleException(StockShortfall shortfall, string message)
-        : base(message)
+    public InventoryRuleException(StockShortfall shortfall, string message, Exception? innerException = null)
+        : base(message, innerException)
     {
         ArgumentNullException.ThrowIfNull(shortfall);
         Code = InventoryRuleCodes.NegativePhysicalStock;

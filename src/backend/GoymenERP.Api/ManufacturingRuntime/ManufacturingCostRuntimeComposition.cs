@@ -16,6 +16,7 @@ public static class ManufacturingCostRuntimeComposition
         services.AddScoped<IManufacturingScrapCostDistributionSourceV1, ManufacturingCostCompositionSourceV1>();
         services.AddScoped<IManufacturingScrapCostDistributionPortV1, ManufacturingScrapCostDistributionPort>();
         services.AddScoped<IManufacturingProductionCostPortV2, ManufacturingProductionCostPort>();
+        services.AddScoped<IManufacturingReopeningAccountingPeriodStatusPortV1, ManufacturingReopeningAccountingPeriodStatusPortV1>();
         services.AddScoped<ManufacturingInventoryCostGenerationFactoryV1>(provider =>
             (connection, transaction, companyId, audit, writer, cancellationToken) =>
                 InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, companyId,
