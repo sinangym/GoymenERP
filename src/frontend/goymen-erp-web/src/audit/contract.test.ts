@@ -128,3 +128,17 @@ describe('KIM-S7 typed System recovery audit permission', () => {
     expect(decodeAuditEventPage(page([auditEvent({ permissionCode: null })]), COMPANY_A)).toBeNull()
   })
 })
+
+describe('KIM-S8 typed authenticated self credential audit', () => {
+  const self = () => auditEvent({ actorType: 'User', actorId: COMPANY_A, entityId: COMPANY_A, entityType: 'Identity.LocalCredential',
+    eventType: 'identity.local-credentials.two-factor-enabled.v1', operation: 'EnableTwoFactor', entityVersionBefore: 0, entityVersionAfter: 1,
+    permissionCode: null, roleCodes: [], sourceChannel: 'Web', aiInvolvement: 'None', aiContextJson: null, clientIpAddress: null, userAgent: null,
+    approvalContextJson: JSON.stringify({ kind: 'IdentityLocalCredentialSelfServiceV1', method: 'TOTP' }) })
+  it('accepts the self transition and rejects target substitution, invented authority, malformed evidence and versions', () => {
+    expect(decodeAuditEventPage(page([self()]), COMPANY_A)?.items[0].permissionCode).toBeNull()
+    for (const extra of [{ entityId: COMPANY_B }, { actorType: 'System' }, { actorType: 'Ai' }, { roleCodes: ['Admin'] },
+      { eventType: 'identity.local-credentials.two-factor-disabled.v1' }, { operation: 'ResetPassword' }, { entityVersionAfter: 2 },
+      { entityVersionBefore: null }, { approvalContextJson: '{}' }, { sourceChannel: 'System' }, { outcome: 'Refused' }])
+      expect(decodeAuditEventPage(page([{ ...self(), ...extra }]), COMPANY_A)).toBeNull()
+  })
+})

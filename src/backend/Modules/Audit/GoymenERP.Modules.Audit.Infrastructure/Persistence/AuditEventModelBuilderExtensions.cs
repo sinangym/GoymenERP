@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Audit.Infrastructure.Persistence;
 
-public static class AuditEventModelBuilderExtensions
+public static partial class AuditEventModelBuilderExtensions
 {
     // Null permission is reserved for the typed, successful founder CLI command. Existing User/AI/Integration/System
     // permission-bearing events retain their invariant; a NULL/UNKNOWN JSON comparison cannot admit another variant.
@@ -76,7 +76,7 @@ public static class AuditEventModelBuilderExtensions
                     table.HasCheckConstraint(
                         "CK_AuditEvents_SchemaVersion_Positive",
                         "[SchemaVersion] > 0");
-                    table.HasCheckConstraint("CK_AuditEvents_PermissionOrFounderRecovery", FounderRecoveryPermissionCheck);
+                    table.HasCheckConstraint("CK_AuditEvents_PermissionOrFounderRecovery", TypedPermissionCheck);
                 });
         }
 

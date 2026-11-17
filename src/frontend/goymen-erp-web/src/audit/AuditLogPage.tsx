@@ -403,7 +403,7 @@ function AuditEventRows({ item }: { readonly item: AuditEvent }) {
           <br />
           <span className={`${styles.code} ${styles.secondary}`}>{item.actorId}</span>
         </td>
-        <td className={styles.code}>{item.permissionCode ?? T.systemWithoutPermission}</td>
+        <td className={styles.code}>{item.permissionCode ?? (item.actorType === 'User' ? T.selfServiceWithoutPermission : T.systemWithoutPermission)}</td>
         {/* The reason is free text a person typed: the same free-text masking as the payloads applies (No 135). */}
         <td>{item.reason === '' ? T.noValue : maskFreeText(item.reason)}</td>
         <td className={styles.code}>{item.correlationId}</td>

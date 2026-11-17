@@ -25,8 +25,9 @@ public sealed class AuditPersistenceModelTests
 
         Assert.Equal(
             ["20260827160529_InitialAudit", "20260912173914_AddGlobalProductAuditSubject",
-                "20261115121446_AddAuditOutcomeQueryIndex", "20261116220434_AddTypedFounderRecoverySystemAudit"],
-            context.Database.GetMigrations().TakeLast(4));
+                "20261115121446_AddAuditOutcomeQueryIndex", "20261116220434_AddTypedFounderRecoverySystemAudit",
+                "20261117003912_AddLocalCredentialSelfServiceAudit"],
+            context.Database.GetMigrations().TakeLast(5));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
