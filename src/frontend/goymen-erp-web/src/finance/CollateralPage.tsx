@@ -33,6 +33,7 @@ import type {
   CollateralFigure,
   CollateralRecord,
   CollateralTypeCandidates,
+  CollateralBankCandidates,
 } from './CollateralContract'
 import {
   requiresCheckBeforeAbandon,
@@ -45,6 +46,7 @@ import {
   fetchCollateralCurrencyCandidates,
   fetchCollateralHistory,
   fetchCollateralTypeCandidates,
+  fetchCollateralBankCandidates,
   type CollateralCommand,
   type CollateralOperation,
 } from './CollateralHttp'
@@ -126,6 +128,8 @@ function useReporter() {
 interface Candidates {
   readonly types: ViewOutcome<CollateralTypeCandidates> | undefined
   readonly currencies: ViewOutcome<CollateralCurrencyCandidates> | undefined
+  readonly banks: ViewOutcome<CollateralBankCandidates> | undefined
+  readonly retryBanks: () => void
   readonly retryTypes: () => void
   readonly retryCurrencies: () => void
   readonly typeNames: Names
@@ -155,9 +159,13 @@ function CollateralScreen({ canRecord }: CollateralPageProps) {
   })
   const typeList = types.data?.type === 'ok-single' ? types.data.data.items : []
   const currencyList = currencies.data?.type === 'ok-single' ? currencies.data.data.items : []
+  const banks = useQuery({ queryKey: [...scope, 'bank-candidates'], enabled: enabled && canRecord, gcTime: 0,
+    queryFn: ({ signal }) => reported(() => fetchCollateralBankCandidates(companyId ?? '', signal)) })
   const candidates: Candidates = {
     types: types.data,
     currencies: currencies.data,
+    banks: banks.data,
+    retryBanks: () => void banks.refetch(),
     retryTypes: () => void types.refetch(),
     retryCurrencies: () => void currencies.refetch(),
     typeNames: new Map(typeList.map((item) => [item.collateralTypeId, item.code])),
@@ -519,11 +527,17 @@ function CollateralForm({ mode, binding, scope, companyAccountId, held, candidat
   const [validFrom, setValidFrom] = useState(held?.validFrom ?? '')
   const [validUntil, setValidUntil] = useState(held?.validUntil ?? '')
   const [documentReference, setDocumentReference] = useState(held?.documentReference ?? '')
+  const [bankSelection, setBankSelection] = useState(held?.bankInstitution === undefined ? ''
+    : `${held.bankInstitution.bankInstitutionId}::${held.bankInstitution.sourceVersion}`)
   const [errors, setErrors] = useState<FormErrors>(NO_ERRORS)
   const [blocked, setBlocked] = useState(false)
   const base = `collateral-${mode}`
   const typeItems = candidates.types?.type === 'ok-single' ? candidates.types.data.items : []
   const currencyItems = candidates.currencies?.type === 'ok-single' ? candidates.currencies.data.items : []
+  const bankItems = candidates.banks?.type === 'ok-single' ? candidates.banks.data.items : []
+  const bank = bankItems.find(x => `${x.bankInstitutionId}::${x.sourceVersion}` === bankSelection)
+    ?? (held?.bankInstitution !== undefined && `${held.bankInstitution.bankInstitutionId}::${held.bankInstitution.sourceVersion}` === bankSelection
+      ? held.bankInstitution : undefined)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -546,8 +560,9 @@ function CollateralForm({ mode, binding, scope, companyAccountId, held, candidat
     }
     setErrors(next)
     if (Object.values(next).some((error) => error !== null) || !parsed.ok) return
+    if (bankSelection !== '' && bank === undefined) { setBlocked(true); return }
     const payload = { collateralTypeId: typeId, currencyId, amount: parsed.wire, validFrom, validUntil: until,
-      documentReference: reference }
+      documentReference: reference, ...(bank === undefined ? {} : { bankInstitutionId: bank.bankInstitutionId, bankSourceVersion: bank.sourceVersion }) }
     const command: CollateralCommand = mode === 'record' || held === null
       ? { operation: 'record', body: { partyId: party, companyAccountId, ...payload } }
       : { operation: 'change', collateralId: held.collateralId, body: { expectedRevision: held.revision, ...payload } }
@@ -580,6 +595,25 @@ function CollateralForm({ mode, binding, scope, companyAccountId, held, candidat
       empty={T.noCurrencies} subject={T.currencySubject} outcome={candidates.currencies} items={currencyItems}
       value={currencyId} onChange={setCurrencyId} onRetry={candidates.retryCurrencies} error={errors.currency}
       option={(item) => ({ value: item.currencyId, label: `${item.code} — ${item.displayLabel}` })} />
+    <div className={styles.field}>
+      <label htmlFor={`${base}-bank`}>{T.bank}</label>
+      <select id={`${base}-bank`} value={bankSelection} onChange={event => setBankSelection(event.target.value)}>
+        <option value="">{T.noBank}</option>
+        {held?.bankInstitution !== undefined && !bankItems.some(x => x.bankInstitutionId === held.bankInstitution!.bankInstitutionId
+          && x.sourceVersion === held.bankInstitution!.sourceVersion)
+          ? <option value={`${held.bankInstitution.bankInstitutionId}::${held.bankInstitution.sourceVersion}`}>
+              {held.bankInstitution.name} — {held.bankInstitution.eftCode} ({held.bankInstitution.sourceVersion})
+            </option> : null}
+        {bankItems.map(item => <option key={`${item.bankInstitutionId}::${item.sourceVersion}`} value={`${item.bankInstitutionId}::${item.sourceVersion}`}>
+          {item.name} — {item.eftCode}
+        </option>)}
+      </select>
+      <p className={styles.hint}>{T.bankHint}</p>
+      {bank === undefined ? null : <p className={styles.hint}>{T.bankVersion}: {bank.sourceVersion}</p>}
+      {candidates.banks?.type === 'ok-single' ? null
+        : <StateBlock state={candidates.banks === undefined ? { kind: 'initial-loading' } : classifyOutcome(candidates.banks)}
+            subject={T.bankSubject} onRetry={candidates.retryBanks} />}
+    </div>
     <div className={styles.field}>
       <label htmlFor={`${base}-amount`}>{T.amount}</label>
       <input id={`${base}-amount`} type="text" inputMode="decimal" autoComplete="off" value={amount}

@@ -40,14 +40,16 @@ internal static class FinancePartyCollateralFigures
     private static readonly FinanceExactDecimalText HundredPercent = new(100, 0);
 
     internal sealed record HeldCollateral(Guid CollateralTypeId, Guid CurrencyId, string AmountText, DateOnly ValidFrom,
-        DateOnly? ValidUntil);
+        DateOnly? ValidUntil, Guid CollateralId = default, long Revision = 0, Guid? BankInstitutionId = null,
+        string? BankSourceVersion = null, string? ResolvedRatePercent = null);
 
     internal sealed record PortfolioInstrument(int Status, Guid CurrencyId, string AmountText);
 
     internal sealed record CurrencyAmount(Guid CurrencyId, string Amount);
 
     /// <summary>Available: <see cref="Amounts"/> is complete (empty is a recorded zero). Otherwise the reason.</summary>
-    internal sealed record Figure(bool IsAvailable, IReadOnlyList<CurrencyAmount> Amounts, string? ReasonCode)
+    internal sealed record Figure(bool IsAvailable, IReadOnlyList<CurrencyAmount> Amounts, string? ReasonCode,
+        IReadOnlyList<FinanceCollateralRateProofV1>? PolicyProofs = null)
     {
         public static Figure Unavailable(string reasonCode) => new(false, [], reasonCode);
     }
@@ -95,6 +97,9 @@ internal static class FinancePartyCollateralFigures
             {
                 return Figure.Unavailable(TypeRateUnavailable);
             }
+
+            if (collateral.ResolvedRatePercent is { } selected && !TryRate(selected, out rate))
+                return Figure.Unavailable(TypeRateUnavailable);
 
             if (collateral.CurrencyId == Guid.Empty
                 || !FinanceExactDecimalText.TryParsePositive(collateral.AmountText, out var amount))

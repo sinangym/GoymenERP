@@ -114,6 +114,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
         ConfigurePurchaseInvoiceVariancePolicies(modelBuilder);
         ConfigureWarehouseTransferScale(modelBuilder);
         ConfigureDocumentNumbers(modelBuilder);
+        ConfigureFinancePolicies(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -634,6 +635,7 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
             }
 
             ApplyManufacturingProfileWriteGuard(entry);
+            ApplyFinancePolicyWriteGuard(entry);
 
             if (entry.State == EntityState.Deleted)
             {

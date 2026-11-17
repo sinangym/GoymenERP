@@ -1801,6 +1801,20 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND LEN([CollateralTypeVersion]) > 0 AND LEN([RecordedBy]) > 0");
             table.HasCheckConstraint("CK_PartyCollaterals_Payload", PartyCollateralPayloadCheck);
+            table.HasCheckConstraint("CK_PartyCollaterals_BankProof",
+                "([BankInstitutionId] IS NULL AND [BankSourceVersion] IS NULL AND [BankProofJson] IS NULL) OR "
+                + "([BankInstitutionId] IS NOT NULL AND [BankInstitutionId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [BankSourceVersion] IS NOT NULL AND LEN([BankSourceVersion]) > 0 AND [BankProofJson] IS NOT NULL "
+                + "AND ISJSON([BankProofJson]) = 1 AND JSON_VALUE([BankProofJson], '$.companyId') IS NOT NULL "
+                + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.companyId')) IS NOT NULL "
+                + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.companyId')) = [CompanyId] "
+                + "AND JSON_VALUE([BankProofJson], '$.bankInstitutionId') IS NOT NULL "
+                + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.bankInstitutionId')) IS NOT NULL "
+                + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE([BankProofJson], '$.bankInstitutionId')) = [BankInstitutionId] "
+                + "AND JSON_VALUE([BankProofJson], '$.sourceVersion') IS NOT NULL "
+                + "AND JSON_VALUE([BankProofJson], '$.sourceVersion') COLLATE Latin1_General_100_BIN2 = [BankSourceVersion] "
+                + "AND JSON_VALUE([BankProofJson], '$.name') IS NOT NULL AND LEN(JSON_VALUE([BankProofJson], '$.name')) > 0 "
+                + "AND JSON_VALUE([BankProofJson], '$.eftCode') IS NOT NULL AND LEN(JSON_VALUE([BankProofJson], '$.eftCode')) > 0)");
             table.HasCheckConstraint("CK_PartyCollaterals_Kind", PartyCollateralKindCheck);
             table.HasCheckConstraint("CK_PartyCollaterals_Status",
                 "([Status] = 1 AND [SupersededAtUtc] IS NULL) OR ([Status] = 2 AND [SupersededAtUtc] IS NOT NULL)");
@@ -1811,6 +1825,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.CollateralTypeVersion).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
+        entity.Property(x => x.BankSourceVersion).HasMaxLength(256).IsUnicode(false).UseCollation(IdentityCollation);
+        entity.Property(x => x.BankProofJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.AmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
         entity.Property(x => x.ValidFrom).HasColumnType("date");

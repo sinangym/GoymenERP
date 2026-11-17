@@ -37,11 +37,12 @@ public sealed class FinancePartyCreditPanelService : IFinancePartyCreditPanelRea
     private readonly IFinancePartyAccountPort parties;
     private readonly IFinanceCollateralTypeCatalogReader collateralTypes;
     private readonly TimeProvider timeProvider;
+    private readonly IFinanceCollateralPolicyReaderV1? collateralPolicies;
     private readonly FinanceSalesPartyRiskReadPortV1 risk;
 
     public FinancePartyCreditPanelService(FinanceDbContext dbContext, ICompanyContext companyContext,
         ICurrentUser currentUser, IFinancePermissionPort permissions, IFinancePartyAccountPort parties,
-        IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider)
+        IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider, IFinanceCollateralPolicyReaderV1? collateralPolicies = null)
     {
         this.dbContext = dbContext;
         this.companyContext = companyContext;
@@ -50,7 +51,8 @@ public sealed class FinancePartyCreditPanelService : IFinancePartyCreditPanelRea
         this.parties = parties;
         this.collateralTypes = collateralTypes;
         this.timeProvider = timeProvider;
-        risk = new FinanceSalesPartyRiskReadPortV1(dbContext, companyContext, collateralTypes, timeProvider);
+        this.collateralPolicies = collateralPolicies;
+        risk = new FinanceSalesPartyRiskReadPortV1(dbContext, companyContext, collateralTypes, timeProvider, collateralPolicies);
     }
 
     public async Task<ReadResult<PartyCreditPanelView>> GetAsync(FinanceContext context, Guid partyId,
@@ -153,7 +155,8 @@ public sealed class FinancePartyCreditPanelService : IFinancePartyCreditPanelRea
         var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil, asOf))
             ? await collateralTypes.ListAsync(companyId, asOf, cancellationToken)
             : null;
-        return (FinancePartyCollateralFigures.Gross(inputs, asOf), FinancePartyCollateralFigures.Weigh(inputs, catalog, asOf));
+        return (FinancePartyCollateralFigures.Gross(inputs, asOf),
+            await FinanceCollateralPolicyFigures.WeighAsync(companyId, inputs, catalog, collateralPolicies, asOf, cancellationToken));
     }
 
     /// <summary>

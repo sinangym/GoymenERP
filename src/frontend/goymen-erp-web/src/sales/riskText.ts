@@ -8,6 +8,10 @@ import type { RiskExceptionState } from './riskException'
 import type { RiskHoldCategory } from './riskExceptionHold'
 
 export const RISK_CHECK_TEXT = {
+  collateralPolicyHeading: 'Teminat oranı kaynakları',
+  collateralPolicy: (revision: string, rate: string, source: string, day: string) =>
+    `Teminat sürümü ${revision} · %${rate} · ${day} · ${source}`,
+  noBankPolicy: 'Banka belirtilmemiş; banka özel oranı uygulanmadı.',
   heading: 'Müşteri riski',
   note:
     'Brüt risk = açık alacak + faturalanmamış sevkiyat + sevk edilmemiş onaylı sipariş kalanı; karar, bu siparişle birlikte ' +

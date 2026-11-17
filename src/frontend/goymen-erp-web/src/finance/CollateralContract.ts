@@ -56,7 +56,17 @@ export interface CollateralRecord {
   readonly recordedAtUtc: string
   readonly supersededAtUtc: string | null
   readonly version: string
+  readonly bankInstitution?: CollateralBankProof
 }
+
+export interface CollateralBankProof {
+  readonly companyId: string
+  readonly bankInstitutionId: string
+  readonly name: string
+  readonly eftCode: string
+  readonly sourceVersion: string
+}
+export interface CollateralBankCandidates { readonly companyId: string; readonly items: readonly CollateralBankProof[] }
 
 export interface CollateralAmount {
   readonly currencyId: string
@@ -125,6 +135,8 @@ export interface CollateralRecordBody {
   readonly validFrom: string
   readonly validUntil: string | null
   readonly documentReference: string | null
+  readonly bankInstitutionId?: string
+  readonly bankSourceVersion?: string
 }
 
 export interface CollateralChangeBody {
@@ -135,6 +147,8 @@ export interface CollateralChangeBody {
   readonly validFrom: string
   readonly validUntil: string | null
   readonly documentReference: string | null
+  readonly bankInstitutionId?: string
+  readonly bankSourceVersion?: string
 }
 
 export interface CollateralReleaseBody {
@@ -192,7 +206,9 @@ const COMMAND_OUTCOMES: readonly string[] = [
 ]
 
 function decodeRecord(value: unknown, companyId: string): CollateralRecord | null {
-  if (!isRecord(value) || !hasExactKeys(value, RECORD_FIELDS)) return null
+  if (!isRecord(value) || !hasExactKeys(value, 'bankInstitution' in value ? [...RECORD_FIELDS, 'bankInstitution'] : RECORD_FIELDS)) return null
+  const bank = 'bankInstitution' in value ? decodeCollateralBankProof(value.bankInstitution, companyId) : undefined
+  if ('bankInstitution' in value && bank === null) return null
   const {
     id, collateralId, revision, direction, source, partyId, companyAccountId, kind, collateralTypeId,
     collateralTypeVersion, currencyId, amount, validFrom, validUntil, documentReference, releaseReason, status,
@@ -242,7 +258,26 @@ function decodeRecord(value: unknown, companyId: string): CollateralRecord | nul
     recordedAtUtc,
     supersededAtUtc,
     version,
+    ...(bank === undefined ? {} : { bankInstitution: bank! }),
   }
+}
+
+export function decodeCollateralBankProof(value: unknown, companyId: string): CollateralBankProof | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'bankInstitutionId', 'name', 'eftCode', 'sourceVersion'])
+    || value.companyId !== companyId || !isBoundUuid(value.bankInstitutionId)
+    || !isCanonicalText(value.name) || value.name.length > 200 || !isCanonicalText(value.eftCode) || value.eftCode.length > 32
+    || !isCanonicalText(value.sourceVersion) || value.sourceVersion.length > 256) return null
+  return value as unknown as CollateralBankProof
+}
+export function decodeCollateralBankCandidates(value: unknown, companyId: string): Decoded<CollateralBankCandidates> {
+  if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'items']) || value.companyId !== companyId || !Array.isArray(value.items)) return FAIL
+  const items: CollateralBankProof[] = []
+  for (const entry of value.items) {
+    const bank = decodeCollateralBankProof(entry, companyId)
+    if (bank === null || items.some(x => x.bankInstitutionId === bank.bankInstitutionId)) return FAIL
+    items.push(bank)
+  }
+  return ok({ companyId, items })
 }
 
 function decodeFigure(value: unknown, allowWithheld: boolean): CollateralFigure | null {
