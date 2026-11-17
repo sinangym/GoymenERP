@@ -59,6 +59,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
             await RequireHistoricalCancellation(source, cancellationToken);
             if (await db.InventoryCostSources.AnyAsync(x => x.Kind == (int)source.Kind && x.InvoiceId == source.InvoiceId
                 && x.InvoiceVersion == source.InvoiceVersion, cancellationToken)) throw Refuse("inventory_cost_source_conflict");
+            source = await RecordObsoleteComponents(source, cancellationToken);
             db.InventoryCostSources.Add(new() { CompanyId = captured, EventId = source.EventId, Kind = (int)source.Kind,
                 InvoiceId = source.InvoiceId, InvoiceVersion = source.InvoiceVersion, AdmissionId = source.AdmissionId,
                 SourceJson = Encode(source), PayloadHash = source.SourcePayloadSha256,
@@ -69,6 +70,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 AuditAiInvolvement.None, null, SourceChannels.System, null, null, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
             foreach (var component in source.Components)
             {
+                if (source.ObsoleteComponents?.Any(x => x.ComponentKey == component.ComponentKey) == true) continue;
                 var hasPurchasePhysicalSource = await RecordPurchaseCandidates(envelope, source, component, cancellationToken);
                 await ClaimPhysicalCost(source, component, cancellationToken);
                 AccountingInventoryCostAmountsV1.TryRead(component.UnpostedTlAmount ?? component.SignedTlAmount, out var amount, out _);

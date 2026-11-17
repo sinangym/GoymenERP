@@ -44,10 +44,18 @@ public sealed record AccountingSalesPhysicalCostClaimV1(Guid ShipmentId, Guid Mo
 public sealed record AccountingInventoryCostSourceCancellationV1(Guid CancellationId, Guid CancelledBy,
     DateTimeOffset CancelledAtUtc, string Reason, string CancellationPayloadSha256);
 
+/// <summary>Accounting-owned terminal receipt: a cancelled, never-accepted invoice cannot take another invoice's physical claim.</summary>
+public sealed record AccountingInventoryCostObsoleteOwnerV1(AccountingSalesPhysicalCostClaimV1 Physical,
+    Guid EventId, Guid InvoiceId, Guid InvoiceLineId, Guid AdmissionId, long FinalizedVersion, Guid ProposalId,
+    string SourceSha256, string ClaimSha256);
+public sealed record AccountingInventoryCostObsoleteComponentV1(string ComponentKey,
+    IReadOnlyList<AccountingInventoryCostObsoleteOwnerV1> Owners);
+
 public sealed record AccountingInventoryCostSourceV1(Guid CompanyId, Guid EventId, AccountingInventoryCostKindV1 Kind,
     Guid InvoiceId, long InvoiceVersion, Guid AdmissionId, DateOnly InvoiceDate, string? OfficialInvoiceNumber,
     Guid? FinalizedBy, string SourcePayloadSha256, IReadOnlyList<AccountingInventoryCostComponentV1> Components,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostSourceCancellationV1? HistoricalCancellation = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingInventoryCostSourceCancellationV1? HistoricalCancellation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AccountingInventoryCostObsoleteComponentV1>? ObsoleteComponents = null);
 
 /// <summary>
 /// Projection is supplied by actual owner ports and a committed event. A missing immutable shipment stamp or

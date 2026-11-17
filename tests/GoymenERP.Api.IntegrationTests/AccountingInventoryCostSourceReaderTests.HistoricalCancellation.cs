@@ -8,6 +8,20 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class AccountingInventoryCostSourceReaderTests
 {
     [Fact]
+    public async Task A_known_stamp_also_keeps_the_actual_cancelled_history_and_cannot_bypass_the_sales_owner()
+    {
+        var f = new Fixture(); var envelope = f.Envelope(); var claims = new FinalizedClaims(f, envelope) { Historical = true };
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, salesClaims: claims);
+        var source = await reader.ReadAsync(envelope);
+        Assert.Equal(claims.CancellationId, source.HistoricalCancellation!.CancellationId);
+        Assert.Equal(new("10001", "100"), Assert.Single(source.Components).SignedTlAmount);
+        Assert.False(Assert.Single(source.Components).HasPostedComponents); Assert.Equal(1, claims.Calls);
+        var missingOwner = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory);
+        Assert.Equal("sales_cost_owner_claim_unavailable", (await Assert.ThrowsAsync<AccountingInvoiceJournalRetryException>(
+            () => missingOwner.ReadAsync(envelope))).Reason);
+    }
+
+    [Fact]
     public async Task Deferred_actual_cost_can_carry_exact_historical_cancellation_without_restoring_an_active_sales_claim()
     {
         var f = new Fixture(); var original = f.Inventory.Value.Lines[0];

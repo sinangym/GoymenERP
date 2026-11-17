@@ -137,19 +137,18 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
                 unposted = AccountingInventoryCostAmountsV1.Add(unposted, exactAmount);
                 hasOriginalCost = true;
             }
-            if (alreadyPosted.Count != 0 || alreadyPurchased.Count != 0)
+            // Known original stamps still need the real invoice lifecycle: a delayed event may arrive after its
+            // cancellation and after a replacement invoice has claimed the same physical shipment.
+            if (salesClaims is null) throw Pending("sales_cost_owner_claim_unavailable");
+            var owned = await salesClaims.ReadAsync(captured, [claim.ShipmentId],
+                _ => { SameCompany(captured); return Task.CompletedTask; }, cancellationToken);
+            SameCompany(captured);
+            var cancelled = RequireOwnerClaim(owned, captured, source, line, claim, envelope);
+            if (cancelled is not null)
             {
-                if (salesClaims is null) throw Pending("sales_cost_owner_claim_unavailable");
-                var owned = await salesClaims.ReadAsync(captured, [claim.ShipmentId],
-                    _ => { SameCompany(captured); return Task.CompletedTask; }, cancellationToken);
-                SameCompany(captured);
-                var cancelled = RequireOwnerClaim(owned, captured, source, line, claim, envelope);
-                if (cancelled is not null)
-                {
-                    if (historicalCancellation is not null && historicalCancellation != cancelled)
-                        throw Pending("sales_cost_owner_claim_unavailable");
-                    historicalCancellation = cancelled;
-                }
+                if (historicalCancellation is not null && historicalCancellation != cancelled)
+                    throw Pending("sales_cost_owner_claim_unavailable");
+                historicalCancellation = cancelled;
             }
             var reread = await logistics.GetAsync(captured, claim.DispatchNoteId, claim.DispatchNoteLineNo, claim.ShipmentId, cancellationToken);
             SameCompany(captured);

@@ -125,10 +125,13 @@ public sealed partial class AccountingInventoryCostSourceReaderTests
             Calls++; await freshConsumerFence(cancellationToken);
             var source = JsonSerializer.Deserialize<AccountingSalesInvoiceFinalizedEventV1>(envelope.PayloadJson,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
-            var ship = f.Line.ShipmentSource!;
+            Assert.Equal(f.Company.CompanyId, companyId);
+            // This synthetic owner represents the first real claim; duplicate input lines remain the adapter's own rejection case.
+            var line = source.Lines!.First(x => x?.ShipmentSource?.ShipmentId == shipmentIds.Single())!;
+            var ship = line.ShipmentSource!;
             var lifecycle = new SalesShipmentInvoiceLifecycleV1(source.InvoiceId, source.Version, "Finalized",
                 Cancelled ? envelope.OccurredAtUtc : null, Cancelled ? "SENTETIK" : null, Cancelled ? envelope.OccurredAtUtc : null);
-            var claim = new SalesFinalizedShipmentClaimV1(companyId, source.InvoiceId, f.Line.LineId, f.Line.LineNo,
+            var claim = new SalesFinalizedShipmentClaimV1(companyId, source.InvoiceId, line.LineId, line.LineNo,
                 source.AdmissionId, source.Version, new(ship.ShipmentId, ship.DispatchNoteId, ship.DispatchNoteLineNo,
                     ship.SalesOrderId, ship.SalesOrderLineId, ship.PriceBasisRevision, ship.ProductId, ship.UnitId, ship.InvoicedQuantity),
                 WrongEvent ? Guid.NewGuid() : envelope.EventId, AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson),
