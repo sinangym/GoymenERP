@@ -445,3 +445,24 @@ shell at `/muhasebe/hesap-plani` (screen `M-05`, capability `accounting.account-
 - The initial Sales SMM recognition trigger is still a human decision (#1189 / 6943887681). This correction does not
   choose it or claim that an initial producer exists. The whole STK-SC36-a owner chain remains incomplete until that
   producer and its immutable shipment-cost trace are bound. Source tests/builds are separate from runtime acceptance.
+
+## FIN-S14 / B-28: received Expense and same-currency Transfer sources
+
+- The Finance owner emits `finance.expense-payment.recorded.v1` or `finance.cash-transfer.recorded.v1` only at its
+  existing final command, in the same transaction as the actual movement and audit. The consumer retains that
+  immutable company/source/version, currency, amount, money-profile and JSON proof once in `FinanceJournalSources`.
+  Receipt does not create a journal or a draft. Identity/payload conflicts are permanent failures; replay is read-only.
+- The existing Accounting journal-read permission controls `GET /api/v1/accounting/finance-journal-sources`, with
+  fresh actor/company/authority checks. `Received`, `BindingUnavailable` and `BindingAvailable` are distinct from
+  journal preparation/posting. The binding is read from the actual approved Accounting source package; no account
+  or debit/credit mapping is supplied by a fallback.
+- The existing normal-journal create screen selects these received sources. The real Finance owner is read again
+  under its read permission when preparing. Its exact amount joins the preparation fingerprint, and the server
+  requires total debit and total credit each to equal that amount in the source currency. A balanced draft for a
+  different total is rejected. Existing open-period, different-approver, idempotency and journal-posting checks apply.
+- FNS-D25 bank fees and paid loan interest remain the single Expense source with its mandatory description. No
+  classification is inferred from that text. FX differences (FNS-D63) and unresolved credit-account mappings (TK-30)
+  are not assigned invented rules by this path. Dispatcher activation and historical event backfill are not included.
+- `AddFinanceJournalSources` adds only this source queue. Down refuses with **THROW 51989** while any received
+  source exists; an empty queue may roll back. Use a forward fix to retain financial provenance. Database apply and
+  runtime SQL/browser/CI acceptance remain separate from source generation and compilation.

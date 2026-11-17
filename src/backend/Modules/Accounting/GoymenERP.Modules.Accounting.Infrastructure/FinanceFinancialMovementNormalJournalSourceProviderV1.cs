@@ -44,7 +44,7 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1(
         if (rule is null || rule.Mirror.CompanyId != companyId || !Same(companyId, actor)) return null;
         var permitted = await permissions.CheckAsync(context, fact.Action, sourceId, cancellationToken);
         return permitted == PermissionDecision.Allowed && Same(companyId, actor)
-            ? new(rule, fact.CurrencyId, fact.Version, fact.Profile.ProfileId, fact.Profile.Version) : null;
+            ? new(rule, fact.CurrencyId, fact.Version, fact.Profile.ProfileId, fact.Profile.Version, fact.Amount) : null;
     }
 
     private static Fact? Expense(ReadResult<ExpensePaymentView> result, Guid company, Guid id)
@@ -57,7 +57,7 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1(
         if (source is null || source.TreasuryAccountId == Guid.Empty || source.ExpenseItemId == Guid.Empty
             || !Enum.IsDefined(source.SourceKind) || source.OccurredOn == default || !Canonical(source.Description)
             || !ValidMoney(source.Money) || !ValidProfile(source.Profile)) return null;
-        return new(source.Money.CurrencyId, view.Version, source.Profile, FinanceAction.ReadExpensePayments);
+        return new(source.Money.CurrencyId, view.Version, source.Profile, FinanceAction.ReadExpensePayments, source.Money.Amount);
     }
 
     private static Fact? Transfer(ReadResult<CashTransferView> result, Guid company, Guid id)
@@ -71,7 +71,7 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1(
             || source.OccurredOn == default || !ValidMoney(source.SourceMoney) || !ValidMoney(source.TargetMoney)
             || source.SourceMoney != source.TargetMoney || !ValidProfile(source.SourceProfile) || !ValidProfile(source.TargetProfile)) return null;
         // This exact immutable source version contains BOTH profile proofs; the approved binding names the real source-leg profile.
-        return new(source.SourceMoney.CurrencyId, view.Version, source.SourceProfile, FinanceAction.ReadCashTransfers);
+        return new(source.SourceMoney.CurrencyId, view.Version, source.SourceProfile, FinanceAction.ReadCashTransfers, source.SourceMoney.Amount);
     }
 
     private bool Current(Guid companyId, out string actor)
@@ -85,5 +85,5 @@ public sealed class FinanceFinancialMovementNormalJournalSourceProviderV1(
     private static bool ValidProfile(ProfileReference? profile) => profile is not null && Canonical(profile.ProfileId) && Canonical(profile.Version);
     private static bool ValidMoney(MoneyText? money) => money is not null && money.CurrencyId != Guid.Empty
         && Canonical(money.Amount) && decimal.TryParse(money.Amount, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount) && amount > 0m;
-    private sealed record Fact(Guid CurrencyId, string Version, ProfileReference Profile, FinanceAction Action);
+    private sealed record Fact(Guid CurrencyId, string Version, ProfileReference Profile, FinanceAction Action, string Amount);
 }
