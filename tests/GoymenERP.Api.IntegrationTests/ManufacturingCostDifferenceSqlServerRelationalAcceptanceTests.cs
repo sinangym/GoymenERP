@@ -136,20 +136,23 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
         Assert.Equal(0, await run.Count("accounting.Journals"));
         Assert.Equal(0, await run.Count("accounting.Deliveries"));
         Assert.Equal(audits, await run.Count("audit.AuditEvents"));
+        long periodVersion;
         await using (var scope = run.Scope())
         {
             Assert.Equal("Prepared", (await scope.Store.FindAsync(id))!.Status);
             var current = await scope.Posting.FindPeriodAsync(period);
-            await scope.Posting.ClosePeriodAsync(period, current!.Version, Checker, Metadata(Checker));
+            periodVersion = current!.Version;
         }
+        await AccountingPeriodCarrySqlFixture.CloseAsync(run.Factory, Company, period, periodVersion, Checker,
+            Metadata(Checker) with { PermissionCode = AccountingPermissionManifestV1.PeriodsClose });
         await using (var scope = run.Scope())
         {
             var refusal = await scope.Service(Checker).ApproveAsync(id, 2, "closed-period");
             Assert.Equal(AccountingApiStatus.Unprocessable, refusal.Status);
             Assert.Equal("cost_difference_open_period_required", refusal.Code);
+            Assert.Equal("Closed", (await scope.Posting.FindPeriodAsync(period))!.Period.Status.ToString());
         }
         Assert.Equal(0, await run.Count("accounting.Journals"));
-        Assert.Equal(2, await run.Scalar<int>("SELECT Status FROM accounting.Periods"));
     }
 
     private static ManufacturingCostDifferenceEventV1 Source() => new(Company, Guid.NewGuid(), Guid.NewGuid(), "2", "4", 3,
@@ -206,7 +209,7 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
             }
             catch { await run.DisposeAsync(); throw; }
         }
-        private SqlServerRelationalApiFactory Factory => factory;
+        public SqlServerRelationalApiFactory Factory => factory;
         public Scope Scope(Guid? company = null) => new(factory.DatabaseConnectionString, company ?? Company);
         public async Task<Guid> OpenPeriod()
         {
