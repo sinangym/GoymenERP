@@ -2,7 +2,7 @@
  "meta": {
   "tarih": "2026-11-18",
   "tren_dali": "claude/tren-1",
-  "kod_head": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
+  "kod_head": "34624009d19c6e3c8e0e0e10ce6ee7726acb0b58",
   "durum_sozlugu": {
    "PARTIAL": "kapsamın bir kısmı kaynakta; kalan kısım son W<n> ekip raporunda",
    "PLANNED/READY": "başlanmadı",
@@ -45,8 +45,8 @@
    "STK-S13 + ALC-S7/S8 (KIM-S18 sonrası)"
   ],
   "toplam": 174,
-  "done": 167,
-  "partial": 7,
+  "done": 171,
+  "partial": 3,
   "remaining_not_started": 0,
   "last_wave": 8,
   "progress_meaning": "DONE yalnız kaynak kapsamıdır. Tam birim/mimari/gerçek SQL/Vitest/browser/CI koşumları NOT_RUN; K3 kabulü ve production değildir.",
@@ -267,11 +267,31 @@
    "SAT-S9",
    "SAT-S13",
    "FIN-S13",
-   "SAT-S12"
+   "SAT-S12",
+   "STK-S3",
+   "STK-S8",
+   "FIN-S14",
+   "FIN-SC47-KREDI"
   ],
   "published_train_done_at_last_checkpoint": 135,
   "w8_status": "IN_PROGRESS: local source scope updated; combined builds/pins/light checks and train fast-forward pending. No W9.",
-  "w8_last_combined_source_build": "65618ac1ec70b97d2a5d05bc6f6cf05e2f2dcea9",
+  "w8_last_combined_source_build": {
+   "head": "34624009d19c6e3c8e0e0e10ce6ee7726acb0b58",
+   "source_exit": 0,
+   "projects": [
+    "Api",
+    "Settings.UnitTests",
+    "Finance.UnitTests",
+    "Sales.UnitTests",
+    "Inventory.UnitTests",
+    "Accounting.UnitTests",
+    "Api.IntegrationTests",
+    "tsc -b"
+   ],
+   "first_integration_failure_preserved": true,
+   "runtime": "NOT_RUN",
+   "note": "API and unit project source at df821ecac;34624009d only fixes new credit test fixture; Integration retry and TypeScript exit0 at34624009d. Later replay fence delta not included."
+  },
   "w8_last_sales_source_build": "19ca53a178dc97e86cdc576ba775d9ee89543a4f",
   "w8_last_mounted_source_build": "6ff5e4f63",
   "sat_s12_golden_main": {
@@ -657,7 +677,7 @@
     "Sales"
    ],
    "toplam": 17,
-   "done": 15,
+   "done": 16,
    "partial": 1,
    "kalan": [
     {
@@ -798,7 +818,7 @@
      "w6_report": "durum/W6_satis.md"
     }
    ],
-   "remaining_not_started": 1
+   "remaining_not_started": 0
   },
   {
    "key": "alis_cari",
@@ -997,8 +1017,8 @@
     "Product"
    ],
    "toplam": 45,
-   "done": 42,
-   "partial": 3,
+   "done": 44,
+   "partial": 1,
    "kalan": [
     {
      "id": "STK-S1",
@@ -1053,11 +1073,13 @@
       "tüketir: ISalesShipmentRiskGateReadPortV1 (satis)",
       "tüketir: Üretim fason emri okuma (uretim)"
      ],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 5,
      "w5_raporu": "durum/W5_stok_lojistik.md",
-     "w6_report": "durum/W6_stok_lojistik.md"
+     "w6_report": "durum/W6_stok_lojistik.md",
+     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+     "w8_source_note": "Original LOJ scope + actual host/borrowed participant/real panels + explicit unused release are mounted. Source checkpoints 372e27303/7b4c5532f and combined34624009d compile exit0. Eight original Logistics shell declarations remain staged false; runtime/SQL/browser/CI NOT_RUN."
     },
     {
      "id": "STK-S8",
@@ -1076,13 +1098,15 @@
       "src/frontend/goymen-erp-web/src/inventory/transfer*.ts"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 7,
      "w6_report": "durum/W6_stok_lojistik.md",
      "w6_note": "Transfer listesi ve detay okuma var; plan/sevk/iptal/teslim/fazla-kayıp onayı mutation ekranları eksik.",
      "w7_result": "Sevk iptal ekranı ve aynı anahtar/payload belirsiz tekrar kaynağı var. Gerçek çıkış/GİB iptal gate ve kaynak kantar ayarı sahibi yok; capability false, kullanılabilir iş akışı değildir.",
-     "w7_report": "durum/W7_stok_lojistik.md"
+     "w7_report": "durum/W7_stok_lojistik.md",
+     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+     "w8_source_note": "Actual plan/dispatch/cancel/receive/difference panels and owner sources mounted;1127e5993 and combined34624009d source compiles exit0. Optional GIB provider absent, linked-document path unavailable503 preserved; no fake official status or activation."
     },
     {
      "id": "STK-S11",
@@ -1630,8 +1654,8 @@
     "FX ekranı (Settings uçları)"
    ],
    "toplam": 21,
-   "done": 18,
-   "partial": 2,
+   "done": 21,
+   "partial": 0,
    "kalan": [
     {
      "id": "FIN-S13",
@@ -1677,12 +1701,12 @@
       "src/backend/Modules/Accounting/**/Sources/*Cash*"
      ],
      "contracts": [],
-     "status": "PARTIAL",
+     "status": "DONE",
      "blocked_reason": "",
      "wave": 6,
      "w6_report": "durum/W6_finans.md",
-     "w8_report": "durum/W8_FIN14_DOVIZ_KAYNAGI.md",
-     "w8_source_note": "PARTIAL: Q10 reference values and event/book-value source owner checkpoint is frozen, build/EF queued. Actual source book-value user answer 6960684942; Accounting bridge still pending. Target FX actual TL value is not inferred from TCMB."
+     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+     "w8_source_note": "Actual Finance source book value + separately evidenced target foreign-currency TL value, different checker, approved mapping and Accounting journal source mounted; a937a1c8f and combined34624009d source compiles exit0. TCMB reference remains separate. Runtime acceptance NOT_RUN."
     },
     {
      "id": "FIN-S17",
@@ -1767,13 +1791,16 @@
      ],
      "contracts": [],
      "finding": "SC36-SC47 kararları",
-     "status": "PARTIAL",
+     "status": "DONE",
      "wave": 5,
      "w5_raporu": "durum/W5_finans.md",
-     "w6_report": "durum/W6_finans.md"
+     "w6_report": "durum/W6_finans.md",
+     "blocked_reason": "",
+     "w8_report": "durum/W8_DORT_DILIM_KAYNAK_KAPANISI.md",
+     "w8_source_note": "5485ec8e5 actual approved credit component mapping/source selection + credit-specific different Accounting checker.34624009d narrows fixture nullable proof; combined API/Accounting/Integration/TSC compiles exit0. No interest/tax/FX calculation or grant/activation; runtime acceptance NOT_RUN."
     }
    ],
-   "remaining_not_started": 1
+   "remaining_not_started": 0
   }
  ]
 }
