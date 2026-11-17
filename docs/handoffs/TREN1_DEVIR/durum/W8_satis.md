@@ -202,3 +202,24 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - Yeniden etkinleşme kaynak testi ilk sabiti ve maliyet okuma sayısını korur.
   Sales.UnitTests ve Api.IntegrationTests derlemeleri exit 0, hata/uyarı 0;
   `git diff --check` exit 0. Runtime testler ve SQL **NOT_RUN**.
+
+
+### SAT-SC34 / ADR-011 — özgün komut cevabının kalıcı tekrarı
+
+- Başarılı lifecycle denemesine nullable `LifecycleSequence` bağlandı. Sonraki onay,
+  kesinleştirme veya Finans yeniden gönderimi ilk komut cevabını değiştirmez. Finans
+  denemeleri aynı fatura sürümünü taşıyabildiğinden özgün ledger sıra numarası kullanılır.
+  Oluşturma tekrarı immutable ilk ledger kaydını okur; güncel fatura yazılmaz/geri sarılmaz.
+- Eski null bağlar korunur; güncel başlıktan cevap veya geçmiş sürüm tahmin edilmez.
+  Şirket filtreleri ve aktör/gövde/anahtar bağı aynen sürer. Yeni grant veya izin yoktur.
+- EF üretimi `20261117155825_AddSubcontractInvoiceReplaySequence`; nullable kolon ve
+  CHECK DDL'i. Down ilk adımda özgün cevap bağı varsa **51937** ile veri kaybını reddeder.
+  Ana dal/tren ve aktif kaynaklarda numara çakışması görülmedi. DB apply **NOT_RUN**.
+- Üç gerçek SQL fact kaynağı ilk oluşturma/komut cevabını, aynı fatura sürümündeki iki
+  Finans denemesini ve boş/dolu Down korumasını kapsar. Model/ilişkisel envanter güncel.
+- API, Sales.UnitTests ve son Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0.
+  İlk Integration denemesinde mevcut fixture'da olmayan yardımcı çağrısı üç hata verdi;
+  gerçek ScalarAsync helper'ıyla düzeltildi, son Integration yeniden derlendi. EF üretimi
+  ve `git diff --check` exit 0. Runtime Unit/SQL/HTTP/CI **NOT_RUN**.
+- Bu düzeltme SAT-SC34'ün resmî iptal üreticisi ve bağımsız muhasebe onayı kalanını
+  tamamlamaz; tüm dilim PARTIAL kalır. Kaynak ve rapor aynı dilim commit'indedir.
