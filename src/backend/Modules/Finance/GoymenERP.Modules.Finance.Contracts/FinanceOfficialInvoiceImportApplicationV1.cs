@@ -24,7 +24,12 @@ public sealed record FinanceOfficialInvoiceAppliedBatchV1(
     Guid CompanyId,
     string BatchVersion,
     string BatchChecksum,
-    IReadOnlyList<FinanceOfficialInvoiceOpenItemV1> OpenItems);
+    IReadOnlyList<FinanceOfficialInvoiceOpenItemV1> OpenItems,
+    IReadOnlyList<FinanceOfficialInvoiceImportedDocumentViewV1>? OfficialDocuments = null);
+
+public sealed record FinanceOfficialInvoiceImportedDocumentViewV1(Guid SourceDocumentId, string OfficialNo,
+    string Ettn, DateOnly? InvoiceDate, string? PayableFunctionalAmount, bool HasPendingManual,
+    Guid? ApprovedManualInvoiceId, string? EffectivePayableFunctionalAmount, IReadOnlyList<string> DifferentFields);
 
 public sealed record FinanceOfficialInvoiceImportApplyResultV1(
     FinanceOfficialInvoiceImportPreviewV1 Preview,

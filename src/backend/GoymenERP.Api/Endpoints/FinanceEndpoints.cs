@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class FinanceEndpoints
+public static partial class FinanceEndpoints
 {
     public const string DraftContextPath = "/api/v1/finance/manual-receipts/draft-context";
     public const string ManualReceiptsPath = "/api/v1/finance/manual-receipts";
@@ -112,9 +112,12 @@ public static class FinanceEndpoints
         MapCollateralEndpoints(endpoints);
         MapOpeningBalanceEndpoints(endpoints);
         MapCreditAccountEndpoints(endpoints);
+        MapCreditMovementEndpoints(endpoints);
+        MapBankCreditLimitEndpoints(endpoints);
         MapPartyCreditPanelEndpoints(endpoints);
         MapOfficialInvoiceImportEndpoints(endpoints);
         MapOfficialSalesInvoiceEndpoints(endpoints);
+        MapOfficialInvoiceCandidates(endpoints);
         return endpoints;
     }
 

@@ -46,7 +46,8 @@ public sealed record FinanceOfficialSalesInvoiceRecordRequestV1(
     string TaxBaseFunctionalAmount,
     string VatFunctionalAmount,
     string WithholdingFunctionalAmount,
-    Guid PdfDocumentId);
+    Guid PdfDocumentId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? InvoiceDate = null);
 
 public sealed record FinanceOfficialSalesInvoiceApproveRequestV1(Guid InvoiceId, string ExpectedVersion);
 
@@ -107,7 +108,14 @@ public sealed record FinanceOfficialSalesInvoiceViewV1(
     DateTimeOffset? RejectedAtUtc,
     string? RejectionReason,
     string? WithdrawnBy,
-    DateTimeOffset? WithdrawnAtUtc);
+    DateTimeOffset? WithdrawnAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? InvoiceDate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceOfficialInvoiceSourceDifferenceV1>? SourceDifferences = null);
+
+/// <summary>FNS-D90 / KLN-D104 detail and approval warning; neither source is rewritten and no notification is sent.</summary>
+public sealed record FinanceOfficialInvoiceSourceDifferenceV1(Guid ImportBatchId, Guid SourceDocumentId,
+    string OfficialNo, string Ettn, IReadOnlyList<string> Fields, DateOnly? InvoiceDate,
+    string? PayableFunctionalAmount, string Winner);
 
 /// <summary>
 /// ExistingOfficialNo is set only with the <c>pdf_already_recorded</c> refusal (#66 6860586175): the official

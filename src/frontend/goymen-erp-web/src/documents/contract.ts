@@ -41,6 +41,7 @@ export const OWNER_KIND = {
   /** The Sales order (S-04 "Sözleşme / Belgeler" tab); the vault asks Sales's own detail read (SalesDocumentOwnerLinkPort). */
   salesOrder: 'sales.order',
   logisticsDispatchNote: 'logistics.dispatch-note',
+  financeOfficialSalesInvoice: 'finance.official-sales-invoice',
 } as const
 export type OwnerKind = (typeof OWNER_KIND)[keyof typeof OWNER_KIND]
 

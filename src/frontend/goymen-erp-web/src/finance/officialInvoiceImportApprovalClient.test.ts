@@ -170,6 +170,20 @@ describe('official invoice application HTTP client', () => {
     isSucceeded: true,
   })
 
+  it('keeps unknown source TL null and refuses numeric money or a foreign source document', async () => {
+    const document = { sourceDocumentId: openItem.sourceDocumentId, officialNo: 'SENTETIK1', ettn: openItem.id,
+      invoiceDate: '2026-11-16', payableFunctionalAmount: null, hasPendingManual: true,
+      approvedManualInvoiceId: null, effectivePayableFunctionalAmount: null, differentFields: [] }
+    const fetcher = vi.fn().mockResolvedValue(json({ ...applied, officialDocuments: [document] }))
+    const client = createOfficialInvoiceImportClient(context, boundary(), fetcher)
+    await expect(client.reopen(batchId, new AbortController().signal)).resolves.toMatchObject({
+      officialDocuments: [{ payableFunctionalAmount: null, hasPendingManual: true }] })
+    for (const invalid of [{ ...document, payableFunctionalAmount: 0 }, { ...document, sourceDocumentId: batchId }]) {
+      fetcher.mockResolvedValue(json({ ...applied, officialDocuments: [invalid] }))
+      await expect(client.reopen(batchId, new AbortController().signal)).rejects.toThrow()
+    }
+  })
+
   it('does not preview or apply when context changes during asynchronous file serialization', async () => {
     const changed = { ...boundary().capture(), requestFenceGeneration: 6, namespace: 'finance-checker-refenced' }
     for (const operation of ['preview', 'apply'] as const) {

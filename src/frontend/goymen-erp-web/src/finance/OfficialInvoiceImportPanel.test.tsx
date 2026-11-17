@@ -99,6 +99,24 @@ beforeEach(() => {
 })
 
 describe('official invoice import panel', () => {
+  it('shows missing TL as unknown and a pending manual record as a nonblocking source note', async () => {
+    const user = userEvent.setup()
+    const result = batch('1250.50', '1', { officialDocuments: [{
+      sourceDocumentId: '33333333-3333-4333-8333-333333333333', officialNo: 'SENTETIK1',
+      ettn: '44444444-4444-4444-8444-444444444444', invoiceDate: '2026-11-16', payableFunctionalAmount: null,
+      hasPendingManual: true, approvedManualInvoiceId: null, effectivePayableFunctionalAmount: null, differentFields: [],
+    }] })
+    const api = client({ apply: vi.fn().mockResolvedValue({ kind: 'succeeded', replayed: false, batch: result }) })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await screen.findByText(`SHA-256: ${checksum}`)
+    await user.click(screen.getByRole('button', { name: /yetkili uygula/i }))
+    expect(await screen.findByText(/Onay bekleyen elle kayıt var/)).toBeTruthy()
+    expect(screen.getAllByText(/Hesaplanamadı; kaynak TL karşılığı yok/)).toHaveLength(2)
+    expect(screen.getByText(/Resmî fatura tarihi: 2026-11-16/)).toBeTruthy()
+  })
+
   it('previews, applies, closes and reopens the same persisted Finance batch', async () => {
     const user = userEvent.setup()
     const api = client()

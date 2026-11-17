@@ -80,6 +80,11 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
 
             if (prior.Status != AccountingSourceDocumentAdmissionStatusV1.Waiting)
             {
+                var replayFence = await FenceAsync(request, cancellationToken);
+                if (replayFence.Answer is not null)
+                {
+                    return replayFence.Answer;
+                }
                 return FromRecord(prior, isReplay: true);
             }
         }
@@ -124,13 +129,15 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
             return AccountingSourceDocumentAdmissionReasonsV1.RequestInvalid;
         }
 
-        if (!string.Equals(request.DocumentKind, AccountingSourceDocumentKindsV1.SalesInvoice, StringComparison.Ordinal))
+        if (request.DocumentKind is not (AccountingSourceDocumentKindsV1.SalesInvoice or AccountingSourceDocumentKindsV1.PurchaseInvoice))
         {
             return AccountingSourceDocumentAdmissionReasonsV1.DocumentKindUnsupported;
         }
 
         return string.Equals(request.IdempotencyKey,
-            AccountingSourceDocumentKindsV1.SalesInvoiceKey(request.InvoiceId, request.FinalizedVersion), StringComparison.Ordinal)
+            request.DocumentKind == AccountingSourceDocumentKindsV1.PurchaseInvoice
+                ? AccountingSourceDocumentKindsV1.PurchaseInvoiceKey(request.InvoiceId, request.FinalizedVersion)
+                : AccountingSourceDocumentKindsV1.SalesInvoiceKey(request.InvoiceId, request.FinalizedVersion), StringComparison.Ordinal)
             ? null
             : AccountingSourceDocumentAdmissionReasonsV1.IdempotencyKeyInvalid;
     }
@@ -138,6 +145,11 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
     private async Task<(AccountingSourceDocumentAdmissionAnswerV1? Answer, AccountingSourceDocumentAuthorityAnswerV1? Authority)>
         FenceAsync(AccountingSourceDocumentAdmissionRequestV1 request, CancellationToken cancellationToken)
     {
+        if (!companyContext.IsResolved || companyContext.CompanyId != request.CompanyId)
+        {
+            return (AccountingSourceDocumentAdmissionAnswerV1.Refused(AccountingSourceDocumentAdmissionReasonsV1.AuthorityDenied), null);
+        }
+
         AccountingSourceDocumentAuthorityAnswerV1 answer;
         try
         {
@@ -147,6 +159,11 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return (AccountingSourceDocumentAdmissionAnswerV1.Unavailable, null);
+        }
+
+        if (!companyContext.IsResolved || companyContext.CompanyId != request.CompanyId)
+        {
+            return (AccountingSourceDocumentAdmissionAnswerV1.Refused(AccountingSourceDocumentAdmissionReasonsV1.AuthorityDenied), null);
         }
 
         if (answer is null || answer.Decision == AccountingSourceDocumentAuthorityDecisionV1.Unavailable
@@ -184,7 +201,9 @@ public sealed class AccountingSourceDocumentAdmissionServiceV1(
                 try
                 {
                     resolution = await mappings.ResolveAsync(request.CompanyId,
-                        AccountingPostingAccountMappingPurposesV1.SalesInvoice, request.DocumentDate, line.MappingKey,
+                        request.DocumentKind == AccountingSourceDocumentKindsV1.PurchaseInvoice
+                            ? AccountingPostingAccountMappingPurposesV1.PurchaseInvoice
+                            : AccountingPostingAccountMappingPurposesV1.SalesInvoice, request.DocumentDate, line.MappingKey,
                         line.ItemType, line.LinePurpose, line.IsExport, line.VatRateCode, cancellationToken);
                 }
                 catch (AccountingStoreException)

@@ -30,8 +30,7 @@ internal static class FinanceOfficialInvoiceIdentityClaimPolicy
                 new FinanceOfficialInvoiceImportPreviewRequestV1(upload.Id, upload.BatchVersion, upload.FileBytes));
             var preview = parsed.Preview;
             if (!preview.IsValid || preview.Batch is null
-                || !string.Equals(preview.TemplateVersion, FinanceOfficialSalesInvoiceImportTemplateV2.Version,
-                    StringComparison.Ordinal)
+                || !FinanceOfficialSalesInvoiceImportTemplateV3.HasDocumentColumns(preview.TemplateVersion)
                 || !string.Equals(preview.TemplateVersion, upload.TemplateVersion, StringComparison.Ordinal)
                 || preview.Batch.BatchId != batch.BatchId
                 || preview.Batch.CompanyId != batch.CompanyId

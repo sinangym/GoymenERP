@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
-public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options, ICompanyContext companyContext)
+public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "finance";
@@ -171,6 +171,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureExpensePayments(modelBuilder);
         ConfigureCashTransfers(modelBuilder);
         ConfigureCreditAccounts(modelBuilder);
+        ConfigureCreditMovements(modelBuilder);
+        ConfigureCreditLimits(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -990,11 +992,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [PdfSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' "
                 + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_OfficialSalesInvoices_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_OfficialSalesInvoices_InvoiceDate", "[InvoiceDate] IS NULL OR [InvoiceDate] > '00010101'");
             table.HasCheckConstraint("CK_OfficialSalesInvoices_Approval", OfficialSalesInvoiceApprovalCheck);
         });
         invoice.HasKey(x => x.Id);
         invoice.HasAlternateKey(x => new { x.CompanyId, x.Id });
         invoice.Property(x => x.Id).ValueGeneratedNever();
+        invoice.Property(x => x.InvoiceDate).HasColumnType("date");
         invoice.Property(x => x.OfficialNo).HasMaxLength(OfficialSalesInvoiceMaximumOfficialNoLength)
             .UseCollation(IdentityCollation).IsRequired();
         invoice.Property(x => x.Ettn).HasMaxLength(OfficialSalesInvoiceEttnLength).IsUnicode(false).IsFixedLength()
@@ -2042,6 +2046,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_CreditAccounts_Group", CreditAccountGroupCheck);
             table.HasCheckConstraint("CK_CreditAccounts_Amount", CreditAccountAmountCheck);
             table.HasCheckConstraint("CK_CreditAccounts_Decision", CreditAccountDecisionCheck);
+            table.HasCheckConstraint("CK_CreditAccounts_SourceProfile", CreditAccountSourceProfileCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -2052,11 +2057,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.PrincipalAmountText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
         entity.Property(x => x.StartDate).HasColumnType("date");
+        entity.Property(x => x.SourceProfileJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.Property(x => x.RejectionReason).HasMaxLength(500);
         entity.HasIndex(x => new { x.CompanyId, x.LenderName, x.ContractReference }, CreditAccountLiveIndex)
-            .HasFilter(CreditAccountLiveFilter).IsUnique();
+            .HasFilter(CreditAccountLiveFilter + " AND [LenderPartyId] IS NULL").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.LenderPartyId, x.LenderCompanyPartyAccountId, x.ContractReference },
+                "UX_CreditAccounts_LenderIdentity_Live")
+            .HasFilter(CreditAccountLiveFilter + " AND [LenderPartyId] IS NOT NULL").IsUnique();
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.ProposedAtUtc }, "IX_CreditAccounts_Status");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
@@ -2070,8 +2079,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_CreditAccountInstallments_Amounts", CreditAccountInstallmentAmountsCheck);
+            table.HasCheckConstraint("CK_CreditAccountInstallments_Charges", CreditAccountInstallmentChargesCheck);
         });
         installment.HasKey(x => new { x.CompanyId, x.CreditAccountId, x.Sequence });
+        installment.Property(x => x.ChargesJson).HasColumnType("nvarchar(max)");
         installment.Property(x => x.DueDate).HasColumnType("date");
         installment.Property(x => x.InstallmentText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
@@ -2129,6 +2140,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     /// <summary>FNS-D87: the four groups (1 cash, 2 non-cash, 3 instrument and factoring, 4 leasing).</summary>
     internal const string CreditAccountGroupCheck = "[CreditGroup] IN (1, 2, 3, 4)";
+
+    internal const string CreditAccountSourceProfileCheck = "([SourceProfileJson] IS NULL AND [LenderPartyId] IS NULL "
+        + "AND [LenderCompanyPartyAccountId] IS NULL AND [LenderPartyVersion] IS NULL AND [LenderCompanyAccountVersion] IS NULL "
+        + "AND [MoneyProfileId] IS NULL AND [MoneyProfileVersion] IS NULL AND [CurrencyScale] IS NULL) "
+        + "OR ([SourceProfileJson] IS NOT NULL AND ISJSON([SourceProfileJson]) = 1 "
+        + "AND [LenderPartyId] IS NOT NULL AND [LenderPartyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LenderCompanyPartyAccountId] IS NOT NULL AND [LenderCompanyPartyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [LenderPartyVersion] IS NOT NULL AND [LenderPartyVersion] > 0 "
+        + "AND [LenderCompanyAccountVersion] IS NOT NULL AND [LenderCompanyAccountVersion] > 0 "
+        + "AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] > 0 "
+        + "AND [CurrencyScale] IS NOT NULL AND [CurrencyScale] BETWEEN 0 AND 28)";
+
+    internal const string CreditAccountInstallmentChargesCheck = "[ChargesJson] IS NULL OR ISJSON([ChargesJson]) = 1";
 
     /// <summary>The credit amount: an unsigned decimal text with at least one non-zero digit (the service parses it exactly).</summary>
     internal const string CreditAccountAmountCheck =
@@ -2341,6 +2366,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is FinanceCreditMovementRow movement && !CreditMovementChangeAllowed(entry, movement))
+                    throw new InvalidOperationException("Kredi hareketi yalnız ayrı kişinin kararı veya açık dönem ters kaydıyla değişir.");
+                if (entry.Entity is FinanceCreditLimitRow limit && !CreditLimitChangeAllowed(entry, limit))
+                    throw new InvalidOperationException("Kredi limiti yalnız ayrı kişinin kararı veya yeni onaylı kaynak sürümüyle değişir.");
                 if (entry.Entity is ManualBankPaymentRow payment
                     && !IsAllowedManualBankPaymentTransition(entry, payment))
                 {
@@ -2436,6 +2465,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
                 string[] allowed = entry.Entity switch
                 {
+                    FinanceCreditLimitRow => [nameof(FinanceCreditLimitRow.Status), nameof(FinanceCreditLimitRow.DecidedBy),
+                        nameof(FinanceCreditLimitRow.DecidedAtUtc), nameof(FinanceCreditLimitRow.RejectionReason)],
+                    FinanceCreditMovementRow => [nameof(FinanceCreditMovementRow.Status), nameof(FinanceCreditMovementRow.DecidedBy),
+                        nameof(FinanceCreditMovementRow.DecidedAtUtc), nameof(FinanceCreditMovementRow.RejectionReason), nameof(FinanceCreditMovementRow.ReversedByMovementId)],
                     FinanceOfficialSalesInvoiceRow =>
                     [
                         nameof(FinanceOfficialSalesInvoiceRow.Status), nameof(FinanceOfficialSalesInvoiceRow.ApprovedBy),
