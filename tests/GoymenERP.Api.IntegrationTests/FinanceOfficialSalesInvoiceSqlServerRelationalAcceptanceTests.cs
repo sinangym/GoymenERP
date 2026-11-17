@@ -642,7 +642,8 @@ public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTest
             (facts.PayableAmount, facts.PayableFunctionalAmount, facts.TaxBaseFunctionalAmount,
                 facts.VatFunctionalAmount, facts.WithholdingFunctionalAmount));
         Assert.Equal(SalesOfficialInvoiceOutcomeV1.Found, forSales.Outcome);
-        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m),
+        Assert.Equal(new SalesOfficialInvoiceFacts(OfficialNo, Ettn, Customer, Currency, 1250.50m, 1250.50m, 208.42m, 0m, facts.InvoiceDate,
+            new(Company, invoice, "manual", facts.Version, facts.ApprovedAtUtc, Pdf, 1, new string('d', 64), null, null, false)),
             forSales.Invoice);
 
         // The number is compared exactly: a case variant is not the record, whatever the column collation says.

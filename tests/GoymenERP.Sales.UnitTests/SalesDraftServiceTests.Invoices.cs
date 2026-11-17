@@ -551,7 +551,8 @@ public sealed partial class SalesDraftServiceTests
         public void Has(decimal functionalAmount, Guid? customer = null, Guid? currency = null, string no = "GIB2026000000001",
             decimal? vat = null, decimal? withholding = null) =>
             Answer = new(SalesOfficialInvoiceOutcomeV1.Found, new SalesOfficialInvoiceFacts(no, OfficialEttn, customer ?? Party,
-                currency ?? Currency, functionalAmount, functionalAmount, vat ?? Vat, withholding ?? Withholding));
+                currency ?? Currency, functionalAmount, functionalAmount, vat ?? Vat, withholding ?? Withholding, new DateOnly(2026, 11, 14),
+                new(Company, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false)));
     }
 
     private static MatchSalesInvoiceRequest MatchRequest(string version = "3", bool approve = false, string? reason = null,
@@ -729,6 +730,24 @@ public sealed partial class SalesDraftServiceTests
         Assert.Contains(refused.Errors, error => error.Field == field);
         Assert.Equal(0, invoicing.Invoices.MatchCalls);
         Assert.DoesNotContain("k-inv-mismatch", invoicing.Invoices.StateAttempts.Keys);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Missing_or_foreign_official_source_evidence_is_503_before_the_match_attempt(bool foreign)
+    {
+        var (invoicing, id, _) = await ApprovedInvoiceAsync();
+        invoicing.Official.Has(invoicing.Invoices.Stored[id].PayableFunctionalAmount);
+        var facts = invoicing.Official.Answer.Invoice!;
+        invoicing.Official.Answer = new(SalesOfficialInvoiceOutcomeV1.Found, foreign
+            ? facts with { SourceProof = facts.SourceProof! with { CompanyId = Guid.NewGuid() } }
+            : facts with { InvoiceDate = null });
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            invoicing.Service().MatchInvoiceAsync(id, MatchRequest(), Metadata("k-inv-proof")));
+        Assert.Equal((503, SalesInvoiceProblemCodesV1.OfficialInvoiceProviderUnavailable), Status(refused));
+        Assert.Equal(0, invoicing.Invoices.MatchCalls);
+        Assert.DoesNotContain("k-inv-proof", invoicing.Invoices.StateAttempts.Keys);
     }
 
     [Fact]

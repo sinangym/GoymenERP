@@ -8,14 +8,14 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// URT-S17 (SAT-D317) against REAL SQL Server through the REAL host: the order cost view answers under the reports grant
 /// (manufacturing.reports.read, given here to a synthetic role only) with the order's stored status and version, and is
-/// "unavailable / cost_source_unavailable" while the host binds no issue-cost source (never a zero figure); a caller
+/// "pending / order_not_closed" while the actual order remains open (never a zero figure); a caller
 /// without the reports grant is refused, another company's caller does not find the order, and reading it writes
 /// nothing.
 /// </summary>
 public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
-    public async Task The_production_cost_is_unavailable_without_a_cost_source_under_the_reports_grant_and_writes_nothing()
+    public async Task The_actual_production_cost_is_pending_for_an_open_order_under_the_reports_grant_and_writes_nothing()
     {
         await using var run = await Run.StartAsync();
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
@@ -35,7 +35,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("no-store", response.Headers.CacheControl?.ToString() ?? string.Empty);
         var cost = (await response.Content.ReadFromJsonAsync<ProductionCostViewV1>())!;
-        Assert.Equal((1, orderId, "Open", output.Version, "unavailable", "cost_source_unavailable"),
+        Assert.Equal((1, orderId, "Open", output.Version, "pending", "order_not_closed"),
             (cost.ContractVersion, cost.OrderId, cost.OrderStatus, cost.OrderVersion, cost.Status, cost.ReasonCode));
         Assert.Equal(((string?)null, (string?)null, (string?)null, (string?)null),
             (cost.CostPerKgTl, cost.InputTotalTl, cost.DistributedTotalTl, cost.RemainderTl));

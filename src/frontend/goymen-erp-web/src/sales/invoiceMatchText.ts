@@ -4,6 +4,12 @@
  */
 
 export const INVOICE_MATCH_TEXT = {
+  invoiceDate: 'Resmî fatura tarihi',
+  source: 'Onaylı resmî kaynak',
+  sourceManual: 'Manuel PDF kaydı',
+  sourceImport: 'Onaylı içe aktarım',
+  sourceMissing: 'Resmî tarih veya kaynak kanıtı bu eski eşleşmede yok; bu kayıtla kesinleştirme yapılamaz.',
+  pendingManual: 'Aynı belge için manuel kayıt onay bekliyor. Eşleştirmede onaylı içe aktarım esas alındı.',
   formHeading: 'Resmî e-faturayla eşleştir',
   formNote:
     'Resmî fatura numarası ve ETTN, onaylı resmî e-fatura kaydıyla eşleştirilir. Numara, ETTN, müşteri ve para birimi birebir ' +

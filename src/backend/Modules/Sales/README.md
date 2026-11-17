@@ -1028,3 +1028,10 @@ Missing participant or unsupported transactional store refuses with 503. No new 
 Host composition is a separate integration requirement: all affected Sales demand locks ascending, then all purchase
 line locks ascending; no physical allocation release, and transient refusal dominates a multi-line terminal refusal.
 The host bridge, registration and real Inventory reduction acceptance are required before this slice is DONE.
+
+
+### FIN-SC36 official source evidence (KLN-D102/D104, FNS-D89/D90)
+
+The Finance owner bridge carries the real invoice date and approved source proof (manual PDF version/hash or approved import batch/version/checksum, including the pending manual notice). Sales records that immutable snapshot with its append-only match and audit. The finalised v1 event appends `invoiceDate` and `finalizedBy`; Accounting uses the official date, never the draft business date. New matches reject missing or foreign-company proof. Legacy matches retain null date/proof and remain readable; finalisation refuses `sales_invoice_match_source_proof_required` instead of inventing evidence. No legacy row is rewritten.
+
+EF migration `20261117081514_AddSalesInvoiceOfficialSourceProof` adds the nullable date/proof columns and source-shape/company constraint. Down's first operation refuses with **51982** while either column contains evidence (forward fix). Unit/model/contract, strict UI and real-SQL test sources cover provenance, company isolation, legacy refusal, reload, event date and Down. Runtime acceptance remains NOT_RUN until the train's closing run.
