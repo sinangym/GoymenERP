@@ -131,9 +131,11 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
             }
             var unabsorbed = positions.Aggregate(ExactCostRatio.Of(0m), (sum, value) => sum.Add(value.UnabsorbedDifference.Value()))
                 .Add(firstRecognitions.Aggregate(ExactCostRatio.Of(0m), (sum, value) => sum.Add(ExactCostRatio.Of(value.ConsumedTlAmount))));
-            // Preserve each nonzero residual even when opposite signed positions net to zero; Accounting receives the facts.
+            // Preserve each nonzero residual even when opposite signed positions net to zero. A real shipment
+            // fully returned before first recognition also needs its immutable zero-claim witness; stock alone does not.
             var costEventId = positions.Any(value => value.UnabsorbedDifference.Value().Sign != 0)
-                || firstRecognitions.Any(value => value.ConsumedExactTlAmount.Value().Sign != 0) ? Guid.NewGuid() : (Guid?)null;
+                || firstRecognitions.Any(value => value.ConsumedExactTlAmount.Value().Sign != 0)
+                || firstPlans.Any(value => value.HasFullyReturnedShipmentWitness) ? Guid.NewGuid() : (Guid?)null;
             var resultOfApplication = new InventoryPurchaseInvoiceCostApplicationResultV1(companyId, source.InvoiceId, source.InvoiceVersion,
                 envelope.EventId, source.AdmissionId, source.InvoiceDate, source.OfficialDocument, hash,
                 receipts.OrderBy(value => value.InvoiceLineNo).ThenBy(value => value.AcceptanceId).ToArray(), positions, costEventId,
