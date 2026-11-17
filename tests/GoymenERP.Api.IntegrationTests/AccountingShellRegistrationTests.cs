@@ -62,7 +62,7 @@ public sealed class AccountingShellRegistrationTests
             .ToArray();
         // Published owner routes and existing staged source/cost declarations, plus the three
         // staged mapping read/prepare/activate actions. The exact published set below is unchanged.
-        Assert.Equal(28, accounting.Length);
+        Assert.Equal(29, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.
@@ -94,11 +94,35 @@ public sealed class AccountingShellRegistrationTests
             == AccountingShellCapabilityProvider.AccountPlanCapabilityId).Declaration.ImplementationAvailable);
         string[] expected =
         [
-            "accounting.account-plan", "accounting.journal-reversals.approve", "accounting.journal-reversals.propose",
-            "accounting.journals.detail", "accounting.journals.list", "accounting.normal-journal-drafts.approve",
-            "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail", "accounting.periods.approve",
-            "accounting.periods.close", "accounting.periods.list", "accounting.periods.propose",
-            "accounting.posting-queues", "accounting.trial-balance",
+            "accounting.account-plan",
+            "accounting.invoice-line-cogs.approve",
+            "accounting.invoice-line-cogs.prepare",
+            "accounting.invoiced-shipment-costs.approve",
+            "accounting.invoiced-shipment-costs.prepare",
+            "accounting.invoiced-shipment-costs.reverse",
+            "accounting.invoiced-shipment-costs.reverse-approve",
+            "accounting.journal-reversals.approve",
+            "accounting.journal-reversals.propose",
+            "accounting.journals.detail",
+            "accounting.journals.list",
+            "accounting.manufacturing-cost-differences.approve",
+            "accounting.manufacturing-cost-differences.prepare",
+            "accounting.normal-journal-drafts.approve",
+            "accounting.normal-journal-drafts.create",
+            "accounting.normal-journal-drafts.detail",
+            "accounting.periods.approve",
+            "accounting.periods.close",
+            "accounting.periods.list",
+            "accounting.periods.propose",
+            "accounting.posting-mappings.activate",
+            "accounting.posting-mappings.prepare",
+            "accounting.posting-mappings.read",
+            "accounting.posting-queues",
+            "accounting.purchase-cost-differences.approve",
+            "accounting.purchase-cost-differences.prepare",
+            "accounting.source-vouchers.approve",
+            "accounting.source-vouchers.list",
+            "accounting.trial-balance",
         ];
         Assert.Equal(expected,
             accounting.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());

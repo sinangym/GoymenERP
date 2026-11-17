@@ -44,7 +44,7 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// </summary>
-    public const string OwnerContractVersion = "1.9";
+    public const string OwnerContractVersion = "1.10";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -52,6 +52,8 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string InvoicedShipmentApproveRoutePath = "/muhasebe/sevk-smm-onay";
     public const string InvoicedShipmentReverseCapabilityId = "accounting.invoiced-shipment-costs.reverse";
     public const string InvoicedShipmentReverseRoutePath = "/muhasebe/sevk-smm-ters-kayit";
+    public const string InvoicedShipmentReverseApproveCapabilityId = "accounting.invoiced-shipment-costs.reverse-approve";
+    public const string InvoicedShipmentReverseApproveRoutePath = "/muhasebe/sevk-smm-ters-kayit-onay";
     public const string PurchaseCostPrepareCapabilityId = "accounting.purchase-cost-differences.prepare";
     public const string PurchaseCostPrepareRoutePath = "/muhasebe/alis-maliyet-farki-hazirla";
     public const string PurchaseCostApproveCapabilityId = "accounting.purchase-cost-differences.approve";
@@ -155,6 +157,8 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 "M-04-INVOICEDSHIPMENTAPPROVE", ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftApprove], available: false),
             Declaration(InvoicedShipmentReverseCapabilityId, InvoicedShipmentReverseCapabilityId, InvoicedShipmentReverseRoutePath,
                 "M-04-INVOICEDSHIPMENTREVERSE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
+            Declaration(InvoicedShipmentReverseApproveCapabilityId, InvoicedShipmentReverseApproveCapabilityId, InvoicedShipmentReverseApproveRoutePath,
+                "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
             Declaration(PurchaseCostPrepareCapabilityId, PurchaseCostPrepareCapabilityId, PurchaseCostPrepareRoutePath,
                 "M-04-PURCHASECOSTPREPARE", ShellCapabilityRoutePrecedence.Static, [AccountingJournalReversalPermissionNamesV1.Propose], available: false),
             Declaration(PurchaseCostApproveCapabilityId, PurchaseCostApproveCapabilityId, PurchaseCostApproveRoutePath,

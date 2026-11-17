@@ -47,6 +47,7 @@ export const accountingRoutes: RouteObject[] = [
   { path: ACCOUNTING_ROUTE.invoicedShipmentPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentPrepare, <InventoryCostWorkspace kind={1} />) },
   { path: ACCOUNTING_ROUTE.invoicedShipmentApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentApprove, <InventoryCostWorkspace kind={1} />) },
   { path: ACCOUNTING_ROUTE.invoicedShipmentReverse.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentReverse, <InventoryCostWorkspace kind={1} />) },
+  { path: ACCOUNTING_ROUTE.invoicedShipmentReverseApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.invoicedShipmentReverseApprove, <InventoryCostWorkspace kind={1} />) },
   { path: ACCOUNTING_ROUTE.purchaseCostPrepare.slice(1), element: gate(ACCOUNTING_CAPABILITY.purchaseCostPrepare, <InventoryCostWorkspace kind={2} />) },
   { path: ACCOUNTING_ROUTE.purchaseCostApprove.slice(1), element: gate(ACCOUNTING_CAPABILITY.purchaseCostApprove, <InventoryCostWorkspace kind={2} />) },
   { path: ACCOUNTING_ROUTE.postingMappings.slice(1), element: gate(ACCOUNTING_CAPABILITY.postingMappingsRead, <PostingMappingWorkspace />) },
@@ -108,5 +109,6 @@ function InventoryCostWorkspace({ kind }: { readonly kind: 1 | 2 }) {
   return <InventoryCostProposalsPage kind={kind}
     canPrepare={hasCapability(shell, kind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare)}
     canApprove={hasCapability(shell, kind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentApprove : ACCOUNTING_CAPABILITY.purchaseCostApprove)}
-    canProposeReversal={hasCapability(shell, ACCOUNTING_CAPABILITY.invoicedShipmentReverse)} />
+    canProposeReversal={hasCapability(shell, ACCOUNTING_CAPABILITY.invoicedShipmentReverse)}
+    canApproveCancellation={hasCapability(shell, ACCOUNTING_CAPABILITY.invoicedShipmentReverseApprove)} />
 }
