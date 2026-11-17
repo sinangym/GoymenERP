@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 
 namespace GoymenERP.Modules.Inventory.Application;
@@ -15,7 +16,12 @@ public sealed record InventorySubcontractDeliverySourceV1(Guid CompanyId, Guid C
     string OutputNetKg, string SourceVersion, long ManufacturingSalesLinkRevision, Guid SalesServiceProductId);
 
 public sealed record InventorySubcontractReservationLineV1(Guid AllocationId, Guid LabelId,
-    string ExpectedLabelVersion, string QuantityKg, string Reason, InventorySubcontractDeliverySourceV1 Source);
+    string ExpectedLabelVersion, string QuantityKg, string Reason, InventorySubcontractDeliverySourceV1 Source,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InventorySubcontractPlanExcessProofV1? PlanExcess = null);
+/// <summary>Trusted host's same-transaction Logistics approval snapshot, never a public request or extra authority.</summary>
+public sealed record InventorySubcontractPlanExcessProofV1(Guid CompanyId, Guid ExceptionId, Guid InstructionId, Guid InstructionLineId,
+    long ApprovedVersion, string ApprovedQuantityKg, string ReservedQuantityKg, string SourceVersion);
+public sealed record InventorySubcontractAdditionalAllocationV1(Guid AllocationId, string ExpectedVersion, string QuantityKg);
 public sealed record InventorySubcontractReservationRequestV1(Guid CompanyId, Guid ReservationId,
     IReadOnlyList<InventorySubcontractReservationLineV1> Lines);
 public sealed record InventorySubcontractReservationResultV1(Guid CompanyId, Guid ReservationId,
@@ -23,7 +29,8 @@ public sealed record InventorySubcontractReservationResultV1(Guid CompanyId, Gui
 
 public sealed record InventorySubcontractShipmentLineV1(Guid ShipmentId, Guid LoadingInstructionLineId,
     Guid AllocationId, string ExpectedAllocationVersion, Guid LabelId, string ExpectedLabelVersion,
-    Guid MovementId, string QuantityKg, InventorySubcontractDeliverySourceV1 Source);
+    Guid MovementId, string QuantityKg, InventorySubcontractDeliverySourceV1 Source,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InventorySubcontractAdditionalAllocationV1>? AdditionalAllocations = null);
 public sealed record InventorySubcontractShipmentRequestV1(Guid CompanyId, Guid LoadingInstructionId,
     Guid CustomerPartyId, DateTimeOffset OccurredAtUtc, IReadOnlyList<InventorySubcontractShipmentLineV1> Lines);
 public sealed record InventorySubcontractShipmentLineResultV1(Guid ShipmentId, Guid LoadingInstructionLineId,

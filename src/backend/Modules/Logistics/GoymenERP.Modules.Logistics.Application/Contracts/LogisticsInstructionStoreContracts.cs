@@ -57,7 +57,8 @@ public static class LogisticsCommands
             or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1
             or LogisticsSubcontractDeliveryV1.ShipCommand;
 
-    public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
+    public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName)
+        || commandName is LogisticsPlanExcessV1.ProposeCommand or LogisticsPlanExcessV1.ApproveCommand or LogisticsPlanExcessV1.ReserveCommand;
 }
 
 /// <summary>The stable refusal codes of the store, beside the domain's rule codes.</summary>

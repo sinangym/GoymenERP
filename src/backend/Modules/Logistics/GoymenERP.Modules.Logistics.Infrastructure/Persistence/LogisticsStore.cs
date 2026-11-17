@@ -305,7 +305,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
         LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, LogisticsShipmentRiskGateFactsV1? shipmentRiskGate,
         CancellationToken cancellationToken, IReadOnlyList<LogisticsShipmentRiskGateFactsV1>? subcontractGates = null,
-        int wholeShipmentCount = 0)
+        int wholeShipmentCount = 0, IReadOnlyDictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?>? planExcessUses = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -343,7 +343,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             return null;
         }
 
-        await using IDbContextTransaction? aggregateTransaction = aggregateLoadLimit is not null && dbContext.Database.CurrentTransaction is null
+        await using IDbContextTransaction? aggregateTransaction = (aggregateLoadLimit is not null || planExcessUses is not null) && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
             : null;
 
@@ -366,6 +366,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             .ToListAsync(cancellationToken);
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
+        await ValidatePlanExcessSnapshotAsync(lineRows, shareRows, cancellationToken);
         var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows, unloadRow, correctionRows);
         if (wholeShipmentCount > 0 && (!instruction.IsContractProcessingDelivery || commandName != LogisticsSubcontractDeliveryV1.ShipCommand
                 || subcontractGates is null || subcontractGates.Count == 0 || shipmentRiskGate is not null))
@@ -385,6 +386,8 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
+        await AppendPlanExcessUsesAsync(companyId, instruction, lineRows, instruction.Shares.Skip(sharesBefore).ToArray(),
+            planExcessUses, actorId, envelope.CorrelationId, now, cancellationToken);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
         var correctionAdded = instruction.WeighingCorrections.Count == correctionsBefore.Length + 1;
         var unloadAdded = unloadBefore is null && instruction.UnloadWeighing is not null;
@@ -583,7 +586,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             ? audit.WarningReason
             : audit.Reason;
         Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
-            WithSubcontractRiskGates(WithShipmentRiskGate(MutationSnapshot(instruction, aggregateLoadLimit), shipmentRiskGate), subcontractGates), reason);
+            WithPlanExcessUses(WithSubcontractRiskGates(WithShipmentRiskGate(MutationSnapshot(instruction, aggregateLoadLimit), shipmentRiskGate), subcontractGates)), reason);
         await SaveAsync(cancellationToken);
         if (aggregateTransaction is not null)
         {
@@ -813,6 +816,15 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         return JsonSerializer.Serialize(new { snapshot = document.RootElement.Clone(), shipmentRiskGates = gates }, Json);
     }
 
+    private string WithPlanExcessUses(string snapshot)
+    {
+        var uses = dbContext.ChangeTracker.Entries<LogisticsPlanExcessUsageRow>().Where(entry => entry.State == EntityState.Added)
+            .Select(entry => entry.Entity).ToArray();
+        if (uses.Length == 0) return snapshot;
+        using var document = JsonDocument.Parse(snapshot);
+        return JsonSerializer.Serialize(new { snapshot = document.RootElement.Clone(), actualPlanExcessUses = uses }, Json);
+    }
+
     private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)
     {
         if (limit is null)
@@ -1020,6 +1032,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         var unloads = await dbContext.UnloadWeighings.AsNoTracking().Where(unload => ids.Contains(unload.InstructionId)).ToListAsync(cancellationToken);
         var notes = await dbContext.DispatchNotes.AsNoTracking().Where(note => ids.Contains(note.InstructionId)).ToListAsync(cancellationToken);
         var noteLines = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
+        await ValidatePlanExcessSnapshotAsync(lines, shares, cancellationToken);
         return [.. rows.Select(row => new StoredLoadingInstruction(
             Restore(row, [.. lines.Where(line => line.InstructionId == row.Id).OrderBy(line => line.LineNo)],
                 [.. shares.Where(share => share.InstructionId == row.Id).OrderBy(share => share.ShareNo)],
@@ -1058,6 +1071,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             var unit = line.UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
             instruction.AddLine(instruction.Version, line.LineId, new SourceOrderLineRef(line.SourceOrderId, line.SourceOrderLineId, line.SourceOrderRevision),
                 line.ProductId, line.UnitId, line.AllocationId, Quantity.Of(line.Instructed, unit), row.CreatedAtUtc);
+            instruction.Lines[^1].RestoreApprovedPlanExcessCapacity(Quantity.Of(line.ApprovedPlanExcess, unit));
         }
 
         // F-020: a Cancelled row was Draft or Issued when it was cancelled. A Draft cancel took exactly one step after the lines and
@@ -1360,7 +1374,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
-                lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
+                lineId = line.Id, instructed = line.InstructedQuantity.Value, approvedPlanExcess = line.ApprovedPlanExcessQuantity.Value, loaded = line.LoadedQuantity.Value,
                 shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
             }),
             shares = instruction.Shares.Count,
@@ -1415,7 +1429,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             cancelledBy = instruction.CancelledBy, cancelReason = instruction.CancelReason,
             lines = instruction.Lines.Select(line => new
             {
-                lineId = line.Id, instructed = line.InstructedQuantity.Value, loaded = line.LoadedQuantity.Value,
+                lineId = line.Id, instructed = line.InstructedQuantity.Value, approvedPlanExcess = line.ApprovedPlanExcessQuantity.Value, loaded = line.LoadedQuantity.Value,
                 shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
             }),
             shares = instruction.Shares.Count,

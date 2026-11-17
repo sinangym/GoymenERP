@@ -89,6 +89,10 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
         {
             Source(line.Source, companyId, line.LabelId); _ = Version(line.ExpectedLabelVersion); _ = Quantity(line.QuantityKg);
             if (line.AllocationId == Guid.Empty || !Text(line.Reason, 1000)) throw Refused(400, Invalid);
+            if (line.PlanExcess is { } proof && (proof.CompanyId != companyId || proof.ExceptionId == Guid.Empty
+                || proof.InstructionId == Guid.Empty || proof.InstructionLineId == Guid.Empty || proof.ApprovedVersion != 2
+                || proof.SourceVersion != "logistics.plan-excess.v1" || Quantity(proof.ReservedQuantityKg).Value != Quantity(line.QuantityKg).Value
+                || Quantity(proof.ReservedQuantityKg).Value > Quantity(proof.ApprovedQuantityKg).Value)) throw Refused(503, SourceMismatch);
         }
         var hash = Hash(request);
         if (await ReplayAsync<InventorySubcontractReservationResultV1>(ReservationCommand, request.ReservationId, hash, metadata, cancellationToken) is { } replay)
@@ -133,7 +137,8 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             context.Allocations.Add(row);
             context.SubcontractAllocationSources.Add(SourceRow(row.Id, line.Source));
             var view = View(row); results.Add(view);
-            Audit(metadata, row.Id, "Create", null, 1, "{}", JsonSerializer.Serialize(new { allocation = view, source = line.Source }, Json), line.Reason);
+            Audit(metadata, row.Id, "Create", null, 1, "{}", line.PlanExcess is null ? JsonSerializer.Serialize(new { allocation = view, source = line.Source }, Json)
+                    : JsonSerializer.Serialize(new { allocation = view, source = line.Source, line.PlanExcess }, Json), line.Reason);
         }
         foreach (var label in labels.Values) { label.Version = checked(label.Version + 1); label.UpdatedAtUtc = clock.GetUtcNow(); }
         var result = new InventorySubcontractReservationResultV1(companyId, request.ReservationId, results, false, metadata.CorrelationId);
@@ -158,6 +163,11 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             if (line.Source.CustomerPartyId != request.CustomerPartyId || line.AllocationId == Guid.Empty || line.ShipmentId == Guid.Empty
                 || line.MovementId == Guid.Empty || line.LoadingInstructionLineId == Guid.Empty) throw Refused(400, Invalid);
         }
+        if (request.Lines.Any(line => line.AdditionalAllocations is { } extras && (extras.Count is < 1 or > 500 || extras.Any(extra => extra is null))))
+            throw Refused(400, Invalid);
+        var allAllocationIds = request.Lines.SelectMany(line => new[] { line.AllocationId }
+            .Concat(line.AdditionalAllocations?.Select(slice => slice.AllocationId) ?? [])).ToArray();
+        if (allAllocationIds.Distinct().Count() != allAllocationIds.Length) throw Refused(400, Invalid);
         var hash = Hash(request);
         if (await ReplayAsync<InventorySubcontractShipmentResultV1>(ShipmentCommand, request.LoadingInstructionId, hash, metadata, cancellationToken) is { } replay)
             return replay.Result with { IsReplay = true, OriginalCorrelationId = replay.Correlation };
@@ -165,7 +175,8 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
         await beforeWrite(cancellationToken);
         await store.LockPhysicalValidationAsync(cancellationToken);
         // Validate every source and initial version before the first stock write; one label can legitimately serve two orders.
-        var prepared = new List<(InventorySubcontractShipmentLineV1 Input, AllocationRow Row, LabelRow Label, StockAllocation Allocation)>();
+        var prepared = new List<(InventorySubcontractShipmentLineV1 Input, AllocationRow Row, LabelRow Label, StockAllocation Allocation,
+            IReadOnlyList<(AllocationRow Row, StockAllocation Allocation)> Extras)>();
         foreach (var line in request.Lines)
         {
             var row = await context.Allocations.SingleOrDefaultAsync(x => x.Id == line.AllocationId, cancellationToken)
@@ -186,14 +197,18 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
                 new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId), row.LocationId, material, (BlockState)row.Block);
             var allocation = StockAllocation.Restore(row.Id, position, Kilograms.Positive(row.AllocatedKg),
                 Kilograms.Of(row.RemainingKg), row.Version, (StockAllocationStatus)row.Status);
-            try { allocation.Consume(Version(line.ExpectedAllocationVersion), line.LabelId, Quantity(line.QuantityKg)); }
+            var physical = Quantity(line.QuantityKg).Value;
+            var primaryQuantity = Math.Min(physical, row.RemainingKg);
+            if (primaryQuantity <= 0m) throw Refused(409, InventoryDefiniteShipmentCodesV1.AllocationInsufficient);
+            try { allocation.Consume(Version(line.ExpectedAllocationVersion), line.LabelId, Kilograms.Positive(primaryQuantity)); }
             catch (StockAllocationException error)
             {
                 throw Refused(409, error.Failure == StockAllocationFailure.VersionConflict ? InventoryDefiniteShipmentCodesV1.AllocationVersionConflict
                     : error.Failure == StockAllocationFailure.Insufficient ? InventoryDefiniteShipmentCodesV1.AllocationInsufficient
                     : InventoryDefiniteShipmentCodesV1.AllocationState, error);
             }
-            prepared.Add((line, row, label, allocation));
+            var extras = await PrepareAdditionalAllocationsAsync(line, row, label, allocation.Position, physical - primaryQuantity, cancellationToken);
+            prepared.Add((line, row, label, allocation, extras));
         }
         var lines = new List<InventorySubcontractShipmentLineResultV1>();
         foreach (var item in prepared)
@@ -211,6 +226,15 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
             { throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, error); }
             row.RemainingKg = item.Allocation.Remaining.Value; row.Status = (int)item.Allocation.Status; row.Version = item.Allocation.Version;
             row.UpdatedAtUtc = clock.GetUtcNow(); var eventId = Guid.NewGuid();
+            foreach (var extra in item.Extras)
+            {
+                var previous = JsonSerializer.Serialize(View(extra.Row), Json); var previousVersion = extra.Row.Version;
+                extra.Row.RemainingKg = extra.Allocation.Remaining.Value; extra.Row.Status = (int)extra.Allocation.Status;
+                extra.Row.Version = extra.Allocation.Version; extra.Row.UpdatedAtUtc = clock.GetUtcNow();
+                Audit(metadata, extra.Row.Id, "ConsumeForSubcontractDelivery", previousVersion, extra.Row.Version, previous,
+                    JsonSerializer.Serialize(new { allocation = View(extra.Row), line.ShipmentId, line.MovementId, line.LoadingInstructionLineId }, Json),
+                    "Onaylı plan üstü payın gerçek ek tahsis tüketimi");
+            }
             var projected = new InventorySubcontractShipmentLineResultV1(line.ShipmentId, line.LoadingInstructionLineId, row.Id,
                 row.Version.ToString(CultureInfo.InvariantCulture), line.LabelId, item.Label.Version.ToString(CultureInfo.InvariantCulture),
                 line.MovementId, eventId, line.QuantityKg);
@@ -219,8 +243,12 @@ public sealed partial class InventorySubcontractDeliveryParticipant : IInventory
                 SourceOperation = ShipmentCommand, AggregateType = "Inventory.StockAllocation", AggregateId = row.Id,
                 AggregateVersion = row.Version, Sequence = row.Version, OccurredAtUtc = request.OccurredAtUtc, RecordedAtUtc = clock.GetUtcNow(),
                 CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId,
-                PayloadJson = JsonSerializer.Serialize(new { companyId, request.LoadingInstructionId, request.CustomerPartyId,
-                    line = projected, source = line.Source, occurredAtUtc = request.OccurredAtUtc }, Json) });
+                PayloadJson = item.Extras.Count == 0
+                    ? JsonSerializer.Serialize(new { companyId, request.LoadingInstructionId, request.CustomerPartyId,
+                        line = projected, source = line.Source, occurredAtUtc = request.OccurredAtUtc }, Json)
+                    : JsonSerializer.Serialize(new { companyId, request.LoadingInstructionId, request.CustomerPartyId,
+                        line = projected, source = line.Source, occurredAtUtc = request.OccurredAtUtc,
+                        additionalAllocations = item.Extras.Select(extra => View(extra.Row)).ToArray() }, Json) });
             Audit(metadata, row.Id, "ConsumeForSubcontractDelivery", beforeVersion, row.Version, before,
                 JsonSerializer.Serialize(new { allocation = View(row), delivery = projected }, Json), "Müşteri malının sahibine fason teslimi");
         }

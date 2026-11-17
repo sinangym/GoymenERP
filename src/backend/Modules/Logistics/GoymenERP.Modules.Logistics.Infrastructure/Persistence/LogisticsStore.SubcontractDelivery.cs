@@ -77,7 +77,8 @@ public sealed partial class LogisticsStore : ILogisticsSubcontractDeliverySource
 
     public async Task<LogisticsStoreResult?> ShipSubcontractInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash,
         Guid instructionId, long expectedVersion, IReadOnlyDictionary<Guid, Guid> shipmentIds,
-        IReadOnlyList<LogisticsShipmentRiskGateFactsV1> gates, DateTimeOffset occurredAt, CancellationToken token = default)
+        IReadOnlyList<LogisticsShipmentRiskGateFactsV1> gates, DateTimeOffset occurredAt, CancellationToken token = default,
+        IReadOnlyDictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?>? planExcessUses = null)
     {
         RequireSubcontractTransaction();
         return await MutateInstructionCoreAsync(envelope, requestHash, LogisticsSubcontractDeliveryV1.ShipCommand, instructionId, (instruction, _) =>
@@ -90,7 +91,7 @@ public sealed partial class LogisticsStore : ILogisticsSubcontractDeliverySource
             foreach (var line in loaded)
                 instruction.MarkShipped(instruction.Version, shipmentIds[line.Id], line.Id, line.LoadedNotShipped, occurredAt);
         }, new("logistics.subcontract-delivery.shipped.v1", "ShipSubcontract", "Müşterinin fason malı tüm talimatla sevk edildi"),
-            null, null, token, gates, shipmentIds.Count);
+            null, null, token, gates, shipmentIds.Count, planExcessUses);
     }
 
     private void RequireSubcontractTransaction()

@@ -23,6 +23,7 @@ public sealed class LoadingInstructionLine
         UnitId = unitId;
         AllocationId = allocationId;
         InstructedQuantity = instructed;
+        ApprovedPlanExcessQuantity = Quantity.Zero(instructed.Unit);
         LoadedQuantity = Quantity.Zero(instructed.Unit);
         ShippedQuantity = Quantity.Zero(instructed.Unit);
         DeliveredQuantity = Quantity.Zero(instructed.Unit);
@@ -49,12 +50,20 @@ public sealed class LoadingInstructionLine
     public Guid? AllocationId { get; }
 
     public Quantity InstructedQuantity { get; }
+    public Quantity ApprovedPlanExcessQuantity { get; private set; }
+    /// <summary>Only the owner restores the sum of independently approved exception caps; no plan change or version step.</summary>
+    public void RestoreApprovedPlanExcessCapacity(Quantity approved)
+    {
+        InstructedQuantity.RequireSameUnit(approved);
+        if (approved.Value < ApprovedPlanExcessQuantity.Value) throw new InvalidOperationException("Approved capacity cannot decrease.");
+        ApprovedPlanExcessQuantity = approved;
+    }
     public Quantity LoadedQuantity { get; private set; }
     public Quantity ShippedQuantity { get; private set; }
     public Quantity DeliveredQuantity { get; private set; }
     public bool IsBlocked { get; private set; }
 
-    public Quantity RemainingToLoad => InstructedQuantity.Subtract(LoadedQuantity);
+    public Quantity RemainingToLoad => InstructedQuantity.Add(ApprovedPlanExcessQuantity).Subtract(LoadedQuantity);
 
     /// <summary>Loaded but not yet definitely shipped (§13: the 200 kg that stays visible).</summary>
     public Quantity LoadedNotShipped => LoadedQuantity.Subtract(ShippedQuantity);
@@ -66,7 +75,7 @@ public sealed class LoadingInstructionLine
     internal void AddLoaded(Quantity loaded)
     {
         var next = LoadedQuantity.Add(loaded);
-        if (next.IsGreaterThan(InstructedQuantity))
+        if (next.IsGreaterThan(InstructedQuantity.Add(ApprovedPlanExcessQuantity)))
         {
             throw new LogisticsRuleException(LogisticsRuleCodes.InternalInvariant, "İç tutarsızlık: yüklenen pay talimatı aşıyor.");
         }

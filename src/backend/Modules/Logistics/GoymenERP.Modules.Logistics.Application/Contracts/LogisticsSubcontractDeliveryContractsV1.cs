@@ -9,7 +9,10 @@ public sealed record SubcontractDeliveryLineRequestV1(Guid LineId, Guid SalesOrd
     string ExpectedSalesLinkRevision, Guid OutputFactId, Guid LabelId, string ExpectedLabelVersion, Guid AllocationId, string QuantityKg, string Reason);
 public sealed record ShipSubcontractDeliveryV1(string ExpectedVersion, DateTimeOffset OccurredAtUtc, IReadOnlyList<SubcontractDeliveryShipmentLineV1> Lines);
 public sealed record SubcontractDeliveryShipmentLineV1(Guid LineId, Guid ShipmentId, Guid MovementId, string ExpectedAllocationVersion, string ExpectedLabelVersion,
-    Guid SalesOrderId, Guid SalesOrderLineId, Guid ManufacturingOrderId, Guid OutputFactId, Guid LabelId);
+    Guid SalesOrderId, Guid SalesOrderLineId, Guid ManufacturingOrderId, Guid OutputFactId, Guid LabelId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessUseV1>? PlanExcessUses = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsSubcontractAdditionalAllocationRequestV1>? AdditionalAllocations = null);
+public sealed record LogisticsSubcontractAdditionalAllocationRequestV1(Guid AllocationId, string ExpectedVersion, string QuantityKg);
 public sealed record CorrectSubcontractWeighingV1(string ExpectedVersion, Guid WeighingId, int ExpectedWeighingRevision, Guid CorrectionId,
     string Direction, string FirstWeighingKg, string SecondWeighingKg, string Reason);
 
@@ -40,7 +43,9 @@ public sealed record LogisticsSubcontractInstructionV1(Guid CompanyId, Guid Inst
     IReadOnlyList<LogisticsSubcontractCorrectionV1> Corrections, bool IsReplay, string OriginalCorrelationId,
     LogisticsSubcontractWeighingV1? OriginalWeighing = null, Guid? RecordedLoadId = null);
 public sealed record LogisticsSubcontractLineV1(Guid LineId, LogisticsSubcontractSourceV1 Source, Guid AllocationId,
-    string InstructedKg, string LoadedKg, string ShippedKg, string DeliveredKg, string? AllocationVersion, string? LabelVersion);
+    string InstructedKg, string LoadedKg, string ShippedKg, string DeliveredKg, string? AllocationVersion, string? LabelVersion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApprovedPlanExcess = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessAdditionalAllocationV1>? AdditionalAllocations = null);
 public sealed record LogisticsSubcontractWeighingV1(Guid WeighingId, int Revision, string Direction, string FirstKg, string SecondKg, string NetKg,
     string LoadedKg, string DifferenceKg);
 public sealed record LogisticsSubcontractCorrectionV1(Guid CorrectionId, int Revision, string Direction, string FirstKg, string SecondKg,
@@ -56,6 +61,11 @@ public interface ILogisticsSubcontractDeliveryHostV1
     Task<LogisticsSubcontractInstructionV1> LoadAsync(Guid instructionId, Guid lineId, RecordLoadRequest request, LogisticsCommandMetadata metadata, CancellationToken token = default);
     Task<LogisticsSubcontractInstructionV1> ShipAsync(Guid instructionId, ShipSubcontractDeliveryV1 request, LogisticsCommandMetadata metadata, CancellationToken token = default);
     Task<LogisticsSubcontractInstructionV1> CorrectWeighingAsync(Guid instructionId, CorrectSubcontractWeighingV1 request, LogisticsCommandMetadata metadata, CancellationToken token = default);
+}
+public interface ILogisticsSubcontractPlanExcessReservationHostV1
+{
+    Task<LogisticsSubcontractInstructionV1> ReservePlanExcessAsync(Guid instructionId, Guid lineId, Guid exceptionId,
+        ReserveLogisticsPlanExcessV1 request, LogisticsCommandMetadata metadata, CancellationToken token = default);
 }
 
 public static class LogisticsSubcontractDeliveryV1

@@ -40,6 +40,7 @@ export interface SalesWorkRow {
   readonly shipped: string
   readonly delivered: string
   readonly requestedDeliveryDate: string | null
+  readonly approvedPlanExcess?: string
 }
 
 export interface PurchaseWorkRow {
@@ -90,7 +91,8 @@ const isText = (v: unknown, max: number): v is string => typeof v === 'string' &
 const isLineNo = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LIMITS.lines
 
 export function decodeSalesWorkRow(value: unknown): SalesWorkRow | null {
-  const o = exact(value, SALES_WORK_KEYS)
+  const hasExtra = typeof value === 'object' && value !== null && Object.hasOwn(value, 'approvedPlanExcess')
+  const o = exact(value, hasExtra ? [...SALES_WORK_KEYS, 'approvedPlanExcess'] : SALES_WORK_KEYS)
   if (
     o === null ||
     !isReferenceId(o.orderId) ||
@@ -109,6 +111,7 @@ export function decodeSalesWorkRow(value: unknown): SalesWorkRow | null {
     !isQuantityText(o.loaded) ||
     !isQuantityText(o.shipped) ||
     !isQuantityText(o.delivered) ||
+    (hasExtra && !isPositiveQuantityText(o.approvedPlanExcess)) ||
     !(o.requestedDeliveryDate === null || isDateOnly(o.requestedDeliveryDate))
   ) {
     return null
@@ -131,6 +134,7 @@ export function decodeSalesWorkRow(value: unknown): SalesWorkRow | null {
     shipped: o.shipped,
     delivered: o.delivered,
     requestedDeliveryDate: o.requestedDeliveryDate,
+    ...(hasExtra ? { approvedPlanExcess: o.approvedPlanExcess as string } : {}),
   }
 }
 

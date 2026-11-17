@@ -25,7 +25,7 @@ public sealed partial class LogisticsInstructionService
         var runner = realization ?? throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
 
         return await RunRealizationAsync(scope, permission, envelope, hash, LogisticsCommands.RecordShipmentV1,
-            () => runner.ExecuteShipmentAsync(scope.CompanyId, async (stock, token) =>
+            () => RunShipmentWithExcessAsync(runner, request.PlanExcessUses is not null, scope.CompanyId, async (stock, token) =>
             {
                 // A winner may have committed between the outer read and the transaction opening.
                 var won = await FindRealizationReplayAsync(scope, permission, envelope, hash,
@@ -57,11 +57,18 @@ public sealed partial class LogisticsInstructionService
                 var gateStore = store as ILogisticsShipmentRiskGateStoreV1
                     ?? throw new LogisticsInstructionServiceException(503, LogisticsShipmentRiskGateCodesV1.GateUnavailable);
                 var expected = long.Parse(request.ExpectedVersion, CultureInfo.InvariantCulture);
-                var result = await GuardedAsync(scope, permission,
-                    () => gateStore.MutateInstructionWithShipmentRiskGateAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
+                Task<LogisticsStoreResult?> Mutate(CancellationToken ct) => request.PlanExcessUses is null
+                    ? gateStore.MutateInstructionWithShipmentRiskGateAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
                         (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc),
                         new LogisticsMutationAudit("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded"),
-                        gate, token), token)
+                        gate, ct)
+                    : store is ILogisticsPlanExcessMutationStoreV1 excessStore
+                        ? excessStore.MutateWithPlanExcessAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
+                            (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc),
+                            new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded with approved plan exception"),
+                            null, gate, new Dictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?> { [lineId] = request.PlanExcessUses }, ct)
+                        : throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
+                var result = await GuardedAsync(scope, permission, () => Mutate(token), token)
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
 
                 var stockRequest = new LogisticsShipmentStockRequestV1(scope.CompanyId, request.ShipmentId, instructionId, lineId,
@@ -85,6 +92,10 @@ public sealed partial class LogisticsInstructionService
                 await RequireStillAsync(scope, LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission, token);
             }, cancellationToken), cancellationToken);
     }
+
+    private static Task<T> RunShipmentWithExcessAsync<T>(ILogisticsRealizationTransactionRunnerV1 runner, bool hasExcess, Guid companyId,
+        Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation, Func<CancellationToken, Task> fence, CancellationToken token) =>
+        hasExcess ? runner.ExecutePlanExcessShipmentAsync(companyId, operation, fence, token) : runner.ExecuteShipmentAsync(companyId, operation, fence, token);
 
     public async Task<LoadingInstructionResponse> RecordDeliveryAsync(Guid instructionId, Guid lineId,
         RecordDeliveryRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -326,6 +337,7 @@ public sealed partial class LogisticsInstructionService
 
     private static bool IsTerminalRealizationConflict(string code) =>
         code is LogisticsRealizationCodesV1.AllocationSourceMismatch or LogisticsProblemCodesV1.OrderLineState
+        or LogisticsPlanExcessV1.ApprovalRequired or LogisticsPlanExcessV1.Conflict
         || LogisticsRealizationDependenciesV1.InventoryTerminalConflictCodes.Contains(code)
         || LogisticsShipmentRiskGateCodesV1.TerminalCodes.Contains(code);
 }

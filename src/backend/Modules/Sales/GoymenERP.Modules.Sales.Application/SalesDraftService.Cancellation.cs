@@ -675,7 +675,9 @@ public sealed partial class SalesDraftService
         {
             if (entry is null || !lines.TryGetValue(entry.OrderLineId, out var line) || entry.UnitId != line.OrderUnit.UnitId
                 || entry.InstructionLineCount < 0 || entry.Delivered < 0m || entry.Delivered > entry.Shipped
-                || entry.Shipped > entry.Loaded || entry.Loaded > entry.Instructed
+                || entry.Shipped > entry.Loaded || entry.Instructed < 0m || entry.ApprovedPlanExcess is < 0m
+                || !FitsScale(entry.ApprovedPlanExcess ?? 0m, line.Quantity.Unit)
+                || entry.Loaded > entry.Instructed && entry.Loaded - entry.Instructed > (entry.ApprovedPlanExcess ?? 0m)
                 || !FitsScale(entry.Instructed, line.Quantity.Unit) || !FitsScale(entry.Loaded, line.Quantity.Unit)
                 || !FitsScale(entry.Shipped, line.Quantity.Unit) || !FitsScale(entry.Delivered, line.Quantity.Unit)
                 || ((entry.InstructionLineCount == 0) != (entry.Instructed == 0m)))

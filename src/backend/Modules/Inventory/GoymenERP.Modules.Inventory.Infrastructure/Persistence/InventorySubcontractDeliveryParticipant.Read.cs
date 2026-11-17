@@ -22,14 +22,14 @@ public sealed partial class InventorySubcontractDeliveryParticipant
             throw Refused(503, SourceMismatch);
         var balances = await context.Balances.AsNoTracking().Where(row => row.LabelId == labelId && row.QuantityKg > 0m)
             .OrderBy(row => row.Id).ToListAsync(cancellationToken);
-        var allocations = await context.Allocations.AsNoTracking().Where(row => row.LabelId == labelId && row.Status == (int)StockAllocationStatus.Active)
+        var allocations = await context.Allocations.AsNoTracking().Where(row => row.LabelId == labelId)
             .OrderBy(row => row.Id).ToListAsync(cancellationToken);
         if (balances.Any(row => row.CompanyId != companyId || row.ProductId != label.ProductId || row.QuantityKg < 0m
                 || !Enum.IsDefined((StockPartyKind)row.OwnerKind) || !Enum.IsDefined((StockPartyKind)row.CustodianKind) || !Enum.IsDefined((BlockState)row.Block))
-            || allocations.Any(row => row.CompanyId != companyId || row.RemainingKg < 0m)) throw Refused(503, SourceMismatch);
+            || allocations.Any(row => row.CompanyId != companyId || row.RemainingKg < 0m || !Enum.IsDefined((StockAllocationStatus)row.Status))) throw Refused(503, SourceMismatch);
         var positions = balances.Select(balance =>
         {
-            var held = allocations.Where(row => row.LocationId == balance.LocationId && row.OwnerKind == balance.OwnerKind && row.OwnerId == balance.OwnerId
+            var held = allocations.Where(row => row.Status == (int)StockAllocationStatus.Active && row.LocationId == balance.LocationId && row.OwnerKind == balance.OwnerKind && row.OwnerId == balance.OwnerId
                 && row.CustodianKind == balance.CustodianKind && row.CustodianId == balance.CustodianId && row.Block == balance.Block).Sum(row => row.RemainingKg);
             return new InventorySubcontractLabelPositionV1(((StockPartyKind)balance.OwnerKind).ToString(), balance.OwnerId,
                 ((StockPartyKind)balance.CustodianKind).ToString(), balance.CustodianId, balance.LocationId, ((BlockState)balance.Block).ToString(),

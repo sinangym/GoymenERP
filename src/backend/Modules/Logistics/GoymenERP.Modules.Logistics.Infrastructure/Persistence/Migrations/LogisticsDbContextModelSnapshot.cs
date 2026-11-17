@@ -634,6 +634,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("AllocationId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal>("ApprovedPlanExcess")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<decimal>("Delivered")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -694,7 +698,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_LoadingInstructionLines_Revision", "[SourceOrderRevision] >= 0");
 
-                            t.HasCheckConstraint("CK_LoadingInstructionLines_Shares", "[Instructed] > 0 AND [Loaded] >= 0 AND [Shipped] >= 0 AND [Delivered] >= 0 AND [Loaded] <= [Instructed] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]");
+                            t.HasCheckConstraint("CK_LoadingInstructionLines_Shares", "[Instructed] > 0 AND [Loaded] >= 0 AND [Shipped] >= 0 AND [Delivered] >= 0 AND [ApprovedPlanExcess]>=0 AND [Loaded] <= [Instructed]+[ApprovedPlanExcess] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]");
 
                             t.HasCheckConstraint("CK_LoadingInstructionLines_SubcontractSource", "[SubcontractSourceJson] IS NULL OR ISJSON([SubcontractSourceJson]) = 1");
                         });
@@ -902,6 +906,181 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_OutboxMessages_EventType", "[EventType] IN ('logistics.definite-shipment.recorded.v1', 'logistics.definite-shipment.cancelled.v1')");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessReservationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("ExceptionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("InstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OriginalAllocationVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("OriginalLabelVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "AllocationId");
+
+                    b.HasIndex("CompanyId", "ExceptionId", "InstructionId", "LineId");
+
+                    b.ToTable("PlanExcessReservations", "logistics", t =>
+                        {
+                            t.HasTrigger("TR_PlanExcessReservations_Immutable");
+
+                            t.HasCheckConstraint("CK_PlanExcessReservations_Quantity", "[Quantity]>0");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ExceptionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("InstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProposedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "ExceptionId");
+
+                    b.HasIndex("CompanyId", "InstructionId", "LineId", "ExceptionId");
+
+                    b.ToTable("PlanExcessExceptions", "logistics", t =>
+                        {
+                            t.HasTrigger("TR_PlanExcessExceptions_ForwardOnly");
+
+                            t.HasCheckConstraint("CK_PlanExcessExceptions_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_PlanExcessExceptions_State", "([Status]=1 AND [Version]=1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([Status]=2 AND [Version]=2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessUsageRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ExceptionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ShareId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("InstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "ExceptionId", "ShareId");
+
+                    b.HasIndex("CompanyId", "InstructionId", "ShareId");
+
+                    b.HasIndex("CompanyId", "ExceptionId", "InstructionId", "LineId");
+
+                    b.ToTable("PlanExcessUsages", "logistics", t =>
+                        {
+                            t.HasTrigger("TR_PlanExcessUsages_Immutable");
+
+                            t.HasCheckConstraint("CK_PlanExcessUsages_Shape", "[Quantity]>0 AND [Kind] IN (1,2)");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", b =>
@@ -1851,6 +2030,43 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessReservationRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ExceptionId", "InstructionId", "LineId")
+                        .HasPrincipalKey("CompanyId", "ExceptionId", "InstructionId", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionLineRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InstructionId", "LineId")
+                        .HasPrincipalKey("CompanyId", "InstructionId", "LineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessUsageRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingShareRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "InstructionId", "ShareId")
+                        .HasPrincipalKey("CompanyId", "InstructionId", "ShareId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LogisticsPlanExcessRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ExceptionId", "InstructionId", "LineId")
+                        .HasPrincipalKey("CompanyId", "ExceptionId", "InstructionId", "LineId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

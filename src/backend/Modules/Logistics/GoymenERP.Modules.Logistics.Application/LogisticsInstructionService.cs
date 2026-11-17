@@ -178,6 +178,8 @@ public sealed partial class LogisticsInstructionService(
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
                 var quantity = await VerifyUnitAsync(scope, bindings.RecordPermission, line.UnitId, request.Quantity, stored.EffectiveOn, "load",
                     cancellationToken);
+                if (line.LoadedQuantity.Value + quantity.Value > line.InstructedQuantity.Value && request.PlanExcessUses is null)
+                    throw new LogisticsInstructionServiceException(409, LogisticsPlanExcessV1.ApprovalRequired);
                 var resolved = await RequireCurrentOrderLineAllowsLoadAsync(scope, stored, line, cancellationToken);
                 if (resolved is not null)
                 {
@@ -187,7 +189,8 @@ public sealed partial class LogisticsInstructionService(
                         quantity.Value, request.Quantity, resolved.SourceOwner, resolved.SourceId, resolved.SourceVersion, resolved.EffectiveOn);
                 }
                 return quantity;
-            }, cancellationToken, () => aggregateLoadLimit);
+            }, cancellationToken, () => aggregateLoadLimit, () => request.PlanExcessUses is null ? null
+                : new Dictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?> { [lineId] = request.PlanExcessUses });
     }
 
     /// <summary>
@@ -430,7 +433,8 @@ public sealed partial class LogisticsInstructionService(
         LogisticsCommandMetadata metadata, string commandName, string? permission,
         Action<LoadingInstruction, long, DateTimeOffset, Quantity?, string> transition, LogisticsMutationAudit audit,
         Func<Scope, StoredLoadingInstruction, Task<Quantity>>? prepare, CancellationToken cancellationToken,
-        Func<LogisticsOrderLineAggregateLoadLimit?>? aggregateLoadLimit = null)
+        Func<LogisticsOrderLineAggregateLoadLimit?>? aggregateLoadLimit = null,
+        Func<IReadOnlyDictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?>?>? planExcessUses = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
@@ -479,13 +483,27 @@ public sealed partial class LogisticsInstructionService(
         try
         {
             var limit = aggregateLoadLimit?.Invoke();
-            result = limit is null
+            var excess = planExcessUses?.Invoke();
+            result = excess is not null
+                ? store is ILogisticsPlanExcessMutationStoreV1 excessStore && realization is { } transaction
+                    ? await transaction.ExecutePlanExcessAsync(scope.CompanyId,
+                        ct => excessStore.MutateWithPlanExcessAsync(envelope, requestHash, commandName, instructionId,
+                            (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, limit, null, excess, ct),
+                        ct => RequireStillAsync(scope, permission, ct), cancellationToken)
+                    : throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable)
+                : limit is null
                 ? await store.MutateInstructionAsync(envelope, requestHash, commandName, instructionId,
                     (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, cancellationToken)
                 : store is ILogisticsAggregateLoadStoreV1 atomicStore
                     ? await atomicStore.MutateInstructionWithAggregateLoadLimitAsync(envelope, requestHash, commandName, instructionId,
                         (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, limit, cancellationToken)
                     : throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.SalesProviderUnavailable);
+        }
+        catch (LogisticsInstructionServiceException exception) when (exception.Status == 409
+            && exception.Code is LogisticsPlanExcessV1.ApprovalRequired or LogisticsPlanExcessV1.Conflict)
+        {
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
+                new(409, exception.Code, exception.Errors), cancellationToken);
         }
         catch (LogisticsVersionConflictException)
         {
@@ -1018,7 +1036,8 @@ public sealed partial class LogisticsInstructionService(
             [.. instruction.Lines.Select((line, index) => new LoadingInstructionLineView(line.Id, index + 1, line.Source.OrderId, line.Source.LineId,
                 line.Source.Revision, line.ProductId, line.UnitId, Text(line.InstructedQuantity), Text(line.LoadedQuantity),
                 Text(line.ShippedQuantity), Text(line.DeliveredQuantity), Text(line.RemainingToLoad), Text(line.LoadedNotShipped),
-                Text(line.ShippedNotDelivered), line.IsBlocked))],
+                Text(line.ShippedNotDelivered), line.IsBlocked,
+                line.ApprovedPlanExcessQuantity.IsZero ? null : Text(line.ApprovedPlanExcessQuantity)))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
                 share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc, stored.ShareRecordedBy?.GetValueOrDefault(share.ShareId)))],
             instruction.Weighing is { } weighing ? WeighingView(weighing) : null,

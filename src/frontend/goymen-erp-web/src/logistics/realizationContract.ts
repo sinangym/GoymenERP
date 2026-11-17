@@ -1,4 +1,5 @@
 import { instructionDetailPath, type InstructionLine, type LoadingShare } from './contract'
+import type { PlanExcessUse } from './planExcessApi'
 
 export const REALIZATION_CAPABILITY = {
   shipment: 'logistics.shipments.record',
@@ -19,6 +20,7 @@ export interface RecordShipmentRequest {
   readonly movementId: string
   readonly quantity: string
   readonly occurredAtUtc: string
+  readonly planExcessUses?: readonly PlanExcessUse[]
 }
 
 export interface RecordDeliveryRequest {

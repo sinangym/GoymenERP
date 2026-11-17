@@ -62,6 +62,10 @@ import {
 import { commandNotice, refusalMovesRecord } from './instructionAttemptNotice'
 import { recallInstructionAttempt, rememberInstructionAttempt } from './pendingInstructionAttempts'
 import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE } from './capabilities'
+import { PlanExcessPreparationPanel } from './PlanExcessPreparationPanel'
+import { PlanExcessUseEditor, planExcessUsePayload } from './PlanExcessUseEditor'
+import { PLAN_EXCESS_CAPABILITY, type PlanExcessUse } from './planExcessApi'
+import { PLAN_EXCESS_TEXT } from './planExcessText'
 import { INSTRUCTION_DETAIL_TEXT as T, INSTRUCTION_CREATE_TEXT, INSTRUCTION_STATUS_TEXT, MEASUREMENT_TEXT, SHARE_KIND_TEXT } from './logisticsText'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -151,6 +155,9 @@ export function InstructionDetailPage() {
                     section, or the notice of the command that caused the version step would vanish with it. */}
                 <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
                 <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+                {detail.instruction.status === INSTRUCTION_STATUS.issued && hasCapability(shell, PLAN_EXCESS_CAPABILITY.prepare)
+                  ? detail.lines.filter(line => !line.isBlocked).map(line => <PlanExcessPreparationPanel key={`plan-excess:${line.lineId}`} instructionId={detail.instruction.id}
+                    instructionVersion={detail.instruction.version} lineId={line.lineId} lineNo={line.lineNo} instructed={line.instructed} onRecorded={reread} />) : null}
                 <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
                 <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
                   shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
@@ -471,6 +478,7 @@ export function InstructionView({
                 <th scope="col" className={styles.numeric}>{T.remainingToLoad}</th>
                 <th scope="col" className={styles.numeric}>{T.loadedNotShipped}</th>
                 <th scope="col" className={styles.numeric}>{T.shippedNotDelivered}</th>
+                <th scope="col" className={styles.numeric}>{PLAN_EXCESS_TEXT.approvedCapacity}</th>
               </tr>
             </thead>
             <tbody>
@@ -499,6 +507,7 @@ export function InstructionView({
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-remaining`}>{line.remainingToLoad}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded-not-shipped`}>{line.loadedNotShipped}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-shipped-not-delivered`}>{line.shippedNotDelivered}</td>
+                  <td className={styles.numeric}>{line.approvedPlanExcess ?? PLAN_EXCESS_TEXT.unavailable}</td>
                 </tr>
               ))}
             </tbody>
@@ -699,6 +708,7 @@ function LoadForm({
   const [lineId, setLineId] = useState<string>(() => initial?.values.lineId ?? openLines[0]?.lineId ?? '')
   const [quantityText, setQuantityText] = useState(() => initial?.values.quantityText ?? '')
   const [measurement, setMeasurement] = useState<Measurement>(() => initial?.values.measurement ?? MEASUREMENT.measured)
+  const [planExcessUses, setPlanExcessUses] = useState<readonly PlanExcessUse[]>(() => initial?.attempt.phase !== 'idle' ? initial?.attempt.snapshot.payload.planExcessUses ?? [] : [])
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<AttemptState<LoadPayload, InstructionMutation>>(() => initial?.attempt ?? { phase: 'idle' })
   const attemptRef = useRef(attempt)
@@ -741,6 +751,8 @@ function LoadForm({
     event.preventDefault()
     if (chosen === undefined) return
     const parsed = parseQuantityInput(quantityText)
+    const exceptionSelection = planExcessUsePayload(planExcessUses)
+    if (exceptionSelection === null) { setError(PLAN_EXCESS_TEXT.invalidUse); return }
     if (!parsed.ok) {
       setError(quantityError(parsed.error))
       return
@@ -761,6 +773,7 @@ function LoadForm({
       loadId: live !== null && live.payload.quantity === parsed.value && live.payload.measurement === measurement ? live.payload.loadId : generateClientId(),
       quantity: parsed.value,
       measurement,
+      ...exceptionSelection,
     }
     const decision = decideSubmit(
       current,
@@ -798,7 +811,7 @@ function LoadForm({
           <legend>{T.load.heading}</legend>
           <div className={styles.grid}>
             <label htmlFor="logistics-load-line">{T.load.line}</label>
-            <select id="logistics-load-line" value={lineId} onChange={(event) => setLineId(event.target.value)}>
+            <select id="logistics-load-line" value={lineId} onChange={(event) => { setLineId(event.target.value); setPlanExcessUses([]) }}>
               {lines.map((line) => (
                 <option key={line.lineId} value={line.lineId} disabled={line.isBlocked}>
                   {line.lineNo}. {T.remainingToLoad}: {line.remainingToLoad}
@@ -838,6 +851,7 @@ function LoadForm({
               ))}
             </select>
           </div>
+          {chosen === undefined ? null : <PlanExcessUseEditor instructionId={instruction.id} lineId={chosen.lineId} purpose="load" value={planExcessUses} onChange={setPlanExcessUses} disabled={frozen} />}
           <div className={styles.actions}>
             <button type="submit" className={styles.primaryButton} disabled={frozen || chosen === undefined || chosen.isBlocked} data-testid="logistics-load-button">
               {T.load.record}

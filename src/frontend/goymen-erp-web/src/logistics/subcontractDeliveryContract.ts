@@ -24,7 +24,10 @@ export interface SubcontractSource {
   readonly manufacturingSourceVersion: string; readonly labelCode: string; readonly salesDocumentNo: string; readonly serviceCode: string; readonly serviceName: string
 }
 export interface SubcontractLine { readonly lineId: string; readonly source: SubcontractSource; readonly allocationId: string; readonly instructedKg: string
-  readonly loadedKg: string; readonly shippedKg: string; readonly deliveredKg: string; readonly allocationVersion: string | null; readonly labelVersion: string | null }
+  readonly loadedKg: string; readonly shippedKg: string; readonly deliveredKg: string; readonly allocationVersion: string | null; readonly labelVersion: string | null
+  readonly approvedPlanExcess?: string; readonly additionalAllocations?: readonly SubcontractAdditionalAllocation[] }
+export interface SubcontractAdditionalAllocation { readonly allocationId: string; readonly exceptionId: string; readonly version: string; readonly remainingKg: string; readonly allocatedKg: string }
+export interface SubcontractAdditionalAllocationUse { readonly allocationId: string; readonly expectedVersion: string; readonly quantityKg: string }
 export interface SubcontractWeighing { readonly weighingId: string; readonly revision: number; readonly direction: 'TareFirst' | 'GrossFirst'
   readonly firstKg: string; readonly secondKg: string; readonly netKg: string; readonly loadedKg: string; readonly differenceKg: string }
 export interface SubcontractCorrection { readonly correctionId: string; readonly revision: number; readonly direction: 'TareFirst' | 'GrossFirst'; readonly firstKg: string
@@ -104,10 +107,18 @@ export function decodeSubcontractInstruction(v: unknown, company: string, id?: s
     || !Array.isArray(v.lines) || v.lines.length < 1 || v.lines.length > 500 || !Array.isArray(v.corrections) || typeof v.isReplay !== 'boolean'
     || typeof v.originalCorrelationId !== 'string' || v.isReplay && !text(v.originalCorrelationId) || !(v.recordedLoadId === null || guid(v.recordedLoadId))) return null
   for (const x of v.lines) {
-    if (!obj(x) || !exact(x, ['lineId', 'source', 'allocationId', 'instructedKg', 'loadedKg', 'shippedKg', 'deliveredKg', 'allocationVersion', 'labelVersion'])
+    if (!obj(x) || !exact(x, ['lineId', 'source', 'allocationId', 'instructedKg', 'loadedKg', 'shippedKg', 'deliveredKg', 'allocationVersion', 'labelVersion',
+      ...(Object.hasOwn(x, 'approvedPlanExcess') ? ['approvedPlanExcess'] : []), ...(Object.hasOwn(x, 'additionalAllocations') ? ['additionalAllocations'] : [])])
       || !guid(x.lineId) || !guid(x.allocationId) || !source(x.source, company) || x.source.customerPartyId !== v.customerPartyId || x.source.customerAccountId !== v.customerAccountId
       || !fields(x, ['instructedKg', 'loadedKg', 'shippedKg', 'deliveredKg'], subcontractKg)
-      || !(x.allocationVersion === null || subcontractVersion(x.allocationVersion)) || !(x.labelVersion === null || subcontractVersion(x.labelVersion))) return null
+      || !(x.allocationVersion === null || subcontractVersion(x.allocationVersion)) || !(x.labelVersion === null || subcontractVersion(x.labelVersion))
+      || Object.hasOwn(x, 'approvedPlanExcess') && (!subcontractKg(x.approvedPlanExcess) || x.approvedPlanExcess === '0')) return null
+    if (Object.hasOwn(x, 'additionalAllocations')) {
+      if (!Array.isArray(x.additionalAllocations) || x.additionalAllocations.length > 500 || x.additionalAllocations.some(a => !obj(a)
+        || !exact(a, ['allocationId', 'exceptionId', 'version', 'remainingKg', 'allocatedKg']) || !guid(a.allocationId) || !guid(a.exceptionId)
+        || a.allocationId === x.allocationId || !subcontractVersion(a.version) || !subcontractKg(a.remainingKg) || !subcontractKg(a.allocatedKg) || a.allocatedKg === '0')
+        || new Set(x.additionalAllocations.map(a => a.allocationId)).size !== x.additionalAllocations.length) return null
+    }
   }
   if (new Set(v.lines.map(x => (x as SubcontractLine).lineId)).size !== v.lines.length) return null
   if (v.weighing === null ? v.originalWeighing !== null || v.corrections.length !== 0

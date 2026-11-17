@@ -21,7 +21,7 @@ namespace GoymenERP.Api.Endpoints;
 /// the same headers (§7). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>;
 /// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery use the line-scoped routes mapped below (D3, LOG-5).
 /// </summary>
-public static class LogisticsEndpoints
+public static partial class LogisticsEndpoints
 {
     public const string InstructionsPath = LogisticsApiV1.InstructionsPath;
     private const string IdempotencyHeaderName = LogisticsApiV1.IdempotencyHeader;
@@ -202,6 +202,7 @@ public static class LogisticsEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LoadExceedsInstructed, LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
+                LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
                 LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
@@ -367,6 +368,7 @@ public static class LogisticsEndpoints
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
                 LogisticsRealizationCodesV1.AllocationSourceMismatch, LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
+                LogisticsPlanExcessV1.ApprovalRequired, LogisticsPlanExcessV1.Conflict,
                 // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): the Sales order line is no longer approved / no longer this source,
                 // or the shipment would take the line's total shipped above the Sales owner's current loading limit.
                 LogisticsProblemCodesV1.OrderLineState, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,

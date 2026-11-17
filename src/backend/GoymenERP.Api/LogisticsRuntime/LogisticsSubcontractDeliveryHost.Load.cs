@@ -51,11 +51,14 @@ public sealed partial class LogisticsSubcontractDeliveryHost
                 throw Error(503, Unavailable);
             var aggregate = new LogisticsOrderLineAggregateLoadLimit(lineId, scope.CompanyId, approved.OrderId, approved.LineId, line.UnitId, approved.Version,
                 maximum, limit.MaximumAggregateQuantityText, quantity, request.Quantity, limit.SourceOwner, limit.SourceId, limit.SourceVersion, limit.EffectiveOn);
-            var recorded = await store.MutateInstructionWithAggregateLoadLimitAsync(envelope, hash, LogisticsCommands.RecordLoadV1, instructionId,
+            if (line.LoadedQuantity.Value + quantity > line.InstructedQuantity.Value && request.PlanExcessUses is null)
+                throw Error(409, LogisticsPlanExcessV1.ApprovalRequired);
+            var recorded = await store.MutateWithPlanExcessAsync(envelope, hash, LogisticsCommands.RecordLoadV1, instructionId,
                 (value, now) => value.RecordLoad(expected, request.LoadId, lineId, verified.Unit!.Quantity, measurement, now),
-                new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "Müşteri malının fiilî fason yüklemesi kaydedildi"), aggregate, ct) ?? throw Error(404, "not_found");
+                new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "Müşteri malının fiilî fason yüklemesi kaydedildi"), aggregate, null,
+                new Dictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?> { [lineId] = request.PlanExcessUses }, ct) ?? throw Error(404, "not_found");
             var labels = await LabelsAsync(stock, sources.Values, ct);
-            var reply = View(recorded.Instruction.Instruction, sources, labels, false, envelope.CorrelationId) with { RecordedLoadId = request.LoadId };
+            var reply = (await ViewWithReservationsAsync(recorded.Instruction.Instruction, sources, labels, false, envelope.CorrelationId, ct)) with { RecordedLoadId = request.LoadId };
             await store.CompleteSubcontractResultAsync(envelope, hash, LogisticsCommands.RecordLoadV1, reply, ct); return reply;
         }, token);
     }

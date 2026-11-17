@@ -50,6 +50,7 @@ internal sealed class LoadingInstructionLineRow : ILogisticsTenantRow
     public Guid? AllocationId { get; set; }
     public string? SubcontractSourceJson { get; set; }
     public decimal Instructed { get; set; }
+    public decimal ApprovedPlanExcess { get; set; }
     public decimal Loaded { get; set; }
     public decimal Shipped { get; set; }
     public decimal Delivered { get; set; }
