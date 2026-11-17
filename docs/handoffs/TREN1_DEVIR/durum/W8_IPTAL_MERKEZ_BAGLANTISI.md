@@ -10,6 +10,12 @@
 
 Unit/SQL/HTTP/Vitest/browser/CI yürütme ve production aktivasyonu **NOT_RUN**. Son K3/pin/hafif kontrol kapıları bekler.
 
+## Tarihsel olay checkpointi
+
+`ab8b9c09b` ve `16cf9dccd` merkeze alındı: gerçek iptal/finalization kanıtı, obsolete olay alındısı ve gerçek tam iadenin exact-zero doğrulaması. Known satırda gerçek Sales sahibi atlanması kaynak incelemesinde bulundu ve düzeltildi. Owner API/Accounting.Unit/Sales.Unit/Integration kaynak derlemeleri exit0; ilk yardımcı-adı çakışması hatası korundu. UI değişmedi, TSC tekrarlanmadı. Altı Accounting ve bir Sales SQL fact adı gerçek işaretli kaynaklardan envantere alındı; koşum yapılmadı.
+
+Ters olay sırası ayrıca somut eksik gösterdi: eski fatura maliyeti önce sahiplenmişse değişmez anchor yeni faturayı engelliyor. SAT-D96/SAT-D228 yeniden faturalamaya zaten izin verir. Tek append-only sahiplik nesli tablosu ve gerçek iptal/tamamlanmış ters kayıt veya hiç muhasebeleşmemiş kaynak kanıtıyla ardıl sahiplik bağı aynı STK-SC36-a içinde hazırlanıyor. Eski claim silinmez/değiştirilmez; eski global maliyet fişi yeniden üretilmez. Bu yüzden enclosing dilim henüz DONE değildir; yeni kullanıcı kararı veya yeni dalga gerekmez.
+
 ## Son merkez kaynak derlemesi
 
 `15a6342904570eb9e93cda2cdb0acac4ce10cb69` donuk kaynakta API, Settings.Unit, Finance.Unit, Inventory.Unit, Sales.Unit, Accounting.Unit, Integration ve TypeScript derlemeleri exit0/0 uyarı/hata. İlk hata kayıtları ve her native exit korundu; her süreç öncesi en az2GiB RAM ölçüldü. Kaynak incelemesindeki fresh replay çiti ve exact29 capability listesi düzeltmeleri dahildir. Sonraki tarihsel iptal delta kaynağı dahil değildir. Runtime/SQL/browser/CI NOT_RUN.
