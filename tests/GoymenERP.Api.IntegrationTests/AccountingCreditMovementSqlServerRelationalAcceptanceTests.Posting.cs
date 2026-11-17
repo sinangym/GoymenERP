@@ -27,12 +27,13 @@ public sealed partial class AccountingCreditMovementSqlServerRelationalAcceptanc
         var actual = Assert.IsType<NormalJournalDraftServerSourceV1>(await provider.ResolveAsync(source.CompanyId, source.EventId));
         Assert.Equal(source.CurrencyId, actual.CurrencyId); Assert.Equal(owner.Value.MoneyProfile.ProfileId.ToString("D"), actual.OwnerProfileId);
         var preparation = NormalJournalDraftSourcePreparationV1.TryCreate(source.CompanyId, source.EventId, actual)!;
-        var lines = actual.ExactSourceLines!.Select(x => new ProposedLine(x.MappingKey,
+        var exactLines = Assert.IsAssignableFrom<IReadOnlyList<NormalJournalExactSourceLineV1>>(actual.ExactSourceLines);
+        var lines = exactLines.Select(x => new ProposedLine(x.MappingKey,
             actual.Rule.Mappings.Single(m => m.MappingKey == x.MappingKey && m.Side.ToString() == x.Side).Account,
             Enum.Parse<PostingSide>(x.Side), decimal.Parse(x.Amount, CultureInfo.InvariantCulture))).ToArray();
-        Assert.Equal(new[] { 98.5m, 1.5m, 100m }, lines.Select(x => x.Amount));
+        Assert.Equal(new[] { 98.5m, 1.5m, 100m }, lines.Select(x => Assert.IsType<decimal>(x.Amount)));
         var changed = lines.ToArray(); changed[0] = changed[0] with { Amount = 98m }; changed[1] = changed[1] with { Amount = 2m };
-        Assert.False(NormalJournalExactSourceAmountsV1.Matches(actual.ExactSourceLines, changed)); // still balanced; source facts differ.
+        Assert.False(NormalJournalExactSourceAmountsV1.Matches(exactLines, changed)); // still balanced; source facts differ.
         var store = new AccountingStore(scope.Db, scope.Company, scope.Audit, TimeProvider.System,
             new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(source.CompanyId)));
         var period = Guid.NewGuid(); var checker = Guid.NewGuid();
