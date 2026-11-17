@@ -38,6 +38,16 @@ public sealed class InventoryCostLineageReaderModelTests
         var root = Assert.Single(snapshot.Labels);
         Assert.Equal((Root, 7L, "1"), (root.LabelId, root.Version, root.ProductVersion));
         Assert.Equal(80m, Assert.Single(root.Positions).QuantityKg);
+        var captured = Assert.Single(snapshot.Shipments);
+        var source = world.Movements.Single(row => row.MovementId == shipment);
+        Assert.Equal((source.SourceId, shipment, 1, source.SourceLineId!.Value, Root, Product),
+            (captured.ShipmentId, captured.MovementId, captured.LineNumber, captured.LoadingInstructionLineId, captured.LabelId, captured.ProductId));
+        Ratio(captured.RootShare, "1", "1");
+        Ratio(captured.NetRootQuantityKg, "20", "1");
+        var returned = Assert.Single(captured.Returns);
+        Assert.Equal(shipment, returned.SourceIssueMovementId);
+        Assert.Equal(10m, returned.QuantityKg);
+        Assert.Equal(world.Movements.Single(row => row.MovementId == returned.MovementId).SourceLineId, returned.ReturnId);
     }
 
     [Fact]
@@ -90,6 +100,25 @@ public sealed class InventoryCostLineageReaderModelTests
         Ratio(snapshot.RemainingKg, "2", "3");
         Ratio(snapshot.ShippedKg, "1", "3");
         Assert.False(snapshot.RemainingKg!.TryToDecimal(out _));
+        var shipment = Assert.Single(snapshot.Shipments);
+        Ratio(shipment.RootShare, "1", "3");
+        Ratio(shipment.NetRootQuantityKg, "1", "3");
+        Assert.Empty(shipment.Returns);
+    }
+
+    [Fact]
+    public void A_fully_returned_shipment_keeps_both_real_movement_identities_in_the_frozen_snapshot()
+    {
+        var world = new World(); world.Receipt(Root, 10m);
+        var issue = world.Shipment(Root, 5m); var returned = world.CustomerReturn(Root, 5m, issue);
+        var snapshot = Value(world);
+        var shipment = Assert.Single(snapshot.Shipments);
+        Assert.Equal(issue, shipment.MovementId);
+        Ratio(shipment.NetRootQuantityKg, "0", "1");
+        Assert.Equal(returned, Assert.Single(shipment.Returns).MovementId);
+        world.CustomerReturn(Root, 1m, issue); // Later invalid source changes cannot mutate the earlier snapshot.
+        Assert.Single(shipment.Returns);
+        Ratio(shipment.NetRootQuantityKg, "0", "1");
     }
 
     [Fact]
@@ -321,6 +350,7 @@ public sealed class InventoryCostLineageReaderModelTests
         Assert.Equal(InventoryCostLineageOutcome.Unreadable, snapshot.Outcome);
         Assert.Equal(InventoryCostLineageReader.UnreadableReason, snapshot.Reason);
         Assert.Empty(snapshot.Labels);
+        Assert.Empty(snapshot.Shipments);
         Assert.Null(snapshot.RemainingKg);
         Assert.Null(snapshot.ShippedKg);
         Assert.Null(snapshot.CustomerReturnedKg);
@@ -359,7 +389,8 @@ public sealed class InventoryCostLineageReaderModelTests
         {
             EnsureLabel(label);
             var id = Next();
-            Movements.Add(new(Company, id, (int)kind, sourceKind, sourceId ?? Next(), Next(), (int)StockSourceGrain.Line));
+            Movements.Add(new(Company, id, (int)kind, sourceKind, sourceId ?? Next(), Next(), (int)StockSourceGrain.Line,
+                new DateTimeOffset(2026, 11, 17, 10, 0, 0, TimeSpan.Zero).AddTicks(sequence)));
             Lines.Add(new(Company, id, 1, label, Product, (int)direction, (int)StockPartyKind.Company, Company,
                 (int)StockPartyKind.Company, Company, Location, (int)BlockState.Free, kg));
             ChangeBalance(label, direction == StockDirection.In ? kg : -kg);
