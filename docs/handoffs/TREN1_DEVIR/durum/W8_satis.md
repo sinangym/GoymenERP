@@ -39,3 +39,27 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - Kaynak testleri: gerçek Sales owner, ilk revizyonun sıfır olması, arşivlenmiş onay, yanlış şirket/satır/revizyon, değişen kaynak sürümü, aktör/şirket kaybı, kur hassasiyeti ve iptal. Gerçek SQL fact'i actual Sales store üzerinden kalıcı kayıt okumasını ve yazma oluşmamasını kapsar.
 - Api, Sales.UnitTests ve Api.IntegrationTests derlemeleri exit 0; 0 uyarı/hata. İlk Integration derlemesindeki sentetik şirket bağlamının eksik arayüz üyesi tamamlandı; yeniden derleme exit 0. OpenAPI üretimi kapalı, merkezi entegrasyon bekliyor.
 - Test çalıştırılması, SQL ve CI: **NOT_RUN**. Yeni migration, izin veya grant yok. Üretimin gerçek tüketicisiyle birleştirme ve pin üretimi tamamlanmadan dilim DONE sayılmaz.
+
+## SAT-S9 — ALS-D90 / F17-5 termin uyarısı
+
+- Aktif gelecek ayırmaların terminleri gerçek Purchasing schedule owner köprüsünden okunur.
+  İstanbul iş günüyle yalnız okuma anında karşılaştırılır. Geçmiş termin ayırmayı bırakmaz,
+  sürümünü değiştirmez, olay veya zamanlanmış iş üretmez. Aynı kaynak satırı bir kez okunur.
+- Tarihsiz, okunamayan ve aktif olmayan kaynaklar ayrı gösterilir; okunamayan termin
+  "geçmedi" sayılmaz. Son şirket/yetki çiti kaynak okumasından sonra yeniden çalışır.
+  Ekran backend'in gününü, tarihi ve uyarısını gösterir; kendi tarihiyle hesaplamaz.
+- Birim, gerçek SQL ve strict istemci/ekran test kaynakları eklendi. TypeScript derlemesi
+  exit 0; backend kaynak derlemesi merkez entegrasyonda sıradadır. Runtime Unit/SQL/HTTP/
+  Vitest/browser/CI **NOT_RUN**. Migration/izin yok; plan durumu ve yüzde artırılmadı.
+
+### SAT-S13 — irsaliye listesinde gerçek kantar farkı
+
+- Kullanıcı satırı açınca mevcut Sales owner endpointinden teorik/kantar/fark/fazla kg,
+  kayıt/onay/bant ve fatura bekleme nedeni okunur. Ekran dağılım, fark veya tolerans
+  hesaplamaz. Satır açılmadan arka planda her irsaliyeye ayrı istek gönderilmez.
+- Şirket ve irsaliye kimliği, miktar metinleri ve onay tutarlılığı istemcide doğrulanır.
+  Eksik kayıt, yetkisiz, bulunamadı, çakışma, çevrimdışı, 503 ve bozuk yanıt ayrı kalır.
+  İstek şirket bağlamına ve iptal sinyaline bağlıdır; `no-store` kullanır.
+- Sözleşme/HTTP ve gerçek shell üzerinde ekran test kaynakları eklendi. `npx tsc -b`
+  exit 0. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; yeni izin/migration yok.
+  Merkezi pin üretimi ve trene entegrasyon öncesi plan yüzdesi artırılmadı.

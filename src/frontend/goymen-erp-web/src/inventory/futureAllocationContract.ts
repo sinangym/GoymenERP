@@ -9,6 +9,11 @@ export interface FutureAllocation {
 export interface FutureAllocationList {
   readonly companyId: string; readonly salesOrderId: string; readonly salesOrderLineId: string
   readonly items: readonly FutureAllocation[]; readonly windowFull: boolean; readonly unitCodes: Readonly<Record<string, string>>
+  readonly evaluatedOn: string; readonly schedules: Readonly<Record<string, FutureAllocationSchedule>>
+}
+export interface FutureAllocationSchedule {
+  readonly status: 'Scheduled' | 'Undated' | 'Unavailable' | 'Inactive'
+  readonly deliveryDate: string | null; readonly isOverdue: boolean | null
 }
 export interface FutureSupplyOption {
   readonly purchaseOrderId: string; readonly purchaseOrderLineId: string; readonly lineNo: number; readonly supplierCode: string
@@ -34,6 +39,8 @@ const text = (v: unknown): v is string => typeof v === 'string' && v.trim().leng
 const nullableText = (v: unknown) => v === null || text(v)
 const version = (v: unknown): v is string => typeof v === 'string' && /^[1-9]\d{0,18}$/.test(v) && BigInt(v) <= 9223372036854775807n
 const instant = (v: unknown) => typeof v === 'string' && v.length <= 64 && /(?:Z|[+-]\d{2}:\d{2})$/.test(v) && !Number.isNaN(Date.parse(v))
+const day = (v: unknown): v is string => typeof v === 'string' && /^(?!0000)\d{4}-\d{2}-\d{2}$/.test(v)
+  && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v
 const quantity = (v: unknown): v is string => typeof v === 'string' && /^(?:0|[1-9]\d{0,14})(?:\.\d{1,3})?$/.test(v)
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const exact = (v: Record<string, unknown>, fields: readonly string[]) => Object.keys(v).length === fields.length && fields.every(f => Object.hasOwn(v, f))
@@ -54,15 +61,23 @@ export function decodeFutureAllocation(value: unknown): FutureAllocation | null 
 }
 
 export function decodeFutureAllocationList(value: unknown): FutureAllocationList | null {
-  if (!obj(value) || !exact(value, ['companyId', 'salesOrderId', 'salesOrderLineId', 'items', 'windowFull', 'unitCodes'])
+  if (!obj(value) || !exact(value, ['companyId', 'salesOrderId', 'salesOrderLineId', 'items', 'windowFull', 'unitCodes', 'evaluatedOn', 'schedules'])
     || !futureGuid(value.companyId) || !futureGuid(value.salesOrderId) || !futureGuid(value.salesOrderLineId) || !Array.isArray(value.items)
     || value.items.length > 100 || typeof value.windowFull !== 'boolean' || !obj(value.unitCodes)
+    || !day(value.evaluatedOn) || !obj(value.schedules) || Object.keys(value.schedules).length !== value.items.length
     || Object.entries(value.unitCodes).some(([key, name]) => !futureGuid(key) || !text(name))) return null
   const ids = new Set<string>()
   for (const raw of value.items) {
     const item = decodeFutureAllocation(raw)
     if (item === null || item.companyId !== value.companyId || item.salesOrderId !== value.salesOrderId || item.salesOrderLineId !== value.salesOrderLineId
       || ids.has(item.allocationId) || !Object.hasOwn(value.unitCodes, item.unitId)) return null
+    const schedule = value.schedules[item.allocationId]
+    if (!obj(schedule) || !exact(schedule, ['status', 'deliveryDate', 'isOverdue'])
+      || !['Scheduled', 'Undated', 'Unavailable', 'Inactive'].includes(String(schedule.status))
+      || (item.status === 'Active') === (schedule.status === 'Inactive')) return null
+    if (schedule.status === 'Scheduled') {
+      if (!day(schedule.deliveryDate) || typeof schedule.isOverdue !== 'boolean') return null
+    } else if (schedule.deliveryDate !== null || schedule.isOverdue !== (schedule.status === 'Unavailable' ? null : false)) return null
     ids.add(item.allocationId)
   }
   return value as unknown as FutureAllocationList

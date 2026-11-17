@@ -42,7 +42,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
         // Only scanned versions exist: the rollback loses nothing and passes; the widened check is applied again.
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
-            Assert.Equal(all, await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(all.Append(InvoiceXmlContentKindMigration), await context.Database.GetAppliedMigrationsAsync());
             Assert.Equal(1, await run.ScalarAsync<int>(TakesSystemGenerated));
             await context.GetService<IMigrator>().MigrateAsync(WidenContentKindsMigration);
             Assert.Equal(0, await run.ScalarAsync<int>(TakesSystemGenerated));
@@ -81,6 +81,8 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
+            // No XML source exists: explicitly step down the later content-kind change before testing this guard.
+            await context.GetService<IMigrator>().MigrateAsync(SystemGeneratedScanStateMigration);
             var refusal = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(WidenContentKindsMigration));
             Assert.Equal(51592, refusal.Number);
             Assert.Equal(all, await context.Database.GetAppliedMigrationsAsync());

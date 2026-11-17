@@ -56,6 +56,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseIncomingInvoiceMatchSourceV1, PurchaseIncomingInvoiceMatchSource>();
         services.AddScoped<IPurchaseIncomingInvoiceWorkspaceV1, PurchaseIncomingInvoiceWorkspace>();
         services.AddScoped<IPurchaseIncomingInvoiceDiagnosticsV1, PurchaseIncomingInvoiceDiagnostics>();
+        services.AddScoped<IPurchaseInvoiceImportReservationStoreV1>(provider => provider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchaseInvoiceFileReaderV1, Imports.PurchaseInvoiceFileReader>();
+        services.AddScoped<IPurchaseInvoiceImportV1, PurchaseInvoiceImport>();
         services.AddScoped<PurchaseUnitVerifier>();
         services.TryAddSingleton(new PurchasingServiceBindings());
         services.AddScoped<PurchasingService>(CreatePurchasingService);

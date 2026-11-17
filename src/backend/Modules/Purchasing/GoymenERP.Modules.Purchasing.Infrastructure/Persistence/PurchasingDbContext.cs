@@ -238,6 +238,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         ConfigureReceiptAdjustments(modelBuilder);
         ConfigureSupplierRevisions(modelBuilder);
         ConfigureIncomingInvoices(modelBuilder);
+        ConfigureInvoiceImports(modelBuilder);
         ConfigureServiceOrders(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()

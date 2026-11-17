@@ -297,7 +297,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var context = new DocumentsDbContext(options, companyContext))
         {
-            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration],
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration, InvoiceXmlContentKindMigration],
                 await context.Database.GetAppliedMigrationsAsync());
             await context.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
@@ -320,7 +320,7 @@ public sealed partial class DocumentVaultSqlServerRelationalAcceptanceTests
             Assert.Equal(51058, error.Number);
             Assert.Equal([InitialDocumentsMigration], await context.Database.GetAppliedMigrationsAsync());
             await context.Database.MigrateAsync();
-            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration],
+            Assert.Equal([InitialDocumentsMigration, PrimaryLinkMarkerMigration, WidenContentKindsMigration, SystemGeneratedScanStateMigration, InvoiceXmlContentKindMigration],
                 await context.Database.GetAppliedMigrationsAsync());
         }
 
