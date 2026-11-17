@@ -37,9 +37,14 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
     private const decimal ColumnBound = 1_000_000_000_000_000m;
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
-    public async Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
+    public Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
         Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
-        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null)
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null) =>
+        StoreInstructionCoreAsync(envelope, requestHash, effectiveOn, build, cancellationToken, aggregateLimits, null);
+
+    private async Task<LogisticsStoreResult> StoreInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
+        Func<LoadingInstruction> build, CancellationToken cancellationToken,
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits, IReadOnlyDictionary<Guid, LogisticsSubcontractSourceV1>? sources)
     {
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
@@ -70,6 +75,10 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         {
             throw new ArgumentException("Yeni talimat satırlı bir taslaktır; payı olamaz.", nameof(build));
         }
+
+        if (instruction.IsContractProcessingDelivery != (sources is not null)
+            || sources is not null && (sources.Count != instruction.Lines.Count || instruction.Lines.Any(line => !sources.ContainsKey(line.Id))))
+            throw new InvalidOperationException("Fason talimatın her satırı gerçek owner kaynağıyla birlikte kaydedilir.");
 
         if (await dbContext.Instructions.AsNoTracking().AnyAsync(row => row.Id == instruction.Id, cancellationToken))
         {
@@ -121,6 +130,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
                 UnitId = line.UnitId,
                 UnitIsKilogram = line.InstructedQuantity.Unit == QuantityUnit.Kilogram,
                 AllocationId = line.AllocationId,
+                SubcontractSourceJson = sources is not null ? JsonSerializer.Serialize(sources[line.Id], Json) : null,
                 Instructed = RequireFits(line.InstructedQuantity.Value),
                 Loaded = 0m,
                 Shipped = 0m,
@@ -294,7 +304,8 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
     private async Task<LogisticsStoreResult?> MutateInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
         LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, LogisticsShipmentRiskGateFactsV1? shipmentRiskGate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IReadOnlyList<LogisticsShipmentRiskGateFactsV1>? subcontractGates = null,
+        int wholeShipmentCount = 0)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -356,6 +367,9 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
         var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows, unloadRow, correctionRows);
+        if (wholeShipmentCount > 0 && (!instruction.IsContractProcessingDelivery || commandName != LogisticsSubcontractDeliveryV1.ShipCommand
+                || subcontractGates is null || subcontractGates.Count == 0 || shipmentRiskGate is not null))
+            throw new InvalidOperationException("Toplu sevk yalnız gerçek fason teslim komutudur.");
         if (aggregateLoadLimit is not null)
         {
             await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
@@ -378,8 +392,12 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         var notesChanged = Enumerable.Range(0, Math.Min(notesBefore.Length, instruction.DispatchNotes.Count))
             .Where(index => !ReferenceEquals(notesBefore[index], instruction.DispatchNotes[index])).ToArray();
         var dispatchStep = noteAdded || notesChanged.Length > 0;
-        if (instruction.Version != versionBefore + 1 || instruction.Id != row.Id || instruction.CompanyId != companyId
-            || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
+        var expectedSteps = wholeShipmentCount > 0 ? wholeShipmentCount : 1;
+        if (instruction.Version != versionBefore + expectedSteps || instruction.Id != row.Id || instruction.CompanyId != companyId
+            || instruction.Shares.Count > sharesBefore + expectedSteps || instruction.Lines.Count != lineRows.Count
+            || wholeShipmentCount > 0 && (instruction.Shares.Count != sharesBefore + wholeShipmentCount
+                || instruction.Shares.Skip(sharesBefore).Any(share => share.Kind != LoadingShareKind.Shipped)
+                || instruction.WeighingCorrections.Count != correctionsBefore.Length || weighingAdded || unloadAdded || dispatchStep)
             || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
             || (instruction.WeighingCorrections.Count != correctionsBefore.Length && !correctionAdded)
             || correctionsBefore.Where((correction, index) => !ReferenceEquals(correction, instruction.WeighingCorrections[index])).Any()
@@ -405,8 +423,9 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateDispatchNoteId, "Bu irsaliye kimliği şirketin başka bir talimatında kullanılıyor.");
         }
 
+        var appendedCorrectionId = correctionAdded ? instruction.WeighingCorrections[^1].CorrectionId : Guid.Empty;
         if (correctionAdded && await dbContext.WeighingCorrections.AsNoTracking()
-            .AnyAsync(correction => correction.CorrectionId == instruction.WeighingCorrections[^1].CorrectionId, cancellationToken))
+            .AnyAsync(correction => correction.CorrectionId == appendedCorrectionId, cancellationToken))
             throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateWeighingCorrectionId, "Bu düzeltme kimliği şirketin başka bir tartımında kayıtlı.");
 
         if (shipmentRiskGate is not null)
@@ -426,6 +445,23 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
                 // L-4 / SAT-D285 (1): single use. The same terminal refusal under the key, never a unique-key race answer.
                 dbContext.ChangeTracker.Clear();
                 throw new LogisticsRuleException(LogisticsShipmentRiskGateCodesV1.ExceptionUsed, LogisticsShipmentRiskGateTextsV1.ExceptionUsed);
+            }
+        }
+
+        if (subcontractGates is not null)
+        {
+            var added = instruction.Shares.Skip(sharesBefore).ToArray();
+            if (subcontractGates.Select(gate => gate.SalesOrderId).Distinct().Count() != subcontractGates.Count
+                || instruction.Lines.Where(line => added.Any(share => share.LineId == line.Id)).Select(line => line.Source.OrderId).Distinct().Count() != subcontractGates.Count)
+                throw new InvalidOperationException("Her fason siparişin tek gerçek risk kararı aynı sevke aittir.");
+            foreach (var gate in subcontractGates)
+            {
+                if (gate.LoadingInstructionId != instruction.Id || !added.Any(share => share.ShareId == gate.ShipmentId
+                    && instruction.Lines.Single(line => line.Id == share.LineId).Source.OrderId == gate.SalesOrderId))
+                    throw new InvalidOperationException("Risk kapısı aynı fason siparişin gerçek sevkine aittir.");
+                if (gate.RiskExceptionNo is { } number && await dbContext.ShipmentRiskExceptionUses.AsNoTracking()
+                    .AnyAsync(use => use.SalesOrderId == gate.SalesOrderId && use.ExceptionNo == number, cancellationToken))
+                    throw new LogisticsRuleException(LogisticsShipmentRiskGateCodesV1.ExceptionUsed, LogisticsShipmentRiskGateTextsV1.ExceptionUsed);
             }
         }
 
@@ -460,14 +496,13 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             lineRow.IsBlocked = line.IsBlocked;
         }
 
-        if (instruction.Shares.Count == sharesBefore + 1)
+        foreach (var share in instruction.Shares.Skip(sharesBefore))
         {
-            var share = instruction.Shares[^1];
             dbContext.Shares.Add(new LoadingShareRow
             {
                 CompanyId = companyId,
                 InstructionId = instruction.Id,
-                ShareNo = sharesBefore + 1,
+                ShareNo = sharesBefore + 1 + instruction.Shares.Skip(sharesBefore).TakeWhile(candidate => candidate.ShareId != share.ShareId).Count(),
                 ShareId = share.ShareId,
                 LineId = share.LineId,
                 Kind = (int)share.Kind,
@@ -540,6 +575,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         {
             AddShipmentRiskGateRows(companyId, instruction.Id, shipmentRiskGate, envelope, actorId, now);
         }
+        foreach (var gate in subcontractGates ?? []) AddShipmentRiskGateRows(companyId, instruction.Id, gate, envelope, actorId, now);
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
         // LOJ-D17 (2): an unload difference is a warning written to the audit record, never a refusal.
@@ -547,17 +583,14 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             ? audit.WarningReason
             : audit.Reason;
         Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
-            WithShipmentRiskGate(MutationSnapshot(instruction, aggregateLoadLimit), shipmentRiskGate), reason);
+            WithSubcontractRiskGates(WithShipmentRiskGate(MutationSnapshot(instruction, aggregateLoadLimit), shipmentRiskGate), subcontractGates), reason);
         await SaveAsync(cancellationToken);
         if (aggregateTransaction is not null)
         {
             await aggregateTransaction.CommitAsync(cancellationToken);
         }
         var shareActors = ShareActors(shareRows);
-        if (instruction.Shares.Count == sharesBefore + 1)
-        {
-            shareActors[instruction.Shares[^1].ShareId] = actorId;
-        }
+        foreach (var share in instruction.Shares.Skip(sharesBefore)) shareActors[share.ShareId] = actorId;
 
         return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn, shareActors), LogisticsWriteOutcome.Recorded,
             envelope.CorrelationId.Trim());
@@ -771,6 +804,13 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
                 gate.RiskExceptionNo, gate.ContractVersion,
             },
         }, Json);
+    }
+
+    private static string WithSubcontractRiskGates(string snapshot, IReadOnlyList<LogisticsShipmentRiskGateFactsV1>? gates)
+    {
+        if (gates is null) return snapshot;
+        using var document = JsonDocument.Parse(snapshot);
+        return JsonSerializer.Serialize(new { snapshot = document.RootElement.Clone(), shipmentRiskGates = gates }, Json);
     }
 
     private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)

@@ -3,11 +3,29 @@ using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Logistics.UnitTests;
 
 public sealed class LogisticsSubcontractPersistenceModelTests
 {
+    [Fact]
+    public void Subcontract_migration_keeps_legacy_sale_default_and_guards_every_new_source_before_any_drop()
+    {
+        using var context = Context();
+        Assert.Contains(context.Database.GetMigrations(), name => name.EndsWith("_AddLogisticsSubcontractDeliveries", StringComparison.Ordinal));
+        var migration = new AddLogisticsSubcontractDeliveries();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var kind = Assert.Single(migration.UpOperations.OfType<AddColumnOperation>(), column => column.Name == "ShipmentKind");
+        Assert.Equal(1, kind.DefaultValue);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51935", guard);
+        foreach (var source in new[] { "VehicleWeighingCorrections", "[ShipmentKind] = 2", "[SubcontractSourceJson] IS NOT NULL", "[ResultJson] IS NOT NULL" })
+            Assert.Contains(source, guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+    }
+
     [Fact]
     public void Shipment_kind_is_immutable_and_defaults_legacy_instructions_to_sale_while_corrections_are_company_bound_append_only()
     {

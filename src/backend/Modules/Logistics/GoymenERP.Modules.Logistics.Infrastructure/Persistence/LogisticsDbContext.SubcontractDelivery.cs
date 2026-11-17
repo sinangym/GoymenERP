@@ -14,6 +14,12 @@ public sealed partial class LogisticsDbContext
 
     private void ConfigureWeighingCorrections(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<LoadingAttemptRow>().Property(row => row.ResultJson).HasColumnType("nvarchar(max)");
+        modelBuilder.Entity<LoadingAttemptRow>().ToTable("LoadingAttempts", Schema, table =>
+            table.HasCheckConstraint("CK_LoadingAttempts_ResultJson", "[ResultJson] IS NULL OR ([Outcome] = 1 AND ISJSON([ResultJson]) = 1)"));
+        modelBuilder.Entity<LoadingInstructionLineRow>().Property(row => row.SubcontractSourceJson).HasColumnType("nvarchar(max)");
+        modelBuilder.Entity<LoadingInstructionLineRow>().ToTable("LoadingInstructionLines", Schema, table =>
+            table.HasCheckConstraint("CK_LoadingInstructionLines_SubcontractSource", "[SubcontractSourceJson] IS NULL OR ISJSON([SubcontractSourceJson]) = 1"));
         var correction = modelBuilder.Entity<VehicleWeighingCorrectionRow>();
         correction.ToTable("VehicleWeighingCorrections", Schema, table =>
         {

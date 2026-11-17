@@ -54,7 +54,8 @@ public static class LogisticsCommands
 
     public static bool IsMutation(string commandName) =>
         commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CorrectWeighingV1 or CreateDispatchNoteV1
-            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1;
+            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1
+            or LogisticsSubcontractDeliveryV1.ShipCommand;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }

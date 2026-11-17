@@ -29,7 +29,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// whole-instruction shipment are separate attempts; neither uses a normal sales allocation or SMM event.
 /// The host verifies current Sales/Manufacturing proofs and final authority, and alone commits or rolls back.
 /// </summary>
-public sealed class InventorySubcontractDeliveryParticipant : IInventorySubcontractDeliveryParticipantV1
+public sealed partial class InventorySubcontractDeliveryParticipant : IInventorySubcontractDeliveryParticipantV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true };

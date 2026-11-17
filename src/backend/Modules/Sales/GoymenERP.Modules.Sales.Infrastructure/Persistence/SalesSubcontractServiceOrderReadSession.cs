@@ -17,6 +17,7 @@ public sealed class SalesSubcontractServiceOrderReadSession : ISalesSubcontractS
 {
     private readonly SalesDbContext context;
     private readonly SalesSubcontractServiceOrderReadPort reader;
+    private readonly SalesOrderLineReferencePort loadingReader;
     private readonly ICompanyContext company;
     private readonly DbConnection connection;
     private readonly DbTransaction transaction;
@@ -28,7 +29,8 @@ public sealed class SalesSubcontractServiceOrderReadSession : ISalesSubcontractS
     {
         this.context = context; this.company = company; this.connection = connection;
         this.transaction = transaction; companyId = company.CompanyId;
-        reader = new(new SalesStore(context, company, new ReadOnlyAuditCollector(), TimeProvider.System), company);
+        var store = new SalesStore(context, company, new ReadOnlyAuditCollector(), TimeProvider.System);
+        reader = new(store, company); loadingReader = new(store, company);
     }
 
     public static async Task<SalesSubcontractServiceOrderReadSession> EnlistAsync(DbConnection connection,
@@ -63,6 +65,19 @@ public sealed class SalesSubcontractServiceOrderReadSession : ISalesSubcontractS
         }
         catch (OperationCanceledException) { throw; }
         catch { return Unavailable(); }
+    }
+
+    /// <summary>The existing approved/remainder/reapproval-cap owner rule in the same borrowed transaction.
+    /// The action-purpose host measures actor/permission before and after this authority-free read.</summary>
+    public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid companyId, Guid orderId, Guid lineId,
+        DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this); cancellationToken.ThrowIfCancellationRequested();
+        if (companyId != this.companyId || !Active()) throw new InvalidOperationException("The Sales loading source transaction or company is unavailable.");
+        var answer = await loadingReader.GetApprovedLineForLoadingAsync(orderId, lineId, effectiveOn, cancellationToken);
+        if (!Active() || answer.Line is { } line && (line.CompanyId != companyId || line.OrderId != orderId || line.LineId != lineId))
+            throw new InvalidOperationException("The Sales loading source changed scope.");
+        return answer;
     }
 
     private bool Active()
