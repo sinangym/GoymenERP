@@ -16,6 +16,7 @@ public static class SalesOutboxContractV1
     [
         new(SalesStore.InvoiceFinalizedEventType, 1),
         new(SalesStore.CustomerReturnFinalizedEventType, 1),
+        new(GoymenERP.Modules.Sales.Application.Contracts.SalesOfficialInvoiceCancellationCommandsV1.EventType, 1),
     ]);
 }
 

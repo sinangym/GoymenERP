@@ -92,6 +92,8 @@ public static class TrainCompletionHostComposition
             AccountingPurchaseInvoiceFinalizedInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<AccountingSalesInvoiceFinalizedInboxConsumer>(AccountingSalesInvoiceFinalizedInboxV1.ConsumerName,
             AccountingSalesInvoiceFinalizedInboxV1.Subscriptions.ToArray());
+        services.AddWorkInboxConsumer<AccountingSalesInvoiceCancelledInboxConsumerV1>(AccountingSalesInvoiceCancelledInboxV1.ConsumerName,
+            AccountingSalesInvoiceCancelledInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<FinanceJournalSourceInboxConsumerV1>(FinanceJournalSourceInboxV1.ConsumerName,
             FinanceJournalSourceInboxV1.Subscriptions.ToArray());
         return services;

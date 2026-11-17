@@ -19,8 +19,12 @@ public enum SalesInvoiceState
     Rejected = 4,
     Cancelled = 5,
 
-    /// <summary>API-36 (SAT-D208): the matched invoice is final; its open items are offered to Finance. Terminal and immutable.</summary>
+    /// <summary>API-36 (SAT-D208): the matched invoice is final; its open items are offered to Finance.
+    /// Its original facts are immutable; only the separate proved official-cancellation command may release its shares.</summary>
     Finalized = 6,
+
+    /// <summary>SAT-D96: externally cancelled official document; original finalization is retained.</summary>
+    OfficiallyCancelled = 7,
 }
 
 /// <summary>
@@ -407,6 +411,8 @@ public sealed partial class SalesInvoice
                 && decidedByOther,
             SalesInvoiceState.Rejected => submitted && decided && cancelledNone && decidedByOther,
             SalesInvoiceState.Cancelled => cancelled && decidedNone,
+            SalesInvoiceState.OfficiallyCancelled => submitted && decided && decidedByOther
+                && facts.DecisionReason is null && cancelled && !string.IsNullOrWhiteSpace(facts.CancellationReason),
             _ => false,
         };
     }

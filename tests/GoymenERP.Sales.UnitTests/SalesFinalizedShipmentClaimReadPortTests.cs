@@ -124,6 +124,37 @@ public sealed class SalesFinalizedShipmentClaimReadPortTests
         Assert.Equal(SalesShipmentClaimReadOutcomeV1.Unavailable, changed.Outcome); Assert.Empty(changed.Items);
     }
 
+    [Theory]
+    [InlineData("valid")] [InlineData("missing-fact")] [InlineData("missing-event")] [InlineData("foreign")] [InlineData("changed-admission")]
+    public void Officially_cancelled_finalization_releases_the_claim_only_with_exact_immutable_fact_and_event(string fault)
+    {
+        var f=new Fixture();var at=f.Time.AddHours(1);var actor=Guid.NewGuid();var id=Guid.NewGuid();var ettn=Guid.NewGuid().ToString("D");
+        var proof=new SalesOfficialInvoiceCancellationEvidenceV1(f.Company,f.Line.InvoiceId,"SENTETIK-OFFICIAL",ettn,"SENTETIK-status","SENTETIK-record","1",new string('a',64),at.AddMinutes(-1));
+        var view=new SalesOfficialInvoiceCancellationViewV1(f.Company,id,f.Line.InvoiceId,SalesOfficialInvoiceKindV1.Normal,"5","4",f.Finalization.AdmissionId,proof.OfficialInvoiceNo,ettn,actor.ToString("D"),at,"SENTETIK",proof);
+        var cancellation=new Reader.Cancellation(f.Company,id,f.Line.InvoiceId,5,4,f.Finalization.AdmissionId,actor.ToString("D"),at,"SENTETIK-cancel",JsonSerializer.Serialize(view,Json));
+        var ev=new Reader.Event(f.Company,id,f.Line.InvoiceId,"Sales.Invoice",5,1,1,JsonSerializer.Serialize(new {companyId=f.Company,cancellationId=id,invoiceId=f.Line.InvoiceId,admissionId=f.Finalization.AdmissionId,finalizedVersion=4,cancelledBy=actor,cancelledAtUtc=at,reason="SENTETIK"},Json),at,"SENTETIK-cancel");
+        var snapshot=f.Snapshot with {Lines=[f.Line with {ReleasedAtUtc=at}],Headers=[f.Header with {Version=5,State=7,CancelledBy=actor.ToString("D"),CancelledAtUtc=at,CancellationReason="SENTETIK"}],Cancellations=[cancellation],CancellationEvents=[ev]};
+        snapshot=fault switch {"missing-fact"=>snapshot with {Cancellations=[]},"missing-event"=>snapshot with {CancellationEvents=[]},"foreign"=>snapshot with {Cancellations=[cancellation with {CompanyId=Guid.NewGuid()}]},"changed-admission"=>snapshot with {Cancellations=[cancellation with {AdmissionId=Guid.NewGuid()}]},_=>snapshot};
+        var answer=Assert.Single(Reader.Project(f.Company,[f.Line.ShipmentId],snapshot).Items);
+        Assert.Equal(fault=="valid"?SalesShipmentClaimReadOutcomeV1.NotInvoiced:SalesShipmentClaimReadOutcomeV1.Unavailable,answer.Outcome);
+        Assert.Null(answer.Claim);if(fault=="valid")Assert.Equal("OfficiallyCancelled",Assert.Single(answer.Lifecycles).State);
+        if(fault=="valid")
+        {
+            // One canceled historical invoice may sort before OR after its real active replacement.
+            foreach(var replacementId in new[]{Guid.Parse("00000000-0000-4000-8000-000000000001"),Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff")})
+            {
+                var activeLine=f.Line with {InvoiceId=replacementId,LineId=Guid.NewGuid()};
+                var activeHeader=f.Header with {InvoiceId=replacementId};var activeFinal=f.Finalization with {InvoiceId=replacementId,AdmissionId=Guid.NewGuid()};
+                var activePayload=JsonSerializer.Serialize(new {companyId=f.Company,invoiceId=replacementId,version=4,admissionId=activeFinal.AdmissionId,finalizedBy=activeFinal.FinalizedBy,
+                    lines=new[]{new{lineId=activeLine.LineId,lineNo=activeLine.LineNo,productId=activeLine.ProductId,unitId=activeLine.UnitId,quantity=5m,shipmentSource=f.Source}}},Json);
+                var activeEvent=f.Event with {Id=Guid.NewGuid(),InvoiceId=replacementId,PayloadJson=activePayload};
+                var withReplacement=snapshot with {Lines=[..snapshot.Lines,activeLine],Headers=[..snapshot.Headers,activeHeader],Finalizations=[..snapshot.Finalizations,activeFinal],Events=[..snapshot.Events,activeEvent]};
+                var replaced=Assert.Single(Reader.Project(f.Company,[f.Line.ShipmentId],withReplacement).Items);
+                Assert.Equal(SalesShipmentClaimReadOutcomeV1.Available,replaced.Outcome);Assert.Equal(replacementId,replaced.Claim!.InvoiceId);
+            }
+        }
+    }
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private sealed class Fixture
     {

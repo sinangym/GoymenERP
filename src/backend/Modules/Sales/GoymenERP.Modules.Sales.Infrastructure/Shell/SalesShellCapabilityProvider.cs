@@ -42,11 +42,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// <see cref="SalesPermissionManifestV1.ReturnsApprove"/> and <see cref="SalesPermissionManifestV1.ReturnsFinalize"/> (manifest v30).
 /// Every API-40 read and command answers amounts, so every screen and control also needs
 /// <see cref="SalesPermissionManifestV1.OrdersPriceRead"/>: a screen that opens never meets a 403 from its own read.</para>
+/// <para>1.26 (SAT-SC34, Q3): standalone official cancellation recording on existing invoice finalize authority only; no price/read grant.</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.25";
+    public const string OwnerContractVersion = "1.26";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -243,6 +244,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     public const string InvoiceListRouteId = "sales.invoices.list";
     public const string InvoiceListRoutePath = "/satis/faturalar";
     public const string InvoiceListScreenId = "S-09";
+
+    // Q3/6957924089: a standalone price-free route uses only the existing finalize authority.
+    public const string OfficialCancellationCapabilityId = "sales.invoices.official-cancellation";
+    public const string OfficialCancellationRoutePath = "/satis/fatura-resmi-iptal";
 
     /// <summary>
     /// UI-80 "Satış raporları" (shell contract 1.11; plan §3.4 API-41 / API-42): one read-only screen with three report tabs (open
@@ -501,6 +506,16 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.InvoicesRead],
+            ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(
+            OfficialCancellationCapabilityId,
+            OfficialCancellationCapabilityId,
+            OfficialCancellationRoutePath,
+            "S-INVOICE-OFFICIAL-CANCELLATION",
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.InvoicesFinalize],
             ImplementationAvailable: true),
         new ShellCapabilityDeclaration(
             ReportsCapabilityId,

@@ -1,6 +1,7 @@
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using System.Text.Json;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -31,6 +32,40 @@ public sealed class CashTransferExchangeCalculatorTests
         Assert.Equal(("1.01", "1.33", "-0.33"), (quote.TransactionRate, quote.ComparisonRate, quote.RateDeviation));
         Assert.Equal(new CashTransferRateRatioV1("201", "200"), quote.ExactTransactionRate);
         Assert.Equal(new CashTransferRateRatioV1("4", "3"), quote.ExactComparisonRate);
+    }
+
+    [Fact]
+    public void Q10_records_each_legs_exact_comparison_TL_value_separately_without_turning_the_difference_into_book_value()
+    {
+        var quote = Calculate(Usd, "100.00", "34", Try, "3300.00", "1");
+        var sourceReference = Assert.IsType<CashTransferTlReferenceV1>(quote.SourceReferenceTl);
+        Assert.Equal(new CashTransferTlReferenceV1(Try, "3400", CashTransferExchangeCalculatorV1.TlReferenceSourceVersion), sourceReference);
+        Assert.Equal(new CashTransferTlReferenceV1(Try, "3300", CashTransferExchangeCalculatorV1.TlReferenceSourceVersion), quote.TargetReferenceTl);
+        Assert.Equal("-1.00", quote.RateDeviation); // Quote deviation, not an automatic 100 TL Accounting profit/loss.
+        Assert.True(CashTransferExchangeCalculatorV1.HasValidTlReferences(quote));
+        Assert.False(CashTransferExchangeCalculatorV1.HasValidTlReferences(quote with { SourceReferenceTl = sourceReference with { Amount = "3300" } }));
+        Assert.False(CashTransferExchangeCalculatorV1.HasValidTlReferences(quote with { TargetReferenceTl = null }));
+    }
+
+    [Fact]
+    public void A_TL_reference_keeps_a_finite_product_beyond_decimal_precision_without_money_rounding_or_overflow()
+    {
+        var large = Calculate(Usd, "1000000000000000000", "999999999999999999", Try, "1", "1");
+        Assert.Equal("999999999999999999000000000000000000", large.SourceReferenceTl!.Amount);
+        var tiny = Calculate(Usd, "0.0000000000000000000000000001", "0.0000000001", Try, "1", "1");
+        Assert.Equal("0." + new string('0', 37) + "1", tiny.SourceReferenceTl!.Amount);
+    }
+
+    [Fact]
+    public void Legacy_snapshots_keep_their_missing_reference_fields_and_original_JSON_shape_without_backfill()
+    {
+        var old = Calculate(Usd, "100", "34", Try, "3300", "1") with { SourceReferenceTl = null, TargetReferenceTl = null };
+        var json = JsonSerializer.Serialize(old, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("sourceReferenceTl", json); Assert.DoesNotContain("targetReferenceTl", json);
+        var restored = JsonSerializer.Deserialize<CashTransferExchangeSnapshotV1>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Null(restored.SourceReferenceTl); Assert.Null(restored.TargetReferenceTl);
+        Assert.Equal(json, JsonSerializer.Serialize(restored, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Assert.True(CashTransferExchangeCalculatorV1.HasValidTlReferences(restored));
     }
 
     [Fact]

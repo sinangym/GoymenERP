@@ -1,8 +1,8 @@
 # W8 — yanıt bekleyen mevcut kararların dizini
 
 17 Kasım 2026 kaynak kontrolü. Bu dosya yeni iş kapsamı veya karar oluşturmaz.
-İlk kayıtta aşağıdaki 12 soru bekliyordu. Güncel durumda 1–11 doğrudan kullanıcı
-tarafından yanıtlandı; yalnız 12 (gerçek dış program/entegratör kanıt kaynağı) bekliyor.
+İlk kayıtta aşağıdaki 12 soru bekliyordu. Güncel durumda 1–12 doğrudan kullanıcı
+tarafından yanıtlandı. Kullanıcıdan beklenen yeni bir işletme kararı yoktur. 12: bugün API sağlayıcısı yok; ileride Mikro ePortal/AI kontrolü fikri mevcut aktivasyon yetkisi değildir. [Ajan aktarımı](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6959047458). Gerçek sağlayıcı kanıtı bulunmayan akış 503 ile kapalı kalır.
 Tam eski soru ve seçenekler tablodaki kaynak bağlantılarındadır.
 Bu başlıklardan bağımsız mevcut kaynak işleri devam eder. Yanıt bekleyen dal
 başarıya çevrilmez ve ilgili dilim bütün olarak DONE sayılmaz.

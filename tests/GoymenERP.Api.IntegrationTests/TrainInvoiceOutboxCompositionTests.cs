@@ -39,6 +39,11 @@ public sealed class TrainInvoiceOutboxCompositionTests
         Assert.Equal(typeof(AccountingSalesInvoiceFinalizedInboxConsumer), consumer.ImplementationType);
         foreach (var subscription in consumer.Subscriptions)
             Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
+        var cancellationConsumer = Assert.Single(registry.Consumers,
+            item => item.ConsumerName == AccountingSalesInvoiceCancelledInboxV1.ConsumerName);
+        Assert.Equal(typeof(AccountingSalesInvoiceCancelledInboxConsumerV1), cancellationConsumer.ImplementationType);
+        foreach (var subscription in cancellationConsumer.Subscriptions)
+            Assert.Contains(source.Publishes, item => item.EventType == subscription.EventType && item.Version == subscription.Version);
         var accountingCosts = Assert.Single(registry.Consumers,
             item => item.ConsumerName == AccountingInventoryCostInboxV1.ConsumerName);
         Assert.Equal(typeof(AccountingInventoryCostInboxConsumerV1), accountingCosts.ImplementationType);

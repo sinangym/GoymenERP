@@ -87,6 +87,11 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             (original.Preparation.SourceMoney.Amount, original.Preparation.TargetMoney.Amount, original.Preparation.Rate));
         Assert.Equal(comparison.RecordId, original.Exchange!.SourceComparison.RecordId);
         Assert.Equal("7", original.Exchange.SourceComparison.RecordVersion);
+        var sourceReference = Assert.IsType<CashTransferTlReferenceV1>(original.Exchange.SourceReferenceTl);
+        var targetReference = Assert.IsType<CashTransferTlReferenceV1>(original.Exchange.TargetReferenceTl);
+        Assert.Equal("3400", sourceReference.Amount); Assert.Equal("3300", targetReference.Amount);
+        Assert.Equal(ExchangeTry, sourceReference.CurrencyId);
+        Assert.Equal(CashTransferExchangeCalculatorV1.TlReferenceSourceVersion, targetReference.SourceVersion);
         await using (var retry = run.OpenExchange(CompanyA, new SyntheticExchangeComparison { Unavailable = true }))
         {
             var replay = await retry.Service.CommitAsync(retry.Context, Key("exchange-record"), request, default);

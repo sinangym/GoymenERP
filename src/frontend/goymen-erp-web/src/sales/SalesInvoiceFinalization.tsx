@@ -1,3 +1,4 @@
+import { SalesOfficialInvoiceCancellationPanel } from './SalesOfficialInvoiceCancellationPage'
 /**
  * API-09 / API-36 (PR #986): the S-04 "Faturalar" tab — the order's invoices (`GET …/drafts/{id}/invoices`, under the draft
  * read) — and, per invoice, the finalization panel (`GET /sales/invoices/{id}`, under the invoice read and the price read).
@@ -263,6 +264,7 @@ export function SalesInvoiceFinalizationPanel({
       <InstalmentTable detail={detail} />
       <AttemptNotice controller={controller} />
       <Controls detail={detail} canControl={canControl} controller={controller} />
+      <SalesOfficialInvoiceCancellationPanel kind="Normal" invoiceId={invoiceId} companyId={companyId} version={detail.version} state={detail.state} onRecorded={refresh} />
     </section>
   )
 }

@@ -51,6 +51,9 @@ public static class SalesModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<SalesStore>();
+        services.AddScoped<ISalesOfficialInvoiceCancellationStoreV1>(p => p.GetRequiredService<SalesStore>());
+        services.TryAddScoped<ISalesOfficialCancellationEvidenceReadPortV1, UnavailableSalesOfficialCancellationEvidenceReadPortV1>();
+        services.AddScoped<ISalesOfficialInvoiceCancellationServiceV1, SalesOfficialInvoiceCancellationServiceV1>();
         services.AddScoped<ISalesOrderDraftStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // API-20 / API-21: the sales request store is the same Sales store (one context, one attempt table).
         services.AddScoped<ISalesRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());

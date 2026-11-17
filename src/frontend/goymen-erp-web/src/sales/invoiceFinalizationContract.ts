@@ -65,7 +65,7 @@ export const salesDraftInvoicesPath = (draftId: string) => `/sales/drafts/${segm
 
 /* ── Enumerations ─────────────────────────────────────────────────────────── */
 
-export const INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized'] as const
+export const INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized', 'OfficiallyCancelled'] as const
 export type InvoiceState = (typeof INVOICE_STATES)[number]
 const isInvoiceState = (value: unknown): value is InvoiceState =>
   typeof value === 'string' && (INVOICE_STATES as readonly string[]).includes(value)
@@ -496,7 +496,7 @@ export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): Sal
     || (o.match !== null && match === null) || (o.finalization !== null && finalization === null)
   ) return null
   // A finalization exists exactly on a finalized invoice.
-  if ((o.state === 'Finalized') !== (finalization !== null)) return null
+  if ((o.state === 'Finalized' || o.state === 'OfficiallyCancelled') !== (finalization !== null)) return null
   return {
     id: o.id, documentNo: o.documentNo, state: o.state, version: o.version, businessDate: o.businessDate, partyId: o.partyId,
     companyAccountId: o.companyAccountId, currencyId: o.currencyId, amountScale: o.amountScale, exchangeRate, totals,
