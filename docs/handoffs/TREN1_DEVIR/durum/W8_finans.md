@@ -123,3 +123,14 @@ Kararlar: KLN-D102/D104, FNS-D76/D89/D90; bu kaynak checkpoint'i tüm dilimin ka
 - Birim, kalıcılık modeli, olay sözleşmesi, strict UI ve gerçek SQL fact kaynakları eklendi. Yeni SQL fact: `GoymenERP.Api.IntegrationTests.SalesInvoiceSqlServerRelationalAcceptanceTests.Official_match_source_proof_survives_reload_and_down_51982_refuses_without_losing_the_match`.
 - API, Sales.UnitTests, Finance.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/hata. Parametreler: `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false`. Sales.Unit eksik assets için yalnız mevcut yerel NuGet önbelleğinden restore edildi. Finance audit beklentisinin nullable permission türü merkez sözleşmesiyle hizalandı; test beklentisi gevşetilmedi.
 - TypeScript `tsc -b` exit 0; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve OpenAPI üretimi NOT_RUN. Program/Shell kayıtları, para politikaları, gerçek grant ve Finance STOP değişmedi.
+
+## FIN-S13 — PARTIAL, gerçek Sales outbox kaynağı
+
+Kararlar: FNS-D76, FNS-D89/D90 ve transactional outbox/inbox değişmezi.
+
+- `SalesOutboxEventSourceV1`, mevcut `sales` kaynak kimliğini ve `sales.invoice.finalized.v1` / `sales.return-invoice.finalized.v1` schema 1 olaylarını aynen taşır. Payload/olay kimliği, şirket, correlation ve causation yeniden üretilmez; para veya stok hareketi oluşturmaz.
+- SQL Server'ın ürettiği rowversion ile 20 haneli imleç kullanılır. Sabit `MIN_ACTIVE_ROWVERSION()` sorgusu, daha erken başlayıp henüz commit olmamış olayın sonraki commit tarafından atlanmasını engeller. Şirket filtresi korunur; iki okuma sonrası bağlam yeniden ölçülür. Bu metadata ham SQL yüzeyi **K3 review bekliyor**; guard izin listesine eklenmedi.
+- EF `20261117084843_AddSalesOutboxCommittedCursor` üretildi; şirket/imleç indeksi eklendi. Outbox kaydı varsa Down ilk adımda `THROW 51983` ile durur. Designer/snapshot üreticiden; mevcut append-only trigger korunur.
+- Kaynak beyanı, bozuk imleç, çözülmemiş şirket ve iptal test kaynakları; rowversion/snapshot/Down model testleri yazıldı. Gerçek SQL fact kaynakları önceki açık transaction/sonraki commit, rollback, şirket izolasyonu, aynı olayın değişmeden okunması ve 51983 veri korumasını kapsar.
+- Merkezi kayıtlar entegrasyonda eklenir: `AddWorkOutboxEventSource<SalesOutboxEventSourceV1>` ve mevcut `AccountingSalesInvoiceFinalizedInboxConsumer`. Dispatch/Accounting aktivasyonu, grant ve Finance STOP değişmedi.
+- API, Sales.UnitTests ve IntegrationTests kaynak derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false` kullanıldı. Runtime birim/SQL/CI ve OpenAPI üretimi NOT_RUN. FIN-S13 tüm üretici/tüketici akışının kabulü bu checkpoint ile tamamlanmış sayılmaz.

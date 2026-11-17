@@ -3554,6 +3554,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("Position")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTimeOffset>("RecordedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3570,6 +3576,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(128)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Position");
 
                     b.HasIndex("CompanyId", "EventType", "AggregateId", "Sequence")
                         .IsUnique()

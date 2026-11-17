@@ -164,6 +164,7 @@ internal sealed class InvoiceFinalizationRow : ISalesTenantRow
 /// <summary>API-36: the transactional outbox of the Sales invoice events (append-only; consumers dedup by <see cref="Id"/>).</summary>
 internal sealed class SalesOutboxRow : ISalesTenantRow
 {
+    public ulong Position { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public string EventType { get; set; } = string.Empty;
