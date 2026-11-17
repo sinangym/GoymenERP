@@ -54,7 +54,7 @@ public sealed class AccountingInventoryCostSourceReaderV1(ICompanyContext compan
             var claim = line.ShipmentSource;
             if (claim is null) throw Pending("sales_cost_shipment_source_missing");
             if (claim.ShipmentId == Guid.Empty || claim.DispatchNoteId == Guid.Empty || claim.DispatchNoteLineNo < 1
-                || claim.SalesOrderId == Guid.Empty || claim.SalesOrderLineId == Guid.Empty || claim.PriceBasisRevision < 1
+                || claim.SalesOrderId == Guid.Empty || claim.SalesOrderLineId == Guid.Empty || claim.PriceBasisRevision < 0
                 || claim.ProductId == Guid.Empty || claim.UnitId == Guid.Empty || !Quantity(claim.InvoicedQuantity, out var commercialQuantity)
                 || !claimed.Add((claim.DispatchNoteId, claim.DispatchNoteLineNo))) throw Invalid("sales_cost_shipment_source_invalid");
             var proofRead = await logistics.GetAsync(captured, claim.DispatchNoteId, claim.DispatchNoteLineNo, claim.ShipmentId, cancellationToken);
