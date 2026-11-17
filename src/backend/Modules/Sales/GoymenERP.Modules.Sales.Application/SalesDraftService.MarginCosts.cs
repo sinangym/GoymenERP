@@ -14,8 +14,11 @@ public sealed partial class SalesDraftService
         draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)
             .OrderByDescending(cost => cost.Revision).FirstOrDefault();
 
-    private static bool SameCostBasis(SalesOrderDraftLine line, SalesMarginCostSnapshot cost) =>
-        cost.ProductId == line.Product.ProductId && cost.UnitId == line.OrderUnit.UnitId && cost.Quantity == line.Quantity.Value;
+    private static bool SameCostBasis(SalesOrderDraft draft, SalesOrderDraftLine line, SalesMarginCostSnapshot cost) =>
+        cost.ProductId == line.Product.ProductId && cost.UnitId == line.OrderUnit.UnitId
+        // SAT-D269 follow-up 6951607190: a quantity edit inside the same revision preserves the pinned unit cost.
+        // A genuine quantity revision still observes its own approval cost; no stock/accounting amount is rewritten.
+        && (cost.Quantity == line.Quantity.Value || cost.Revision == draft.Revision);
 
     private static bool LegacyApprovedCost(SalesOrderDraft draft, SalesOrderDraftLine line)
     {
@@ -33,14 +36,8 @@ public sealed partial class SalesDraftService
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var previous = LastMarginCost(draft, line.Id);
-            if (line.ReinstatedInRevision is not null)
-            {
-                // #1189 6934716192 is still a human decision; never silently preserve or re-pin this edge.
-                if (previous?.Revision != draft.Revision)
-                    costs.Add(UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostRepinPolicyPending));
-                continue;
-            }
-            if (previous is not null && SameCostBasis(line, previous)) continue;
+            // The same product/quantity reinstated after customer rejection keeps its original immutable cost.
+            if (previous is not null && SameCostBasis(draft, line, previous)) continue;
             if (previous is null && LegacyApprovedCost(draft, line)) continue; // SAT-D273: no backfill.
             costs.Add(await ReadMarginCostAsync(scope, permission, draft, line, cancellationToken));
         }
@@ -94,10 +91,10 @@ public sealed partial class SalesDraftService
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var cost = LastMarginCost(draft, line.Id);
-            if (line.ReinstatedInRevision is not null || (cost is not null && !SameCostBasis(line, cost)
-                && draft.ApprovalState == InternalApprovalState.Approved))
+            if (cost is not null && !SameCostBasis(draft, line, cost)
+                && draft.ApprovalState == InternalApprovalState.Approved)
                 cost = UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostRepinPolicyPending);
-            else if (cost is null || !SameCostBasis(line, cost))
+            else if (cost is null || !SameCostBasis(draft, line, cost))
                 cost = draft.ApprovalState == InternalApprovalState.Approved || LegacyApprovedCost(draft, line)
                     ? UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing)
                     : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);

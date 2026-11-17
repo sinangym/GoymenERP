@@ -188,3 +188,17 @@ FNS-D73/D83/D107 için Sales owner okuma portu eklendi. Mevcut onaylı revizyon 
 - K3 review bekliyor: yeni borrowed Sales read-context construction. Guard izin
   listesi genişletilmedi. Gerçek fason Logistics host ve ekran zinciri halen açıktır;
   bu bağımlılık bütün STK-S3 diliminin DONE veya runtime kabulü değildir.
+
+### SAT-S12 ilk onay marj maliyeti koruma
+
+- Oturumdaki doğrudan insan cevabının kaynak sınırı açık aktarımı:
+  [6951607190](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951607190).
+  Müşteri reddi sonrası aynı ürün/miktarla yeniden etkinleşen satır ilk onayın
+  birim maliyetini korur; aynı revizyon içindeki miktar değişimi yeni maliyet
+  okuması gerektirmez. Gerçek yeni revizyonda değişen miktar tabanı için mevcut
+  yeniden sabitleme ve eski kayıtları geriye doldurmama kuralları korunur.
+- Yeni bir miktar değiştirme endpointi veya stok/muhasebe hareketi eklenmedi.
+  Golden kabul kapısı açık tutuldu; marjın kullanılabilir olduğu iddia edilmez.
+- Yeniden etkinleşme kaynak testi ilk sabiti ve maliyet okuma sayısını korur.
+  Sales.UnitTests ve Api.IntegrationTests derlemeleri exit 0, hata/uyarı 0;
+  `git diff --check` exit 0. Runtime testler ve SQL **NOT_RUN**.
