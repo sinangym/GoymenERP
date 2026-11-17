@@ -14,7 +14,7 @@ public sealed record InventoryPurchaseReceiptCostV1(Guid CompanyId, Guid Accepta
     decimal? TlUnitCostPerKg, decimal? UsdUnitCostPerKg, InventoryIssueCostCurrencyV1 Currency,
     string SourceVersion, string EvidenceJson, string? TlUnavailableReason, string? UsdUnavailableReason,
     InventoryExactCostRatioV1? OriginalUnitCostRatio = null, InventoryExactCostRatioV1? TlUnitCostRatio = null,
-    InventoryExactCostRatioV1? UsdUnitCostRatio = null);
+    InventoryExactCostRatioV1? UsdUnitCostRatio = null, InventoryFirstEntryRateV1? FirstEntryRate = null);
 
 public interface IInventoryPurchaseReceiptCostSourceV1
 {
