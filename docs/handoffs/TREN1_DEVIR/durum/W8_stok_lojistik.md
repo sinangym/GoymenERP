@@ -590,3 +590,24 @@
   değildir. Bu merkezi cap/mount deltası owned kaynak derlemesinden ayrıca birleşik head'de doğrulanır.
   Kaynak/pin/OpenAPI/ilişkisel envanter/grup üretimi ve exact-head kabul ayrıca gereklidir; enclosing
   STK-S3 durumunu yalnız bu dar checkpoint ile yükseltme yetkisi alınmaz.
+
+## STK-SC36-a — ilk alış maliyetinde tam müşteri iadesinin sıfır kanıtı
+
+- BS-1 ve SAT-D303 kapsamındaki mevcut ilk maliyet tanıma kaynağına dar teknik tamamlamadır.
+  Güvenilen Inventory soy okuyucusu gerçek pozitif sevki ve ona bağlı gerçek müşteri iadesini
+  doğrulayıp net sevk kg değerini sıfır bulursa, aynı işlemde mevcut maliyet farkı outbox olayı
+  üretilir. Tamamen stokta kalan, hiç sevk edilmemiş mal için sıfır SMM kaynağı üretilmez.
+- Mevcut `PhysicalSourceJson` gerçek shipment, movement, satır, kök payı ve return kimliklerini
+  değişmez olarak taşır. Maliyet tutarı, para profili, exact oran, yuvarlama, fiziksel hareket ve
+  özgün movement stamp değiştirilmez. Yeni model, migration, EF, izin, hesap veya fiş yoktur.
+- Özgün uygulama replay'i önce okunur; önceki sonuç yeniden hesaplanmaz ve eski sıfır kaynaklara
+  geriye dönük olay eklenmez. Yeni sıfır olay, uygulama/pool/sürüm çiti/Audit ile aynı transaction'a
+  bağlıdır. Accounting kaynak kabulü ve sıfır approval witness kendi owner kapsamındadır;
+  bu producer düzeltmesi hayalî sıfır journal üretmez.
+- İki birim regresyon kaynağı: gerçek tam iade şartı ve üçte bir kök payında tam iade/bozuk kaynak.
+  Üç gerçek-SQL fact kaynağı: hiç sevk edilmemiş stokta olay yokluğu; tam gerçek iade sonrası tek
+  sıfır olay ve değişmeyen movement/stamp geçmişi/replay; başarısız save sonrası pool/sürüm/olay
+  rollback ve aynı özgün kaynakla sonraki kayıt. Gerçek SQL çalıştırılmadı.
+- **SOURCE_READY; kaynak derlemeleri QUEUED.** Bu delta için birim/SQL/runtime/CI **NOT_RUN**.
+  Merkezi Accounting host okuyucusunun sıfır gerçek sevk/iade bileşenini kabul bağı ayrı owner
+  düzeltmesidir; bu kayıt enclosing dilim için DONE veya kullanılabilirlik iddiası değildir.
